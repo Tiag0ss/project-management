@@ -1,0 +1,47 @@
+{
+  "TableName": "TaskChildAllocations",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "ParentTaskId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "ChildTaskId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "AllocationDate",
+      "DataType": "date",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "AllocatedHours",
+      "DataType": "decimal(4,2)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Level",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "StartTime",
+      "DataType": "varchar(5)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "EndTime",
+      "DataType": "varchar(5)",
+      "NotNullable": false
+    }
+  ]
+}

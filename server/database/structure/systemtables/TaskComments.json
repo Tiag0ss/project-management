@@ -1,0 +1,38 @@
+{
+  "TableName": "TaskComments",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "TaskId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Comment",
+      "DataType": "text",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": false
+    }
+  ]
+}

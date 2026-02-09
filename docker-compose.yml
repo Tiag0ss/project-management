@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  app:
+    image: ${DOCKER_USERNAME:-myuser}/project-management:latest
+    container_name: project-management-app
+    env_file:
+      - .env.docker
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Database Configuration
+      DB_HOST: ${DB_HOST:-mysql}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-projectmanagement}
+      DB_CONNECTION_LIMIT: ${DB_CONNECTION_LIMIT:-50}
+      
+      # JWT Configuration
+      JWT_SECRET: ${JWT_SECRET}
+      
+      # Server Configuration
+      PORT: 3000
+      NODE_ENV: production
+      API_URL: ${API_URL:-http://localhost:3000}
+      
+      # CORS Configuration
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-warn}
+      
+      # Frontend
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000}
+    
+    volumes:
+      - app-logs:/app/logs
+    
+    depends_on:
+      - mysql
+    
+    networks:
+      - app-network
+    
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  mysql:
+    image: mysql:8.0
+    container_name: project-management-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME:-projectmanagement}
+      MYSQL_USER: ${DB_USER:-appuser}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./backups:/backups
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql-data:
+    driver: local
+  app-logs:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge

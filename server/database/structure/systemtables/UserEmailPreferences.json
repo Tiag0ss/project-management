@@ -1,0 +1,40 @@
+{
+  "TableName": "UserEmailPreferences",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "NotificationType",
+      "DataType": "varchar(50)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "EmailEnabled",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    }
+  ]
+}

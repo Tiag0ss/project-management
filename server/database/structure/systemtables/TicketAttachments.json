@@ -1,0 +1,53 @@
+{
+  "TableName": "TicketAttachments",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "TicketId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CommentId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "UploadedByUserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "FileName",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "FileType",
+      "DataType": "varchar(100)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "FileSize",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "FileData",
+      "DataType": "longtext",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+TaskName,Description,Status,Priority,AssignedToUsername,DueDate,EstimatedHours,ParentTaskName,PlannedStartDate,PlannedEndDate,DependsOnTaskName
+Example Task 1,This is a sample task description,To Do,High,john.doe,2026-03-15,8.5,,2026-02-10,2026-02-15,
+Example Task 2,Another example task with dependencies,In Progress,Medium,jane.smith,2026-03-20,16.0,Example Task 1,2026-02-16,2026-02-25,Example Task 1
+Example Subtask,This is a subtask,To Do,Low,john.doe,2026-03-18,4.0,Example Task 1,2026-02-12,2026-02-14,

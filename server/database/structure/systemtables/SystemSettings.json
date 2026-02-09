@@ -1,0 +1,22 @@
+{
+  "TableName": "SystemSettings",
+  "PrimaryKeyFields": "SettingKey",
+  "Fields": [
+    {
+      "FieldName": "SettingKey",
+      "DataType": "varchar(100)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "SettingValue",
+      "DataType": "text",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    }
+  ]
+}

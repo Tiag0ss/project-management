@@ -1,0 +1,76 @@
+{
+  "TableName": "CallRecords",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CallDate",
+      "DataType": "date",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "StartTime",
+      "DataType": "time",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "DurationMinutes",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CallType",
+      "DataType": "varchar(50)",
+      "NotNullable": true,
+      "DefaultValue": "Teams"
+    },
+    {
+      "FieldName": "Participants",
+      "DataType": "text",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Subject",
+      "DataType": "varchar(255)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Notes",
+      "DataType": "text",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "ProjectId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "TaskId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ],
+  "PrimaryKeyFields": "Id",
+  "ForeignKeys": [
+    {
+      "Field": "UserId",
+      "References": "Users(Id)"
+    }
+  ]
+}

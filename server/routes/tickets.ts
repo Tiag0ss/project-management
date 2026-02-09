@@ -1,0 +1,877 @@
+import { Router, Response } from 'express';
+import { pool } from '../config/database';
+import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { createNotification } from './notifications';
+import { logActivity } from './activityLogs';
+
+const router = Router();
+
+// Helper function to normalize string values from request
+function normalizeString(value: any): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  return Array.isArray(value) ? value[0] : value;
+}
+
+// Helper function to log ticket history
+async function logTicketHistory(
+  ticketId: number,
+  userId: number,
+  action: string,
+  fieldName: string | null = null,
+  oldValue: any = null,
+  newValue: any = null
+) {
+  try {
+    // Convert values to string or null
+    const oldStr = oldValue !== null && oldValue !== undefined ? String(oldValue) : null;
+    const newStr = newValue !== null && newValue !== undefined ? String(newValue) : null;
+    
+    await pool.execute(
+      `INSERT INTO TicketHistory (TicketId, UserId, Action, FieldName, OldValue, NewValue) 
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [ticketId, userId, action, fieldName, oldStr, newStr]
+    );
+  } catch (error) {
+    console.error('Error logging ticket history:', error);
+    // Don't throw - history logging should not break the main operation
+  }
+}
+
+// Get all tickets (filtered by user role)
+router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
+    const { organizationId, status, priority, category, assignedTo, search } = req.query;
+
+    let query = `
+      SELECT 
+        t.*,
+        o.Name as OrganizationName,
+        c.Name as CustomerName,
+        p.ProjectName,
+        creator.FirstName as CreatorFirstName,
+        creator.LastName as CreatorLastName,
+        creator.Username as CreatorUsername,
+        assignee.FirstName as AssigneeFirstName,
+        assignee.LastName as AssigneeLastName,
+        assignee.Username as AssigneeUsername,
+        developer.FirstName as DeveloperFirstName,
+        developer.LastName as DeveloperLastName,
+        developer.Username as DeveloperUsername,
+        (SELECT COUNT(*) FROM TicketComments tc WHERE tc.TicketId = t.Id) as CommentCount
+      FROM Tickets t
+      LEFT JOIN Organizations o ON t.OrganizationId = o.Id
+      LEFT JOIN Customers c ON t.CustomerId = c.Id
+      LEFT JOIN Projects p ON t.ProjectId = p.Id
+      LEFT JOIN Users creator ON t.CreatedByUserId = creator.Id
+      LEFT JOIN Users assignee ON t.AssignedToUserId = assignee.Id
+      LEFT JOIN Users developer ON t.DeveloperUserId = developer.Id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+
+    // Customer users can only see their own tickets
+    if (customerId) {
+      query += ` AND t.CustomerId = ?`;
+      params.push(customerId);
+    } else {
+      // Regular users see tickets from their organizations
+      query += ` AND t.OrganizationId IN (
+        SELECT OrganizationId FROM OrganizationMembers WHERE UserId = ?
+      )`;
+      params.push(userId);
+    }
+
+    if (organizationId) {
+      query += ` AND t.OrganizationId = ?`;
+      params.push(organizationId);
+    }
+
+    if (status) {
+      query += ` AND t.Status = ?`;
+      params.push(status);
+    }
+
+    if (priority) {
+      query += ` AND t.Priority = ?`;
+      params.push(priority);
+    }
+
+    if (category) {
+      query += ` AND t.Category = ?`;
+      params.push(category);
+    }
+
+    if (assignedTo) {
+      query += ` AND t.AssignedToUserId = ?`;
+      params.push(assignedTo);
+    }
+
+    if (search) {
+      query += ` AND (t.Title LIKE ? OR t.TicketNumber LIKE ? OR t.Description LIKE ?)`;
+      const searchTerm = `%${search}%`;
+      params.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    query += ` ORDER BY t.CreatedAt DESC`;
+
+    const [tickets] = await pool.execute<RowDataPacket[]>(query, params);
+
+    res.json({ success: true, tickets });
+  } catch (error) {
+    console.error('Error fetching tickets:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch tickets' });
+  }
+});
+
+// Get my tickets (where I'm assignee OR developer)
+// MUST be before /:id to avoid route conflict
+router.get('/my-tickets', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    const query = `
+      SELECT 
+        t.*,
+        o.Name as OrganizationName,
+        c.Name as CustomerName,
+        p.ProjectName,
+        creator.FirstName as CreatorFirstName,
+        creator.LastName as CreatorLastName,
+        creator.Username as CreatorUsername,
+        assignee.FirstName as AssigneeFirstName,
+        assignee.LastName as AssigneeLastName,
+        assignee.Username as AssigneeUsername,
+        developer.FirstName as DeveloperFirstName,
+        developer.LastName as DeveloperLastName,
+        developer.Username as DeveloperUsername,
+        (SELECT COUNT(*) FROM TicketComments tc WHERE tc.TicketId = t.Id) as CommentCount
+      FROM Tickets t
+      LEFT JOIN Organizations o ON t.OrganizationId = o.Id
+      LEFT JOIN Customers c ON t.CustomerId = c.Id
+      LEFT JOIN Projects p ON t.ProjectId = p.Id
+      LEFT JOIN Users creator ON t.CreatedByUserId = creator.Id
+      LEFT JOIN Users assignee ON t.AssignedToUserId = assignee.Id
+      LEFT JOIN Users developer ON t.DeveloperUserId = developer.Id
+      WHERE (t.AssignedToUserId = ? OR t.DeveloperUserId = ?)
+      ORDER BY t.CreatedAt DESC
+    `;
+
+    const [tickets] = await pool.execute<RowDataPacket[]>(query, [userId, userId]);
+
+    res.json({ success: true, tickets });
+  } catch (error) {
+    console.error('Error fetching my tickets:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch tickets' });
+  }
+});
+
+// Get single ticket by ID
+router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
+
+    const [tickets] = await pool.execute<RowDataPacket[]>(`
+      SELECT 
+        t.*,
+        o.Name as OrganizationName,
+        c.Name as CustomerName,
+        p.ProjectName,
+        creator.FirstName as CreatorFirstName,
+        creator.LastName as CreatorLastName,
+        creator.Username as CreatorUsername,
+        creator.Email as CreatorEmail,
+        assignee.FirstName as AssigneeFirstName,
+        assignee.LastName as AssigneeLastName,
+        assignee.Username as AssigneeUsername,
+        developer.FirstName as DeveloperFirstName,
+        developer.LastName as DeveloperLastName,
+        developer.Username as DeveloperUsername
+      FROM Tickets t
+      LEFT JOIN Organizations o ON t.OrganizationId = o.Id
+      LEFT JOIN Customers c ON t.CustomerId = c.Id
+      LEFT JOIN Projects p ON t.ProjectId = p.Id
+      LEFT JOIN Users creator ON t.CreatedByUserId = creator.Id
+      LEFT JOIN Users assignee ON t.AssignedToUserId = assignee.Id
+      LEFT JOIN Users developer ON t.DeveloperUserId = developer.Id
+      WHERE t.Id = ?
+    `, [id]);
+
+    if (tickets.length === 0) {
+      return res.status(404).json({ success: false, message: 'Ticket not found' });
+    }
+
+    const ticket = tickets[0];
+
+    // Check access
+    if (customerId && ticket.CustomerId !== customerId) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Get comments (filter internal comments for customer users)
+    let commentsQuery = `
+      SELECT 
+        tc.*,
+        u.FirstName,
+        u.LastName,
+        u.Username,
+        u.Email
+      FROM TicketComments tc
+      LEFT JOIN Users u ON tc.UserId = u.Id
+      WHERE tc.TicketId = ?
+    `;
+    
+    if (customerId) {
+      commentsQuery += ` AND tc.IsInternal = 0`;
+    }
+    
+    commentsQuery += ` ORDER BY tc.CreatedAt ASC`;
+
+    const [comments] = await pool.execute<RowDataPacket[]>(commentsQuery, [id]);
+
+    res.json({ success: true, ticket, comments });
+  } catch (error) {
+    console.error('Error fetching ticket:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch ticket' });
+  }
+});
+
+// Create new ticket
+router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
+    const { organizationId, projectId, title, description, priority, category } = req.body;
+
+    if (!organizationId || !title) {
+      return res.status(400).json({ success: false, message: 'Organization and title are required' });
+    }
+
+    // Get organization abbreviation
+    const [orgResult] = await pool.execute<RowDataPacket[]>(
+      'SELECT Abbreviation FROM Organizations WHERE Id = ?',
+      [organizationId]
+    );
+    
+    if (orgResult.length === 0) {
+      return res.status(404).json({ success: false, message: 'Organization not found' });
+    }
+    
+    const orgAbbr = orgResult[0].Abbreviation || `ORG${organizationId}`;
+
+    // Insert ticket first to get the ID
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO Tickets (
+        OrganizationId, CustomerId, ProjectId, CreatedByUserId,
+        Title, Description, Priority, Category
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        organizationId,
+        customerId || null,
+        projectId || null,
+        userId,
+        title,
+        description || null,
+        priority || 'Medium',
+        category || 'Support'
+      ]
+    );
+
+    const ticketId = result.insertId;
+    
+    // Generate ticket number using abbreviation and ticket ID
+    const ticketNumber = `TKT-${orgAbbr}-${ticketId}`;
+    
+    // Update ticket with the generated number
+    await pool.execute(
+      'UPDATE Tickets SET TicketNumber = ? WHERE Id = ?',
+      [ticketNumber, ticketId]
+    );
+
+    // Log ticket creation
+    await logTicketHistory(ticketId, userId!, 'Created', null, null, null);
+
+    // Log activity
+    await logActivity(
+      userId ?? null,
+      req.user?.username || null,
+      'TICKET_CREATE',
+      'Ticket',
+      ticketId,
+      ticketNumber,
+      `Created ticket: ${ticketNumber} - ${title}`,
+      req.ip,
+      req.get('user-agent')
+    );
+
+    // Notify organization managers about new ticket
+    const [orgManagers] = await pool.execute<RowDataPacket[]>(
+      `SELECT DISTINCT u.Id 
+       FROM Users u
+       INNER JOIN OrganizationMembers om ON u.Id = om.UserId
+       WHERE om.OrganizationId = ? AND (u.IsManager = 1 OR u.IsAdmin = 1) AND u.Id != ?`,
+      [organizationId, userId]
+    );
+    
+    for (const manager of orgManagers) {
+      await createNotification(
+        manager.Id,
+        'ticket_created',
+        'New Ticket Created',
+        `Ticket ${ticketNumber}: ${title}`,
+        `/tickets/${ticketId}`
+      );
+    }
+
+    res.json({ 
+      success: true, 
+      message: 'Ticket created successfully',
+      ticketId,
+      ticketNumber
+    });
+  } catch (error) {
+    console.error('Error creating ticket:', error);
+    res.status(500).json({ success: false, message: 'Failed to create ticket' });
+  }
+});
+
+// Update ticket
+router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const ticketId = parseInt(Array.isArray(id) ? id[0] : id);
+    const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
+    
+    // Normalize all string values from request body
+    const title = normalizeString(req.body.title);
+    const description = normalizeString(req.body.description);
+    const status = normalizeString(req.body.status);
+    const priority = normalizeString(req.body.priority);
+    const category = normalizeString(req.body.category);
+    const assignedToUserId = req.body.assignedToUserId;
+    const projectId = req.body.projectId;
+    const developerUserId = req.body.developerUserId;
+    const scheduledDate = normalizeString(req.body.scheduledDate);
+    const organizationId = req.body.organizationId;
+    const customerId_new = req.body.customerId; // Different from user's customerId
+
+    // Verify access
+    const [tickets] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM Tickets WHERE Id = ?',
+      [ticketId]
+    );
+
+    if (tickets.length === 0) {
+      return res.status(404).json({ success: false, message: 'Ticket not found' });
+    }
+
+    const ticket = tickets[0];
+
+    // Check if user is manager or admin
+    const [users] = await pool.execute<RowDataPacket[]>(
+      'SELECT IsManager, IsAdmin FROM Users WHERE Id = ?',
+      [userId]
+    );
+    const isManagerOrAdmin = users.length > 0 && (users[0].IsManager || users[0].IsAdmin);
+
+    // Customer users can only update their own tickets and limited fields
+    if (customerId) {
+      if (ticket.CustomerId !== customerId) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+      // Customer can only update title and description
+      if (title !== undefined && title !== ticket.Title) {
+        await logTicketHistory(ticketId, userId!, 'Updated', 'Title', ticket.Title, title);
+      }
+      if (description !== undefined && description !== ticket.Description) {
+        await logTicketHistory(ticketId, userId!, 'Updated', 'Description', ticket.Description, description);
+      }
+      
+      await pool.execute(
+        `UPDATE Tickets SET Title = ?, Description = ?, UpdatedAt = NOW() WHERE Id = ?`,
+        [title || ticket.Title, description || ticket.Description, ticketId]
+      );
+    } else {
+      // Regular users can update all fields
+      const updates: string[] = [];
+      const params: any[] = [];
+
+      if (title !== undefined) {
+        if (title !== ticket.Title) {
+          await logTicketHistory(ticketId, userId!, 'Updated', 'Title', ticket.Title, title);
+        }
+        updates.push('Title = ?');
+        params.push(title);
+      }
+      if (description !== undefined) {
+        if (description !== ticket.Description) {
+          await logTicketHistory(ticketId, userId!, 'Updated', 'Description', ticket.Description, description);
+        }
+        updates.push('Description = ?');
+        params.push(description);
+      }
+      if (status !== undefined) {
+        if (status !== ticket.Status) {
+          await logTicketHistory(ticketId, userId!, 'StatusChanged', 'Status', ticket.Status, status);
+          
+          // Notify ticket creator about ANY status change (if they're not the one making the change)
+          if (ticket.CreatedByUserId && ticket.CreatedByUserId !== userId) {
+            await createNotification(
+              ticket.CreatedByUserId,
+              'ticket_status',
+              'Ticket Status Changed',
+              `Your ticket ${ticket.TicketNumber} status changed from "${ticket.Status}" to "${status}"`,
+              `/tickets/${ticketId}`
+            );
+          }
+          
+          // Also notify assignee if different from creator and updater
+          if (ticket.AssignedToUserId && ticket.AssignedToUserId !== userId && ticket.AssignedToUserId !== ticket.CreatedByUserId) {
+            await createNotification(
+              ticket.AssignedToUserId,
+              'ticket_status',
+              'Assigned Ticket Status Changed',
+              `Ticket ${ticket.TicketNumber} status changed from "${ticket.Status}" to "${status}"`,
+              `/tickets/${ticketId}`
+            );
+          }
+        }
+        updates.push('Status = ?');
+        params.push(status);
+        
+        // Set resolved/closed timestamps
+        if (status === 'Resolved' && !ticket.ResolvedAt) {
+          updates.push('ResolvedAt = NOW()');
+        }
+        if (status === 'Closed' && !ticket.ClosedAt) {
+          updates.push('ClosedAt = NOW()');
+        }
+      }
+      if (priority !== undefined) {
+        if (priority !== ticket.Priority) {
+          await logTicketHistory(ticketId, userId!, 'PriorityChanged', 'Priority', ticket.Priority, priority);
+        }
+        updates.push('Priority = ?');
+        params.push(priority);
+      }
+      if (category !== undefined) {
+        if (category !== ticket.Category) {
+          await logTicketHistory(ticketId, userId!, 'Updated', 'Category', ticket.Category, category);
+        }
+        updates.push('Category = ?');
+        params.push(category);
+      }
+      if (assignedToUserId !== undefined) {
+        const oldAssignee = ticket.AssignedToUserId ? ticket.AssignedToUserId.toString() : null;
+        const newAssignee = assignedToUserId ? assignedToUserId.toString() : null;
+        if (oldAssignee !== newAssignee) {
+          await logTicketHistory(ticketId, userId!, 'AssignedToChanged', 'AssignedToUserId', oldAssignee, newAssignee);
+          
+          // Notify new assignee
+          if (assignedToUserId) {
+            await createNotification(
+              assignedToUserId,
+              'ticket_assigned',
+              'Ticket Assigned to You',
+              `You have been assigned to ticket ${ticket.TicketNumber}: ${ticket.Title}`,
+              `/tickets/${ticketId}`
+            );
+          }
+        }
+        updates.push('AssignedToUserId = ?');
+        params.push(assignedToUserId || null);
+      }
+      if (projectId !== undefined) {
+        const oldProject = ticket.ProjectId ? ticket.ProjectId.toString() : null;
+        const newProject = projectId ? projectId.toString() : null;
+        if (oldProject !== newProject) {
+          await logTicketHistory(ticketId, userId!, 'Updated', 'ProjectId', oldProject, newProject);
+        }
+        updates.push('ProjectId = ?');
+        params.push(projectId || null);
+      }
+      if (developerUserId !== undefined) {
+        const oldDeveloper = ticket.DeveloperUserId ? ticket.DeveloperUserId.toString() : null;
+        const newDeveloper = developerUserId ? developerUserId.toString() : null;
+        if (oldDeveloper !== newDeveloper) {
+          await logTicketHistory(ticketId, userId!, 'DeveloperChanged', 'DeveloperUserId', oldDeveloper, newDeveloper);
+          
+          // Notify new developer
+          if (developerUserId) {
+            await createNotification(
+              developerUserId,
+              'ticket_developer',
+              'Assigned as Developer',
+              `You are now the developer for ticket ${ticket.TicketNumber}: ${ticket.Title}`,
+              `/tickets/${ticketId}`
+            );
+          }
+        }
+        updates.push('DeveloperUserId = ?');
+        params.push(developerUserId || null);
+      }
+      if (scheduledDate !== undefined) {
+        const oldDate = ticket.ScheduledDate ? ticket.ScheduledDate.toString() : null;
+        const newDate = scheduledDate ? scheduledDate.toString() : null;
+        if (oldDate !== newDate) {
+          await logTicketHistory(ticketId, userId!, 'Updated', 'ScheduledDate', oldDate, newDate);
+        }
+        updates.push('ScheduledDate = ?');
+        params.push(scheduledDate || null);
+      }
+      
+      // Only managers and admins can change organization and customer
+      if (isManagerOrAdmin) {
+        if (organizationId !== undefined) {
+          const oldOrg = ticket.OrganizationId ? ticket.OrganizationId.toString() : null;
+          const newOrg = organizationId ? organizationId.toString() : null;
+          if (oldOrg !== newOrg) {
+            await logTicketHistory(ticketId, userId!, 'Updated', 'OrganizationId', oldOrg, newOrg);
+          }
+          updates.push('OrganizationId = ?');
+          params.push(organizationId || null);
+        }
+        if (customerId_new !== undefined) {
+          const oldCust = ticket.CustomerId ? ticket.CustomerId.toString() : null;
+          const newCust = customerId_new ? customerId_new.toString() : null;
+          if (oldCust !== newCust) {
+            await logTicketHistory(ticketId, userId!, 'Updated', 'CustomerId', oldCust, newCust);
+          }
+          updates.push('CustomerId = ?');
+          params.push(customerId_new || null);
+        }
+      }
+
+      updates.push('UpdatedAt = NOW()');
+      params.push(ticketId);
+
+      await pool.execute(
+        `UPDATE Tickets SET ${updates.join(', ')} WHERE Id = ?`,
+        params
+      );
+      
+      // Log activity for ticket update
+      await logActivity(
+        userId ?? null,
+        req.user?.username || null,
+        'TICKET_UPDATE',
+        'Ticket',
+        ticketId,
+        ticket.TicketNumber,
+        `Updated ticket: ${ticket.TicketNumber}`,
+        req.ip,
+        req.get('user-agent')
+      );
+    }
+
+    res.json({ success: true, message: 'Ticket updated successfully' });
+  } catch (error) {
+    console.error('Error updating ticket:', error);
+    res.status(500).json({ success: false, message: 'Failed to update ticket' });
+  }
+});
+
+// Add comment to ticket
+router.post('/:id/comments', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
+    const { comment, isInternal } = req.body;
+
+    if (!comment) {
+      return res.status(400).json({ success: false, message: 'Comment is required' });
+    }
+
+    // Verify ticket exists and user has access
+    const [tickets] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM Tickets WHERE Id = ?',
+      [id]
+    );
+
+    if (tickets.length === 0) {
+      return res.status(404).json({ success: false, message: 'Ticket not found' });
+    }
+
+    const ticket = tickets[0];
+
+    if (customerId && ticket.CustomerId !== customerId) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Customer users cannot create internal comments
+    const isInternalComment = customerId ? false : (isInternal || false);
+
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO TicketComments (TicketId, UserId, Comment, IsInternal) VALUES (?, ?, ?, ?)`,
+      [id, userId, comment, isInternalComment ? 1 : 0]
+    );
+
+    // Auto-update ticket status based on who is commenting
+    // Internal notes don't trigger status changes
+    if (!isInternalComment) {
+      const currentStatus = ticket.Status;
+      let newStatus = null;
+
+      if (customerId) {
+        // Customer is replying
+        // If ticket was "Waiting Response", move to "Open" (needs attention)
+        // If ticket was "Resolved", move to "Open" (customer has follow-up)
+        if (currentStatus === 'Waiting Response' || currentStatus === 'Resolved') {
+          newStatus = 'Open';
+        }
+      } else {
+        // Staff is replying (non-internal comment visible to customer)
+        // If ticket is "Open", move to "Waiting Response" (waiting for customer reply)
+        if (currentStatus === 'Open') {
+          newStatus = 'Waiting Response';
+        }
+      }
+
+      if (newStatus) {
+        await pool.execute(
+          'UPDATE Tickets SET Status = ?, UpdatedAt = NOW() WHERE Id = ?',
+          [newStatus, id]
+        );
+      } else {
+        // Just update the timestamp
+        await pool.execute('UPDATE Tickets SET UpdatedAt = NOW() WHERE Id = ?', [id]);
+      }
+    } else {
+      // Internal note - just update timestamp
+      await pool.execute('UPDATE Tickets SET UpdatedAt = NOW() WHERE Id = ?', [id]);
+    }
+
+    // Notify relevant users about new comment (unless it's internal)
+    if (!isInternalComment) {
+      // Notify ticket creator if they're not the commenter
+      if (ticket.CreatedByUserId !== userId) {
+        await createNotification(
+          ticket.CreatedByUserId,
+          'ticket_comment',
+          'New Comment on Your Ticket',
+          `New comment on ticket ${ticket.TicketNumber}`,
+          `/tickets/${id}`
+        );
+      }
+      
+      // Notify assignee if different from creator and commenter
+      if (ticket.AssignedToUserId && ticket.AssignedToUserId !== userId && ticket.AssignedToUserId !== ticket.CreatedByUserId) {
+        await createNotification(
+          ticket.AssignedToUserId,
+          'ticket_comment',
+          'New Comment on Assigned Ticket',
+          `New comment on ticket ${ticket.TicketNumber}`,
+          `/tickets/${id}`
+        );
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      message: 'Comment added successfully',
+      commentId: result.insertId
+    });
+  } catch (error) {
+    console.error('Error adding comment:', error);
+    res.status(500).json({ success: false, message: 'Failed to add comment' });
+  }
+});
+
+// Get ticket statistics
+router.get('/stats/summary', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
+    const { organizationId } = req.query;
+
+    let baseCondition = '';
+    const params: any[] = [];
+
+    if (customerId) {
+      baseCondition = 'WHERE CustomerId = ?';
+      params.push(customerId);
+    } else if (organizationId) {
+      baseCondition = 'WHERE OrganizationId = ?';
+      params.push(organizationId);
+    } else {
+      baseCondition = `WHERE OrganizationId IN (
+        SELECT OrganizationId FROM OrganizationMembers WHERE UserId = ?
+      )`;
+      params.push(userId);
+    }
+
+    const [stats] = await pool.execute<RowDataPacket[]>(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN Status = 'Open' THEN 1 ELSE 0 END) as open,
+        SUM(CASE WHEN Status IN ('In Progress', 'With Developer', 'Scheduled') THEN 1 ELSE 0 END) as inProgress,
+        SUM(CASE WHEN Status = 'Waiting Response' THEN 1 ELSE 0 END) as waiting,
+        SUM(CASE WHEN Status = 'Resolved' THEN 1 ELSE 0 END) as resolved,
+        SUM(CASE WHEN Status = 'Closed' THEN 1 ELSE 0 END) as closed,
+        SUM(CASE WHEN Priority = 'Urgent' THEN 1 ELSE 0 END) as urgent,
+        SUM(CASE WHEN Priority = 'High' THEN 1 ELSE 0 END) as high
+      FROM Tickets ${baseCondition}
+    `, params);
+
+    res.json({ success: true, stats: stats[0] });
+  } catch (error) {
+    console.error('Error fetching ticket stats:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch statistics' });
+  }
+});
+
+// Delete ticket (admin only)
+router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const isAdmin = req.user?.isAdmin;
+
+    if (!isAdmin) {
+      return res.status(403).json({ success: false, message: 'Only admins can delete tickets' });
+    }
+
+    // Get ticket info before deletion
+    const [ticket] = await pool.execute<RowDataPacket[]>(
+      'SELECT TicketNumber, Title FROM Tickets WHERE Id = ?',
+      [id]
+    );
+
+    const ticketInfo = ticket.length > 0 ? ticket[0] : null;
+
+    // Delete comments first
+    await pool.execute('DELETE FROM TicketComments WHERE TicketId = ?', [id]);
+    
+    // Delete history
+    await pool.execute('DELETE FROM TicketHistory WHERE TicketId = ?', [id]);
+    
+    // Delete ticket
+    await pool.execute('DELETE FROM Tickets WHERE Id = ?', [id]);
+
+    // Log activity
+    if (ticketInfo) {
+      await logActivity(
+        req.user?.userId ?? null,
+        req.user?.username || null,
+        'TICKET_DELETE',
+        'Ticket',
+        Number(id),
+        ticketInfo.TicketNumber,
+        `Deleted ticket: ${ticketInfo.TicketNumber} - ${ticketInfo.Title}`,
+        req.ip,
+        req.get('user-agent')
+      );
+    }
+
+    res.json({ success: true, message: 'Ticket deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting ticket:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete ticket' });
+  }
+});
+
+// Get ticket history
+router.get('/:id/history', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
+
+    // Verify access to ticket
+    const [tickets] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM Tickets WHERE Id = ?',
+      [id]
+    );
+
+    if (tickets.length === 0) {
+      return res.status(404).json({ success: false, message: 'Ticket not found' });
+    }
+
+    const ticket = tickets[0];
+
+    // Check access
+    if (customerId) {
+      if (ticket.CustomerId !== customerId) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+    } else {
+      // Regular users must be in the organization
+      const [orgMembers] = await pool.execute<RowDataPacket[]>(
+        'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+        [ticket.OrganizationId, userId]
+      );
+
+      if (orgMembers.length === 0) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+    }
+
+    // Get history
+    const [history] = await pool.execute<RowDataPacket[]>(
+      `SELECT 
+        th.*,
+        u.FirstName,
+        u.LastName,
+        u.Username
+      FROM TicketHistory th
+      LEFT JOIN Users u ON th.UserId = u.Id
+      WHERE th.TicketId = ?
+      ORDER BY th.CreatedAt DESC`,
+      [id]
+    );
+
+    res.json({ success: true, data: history });
+  } catch (error) {
+    console.error('Error fetching ticket history:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch ticket history' });
+  }
+});
+
+// Migrate ticket numbers to new format (admin only)
+router.post('/migrate-ticket-numbers', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const isAdmin = req.user?.isAdmin;
+
+    if (!isAdmin) {
+      return res.status(403).json({ success: false, message: 'Only admins can migrate ticket numbers' });
+    }
+
+    // Get all tickets with their organization abbreviations
+    const [tickets] = await pool.execute<RowDataPacket[]>(`
+      SELECT t.Id, t.OrganizationId, o.Abbreviation
+      FROM Tickets t
+      LEFT JOIN Organizations o ON t.OrganizationId = o.Id
+      ORDER BY t.Id
+    `);
+
+    let updatedCount = 0;
+    
+    for (const ticket of tickets) {
+      const orgAbbr = ticket.Abbreviation || `ORG${ticket.OrganizationId}`;
+      const newTicketNumber = `TKT-${orgAbbr}-${ticket.Id}`;
+      
+      await pool.execute(
+        'UPDATE Tickets SET TicketNumber = ? WHERE Id = ?',
+        [newTicketNumber, ticket.Id]
+      );
+      
+      updatedCount++;
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Successfully migrated ${updatedCount} ticket numbers`,
+      count: updatedCount
+    });
+  } catch (error) {
+    console.error('Error migrating ticket numbers:', error);
+    res.status(500).json({ success: false, message: 'Failed to migrate ticket numbers' });
+  }
+});
+
+export default router;

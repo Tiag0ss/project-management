@@ -1,0 +1,46 @@
+{
+  "TableName": "TicketStatusValues",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "StatusName",
+      "DataType": "varchar(50)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Color",
+      "DataType": "varchar(7)",
+      "NotNullable": true,
+      "DefaultValue": "#6B7280"
+    },
+    {
+      "FieldName": "IsDefault",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "IsClosed",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "SortOrder",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    }
+  ]
+}

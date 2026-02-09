@@ -1,0 +1,29 @@
+{
+  "TableName": "SchemaVersions",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "TableName",
+      "DataType": "varchar(255)",
+      "NotNullable": true,
+      "Unique": true
+    },
+    {
+      "FieldName": "SchemaHash",
+      "DataType": "varchar(32)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "LastUpdated",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    }
+  ]
+}

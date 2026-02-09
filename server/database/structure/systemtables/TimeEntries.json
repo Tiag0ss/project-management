@@ -1,0 +1,60 @@
+{
+  "TableName": "TimeEntries",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "TaskId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "WorkDate",
+      "DataType": "date",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Hours",
+      "DataType": "decimal(4,2)",
+      "NotNullable": true,
+      "DefaultValue": "0.00"
+    },
+    {
+      "FieldName": "StartTime",
+      "DataType": "varchar(5)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "EndTime",
+      "DataType": "varchar(5)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Description",
+      "DataType": "text",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "datetime",
+      "NotNullable": false,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "datetime",
+      "NotNullable": false,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

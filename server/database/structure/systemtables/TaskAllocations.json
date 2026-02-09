@@ -1,0 +1,51 @@
+{
+  "TableName": "TaskAllocations",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "TaskId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "AllocationDate",
+      "DataType": "date",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "AllocatedHours",
+      "DataType": "decimal(4,2)",
+      "NotNullable": true,
+      "DefaultValue": "0.00"
+    },
+    {
+      "FieldName": "StartTime",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "09:00"
+    },
+    {
+      "FieldName": "EndTime",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "17:00"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "datetime",
+      "NotNullable": false,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

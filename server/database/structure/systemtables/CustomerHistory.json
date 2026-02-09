@@ -1,0 +1,48 @@
+{
+  "TableName": "CustomerHistory",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "CustomerId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "ChangedBy",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "ChangeType",
+      "DataType": "varchar(50)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "FieldName",
+      "DataType": "varchar(100)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "OldValue",
+      "DataType": "text",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "NewValue",
+      "DataType": "text",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

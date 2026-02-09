@@ -1,0 +1,22 @@
+{
+  "TableName": "CustomerOrganizations",
+  "PrimaryKeyFields": "CustomerId,OrganizationId",
+  "Fields": [
+    {
+      "FieldName": "CustomerId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

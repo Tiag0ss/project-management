@@ -1,0 +1,100 @@
+{
+  "TableName": "Tasks",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "ProjectId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "TaskName",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Description",
+      "DataType": "text",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Status",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Priority",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "AssignedTo",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "DueDate",
+      "DataType": "date",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "EstimatedHours",
+      "DataType": "decimal(10,2)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "ParentTaskId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "DisplayOrder",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "PlannedStartDate",
+      "DataType": "date",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "PlannedEndDate",
+      "DataType": "date",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "DependsOnTaskId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "TicketId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    }
+  ]
+}

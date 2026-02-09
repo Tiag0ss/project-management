@@ -1,0 +1,39 @@
+{
+  "TableName": "OrganizationMembers",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Role",
+      "DataType": "varchar(50)",
+      "NotNullable": true,
+      "DefaultValue": "Member"
+    },
+    {
+      "FieldName": "PermissionGroupId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "JoinedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

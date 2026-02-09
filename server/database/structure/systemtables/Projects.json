@@ -1,0 +1,70 @@
+{
+  "TableName": "Projects",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "ProjectName",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Description",
+      "DataType": "text",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Status",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "StartDate",
+      "DataType": "date",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "EndDate",
+      "DataType": "date",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "IsHobby",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CustomerId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    }
+  ]
+}

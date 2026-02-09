@@ -1,0 +1,57 @@
+{
+  "TableName": "ProjectStatusValues",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "StatusName",
+      "DataType": "varchar(100)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "ColorCode",
+      "DataType": "varchar(7)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "SortOrder",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "IsDefault",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "IsClosed",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "IsCancelled",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

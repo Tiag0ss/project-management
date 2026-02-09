@@ -1,0 +1,185 @@
+{
+  "TableName": "RolePermissions",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "RoleName",
+      "DataType": "varchar(50)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CanViewDashboard",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CanViewPlanning",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CanViewProjects",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CanManageProjects",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanCreateProjects",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanDeleteProjects",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanViewTasks",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CanManageTasks",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CanCreateTasks",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CanDeleteTasks",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanAssignTasks",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanManageTimeEntries",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CanViewReports",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanManageOrganizations",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanViewCustomers",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CanManageCustomers",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanCreateCustomers",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanDeleteCustomers",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanManageUsers",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanManageTickets",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CanCreateTickets",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CanDeleteTickets",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanAssignTickets",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanCreateTaskFromTicket",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanPlanTasks",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CanViewOthersPlanning",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    }
+  ]
+}

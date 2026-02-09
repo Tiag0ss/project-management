@@ -1,0 +1,85 @@
+{
+  "TableName": "Customers",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "Name",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Email",
+      "DataType": "varchar(255)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Phone",
+      "DataType": "varchar(50)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Address",
+      "DataType": "text",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Website",
+      "DataType": "varchar(255)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "ContactPerson",
+      "DataType": "varchar(255)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "ContactEmail",
+      "DataType": "varchar(255)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "ContactPhone",
+      "DataType": "varchar(50)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "ProjectManagerId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Notes",
+      "DataType": "text",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "IsActive",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

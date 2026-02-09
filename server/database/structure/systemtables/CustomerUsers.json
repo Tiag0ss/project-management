@@ -1,0 +1,28 @@
+{
+  "TableName": "CustomerUsers",
+  "PrimaryKeyFields": "CustomerId,UserId",
+  "Fields": [
+    {
+      "FieldName": "CustomerId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Role",
+      "DataType": "varchar(50)",
+      "NotNullable": true,
+      "DefaultValue": "User"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "TableName": "Tickets",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CustomerId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "ProjectId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedByUserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "AssignedToUserId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "TicketNumber",
+      "DataType": "varchar(20)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Title",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Description",
+      "DataType": "text",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Status",
+      "DataType": "varchar(50)",
+      "NotNullable": true,
+      "DefaultValue": "Open"
+    },
+    {
+      "FieldName": "Priority",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "Medium"
+    },
+    {
+      "FieldName": "Category",
+      "DataType": "varchar(50)",
+      "NotNullable": true,
+      "DefaultValue": "Support"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "ResolvedAt",
+      "DataType": "timestamp",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "ClosedAt",
+      "DataType": "timestamp",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "DeveloperUserId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "ScheduledDate",
+      "DataType": "date",
+      "NotNullable": false
+    }
+  ]
+}

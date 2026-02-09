@@ -1,0 +1,44 @@
+{
+  "TableName": "Tags",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Name",
+      "DataType": "varchar(50)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Color",
+      "DataType": "varchar(7)",
+      "NotNullable": true,
+      "DefaultValue": "#6B7280"
+    },
+    {
+      "FieldName": "Description",
+      "DataType": "varchar(255)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

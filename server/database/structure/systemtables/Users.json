@@ -1,0 +1,267 @@
+{
+  "TableName": "Users",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "Username",
+      "DataType": "varchar(100)",
+      "NotNullable": true,
+      "Unique": true
+    },
+    {
+      "FieldName": "Email",
+      "DataType": "varchar(255)",
+      "NotNullable": true,
+      "Unique": true
+    },
+    {
+      "FieldName": "PasswordHash",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "FirstName",
+      "DataType": "varchar(100)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "LastName",
+      "DataType": "varchar(100)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "IsActive",
+      "DataType": "boolean",
+      "NotNullable": true,
+      "DefaultValue": true
+    },
+    {
+      "FieldName": "IsAdmin",
+      "DataType": "boolean",
+      "NotNullable": true,
+      "DefaultValue": false
+    },
+    {
+      "FieldName": "CustomerId",
+      "DataType": "int",
+      "NotNullable": false,
+      "DefaultValue": null
+    },
+    {
+      "FieldName": "IsDeveloper",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "IsSupport",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "IsManager",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "WorkHoursMonday",
+      "DataType": "decimal(4,2)",
+      "NotNullable": false,
+      "DefaultValue": "8.00"
+    },
+    {
+      "FieldName": "WorkStartMonday",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "09:00"
+    },
+    {
+      "FieldName": "WorkHoursTuesday",
+      "DataType": "decimal(4,2)",
+      "NotNullable": false,
+      "DefaultValue": "8.00"
+    },
+    {
+      "FieldName": "WorkStartTuesday",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "09:00"
+    },
+    {
+      "FieldName": "WorkHoursWednesday",
+      "DataType": "decimal(4,2)",
+      "NotNullable": false,
+      "DefaultValue": "8.00"
+    },
+    {
+      "FieldName": "WorkStartWednesday",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "09:00"
+    },
+    {
+      "FieldName": "WorkHoursThursday",
+      "DataType": "decimal(4,2)",
+      "NotNullable": false,
+      "DefaultValue": "8.00"
+    },
+    {
+      "FieldName": "WorkStartThursday",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "09:00"
+    },
+    {
+      "FieldName": "WorkHoursFriday",
+      "DataType": "decimal(4,2)",
+      "NotNullable": false,
+      "DefaultValue": "8.00"
+    },
+    {
+      "FieldName": "WorkStartFriday",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "09:00"
+    },
+    {
+      "FieldName": "WorkHoursSaturday",
+      "DataType": "decimal(4,2)",
+      "NotNullable": false,
+      "DefaultValue": "0.00"
+    },
+    {
+      "FieldName": "WorkStartSaturday",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "09:00"
+    },
+    {
+      "FieldName": "WorkHoursSunday",
+      "DataType": "decimal(4,2)",
+      "NotNullable": false,
+      "DefaultValue": "0.00"
+    },
+    {
+      "FieldName": "WorkStartSunday",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "09:00"
+    },
+    {
+      "FieldName": "LunchTime",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "12:00"
+    },
+    {
+      "FieldName": "LunchDuration",
+      "DataType": "int",
+      "NotNullable": false,
+      "DefaultValue": "60"
+    },
+    {
+      "FieldName": "HobbyStartMonday",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "19:00"
+    },
+    {
+      "FieldName": "HobbyHoursMonday",
+      "DataType": "decimal(4,2)",
+      "NotNullable": false,
+      "DefaultValue": "0.00"
+    },
+    {
+      "FieldName": "HobbyStartTuesday",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "19:00"
+    },
+    {
+      "FieldName": "HobbyHoursTuesday",
+      "DataType": "decimal(4,2)",
+      "NotNullable": false,
+      "DefaultValue": "0.00"
+    },
+    {
+      "FieldName": "HobbyStartWednesday",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "19:00"
+    },
+    {
+      "FieldName": "HobbyHoursWednesday",
+      "DataType": "decimal(4,2)",
+      "NotNullable": false,
+      "DefaultValue": "0.00"
+    },
+    {
+      "FieldName": "HobbyStartThursday",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "19:00"
+    },
+    {
+      "FieldName": "HobbyHoursThursday",
+      "DataType": "decimal(4,2)",
+      "NotNullable": false,
+      "DefaultValue": "0.00"
+    },
+    {
+      "FieldName": "HobbyStartFriday",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "19:00"
+    },
+    {
+      "FieldName": "HobbyHoursFriday",
+      "DataType": "decimal(4,2)",
+      "NotNullable": false,
+      "DefaultValue": "0.00"
+    },
+    {
+      "FieldName": "HobbyStartSaturday",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "10:00"
+    },
+    {
+      "FieldName": "HobbyHoursSaturday",
+      "DataType": "decimal(4,2)",
+      "NotNullable": false,
+      "DefaultValue": "4.00"
+    },
+    {
+      "FieldName": "HobbyStartSunday",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "DefaultValue": "10:00"
+    },
+    {
+      "FieldName": "HobbyHoursSunday",
+      "DataType": "decimal(4,2)",
+      "NotNullable": false,
+      "DefaultValue": "4.00"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    }
+  ]
+}

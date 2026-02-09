@@ -1,0 +1,18 @@
+{
+  "name": "projectmanagementserver",
+  "version": "0.0.1",
+  "description": "Project Management Server",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.ts",
+  "scripts": {
+    "test": "test"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6"
+  }
+}

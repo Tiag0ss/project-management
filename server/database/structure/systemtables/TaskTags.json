@@ -1,0 +1,33 @@
+{
+  "TableName": "TaskTags",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "TaskId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "TagId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "AddedBy",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "AddedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}
