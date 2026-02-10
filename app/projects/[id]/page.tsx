@@ -2595,11 +2595,25 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
   const hasSubtasks = (taskId: number) => tasks.some(t => t.ParentTaskId === taskId);
   const parentTasks = tasks.filter(t => !t.ParentTaskId);
 
+  // Calculate recursive total worked hours for a task (sum of all leaf descendants)
+  const calculateRecursiveWorked = (taskId: number): number => {
+    const subtasks = getSubtasks(taskId);
+    
+    if (subtasks.length === 0) {
+      // Leaf task - return its own worked hours
+      const task = tasks.find(t => t.Id === taskId);
+      return parseFloat(task?.TotalWorked || 0);
+    }
+    
+    // Parent task - sum all children recursively
+    return subtasks.reduce((sum, subtask) => sum + calculateRecursiveWorked(subtask.Id), 0);
+  };
+
   // Recursive function to render task and all its descendants in reporting
   const renderReportTaskRow = (task: any, level: number = 0): React.JSX.Element[] => {
     const allocated = parseFloat(task.TotalAllocated || 0);
-    const worked = parseFloat(task.TotalWorked || 0);
-    const toAllocate = parseFloat(task.EstimatedHours || 0) - worked - allocated;
+    const worked = calculateRecursiveWorked(task.Id);
+    const toAllocate = parseFloat(task.EstimatedHours || 0) - allocated;
     const subtasks = getSubtasks(task.Id);
     const taskHasSubtasks = subtasks.length > 0;
     const isExpanded = expandedTasks.has(task.Id);
@@ -2645,13 +2659,13 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
           {parseFloat(task.EstimatedHours || 0).toFixed(2)}h
         </td>
         <td className={`px-4 py-3 text-sm text-right ${level === 0 ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-blue-500 dark:text-blue-400'}`}>
-          {parseFloat(task.TotalAllocated || 0).toFixed(2)}h
+          {allocated.toFixed(2)}h
         </td>
         <td className={`px-4 py-3 text-sm text-right ${level === 0 ? 'text-orange-600 dark:text-orange-400 font-medium' : 'text-orange-500 dark:text-orange-400'}`}>
           {toAllocate.toFixed(2)}h
         </td>
         <td className={`px-4 py-3 text-sm text-right ${level === 0 ? 'text-green-600 dark:text-green-400 font-medium' : 'text-green-500 dark:text-green-400'}`}>
-          {parseFloat(task.TotalWorked || 0).toFixed(2)}h
+          {worked.toFixed(2)}h
         </td>
         <td className="px-4 py-3 text-center">
           <button
@@ -3271,8 +3285,8 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
   const totalEstimatedHours = leafTasks.reduce((sum, t) => sum + parseFloat(t.EstimatedHours || 0), 0);
   const totalTaskAllocatedHours = leafTasks.reduce((sum, t) => sum + parseFloat(t.TotalAllocated || 0), 0);
   const totalTaskWorkedHours = leafTasks.reduce((sum, t) => sum + parseFloat(t.TotalWorked || 0), 0);
-  // To allocate = Estimated - Worked - Allocated
-  const totalToAllocateHours = totalEstimatedHours - totalTaskWorkedHours - totalTaskAllocatedHours;
+  // To allocate = Estimated - Allocated
+  const totalToAllocateHours = totalEstimatedHours - totalTaskAllocatedHours;
 
   // Export functions
   const exportToCSV = (data: any[], filename: string, headers: string[]) => {

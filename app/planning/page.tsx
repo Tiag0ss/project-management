@@ -115,6 +115,7 @@ export default function PlanningPage() {
     hoursPerDay: string;
     totalHours: number;
     hoursAlreadyWorked: number;
+    totalEstimatedHours: number;
     isParentTask?: boolean;
     leafTasks?: Task[];
   }>({
@@ -126,6 +127,7 @@ export default function PlanningPage() {
     hoursPerDay: '8',
     totalHours: 0,
     hoursAlreadyWorked: 0,
+    totalEstimatedHours: 0,
   });
 
   // Subtasks modal state
@@ -969,7 +971,7 @@ export default function PlanningPage() {
 
       // Now plan the PARENT task with the total hours
       // This will create allocations for the parent, giving us the date range
-      await planTaskAsParent(draggedTask, day, userId, totalRemainingHours, leafTasks);
+      await planTaskAsParent(draggedTask, day, userId, totalRemainingHours, leafTasks, totalEstimatedHours, totalHoursWorked);
       setDraggedTask(null);
       return;
     }
@@ -1146,15 +1148,18 @@ export default function PlanningPage() {
       // - Remaining hours are more than 50% of daily capacity
       if (hoursAlreadyWorked > 0 || remainingHoursToWork > maxDailyHours * 0.5) {
         console.log('Showing hours per day modal');
+        const taskEstimatedHours = parseFloat(String(draggedTask.EstimatedHours || 0));
+        const suggestedHours = Math.min(Math.max(1, Math.ceil(remainingHoursToWork / 5)), maxDailyHours);
         setHoursPerDayModal({
           show: true,
           task: draggedTask,
           userId,
           startDate,
           maxDailyHours,
-          hoursPerDay: maxDailyHours.toString(),
+          hoursPerDay: suggestedHours.toString(),
           totalHours: remainingHoursToWork,
           hoursAlreadyWorked: hoursAlreadyWorked,
+          totalEstimatedHours: taskEstimatedHours,
         });
         setDraggedTask(null);
         return;
@@ -1175,7 +1180,9 @@ export default function PlanningPage() {
     day: Date,
     userId: number,
     totalHours: number,
-    leafTasks: Task[]
+    leafTasks: Task[],
+    totalEstimatedHours?: number,
+    totalAlreadyWorked?: number
   ) => {
     try {
       const startDate = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12, 0, 0);
@@ -1242,7 +1249,7 @@ export default function PlanningPage() {
           startDate,
           existingTasks: existingTaskNames,
           totalHoursToAllocate: totalHours,
-          hoursAlreadyWorked: 0,
+          hoursAlreadyWorked: totalAlreadyWorked || 0,
           maxDailyHours,
           isParentTask: true,
           leafTasks: leafTasks
@@ -1252,15 +1259,17 @@ export default function PlanningPage() {
 
       // Show modal to ask for hours per day if task requires more than 50% of daily capacity
       if (totalHours > maxDailyHours * 0.5) {
+        const suggestedHours = Math.min(Math.max(1, Math.ceil(totalHours / 5)), maxDailyHours);
         setHoursPerDayModal({
           show: true,
           task: parentTask,
           userId,
           startDate,
           maxDailyHours,
-          hoursPerDay: maxDailyHours.toString(),
+          hoursPerDay: suggestedHours.toString(),
           totalHours: totalHours,
-          hoursAlreadyWorked: 0,
+          hoursAlreadyWorked: totalAlreadyWorked || 0,
+          totalEstimatedHours: totalEstimatedHours || totalHours,
           isParentTask: true,
           leafTasks: leafTasks
         });
@@ -1802,15 +1811,20 @@ export default function PlanningPage() {
 
     // Show hours per day modal if needed
     if (hoursAlreadyWorked > 0 || totalHoursToAllocate > maxDailyHours * 0.5) {
+      const taskEstimatedHours = isParentTask && leafTasks 
+        ? leafTasks.reduce((sum, t) => sum + parseFloat(String(t.EstimatedHours || 0)), 0)
+        : parseFloat(String(task.EstimatedHours || 0));
+      const suggestedHours = Math.min(Math.max(1, Math.ceil(totalHoursToAllocate / 5)), maxDailyHours);
       setHoursPerDayModal({
         show: true,
         task,
         userId,
         startDate,
         maxDailyHours,
-        hoursPerDay: maxDailyHours.toString(),
+        hoursPerDay: suggestedHours.toString(),
         totalHours: totalHoursToAllocate,
         hoursAlreadyWorked,
+        totalEstimatedHours: taskEstimatedHours,
         isParentTask,
         leafTasks
       });
@@ -3339,20 +3353,43 @@ export default function PlanningPage() {
                 </div>
               </div>
               
-              <div className="text-sm text-gray-700 dark:text-gray-300 mb-4 space-y-2">
-                {hoursPerDayModal.hoursAlreadyWorked > 0 && (
-                  <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                    <p className="text-yellow-800 dark:text-yellow-300">
-                      <strong>{hoursPerDayModal.hoursAlreadyWorked.toFixed(1)}h</strong> already worked out of{' '}
-                      <strong>{(hoursPerDayModal.totalHours + hoursPerDayModal.hoursAlreadyWorked).toFixed(1)}h</strong> estimated.
+              <div className="text-sm text-gray-700 dark:text-gray-300 mb-4 space-y-3">
+                {/* Task Info */}
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg space-y-2">
+                  {hoursPerDayModal.isParentTask && hoursPerDayModal.leafTasks && (
+                    <p className="text-blue-800 dark:text-blue-300">
+                      <strong>{hoursPerDayModal.leafTasks.length}</strong> leaf task(s) with{' '}
+                      <strong>{hoursPerDayModal.totalEstimatedHours.toFixed(1)}h</strong> total estimated
                     </p>
-                  </div>
-                )}
-                <p>
-                  <strong>{hoursPerDayModal.totalHours.toFixed(1)} hours</strong> remaining to be planned.
-                </p>
-                <p className="text-gray-500 dark:text-gray-400">
-                  How many hours would you like to allocate per day?
+                  )}
+                  {!hoursPerDayModal.isParentTask && (
+                    <p className="text-blue-800 dark:text-blue-300">
+                      Total estimated: <strong>{hoursPerDayModal.totalEstimatedHours.toFixed(1)}h</strong>
+                    </p>
+                  )}
+                  {hoursPerDayModal.hoursAlreadyWorked > 0 && (
+                    <p className="text-blue-800 dark:text-blue-300">
+                      Already worked: <strong>{hoursPerDayModal.hoursAlreadyWorked.toFixed(1)}h</strong>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  How many hours to plan?
+                </label>
+                <input
+                  type="number"
+                  min="0.5"
+                  max={hoursPerDayModal.totalEstimatedHours}
+                  step="0.5"
+                  value={hoursPerDayModal.totalHours}
+                  onChange={(e) => setHoursPerDayModal(prev => ({ ...prev, totalHours: parseFloat(e.target.value) || 0 }))}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-semibold"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Suggested: {(hoursPerDayModal.totalEstimatedHours - hoursPerDayModal.hoursAlreadyWorked).toFixed(1)}h (estimated - worked)
                 </p>
               </div>
 
