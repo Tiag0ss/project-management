@@ -18,6 +18,7 @@ export default function MemosPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [filterVisibility, setFilterVisibility] = useState<'all' | 'private' | 'organizations' | 'public'>('all');
 
   // Form state
   const [memoForm, setMemoForm] = useState({
@@ -158,6 +159,12 @@ export default function MemosPage() {
 
   // Filter memos
   const filteredMemos = memos.filter(memo => {
+    // Filter by visibility
+    if (filterVisibility !== 'all' && memo.Visibility !== filterVisibility) {
+      return false;
+    }
+
+    // Filter by tag
     if (filterTag) {
       const tags = memo.Tags ? memo.Tags.split(',').map(t => t.trim()) : [];
       if (!tags.includes(filterTag)) return false;
@@ -281,6 +288,53 @@ export default function MemosPage() {
                 })}
               </div>
 
+              {/* Visibility Filter */}
+              <div className="mt-6">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Visibility</h3>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setFilterVisibility('all')}
+                    className={`px-3 py-1 text-xs rounded ${
+                      filterVisibility === 'all'
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    🌟 All
+                  </button>
+                  <button
+                    onClick={() => setFilterVisibility('private')}
+                    className={`px-3 py-1 text-xs rounded ${
+                      filterVisibility === 'private'
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    🔒 Private
+                  </button>
+                  <button
+                    onClick={() => setFilterVisibility('organizations')}
+                    className={`px-3 py-1 text-xs rounded ${
+                      filterVisibility === 'organizations'
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    👥 Organizations
+                  </button>
+                  <button
+                    onClick={() => setFilterVisibility('public')}
+                    className={`px-3 py-1 text-xs rounded ${
+                      filterVisibility === 'public'
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    🌍 Public
+                  </button>
+                </div>
+              </div>
+
               {/* Tags Filter */}
               <div className="mt-6">
                 <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Tags</h3>
@@ -336,6 +390,15 @@ export default function MemosPage() {
                           {memo.Title}
                         </h3>
                         <div className="flex items-center space-x-3 text-sm text-gray-500 dark:text-gray-400">
+                          <span className="flex items-center gap-1">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                            {memo.FirstName && memo.LastName 
+                              ? `${memo.FirstName} ${memo.LastName}` 
+                              : memo.Username}
+                          </span>
+                          <span>•</span>
                           <span>{new Date(memo.CreatedAt).toLocaleDateString('pt-PT', { 
                             weekday: 'short', 
                             day: 'numeric', 

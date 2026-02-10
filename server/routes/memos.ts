@@ -10,12 +10,15 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
 
+    console.log('[Memos] Fetching memos for userId:', userId);
+
     // Get user's organizations
     const [userOrgs] = await pool.execute<RowDataPacket[]>(
       'SELECT OrganizationId FROM OrganizationMembers WHERE UserId = ?',
       [userId]
     );
     const orgIds = userOrgs.map(o => o.OrganizationId);
+    console.log('[Memos] User organizations:', orgIds);
 
     // Get memos:
     // - Private: only user's own
@@ -34,17 +37,21 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const params: any[] = [userId];
 
     if (orgIds.length > 0) {
+      // Build placeholders for IN clause
+      const placeholders = orgIds.map(() => '?').join(',');
       query += `
         OR (m.Visibility = 'organizations' AND m.UserId IN (
-          SELECT DISTINCT UserId FROM OrganizationMembers WHERE OrganizationId IN (?)
+          SELECT DISTINCT UserId FROM OrganizationMembers WHERE OrganizationId IN (${placeholders})
         ))
       `;
-      params.push(orgIds);
+      params.push(...orgIds);
     }
 
     query += ' ORDER BY m.CreatedAt DESC';
 
+    console.log('[Memos] Query params:', params);
     const [memos] = await pool.execute<RowDataPacket[]>(query, params);
+    console.log('[Memos] Found memos:', memos.length);
 
     // Get attachments for each memo
     for (const memo of memos) {
