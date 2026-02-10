@@ -158,6 +158,16 @@ function DashboardContent() {
     estimatedHours: 0,
     workedHours: 0,
     overdueTasks: 0,
+    // Normal projects
+    normalEstimatedHours: 0,
+    normalWorkedHours: 0,
+    normalAllocatedThisWeek: 0,
+    normalHoursThisWeek: 0,
+    // Hobby projects
+    hobbyEstimatedHours: 0,
+    hobbyWorkedHours: 0,
+    hobbyAllocatedThisWeek: 0,
+    hobbyHoursThisWeek: 0,
     tasksToday: [] as any[],
     myTickets: 0,
     openTickets: 0,
@@ -311,6 +321,8 @@ function DashboardContent() {
       let myTasksCount = 0;
       let totalTasks = 0;
       let estimatedHours = 0;
+      let normalEstimatedHours = 0;
+      let hobbyEstimatedHours = 0;
       let overdueTasks = 0;
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -321,11 +333,26 @@ function DashboardContent() {
         myTasksCount = tasks.length;
         totalTasks = myTasksCount;
         
-        // Calculate estimated hours and overdue tasks
-        tasks.forEach((task: any) => {
-          estimatedHours += Number(task.EstimatedHours || 0);
+        // Identify tasks with children (parent tasks)
+        const taskIdsWithChildren = new Set(tasks.filter((t: any) => t.ParentTaskId).map((t: any) => t.ParentTaskId));
+        // Get only leaf tasks (tasks without children)
+        const leafTasks = tasks.filter((t: any) => !taskIdsWithChildren.has(t.Id));
+        
+        // Calculate estimated hours only from leaf tasks and overdue tasks
+        leafTasks.forEach((task: any) => {
+          const hours = Number(task.EstimatedHours || 0);
+          estimatedHours += hours;
           
-          // Check if task is overdue (PlannedEndDate is past and not completed)
+          // Separate by project type
+          if (task.IsHobby) {
+            hobbyEstimatedHours += hours;
+          } else {
+            normalEstimatedHours += hours;
+          }
+        });
+        
+        // Check overdue tasks (all tasks, not just leaf)
+        tasks.forEach((task: any) => {
           if (task.PlannedEndDate && 
               !task.StatusIsClosed &&
               !task.StatusIsCancelled) {
@@ -352,6 +379,10 @@ function DashboardContent() {
       let hoursThisWeek = 0;
       let hoursThisMonth = 0;
       let workedHours = 0;
+      let normalWorkedHours = 0;
+      let hobbyWorkedHours = 0;
+      let normalHoursThisWeek = 0;
+      let hobbyHoursThisWeek = 0;
       
       if (entriesResponse.ok) {
         const entriesData = await entriesResponse.json();
@@ -367,11 +398,23 @@ function DashboardContent() {
         entries.forEach((entry: any) => {
           const entryDate = new Date(entry.WorkDate);
           const hours = parseFloat(entry.Hours || 0);
+          const isHobby = entry.IsHobby || false;
           
           workedHours += hours;
           
+          if (isHobby) {
+            hobbyWorkedHours += hours;
+          } else {
+            normalWorkedHours += hours;
+          }
+          
           if (entryDate >= startOfWeek) {
             hoursThisWeek += hours;
+            if (isHobby) {
+              hobbyHoursThisWeek += hours;
+            } else {
+              normalHoursThisWeek += hours;
+            }
           }
           
           if (entryDate >= startOfMonth) {
@@ -393,6 +436,8 @@ function DashboardContent() {
       
       let allocatedToday = 0;
       let allocatedThisWeek = 0;
+      let normalAllocatedThisWeek = 0;
+      let hobbyAllocatedThisWeek = 0;
       const tasksToday: any[] = [];
       
       if (allocationsResponse.ok) {
@@ -411,6 +456,7 @@ function DashboardContent() {
           const allocDate = new Date(alloc.AllocationDate);
           const allocDateStr = allocDate.toISOString().split('T')[0];
           const hours = parseFloat(alloc.AllocatedHours || 0);
+          const isHobby = alloc.IsHobby || false;
           
           if (allocDateStr === todayStr) {
             allocatedToday += hours;
@@ -425,6 +471,11 @@ function DashboardContent() {
           
           if (allocDate >= startOfWeek && allocDate <= endOfWeek) {
             allocatedThisWeek += hours;
+            if (isHobby) {
+              hobbyAllocatedThisWeek += hours;
+            } else {
+              normalAllocatedThisWeek += hours;
+            }
           }
         });
       }
@@ -444,6 +495,14 @@ function DashboardContent() {
         myTickets: 0,
         openTickets: 0,
         unresolvedTickets: 0,
+        normalEstimatedHours,
+        normalWorkedHours,
+        normalAllocatedThisWeek,
+        normalHoursThisWeek,
+        hobbyEstimatedHours,
+        hobbyWorkedHours,
+        hobbyAllocatedThisWeek,
+        hobbyHoursThisWeek,
       });
 
       // Load my tickets statistics
@@ -874,47 +933,106 @@ function DashboardContent() {
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                   <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">📈 Work Progress</h3>
                   <div className="space-y-4">
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">Hours Worked vs Estimated</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">
-                          {summaryStats.workedHours.toFixed(0)}h / {summaryStats.estimatedHours.toFixed(0)}h
-                        </span>
+                    {/* Normal Projects */}
+                    {summaryStats.normalEstimatedHours > 0 && (
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">💼 Work Projects</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            {summaryStats.normalWorkedHours.toFixed(0)}h / {summaryStats.normalEstimatedHours.toFixed(0)}h
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                          <div 
+                            className={`h-3 rounded-full transition-all ${
+                              summaryStats.normalEstimatedHours > 0 && summaryStats.normalWorkedHours > summaryStats.normalEstimatedHours
+                                ? 'bg-red-500'
+                                : 'bg-green-500'
+                            }`}
+                            style={{ 
+                              width: `${Math.min(100, summaryStats.normalEstimatedHours > 0 ? (summaryStats.normalWorkedHours / summaryStats.normalEstimatedHours) * 100 : 0)}%` 
+                            }}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          {summaryStats.normalEstimatedHours > 0 
+                            ? `${Math.round((summaryStats.normalWorkedHours / summaryStats.normalEstimatedHours) * 100)}% of estimated hours`
+                            : 'No estimated hours set'}
+                        </p>
                       </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                        <div 
-                          className={`h-3 rounded-full transition-all ${
-                            summaryStats.estimatedHours > 0 && summaryStats.workedHours > summaryStats.estimatedHours
-                              ? 'bg-red-500'
-                              : 'bg-green-500'
-                          }`}
-                          style={{ 
-                            width: `${Math.min(100, summaryStats.estimatedHours > 0 ? (summaryStats.workedHours / summaryStats.estimatedHours) * 100 : 0)}%` 
-                          }}
-                        />
+                    )}
+                    
+                    {/* Hobby Projects */}
+                    {summaryStats.hobbyEstimatedHours > 0 && (
+                      <div className={summaryStats.normalEstimatedHours > 0 ? 'pt-4 border-t dark:border-gray-700' : ''}>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">🎮 Hobby Projects</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            {summaryStats.hobbyWorkedHours.toFixed(0)}h / {summaryStats.hobbyEstimatedHours.toFixed(0)}h
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                          <div 
+                            className={`h-3 rounded-full transition-all ${
+                              summaryStats.hobbyEstimatedHours > 0 && summaryStats.hobbyWorkedHours > summaryStats.hobbyEstimatedHours
+                                ? 'bg-red-500'
+                                : 'bg-purple-500'
+                            }`}
+                            style={{ 
+                              width: `${Math.min(100, summaryStats.hobbyEstimatedHours > 0 ? (summaryStats.hobbyWorkedHours / summaryStats.hobbyEstimatedHours) * 100 : 0)}%` 
+                            }}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          {summaryStats.hobbyEstimatedHours > 0 
+                            ? `${Math.round((summaryStats.hobbyWorkedHours / summaryStats.hobbyEstimatedHours) * 100)}% of estimated hours`
+                            : 'No estimated hours set'}
+                        </p>
                       </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        {summaryStats.estimatedHours > 0 
-                          ? `${Math.round((summaryStats.workedHours / summaryStats.estimatedHours) * 100)}% of estimated hours`
-                          : 'No estimated hours set'}
-                      </p>
-                    </div>
+                    )}
                     
                     <div className="pt-4 border-t dark:border-gray-700">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">Weekly Progress</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">
-                          {summaryStats.hoursThisWeek.toFixed(1)}h / {summaryStats.allocatedThisWeek.toFixed(1)}h allocated
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                        <div 
-                          className="bg-blue-500 h-3 rounded-full transition-all"
-                          style={{ 
-                            width: `${Math.min(100, summaryStats.allocatedThisWeek > 0 ? (summaryStats.hoursThisWeek / summaryStats.allocatedThisWeek) * 100 : 0)}%` 
-                          }}
-                        />
-                      </div>
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Weekly Progress</h4>
+                      
+                      {/* Normal Weekly Progress */}
+                      {summaryStats.normalAllocatedThisWeek > 0 && (
+                        <div className="mb-3">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-xs text-gray-600 dark:text-gray-400">💼 Work</span>
+                            <span className="text-xs font-medium text-gray-900 dark:text-white">
+                              {summaryStats.normalHoursThisWeek.toFixed(1)}h / {summaryStats.normalAllocatedThisWeek.toFixed(1)}h
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                            <div 
+                              className="bg-blue-500 h-2 rounded-full transition-all"
+                              style={{ 
+                                width: `${Math.min(100, summaryStats.normalAllocatedThisWeek > 0 ? (summaryStats.normalHoursThisWeek / summaryStats.normalAllocatedThisWeek) * 100 : 0)}%` 
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Hobby Weekly Progress */}
+                      {summaryStats.hobbyAllocatedThisWeek > 0 && (
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-xs text-gray-600 dark:text-gray-400">🎮 Hobby</span>
+                            <span className="text-xs font-medium text-gray-900 dark:text-white">
+                              {summaryStats.hobbyHoursThisWeek.toFixed(1)}h / {summaryStats.hobbyAllocatedThisWeek.toFixed(1)}h
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                            <div 
+                              className="bg-purple-500 h-2 rounded-full transition-all"
+                              style={{ 
+                                width: `${Math.min(100, summaryStats.hobbyAllocatedThisWeek > 0 ? (summaryStats.hobbyHoursThisWeek / summaryStats.hobbyAllocatedThisWeek) * 100 : 0)}%` 
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
