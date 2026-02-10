@@ -3283,7 +3283,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
   const totalAllocatedHours = allocations.reduce((sum, a) => sum + parseFloat(a.AllocatedHours || 0), 0);
   const totalWorkedHours = timeEntries.reduce((sum, e) => sum + parseFloat(e.Hours || 0), 0);
   const totalEstimatedHours = leafTasks.reduce((sum, t) => sum + parseFloat(t.EstimatedHours || 0), 0);
-  const totalTaskAllocatedHours = leafTasks.reduce((sum, t) => sum + parseFloat(t.TotalAllocated || 0), 0);
+  const totalTaskAllocatedHours = parentTasks.reduce((sum, t) => sum + parseFloat(t.TotalAllocated || 0), 0);
   const totalTaskWorkedHours = leafTasks.reduce((sum, t) => sum + parseFloat(t.TotalWorked || 0), 0);
   // To allocate = Estimated - Allocated
   const totalToAllocateHours = totalEstimatedHours - totalTaskAllocatedHours;
