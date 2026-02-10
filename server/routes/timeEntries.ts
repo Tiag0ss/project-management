@@ -173,8 +173,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
        SET WorkDate = COALESCE(?, WorkDate),
            Hours = COALESCE(?, Hours),
            Description = COALESCE(?, Description),
-           StartTime = ?,
-           EndTime = ?,
+           StartTime = COALESCE(?, StartTime),
+           EndTime = COALESCE(?, EndTime),
            UpdatedAt = CURRENT_TIMESTAMP
        WHERE Id = ?`,
       [

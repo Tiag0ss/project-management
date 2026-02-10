@@ -2,7 +2,7 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import React, { useState, useEffect, use } from 'react';
+import React, { useState, useEffect, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -4936,6 +4936,114 @@ function EditProjectModal({
   );
 }
 
+// Searchable Select Component for large dropdowns
+function SearchableSelect({
+  value,
+  onChange,
+  options,
+  placeholder = 'Select...',
+  emptyMessage = 'No options available',
+  className = '',
+}: {
+  value: number | undefined;
+  onChange: (value: number | undefined) => void;
+  options: { id: number; label: string }[];
+  placeholder?: string;
+  emptyMessage?: string;
+  className?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const filteredOptions = options.filter(opt =>
+    opt.label.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const selectedOption = options.find(opt => opt.id === value);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        setSearchTerm('');
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  return (
+    <div ref={dropdownRef} className={`relative ${className}`}>
+      <div
+        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white cursor-pointer flex items-center justify-between"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <span className={!selectedOption ? 'text-gray-400 dark:text-gray-500' : ''}>
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </div>
+
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-72 overflow-hidden">
+          <div className="p-2 border-b border-gray-200 dark:border-gray-600">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search..."
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              onClick={(e) => e.stopPropagation()}
+              autoFocus
+            />
+          </div>
+          <div className="overflow-y-auto max-h-56">
+            <div
+              className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer text-gray-900 dark:text-white"
+              onClick={() => {
+                onChange(undefined);
+                setIsOpen(false);
+                setSearchTerm('');
+              }}
+            >
+              {placeholder}
+            </div>
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map(opt => (
+                <div
+                  key={opt.id}
+                  className={`px-4 py-2 cursor-pointer text-gray-900 dark:text-white ${
+                    opt.id === value
+                      ? 'bg-blue-100 dark:bg-blue-900'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-600'
+                  }`}
+                  onClick={() => {
+                    onChange(opt.id);
+                    setIsOpen(false);
+                    setSearchTerm('');
+                  }}
+                >
+                  {opt.label}
+                </div>
+              ))
+            ) : (
+              <div className="px-4 py-2 text-gray-500 dark:text-gray-400 text-sm">
+                {emptyMessage}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Task Modal Component
 function TaskModal({
   projectId,
@@ -4964,6 +5072,7 @@ function TaskModal({
     dueDate: task?.DueDate ? task.DueDate.split('T')[0] : '',
     estimatedHours: task?.EstimatedHours || undefined,
     parentTaskId: task?.ParentTaskId || undefined,
+    dependsOnTaskId: task?.DependsOnTaskId || undefined,
   });
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
@@ -4991,6 +5100,33 @@ function TaskModal({
     loadOrganizationUsers();
   }, []);
 
+  // Set default values when creating a new task
+  useEffect(() => {
+    if (!task && taskStatuses.length > 0 && taskPriorities.length > 0) {
+      setFormData(prev => {
+        const updates: Partial<CreateTaskData> = {};
+        
+        // Set default status if not already set
+        if (prev.status === null) {
+          const defaultStatus = taskStatuses.find(s => s.IsDefault);
+          if (defaultStatus) {
+            updates.status = defaultStatus.Id;
+          }
+        }
+        
+        // Set default priority if not already set
+        if (prev.priority === null) {
+          const defaultPriority = taskPriorities.find(p => p.IsDefault);
+          if (defaultPriority) {
+            updates.priority = defaultPriority.Id;
+          }
+        }
+        
+        return Object.keys(updates).length > 0 ? { ...prev, ...updates } : prev;
+      });
+    }
+  }, [task, taskStatuses, taskPriorities]);
+
   const loadTaskStatuses = async () => {
     try {
       const response = await statusValuesApi.getTaskStatuses(project.OrganizationId, token);
@@ -5016,6 +5152,60 @@ function TaskModal({
     } catch (err: any) {
       console.error('Failed to load organization users:', err);
     }
+  };
+
+  // Get all descendants of a task (recursively) to prevent circular references
+  const getDescendants = (taskId: number): number[] => {
+    const descendants: number[] = [];
+    const directChildren = tasks.filter(t => t.ParentTaskId === taskId);
+    
+    for (const child of directChildren) {
+      descendants.push(child.Id);
+      descendants.push(...getDescendants(child.Id));
+    }
+    
+    return descendants;
+  };
+
+  // Get available tasks for Parent Task dropdown (exclude self and descendants)
+  const getAvailableParentTasks = (): { id: number; label: string }[] => {
+    if (!task) {
+      // Creating new task - all tasks are available
+      return tasks.map(t => ({
+        id: t.Id,
+        label: t.TaskName,
+      }));
+    }
+    
+    // Editing existing task - exclude self and descendants
+    const descendants = getDescendants(task.Id);
+    const excludeIds = [task.Id, ...descendants];
+    
+    return tasks
+      .filter(t => !excludeIds.includes(t.Id))
+      .map(t => ({
+        id: t.Id,
+        label: t.TaskName,
+      }));
+  };
+
+  // Get available tasks for Depends On dropdown (exclude self and descendants)
+  const getAvailableDependencyTasks = (): { id: number; label: string }[] => {
+    if (!task) {
+      // Creating new task - all tasks are available
+      return tasks.map(t => ({
+        id: t.Id,
+        label: t.TaskName,
+      }));
+    }
+    
+    // Editing existing task - exclude self
+    return tasks
+      .filter(t => t.Id !== task.Id)
+      .map(t => ({
+        id: t.Id,
+        label: t.TaskName,
+      }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -5109,11 +5299,14 @@ function TaskModal({
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 >
                   {taskStatuses.length > 0 ? (
-                    taskStatuses.sort((a, b) => a.SortOrder - b.SortOrder).map((status) => (
-                      <option key={status.Id} value={status.Id}>
-                        {status.StatusName}
-                      </option>
-                    ))
+                    <>
+                      <option value="">Select a status</option>
+                      {taskStatuses.sort((a, b) => a.SortOrder - b.SortOrder).map((status) => (
+                        <option key={status.Id} value={status.Id}>
+                          {status.StatusName}
+                        </option>
+                      ))}
+                    </>
                   ) : (
                     <option value="">No statuses available</option>
                   )}
@@ -5130,11 +5323,14 @@ function TaskModal({
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 >
                   {taskPriorities.length > 0 ? (
-                    taskPriorities.sort((a, b) => a.SortOrder - b.SortOrder).map((priority) => (
-                      <option key={priority.Id} value={priority.Id}>
-                        {priority.PriorityName}
-                      </option>
-                    ))
+                    <>
+                      <option value="">Select a priority</option>
+                      {taskPriorities.sort((a, b) => a.SortOrder - b.SortOrder).map((priority) => (
+                        <option key={priority.Id} value={priority.Id}>
+                          {priority.PriorityName}
+                        </option>
+                      ))}
+                    </>
                   ) : (
                     <option value="">No priorities available</option>
                   )}
@@ -5207,22 +5403,31 @@ function TaskModal({
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Parent Task (Optional)
               </label>
-              <select
-                value={formData.parentTaskId || ''}
-                onChange={(e) => setFormData({ ...formData, parentTaskId: e.target.value ? parseInt(e.target.value) : undefined })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              >
-                <option value="">No Parent (Top-level task)</option>
-                {tasks
-                  .filter(t => t.Id !== task?.Id && !t.ParentTaskId)
-                  .map(t => (
-                    <option key={t.Id} value={t.Id}>
-                      {t.TaskName}
-                    </option>
-                  ))}
-              </select>
+              <SearchableSelect
+                value={formData.parentTaskId}
+                onChange={(value) => setFormData({ ...formData, parentTaskId: value })}
+                options={getAvailableParentTasks()}
+                placeholder="No Parent (Top-level task)"
+                emptyMessage="No tasks available"
+              />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Select a parent task to create a subtask
+                Select a parent task to create a subtask (supports multi-level hierarchy)
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Depends On (Optional)
+              </label>
+              <SearchableSelect
+                value={formData.dependsOnTaskId}
+                onChange={(value) => setFormData({ ...formData, dependsOnTaskId: value })}
+                options={getAvailableDependencyTasks()}
+                placeholder="No dependency"
+                emptyMessage="No tasks available"
+              />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                This task cannot start until the selected task is completed
               </p>
             </div>
 

@@ -536,7 +536,7 @@ export default function TimesheetPage() {
             });
 
             if (existingEntry) {
-              // Update existing entry
+              // Update existing entry - preserve StartTime and EndTime
               const response = await fetch(
                 `${getApiUrl()}/api/time-entries/${existingEntry.Id}`,
                 {
@@ -547,7 +547,9 @@ export default function TimesheetPage() {
                   },
                   body: JSON.stringify({
                     hours: hoursNum,
-                    description: existingEntry.Description || myTasks.find(t => t.Id === taskId)?.TaskName || ''
+                    description: existingEntry.Description || myTasks.find(t => t.Id === taskId)?.TaskName || '',
+                    startTime: existingEntry.StartTime,
+                    endTime: existingEntry.EndTime
                   })
                 }
               );
