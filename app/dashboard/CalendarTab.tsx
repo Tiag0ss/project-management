@@ -2,11 +2,12 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Calendar, dateFnsLocalizer, Views } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
+import SearchableSelect from '@/components/SearchableSelect';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
 const locales = {
@@ -20,6 +21,17 @@ const localizer = dateFnsLocalizer({
   getDay,
   locales,
 });
+
+interface Organization {
+  Id: number;
+  Name: string;
+}
+
+interface Project {
+  Id: number;
+  ProjectName: string;
+  OrganizationId: number;
+}
 
 interface Task {
   Id: number;
@@ -127,13 +139,98 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   const [entryStartTime, setEntryStartTime] = useState<string>('09:00');
   const [entryEndTime, setEntryEndTime] = useState<string>('10:00');
   const [callData, setCallData] = useState({
+    startTime: '09:00',
+    endTime: '09:30',
     durationMinutes: 30,
     callType: 'Teams',
     participants: '',
     subject: '',
     notes: '',
+    organizationId: '',
+    projectId: '',
+    taskId: '',
   });
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [availableTasks, setAvailableTasks] = useState<Task[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  
+  // Load organizations on mount
+  useEffect(() => {
+    const loadOrganizations = async () => {
+      try {
+        const response = await fetch(`${getApiUrl()}/api/organizations`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setOrganizations(data.organizations || []);
+        }
+      } catch (err) {
+        console.error('Error loading organizations:', err);
+      }
+    };
+    loadOrganizations();
+  }, [token]);
+
+  // Load projects for selected organization
+  const loadProjectsForOrg = async (orgId: string) => {
+    if (!orgId) {
+      setProjects([]);
+      setAvailableTasks([]);
+      return;
+    }
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/projects?organizationId=${orgId}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setProjects(data.projects || []);
+      }
+    } catch (err) {
+      console.error('Error loading projects:', err);
+    }
+  };
+
+  // Load tasks for selected project
+  const loadTasksForProject = async (projectId: string) => {
+    if (!projectId) {
+      setAvailableTasks([]);
+      return;
+    }
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/tasks/project/${projectId}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableTasks(data.tasks || []);
+      }
+    } catch (err) {
+      console.error('Error loading tasks:', err);
+    }
+  };
+
+  // Helper functions for time calculations
+  const calculateHoursDifference = (startTime: string, endTime: string): number => {
+    const [startHour, startMin] = startTime.split(':').map(Number);
+    const [endHour, endMin] = endTime.split(':').map(Number);
+    const startTotalMin = startHour * 60 + startMin;
+    const endTotalMin = endHour * 60 + endMin;
+    const diffMin = endTotalMin - startTotalMin;
+    return Math.max(0, diffMin / 60);
+  };
+  
+  const calculateEndTime = (startTime: string, hours: number): string => {
+    const [startHour, startMin] = startTime.split(':').map(Number);
+    const totalMinutes = startHour * 60 + startMin + (hours * 60);
+    const endHour = Math.floor(totalMinutes / 60) % 24;
+    const endMin = Math.floor(totalMinutes % 60);
+    return `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+  };
   
   // Edit time entry modal state
   const [showEditEntryModal, setShowEditEntryModal] = useState(false);
@@ -443,20 +540,36 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     setSelectedSlot(slotInfo);
     setSlotAction('choice');
     setSelectedTaskId('');
-    setEntryHours('1');
+    
+    // Use actual slot times for both time entry and call record
+    const startTimeStr = format(slotInfo.start, 'HH:mm');
+    const endTimeStr = format(slotInfo.end, 'HH:mm');
+    
+    // Calculate hours from slot duration
+    const slotDurationMs = slotInfo.end.getTime() - slotInfo.start.getTime();
+    const slotHours = slotDurationMs / (1000 * 60 * 60);
+    const slotMinutes = Math.round(slotDurationMs / (1000 * 60));
+    
+    // Set time entry with slot times
+    setEntryStartTime(startTimeStr);
+    setEntryEndTime(endTimeStr);
+    setEntryHours(slotHours.toString());
     setEntryDescription('');
-    setEntryStartTime(format(slotInfo.start, 'HH:mm'));
-    // Calculate end time based on start + 1 hour
-    const endTime = new Date(slotInfo.start);
-    endTime.setHours(endTime.getHours() + 1);
-    setEntryEndTime(format(endTime, 'HH:mm'));
+    
+    // Set call data with slot times
     setCallData({
-      durationMinutes: 30,
+      startTime: startTimeStr,
+      endTime: endTimeStr,
+      durationMinutes: slotMinutes,
       callType: 'Teams',
       participants: '',
       subject: '',
       notes: '',
+      organizationId: '',
+      projectId: '',
+      taskId: '',
     });
+    
     setShowSlotModal(true);
   }, []);
 
@@ -581,12 +694,14 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
           },
           body: JSON.stringify({
             callDate: format(selectedSlot.start, 'yyyy-MM-dd'),
-            startTime: format(selectedSlot.start, 'HH:mm'),
+            startTime: callData.startTime,
             durationMinutes: callData.durationMinutes,
             callType: callData.callType,
             participants: callData.participants,
             subject: callData.subject,
             notes: callData.notes,
+            projectId: callData.projectId || null,
+            taskId: callData.taskId || null,
           }),
         }
       );
@@ -873,7 +988,13 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                       step="0.5"
                       min="0.5"
                       value={entryHours}
-                      onChange={(e) => setEntryHours(e.target.value)}
+                      onChange={(e) => {
+                        const hours = parseFloat(e.target.value) || 0.5;
+                        setEntryHours(e.target.value);
+                        // Recalculate end time based on start time + hours
+                        const newEndTime = calculateEndTime(entryStartTime, hours);
+                        setEntryEndTime(newEndTime);
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -886,7 +1007,12 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                       <input
                         type="time"
                         value={entryStartTime}
-                        onChange={(e) => setEntryStartTime(e.target.value)}
+                        onChange={(e) => {
+                          setEntryStartTime(e.target.value);
+                          // Recalculate hours based on new start time and current end time
+                          const hours = calculateHoursDifference(e.target.value, entryEndTime);
+                          setEntryHours(hours.toFixed(2));
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
@@ -897,7 +1023,12 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                       <input
                         type="time"
                         value={entryEndTime}
-                        onChange={(e) => setEntryEndTime(e.target.value)}
+                        onChange={(e) => {
+                          setEntryEndTime(e.target.value);
+                          // Recalculate hours based on start time and new end time
+                          const hours = calculateHoursDifference(entryStartTime, e.target.value);
+                          setEntryHours(hours.toFixed(2));
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
@@ -947,12 +1078,54 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Start Time *
+                      </label>
+                      <input
+                        type="time"
+                        value={callData.startTime}
+                        onChange={(e) => {
+                          const newStartTime = e.target.value;
+                          // Recalculate duration based on new start time and current end time
+                          const hours = calculateHoursDifference(newStartTime, callData.endTime);
+                          const durationMin = Math.round(hours * 60);
+                          setCallData({...callData, startTime: newStartTime, durationMinutes: durationMin > 0 ? durationMin : 30});
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        End Time *
+                      </label>
+                      <input
+                        type="time"
+                        value={callData.endTime}
+                        onChange={(e) => {
+                          const newEndTime = e.target.value;
+                          // Recalculate duration based on start time and new end time
+                          const hours = calculateHoursDifference(callData.startTime, newEndTime);
+                          const durationMin = Math.round(hours * 60);
+                          setCallData({...callData, endTime: newEndTime, durationMinutes: durationMin > 0 ? durationMin : 30});
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Duration (min)
                       </label>
                       <input
                         type="number"
                         value={callData.durationMinutes}
-                        onChange={(e) => setCallData({...callData, durationMinutes: parseInt(e.target.value) || 30})}
+                        onChange={(e) => {
+                          const duration = parseInt(e.target.value) || 30;
+                          // Recalculate end time based on start time + duration
+                          const newEndTime = calculateEndTime(callData.startTime, duration / 60);
+                          setCallData({...callData, durationMinutes: duration, endTime: newEndTime});
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
@@ -984,6 +1157,53 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                       onChange={(e) => setCallData({...callData, subject: e.target.value})}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                       placeholder="Meeting topic"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Organization
+                    </label>
+                    <SearchableSelect
+                      options={organizations.map(org => ({ value: String(org.Id), label: org.Name }))}
+                      value={callData.organizationId}
+                      onChange={(value) => {
+                        setCallData({...callData, organizationId: value, projectId: '', taskId: ''});
+                        setProjects([]);
+                        setAvailableTasks([]);
+                        if (value) loadProjectsForOrg(value);
+                      }}
+                      placeholder="Select organization (optional)"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Project
+                    </label>
+                    <SearchableSelect
+                      options={projects.map(proj => ({ value: String(proj.Id), label: proj.ProjectName }))}
+                      value={callData.projectId}
+                      onChange={(value) => {
+                        setCallData({...callData, projectId: value, taskId: ''});
+                        setAvailableTasks([]);
+                        if (value) loadTasksForProject(value);
+                      }}
+                      placeholder="Select project (optional)"
+                      disabled={!callData.organizationId}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Task
+                    </label>
+                    <SearchableSelect
+                      options={availableTasks.map(task => ({ value: String(task.Id), label: task.TaskName }))}
+                      value={callData.taskId}
+                      onChange={(value) => setCallData({...callData, taskId: value})}
+                      placeholder="Select task (optional)"
+                      disabled={!callData.projectId}
                     />
                   </div>
 
@@ -1072,7 +1292,11 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                     step="0.5"
                     min="0.5"
                     value={editingEntry.hours}
-                    onChange={(e) => setEditingEntry({...editingEntry, hours: e.target.value})}
+                    onChange={(e) => {
+                      const hours = parseFloat(e.target.value) || 0.5;
+                      const newEndTime = calculateEndTime(editingEntry.startTime, hours);
+                      setEditingEntry({...editingEntry, hours: e.target.value, endTime: newEndTime});
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -1085,7 +1309,10 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                     <input
                       type="time"
                       value={editingEntry.startTime}
-                      onChange={(e) => setEditingEntry({...editingEntry, startTime: e.target.value})}
+                      onChange={(e) => {
+                        const hours = calculateHoursDifference(e.target.value, editingEntry.endTime);
+                        setEditingEntry({...editingEntry, startTime: e.target.value, hours: hours.toFixed(2)});
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -1096,7 +1323,10 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                     <input
                       type="time"
                       value={editingEntry.endTime}
-                      onChange={(e) => setEditingEntry({...editingEntry, endTime: e.target.value})}
+                      onChange={(e) => {
+                        const hours = calculateHoursDifference(editingEntry.startTime, e.target.value);
+                        setEditingEntry({...editingEntry, endTime: e.target.value, hours: hours.toFixed(2)});
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     />
                   </div>

@@ -144,10 +144,9 @@ export default function Navbar() {
     callDate: new Date().toISOString().split('T')[0],
     startTime: '',
     endTime: '',
-    duration: '',
-    phoneNumber: '',
-    contactName: '',
-    callType: 'outgoing',
+    durationMinutes: 30,
+    participants: '',
+    callType: 'Teams',
     subject: '',
     notes: '',
   });
@@ -413,6 +412,26 @@ export default function Navbar() {
     const endMinutes = endH * 60 + endM;
     return Math.max(0, (endMinutes - startMinutes) / 60);
   };
+  
+  // Calculate end time from start time + hours
+  const calculateEndTimeFromHours = (startTime: string, hours: number): string => {
+    if (!startTime) return '';
+    const [startH, startM] = startTime.split(':').map(Number);
+    const totalMinutes = startH * 60 + startM + (hours * 60);
+    const endHour = Math.floor(totalMinutes / 60) % 24;
+    const endMin = Math.floor(totalMinutes % 60);
+    return `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+  };
+  
+  // Calculate end time from start time + duration in minutes
+  const calculateEndTimeFromMinutes = (startTime: string, minutes: number): string => {
+    if (!startTime) return '';
+    const [startH, startM] = startTime.split(':').map(Number);
+    const totalMinutes = startH * 60 + startM + minutes;
+    const endHour = Math.floor(totalMinutes / 60) % 24;
+    const endMin = Math.floor(totalMinutes % 60);
+    return `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+  };
 
   // Save Organization
   const handleSaveOrganization = async () => {
@@ -540,14 +559,9 @@ export default function Navbar() {
 
   // Save Call Record
   const handleSaveCallRecord = async () => {
-    if (!callRecordForm.callDate) {
-      setError('Call date is required');
+    if (!callRecordForm.callDate || !callRecordForm.startTime) {
+      setError('Date and start time are required');
       return;
-    }
-
-    let duration = callRecordForm.duration ? parseInt(callRecordForm.duration) : 0;
-    if (!duration && callRecordForm.startTime && callRecordForm.endTime) {
-      duration = Math.round(calculateHours(callRecordForm.startTime, callRecordForm.endTime) * 60);
     }
 
     setIsSaving(true);
@@ -561,12 +575,11 @@ export default function Navbar() {
         },
         body: JSON.stringify({
           taskId: callRecordForm.taskId ? parseInt(callRecordForm.taskId) : null,
+          projectId: callRecordForm.projectId ? parseInt(callRecordForm.projectId) : null,
           callDate: callRecordForm.callDate,
-          startTime: callRecordForm.startTime || null,
-          endTime: callRecordForm.endTime || null,
-          duration: duration || null,
-          phoneNumber: callRecordForm.phoneNumber || null,
-          contactName: callRecordForm.contactName || null,
+          startTime: callRecordForm.startTime,
+          durationMinutes: callRecordForm.durationMinutes,
+          participants: callRecordForm.participants || null,
           callType: callRecordForm.callType,
           subject: callRecordForm.subject || null,
           notes: callRecordForm.notes || null,
@@ -630,10 +643,9 @@ export default function Navbar() {
       callDate: new Date().toISOString().split('T')[0],
       startTime: '',
       endTime: '',
-      duration: '',
-      phoneNumber: '',
-      contactName: '',
-      callType: 'outgoing',
+      durationMinutes: 30,
+      participants: '',
+      callType: 'Teams',
       subject: '',
       notes: '',
     });
@@ -1842,7 +1854,12 @@ export default function Navbar() {
                     <input
                       type="time"
                       value={timeEntryForm.startTime}
-                      onChange={(e) => setTimeEntryForm(prev => ({ ...prev, startTime: e.target.value }))}
+                      onChange={(e) => {
+                        const newStartTime = e.target.value;
+                        // Recalculate hours based on new start time and current end time
+                        const hours = calculateHours(newStartTime, timeEntryForm.endTime);
+                        setTimeEntryForm(prev => ({ ...prev, startTime: newStartTime, hours: hours > 0 ? hours.toFixed(2) : '' }));
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -1853,7 +1870,12 @@ export default function Navbar() {
                     <input
                       type="time"
                       value={timeEntryForm.endTime}
-                      onChange={(e) => setTimeEntryForm(prev => ({ ...prev, endTime: e.target.value }))}
+                      onChange={(e) => {
+                        const newEndTime = e.target.value;
+                        // Recalculate hours based on start time and new end time
+                        const hours = calculateHours(timeEntryForm.startTime, newEndTime);
+                        setTimeEntryForm(prev => ({ ...prev, endTime: newEndTime, hours: hours > 0 ? hours.toFixed(2) : '' }));
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -1865,7 +1887,12 @@ export default function Navbar() {
                   <input
                     type="number"
                     value={timeEntryForm.hours}
-                    onChange={(e) => setTimeEntryForm(prev => ({ ...prev, hours: e.target.value }))}
+                    onChange={(e) => {
+                      const hours = parseFloat(e.target.value) || 0;
+                      // Recalculate end time based on start time + hours
+                      const newEndTime = hours > 0 ? calculateEndTimeFromHours(timeEntryForm.startTime, hours) : timeEntryForm.endTime;
+                      setTimeEntryForm(prev => ({ ...prev, hours: e.target.value, endTime: newEndTime }));
+                    }}
                     placeholder={timeEntryForm.startTime && timeEntryForm.endTime ? `${calculateHours(timeEntryForm.startTime, timeEntryForm.endTime).toFixed(2)}` : "0"}
                     min="0"
                     step="0.25"
@@ -1998,64 +2025,64 @@ export default function Navbar() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Start Time
+                      Start Time *
                     </label>
                     <input
                       type="time"
                       value={callRecordForm.startTime}
-                      onChange={(e) => setCallRecordForm(prev => ({ ...prev, startTime: e.target.value }))}
+                      onChange={(e) => {
+                        const newStartTime = e.target.value;
+                        const hours = calculateHours(newStartTime, callRecordForm.endTime);
+                        const durationMin = Math.round(hours * 60);
+                        setCallRecordForm(prev => ({ ...prev, startTime: newStartTime, durationMinutes: durationMin > 0 ? durationMin : 30 }));
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      End Time
+                      End Time *
                     </label>
                     <input
                       type="time"
                       value={callRecordForm.endTime}
-                      onChange={(e) => setCallRecordForm(prev => ({ ...prev, endTime: e.target.value }))}
+                      onChange={(e) => {
+                        const newEndTime = e.target.value;
+                        const hours = calculateHours(callRecordForm.startTime, newEndTime);
+                        const durationMin = Math.round(hours * 60);
+                        setCallRecordForm(prev => ({ ...prev, endTime: newEndTime, durationMinutes: durationMin > 0 ? durationMin : 30 }));
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Duration (minutes) {callRecordForm.startTime && callRecordForm.endTime && `(calculated: ${Math.round(calculateHours(callRecordForm.startTime, callRecordForm.endTime) * 60)} min)`}
-                  </label>
-                  <input
-                    type="number"
-                    value={callRecordForm.duration}
-                    onChange={(e) => setCallRecordForm(prev => ({ ...prev, duration: e.target.value }))}
-                    placeholder={callRecordForm.startTime && callRecordForm.endTime ? `${Math.round(calculateHours(callRecordForm.startTime, callRecordForm.endTime) * 60)}` : "0"}
-                    min="0"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                  />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Phone Number
+                      Duration (min)
                     </label>
                     <input
-                      type="tel"
-                      value={callRecordForm.phoneNumber}
-                      onChange={(e) => setCallRecordForm(prev => ({ ...prev, phoneNumber: e.target.value }))}
-                      placeholder="+351..."
+                      type="number"
+                      value={callRecordForm.durationMinutes}
+                      onChange={(e) => {
+                        const duration = parseInt(e.target.value) || 30;
+                        const newEndTime = duration > 0 ? calculateEndTimeFromMinutes(callRecordForm.startTime, duration) : callRecordForm.endTime;
+                        setCallRecordForm(prev => ({ ...prev, durationMinutes: duration, endTime: newEndTime }));
+                      }}
+                      min="1"
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Contact Name
+                      Participants
                     </label>
                     <input
                       type="text"
-                      value={callRecordForm.contactName}
-                      onChange={(e) => setCallRecordForm(prev => ({ ...prev, contactName: e.target.value }))}
-                      placeholder="Contact name"
+                      value={callRecordForm.participants}
+                      onChange={(e) => setCallRecordForm(prev => ({ ...prev, participants: e.target.value }))}
+                      placeholder="Names or emails (optional)"
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -2070,9 +2097,11 @@ export default function Navbar() {
                     onChange={(e) => setCallRecordForm(prev => ({ ...prev, callType: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="outgoing">Outgoing</option>
-                    <option value="incoming">Incoming</option>
-                    <option value="missed">Missed</option>
+                    <option value="Teams">Teams</option>
+                    <option value="Phone">Phone</option>
+                    <option value="Zoom">Zoom</option>
+                    <option value="Meet">Google Meet</option>
+                    <option value="Other">Other</option>
                   </select>
                 </div>
 
