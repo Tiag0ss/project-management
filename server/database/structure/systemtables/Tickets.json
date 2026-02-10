@@ -36,7 +36,7 @@
     {
       "FieldName": "TicketNumber",
       "DataType": "varchar(20)",
-      "NotNullable": true
+      "NotNullable": false
     },
     {
       "FieldName": "Title",
@@ -45,7 +45,7 @@
     },
     {
       "FieldName": "Description",
-      "DataType": "text",
+      "DataType": "mediumtext",
       "NotNullable": false
     },
     {

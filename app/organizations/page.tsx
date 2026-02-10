@@ -401,9 +401,12 @@ export default function OrganizationsPage() {
                     >
                       <td className="px-6 py-4">
                         <div className="font-medium text-gray-900 dark:text-white">{org.Name}</div>
-                        {org.Description && (
-                          <div className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-md">{org.Description}</div>
-                        )}
+                        {org.Description && (() => {
+                          const plainText = org.Description.replace(/<[^>]*>/g, '').trim();
+                          return plainText ? (
+                            <div className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-md">{plainText}</div>
+                          ) : null;
+                        })()}
                       </td>
                       <td className="px-6 py-4 text-center">
                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${getRoleBadgeColor(org.Role)}`}>
@@ -586,11 +589,14 @@ function OrganizationCard({
         </div>
         
         {/* Description */}
-        {organization.Description && (
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-2">
-            {organization.Description}
-          </p>
-        )}
+        {organization.Description && (() => {
+          const plainText = organization.Description.replace(/<[^>]*>/g, '').trim();
+          return plainText ? (
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-2">
+              {plainText}
+            </p>
+          ) : null;
+        })()}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-3 gap-3 mb-4">

@@ -11,6 +11,7 @@ import TicketHistory from '@/components/TicketHistory';
 import AttachmentUploader, { AttachmentList } from '@/components/AttachmentManager';
 import { getTicketAttachments, getTicketAttachment, uploadTicketAttachment, deleteTicketAttachment, TicketAttachment } from '@/lib/api/tickets';
 import { tasksApi, CreateTaskData, Task } from '@/lib/api/tasks';
+import RichTextEditor from '@/components/RichTextEditor';
 
 interface Ticket {
   Id: number;
@@ -76,7 +77,6 @@ export default function TicketDetailPage() {
   const router = useRouter();
   const params = useParams();
   const ticketId = params.id;
-  const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -832,17 +832,15 @@ export default function TicketDetailPage() {
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Description</h2>
               {isEditing ? (
-                <textarea
-                  value={editForm.description}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}
-                  rows={6}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                <RichTextEditor
+                  content={editForm.description}
+                  onChange={(html) => setEditForm(prev => ({ ...prev, description: html }))}
                   placeholder="Add a description..."
                 />
               ) : (
                 <div className="prose dark:prose-invert max-w-none">
                   {ticket.Description ? (
-                    <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{ticket.Description}</p>
+                    <div dangerouslySetInnerHTML={{ __html: ticket.Description }} />
                   ) : (
                     <p className="text-gray-400 dark:text-gray-500 italic">No description provided</p>
                   )}
@@ -883,9 +881,10 @@ export default function TicketDetailPage() {
                               {formatDate(comment.CreatedAt)}
                             </span>
                           </div>
-                          <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                            {comment.Comment}
-                          </p>
+                          <div
+                            className="text-gray-700 dark:text-gray-300 prose prose-sm dark:prose-invert max-w-none"
+                            dangerouslySetInnerHTML={{ __html: comment.Comment }}
+                          />
                           
                           {/* Comment Attachments */}
                           {!commentAttachmentsMap[comment.Id] ? (
@@ -923,13 +922,10 @@ export default function TicketDetailPage() {
 
               {/* Add Comment Form */}
               <form onSubmit={handleAddComment} className="p-6 border-t border-gray-200 dark:border-gray-700">
-                <textarea
-                  ref={commentInputRef}
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
+                <RichTextEditor
+                  content={newComment}
+                  onChange={setNewComment}
                   placeholder="Write a comment..."
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 mb-3"
                 />
                 
                 {/* Comment Attachments */}
@@ -1037,9 +1033,12 @@ export default function TicketDetailPage() {
                           </span>
                         </div>
                         
-                        {task.Description && (
-                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 line-clamp-2">{task.Description}</p>
-                        )}
+                        {task.Description && (() => {
+                          const plainText = task.Description.replace(/<[^>]*>/g, '').trim();
+                          return plainText ? (
+                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 line-clamp-2">{plainText}</p>
+                          ) : null;
+                        })()}
                         
                         <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
                           <span className="px-2 py-0.5 rounded" style={{ backgroundColor: task.PriorityColor ? `${task.PriorityColor}20` : undefined, color: task.PriorityColor || undefined }}>
@@ -1448,12 +1447,10 @@ export default function TicketDetailPage() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Description
                   </label>
-                  <textarea
-                    value={taskForm.description}
-                    onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })}
-                    rows={4}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="Enter task description"
+                  <RichTextEditor
+                    content={taskForm.description}
+                    onChange={(html) => setTaskForm({ ...taskForm, description: html })}
+                    placeholder="Enter task description..."
                   />
                 </div>
 

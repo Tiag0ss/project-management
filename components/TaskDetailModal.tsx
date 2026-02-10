@@ -7,6 +7,7 @@ import { Task, CreateTaskData, tasksApi } from '@/lib/api/tasks';
 import { Project } from '@/lib/api/projects';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { usersApi, User } from '@/lib/api/users';
+import RichTextEditor from './RichTextEditor';
 
 interface TaskDetailModalProps {
   projectId: number;
@@ -869,12 +870,10 @@ export default function TaskDetailModal({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Description
                 </label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={3}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  placeholder="Enter task description"
+                <RichTextEditor
+                  content={formData.description || ''}
+                  onChange={(html) => setFormData({ ...formData, description: html })}
+                  placeholder="Enter task description..."
                 />
               </div>
 
@@ -1237,13 +1236,11 @@ export default function TaskDetailModal({
           {activeTab === 'comments' && task && (
             <div className="space-y-4">
               {/* Add Comment Form */}
-              <form onSubmit={handleAddComment} className="flex gap-3">
-                <input
-                  type="text"
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
+              <form onSubmit={handleAddComment} className="space-y-3">
+                <RichTextEditor
+                  content={newComment}
+                  onChange={setNewComment}
                   placeholder="Write a comment..."
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
                 <button
                   type="submit"
@@ -1280,7 +1277,10 @@ export default function TaskDetailModal({
                           </button>
                         </div>
                       </div>
-                      <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{comment.Comment}</p>
+                      <div
+                        className="text-gray-700 dark:text-gray-300 prose prose-sm dark:prose-invert max-w-none"
+                        dangerouslySetInnerHTML={{ __html: comment.Comment }}
+                      />
                     </div>
                   ))}
                 </div>

@@ -3576,11 +3576,14 @@ export default function PlanningPage() {
                                 </h3>
                               </div>
                               
-                              {subtask.Description && (
-                                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                                  {subtask.Description}
-                                </p>
-                              )}
+                              {subtask.Description && (() => {
+                                const plainText = subtask.Description.replace(/<[^>]*>/g, '').trim();
+                                return plainText ? (
+                                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                                    {plainText}
+                                  </p>
+                                ) : null;
+                              })()}
 
                               <div className="flex flex-wrap gap-4 text-sm">
                                 {subtask.EstimatedHours && (

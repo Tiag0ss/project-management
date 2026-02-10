@@ -20,7 +20,7 @@
     },
     {
       "FieldName": "Comment",
-      "DataType": "text",
+      "DataType": "mediumtext",
       "NotNullable": true
     },
     {

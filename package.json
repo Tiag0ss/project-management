@@ -20,6 +20,11 @@
     "postbuild": "echo Build completed successfully!"
   },
   "dependencies": {
+    "@tailwindcss/typography": "^0.5.19",
+    "@tiptap/extension-image": "^3.19.0",
+    "@tiptap/extension-placeholder": "^3.19.0",
+    "@tiptap/react": "^3.19.0",
+    "@tiptap/starter-kit": "^3.19.0",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.0.0",
     "@types/nodemailer": "^7.0.9",

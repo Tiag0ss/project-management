@@ -7,6 +7,7 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import RichTextEditor from './RichTextEditor';
 
 interface Organization {
   Id: number;
@@ -1326,12 +1327,10 @@ export default function Navbar() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Description
                   </label>
-                  <textarea
-                    value={taskForm.description}
-                    onChange={(e) => setTaskForm(prev => ({ ...prev, description: e.target.value }))}
+                  <RichTextEditor
+                    content={taskForm.description}
+                    onChange={(html) => setTaskForm(prev => ({ ...prev, description: html }))}
                     placeholder="Enter task description"
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
@@ -1496,12 +1495,10 @@ export default function Navbar() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Description
                   </label>
-                  <textarea
-                    value={orgForm.description}
-                    onChange={(e) => setOrgForm(prev => ({ ...prev, description: e.target.value }))}
+                  <RichTextEditor
+                    content={orgForm.description}
+                    onChange={(html) => setOrgForm(prev => ({ ...prev, description: html }))}
                     placeholder="Enter description"
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -1623,12 +1620,10 @@ export default function Navbar() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Description
                   </label>
-                  <textarea
-                    value={projectForm.description}
-                    onChange={(e) => setProjectForm(prev => ({ ...prev, description: e.target.value }))}
+                  <RichTextEditor
+                    content={projectForm.description}
+                    onChange={(html) => setProjectForm(prev => ({ ...prev, description: html }))}
                     placeholder="Enter description"
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -1811,12 +1806,10 @@ export default function Navbar() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Description
                   </label>
-                  <textarea
-                    value={timeEntryForm.description}
-                    onChange={(e) => setTimeEntryForm(prev => ({ ...prev, description: e.target.value }))}
+                  <RichTextEditor
+                    content={timeEntryForm.description}
+                    onChange={(html) => setTimeEntryForm(prev => ({ ...prev, description: html }))}
                     placeholder="What did you work on?"
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -2039,12 +2032,10 @@ export default function Navbar() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Notes
                   </label>
-                  <textarea
-                    value={callRecordForm.notes}
-                    onChange={(e) => setCallRecordForm(prev => ({ ...prev, notes: e.target.value }))}
+                  <RichTextEditor
+                    content={callRecordForm.notes}
+                    onChange={(html) => setCallRecordForm(prev => ({ ...prev, notes: html }))}
                     placeholder="Call notes..."
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>

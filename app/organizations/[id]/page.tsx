@@ -267,7 +267,10 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{organization.Name}</h1>
               {organization.Description && (
-                <p className="text-gray-600 dark:text-gray-400 mt-2">{organization.Description}</p>
+                <div 
+                  className="text-gray-600 dark:text-gray-400 mt-2 prose prose-sm dark:prose-invert max-w-none"
+                  dangerouslySetInnerHTML={{ __html: organization.Description }}
+                />
               )}
             </div>
             {canManageSettings && (
@@ -1183,9 +1186,12 @@ function PermissionsTab({
             <div className="flex justify-between items-start mb-3">
               <div>
                 <h4 className="text-lg font-semibold text-gray-900 dark:text-white">{group.GroupName}</h4>
-                {group.Description && (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{group.Description}</p>
-                )}
+                {group.Description && (() => {
+                  const plainText = group.Description.replace(/<[^>]*>/g, '').trim();
+                  return plainText ? (
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{plainText}</p>
+                  ) : null;
+                })()}
               </div>
               <span className="text-sm text-gray-500 dark:text-gray-400">{group.MemberCount || 0} members</span>
             </div>
@@ -2182,9 +2188,12 @@ function TagsTab({
                 </div>
                 <div>
                   <div className="font-medium text-gray-900 dark:text-white">{tag.Name}</div>
-                  {tag.Description && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400">{tag.Description}</div>
-                  )}
+                  {tag.Description && (() => {
+                    const plainText = tag.Description.replace(/<[^>]*>/g, '').trim();
+                    return plainText ? (
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{plainText}</div>
+                    ) : null;
+                  })()}
                 </div>
               </div>
               {canManage && (

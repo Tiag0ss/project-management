@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
+import RichTextEditor from '@/components/RichTextEditor';
 
 interface Ticket {
   Id: number;
@@ -565,11 +566,14 @@ export default function TicketsPage() {
                         {ticket.Title}
                       </h3>
                       
-                      {ticket.Description && (
-                        <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mt-1">
-                          {ticket.Description}
-                        </p>
-                      )}
+                      {ticket.Description && (() => {
+                        const plainText = ticket.Description.replace(/<[^>]*>/g, '').trim();
+                        return plainText ? (
+                          <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mt-1">
+                            {plainText}
+                          </p>
+                        ) : null;
+                      })()}
 
                       <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 dark:text-gray-400">
                         {!isCustomerUser && (
@@ -718,12 +722,10 @@ export default function TicketsPage() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Description
                     </label>
-                    <textarea
-                      value={createForm.description}
-                      onChange={(e) => setCreateForm(prev => ({ ...prev, description: e.target.value }))}
+                    <RichTextEditor
+                      content={createForm.description}
+                      onChange={(html) => setCreateForm(prev => ({ ...prev, description: html }))}
                       placeholder="Provide more details about the issue..."
-                      rows={4}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
 

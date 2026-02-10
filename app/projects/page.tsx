@@ -675,11 +675,14 @@ function ProjectCard({
         </div>
         
         {/* Description */}
-        {project.Description && (
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-2">
-            {project.Description}
-          </p>
-        )}
+        {project.Description && (() => {
+          const plainText = project.Description.replace(/<[^>]*>/g, '').trim();
+          return plainText ? (
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-2">
+              {plainText}
+            </p>
+          ) : null;
+        })()}
 
         {/* Progress Section */}
         <div className="space-y-3 mb-4">

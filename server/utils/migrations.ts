@@ -121,6 +121,90 @@ async function migrateStatusPriorityToIds(): Promise<void> {
 }
 
 /**
+ * Migration: Allow TicketNumber to be NULL temporarily during insertion.
+ * The code generates the ticket number after insertion based on the ticket ID.
+ * 
+ * This migration is idempotent.
+ */
+async function migrateTicketNumberToNullable(): Promise<void> {
+  try {
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      `SELECT IS_NULLABLE FROM information_schema.columns 
+       WHERE table_schema = DATABASE() AND table_name = 'Tickets' AND column_name = 'TicketNumber'`
+    );
+    
+    if (rows.length === 0 || rows[0].IS_NULLABLE === 'YES') {
+      return; // Column doesn't exist or already nullable
+    }
+
+    logger.info('⚡ Running migration: Allow TicketNumber to be NULL...');
+    
+    await pool.execute(`ALTER TABLE Tickets MODIFY COLUMN TicketNumber varchar(20) NULL`);
+    logger.info('  ✓ TicketNumber → NULL allowed');
+    logger.info('✓ Migration complete: TicketNumber now allows NULL');
+  } catch (error: any) {
+    if (error.code === 'ER_NO_SUCH_TABLE') {
+      logger.info('  ℹ Tables not yet created, migration will run on next startup');
+      return;
+    }
+    logger.error('✗ Migration failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Migration: Convert Description and Comment fields from text to mediumtext
+ * to support base64 images in rich text editor.
+ * 
+ * This migration is idempotent.
+ */
+async function migrateDescriptionToMediumtext(): Promise<void> {
+  const tasksDescType = await getColumnDataType('Tasks', 'Description');
+  const ticketsDescType = await getColumnDataType('Tickets', 'Description');
+  const taskCommentsType = await getColumnDataType('TaskComments', 'Comment');
+  const ticketCommentsType = await getColumnDataType('TicketComments', 'Comment');
+
+  // If all columns are already mediumtext, nothing to do
+  if (tasksDescType === 'mediumtext' && ticketsDescType === 'mediumtext' && 
+      taskCommentsType === 'mediumtext' && ticketCommentsType === 'mediumtext') {
+    return;
+  }
+
+  logger.info('⚡ Running migration: Convert Description/Comment fields to mediumtext...');
+
+  try {
+    if (tasksDescType !== 'mediumtext') {
+      await pool.execute(`ALTER TABLE Tasks MODIFY COLUMN Description mediumtext NULL`);
+      logger.info('  ✓ Tasks.Description → mediumtext');
+    }
+
+    if (ticketsDescType !== 'mediumtext') {
+      await pool.execute(`ALTER TABLE Tickets MODIFY COLUMN Description mediumtext NULL`);
+      logger.info('  ✓ Tickets.Description → mediumtext');
+    }
+
+    if (taskCommentsType !== 'mediumtext') {
+      await pool.execute(`ALTER TABLE TaskComments MODIFY COLUMN Comment mediumtext NOT NULL`);
+      logger.info('  ✓ TaskComments.Comment → mediumtext');
+    }
+
+    if (ticketCommentsType !== 'mediumtext') {
+      await pool.execute(`ALTER TABLE TicketComments MODIFY COLUMN Comment mediumtext NOT NULL`);
+      logger.info('  ✓ TicketComments.Comment → mediumtext');
+    }
+
+    logger.info('✓ Migration complete: Description/Comment fields converted to mediumtext');
+  } catch (error: any) {
+    if (error.code === 'ER_NO_SUCH_TABLE') {
+      logger.info('  ℹ Tables not yet created, migration will run on next startup');
+      return;
+    }
+    logger.error('✗ Migration failed:', error);
+    throw error;
+  }
+}
+
+/**
  * Run all pending database migrations.
  * Called during server startup after buildAllTables.
  * All migrations must be idempotent (safe to run multiple times).
@@ -130,6 +214,8 @@ export async function runMigrations(): Promise<void> {
 
   try {
     await migrateStatusPriorityToIds();
+    await migrateTicketNumberToNullable();
+    await migrateDescriptionToMediumtext();
     logger.info('=== Migrations Complete ===');
   } catch (error) {
     logger.error('Migration error:', error);

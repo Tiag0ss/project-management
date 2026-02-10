@@ -20,7 +20,7 @@
     },
     {
       "FieldName": "Description",
-      "DataType": "text",
+      "DataType": "mediumtext",
       "NotNullable": false
     },
     {
