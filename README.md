@@ -9,11 +9,13 @@ A full-stack, self-hosted project management application with task tracking, res
 - ⏱️ **Time Tracking** — Daily and weekly timesheet views, per-task time entries
 - 👥 **Multi-Tenant Organizations** — Multiple organizations, team management, permission groups
 - 🔐 **Role-Based Permissions** — Developer, Support, Manager roles with granular permission control
-- 🎫 **Ticket System** — Support ticket management with auto-numbering and task conversion
-- 👤 **Customer Management** — Customer database with organization associations
+- 🎫 **Ticket System** — Support ticket management with auto-numbering, auto-assignment to default support users, and task conversion
+- 👤 **Customer Management** — Customer database with organization associations and default support user assignment
+- 📝 **Rich Text Editor** — Tiptap-based editor with formatting, images (inline base64), and markdown support for descriptions and comments
+- 📔 **Memos System** — Calendar-based note-taking with visibility controls (Private, Organizations, Public), tags, and rich content
 - 📧 **Email Notifications** — SMTP integration with encrypted credentials
 - 🌙 **Dark Mode** — Full dark mode support across the entire UI
-- 📱 **Responsive Design** — Mobile-friendly interface
+- 📱 **Responsive Design** — Mobile-friendly interface with organized navigation dropdowns
 - 🧙 **Install Wizard** — Guided first-time setup
 
 ## Tech Stack
@@ -21,6 +23,7 @@ A full-stack, self-hosted project management application with task tracking, res
 | Component | Technology |
 |-----------|------------|
 | Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS |
+| Rich Text | Tiptap (StarterKit, Image, Placeholder extensions) |
 | Backend | Node.js 20, Express.js, TypeScript |
 | Database | MySQL 8.0 |
 | Auth | JWT with HTTP-only cookies |
@@ -149,6 +152,37 @@ docker run -d \
    - Set up email (optional)
 3. Start managing your projects!
 
+## Key Features in Detail
+
+### 📝 Rich Text Editor
+- **Tiptap-based editor** with full formatting toolbar (bold, italic, headings, lists, etc.)
+- **Inline image support** — Paste or upload images directly in descriptions and comments (base64, 5MB limit)
+- Used across all description and comment fields: Tasks, Tickets, Projects, Organizations, Memos
+- HTML storage in database with proper rendering in list and detail views
+
+### 📔 Memos System
+- **Calendar-based interface** — Navigate months and select specific dates
+- **Visibility controls**:
+  - 🔒 **Private** — Only visible to you
+  - 👥 **Organizations** — Shared with members of your organizations
+  - 🌍 **Public** — Visible to all users
+- **Tag system** — Organize and filter memos by custom tags
+- **Rich content** — Full rich text editor support with images
+- **Quick filters** — Filter by visibility, tags, and date
+
+### 🎫 Ticket Auto-Assignment
+- **Default Support User** — Set a default support representative for each customer
+- **Automatic assignment** — Tickets created for customer projects are automatically assigned to the customer's default support user
+- **Intelligent detection** — Works for both customer users creating tickets and internal users creating tickets for customer projects
+- **Notification system** — Assigned users receive instant notifications
+
+### 🗂️ Navigation Organization
+- **Grouped menus** for better organization:
+  - **Work** dropdown: Projects, Planning
+  - **Management** dropdown: Customers, Organizations
+- **Quick access** to: Dashboard, Tickets, Memos, Reports
+- **Consistent experience** across all pages
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |
@@ -176,7 +210,9 @@ docker run -d \
 | Path | Description |
 |------|-------------|
 | `/app/logs` | Application log files |
-| `/app/uploads` | File attachments and uploads |
+| `/app/uploads` | File attachments (Tasks, Tickets, Projects, Organizations, Customers, Memos) |
+
+**Note:** Rich text editor images are stored as base64 in the database, not in the uploads folder.
 
 ## Health Check
 
