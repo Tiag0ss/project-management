@@ -195,8 +195,8 @@ This is a **single container** that serves both the Next.js frontend and Express
 │     project-management:latest   │
 │                                 │
 │  ┌───────────┐  ┌────────────┐  │
-│  │  Next.js   │  │  Express   │  │
-│  │  Frontend  │  │  API       │  │
+│  │  Next.js  │  │  Express   │  │
+│  │  Frontend │  │  API       │  │
 │  └───────────┘  └─────┬──────┘  │
 │                       │         │
 │              Port 3000          │
