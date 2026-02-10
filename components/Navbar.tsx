@@ -59,6 +59,12 @@ export default function Navbar() {
   const quickActionsRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
+  
+  // Menu dropdowns
+  const [workMenuOpen, setWorkMenuOpen] = useState(false);
+  const [managementMenuOpen, setManagementMenuOpen] = useState(false);
+  const workMenuRef = useRef<HTMLDivElement>(null);
+  const managementMenuRef = useRef<HTMLDivElement>(null);
 
   // Global Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -164,6 +170,12 @@ export default function Navbar() {
       }
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
         setSearchOpen(false);
+      }
+      if (workMenuRef.current && !workMenuRef.current.contains(event.target as Node)) {
+        setWorkMenuOpen(false);
+      }
+      if (managementMenuRef.current && !managementMenuRef.current.contains(event.target as Node)) {
+        setManagementMenuOpen(false);
       }
     };
 
@@ -780,6 +792,7 @@ export default function Navbar() {
                 Project Management
               </h1>
               <div className="hidden md:flex space-x-4">
+                {/* Dashboard */}
                 {(permissionsLoading || permissions?.canViewDashboard) && (
                   <a 
                     href="/dashboard" 
@@ -788,6 +801,45 @@ export default function Navbar() {
                     Dashboard
                   </a>
                 )}
+
+                {/* Work Dropdown (Projects & Planning) */}
+                {!isCustomerUser && (permissionsLoading || permissions?.canViewProjects || permissions?.canManageProjects || permissions?.canCreateProjects || permissions?.canViewPlanning) && (
+                  <div className="relative" ref={workMenuRef}>
+                    <button
+                      onClick={() => setWorkMenuOpen(!workMenuOpen)}
+                      className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium flex items-center space-x-1"
+                    >
+                      <span>Work</span>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {workMenuOpen && (
+                      <div className="absolute left-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg py-1 z-50 border border-gray-200 dark:border-gray-700">
+                        {(permissionsLoading || permissions?.canViewProjects || permissions?.canManageProjects || permissions?.canCreateProjects) && (
+                          <a
+                            href="/projects"
+                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            onClick={() => setWorkMenuOpen(false)}
+                          >
+                            Projects
+                          </a>
+                        )}
+                        {(permissionsLoading || permissions?.canViewPlanning) && (
+                          <a
+                            href="/planning"
+                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            onClick={() => setWorkMenuOpen(false)}
+                          >
+                            Planning
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Tickets */}
                 {(user?.isSupport || isCustomerUser || permissions?.canManageTickets || permissions?.canCreateTickets) && (
                     <a 
                       href="/tickets" 
@@ -795,46 +847,62 @@ export default function Navbar() {
                     >
                       Tickets
                     </a>
-                  
                 )}
-                {!isCustomerUser && permissions?.canManageOrganizations && (
+
+                {/* Memos */}
+                {!isCustomerUser && (
                   <a 
-                    href="/organizations" 
+                    href="/memos" 
                     className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
                   >
-                    Organizations
+                    Memos
                   </a>
                 )}
+
+                {/* Management Dropdown (Customers & Organizations) */}
                 {!isCustomerUser && (permissionsLoading || permissions?.canViewCustomers || permissions?.canManageOrganizations) && (
-                  <a 
-                    href="/customers" 
-                    className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
-                  >
-                    Customers
-                  </a>
+                  <div className="relative" ref={managementMenuRef}>
+                    <button
+                      onClick={() => setManagementMenuOpen(!managementMenuOpen)}
+                      className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium flex items-center space-x-1"
+                    >
+                      <span>Management</span>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {managementMenuOpen && (
+                      <div className="absolute left-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg py-1 z-50 border border-gray-200 dark:border-gray-700">
+                        {(permissionsLoading || permissions?.canViewCustomers || permissions?.canManageOrganizations) && (
+                          <a
+                            href="/customers"
+                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            onClick={() => setManagementMenuOpen(false)}
+                          >
+                            Customers
+                          </a>
+                        )}
+                        {permissions?.canManageOrganizations && (
+                          <a
+                            href="/organizations"
+                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            onClick={() => setManagementMenuOpen(false)}
+                          >
+                            Organizations
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
-                {!isCustomerUser && (permissionsLoading || permissions?.canViewProjects || permissions?.canManageProjects || permissions?.canCreateProjects) && (
-                  <a 
-                    href="/projects" 
-                    className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
-                  >
-                    Projects
-                  </a>
-                )}
-                {!isCustomerUser && (permissionsLoading || permissions?.canViewPlanning) && (
-                  <a 
-                    href="/planning" 
-                    className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
-                  >
-                    Planning
-                  </a>
-                )}
+
+                {/* Reports */}
                 {!isCustomerUser && (
                   <a 
                     href="/web-reports" 
                     className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
                   >
-                    Web Reports
+                    Reports
                   </a>
                 )}
               </div>

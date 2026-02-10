@@ -1,0 +1,22 @@
+{
+  "TableName": "MemoTags",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "MemoId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "TagName",
+      "DataType": "varchar(50)",
+      "NotNullable": true
+    }
+  ]
+}

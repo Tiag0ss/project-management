@@ -54,6 +54,11 @@
       "NotNullable": false
     },
     {
+      "FieldName": "DefaultSupportUserId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
       "FieldName": "Notes",
       "DataType": "text",
       "NotNullable": false

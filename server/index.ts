@@ -45,6 +45,7 @@ import changeHistoryRoutes from './routes/changeHistory';
 import emailPreferencesRoutes from './routes/emailPreferences';
 import installRoutes from './routes/install';
 import savedReportsRoutes from './routes/savedReports';
+import memosRoutes from './routes/memos';
 
 dotenv.config();
 
@@ -200,6 +201,7 @@ app.prepare().then(async () => {
   server.use('/api/change-history', changeHistoryRoutes);
   server.use('/api/email-preferences', emailPreferencesRoutes);
   server.use('/api/saved-reports', savedReportsRoutes);
+  server.use('/api/memos', memosRoutes);
 
   // Error handling middleware
   server.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

@@ -127,7 +127,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { Name, Email, Phone, Address, Notes, OrganizationIds, CreateDefaultProject, DefaultProjectName } = req.body;
+    const { Name, Email, Phone, Address, Notes, DefaultSupportUserId, OrganizationIds, CreateDefaultProject, DefaultProjectName } = req.body;
 
     if (!Name || !Name.trim()) {
       return res.status(400).json({
@@ -161,9 +161,9 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     // Create customer
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Customers (Name, Email, Phone, Address, Notes, IsActive, CreatedBy)
-       VALUES (?, ?, ?, ?, ?, 1, ?)`,
-      [Name.trim(), Email || null, Phone || null, Address || null, Notes || null, userId]
+      `INSERT INTO Customers (Name, Email, Phone, Address, Notes, DefaultSupportUserId, IsActive, CreatedBy)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+      [Name.trim(), Email || null, Phone || null, Address || null, Notes || null, DefaultSupportUserId || null, userId]
     );
 
     const customerId = result.insertId;
@@ -235,7 +235,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const customerId = parseInt(req.params.id as string);
-    const { Name, Email, Phone, Address, Notes, IsActive, OrganizationIds, Website, ContactPerson, ContactEmail, ContactPhone, ProjectManagerId } = req.body;
+    const { Name, Email, Phone, Address, Notes, DefaultSupportUserId, IsActive, OrganizationIds, Website, ContactPerson, ContactEmail, ContactPhone, ProjectManagerId } = req.body;
 
     // Check if user has access to this customer
     const [existingCustomers] = await pool.execute<RowDataPacket[]>(
@@ -360,6 +360,13 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       }
       updates.push('ProjectManagerId = ?');
       values.push(ProjectManagerId || null);
+    }
+    if (DefaultSupportUserId !== undefined) {
+      if ((DefaultSupportUserId || null) !== (oldCustomer.DefaultSupportUserId || null)) {
+        changes.push({ field: 'DefaultSupportUserId', oldVal: String(oldCustomer.DefaultSupportUserId || ''), newVal: String(DefaultSupportUserId || '') });
+      }
+      updates.push('DefaultSupportUserId = ?');
+      values.push(DefaultSupportUserId || null);
     }
 
     if (updates.length > 0) {

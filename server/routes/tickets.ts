@@ -263,17 +263,54 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     
     const orgAbbr = orgResult[0].Abbreviation || `ORG${organizationId}`;
 
+    // Determine customer: from JWT (customer user) or from project
+    let ticketCustomerId = customerId || null;
+    
+    // If not customer user but has projectId, get customer from project
+    if (!ticketCustomerId && projectId) {
+      console.log('[Ticket Creation] Getting customer from projectId:', projectId);
+      const [projectResult] = await pool.execute<RowDataPacket[]>(
+        'SELECT CustomerId FROM Projects WHERE Id = ?',
+        [projectId]
+      );
+      if (projectResult.length > 0 && projectResult[0].CustomerId) {
+        ticketCustomerId = projectResult[0].CustomerId;
+        console.log('[Ticket Creation] Found customer from project:', ticketCustomerId);
+      }
+    }
+
+    // If we have a customer, get default support user for auto-assignment
+    let assignedToUserId = null;
+    if (ticketCustomerId) {
+      console.log('[Ticket Creation] Ticket for customerId:', ticketCustomerId);
+      const [customerResult] = await pool.execute<RowDataPacket[]>(
+        'SELECT DefaultSupportUserId FROM Customers WHERE Id = ?',
+        [ticketCustomerId]
+      );
+      console.log('[Ticket Creation] Customer query result:', customerResult);
+      if (customerResult.length > 0 && customerResult[0].DefaultSupportUserId) {
+        assignedToUserId = customerResult[0].DefaultSupportUserId;
+        console.log('[Ticket Creation] Auto-assigning to support user:', assignedToUserId);
+      } else {
+        console.log('[Ticket Creation] No DefaultSupportUserId found for customer');
+      }
+    } else {
+      console.log('[Ticket Creation] No customer for this ticket (neither from user nor project)');
+    }
+
     // Insert ticket first to get the ID
+    console.log('[Ticket Creation] Inserting ticket with AssignedToUserId:', assignedToUserId);
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO Tickets (
-        OrganizationId, CustomerId, ProjectId, CreatedByUserId,
+        OrganizationId, CustomerId, ProjectId, CreatedByUserId, AssignedToUserId,
         Title, Description, Priority, Category
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         organizationId,
-        customerId || null,
+        ticketCustomerId,
         projectId || null,
         userId,
+        assignedToUserId,
         title,
         description || null,
         priority || 'Medium',
@@ -282,6 +319,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     );
 
     const ticketId = result.insertId;
+    console.log('[Ticket Creation] Ticket created with ID:', ticketId);
     
     // Generate ticket number using abbreviation and ticket ID
     const ticketNumber = `TKT-${orgAbbr}-${ticketId}`;
@@ -325,6 +363,20 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         `Ticket ${ticketNumber}: ${title}`,
         `/tickets/${ticketId}`
       );
+    }
+
+    // Notify assigned support user if auto-assigned
+    if (assignedToUserId && assignedToUserId !== userId) {
+      console.log('[Ticket Creation] Sending notification to assigned support user:', assignedToUserId);
+      await createNotification(
+        assignedToUserId,
+        'ticket_assigned',
+        'Ticket Assigned',
+        `You have been assigned to ticket ${ticketNumber}: ${title}`,
+        `/tickets/${ticketId}`
+      );
+    } else {
+      console.log('[Ticket Creation] No notification sent. AssignedUser:', assignedToUserId, 'CreatedBy:', userId);
     }
 
     res.json({ 

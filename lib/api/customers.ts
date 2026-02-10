@@ -9,6 +9,7 @@ export interface Customer {
   Phone: string | null;
   Address: string | null;
   Notes: string | null;
+  DefaultSupportUserId: number | null;
   IsActive: number;
   CreatedBy: number;
   CreatedAt: string;
@@ -30,6 +31,7 @@ export interface CreateCustomerData {
   Phone?: string;
   Address?: string;
   Notes?: string;
+  DefaultSupportUserId?: number;
   OrganizationIds: number[];
   CreateDefaultProject?: boolean;
   DefaultProjectName?: string;
@@ -41,6 +43,7 @@ export interface UpdateCustomerData {
   Phone?: string;
   Address?: string;
   Notes?: string;
+  DefaultSupportUserId?: number;
   IsActive?: number;
   OrganizationIds?: number[];
 }

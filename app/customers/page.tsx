@@ -34,6 +34,7 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [supportUsers, setSupportUsers] = useState<{Id: number; FirstName: string; LastName: string; Username: string}[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   
@@ -55,6 +56,7 @@ export default function CustomersPage() {
     Address: '',
     Notes: '',
     OrganizationIds: [] as number[],
+    DefaultSupportUserId: null as number | null,
     CreateDefaultProject: true,
     DefaultProjectName: ''
   });
@@ -157,6 +159,18 @@ export default function CustomersPage() {
         const data = await response.json();
         setOrganizations(data.organizations || []);
       }
+
+      // Load support users
+      const usersResponse = await fetch(`${getApiUrl()}/api/users`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (usersResponse.ok) {
+        const usersData = await usersResponse.json();
+        const supportUsersList = usersData.users.filter((u: any) => u.IsSupport);
+        setSupportUsers(supportUsersList);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load data');
     } finally {
@@ -173,6 +187,7 @@ export default function CustomersPage() {
       Address: '',
       Notes: '',
       OrganizationIds: organizations.length === 1 ? [organizations[0].Id] : [],
+      DefaultSupportUserId: null,
       CreateDefaultProject: true,
       DefaultProjectName: ''
     });
@@ -188,6 +203,7 @@ export default function CustomersPage() {
       Address: customer.Address || '',
       Notes: customer.Notes || '',
       OrganizationIds: customer.Organizations?.map(o => o.OrganizationId) || [],
+      DefaultSupportUserId: (customer as any).DefaultSupportUserId || null,
       CreateDefaultProject: false,
       DefaultProjectName: ''
     });
@@ -231,7 +247,8 @@ export default function CustomersPage() {
           Phone: formData.Phone || undefined,
           Address: formData.Address || undefined,
           Notes: formData.Notes || undefined,
-          OrganizationIds: formData.OrganizationIds
+          OrganizationIds: formData.OrganizationIds,
+          DefaultSupportUserId: formData.DefaultSupportUserId || undefined
         };
         await updateCustomer(token!, editingCustomer.Id, updateData);
       } else {
@@ -243,6 +260,7 @@ export default function CustomersPage() {
           Address: formData.Address || undefined,
           Notes: formData.Notes || undefined,
           OrganizationIds: formData.OrganizationIds,
+          DefaultSupportUserId: formData.DefaultSupportUserId || undefined,
           CreateDefaultProject: formData.CreateDefaultProject,
           DefaultProjectName: formData.CreateDefaultProject ? (formData.DefaultProjectName || formData.Name) : undefined
         };
@@ -542,6 +560,27 @@ export default function CustomersPage() {
                       rows={2}
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Default Support User
+                    </label>
+                    <select
+                      value={formData.DefaultSupportUserId || ''}
+                      onChange={(e) => setFormData({ ...formData, DefaultSupportUserId: e.target.value ? parseInt(e.target.value) : null })}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="">No default support user</option>
+                      {supportUsers.map(user => (
+                        <option key={user.Id} value={user.Id}>
+                          {user.FirstName && user.LastName ? `${user.FirstName} ${user.LastName}` : user.Username}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      This user will be automatically assigned to tickets created by this customer
+                    </p>
                   </div>
 
                   <div>

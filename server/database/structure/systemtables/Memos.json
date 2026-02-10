@@ -1,0 +1,45 @@
+{
+  "TableName": "Memos",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Title",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Content",
+      "DataType": "mediumtext",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Visibility",
+      "DataType": "enum('private','organizations','public')",
+      "NotNullable": true,
+      "DefaultValue": "private"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    }
+  ]
+}

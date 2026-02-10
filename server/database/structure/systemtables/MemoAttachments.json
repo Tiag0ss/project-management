@@ -1,0 +1,43 @@
+{
+  "TableName": "MemoAttachments",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "MemoId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "FileName",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "FilePath",
+      "DataType": "varchar(500)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "FileSize",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "UploadedBy",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "UploadedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}
