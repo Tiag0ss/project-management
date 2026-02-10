@@ -11,6 +11,7 @@ import { organizationsApi, Organization } from '@/lib/api/organizations';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
+import SearchableSelect from '@/components/SearchableSelect';
 
 type ProjectSortField = 'name' | 'status' | 'tasks' | 'hours' | 'tickets' | 'startDate' | 'endDate';
 type SortDirection = 'asc' | 'desc';
@@ -815,6 +816,7 @@ function ProjectModal({
 }) {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [customers, setCustomers] = useState<{ Id: number; Name: string }[]>([]);
+  const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [formData, setFormData] = useState<CreateProjectData>({
     organizationId: project?.OrganizationId || 0,
     projectName: project?.ProjectName || '',
@@ -835,8 +837,10 @@ function ProjectModal({
   useEffect(() => {
     if (formData.organizationId && formData.organizationId > 0) {
       loadCustomers(formData.organizationId);
+      loadProjectStatuses(formData.organizationId);
     } else {
       setCustomers([]);
+      setProjectStatuses([]);
     }
   }, [formData.organizationId]);
 
@@ -863,6 +867,15 @@ function ProjectModal({
       }
     } catch (err: any) {
       console.error('Failed to load customers:', err);
+    }
+  };
+
+  const loadProjectStatuses = async (orgId: number) => {
+    try {
+      const response = await statusValuesApi.getProjectStatuses(orgId, token);
+      setProjectStatuses(response.statuses);
+    } catch (err: any) {
+      console.error('Failed to load project statuses:', err);
     }
   };
 
@@ -912,18 +925,14 @@ function ProjectModal({
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Organization *
               </label>
-              <select
-                value={formData.organizationId}
-                onChange={(e) => setFormData({ ...formData, organizationId: parseInt(e.target.value) })}
-                required
+              <SearchableSelect
+                value={formData.organizationId.toString()}
+                onChange={(value) => setFormData({ ...formData, organizationId: parseInt(value) || 0 })}
+                options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
+                placeholder="Select Organization"
+                emptyText="Select organization"
                 disabled={!!project}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
-              >
-                <option value={0}>Select organization</option>
-                {organizations.map((org) => (
-                  <option key={org.Id} value={org.Id}>{org.Name}</option>
-                ))}
-              </select>
+              />
               {!!project && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Organization cannot be changed after project creation
@@ -935,17 +944,14 @@ function ProjectModal({
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Customer
               </label>
-              <select
-                value={formData.customerId || ''}
-                onChange={(e) => setFormData({ ...formData, customerId: e.target.value ? parseInt(e.target.value) : undefined })}
+              <SearchableSelect
+                value={formData.customerId?.toString() || ''}
+                onChange={(value) => setFormData({ ...formData, customerId: value ? parseInt(value) : undefined })}
+                options={customers.map(customer => ({ value: customer.Id, label: customer.Name }))}
+                placeholder="Select Customer"
+                emptyText="No customer"
                 disabled={!formData.organizationId || formData.organizationId === 0}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
-              >
-                <option value="">No customer</option>
-                {customers.map((customer) => (
-                  <option key={customer.Id} value={customer.Id}>{customer.Name}</option>
-                ))}
-              </select>
+              />
               {formData.organizationId > 0 && customers.length === 0 && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   No customers available for this organization
@@ -988,9 +994,20 @@ function ProjectModal({
                 value={formData.status ?? ''}
                 onChange={(e) => setFormData({ ...formData, status: e.target.value ? parseInt(e.target.value) : null })}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                disabled={!formData.organizationId || formData.organizationId === 0}
               >
                 <option value="">Select Status</option>
+                {projectStatuses.map(status => (
+                  <option key={status.Id} value={status.Id}>
+                    {status.StatusName}
+                  </option>
+                ))}
               </select>
+              {formData.organizationId > 0 && projectStatuses.length === 0 && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  No project statuses available for this organization
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">

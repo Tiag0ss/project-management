@@ -4837,19 +4837,16 @@ function EditProjectModal({
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Organization *
               </label>
-              <select
+              <SearchableSelect
                 value={formData.organizationId}
-                onChange={(e) => setFormData({ ...formData, organizationId: parseInt(e.target.value) })}
-                required
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              >
-                <option value="">Select Organization</option>
-                {organizations.map((org) => (
-                  <option key={org.Id} value={org.Id}>
-                    {org.Name} ({org.Role})
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => setFormData({ ...formData, organizationId: value || 0 })}
+                options={organizations.map(org => ({
+                  id: org.Id,
+                  label: `${org.Name} (${org.Role})`
+                }))}
+                placeholder="Select Organization"
+                emptyMessage="No organizations available"
+              />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 Only organizations where you have Admin or Owner role are shown
               </p>
@@ -5354,18 +5351,16 @@ function TaskModal({
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Assigned To
               </label>
-              <select
-                value={formData.assignedTo || ''}
-                onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value ? parseInt(e.target.value) : undefined })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              >
-                <option value="">Unassigned</option>
-                {organizationUsers.map(user => (
-                  <option key={user.Id} value={user.Id}>
-                    {user.Username} {user.FirstName && user.LastName ? `(${user.FirstName} ${user.LastName})` : ''}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                value={formData.assignedTo}
+                onChange={(value) => setFormData({ ...formData, assignedTo: value })}
+                options={organizationUsers.map(user => ({
+                  id: user.Id,
+                  label: `${user.Username}${user.FirstName && user.LastName ? ` (${user.FirstName} ${user.LastName})` : ''}`
+                }))}
+                placeholder="Unassigned"
+                emptyMessage="No users available"
+              />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 Select a user to assign this task
               </p>

@@ -8,6 +8,8 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import RichTextEditor from './RichTextEditor';
+import SearchableSelect from './SearchableSelect';
+import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 
 interface Organization {
   Id: number;
@@ -18,15 +20,6 @@ interface Project {
   Id: number;
   ProjectName: string;
   OrganizationId: number;
-}
-
-interface StatusValue {
-  Id: number;
-  OrganizationId: number;
-  StatusName: string;
-  ColorCode?: string;
-  SortOrder: number;
-  IsDefault: number;
 }
 
 interface PriorityValue {
@@ -123,10 +116,12 @@ export default function Navbar() {
     startDate: '',
     endDate: '',
     customerId: '',
+    status: '',
   });
 
   // Customers state for quick project modal
   const [projectCustomers, setProjectCustomers] = useState<{ Id: number; Name: string }[]>([]);
+  const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
 
   // Time Entry form
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -476,6 +471,7 @@ export default function Navbar() {
           startDate: projectForm.startDate || null,
           endDate: projectForm.endDate || null,
           customerId: projectForm.customerId ? parseInt(projectForm.customerId) : null,
+          status: projectForm.status ? parseInt(projectForm.status) : null,
         }),
       });
       if (!res.ok) {
@@ -614,8 +610,9 @@ export default function Navbar() {
       estimatedHours: '',
     });
     setOrgForm({ name: '', description: '' });
-    setProjectForm({ organizationId: '', projectName: '', description: '', startDate: '', endDate: '', customerId: '' });
+    setProjectForm({ organizationId: '', projectName: '', description: '', startDate: '', endDate: '', customerId: '', status: '' });
     setProjectCustomers([]);
+    setProjectStatuses([]);
     setTimeEntryForm({
       organizationId: '',
       projectId: '',
@@ -1345,17 +1342,14 @@ export default function Navbar() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Organization <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    value={selectedOrgId || ''}
-                    onChange={(e) => handleOrgChange(parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  <SearchableSelect
+                    value={selectedOrgId?.toString() || ''}
+                    onChange={(value) => handleOrgChange(parseInt(value) || 0)}
+                    options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
+                    placeholder="Select Organization"
+                    emptyText="Select Organization"
                     disabled={isLoadingData}
-                  >
-                    <option value="">Select Organization</option>
-                    {organizations.map(org => (
-                      <option key={org.Id} value={org.Id}>{org.Name}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
 
                 {/* Project */}
@@ -1363,17 +1357,14 @@ export default function Navbar() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Project <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <SearchableSelect
                     value={taskForm.projectId}
-                    onChange={(e) => setTaskForm(prev => ({ ...prev, projectId: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    onChange={(value) => setTaskForm(prev => ({ ...prev, projectId: value }))}
+                    options={projects.map(project => ({ value: project.Id, label: project.ProjectName }))}
+                    placeholder="Select Project"
+                    emptyText="Select Project"
                     disabled={!selectedOrgId || isLoadingData}
-                  >
-                    <option value="">Select Project</option>
-                    {projects.map(project => (
-                      <option key={project.Id} value={project.Id}>{project.ProjectName}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
 
                 {/* Task Name */}
@@ -1621,51 +1612,48 @@ export default function Navbar() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Organization <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <SearchableSelect
                     value={projectForm.organizationId}
-                    onChange={async (e) => {
-                      const orgId = e.target.value;
-                      setProjectForm(prev => ({ ...prev, organizationId: orgId, customerId: '' }));
-                      if (orgId) {
+                    onChange={async (value) => {
+                      setProjectForm(prev => ({ ...prev, organizationId: value, customerId: '', status: '' }));
+                      if (value) {
                         try {
-                          const res = await fetch(`${getApiUrl()}/api/customers?organizationId=${orgId}`, {
+                          const res = await fetch(`${getApiUrl()}/api/customers?organizationId=${value}`, {
                             headers: { 'Authorization': `Bearer ${token}` }
                           });
                           if (res.ok) {
                             const data = await res.json();
                             setProjectCustomers(data.data || []);
                           }
+                          
+                          const statusRes = await statusValuesApi.getProjectStatuses(parseInt(value), token!);
+                          setProjectStatuses(statusRes.statuses);
                         } catch (err) {
-                          console.error('Failed to load customers:', err);
+                          console.error('Failed to load customers/statuses:', err);
                         }
                       } else {
                         setProjectCustomers([]);
+                        setProjectStatuses([]);
                       }
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
+                    placeholder="Select Organization"
+                    emptyText="Select Organization"
                     disabled={isLoadingData}
-                  >
-                    <option value="">Select Organization</option>
-                    {organizations.map(org => (
-                      <option key={org.Id} value={org.Id}>{org.Name}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Customer
                   </label>
-                  <select
+                  <SearchableSelect
                     value={projectForm.customerId}
-                    onChange={(e) => setProjectForm(prev => ({ ...prev, customerId: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    onChange={(value) => setProjectForm(prev => ({ ...prev, customerId: value }))}
+                    options={projectCustomers.map(customer => ({ value: customer.Id, label: customer.Name }))}
+                    placeholder="Select Customer"
+                    emptyText="No customer"
                     disabled={!projectForm.organizationId}
-                  >
-                    <option value="">No customer</option>
-                    {projectCustomers.map(customer => (
-                      <option key={customer.Id} value={customer.Id}>{customer.Name}</option>
-                    ))}
-                  </select>
+                  />
                   {projectForm.organizationId && projectCustomers.length === 0 && (
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                       No customers available for this organization
@@ -1693,6 +1681,29 @@ export default function Navbar() {
                     onChange={(html) => setProjectForm(prev => ({ ...prev, description: html }))}
                     placeholder="Enter description"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={projectForm.status}
+                    onChange={(e) => setProjectForm(prev => ({ ...prev, status: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    disabled={!projectForm.organizationId}
+                  >
+                    <option value="">Select Status</option>
+                    {projectStatuses.map(status => (
+                      <option key={status.Id} value={status.Id}>
+                        {status.StatusName}
+                      </option>
+                    ))}
+                  </select>
+                  {projectForm.organizationId && projectStatuses.length === 0 && (
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      No project statuses available for this organization
+                    </p>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -1770,56 +1781,47 @@ export default function Navbar() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Organization <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <SearchableSelect
                     value={timeEntryForm.organizationId}
-                    onChange={async (e) => {
-                      setTimeEntryForm(prev => ({ ...prev, organizationId: e.target.value, projectId: '', taskId: '' }));
+                    onChange={async (value) => {
+                      setTimeEntryForm(prev => ({ ...prev, organizationId: value, projectId: '', taskId: '' }));
                       setTasks([]);
-                      await loadProjectsForOrg(e.target.value);
+                      await loadProjectsForOrg(value);
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
+                    placeholder="Select Organization"
+                    emptyText="Select Organization"
                     disabled={isLoadingData}
-                  >
-                    <option value="">Select Organization</option>
-                    {organizations.map(org => (
-                      <option key={org.Id} value={org.Id}>{org.Name}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Project <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <SearchableSelect
                     value={timeEntryForm.projectId}
-                    onChange={async (e) => {
-                      setTimeEntryForm(prev => ({ ...prev, projectId: e.target.value, taskId: '' }));
-                      await loadTasksForProject(e.target.value);
+                    onChange={async (value) => {
+                      setTimeEntryForm(prev => ({ ...prev, projectId: value, taskId: '' }));
+                      await loadTasksForProject(value);
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    options={projects.map(proj => ({ value: proj.Id, label: proj.ProjectName }))}
+                    placeholder="Select Project"
+                    emptyText="Select Project"
                     disabled={!timeEntryForm.organizationId}
-                  >
-                    <option value="">Select Project</option>
-                    {projects.map(proj => (
-                      <option key={proj.Id} value={proj.Id}>{proj.ProjectName}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Task <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <SearchableSelect
                     value={timeEntryForm.taskId}
-                    onChange={(e) => setTimeEntryForm(prev => ({ ...prev, taskId: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    onChange={(value) => setTimeEntryForm(prev => ({ ...prev, taskId: value }))}
+                    options={tasks.map(task => ({ value: task.Id, label: task.TaskName }))}
+                    placeholder="Select Task"
+                    emptyText="Select Task"
                     disabled={!timeEntryForm.projectId}
-                  >
-                    <option value="">Select Task</option>
-                    {tasks.map(task => (
-                      <option key={task.Id} value={task.Id}>{task.TaskName}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1932,21 +1934,18 @@ export default function Navbar() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Organization (optional - to link to task)
                   </label>
-                  <select
+                  <SearchableSelect
                     value={callRecordForm.organizationId}
-                    onChange={async (e) => {
-                      setCallRecordForm(prev => ({ ...prev, organizationId: e.target.value, projectId: '', taskId: '' }));
+                    onChange={async (value) => {
+                      setCallRecordForm(prev => ({ ...prev, organizationId: value, projectId: '', taskId: '' }));
                       setTasks([]);
-                      await loadProjectsForOrg(e.target.value);
+                      await loadProjectsForOrg(value);
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
+                    placeholder="No Organization"
+                    emptyText="No Organization"
                     disabled={isLoadingData}
-                  >
-                    <option value="">No Organization</option>
-                    {organizations.map(org => (
-                      <option key={org.Id} value={org.Id}>{org.Name}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
 
                 {callRecordForm.organizationId && (
@@ -1955,19 +1954,16 @@ export default function Navbar() {
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Project
                       </label>
-                      <select
+                      <SearchableSelect
                         value={callRecordForm.projectId}
-                        onChange={async (e) => {
-                          setCallRecordForm(prev => ({ ...prev, projectId: e.target.value, taskId: '' }));
-                          await loadTasksForProject(e.target.value);
+                        onChange={async (value) => {
+                          setCallRecordForm(prev => ({ ...prev, projectId: value, taskId: '' }));
+                          await loadTasksForProject(value);
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">No Project</option>
-                        {projects.map(proj => (
-                          <option key={proj.Id} value={proj.Id}>{proj.ProjectName}</option>
-                        ))}
-                      </select>
+                        options={projects.map(proj => ({ value: proj.Id, label: proj.ProjectName }))}
+                        placeholder="No Project"
+                        emptyText="No Project"
+                      />
                     </div>
 
                     {callRecordForm.projectId && (
@@ -1975,16 +1971,13 @@ export default function Navbar() {
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                           Task
                         </label>
-                        <select
+                        <SearchableSelect
                           value={callRecordForm.taskId}
-                          onChange={(e) => setCallRecordForm(prev => ({ ...prev, taskId: e.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">No Task</option>
-                          {tasks.map(task => (
-                            <option key={task.Id} value={task.Id}>{task.TaskName}</option>
-                          ))}
-                        </select>
+                          onChange={(value) => setCallRecordForm(prev => ({ ...prev, taskId: value }))}
+                          options={tasks.map(task => ({ value: task.Id, label: task.TaskName }))}
+                          placeholder="No Task"
+                          emptyText="No Task"
+                        />
                       </div>
                     )}
                   </>

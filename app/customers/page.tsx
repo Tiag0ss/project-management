@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
+import SearchableSelect from '@/components/SearchableSelect';
 import { 
   getCustomers, 
   createCustomer, 
@@ -566,18 +567,16 @@ export default function CustomersPage() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Default Support User
                     </label>
-                    <select
-                      value={formData.DefaultSupportUserId || ''}
-                      onChange={(e) => setFormData({ ...formData, DefaultSupportUserId: e.target.value ? parseInt(e.target.value) : null })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    >
-                      <option value="">No default support user</option>
-                      {supportUsers.map(user => (
-                        <option key={user.Id} value={user.Id}>
-                          {user.FirstName && user.LastName ? `${user.FirstName} ${user.LastName}` : user.Username}
-                        </option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      value={formData.DefaultSupportUserId?.toString() || ''}
+                      onChange={(value) => setFormData({ ...formData, DefaultSupportUserId: value ? parseInt(value) : null })}
+                      options={supportUsers.map(user => ({
+                        value: user.Id,
+                        label: user.FirstName && user.LastName ? `${user.FirstName} ${user.LastName}` : user.Username
+                      }))}
+                      placeholder="Select Support User"
+                      emptyText="No default support user"
+                    />
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                       This user will be automatically assigned to tickets created by this customer
                     </p>

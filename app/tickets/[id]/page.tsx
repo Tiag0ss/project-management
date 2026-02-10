@@ -12,6 +12,7 @@ import AttachmentUploader, { AttachmentList } from '@/components/AttachmentManag
 import { getTicketAttachments, getTicketAttachment, uploadTicketAttachment, deleteTicketAttachment, TicketAttachment } from '@/lib/api/tickets';
 import { tasksApi, CreateTaskData, Task } from '@/lib/api/tasks';
 import RichTextEditor from '@/components/RichTextEditor';
+import SearchableSelect from '@/components/SearchableSelect';
 
 interface Ticket {
   Id: number;
@@ -123,8 +124,8 @@ export default function TicketDetailPage() {
     projectId: 0,
     taskName: '',
     description: '',
-    status: 'To Do',
-    priority: 'Medium',
+    status: null,
+    priority: null,
     estimatedHours: 0,
   });
   const [creatingTask, setCreatingTask] = useState(false);
@@ -309,8 +310,8 @@ export default function TicketDetailPage() {
       projectId: ticket.ProjectId,
       taskName: ticket.Title,
       description: ticket.Description || '',
-      status: 'To Do',
-      priority: ticket.Priority,
+      status: null,
+      priority: null,
       assignedTo: ticket.AssignedToUserId || undefined,
       estimatedHours: 0,
       ticketId: ticket.Id,
@@ -804,7 +805,7 @@ export default function TicketDetailPage() {
             >
               Attachments ({attachments.length})
             </button>
-            {!isCustomerUser && (user?.isManager || user?.isAdmin) && (
+            {!isCustomerUser && (user?.isManager || !!user?.isAdmin) && (
               <button
                 onClick={() => {
                   setActiveTab('tasks');
@@ -1060,7 +1061,7 @@ export default function TicketDetailPage() {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
                               {task.EstimatedHours}h
-                              {task.TotalWorked && ` / ${task.TotalWorked}h worked`}
+                              {task.WorkedHours ? ` / ${task.WorkedHours}h worked` : ''}
                             </span>
                           )}
                           
@@ -1192,16 +1193,14 @@ export default function TicketDetailPage() {
                   <div>
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Organization</dt>
                     {isEditing ? (
-                      <select
+                      <SearchableSelect
                         value={editForm.organizationId}
-                        onChange={(e) => handleOrganizationChange(e.target.value)}
-                        className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      >
-                        <option value="">Select Organization</option>
-                        {organizations.map(org => (
-                          <option key={org.Id} value={org.Id}>{org.Name}</option>
-                        ))}
-                      </select>
+                        onChange={handleOrganizationChange}
+                        options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
+                        placeholder="Select Organization"
+                        emptyText="Select Organization"
+                        className="mt-1"
+                      />
                     ) : (
                       <dd className="mt-1 text-sm text-gray-900 dark:text-white">
                         {ticket.OrganizationName || 'N/A'}
@@ -1215,16 +1214,14 @@ export default function TicketDetailPage() {
                   <div>
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Customer</dt>
                     {isEditing ? (
-                      <select
+                      <SearchableSelect
                         value={editForm.customerId}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, customerId: e.target.value }))}
-                        className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      >
-                        <option value="">No Customer</option>
-                        {customers.map(customer => (
-                          <option key={customer.Id} value={customer.Id}>{customer.Name}</option>
-                        ))}
-                      </select>
+                        onChange={(value) => setEditForm(prev => ({ ...prev, customerId: value }))}
+                        options={customers.map(customer => ({ value: customer.Id, label: customer.Name }))}
+                        placeholder="Select Customer"
+                        emptyText="No Customer"
+                        className="mt-1"
+                      />
                     ) : (
                       <dd className="mt-1 text-sm text-gray-900 dark:text-white">
                         {ticket.CustomerName || 'N/A'}
@@ -1238,16 +1235,14 @@ export default function TicketDetailPage() {
                   <div>
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Project</dt>
                     {isEditing ? (
-                      <select
+                      <SearchableSelect
                         value={editForm.projectId}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, projectId: e.target.value }))}
-                        className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      >
-                        <option value="">No Project</option>
-                        {projects.map(project => (
-                          <option key={project.Id} value={project.Id}>{project.ProjectName}</option>
-                        ))}
-                      </select>
+                        onChange={(value) => setEditForm(prev => ({ ...prev, projectId: value }))}
+                        options={projects.map(project => ({ value: project.Id, label: project.ProjectName }))}
+                        placeholder="Select Project"
+                        emptyText="No Project"
+                        className="mt-1"
+                      />
                     ) : (
                       <dd className="mt-1 text-sm text-gray-900 dark:text-white">
                         {ticket.ProjectName || 'N/A'}
@@ -1261,18 +1256,17 @@ export default function TicketDetailPage() {
                   <div>
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Assignee</dt>
                     {isEditing ? (
-                      <select
+                      <SearchableSelect
                         value={editForm.assignedToUserId}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, assignedToUserId: e.target.value }))}
-                        className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      >
-                        <option value="">Unassigned</option>
-                        {orgMembers.map(member => (
-                          <option key={member.Id} value={member.Id}>
-                            {getDisplayName(member.FirstName, member.LastName, member.Username)}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(value) => setEditForm(prev => ({ ...prev, assignedToUserId: value }))}
+                        options={orgMembers.map(member => ({
+                          value: member.Id,
+                          label: getDisplayName(member.FirstName, member.LastName, member.Username)
+                        }))}
+                        placeholder="Select Assignee"
+                        emptyText="Unassigned"
+                        className="mt-1"
+                      />
                     ) : (
                       <dd className="mt-1 text-sm text-gray-900 dark:text-white">
                         {ticket.AssigneeFirstName ? (
@@ -1295,18 +1289,17 @@ export default function TicketDetailPage() {
                   <div>
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Developer</dt>
                     {isEditing ? (
-                      <select
+                      <SearchableSelect
                         value={editForm.developerUserId}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, developerUserId: e.target.value }))}
-                        className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      >
-                        <option value="">No developer assigned</option>
-                        {orgMembers.map(member => (
-                          <option key={member.Id} value={member.Id}>
-                            {getDisplayName(member.FirstName, member.LastName, member.Username)}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(value) => setEditForm(prev => ({ ...prev, developerUserId: value }))}
+                        options={orgMembers.map(member => ({
+                          value: member.Id,
+                          label: getDisplayName(member.FirstName, member.LastName, member.Username)
+                        }))}
+                        placeholder="Select Developer"
+                        emptyText="No developer assigned"
+                        className="mt-1"
+                      />
                     ) : (
                       <dd className="mt-1 text-sm text-gray-900 dark:text-white">
                         {ticket.DeveloperFirstName ? (
@@ -1447,10 +1440,12 @@ export default function TicketDetailPage() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Description
                   </label>
-                  <RichTextEditor
-                    content={taskForm.description}
-                    onChange={(html) => setTaskForm({ ...taskForm, description: html })}
-                    placeholder="Enter task description..."
+                  <textarea
+                    value={taskForm.description}
+                    onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })}
+                    rows={4}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="Enter task description"
                   />
                 </div>
 
@@ -1461,14 +1456,15 @@ export default function TicketDetailPage() {
                       Priority
                     </label>
                     <select
-                      value={taskForm.priority}
-                      onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })}
+                      value={taskForm.priority ?? ''}
+                      onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value ? parseInt(e.target.value) : null })}
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     >
-                      <option value="Low">Low</option>
-                      <option value="Medium">Medium</option>
-                      <option value="High">High</option>
-                      <option value="Urgent">Urgent</option>
+                      <option value="">Select Priority</option>
+                      <option value="1">Low</option>
+                      <option value="2">Medium</option>
+                      <option value="3">High</option>
+                      <option value="4">Urgent</option>
                     </select>
                   </div>
 
@@ -1477,13 +1473,14 @@ export default function TicketDetailPage() {
                       Status
                     </label>
                     <select
-                      value={taskForm.status}
-                      onChange={(e) => setTaskForm({ ...taskForm, status: e.target.value })}
+                      value={taskForm.status ?? ''}
+                      onChange={(e) => setTaskForm({ ...taskForm, status: e.target.value ? parseInt(e.target.value) : null })}
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     >
-                      <option value="To Do">To Do</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Done">Done</option>
+                      <option value="">Select Status</option>
+                      <option value="1">To Do</option>
+                      <option value="2">In Progress</option>
+                      <option value="3">Done</option>
                     </select>
                   </div>
                 </div>
@@ -1510,20 +1507,18 @@ export default function TicketDetailPage() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Assigned To
                     </label>
-                    <select
+                    <SearchableSelect
                       value={taskForm.assignedTo || ''}
-                      onChange={(e) => setTaskForm({ ...taskForm, assignedTo: e.target.value ? parseInt(e.target.value) : undefined })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    >
-                      <option value="">Unassigned</option>
-                      {orgMembers.map((member) => (
-                        <option key={member.Id} value={member.Id}>
-                          {member.FirstName && member.LastName
-                            ? `${member.FirstName} ${member.LastName} (${member.Username})`
-                            : member.Username}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(value) => setTaskForm({ ...taskForm, assignedTo: value ? parseInt(value) : undefined })}
+                      options={orgMembers.map((member) => ({
+                        value: member.Id,
+                        label: member.FirstName && member.LastName
+                          ? `${member.FirstName} ${member.LastName} (${member.Username})`
+                          : member.Username
+                      }))}
+                      placeholder="Select Assignee"
+                      emptyText="Unassigned"
+                    />
                   </div>
                 )}
 

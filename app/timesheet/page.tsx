@@ -8,6 +8,7 @@ import { usersApi, User } from '@/lib/api/users';
 import { tasksApi, Task } from '@/lib/api/tasks';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
+import SearchableSelect from '@/components/SearchableSelect';
 
 interface TaskWithProject extends Task {
   ProjectName?: string;
@@ -702,18 +703,16 @@ export default function TimesheetPage() {
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Task *
                           </label>
-                          <select
+                          <SearchableSelect
                             value={newEntry.taskId}
-                            onChange={(e) => setNewEntry({ ...newEntry, taskId: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                          >
-                            <option value="">Select a task</option>
-                            {myTasks.map(task => (
-                              <option key={task.Id} value={task.Id}>
-                                {task.ProjectName} - {task.TaskName} ({task.StatusName || 'Unknown'})
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(value) => setNewEntry({ ...newEntry, taskId: value })}
+                            options={myTasks.map(task => ({
+                              value: task.Id,
+                              label: `${task.ProjectName} - ${task.TaskName} (${task.StatusName || 'Unknown'})`
+                            }))}
+                            placeholder="Select a task"
+                            emptyText="No tasks assigned to you"
+                          />
                         </div>
 
                         <div>

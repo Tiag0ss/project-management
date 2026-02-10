@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
+import SearchableSelect from '@/components/SearchableSelect';
 
 interface CallRecord {
   Id: number;
@@ -447,50 +448,41 @@ export default function CallRecordsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Organization</label>
-                <select
+                <SearchableSelect
                   value={formData.organizationId}
-                  onChange={(e) => {
-                    setFormData({...formData, organizationId: e.target.value, projectId: '', taskId: ''});
-                    loadProjectsForOrg(e.target.value);
+                  onChange={(value) => {
+                    setFormData({...formData, organizationId: value, projectId: '', taskId: ''});
+                    loadProjectsForOrg(value);
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">-- None --</option>
-                  {organizations.map(org => (
-                    <option key={org.Id} value={org.Id}>{org.Name}</option>
-                  ))}
-                </select>
+                  options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
+                  placeholder="Select Organization"
+                  emptyText="-- None --"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Project</label>
-                <select
+                <SearchableSelect
                   value={formData.projectId}
-                  onChange={(e) => {
-                    setFormData({...formData, projectId: e.target.value, taskId: ''});
-                    loadTasksForProject(e.target.value);
+                  onChange={(value) => {
+                    setFormData({...formData, projectId: value, taskId: ''});
+                    loadTasksForProject(value);
                   }}
+                  options={projects.map(project => ({ value: project.Id, label: project.ProjectName }))}
+                  placeholder="Select Project"
+                  emptyText="-- None --"
                   disabled={!formData.organizationId}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                >
-                  <option value="">-- None --</option>
-                  {projects.map(project => (
-                    <option key={project.Id} value={project.Id}>{project.ProjectName}</option>
-                  ))}
-                </select>
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Task</label>
-                <select
+                <SearchableSelect
                   value={formData.taskId}
-                  onChange={(e) => setFormData({...formData, taskId: e.target.value})}
+                  onChange={(value) => setFormData({...formData, taskId: value})}
+                  options={tasks.map(task => ({ value: task.Id, label: task.TaskName }))}
+                  placeholder="Select Task"
+                  emptyText="-- None --"
                   disabled={!formData.projectId}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                >
-                  <option value="">-- None --</option>
-                  {tasks.map(task => (
-                    <option key={task.Id} value={task.Id}>{task.TaskName}</option>
-                  ))}
-                </select>
+                />
               </div>
               <div className="md:col-span-3">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>

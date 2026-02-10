@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
 import RichTextEditor from '@/components/RichTextEditor';
+import SearchableSelect from '@/components/SearchableSelect';
 
 interface Ticket {
   Id: number;
@@ -666,20 +667,16 @@ export default function TicketsPage() {
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Organization <span className="text-red-500">*</span>
                       </label>
-                      <select
+                      <SearchableSelect
                         value={createForm.organizationId}
-                        onChange={(e) => {
-                          setCreateForm(prev => ({ ...prev, organizationId: e.target.value, projectId: '' }));
-                          loadProjects(e.target.value);
+                        onChange={(value) => {
+                          setCreateForm(prev => ({ ...prev, organizationId: value, projectId: '' }));
+                          loadProjects(value);
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                        required
-                      >
-                        <option value="">Select Organization</option>
-                        {organizations.map(org => (
-                          <option key={org.Id} value={org.Id}>{org.Name}</option>
-                        ))}
-                      </select>
+                        options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
+                        placeholder="Select Organization"
+                        emptyText="Select Organization"
+                      />
                     </div>
                   )}
 
@@ -689,16 +686,13 @@ export default function TicketsPage() {
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Project (optional)
                       </label>
-                      <select
+                      <SearchableSelect
                         value={createForm.projectId}
-                        onChange={(e) => setCreateForm(prev => ({ ...prev, projectId: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">No Project</option>
-                        {projects.map(project => (
-                          <option key={project.Id} value={project.Id}>{project.ProjectName}</option>
-                        ))}
-                      </select>
+                        onChange={(value) => setCreateForm(prev => ({ ...prev, projectId: value }))}
+                        options={projects.map(project => ({ value: project.Id, label: project.ProjectName }))}
+                        placeholder="Select Project"
+                        emptyText="No Project"
+                      />
                     </div>
                   )}
 

@@ -7,6 +7,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
 import ChangeHistory from '@/components/ChangeHistory';
+import SearchableSelect from '@/components/SearchableSelect';
 
 interface UserDetails {
   Id: number;
@@ -713,20 +714,16 @@ export default function UserDetailPage() {
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Organization *
                 </label>
-                <select
+                <SearchableSelect
                   value={addForm.organizationId}
-                  onChange={(e) => {
-                    setAddForm(prev => ({ ...prev, organizationId: e.target.value, permissionGroupId: '' }));
-                    if (e.target.value) loadPermissionGroups(parseInt(e.target.value));
+                  onChange={(value) => {
+                    setAddForm(prev => ({ ...prev, organizationId: value, permissionGroupId: '' }));
+                    if (value) loadPermissionGroups(parseInt(value));
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  required
-                >
-                  <option value="">Select organization...</option>
-                  {availableOrganizations.map(org => (
-                    <option key={org.Id} value={org.Id}>{org.Name}</option>
-                  ))}
-                </select>
+                  options={availableOrganizations.map(org => ({ value: org.Id, label: org.Name }))}
+                  placeholder="Select organization..."
+                  emptyText="No organizations available"
+                />
               </div>
 
               <div>
