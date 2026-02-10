@@ -166,10 +166,11 @@ interface AttachmentListProps {
   currentUserId: number;
   isAdmin: boolean;
   onDownload: (attachmentId: number) => void;
+  onPreview?: (attachmentId: number) => void;
   onDelete: (attachmentId: number) => void;
 }
 
-export function AttachmentList({ attachments, currentUserId, isAdmin, onDownload, onDelete }: AttachmentListProps) {
+export function AttachmentList({ attachments, currentUserId, isAdmin, onDownload, onPreview, onDelete }: AttachmentListProps) {
   const getFileIcon = (fileType: string): string => {
     for (const [type, icon] of Object.entries(FILE_ICONS)) {
       if (fileType.startsWith(type)) {
@@ -193,6 +194,10 @@ export function AttachmentList({ attachments, currentUserId, isAdmin, onDownload
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  const canPreview = (fileType: string): boolean => {
+    return fileType.startsWith('image/') || fileType === 'application/pdf';
   };
 
   if (attachments.length === 0) {
@@ -232,6 +237,19 @@ export function AttachmentList({ attachments, currentUserId, isAdmin, onDownload
           </div>
 
           <div className="flex items-center gap-2">
+            {onPreview && canPreview(attachment.FileType) && (
+              <button
+                onClick={() => onPreview(attachment.Id)}
+                className="p-2 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors"
+                title="Preview"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              </button>
+            )}
+
             <button
               onClick={() => onDownload(attachment.Id)}
               className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"

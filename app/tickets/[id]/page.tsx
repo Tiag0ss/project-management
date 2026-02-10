@@ -147,6 +147,36 @@ export default function TicketDetailPage() {
     }
   }, [token, ticketId]);
 
+  // Load comment attachments whenever comments change
+  useEffect(() => {
+    const loadAllCommentAttachments = async () => {
+      if (!token || comments.length === 0) return;
+      
+      const attachmentsMap: Record<number, TicketAttachment[]> = {};
+      
+      await Promise.all(
+        comments.map(async (comment: any) => {
+          try {
+            const attRes = await fetch(
+              `${getApiUrl()}/api/ticket-attachments/comment/${comment.Id}`,
+              { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+            if (attRes.ok) {
+              const attData = await attRes.json();
+              attachmentsMap[comment.Id] = attData.data || [];
+            }
+          } catch (err) {
+            console.error(`Failed to load attachments for comment ${comment.Id}:`, err);
+          }
+        })
+      );
+      
+      setCommentAttachmentsMap(attachmentsMap);
+    };
+    
+    loadAllCommentAttachments();
+  }, [comments, token]);
+
   const loadCustomersAndProjects = async (orgId: number | string) => {
     if (!token) return;
 
@@ -382,6 +412,32 @@ export default function TicketDetailPage() {
     }
   };
 
+  const handlePreviewAttachment = async (attachmentId: number) => {
+    if (!token) return;
+    
+    try {
+      const attachment = await getTicketAttachment(attachmentId, token);
+      
+      // Create blob from base64
+      const byteCharacters = atob(attachment.FileData || '');
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: attachment.FileType });
+      
+      // Open in new tab
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      
+      // Clean up URL after a delay
+      setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    } catch (err: any) {
+      alert(err.message || 'Failed to preview attachment');
+    }
+  };
+
   const handleDeleteAttachment = async (attachmentId: number) => {
     if (!token) return;
     
@@ -392,27 +448,6 @@ export default function TicketDetailPage() {
       await loadAttachments();
     } catch (err: any) {
       alert(err.message || 'Failed to delete attachment');
-    }
-  };
-
-  const loadCommentAttachments = async (commentId: number) => {
-    if (!token) return;
-    
-    try {
-      const res = await fetch(
-        `${getApiUrl()}/api/ticket-attachments/comment/${commentId}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      
-      if (res.ok) {
-        const data = await res.json();
-        setCommentAttachmentsMap(prev => ({
-          ...prev,
-          [commentId]: data.attachments || []
-        }));
-      }
-    } catch (err) {
-      console.error('Failed to load comment attachments:', err);
     }
   };
 
@@ -888,30 +923,42 @@ export default function TicketDetailPage() {
                           />
                           
                           {/* Comment Attachments */}
-                          {!commentAttachmentsMap[comment.Id] ? (
-                            <button
-                              onClick={() => loadCommentAttachments(comment.Id)}
-                              className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                            >
-                              📎 Load attachments
-                            </button>
-                          ) : commentAttachmentsMap[comment.Id].length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {commentAttachmentsMap[comment.Id].map((att: TicketAttachment) => (
-                                <div
-                                  key={att.Id}
-                                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm"
-                                >
-                                  <span>📎 {att.FileName}</span>
-                                  <button
-                                    onClick={() => handleDownloadAttachment(att.Id)}
-                                    className="text-blue-600 hover:text-blue-700 dark:text-blue-400"
-                                    title="Download"
+                          {commentAttachmentsMap[comment.Id]?.length > 0 && (
+                            <div className="mt-3 space-y-2">
+                              {commentAttachmentsMap[comment.Id].map((att: TicketAttachment) => {
+                                const canPreview = att.FileType.startsWith('image/') || att.FileType === 'application/pdf';
+                                return (
+                                  <div
+                                    key={att.Id}
+                                    className="inline-flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm"
                                   >
-                                    ⬇️
-                                  </button>
-                                </div>
-                              ))}
+                                    <span>📎 {att.FileName}</span>
+                                    <div className="flex items-center gap-1">
+                                      {canPreview && (
+                                        <button
+                                          onClick={() => handlePreviewAttachment(att.Id)}
+                                          className="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 transition-colors"
+                                          title="Preview"
+                                        >
+                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                          </svg>
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={() => handleDownloadAttachment(att.Id)}
+                                        className="p-1 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                                        title="Download"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                        </svg>
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -1098,6 +1145,7 @@ export default function TicketDetailPage() {
                       currentUserId={user.id}
                       isAdmin={user.isAdmin || false}
                       onDownload={handleDownloadAttachment}
+                      onPreview={handlePreviewAttachment}
                       onDelete={handleDeleteAttachment}
                     />
                   )}

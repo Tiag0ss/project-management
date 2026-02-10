@@ -596,6 +596,43 @@ export default function TaskDetailModal({
     }
   };
 
+  const handlePreviewAttachment = async (attachmentId: number) => {
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/task-attachments/${attachmentId}`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to preview attachment');
+      }
+
+      const result = await response.json();
+      const attachment = result.data;
+
+      // Create blob from base64
+      const byteCharacters = atob(attachment.FileData || '');
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: attachment.FileType });
+
+      // Open in new tab
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank');
+
+      // Clean up URL after a delay
+      setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error('Failed to preview attachment:', err);
+      showAlert('Preview Error', 'Failed to preview attachment');
+    }
+  };
+
   const handleDownloadAttachment = async (attachmentId: number) => {
     try {
       const response = await fetch(
@@ -1313,35 +1350,54 @@ export default function TaskDetailModal({
                 <p className="text-gray-500 dark:text-gray-400 text-center py-8">No attachments yet.</p>
               ) : (
                 <div className="space-y-3">
-                  {taskAttachments.map((attachment) => (
-                    <div key={attachment.Id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">📄</span>
-                        <div>
-                          <div className="font-medium text-gray-900 dark:text-white">{attachment.FileName}</div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {formatFileSize(attachment.FileSize)} • Uploaded by {attachment.Username || `User ${attachment.UploadedBy}`}
+                  {taskAttachments.map((attachment) => {
+                    const canPreview = attachment.MimeType.startsWith('image/') || attachment.MimeType === 'application/pdf';
+                    return (
+                      <div key={attachment.Id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">📄</span>
+                          <div>
+                            <div className="font-medium text-gray-900 dark:text-white">{attachment.FileName}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {formatFileSize(attachment.FileSize)} • Uploaded by {attachment.Username || `User ${attachment.UploadedBy}`}
+                            </div>
                           </div>
                         </div>
+                        <div className="flex items-center gap-2">
+                          {canPreview && (
+                            <button
+                              onClick={() => handlePreviewAttachment(attachment.Id)}
+                              className="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 transition-colors"
+                              title="Preview"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDownloadAttachment(attachment.Id)}
+                            className="p-1 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                            title="Download"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteAttachment(attachment.Id)}
+                            className="p-1 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors"
+                            title="Delete"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleDownloadAttachment(attachment.Id)}
-                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                          title="Download"
-                        >
-                          ⬇️
-                        </button>
-                        <button
-                          onClick={() => handleDeleteAttachment(attachment.Id)}
-                          className="text-gray-400 hover:text-red-500 transition-colors"
-                          title="Delete"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

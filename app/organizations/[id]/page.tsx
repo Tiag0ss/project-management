@@ -2396,6 +2396,45 @@ function AttachmentsTab({
     }
   };
 
+  const handlePreviewAttachment = async (attachmentId: number) => {
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/organization-attachments/${attachmentId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const fileData = data.data;
+        
+        const byteCharacters = atob(fileData.FileData);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: fileData.FileType });
+        
+        // Open in new tab
+        const url = window.URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        
+        // Clean up URL after a delay
+        setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+      }
+    } catch (err) {
+      console.error('Failed to preview attachment:', err);
+    }
+  };
+
+  const canPreview = (fileType: string): boolean => {
+    return fileType.startsWith('image/') || fileType === 'application/pdf';
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -2433,6 +2472,15 @@ function AttachmentsTab({
               <div className="flex items-start justify-between mb-2">
                 <span className="text-3xl">{getFileIcon(attachment.FileType)}</span>
                 <div className="flex gap-2">
+                  {canPreview(attachment.FileType) && (
+                    <button
+                      onClick={() => handlePreviewAttachment(attachment.Id)}
+                      className="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+                      title="Preview"
+                    >
+                      👁️
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDownloadAttachment(attachment.Id, attachment.FileName)}
                     className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
