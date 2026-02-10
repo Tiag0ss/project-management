@@ -18,6 +18,139 @@ A full-stack, self-hosted project management application with task tracking, res
 - 📱 **Responsive Design** — Mobile-friendly interface with organized navigation dropdowns
 - 🧙 **Install Wizard** — Guided first-time setup
 
+## Key Features in Detail
+
+### 📋 Project & Task Management
+- **Kanban boards** — Visual task management with drag-and-drop
+- **Task hierarchy** — Parent tasks with subtasks for complex work breakdown
+- **Dependencies** — Link tasks that must be completed in order
+- **Custom statuses & priorities** — Define project/task statuses and priority levels per organization
+- **Bulk operations** — Import tasks from CSV templates
+- **Task details** — Rich descriptions, attachments, comments, time tracking
+- **Progress tracking** — Automatic completion percentage based on subtasks
+
+### 📊 Resource Planning (Gantt Chart)
+- **Interactive timeline** — View and allocate tasks across team members
+- **Three view modes**:
+  - **Week** — 28-day view with daily columns
+  - **Month** — 90-day view with week grouping
+  - **Year** — 365-day view with month grouping
+- **Drag-and-drop allocation** — Assign tasks to users visually
+- **Availability checking** — Real-time validation of user daily capacity
+- **Parent-child allocations** — Split parent task hours across subtasks
+- **Intelligent replanning** — Considers already-worked hours when rescheduling
+- **User capacity** — Configurable work hours per day of the week
+
+### ⏱️ Time Tracking
+- **Timesheet views**:
+  - **Daily Entry** — Quick form for logging hours today
+  - **Weekly Grid** — Spreadsheet-style view of the entire week
+- **Manual save** — Review before submitting time entries
+- **Task-based tracking** — Associate hours with specific tasks
+- **Historical view** — Week navigation to review past entries
+- **Reporting integration** — Time data feeds into project reports
+
+### 👥 Multi-Tenant Organizations
+- **Multiple organizations** — Single installation supports multiple companies/teams
+- **Organization isolation** — Projects, tasks, and data separated by organization
+- **Team management** — Add/remove members, assign roles
+- **Permission groups** — Custom permission sets per organization (CanManageProjects, CanManageTasks, CanManageMembers, CanManageSettings)
+- **Cross-organization users** — Users can be members of multiple organizations
+
+### 🔐 Role-Based Permissions
+- **Global roles**: Admin, Developer, Support, Manager
+- **Permission system**:
+  - **View permissions** — Dashboard, Planning, Reports
+  - **Project permissions** — Create, Manage, Delete projects
+  - **Task permissions** — Create, Assign, Manage, Delete tasks
+  - **Ticket permissions** — Create, Assign, Manage, Delete tickets
+  - **Admin permissions** — Manage organizations, users, system settings
+- **Permission combination** — Users get permissions from ALL their roles
+- **Admin override** — Admin users have all permissions automatically
+- **Context-based validation** — Frontend and backend permission checks
+
+### 🎫 Ticket System
+- **Auto-numbering** — Tickets get unique IDs like `TKT-ORG-123`
+- **Auto-assignment** — Tickets for customer projects automatically assigned to customer's default support user
+- **Intelligent detection** — Works for customer users AND internal users creating tickets for customers
+- **Priority & category** — Classify tickets (Support, Bug, Feature Request, etc.)
+- **Status workflow** — Open → In Progress → Waiting → Resolved → Closed
+- **Developer assignment** — Separate field for developers working on technical issues
+- **Task conversion** — Convert tickets to project tasks
+- **Comment history** — Full conversation thread with rich text
+- **Attachments** — File upload support
+- **Notifications** — Real-time alerts for assignments and updates
+
+### 👤 Customer Management
+- **Customer database** — Track external clients and their information
+- **Organization association** — Link customers to internal organizations
+- **Default support user** — Assign a dedicated support representative per customer
+- **Project linking** — Associate projects with customers
+- **Ticket tracking** — View all tickets for a customer
+- **Contact management** — Store customer contact details
+- **Custom fields** — Rich text descriptions and notes
+
+### 📝 Rich Text Editor
+- **Tiptap-based editor** with full formatting toolbar:
+  - Text formatting: Bold, italic, strike-through, code
+  - Headings: H1, H2, H3
+  - Lists: Bullet points, numbered lists
+  - Alignment: Left, center, right
+  - Links: Clickable URLs
+- **Inline image support** — Paste or upload images directly (base64, 5MB limit)
+- **Used everywhere** — Tasks, Tickets, Projects, Organizations, Customers, Memos
+- **Smart rendering**:
+  - List views: Strip HTML tags for clean preview
+  - Detail views: Full HTML rendering with Tailwind Typography (@tailwindcss/typography)
+
+### 📔 Memos System
+- **Calendar-based interface** — Navigate by month and select specific dates
+- **Visibility controls**:
+  - 🔒 **Private** — Only visible to you
+  - 👥 **Organizations** — Shared with members of your organizations
+  - 🌍 **Public** — Visible to all users
+- **Tag system** — Organize and filter memos by custom tags
+- **Rich content** — Full rich text editor support with images
+- **Quick filters** — Filter by visibility level, tags, and date
+- **Author display** — See who created each memo
+- **Personal notes** — Great for daily logs, meeting notes, ideas
+
+### 📧 Email Notifications
+- **SMTP integration** — Send notifications via your email server
+- **Encrypted credentials** — Passwords stored securely with AES-256-CBC
+- **Email preferences** — Users can customize notification settings
+- **Notification types**:
+  - Task assignments
+  - Ticket assignments
+  - Project updates
+  - Mention notifications
+  - Status changes
+- **Template system** — Customizable email templates
+
+### 🌙 Dark Mode
+- **Full dark mode support** — Every page and component
+- **Automatic system detection** — Follows OS preference
+- **Manual toggle** — Switch modes anytime
+- **Consistent styling** — Tailwind CSS dark: classes throughout
+- **Optimized readability** — Carefully chosen color contrasts
+
+### 🧙 Install Wizard
+- **First-time setup** — Guided wizard for initial configuration
+- **Admin account creation** — Set up first user with admin privileges
+- **Organization setup** — Create initial organization
+- **Email configuration** — Optional SMTP setup
+- **Database initialization** — Automatic table creation and seeding
+- **One-time only** — Can't be accessed again after completion
+
+### 🗂️ Navigation Organization
+- **Grouped menus** for better organization:
+  - **Work** dropdown: Projects, Planning
+  - **Management** dropdown: Customers, Organizations
+- **Quick access** to: Dashboard, Tickets, Memos, Reports
+- **User menu** — Profile, notifications, logout
+- **Role-based visibility** — Menu items shown based on permissions
+- **Consistent experience** across all pages
+
 ## Tech Stack
 
 | Component | Technology |
@@ -151,37 +284,6 @@ docker run -d \
    - Configure organization
    - Set up email (optional)
 3. Start managing your projects!
-
-## Key Features in Detail
-
-### 📝 Rich Text Editor
-- **Tiptap-based editor** with full formatting toolbar (bold, italic, headings, lists, etc.)
-- **Inline image support** — Paste or upload images directly in descriptions and comments (base64, 5MB limit)
-- Used across all description and comment fields: Tasks, Tickets, Projects, Organizations, Memos
-- HTML storage in database with proper rendering in list and detail views
-
-### 📔 Memos System
-- **Calendar-based interface** — Navigate months and select specific dates
-- **Visibility controls**:
-  - 🔒 **Private** — Only visible to you
-  - 👥 **Organizations** — Shared with members of your organizations
-  - 🌍 **Public** — Visible to all users
-- **Tag system** — Organize and filter memos by custom tags
-- **Rich content** — Full rich text editor support with images
-- **Quick filters** — Filter by visibility, tags, and date
-
-### 🎫 Ticket Auto-Assignment
-- **Default Support User** — Set a default support representative for each customer
-- **Automatic assignment** — Tickets created for customer projects are automatically assigned to the customer's default support user
-- **Intelligent detection** — Works for both customer users creating tickets and internal users creating tickets for customer projects
-- **Notification system** — Assigned users receive instant notifications
-
-### 🗂️ Navigation Organization
-- **Grouped menus** for better organization:
-  - **Work** dropdown: Projects, Planning
-  - **Management** dropdown: Customers, Organizations
-- **Quick access** to: Dashboard, Tickets, Memos, Reports
-- **Consistent experience** across all pages
 
 ## Environment Variables
 
