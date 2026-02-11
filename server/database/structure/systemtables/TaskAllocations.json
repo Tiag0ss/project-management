@@ -39,7 +39,13 @@
       "FieldName": "EndTime",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "17:00"
+      "DefaultValue": "09:00"
+    },
+    {
+      "FieldName": "IsManual",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
     },
     {
       "FieldName": "CreatedAt",

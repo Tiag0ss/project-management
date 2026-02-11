@@ -39,7 +39,7 @@ export default function PlanningPage() {
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [taskAllocations, setTaskAllocations] = useState<any[]>([]);
-  const [allAllocations, setAllAllocations] = useState<{TaskId: number; UserId: number; AllocationDate: string; AllocatedHours: number; IsHobby: number}[]>([]);
+  const [allAllocations, setAllAllocations] = useState<{Id?: number; TaskId: number; UserId: number; AllocationDate: string; AllocatedHours: number; IsHobby: number; IsManual?: number; StartTime?: string; EndTime?: string}[]>([]);
   const [childAllocations, setChildAllocations] = useState<{ParentTaskId: number; ChildTaskId: number; AllocationDate: string; AllocatedHours: number; Level: number}[]>([]);
   const [taskTimeEntries, setTaskTimeEntries] = useState<any[]>([]);
   const [loadingAllocations, setLoadingAllocations] = useState(false);
@@ -54,7 +54,28 @@ export default function PlanningPage() {
     projectId: '',
     taskName: ''
   });
+  const [expandedAllocationRows, setExpandedAllocationRows] = useState<Set<number>>(new Set());
   const ganttContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Manual allocation modal state
+  const [manualAllocationModal, setManualAllocationModal] = useState<{
+    show: boolean;
+    allocationId?: number;
+    taskId?: number;
+    userId?: number;
+    allocationDate: string;
+    allocatedHours: string;
+    startTime: string;
+    endTime: string;
+    mode: 'add' | 'edit';
+  }>({
+    show: false,
+    allocationDate: '',
+    allocatedHours: '',
+    startTime: '09:00',
+    endTime: '17:00',
+    mode: 'add'
+  });
   
   // Planning progress modal state
   const [planningProgress, setPlanningProgress] = useState<{
@@ -118,6 +139,7 @@ export default function PlanningPage() {
     totalEstimatedHours: number;
     isParentTask?: boolean;
     leafTasks?: Task[];
+    usePushForward?: boolean;
   }>({
     show: false,
     task: null,
@@ -1295,6 +1317,44 @@ export default function PlanningPage() {
     leafTasks: Task[]
   ) => {
     try {
+      // Delete existing allocations for this parent task and its children before creating new ones
+      try {
+        const deleteRes = await fetch(
+          `${getApiUrl()}/api/task-allocations/task/${parentTask.Id}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        
+        if (!deleteRes.ok) {
+          console.warn('Failed to delete existing allocations for parent task, continuing anyway');
+        }
+        
+        // Also delete allocations for all leaf tasks
+        for (const leafTask of leafTasks) {
+          const leafDeleteRes = await fetch(
+            `${getApiUrl()}/api/task-allocations/task/${leafTask.Id}`,
+            {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+          
+          if (!leafDeleteRes.ok) {
+            console.warn(`Failed to delete existing allocations for leaf task ${leafTask.Id}, continuing anyway`);
+          }
+        }
+      } catch (err) {
+        console.error('Error deleting existing allocations:', err);
+      }
+
       const taskProject = projects.find(p => p.Id === parentTask.ProjectId);
       const isHobbyTask = taskProject?.IsHobby || false;
 
@@ -1757,46 +1817,34 @@ export default function PlanningPage() {
 
   // Handle conflict modal - push forward existing tasks
   const handleConflictPushForward = async () => {
-    const { task, userId, startDate, totalHoursToAllocate } = conflictModal;
+    const { task, userId, startDate, totalHoursToAllocate, hoursAlreadyWorked, maxDailyHours, isParentTask, leafTasks } = conflictModal;
     if (!task || !userId || !startDate) return;
+
+    const user = users.find(u => u.Id === userId);
+    if (!user) return;
 
     setConflictModal(prev => ({ ...prev, show: false }));
 
-    try {
-      const dateStr = startDate.toISOString().split('T')[0];
-
-      // Push forward: backend will allocate the new task FIRST, then replan existing tasks
-      const pushRes = await fetch(
-        `${getApiUrl()}/api/task-allocations/push-forward`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            userId,
-            fromDate: dateStr,
-            newTaskId: task.Id,
-            newTaskHours: totalHoursToAllocate,
-          }),
-        }
-      );
-
-      if (!pushRes.ok) {
-        showAlert('Error', 'Failed to push forward existing tasks');
-        return;
-      }
-      
-      // Reload tasks and allocations to refresh the Gantt chart
-      if (projects.length > 0) {
-        await loadAllProjectsTasks(projects);
-        await loadAllAllocations();
-      }
-    } catch (err) {
-      console.error('Failed to push forward:', err);
-      showAlert('Error', 'Failed to push forward allocations');
-    }
+    // Show hours per day modal for confirmation
+    const taskEstimatedHours = isParentTask && leafTasks 
+      ? leafTasks.reduce((sum, t) => sum + parseFloat(String(t.EstimatedHours || 0)), 0)
+      : parseFloat(String(task.EstimatedHours || 0));
+    const suggestedHours = Math.min(Math.max(1, Math.ceil(totalHoursToAllocate / 5)), maxDailyHours);
+    
+    setHoursPerDayModal({
+      show: true,
+      task,
+      userId,
+      startDate,
+      maxDailyHours,
+      hoursPerDay: suggestedHours.toString(),
+      totalHours: totalHoursToAllocate,
+      hoursAlreadyWorked,
+      totalEstimatedHours: taskEstimatedHours,
+      isParentTask,
+      leafTasks,
+      usePushForward: true // Flag to indicate we should use push-forward
+    });
   };
 
   // Handle conflict modal - plan when available (use available slots)
@@ -1840,7 +1888,7 @@ export default function PlanningPage() {
 
   // Handle confirmation from hours per day modal
   const handleHoursPerDayConfirm = async () => {
-    const { task, userId, startDate, totalHours, hoursPerDay, maxDailyHours, isParentTask, leafTasks } = hoursPerDayModal;
+    const { task, userId, startDate, totalHours, hoursPerDay, maxDailyHours, isParentTask, leafTasks, usePushForward } = hoursPerDayModal;
     if (!task || !userId || !startDate) return;
 
     const user = users.find(u => u.Id === userId);
@@ -1852,10 +1900,50 @@ export default function PlanningPage() {
     
     setHoursPerDayModal(prev => ({ ...prev, show: false }));
     
-    if (isParentTask && leafTasks) {
-      await executeParentTaskAllocation(task, userId, startDate, totalHours, user, maxHoursPerDay, leafTasks);
+    // If usePushForward flag is set, use push-forward endpoint
+    if (usePushForward) {
+      try {
+        const dateStr = startDate.toISOString().split('T')[0];
+
+        // Push forward: backend will allocate the new task FIRST, then replan existing tasks
+        const pushRes = await fetch(
+          `${getApiUrl()}/api/task-allocations/push-forward`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              userId,
+              fromDate: dateStr,
+              newTaskId: task.Id,
+              newTaskHours: totalHours,
+            }),
+          }
+        );
+
+        if (!pushRes.ok) {
+          showAlert('Error', 'Failed to push forward existing tasks');
+          return;
+        }
+        
+        // Reload tasks and allocations to refresh the Gantt chart
+        if (projects.length > 0) {
+          await loadAllProjectsTasks(projects);
+          await loadAllAllocations();
+        }
+      } catch (err) {
+        console.error('Failed to push forward:', err);
+        showAlert('Error', 'Failed to push forward allocations');
+      }
     } else {
-      await executeTaskAllocation(task, userId, startDate, totalHours, user, maxHoursPerDay);
+      // Normal allocation (plan when available)
+      if (isParentTask && leafTasks) {
+        await executeParentTaskAllocation(task, userId, startDate, totalHours, user, maxHoursPerDay, leafTasks);
+      } else {
+        await executeTaskAllocation(task, userId, startDate, totalHours, user, maxHoursPerDay);
+      }
     }
   };
 
@@ -1869,6 +1957,26 @@ export default function PlanningPage() {
     maxHoursPerDay: number
   ) => {
     try {
+      // Delete existing allocations for this task before creating new ones
+      try {
+        const deleteRes = await fetch(
+          `${getApiUrl()}/api/task-allocations/task/${task.Id}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        
+        if (!deleteRes.ok) {
+          console.warn('Failed to delete existing allocations, continuing anyway');
+        }
+      } catch (err) {
+        console.error('Error deleting existing allocations:', err);
+      }
+
       // Show planning progress modal
       setPlanningProgress({
         show: true,
@@ -2269,6 +2377,143 @@ export default function PlanningPage() {
       return dateValue.toISOString().split('T')[0];
     }
     return String(dateValue).split('T')[0];
+  };
+
+  const openAddManualAllocationModal = (taskId: number, userId: number) => {
+    setManualAllocationModal({
+      show: true,
+      taskId,
+      userId,
+      allocationDate: '',
+      allocatedHours: '',
+      startTime: '09:00',
+      endTime: '17:00',
+      mode: 'add'
+    });
+  };
+
+  const openEditManualAllocationModal = (allocation: any) => {
+    setManualAllocationModal({
+      show: true,
+      allocationId: allocation.Id,
+      taskId: allocation.TaskId,
+      userId: allocation.UserId,
+      allocationDate: normalizeDateString(allocation.AllocationDate),
+      allocatedHours: String(allocation.AllocatedHours),
+      startTime: allocation.StartTime || '09:00',
+      endTime: allocation.EndTime || '17:00',
+      mode: 'edit'
+    });
+  };
+
+  const handleSaveManualAllocation = async () => {
+    if (!manualAllocationModal.taskId || !manualAllocationModal.userId) {
+      showAlert('Error', 'Task and User are required');
+      return;
+    }
+
+    if (!manualAllocationModal.allocationDate || !manualAllocationModal.allocatedHours) {
+      showAlert('Error', 'Date and Hours are required');
+      return;
+    }
+
+    const hours = parseFloat(manualAllocationModal.allocatedHours);
+    if (isNaN(hours) || hours <= 0) {
+      showAlert('Error', 'Hours must be greater than 0');
+      return;
+    }
+
+    try {
+      if (manualAllocationModal.mode === 'add') {
+        const response = await fetch(`${getApiUrl()}/api/task-allocations/manual`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            taskId: manualAllocationModal.taskId,
+            userId: manualAllocationModal.userId,
+            allocationDate: manualAllocationModal.allocationDate,
+            allocatedHours: hours,
+            startTime: manualAllocationModal.startTime,
+            endTime: manualAllocationModal.endTime
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to create manual allocation');
+        }
+
+        showAlert('Success', 'Manual allocation created successfully');
+      } else {
+        const response = await fetch(`${getApiUrl()}/api/task-allocations/manual/${manualAllocationModal.allocationId}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            allocatedHours: hours,
+            startTime: manualAllocationModal.startTime,
+            endTime: manualAllocationModal.endTime
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to update manual allocation');
+        }
+
+        showAlert('Success', 'Manual allocation updated successfully');
+      }
+
+      setManualAllocationModal({
+        show: false,
+        allocationDate: '',
+        allocatedHours: '',
+        startTime: '09:00',
+        endTime: '17:00',
+        mode: 'add'
+      });
+
+      // Reload allocations
+      await loadAllAllocations();
+    } catch (err: any) {
+      console.error('Failed to save manual allocation:', err);
+      showAlert('Error', err.message || 'Failed to save manual allocation');
+    }
+  };
+
+  const handleDeleteManualAllocation = async (allocationId: number) => {
+    showConfirm(
+      'Confirm Delete',
+      'Are you sure you want to delete this manual allocation?',
+      async () => {
+        try {
+          const response = await fetch(`${getApiUrl()}/api/task-allocations/manual/${allocationId}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Failed to delete manual allocation');
+          }
+
+          showAlert('Success', 'Manual allocation deleted successfully');
+          
+          // Reload allocations
+          await loadAllAllocations();
+        } catch (err: any) {
+          console.error('Failed to delete manual allocation:', err);
+          showAlert('Error', err.message || 'Failed to delete manual allocation');
+        }
+      }
+    );
   };
 
   const getFilteredAllocations = () => {
@@ -3159,7 +3404,21 @@ export default function PlanningPage() {
                   />
                 </div>
               </div>
-              <div className="flex justify-end">
+              <div className="flex justify-between items-center">
+                <button
+                  onClick={() => setManualAllocationModal({
+                    show: true,
+                    allocationDate: '',
+                    allocatedHours: '',
+                    startTime: '09:00',
+                    endTime: '17:00',
+                    mode: 'add'
+                  })}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <span>➕</span>
+                  Add Manual Allocation
+                </button>
                 <button
                   onClick={() => setAllocationFilters({ startDate: '', endDate: '', userId: '', projectId: '', taskName: '' })}
                   className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
@@ -3630,6 +3889,132 @@ export default function PlanningPage() {
                     className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
                   >
                     Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Manual Allocation Modal */}
+        {manualAllocationModal.show && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                  {manualAllocationModal.mode === 'add' ? 'Add Manual Allocation' : 'Edit Manual Allocation'}
+                </h3>
+
+                <div className="space-y-4">
+                  {manualAllocationModal.mode === 'add' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Task
+                        </label>
+                        <select
+                          value={manualAllocationModal.taskId || ''}
+                          onChange={(e) => setManualAllocationModal(prev => ({ ...prev, taskId: parseInt(e.target.value) }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Select Task</option>
+                          {tasks.map(t => {
+                            const project = projects.find(p => p.Id === t.ProjectId);
+                            return (
+                              <option key={t.Id} value={t.Id}>
+                                {project?.ProjectName} - {t.TaskName}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          User
+                        </label>
+                        <select
+                          value={manualAllocationModal.userId || ''}
+                          onChange={(e) => setManualAllocationModal(prev => ({ ...prev, userId: parseInt(e.target.value) }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Select User</option>
+                          {users.map(u => (
+                            <option key={u.Id} value={u.Id}>{u.Username}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      value={manualAllocationModal.allocationDate}
+                      onChange={(e) => setManualAllocationModal(prev => ({ ...prev, allocationDate: e.target.value }))}
+                      disabled={manualAllocationModal.mode === 'edit'}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Hours
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0.5"
+                      max="24"
+                      value={manualAllocationModal.allocatedHours}
+                      onChange={(e) => setManualAllocationModal(prev => ({ ...prev, allocatedHours: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      placeholder="e.g., 4.5"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Start Time
+                      </label>
+                      <input
+                        type="time"
+                        value={manualAllocationModal.startTime}
+                        onChange={(e) => setManualAllocationModal(prev => ({ ...prev, startTime: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        End Time
+                      </label>
+                      <input
+                        type="time"
+                        value={manualAllocationModal.endTime}
+                        onChange={(e) => setManualAllocationModal(prev => ({ ...prev, endTime: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 mt-6">
+                  <button
+                    onClick={() => setManualAllocationModal({ show: false, allocationDate: '', allocatedHours: '', startTime: '09:00', endTime: '17:00', mode: 'add' })}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveManualAllocation}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  >
+                    {manualAllocationModal.mode === 'add' ? 'Add Allocation' : 'Save Changes'}
                   </button>
                 </div>
               </div>

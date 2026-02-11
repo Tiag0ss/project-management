@@ -72,6 +72,7 @@ interface TaskAllocation {
   AllocatedHours: number;
   StartTime?: string;
   EndTime?: string;
+  IsManual?: number;
   Username?: string;
 }
 
@@ -235,6 +236,18 @@ export default function TaskDetailModal({
   const [taskAllocations, setTaskAllocations] = useState<TaskAllocation[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   
+  // Manual allocation modal state
+  const [manualAllocationModal, setManualAllocationModal] = useState<{
+    show: boolean;
+    allocationId: number | null;
+    userId: number | null;
+    allocationDate: string;
+    allocatedHours: string;
+    mode: 'add' | 'edit';
+  }>({ show: false, allocationId: null, userId: null, allocationDate: '', allocatedHours: '', mode: 'add' });
+  const [users, setUsers] = useState<User[]>([]);
+  const [hasChildren, setHasChildren] = useState(false);
+  
   // UI states
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -243,7 +256,11 @@ export default function TaskDetailModal({
   const [submittingComment, setSubmittingComment] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [showTagSelector, setShowTagSelector] = useState(false);
-  const [modalMessage, setModalMessage] = useState<{ type: 'alert'; title: string; message: string } | null>(null);
+  const [modalMessage, setModalMessage] = useState<
+    | { type: 'alert'; title: string; message: string }
+    | { type: 'confirm'; title: string; message: string; onConfirm: () => void }
+    | null
+  >(null);
 
   const showAlert = (title: string, message: string) => {
     setModalMessage({ type: 'alert', title, message });
@@ -262,6 +279,7 @@ export default function TaskDetailModal({
     loadOrganizationUsers();
     if (task) {
       loadTaskDetails();
+      checkHasChildren();
     }
   }, [task?.Id]);
 
@@ -374,8 +392,33 @@ export default function TaskDetailModal({
     try {
       const response = await usersApi.getByOrganization(organizationId, token);
       setOrganizationUsers(response.users);
+      setUsers(response.users); // Also populate users state for manual allocation modal
     } catch (err) {
       console.error('Failed to load organization users:', err);
+    }
+  };
+
+  const checkHasChildren = async () => {
+    if (!task) {
+      setHasChildren(false);
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${getApiUrl()}/api/tasks/project/${projectId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const allTasks = data.tasks || [];
+        // Check if any task has this task as parent
+        const hasChild = allTasks.some((t: any) => t.ParentTaskId === task.Id);
+        setHasChildren(hasChild);
+      }
+    } catch (err) {
+      console.error('Failed to check for children:', err);
+      setHasChildren(false);
     }
   };
 
@@ -689,6 +732,108 @@ export default function TaskDetailModal({
     } catch (err) {
       console.error('Failed to delete attachment:', err);
     }
+  };
+
+  const handleSaveManualAllocation = async () => {
+    if (!task) return;
+    
+    const { allocationId, userId, allocationDate, allocatedHours, mode } = manualAllocationModal;
+    
+    if (!userId || !allocationDate || !allocatedHours) {
+      setModalMessage({
+        type: 'alert',
+        title: 'Validation Error',
+        message: 'Please fill in all required fields (User, Date, Hours).'
+      });
+      return;
+    }
+
+    try {
+      const method = mode === 'edit' ? 'PUT' : 'POST';
+      const url = mode === 'edit' 
+        ? `${getApiUrl()}/api/task-allocations/manual/${allocationId}`
+        : `${getApiUrl()}/api/task-allocations/manual`;
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          taskId: task.Id,
+          userId,
+          allocationDate,
+          allocatedHours: parseFloat(allocatedHours)
+        })
+      });
+
+      if (response.ok) {
+        setManualAllocationModal({
+          show: false,
+          allocationId: null,
+          userId: null,
+          allocationDate: '',
+          allocatedHours: '',
+          mode: 'add'
+        });
+        loadTaskDetails(); // Reload allocations
+        onSaved(); // Refresh tasks in parent component (updates Gantt)
+      } else {
+        const error = await response.json();
+        setModalMessage({
+          type: 'alert',
+          title: 'Error',
+          message: error.message || 'Failed to save allocation'
+        });
+      }
+    } catch (err) {
+      console.error('Failed to save manual allocation:', err);
+      setModalMessage({
+        type: 'alert',
+        title: 'Error',
+        message: 'An error occurred while saving the allocation'
+      });
+    }
+  };
+
+  const handleDeleteManualAllocation = async (allocationId: number) => {
+    setModalMessage({
+      type: 'confirm',
+      title: 'Confirm Delete',
+      message: 'Are you sure you want to delete this manual allocation?',
+      onConfirm: async () => {
+        try {
+          const response = await fetch(
+            `${getApiUrl()}/api/task-allocations/manual/${allocationId}`,
+            {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${token}` }
+            }
+          );
+
+          if (response.ok) {
+            loadTaskDetails(); // Reload allocations
+            onSaved(); // Refresh tasks in parent component (updates Gantt)
+            setModalMessage(null);
+          } else {
+            const error = await response.json();
+            setModalMessage({
+              type: 'alert',
+              title: 'Error',
+              message: error.message || 'Failed to delete allocation'
+            });
+          }
+        } catch (err) {
+          console.error('Failed to delete manual allocation:', err);
+          setModalMessage({
+            type: 'alert',
+            title: 'Error',
+            message: 'An error occurred while deleting the allocation'
+          });
+        }
+      }
+    });
   };
 
   const handleAddTag = async (tagId: number) => {
@@ -1168,7 +1313,25 @@ export default function TaskDetailModal({
 
               {/* Allocations */}
               <div>
-                <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">Planned Allocations</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Planned Allocations</h3>
+                  {!hasChildren && (
+                    <button
+                      onClick={() => setManualAllocationModal({ 
+                        show: true, 
+                        allocationId: null, 
+                        userId: null, 
+                        allocationDate: '', 
+                        allocatedHours: '', 
+                        mode: 'add' 
+                      })}
+                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors flex items-center gap-1"
+                    >
+                      <span>+</span>
+                      <span>Add Manual Allocation</span>
+                    </button>
+                  )}
+                </div>
                 {loadingData ? (
                   <p className="text-gray-500 dark:text-gray-400">Loading...</p>
                 ) : taskAllocations.length === 0 ? (
@@ -1183,6 +1346,7 @@ export default function TaskDetailModal({
                           <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Start</th>
                           <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">End</th>
                           <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Hours</th>
+                          {!hasChildren && <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>}
                         </tr>
                       </thead>
                       <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -1203,6 +1367,37 @@ export default function TaskDetailModal({
                             <td className="px-4 py-2 text-sm text-right font-medium text-gray-900 dark:text-white">
                               {parseFloat(allocation.AllocatedHours as any).toFixed(1)}h
                             </td>
+                            {!hasChildren && (
+                              <td className="px-4 py-2 text-sm text-center">
+                                {allocation.IsManual === 1 ? (
+                                  <div className="flex items-center justify-center gap-2">
+                                    <button
+                                      onClick={() => setManualAllocationModal({
+                                        show: true,
+                                        allocationId: allocation.Id || null,
+                                        userId: allocation.UserId,
+                                        allocationDate: new Date(allocation.AllocationDate).toISOString().split('T')[0],
+                                        allocatedHours: String(allocation.AllocatedHours),
+                                        mode: 'edit'
+                                      })}
+                                      className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                      title="Edit"
+                                    >
+                                      ✏️
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteManualAllocation(allocation.Id!)}
+                                      className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                      title="Delete"
+                                    >
+                                      🗑️
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400 dark:text-gray-600 text-xs">Auto</span>
+                                )}
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -1469,6 +1664,94 @@ export default function TaskDetailModal({
         </div>
       </div>
 
+      {/* Modal de Alocação Manual */}
+      {manualAllocationModal.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
+                {manualAllocationModal.mode === 'add' ? 'Add Manual Allocation' : 'Edit Manual Allocation'}
+              </h3>
+              
+              <div className="space-y-4">
+                {/* User */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    User *
+                  </label>
+                  <select
+                    value={manualAllocationModal.userId || ''}
+                    onChange={(e) => setManualAllocationModal(prev => ({ ...prev, userId: parseInt(e.target.value) }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  >
+                    <option value="">Select user...</option>
+                    {users.map(user => (
+                      <option key={user.Id} value={user.Id}>
+                        {user.FirstName} {user.LastName} ({user.Username})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Date */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={manualAllocationModal.allocationDate}
+                    onChange={(e) => setManualAllocationModal(prev => ({ ...prev, allocationDate: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  />
+                </div>
+
+                {/* Hours */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Hours *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0.5"
+                    max="24"
+                    value={manualAllocationModal.allocatedHours}
+                    onChange={(e) => setManualAllocationModal(prev => ({ ...prev, allocatedHours: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Start/end times will be calculated automatically. If this crosses lunch time, it will be split into 2 allocations.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 mt-6">
+                <button
+                  onClick={() => setManualAllocationModal({
+                    show: false,
+                    allocationId: null,
+                    userId: null,
+                    allocationDate: '',
+                    allocatedHours: '',
+                    mode: 'add'
+                  })}
+                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-900 dark:text-white rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveManualAllocation}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  {manualAllocationModal.mode === 'add' ? 'Add' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Alerta */}
       {modalMessage && modalMessage.type === 'alert' && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
@@ -1486,6 +1769,40 @@ export default function TaskDetailModal({
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                 >
                   OK
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação */}
+      {modalMessage && modalMessage.type === 'confirm' && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
+                {modalMessage.title}
+              </h3>
+              <p className="text-gray-700 dark:text-gray-300 mb-6">
+                {modalMessage.message}
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setModalMessage(null)}
+                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-900 dark:text-white rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (modalMessage.onConfirm) {
+                      modalMessage.onConfirm();
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                >
+                  Delete
                 </button>
               </div>
             </div>

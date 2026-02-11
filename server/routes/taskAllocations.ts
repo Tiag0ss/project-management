@@ -144,9 +144,9 @@ async function replanDependentTasks(taskId: number, newEndDate: string): Promise
 
     // Insert new allocations
     if (newAllocations.length > 0) {
-      const values = newAllocations.map(a => [depTask.Id, userId, a.date, a.hours, a.startTime, a.endTime]);
+      const values = newAllocations.map(a => [depTask.Id, userId, a.date, a.hours, a.startTime, a.endTime, 0]);
       await pool.query(
-        'INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime) VALUES ?',
+        'INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual) VALUES ?',
         [values]
       );
 
@@ -398,6 +398,28 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       return res.json({ success: true, message: 'No allocations to push forward' });
     }
 
+    // FIRST: Delete ALL existing allocations for the NEW task being planned
+    // (not just from fromDate, but ALL of them to avoid duplicates)
+    await pool.execute(
+      `DELETE FROM TaskAllocations WHERE TaskId = ?`,
+      [newTaskId]
+    );
+    await pool.execute(
+      `DELETE FROM TaskChildAllocations WHERE ChildTaskId = ?`,
+      [newTaskId]
+    );
+    await pool.execute(
+      `DELETE FROM TaskChildAllocations WHERE ParentTaskId IN (
+        WITH RECURSIVE Descendants AS (
+          SELECT Id FROM Tasks WHERE Id = ?
+          UNION ALL
+          SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+        )
+        SELECT Id FROM Descendants
+      )`,
+      [newTaskId]
+    );
+
     // Delete all allocations for these tasks from the given date onwards
     for (const taskData of affectedTasksData) {
       await pool.execute(
@@ -529,8 +551,8 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
             console.log(`  Task ${taskId} @ ${dateStr} (morning): ${formatTime(morningStart)}-${formatTime(morningEnd)} (${morningHoursToAllocate}h)`);
             
             await pool.execute(
-              `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime)
-               VALUES (?, ?, ?, ?, ?, ?)`,
+              `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+               VALUES (?, ?, ?, ?, ?, ?, 0)`,
               [taskId, userId, dateStr, morningHoursToAllocate, formatTime(morningStart), formatTime(morningEnd)]
             );
             
@@ -548,8 +570,8 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
             console.log(`  Task ${taskId} @ ${dateStr} (afternoon): ${formatTime(afternoonStart)}-${formatTime(afternoonEnd)} (${afternoonHoursToAllocate}h)`);
             
             await pool.execute(
-              `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime)
-               VALUES (?, ?, ?, ?, ?, ?)`,
+              `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+               VALUES (?, ?, ?, ?, ?, ?, 0)`,
               [taskId, userId, dateStr, afternoonHoursToAllocate, formatTime(afternoonStart), formatTime(afternoonEnd)]
             );
             
@@ -578,8 +600,8 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
         
         // Create allocation
         await pool.execute(
-          `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+           VALUES (?, ?, ?, ?, ?, ?, 0)`,
           [taskId, userId, dateStr, hoursNow, formatTime(actualStart), formatTime(actualEnd)]
         );
         
@@ -608,6 +630,9 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
 
     // THEN: Allocate the affected tasks after the new task (slots now have the new task's allocations)
     for (const taskData of affectedTasksData) {
+      // Skip the new task - it was already allocated above with the user-specified hours
+      if (taskData.TaskId === newTaskId) continue;
+      
       const remainingHours = parseFloat(taskData.AllocatedHoursFromDate) || 0;
       if (remainingHours <= 0) continue;
       
@@ -862,10 +887,11 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         a.date, 
         a.hours,
         a.startTime || '09:00',
-        a.endTime || '17:00'
+        a.endTime || '17:00',
+        0
       ]);
       await pool.query(
-        'INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime) VALUES ?',
+        'INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual) VALUES ?',
         [values]
       );
     }
@@ -1202,6 +1228,517 @@ router.get('/my-allocations', authenticateToken, async (req: AuthRequest, res: R
   } catch (error) {
     console.error('Error fetching my allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch allocations' });
+  }
+});
+
+/**
+ * @route   POST /api/task-allocations/manual
+ * @desc    Create a manual allocation for a task
+ * @access  Authenticated users with task assignment permissions
+ */
+router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskId, userId, allocationDate, allocatedHours } = req.body;
+
+    if (!taskId || !userId || !allocationDate || !allocatedHours) {
+      return res.status(400).json({
+        success: false,
+        message: 'TaskId, UserId, AllocationDate, and AllocatedHours are required'
+      });
+    }
+
+    // Verify task exists and get project info
+    const [tasks] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.Id, t.ProjectId, COALESCE(p.IsHobby, 0) as IsHobby
+       FROM Tasks t
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       WHERE t.Id = ?`,
+      [taskId]
+    );
+
+    if (tasks.length === 0) {
+      return res.status(404).json({ success: false, message: 'Task not found' });
+    }
+
+    const task = tasks[0];
+    const isHobby = task.IsHobby === 1;
+
+    // Get user's work configuration
+    const [users] = await pool.execute<RowDataPacket[]>(
+      `SELECT WorkHoursMonday, WorkHoursTuesday, WorkHoursWednesday, WorkHoursThursday,
+              WorkHoursFriday, WorkHoursSaturday, WorkHoursSunday,
+              WorkStartMonday, WorkStartTuesday, WorkStartWednesday, WorkStartThursday,
+              WorkStartFriday, WorkStartSaturday, WorkStartSunday,
+              HobbyHoursMonday, HobbyHoursTuesday, HobbyHoursWednesday, HobbyHoursThursday,
+              HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
+              HobbyStartMonday, HobbyStartTuesday, HobbyStartWednesday, HobbyStartThursday,
+              HobbyStartFriday, HobbyStartSaturday, HobbyStartSunday,
+              LunchTime, LunchDuration
+       FROM Users WHERE Id = ?`,
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = users[0];
+    const date = new Date(allocationDate);
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayOfWeek = date.getDay();
+    const dayName = dayNames[dayOfWeek];
+
+    // Get work hours for this day based on task type
+    const dailyCapacity = isHobby
+      ? parseFloat(user[`HobbyHours${dayName}`] || 0)
+      : parseFloat(user[`WorkHours${dayName}`] || 0);
+
+    if (dailyCapacity <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: `User has no ${isHobby ? 'hobby' : 'work'} hours configured for ${dayName}`
+      });
+    }
+
+    const workStart = isHobby
+      ? (user[`HobbyStart${dayName}`] || '19:00')
+      : (user[`WorkStart${dayName}`] || '09:00');
+
+    // Get existing allocations for this user on this date
+    const [existingAllocations] = await pool.execute<RowDataPacket[]>(
+      `SELECT ta.AllocatedHours, COALESCE(p.IsHobby, 0) as IsHobby
+       FROM TaskAllocations ta
+       INNER JOIN Tasks t ON ta.TaskId = t.Id
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       WHERE ta.UserId = ? AND ta.AllocationDate = ?`,
+      [userId, allocationDate]
+    );
+
+    // Calculate already allocated hours for the same task type
+    const allocatedHoursToday = existingAllocations
+      .filter((a: any) => (a.IsHobby === 1) === isHobby)
+      .reduce((sum: number, a: any) => sum + parseFloat(a.AllocatedHours || 0), 0);
+
+    const availableHours = dailyCapacity - allocatedHoursToday;
+
+    if (allocatedHours > availableHours) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient hours available. User has ${availableHours.toFixed(1)}h available for ${isHobby ? 'hobby' : 'work'} tasks on this date (capacity: ${dailyCapacity}h, allocated: ${allocatedHoursToday.toFixed(1)}h)`
+      });
+    }
+
+    // Get lunch settings (only for work tasks)
+    const effectiveLunchDuration = isHobby ? 0 : (typeof user.LunchDuration === 'number' && user.LunchDuration >= 0 ? user.LunchDuration : 60);
+    const lunchTimeRaw = user.LunchTime;
+    const lunchTime = (typeof lunchTimeRaw === 'string' && lunchTimeRaw.includes(':')) ? lunchTimeRaw : '13:00';
+    const [lunchHour, lunchMin] = lunchTime.split(':').map(Number);
+    const lunchStartMinutes = lunchHour * 60 + lunchMin;
+    const lunchEndMinutes = lunchStartMinutes + effectiveLunchDuration;
+
+    // Calculate work end time
+    const [startH, startM] = workStart.split(':').map(Number);
+    let workStartMinutes = startH * 60 + startM;
+    let workEndMinutes = workStartMinutes + dailyCapacity * 60;
+    if (!isHobby && effectiveLunchDuration > 0) {
+      workEndMinutes += effectiveLunchDuration;
+    }
+
+    // Find current slot position (where to start this allocation)
+    const [lastAllocation] = await pool.execute<RowDataPacket[]>(
+      `SELECT MAX(EndTime) as LastEndTime
+       FROM TaskAllocations ta
+       INNER JOIN Tasks t ON ta.TaskId = t.Id
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       WHERE ta.UserId = ? AND ta.AllocationDate = ? AND COALESCE(p.IsHobby, 0) = ?`,
+      [userId, allocationDate, isHobby ? 1 : 0]
+    );
+
+    let slotStart = workStartMinutes;
+    if (lastAllocation[0]?.LastEndTime) {
+      const lastEndTime = lastAllocation[0].LastEndTime;
+      const [endH, endM] = String(lastEndTime).split(':').map(Number);
+      slotStart = Math.max(slotStart, endH * 60 + endM);
+    }
+
+    // Skip lunch if we're at lunch time (only for work)
+    if (!isHobby && effectiveLunchDuration > 0 && slotStart >= lunchStartMinutes && slotStart < lunchEndMinutes) {
+      slotStart = lunchEndMinutes;
+    }
+
+    const formatTime = (mins: number) => {
+      return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+    };
+
+    const minutesToAllocate = allocatedHours * 60;
+
+    // Check if allocation crosses lunch - if so, split it (only for work)
+    if (!isHobby && effectiveLunchDuration > 0 && slotStart < lunchStartMinutes) {
+      const morningAvail = lunchStartMinutes - slotStart;
+
+      if (minutesToAllocate > morningAvail) {
+        // SPLIT: Create morning allocation
+        const morningHours = morningAvail / 60;
+        const morningStart = slotStart;
+        const morningEnd = lunchStartMinutes;
+
+        await pool.execute<ResultSetHeader>(
+          `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+           VALUES (?, ?, ?, ?, ?, ?, 1)`,
+          [taskId, userId, allocationDate, morningHours, formatTime(morningStart), formatTime(morningEnd)]
+        );
+
+        // Create afternoon allocation
+        const afternoonMinutes = minutesToAllocate - morningAvail;
+        const afternoonHours = afternoonMinutes / 60;
+        const afternoonStart = lunchEndMinutes;
+        const afternoonEnd = afternoonStart + afternoonMinutes;
+
+        await pool.execute<ResultSetHeader>(
+          `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+           VALUES (?, ?, ?, ?, ?, ?, 1)`,
+          [taskId, userId, allocationDate, afternoonHours, formatTime(afternoonStart), formatTime(afternoonEnd)]
+        );
+
+        // Update task's PlannedStartDate and PlannedEndDate
+        const [allAllocations] = await pool.execute<RowDataPacket[]>(
+          'SELECT DISTINCT AllocationDate FROM TaskAllocations WHERE TaskId = ? ORDER BY AllocationDate',
+          [taskId]
+        );
+        if (allAllocations.length > 0) {
+          const startDate = allAllocations[0].AllocationDate;
+          const endDate = allAllocations[allAllocations.length - 1].AllocationDate;
+          await pool.execute(
+            'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
+            [startDate, endDate, userId, taskId]
+          );
+        }
+
+        return res.json({ success: true, message: 'Manual allocation created (split across lunch break)' });
+      }
+    }
+
+    // Single allocation (doesn't cross lunch or is hobby)
+    const startTime = formatTime(slotStart);
+    const endTime = formatTime(slotStart + minutesToAllocate);
+
+    await pool.execute<ResultSetHeader>(
+      `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [taskId, userId, allocationDate, allocatedHours, startTime, endTime]
+    );
+
+    // Update task's PlannedStartDate and PlannedEndDate
+    const [allAllocations] = await pool.execute<RowDataPacket[]>(
+      'SELECT DISTINCT AllocationDate FROM TaskAllocations WHERE TaskId = ? ORDER BY AllocationDate',
+      [taskId]
+    );
+    if (allAllocations.length > 0) {
+      const startDate = allAllocations[0].AllocationDate;
+      const endDate = allAllocations[allAllocations.length - 1].AllocationDate;
+      await pool.execute(
+        'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
+        [startDate, endDate, userId, taskId]
+      );
+    }
+
+    res.json({ success: true, message: 'Manual allocation created successfully' });
+  } catch (error) {
+    console.error('Error creating manual allocation:', error);
+    res.status(500).json({ success: false, message: 'Failed to create manual allocation' });
+  }
+});
+
+/**
+ * @route   PUT /api/task-allocations/manual/:id
+ * @desc    Update a manual allocation
+ * @access  Authenticated users with task assignment permissions
+ */
+router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { allocatedHours } = req.body;
+
+    if (!allocatedHours) {
+      return res.status(400).json({
+        success: false,
+        message: 'AllocatedHours is required'
+      });
+    }
+
+    // Get the allocation details
+    const [allocations] = await pool.execute<RowDataPacket[]>(
+      `SELECT ta.Id, ta.IsManual, ta.TaskId, ta.UserId, ta.AllocationDate,
+              COALESCE(p.IsHobby, 0) as IsHobby
+       FROM TaskAllocations ta
+       INNER JOIN Tasks t ON ta.TaskId = t.Id
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       WHERE ta.Id = ?`,
+      [id]
+    );
+
+    if (allocations.length === 0) {
+      return res.status(404).json({ success: false, message: 'Allocation not found' });
+    }
+
+    if (allocations[0].IsManual !== 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Only manual allocations can be edited this way'
+      });
+    }
+
+    const allocation = allocations[0];
+    const { TaskId, UserId, AllocationDate } = allocation;
+
+    // Delete all manual allocations for this task/user/date
+    // (there might be 2 if it was split across lunch)
+    await pool.execute<ResultSetHeader>(
+      'DELETE FROM TaskAllocations WHERE TaskId = ? AND UserId = ? AND AllocationDate = ? AND IsManual = 1',
+      [TaskId, UserId, AllocationDate]
+    );
+
+    // Now recreate using the same logic as POST
+    // This will recalculate start/end times and split if needed
+    const isHobby = allocation.IsHobby === 1;
+
+    // Get user's work configuration
+    const [users] = await pool.execute<RowDataPacket[]>(
+      `SELECT WorkHoursMonday, WorkHoursTuesday, WorkHoursWednesday, WorkHoursThursday,
+              WorkHoursFriday, WorkHoursSaturday, WorkHoursSunday,
+              WorkStartMonday, WorkStartTuesday, WorkStartWednesday, WorkStartThursday,
+              WorkStartFriday, WorkStartSaturday, WorkStartSunday,
+              HobbyHoursMonday, HobbyHoursTuesday, HobbyHoursWednesday, HobbyHoursThursday,
+              HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
+              HobbyStartMonday, HobbyStartTuesday, HobbyStartWednesday, HobbyStartThursday,
+              HobbyStartFriday, HobbyStartSaturday, HobbyStartSunday,
+              LunchTime, LunchDuration
+       FROM Users WHERE Id = ?`,
+      [UserId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = users[0];
+    const date = new Date(AllocationDate);
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayOfWeek = date.getDay();
+    const dayName = dayNames[dayOfWeek];
+
+    const dailyCapacity = isHobby
+      ? parseFloat(user[`HobbyHours${dayName}`] || 0)
+      : parseFloat(user[`WorkHours${dayName}`] || 0);
+
+    if (dailyCapacity <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: `User has no ${isHobby ? 'hobby' : 'work'} hours configured for ${dayName}`
+      });
+    }
+
+    const workStart = isHobby
+      ? (user[`HobbyStart${dayName}`] || '19:00')
+      : (user[`WorkStart${dayName}`] || '09:00');
+
+    // Get existing allocations (excluding the ones we just deleted)
+    const [existingAllocations] = await pool.execute<RowDataPacket[]>(
+      `SELECT ta.AllocatedHours, COALESCE(p.IsHobby, 0) as IsHobby
+       FROM TaskAllocations ta
+       INNER JOIN Tasks t ON ta.TaskId = t.Id
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       WHERE ta.UserId = ? AND ta.AllocationDate = ?`,
+      [UserId, AllocationDate]
+    );
+
+    const allocatedHoursToday = existingAllocations
+      .filter((a: any) => (a.IsHobby === 1) === isHobby)
+      .reduce((sum: number, a: any) => sum + parseFloat(a.AllocatedHours || 0), 0);
+
+    const availableHours = dailyCapacity - allocatedHoursToday;
+
+    if (allocatedHours > availableHours) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient hours available. User has ${availableHours.toFixed(1)}h available for ${isHobby ? 'hobby' : 'work'} tasks on this date (capacity: ${dailyCapacity}h, allocated: ${allocatedHoursToday.toFixed(1)}h)`
+      });
+    }
+
+    const effectiveLunchDuration = isHobby ? 0 : (typeof user.LunchDuration === 'number' && user.LunchDuration >= 0 ? user.LunchDuration : 60);
+    const lunchTimeRaw = user.LunchTime;
+    const lunchTime = (typeof lunchTimeRaw === 'string' && lunchTimeRaw.includes(':')) ? lunchTimeRaw : '13:00';
+    const [lunchHour, lunchMin] = lunchTime.split(':').map(Number);
+    const lunchStartMinutes = lunchHour * 60 + lunchMin;
+    const lunchEndMinutes = lunchStartMinutes + effectiveLunchDuration;
+
+    const [startH, startM] = workStart.split(':').map(Number);
+    let workStartMinutes = startH * 60 + startM;
+    let workEndMinutes = workStartMinutes + dailyCapacity * 60;
+    if (!isHobby && effectiveLunchDuration > 0) {
+      workEndMinutes += effectiveLunchDuration;
+    }
+
+    const [lastAllocation] = await pool.execute<RowDataPacket[]>(
+      `SELECT MAX(EndTime) as LastEndTime
+       FROM TaskAllocations ta
+       INNER JOIN Tasks t ON ta.TaskId = t.Id
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       WHERE ta.UserId = ? AND ta.AllocationDate = ? AND COALESCE(p.IsHobby, 0) = ?`,
+      [UserId, AllocationDate, isHobby ? 1 : 0]
+    );
+
+    let slotStart = workStartMinutes;
+    if (lastAllocation[0]?.LastEndTime) {
+      const lastEndTime = lastAllocation[0].LastEndTime;
+      const [endH, endM] = String(lastEndTime).split(':').map(Number);
+      slotStart = Math.max(slotStart, endH * 60 + endM);
+    }
+
+    if (!isHobby && effectiveLunchDuration > 0 && slotStart >= lunchStartMinutes && slotStart < lunchEndMinutes) {
+      slotStart = lunchEndMinutes;
+    }
+
+    const formatTime = (mins: number) => {
+      return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+    };
+
+    const minutesToAllocate = allocatedHours * 60;
+
+    if (!isHobby && effectiveLunchDuration > 0 && slotStart < lunchStartMinutes) {
+      const morningAvail = lunchStartMinutes - slotStart;
+
+      if (minutesToAllocate > morningAvail) {
+        const morningHours = morningAvail / 60;
+        const morningStart = slotStart;
+        const morningEnd = lunchStartMinutes;
+
+        await pool.execute<ResultSetHeader>(
+          `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+           VALUES (?, ?, ?, ?, ?, ?, 1)`,
+          [TaskId, UserId, AllocationDate, morningHours, formatTime(morningStart), formatTime(morningEnd)]
+        );
+
+        const afternoonMinutes = minutesToAllocate - morningAvail;
+        const afternoonHours = afternoonMinutes / 60;
+        const afternoonStart = lunchEndMinutes;
+        const afternoonEnd = afternoonStart + afternoonMinutes;
+
+        await pool.execute<ResultSetHeader>(
+          `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+           VALUES (?, ?, ?, ?, ?, ?, 1)`,
+          [TaskId, UserId, AllocationDate, afternoonHours, formatTime(afternoonStart), formatTime(afternoonEnd)]
+        );
+
+        // Update task's PlannedStartDate and PlannedEndDate
+        const [allAllocations] = await pool.execute<RowDataPacket[]>(
+          'SELECT DISTINCT AllocationDate FROM TaskAllocations WHERE TaskId = ? ORDER BY AllocationDate',
+          [TaskId]
+        );
+        if (allAllocations.length > 0) {
+          const startDate = allAllocations[0].AllocationDate;
+          const endDate = allAllocations[allAllocations.length - 1].AllocationDate;
+          await pool.execute(
+            'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
+            [startDate, endDate, UserId, TaskId]
+          );
+        }
+
+        return res.json({ success: true, message: 'Manual allocation updated (split across lunch break)' });
+      }
+    }
+
+    const startTime = formatTime(slotStart);
+    const endTime = formatTime(slotStart + minutesToAllocate);
+
+    await pool.execute<ResultSetHeader>(
+      `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [TaskId, UserId, AllocationDate, allocatedHours, startTime, endTime]
+    );
+
+    // Update task's PlannedStartDate and PlannedEndDate
+    const [allAllocations] = await pool.execute<RowDataPacket[]>(
+      'SELECT DISTINCT AllocationDate FROM TaskAllocations WHERE TaskId = ? ORDER BY AllocationDate',
+      [TaskId]
+    );
+    if (allAllocations.length > 0) {
+      const startDate = allAllocations[0].AllocationDate;
+      const endDate = allAllocations[allAllocations.length - 1].AllocationDate;
+      await pool.execute(
+        'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
+        [startDate, endDate, UserId, TaskId]
+      );
+    }
+
+    res.json({ success: true, message: 'Manual allocation updated successfully' });
+  } catch (error) {
+    console.error('Error updating manual allocation:', error);
+    res.status(500).json({ success: false, message: 'Failed to update manual allocation' });
+  }
+});
+
+/**
+ * @route   DELETE /api/task-allocations/manual/:id
+ * @desc    Delete a manual allocation
+ * @access  Authenticated users with task assignment permissions
+ */
+router.delete('/manual/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Verify it's a manual allocation and get task ID
+    const [allocations] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id, IsManual, TaskId FROM TaskAllocations WHERE Id = ?',
+      [id]
+    );
+
+    if (allocations.length === 0) {
+      return res.status(404).json({ success: false, message: 'Allocation not found' });
+    }
+
+    if (allocations[0].IsManual !== 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Only manual allocations can be deleted this way'
+      });
+    }
+
+    const taskId = allocations[0].TaskId;
+
+    // Delete allocation
+    await pool.execute<ResultSetHeader>(
+      'DELETE FROM TaskAllocations WHERE Id = ?',
+      [id]
+    );
+
+    // Update task's PlannedStartDate and PlannedEndDate
+    const [remainingAllocations] = await pool.execute<RowDataPacket[]>(
+      'SELECT DISTINCT AllocationDate, UserId FROM TaskAllocations WHERE TaskId = ? ORDER BY AllocationDate',
+      [taskId]
+    );
+
+    if (remainingAllocations.length > 0) {
+      const startDate = remainingAllocations[0].AllocationDate;
+      const endDate = remainingAllocations[remainingAllocations.length - 1].AllocationDate;
+      // Get the most recent user from remaining allocations
+      const assignedUserId = remainingAllocations[remainingAllocations.length - 1].UserId;
+      await pool.execute(
+        'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
+        [startDate, endDate, assignedUserId, taskId]
+      );
+    } else {
+      // No more allocations - clear planned dates and assignment
+      await pool.execute(
+        'UPDATE Tasks SET PlannedStartDate = NULL, PlannedEndDate = NULL, AssignedTo = NULL WHERE Id = ?',
+        [taskId]
+      );
+    }
+
+    res.json({ success: true, message: 'Manual allocation deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting manual allocation:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete manual allocation' });
   }
 });
 
