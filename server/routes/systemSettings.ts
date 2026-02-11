@@ -42,6 +42,117 @@ router.get('/public', async (req, res: Response) => {
   }
 });
 
+// Get public frontpage content (no auth required)
+router.get('/public-frontpage', async (req, res: Response) => {
+  try {
+    const [settings] = await pool.execute<RowDataPacket[]>(
+      'SELECT SettingValue FROM SystemSettings WHERE SettingKey = ?',
+      ['frontpage_content']
+    );
+
+    const content = settings.length > 0 ? settings[0].SettingValue : null;
+
+    res.json({ success: true, content });
+  } catch (error) {
+    console.error('Get public frontpage content error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch frontpage content' 
+    });
+  }
+});
+
+/**
+ * @route   GET /api/system-settings/frontpage
+ * @desc    Get frontpage HTML content
+ * @access  Admin only
+ */
+router.get('/frontpage', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    
+    // Check if user is admin
+    const [users] = await pool.execute<RowDataPacket[]>(
+      'SELECT IsAdmin FROM Users WHERE Id = ?',
+      [userId]
+    );
+
+    const isAdmin = users.length > 0 && (users[0].IsAdmin === 1 || users[0].IsAdmin === true);
+    
+    if (!isAdmin) {
+      console.log('Frontpage access denied. User:', userId, 'IsAdmin:', users.length > 0 ? users[0].IsAdmin : 'not found');
+      return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+
+    // Get frontpage content from SystemSettings
+    const [settings] = await pool.execute<RowDataPacket[]>(
+      'SELECT SettingValue FROM SystemSettings WHERE SettingKey = ?',
+      ['frontpage_content']
+    );
+
+    const content = settings.length > 0 ? settings[0].SettingValue : null;
+
+    res.json({ success: true, content });
+  } catch (error) {
+    console.error('Error fetching frontpage content:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch frontpage content' });
+  }
+});
+
+/**
+ * @route   PUT /api/system-settings/frontpage
+ * @desc    Update frontpage HTML content
+ * @access  Admin only
+ */
+router.put('/frontpage', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { content } = req.body;
+
+    if (content === undefined) {
+      return res.status(400).json({ success: false, message: 'Content is required' });
+    }
+
+    // Check if user is admin
+    const [users] = await pool.execute<RowDataPacket[]>(
+      'SELECT IsAdmin FROM Users WHERE Id = ?',
+      [userId]
+    );
+
+    const isAdmin = users.length > 0 && (users[0].IsAdmin === 1 || users[0].IsAdmin === true);
+    
+    if (!isAdmin) {
+      console.log('Frontpage update denied. User:', userId, 'IsAdmin:', users.length > 0 ? users[0].IsAdmin : 'not found');
+      return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+
+    // Check if setting exists
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT SettingKey FROM SystemSettings WHERE SettingKey = ?',
+      ['frontpage_content']
+    );
+
+    if (existing.length > 0) {
+      // Update existing setting
+      await pool.execute<ResultSetHeader>(
+        'UPDATE SystemSettings SET SettingValue = ? WHERE SettingKey = ?',
+        [content, 'frontpage_content']
+      );
+    } else {
+      // Insert new setting
+      await pool.execute<ResultSetHeader>(
+        'INSERT INTO SystemSettings (SettingKey, SettingValue) VALUES (?, ?)',
+        ['frontpage_content', content]
+      );
+    }
+
+    res.json({ success: true, message: 'Frontpage content updated successfully' });
+  } catch (error) {
+    console.error('Error updating frontpage content:', error);
+    res.status(500).json({ success: false, message: 'Failed to update frontpage content' });
+  }
+});
+
 // Get all system settings (admin only)
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -143,3 +254,4 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 });
 
 export default router;
+

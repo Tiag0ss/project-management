@@ -8,8 +8,9 @@ import UsersManagement from '@/components/admin/UsersManagement';
 import RolePermissionsManagement from '@/components/admin/RolePermissionsManagement';
 import SystemSettings from '@/components/admin/SystemSettings';
 import ActivityLogsManagement from '@/components/admin/ActivityLogsManagement';
+import FrontpageEditor from '@/components/admin/FrontpageEditor';
 
-type AdminTab = 'users' | 'permissions' | 'settings' | 'logs';
+type AdminTab = 'users' | 'permissions' | 'settings' | 'logs' | 'frontpage';
 
 export default function AdministrationPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>('users');
@@ -93,6 +94,16 @@ export default function AdministrationPage() {
             >
               📋 Activity Logs
             </button>
+            <button
+              onClick={() => setActiveTab('frontpage')}
+              className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'frontpage'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+              }`}
+            >
+              🏠 Frontpage
+            </button>
           </nav>
         </div>
 
@@ -105,6 +116,8 @@ export default function AdministrationPage() {
           {activeTab === 'settings' && <SystemSettings />}
           
           {activeTab === 'logs' && <ActivityLogsManagement />}
+          
+          {activeTab === 'frontpage' && <FrontpageEditor />}
         </div>
       </div>
     </div>

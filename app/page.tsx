@@ -16,6 +16,8 @@ export default function Home() {
   const [allowPublicRegistration, setAllowPublicRegistration] = useState(false);
   const [registrationType, setRegistrationType] = useState<'internal' | 'customer'>('internal');
   const [isCheckingInstall, setIsCheckingInstall] = useState(true);
+  const [customFrontpage, setCustomFrontpage] = useState<string | null>(null);
+  const [isLoadingFrontpage, setIsLoadingFrontpage] = useState(true);
 
   const loadStats = async () => {
     try {
@@ -70,13 +72,34 @@ export default function Home() {
     setIsCheckingInstall(false);
     loadStats();
     checkRegistrationSettings();
+    loadCustomFrontpage();
+  };
+
+  const loadCustomFrontpage = async () => {
+    setIsLoadingFrontpage(true);
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/system-settings/public-frontpage`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.content) {
+          setCustomFrontpage(data.content);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load custom frontpage:', err);
+    } finally {
+      setIsLoadingFrontpage(false);
+    }
   };
 
   useEffect(() => {
     checkInstallStatus();
   }, []);
 
-  if (isCheckingInstall) {
+  if (isCheckingInstall || isLoadingFrontpage) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white dark:bg-gray-900">
         <div className="text-gray-400 text-lg">Loading...</div>
@@ -84,6 +107,14 @@ export default function Home() {
     );
   }
 
+  // If custom frontpage exists, render it
+  if (customFrontpage) {
+    return (
+      <div dangerouslySetInnerHTML={{ __html: customFrontpage }} />
+    );
+  }
+
+  // Otherwise, render default frontpage
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
       {/* Navigation */}
