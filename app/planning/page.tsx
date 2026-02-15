@@ -13,6 +13,7 @@ import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import Navbar from '@/components/Navbar';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
+import SearchableSelect from '@/components/SearchableSelect';
 
 // Week days constant - reused throughout the component
 const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -3404,21 +3405,7 @@ export default function PlanningPage() {
                   />
                 </div>
               </div>
-              <div className="flex justify-between items-center">
-                <button
-                  onClick={() => setManualAllocationModal({
-                    show: true,
-                    allocationDate: '',
-                    allocatedHours: '',
-                    startTime: '09:00',
-                    endTime: '17:00',
-                    mode: 'add'
-                  })}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <span>➕</span>
-                  Add Manual Allocation
-                </button>
+              <div className="flex justify-end items-center">
                 <button
                   onClick={() => setAllocationFilters({ startDate: '', endDate: '', userId: '', projectId: '', taskName: '' })}
                   className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
@@ -3912,21 +3899,19 @@ export default function PlanningPage() {
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                           Task
                         </label>
-                        <select
-                          value={manualAllocationModal.taskId || ''}
-                          onChange={(e) => setManualAllocationModal(prev => ({ ...prev, taskId: parseInt(e.target.value) }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Select Task</option>
-                          {tasks.map(t => {
+                        <SearchableSelect
+                          value={manualAllocationModal.taskId ? manualAllocationModal.taskId.toString() : ''}
+                          onChange={(value) => setManualAllocationModal(prev => ({ ...prev, taskId: value ? parseInt(value) : undefined }))}
+                          options={tasks.map(t => {
                             const project = projects.find(p => p.Id === t.ProjectId);
-                            return (
-                              <option key={t.Id} value={t.Id}>
-                                {project?.ProjectName} - {t.TaskName}
-                              </option>
-                            );
+                            return {
+                              value: t.Id,
+                              label: `${project?.ProjectName} - ${t.TaskName}`
+                            };
                           })}
-                        </select>
+                          placeholder="Select Task"
+                          emptyText="Select Task"
+                        />
                       </div>
 
                       <div>

@@ -54,6 +54,18 @@ interface Project {
   ProjectName: string;
 }
 
+interface Customer {
+  Id: number;
+  Name: string;
+}
+
+interface UserOption {
+  Id: number;
+  Username: string;
+  FirstName: string | null;
+  LastName: string | null;
+}
+
 interface Stats {
   total: number;
   open: number;
@@ -77,6 +89,8 @@ export default function TicketsPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [users, setUsers] = useState<UserOption[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -86,12 +100,22 @@ export default function TicketsPage() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
+  const [filterAssignee, setFilterAssignee] = useState('');
+  const [filterDeveloper, setFilterDeveloper] = useState('');
+  const [filterCustomer, setFilterCustomer] = useState('');
+  const [filterCreatedFrom, setFilterCreatedFrom] = useState('');
+  const [filterCreatedTo, setFilterCreatedTo] = useState('');
+  const [filterScheduledFrom, setFilterScheduledFrom] = useState('');
+  const [filterScheduledTo, setFilterScheduledTo] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showMyTicketsOnly, setShowMyTicketsOnly] = useState(true);
+  const [showClosed, setShowClosed] = useState(false);
   
   // Create Modal
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState({
     organizationId: '',
+    customerId: '',
     projectId: '',
     title: '',
     description: '',
@@ -111,7 +135,7 @@ export default function TicketsPage() {
     if (token) {
       loadData();
     }
-  }, [token, filterOrg, filterStatus, filterPriority, filterCategory, searchQuery]);
+  }, [token, filterOrg, filterStatus, filterPriority, filterCategory, filterAssignee, filterDeveloper, filterCustomer, filterCreatedFrom, filterCreatedTo, filterScheduledFrom, filterScheduledTo, searchQuery, showClosed]);
 
   const loadData = async () => {
     setLoading(true);
@@ -122,7 +146,15 @@ export default function TicketsPage() {
       if (filterStatus) params.append('status', filterStatus);
       if (filterPriority) params.append('priority', filterPriority);
       if (filterCategory) params.append('category', filterCategory);
+      if (filterAssignee) params.append('assignedTo', filterAssignee);
+      if (filterDeveloper) params.append('developer', filterDeveloper);
+      if (filterCustomer) params.append('customer', filterCustomer);
+      if (filterCreatedFrom) params.append('createdFrom', filterCreatedFrom);
+      if (filterCreatedTo) params.append('createdTo', filterCreatedTo);
+      if (filterScheduledFrom) params.append('scheduledFrom', filterScheduledFrom);
+      if (filterScheduledTo) params.append('scheduledTo', filterScheduledTo);
       if (searchQuery) params.append('search', searchQuery);
+      if (!showClosed) params.append('excludeClosed', 'true');
       
       const ticketsRes = await fetch(
         `${getApiUrl()}/api/tickets?${params}`,
@@ -158,6 +190,33 @@ export default function TicketsPage() {
         // Auto-select first org if only one available
         if ((data.organizations || []).length === 1 && !createForm.organizationId) {
           setCreateForm(prev => ({ ...prev, organizationId: data.organizations[0].Id.toString() }));
+        }
+      }
+
+      // Load users for assignee/developer filters
+      if (!isCustomerUser) {
+        const usersRes = await fetch(
+          `${getApiUrl()}/api/users`,
+          { headers: { 'Authorization': `Bearer ${token}` } }
+        );
+        if (usersRes.ok) {
+          const data = await usersRes.json();
+          setUsers(data.users || []);
+        }
+      }
+
+      // Load customers for customer filter
+      if (!isCustomerUser) {
+        const customersRes = await fetch(
+          `${getApiUrl()}/api/customers`,
+          { headers: { 'Authorization': `Bearer ${token}` } }
+        );
+        if (customersRes.ok) {
+          const data = await customersRes.json();
+          console.log('Customers data received:', data);
+          setCustomers(data.data || []);
+        } else {
+          console.error('Failed to load customers, status:', customersRes.status);
         }
       }
     } catch (err) {
@@ -205,6 +264,12 @@ export default function TicketsPage() {
       return;
     }
 
+    // Customer is required for non-customer users
+    if (!isCustomerUser && !createForm.customerId) {
+      setError('Customer is required');
+      return;
+    }
+
     setCreating(true);
     setError('');
 
@@ -219,6 +284,7 @@ export default function TicketsPage() {
           },
           body: JSON.stringify({
             organizationId: parseInt(orgId),
+            customerId: createForm.customerId ? parseInt(createForm.customerId) : null,
             projectId: createForm.projectId ? parseInt(createForm.projectId) : null,
             title: createForm.title.trim(),
             description: createForm.description || null,
@@ -278,6 +344,7 @@ export default function TicketsPage() {
       setShowCreateModal(false);
       setCreateForm({
         organizationId: '',
+        customerId: '',
         projectId: '',
         title: '',
         description: '',
@@ -413,89 +480,232 @@ export default function TicketsPage() {
         )}
 
         {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
-          <div className="flex flex-wrap gap-4">
-            {/* Search */}
-            <div className="flex-1 min-w-[200px]">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6 mb-6">
+          <div className="space-y-4">
+            {/* Search Row */}
+            <div className="w-full">
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Search</label>
               <div className="relative">
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search tickets..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  placeholder="Search by ticket number, title, or description..."
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                 />
-                <svg className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="absolute left-3 top-3 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
               </div>
             </div>
 
-            {/* Organization Filter (not for customer users) */}
-            {!isCustomerUser && (
+            {/* Main Filters Row */}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Filters</label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+
+              {/* Organization Filter (not for customer users) */}
+              {!isCustomerUser && (
+                <select
+                  value={filterOrg}
+                  onChange={(e) => setFilterOrg(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                >
+                  <option value="">All Organizations</option>
+                  {organizations.map(org => (
+                    <option key={org.Id} value={org.Id}>{org.Name}</option>
+                  ))}
+                </select>
+              )}
+
+              {/* Status Filter */}
               <select
-                value={filterOrg}
-                onChange={(e) => setFilterOrg(e.target.value)}
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               >
-                <option value="">All Organizations</option>
-                {organizations.map(org => (
-                  <option key={org.Id} value={org.Id}>{org.Name}</option>
+                <option value="">All Statuses</option>
+                {STATUSES.map(status => (
+                  <option key={status} value={status}>{status}</option>
                 ))}
               </select>
-            )}
 
-            {/* Status Filter */}
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All Statuses</option>
-              {STATUSES.map(status => (
-                <option key={status} value={status}>{status}</option>
-              ))}
-            </select>
-
-            {/* Priority Filter */}
-            <select
-              value={filterPriority}
-              onChange={(e) => setFilterPriority(e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All Priorities</option>
-              {PRIORITIES.map(priority => (
-                <option key={priority} value={priority}>{priority}</option>
-              ))}
-            </select>
-
-            {/* Category Filter */}
-            <select
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All Categories</option>
-              {CATEGORIES.map(category => (
-                <option key={category} value={category}>{category}</option>
-              ))}
-            </select>
-
-            {/* Clear Filters */}
-            {(filterOrg || filterStatus || filterPriority || filterCategory || searchQuery) && (
-              <button
-                onClick={() => {
-                  setFilterOrg('');
-                  setFilterStatus('');
-                  setFilterPriority('');
-                  setFilterCategory('');
-                  setSearchQuery('');
-                }}
-                className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+              {/* Priority Filter */}
+              <select
+                value={filterPriority}
+                onChange={(e) => setFilterPriority(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               >
-                Clear filters
-              </button>
+                <option value="">All Priorities</option>
+                {PRIORITIES.map(priority => (
+                  <option key={priority} value={priority}>{priority}</option>
+                ))}
+              </select>
+
+              {/* Category Filter */}
+              <select
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+              >
+                <option value="">All Categories</option>
+                {CATEGORIES.map(category => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
+            </div>
+            </div>
+
+            {/* People & Customer Filters Row */}
+            {!isCustomerUser && (
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">People & Customers</label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Assignee Filter */}
+                  <div>
+                    <SearchableSelect
+                      options={[
+                        { value: '', label: 'All Assignees' },
+                        ...users.map(u => ({
+                          value: u.Id.toString(),
+                          label: u.FirstName && u.LastName ? `${u.FirstName} ${u.LastName}` : u.Username
+                        }))
+                      ]}
+                      value={filterAssignee}
+                      onChange={setFilterAssignee}
+                      placeholder="All Assignees"
+                    />
+                  </div>
+
+                  {/* Developer Filter */}
+                  <div>
+                    <SearchableSelect
+                      options={[
+                        { value: '', label: 'All Developers' },
+                        ...users.map(u => ({
+                          value: u.Id.toString(),
+                          label: u.FirstName && u.LastName ? `${u.FirstName} ${u.LastName}` : u.Username
+                        }))
+                      ]}
+                      value={filterDeveloper}
+                      onChange={setFilterDeveloper}
+                      placeholder="All Developers"
+                    />
+                  </div>
+
+                  {/* Customer Filter */}
+                  <div>
+                    <SearchableSelect
+                      options={[
+                        { value: '', label: 'All Customers' },
+                        ...customers.map(c => ({
+                          value: c.Id.toString(),
+                          label: c.Name
+                        }))
+                      ]}
+                      value={filterCustomer}
+                      onChange={setFilterCustomer}
+                      placeholder="All Customers"
+                    />
+                  </div>
+                </div>
+              </div>
             )}
+
+            {/* Date Filters Row */}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Date Ranges</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-200 dark:border-gray-600">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap min-w-[80px]">Created:</label>
+                  <input
+                    type="date"
+                    value={filterCreatedFrom}
+                    onChange={(e) => setFilterCreatedFrom(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  />
+                  <span className="text-gray-400 text-sm">to</span>
+                  <input
+                    type="date"
+                    value={filterCreatedTo}
+                    onChange={(e) => setFilterCreatedTo(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-200 dark:border-gray-600">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap min-w-[80px]">Scheduled:</label>
+                  <input
+                    type="date"
+                    value={filterScheduledFrom}
+                    onChange={(e) => setFilterScheduledFrom(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  />
+                  <span className="text-gray-400 text-sm">to</span>
+                  <input
+                    type="date"
+                    value={filterScheduledTo}
+                    onChange={(e) => setFilterScheduledTo(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Checkboxes and Actions Row */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex flex-wrap items-center gap-3">
+                {/* My Tickets Only Filter */}
+                <label className="flex items-center gap-2 px-4 py-2.5 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-400 dark:hover:border-blue-500 transition-all">
+                  <input
+                    type="checkbox"
+                    checked={showMyTicketsOnly}
+                    onChange={(e) => setShowMyTicketsOnly(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                  />
+                  <span className="text-sm font-medium">My Tickets</span>
+                </label>
+
+                {/* Show Closed Filter */}
+                <label className="flex items-center gap-2 px-4 py-2.5 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600/50 hover:border-gray-400 dark:hover:border-gray-500 transition-all">
+                  <input
+                    type="checkbox"
+                    checked={showClosed}
+                    onChange={(e) => setShowClosed(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                  />
+                  <span className="text-sm font-medium">Show Closed</span>
+                </label>
+              </div>
+
+              {/* Clear Filters */}
+              {(filterOrg || filterStatus || filterPriority || filterCategory || filterAssignee || filterDeveloper || filterCustomer || filterCreatedFrom || filterCreatedTo || filterScheduledFrom || filterScheduledTo || searchQuery || !showMyTicketsOnly || showClosed) && (
+                <button
+                  onClick={() => {
+                    setFilterOrg('');
+                    setFilterStatus('');
+                    setFilterPriority('');
+                    setFilterCategory('');
+                    setFilterAssignee('');
+                    setFilterDeveloper('');
+                    setFilterCustomer('');
+                    setFilterCreatedFrom('');
+                    setFilterCreatedTo('');
+                    setFilterScheduledFrom('');
+                    setFilterScheduledTo('');
+                    setSearchQuery('');
+                    setShowMyTicketsOnly(true);
+                    setShowClosed(false);
+                  }}
+                  className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium shadow-sm hover:shadow-md flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Clear All Filters
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -513,7 +723,33 @@ export default function TicketsPage() {
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
               Loading tickets...
             </div>
-          ) : tickets.length === 0 ? (
+          ) : (() => {
+            // Filter tickets for "My Tickets" logic
+            const filteredTickets = showMyTicketsOnly && user ? tickets.filter(ticket => {
+              const statusLower = ticket.Status.toLowerCase();
+              
+              // Open, Scheduled, In Progress - check AssignedToUserId
+              if (statusLower === 'open' || statusLower === 'scheduled' || statusLower === 'in progress') {
+                return ticket.AssignedToUserId === user.id;
+              }
+              
+              // With Developer - check DeveloperUserId
+              if (statusLower === 'with developer') {
+                return ticket.DeveloperUserId === user.id;
+              }
+              
+              // Waiting Response - check CreatedByUserId
+              if (statusLower === 'waiting response') {
+                return ticket.CreatedByUserId === user.id;
+              }
+              
+              // For other statuses (Resolved, Closed), show if created by or assigned to user
+              return ticket.CreatedByUserId === user.id || 
+                     ticket.AssignedToUserId === user.id || 
+                     ticket.DeveloperUserId === user.id;
+            }) : tickets;
+            
+            return filteredTickets.length === 0 ? (
             <div className="p-8 text-center">
               <div className="text-4xl mb-4">🎫</div>
               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No tickets found</h3>
@@ -536,7 +772,7 @@ export default function TicketsPage() {
             </div>
           ) : (
             <div className="divide-y divide-gray-200 dark:divide-gray-700">
-              {tickets.map((ticket) => (
+              {filteredTickets.map((ticket) => (
                 <div
                   key={ticket.Id}
                   onClick={() => router.push(`/tickets/${ticket.Id}`)}
@@ -629,7 +865,8 @@ export default function TicketsPage() {
                 </div>
               ))}
             </div>
-          )}
+          );
+          })()}
         </div>
       </main>
 
@@ -676,6 +913,22 @@ export default function TicketsPage() {
                         options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
                         placeholder="Select Organization"
                         emptyText="Select Organization"
+                      />
+                    </div>
+                  )}
+
+                  {/* Customer (not for customer users) */}
+                  {!isCustomerUser && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Customer <span className="text-red-500">*</span>
+                      </label>
+                      <SearchableSelect
+                        value={createForm.customerId}
+                        onChange={(value) => setCreateForm(prev => ({ ...prev, customerId: value }))}
+                        options={customers.map(c => ({ value: c.Id.toString(), label: c.Name }))}
+                        placeholder="Select Customer"
+                        emptyText="Select Customer"
                       />
                     </div>
                   )}

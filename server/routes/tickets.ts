@@ -43,7 +43,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const customerId = req.user?.customerId;
-    const { organizationId, status, priority, category, assignedTo, search } = req.query;
+    const { organizationId, status, priority, category, assignedTo, developer, customer, search, excludeClosed, createdFrom, createdTo, scheduledFrom, scheduledTo } = req.query;
 
     let query = `
       SELECT 
@@ -109,10 +109,44 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       params.push(assignedTo);
     }
 
+    if (developer) {
+      query += ` AND t.DeveloperUserId = ?`;
+      params.push(developer);
+    }
+
+    if (customer) {
+      query += ` AND t.CustomerId = ?`;
+      params.push(customer);
+    }
+
     if (search) {
       query += ` AND (t.Title LIKE ? OR t.TicketNumber LIKE ? OR t.Description LIKE ?)`;
       const searchTerm = `%${search}%`;
       params.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    if (excludeClosed === 'true') {
+      query += ` AND t.Status NOT IN ('Resolved', 'Closed')`;
+    }
+
+    if (createdFrom) {
+      query += ` AND DATE(t.CreatedAt) >= ?`;
+      params.push(createdFrom);
+    }
+
+    if (createdTo) {
+      query += ` AND DATE(t.CreatedAt) <= ?`;
+      params.push(createdTo);
+    }
+
+    if (scheduledFrom) {
+      query += ` AND DATE(t.ScheduledDate) >= ?`;
+      params.push(scheduledFrom);
+    }
+
+    if (scheduledTo) {
+      query += ` AND DATE(t.ScheduledDate) <= ?`;
+      params.push(scheduledTo);
     }
 
     query += ` ORDER BY t.CreatedAt DESC`;
@@ -245,7 +279,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const customerId = req.user?.customerId;
-    const { organizationId, projectId, title, description, priority, category } = req.body;
+    const { organizationId, projectId, title, description, priority, category, customerId: bodyCustomerId } = req.body;
 
     if (!organizationId || !title) {
       return res.status(400).json({ success: false, message: 'Organization and title are required' });
@@ -263,10 +297,10 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     
     const orgAbbr = orgResult[0].Abbreviation || `ORG${organizationId}`;
 
-    // Determine customer: from JWT (customer user) or from project
-    let ticketCustomerId = customerId || null;
+    // Determine customer: from JWT (customer user), from body, or from project
+    let ticketCustomerId = customerId || bodyCustomerId || null;
     
-    // If not customer user but has projectId, get customer from project
+    // If not customer user and no bodyCustomerId but has projectId, get customer from project
     if (!ticketCustomerId && projectId) {
       console.log('[Ticket Creation] Getting customer from projectId:', projectId);
       const [projectResult] = await pool.execute<RowDataPacket[]>(
@@ -277,6 +311,11 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         ticketCustomerId = projectResult[0].CustomerId;
         console.log('[Ticket Creation] Found customer from project:', ticketCustomerId);
       }
+    }
+
+    // Customer is required
+    if (!ticketCustomerId) {
+      return res.status(400).json({ success: false, message: 'Customer is required. Please select a customer or a project with a customer.' });
     }
 
     // If we have a customer, get default support user for auto-assignment
