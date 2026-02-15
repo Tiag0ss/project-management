@@ -1,0 +1,39 @@
+{
+  "TableName": "OrganizationGiteaIntegrations",
+  "PrimaryKeyFields": "OrganizationId",
+  "Fields": [
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "IsEnabled",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "GiteaUrl",
+      "DataType": "varchar(500)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "GiteaToken",
+      "DataType": "text",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

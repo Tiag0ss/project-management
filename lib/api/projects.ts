@@ -21,6 +21,8 @@ export interface Project {
   JiraBoardId?: string | null;
   GitHubOwner?: string | null;
   GitHubRepo?: string | null;
+  GiteaOwner?: string | null;
+  GiteaRepo?: string | null;
   CreatedBy: number;
   CreatorName?: string;
   CreatedAt: string;
@@ -45,6 +47,8 @@ export interface CreateProjectData {
   jiraBoardId?: string;
   gitHubOwner?: string;
   gitHubRepo?: string;
+  giteaOwner?: string;
+  giteaRepo?: string;
 }
 
 export interface UpdateProjectData {
@@ -58,6 +62,8 @@ export interface UpdateProjectData {
   jiraBoardId?: string | null;
   gitHubOwner?: string | null;
   gitHubRepo?: string | null;
+  giteaOwner?: string | null;
+  giteaRepo?: string | null;
 }
 
 export interface UpdateProjectDataWithId extends UpdateProjectData {

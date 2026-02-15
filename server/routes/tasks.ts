@@ -1767,4 +1767,204 @@ router.post('/import-from-github', authenticateToken, async (req: AuthRequest, r
   }
 });
 
+// Get Gitea issues already imported for a project
+router.get('/gitea-issues/:projectId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.user?.userId;
+
+    // Verify user has access to project
+    const [projects] = await pool.execute<RowDataPacket[]>(
+      `SELECT p.*, om.UserId 
+       FROM Projects p
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       WHERE p.Id = ? AND om.UserId = ?`,
+      [projectId, userId]
+    );
+
+    if (projects.length === 0) {
+      return res.status(403).json({ success: false, message: 'Project not found or access denied' });
+    }
+
+    // Get tasks with Gitea issue numbers
+    const [tasks] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id, TaskName, GiteaIssueNumber, ExternalUrl FROM Tasks WHERE ProjectId = ? AND GiteaIssueNumber IS NOT NULL',
+      [projectId]
+    );
+
+    res.json({ 
+      success: true, 
+      issues: tasks.map(task => ({
+        taskId: task.Id,
+        taskName: task.TaskName,
+        GiteaIssueNumber: task.GiteaIssueNumber,
+        externalUrl: task.ExternalUrl
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching Gitea issues:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch Gitea issues' });
+  }
+});
+
+// Import tasks from Gitea
+router.post('/import-from-gitea', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { projectId, issues, statusMapping } = req.body;
+
+    if (!projectId || !issues || !Array.isArray(issues) || issues.length === 0) {
+      return res.status(400).json({ success: false, message: 'Project ID and issues are required' });
+    }
+
+    // Verify user has access to project
+    const [projects] = await pool.execute<RowDataPacket[]>(
+      `SELECT p.*, om.UserId 
+       FROM Projects p
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       WHERE p.Id = ? AND om.UserId = ?`,
+      [projectId, userId]
+    );
+
+    if (projects.length === 0) {
+      return res.status(403).json({ success: false, message: 'Project not found or access denied' });
+    }
+
+    const project = projects[0];
+
+    // Get task statuses for the organization
+    const [taskStatuses] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id, StatusName FROM TaskStatusValues WHERE OrganizationId = ?',
+      [project.OrganizationId]
+    );
+
+    // Get task priorities for the organization
+    const [taskPriorities] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id, PriorityName FROM TaskPriorityValues WHERE OrganizationId = ?',
+      [project.OrganizationId]
+    );
+
+    // Get existing tasks with Gitea issue numbers to avoid duplicates
+    const [existingTasks] = await pool.execute<RowDataPacket[]>(
+      'SELECT GiteaIssueNumber FROM Tasks WHERE ProjectId = ? AND GiteaIssueNumber IS NOT NULL',
+      [projectId]
+    );
+    
+    const existingIssueNumbers = new Set(existingTasks.map((t: any) => String(t.GiteaIssueNumber)));
+    
+    // Filter out issues that are already imported
+    const newIssues = issues.filter((issue: any) => !existingIssueNumbers.has(String(issue.number)));
+    const skippedCount = issues.length - newIssues.length;
+
+    // If no new issues to import, return early
+    if (newIssues.length === 0) {
+      return res.json({
+        success: true,
+        message: `No new tasks to import. All ${issues.length} issues already exist in the project.`,
+        data: {
+          imported: 0,
+          skipped: skippedCount,
+          total: issues.length
+        }
+      });
+    }
+
+    const createdTasks: any[] = [];
+
+    // Create tasks for each Gitea issue
+    for (const issue of newIssues) {
+      // Map status from Gitea state to project task status
+      let statusId = null;
+      if (issue.state && statusMapping && statusMapping[issue.state]) {
+        // statusMapping maps state to StatusName, find the Id
+        const mappedValue = statusMapping[issue.state];
+        const matchingStatus = taskStatuses.find((s: any) => s.StatusName === mappedValue);
+        if (matchingStatus) {
+          statusId = matchingStatus.Id;
+        }
+      } else if (issue.state) {
+        // Try to find matching status by Gitea state (open -> To Do, closed -> Done)
+        const stateMapping: Record<string, string> = {
+          'open': 'to do',
+          'closed': 'done'
+        };
+        const mappedStateName = stateMapping[issue.state.toLowerCase()];
+        if (mappedStateName) {
+          const matchingStatus = taskStatuses.find(
+            (s: any) => s.StatusName.toLowerCase() === mappedStateName
+          );
+          if (matchingStatus) {
+            statusId = matchingStatus.Id;
+          }
+        }
+      }
+
+      // Map priority based on labels (if any contain priority keywords)
+      let priorityId = null;
+      if (issue.labels && issue.labels.length > 0) {
+        const priorityLabels = issue.labels.filter((label: any) => 
+          /priority|urgent|critical|high|medium|low/i.test(label.name)
+        );
+        if (priorityLabels.length > 0) {
+          const priorityLabel = priorityLabels[0].name.toLowerCase();
+          let mappedPriority = 'medium'; // default
+          if (/critical|urgent|high/i.test(priorityLabel)) mappedPriority = 'high';
+          else if (/low/i.test(priorityLabel)) mappedPriority = 'low';
+          
+          const matchingPriority = taskPriorities.find(
+            (p: any) => p.PriorityName.toLowerCase() === mappedPriority
+          );
+          if (matchingPriority) {
+            priorityId = matchingPriority.Id;
+          }
+        }
+      }
+
+      const [result] = await pool.execute<ResultSetHeader>(
+        `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, CreatedBy, GiteaIssueNumber, ExternalUrl)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          projectId,
+          issue.title || `Gitea Issue #${issue.number}`,
+          issue.body || '',
+          statusId || taskStatuses[0]?.Id || null,
+          priorityId || taskPriorities.find((p: any) => p.PriorityName.toLowerCase() === 'medium')?.Id || null,
+          userId,
+          issue.number,
+          issue.html_url || null
+        ]
+      );
+
+      // Create task history entry for Gitea import
+      await createTaskHistory(
+        result.insertId,
+        userId!,
+        'created',
+        'GiteaImport',
+        null,
+        `#${issue.number}`
+      );
+
+      createdTasks.push({
+        taskId: result.insertId,
+        issueNumber: issue.number,
+        taskName: issue.title || `Gitea Issue #${issue.number}`
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Imported ${createdTasks.length} tasks from Gitea${skippedCount > 0 ? `, skipped ${skippedCount} already existing` : ''}`,
+      data: {
+        imported: createdTasks.length,
+        skipped: skippedCount,
+        total: issues.length
+      }
+    });
+  } catch (error) {
+    console.error('Error importing Gitea tasks:', error);
+    res.status(500).json({ success: false, message: 'Failed to import tasks from Gitea' });
+  }
+});
+
 export default router;

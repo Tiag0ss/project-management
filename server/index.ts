@@ -48,6 +48,7 @@ import savedReportsRoutes from './routes/savedReports';
 import memosRoutes from './routes/memos';
 import jiraIntegrationsRoutes from './routes/jiraIntegrations';
 import githubIntegrationsRoutes from './routes/githubIntegrations';
+import giteaIntegrationsRoutes from './routes/giteaIntegrations';
 
 dotenv.config();
 
@@ -206,6 +207,7 @@ app.prepare().then(async () => {
   server.use('/api/memos', memosRoutes);
   server.use('/api/jira-integrations', jiraIntegrationsRoutes);
   server.use('/api/github-integrations', githubIntegrationsRoutes);
+  server.use('/api/gitea-integrations', giteaIntegrationsRoutes);
 
   // Error handling middleware
   server.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

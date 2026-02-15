@@ -2594,10 +2594,265 @@ function GitHubIntegrationCard({
   );
 }
 
+// Gitea Integration Card Component
+function GiteaIntegrationCard({
+  integration,
+  token,
+  orgId,
+  onUpdate,
+  setError,
+  setSuccess
+}: {
+  integration: any;
+  token: string;
+  orgId: number;
+  onUpdate: () => void;
+  setError: (error: string) => void;
+  setSuccess: (success: string) => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [formData, setFormData] = useState({
+    isEnabled: true,
+    giteaUrl: '',
+    giteaToken: ''
+  });
+
+  useEffect(() => {
+    if (integration) {
+      setFormData({
+        isEnabled: integration.IsEnabled === 1,
+        giteaUrl: integration.GiteaUrl || '',
+        giteaToken: ''
+      });
+    }
+  }, [integration]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/gitea-integrations/organization/${orgId}`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formData)
+        }
+      );
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSuccess('Gitea integration saved successfully');
+        setShowForm(false);
+        onUpdate();
+      } else {
+        setError(data.message || 'Failed to save Gitea integration');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to save Gitea integration');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm('Are you sure you want to remove the Gitea integration?')) return;
+
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/gitea-integrations/organization/${orgId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        setSuccess('Gitea integration removed successfully');
+        onUpdate();
+      } else {
+        setError('Failed to delete Gitea integration');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete Gitea integration');
+    }
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+      <div className="p-6">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <div className="text-5xl">🍵</div>
+            <div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Gitea Integration</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Import Gitea issues as tasks
+              </p>
+            </div>
+          </div>
+          {integration && (
+            <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+              integration.IsEnabled 
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-400'
+            }`}>
+              {integration.IsEnabled ? '✓ Active' : 'Inactive'}
+            </div>
+          )}
+        </div>
+
+        {!integration && !showForm ? (
+          <div className="text-center py-8">
+            <div className="text-gray-400 dark:text-gray-500 text-6xl mb-4">🍵</div>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">
+              Gitea integration is not configured for this organization.
+            </p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+            >
+              🔗 Configure Gitea
+            </button>
+          </div>
+        ) : integration && !showForm ? (
+          <div className="space-y-4">
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/20 rounded-lg border border-gray-200 dark:border-gray-800">
+              <div className="grid grid-cols-1 gap-3 text-sm">
+                <div>
+                  <span className="text-gray-500 dark:text-gray-400">Gitea URL:</span>{' '}
+                  <span className="font-medium text-gray-900 dark:text-white">{integration.GiteaUrl}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              Last Updated: <span className="text-gray-900 dark:text-white">{new Date(integration.UpdatedAt).toLocaleDateString()}</span>
+            </div>
+
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+              <p className="text-sm text-blue-800 dark:text-blue-400">
+                ℹ️ Repository configuration is set per project in Project Settings
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowForm(true)}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+              >
+                ✏️ Edit Configuration
+              </button>
+              <button
+                onClick={handleDelete}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                🗑️ Remove Integration
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSave} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Gitea URL {!integration && <span className="text-red-500">*</span>}
+              </label>
+              <input
+                type="url"
+                value={formData.giteaUrl}
+                onChange={(e) => setFormData({ ...formData, giteaUrl: e.target.value })}
+                placeholder="https://gitea.example.com"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
+                required={!integration}
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Your Gitea instance URL (e.g., https://gitea.example.com)
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Access Token {!integration && <span className="text-red-500">*</span>}
+              </label>
+              <input
+                type="password"
+                value={formData.giteaToken}
+                onChange={(e) => setFormData({ ...formData, giteaToken: e.target.value })}
+                placeholder={integration ? "Leave empty to keep current token" : "Your Gitea access token"}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
+                required={!integration}
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Token with read access to repositories and issues (Settings → Applications → Generate New Token)
+              </p>
+            </div>
+
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+              <p className="text-sm text-blue-800 dark:text-blue-400">
+                ℹ️ Repository owner and name will be configured per project in Project Settings
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="giteaEnabled"
+                checked={formData.isEnabled}
+                onChange={(e) => setFormData({ ...formData, isEnabled: e.target.checked })}
+                className="w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500"
+              />
+              <label htmlFor="giteaEnabled" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Enable Gitea integration
+              </label>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-lg transition-colors"
+              >
+                {isSaving ? 'Saving...' : '💾 Save Integration'}
+              </button>
+              {integration && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForm(false);
+                    setFormData({
+                      isEnabled: integration.IsEnabled === 1,
+                      giteaUrl: integration.GiteaUrl || '',
+                      giteaToken: ''
+                    });
+                  }}
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Integrations Tab Component
 function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
   const [integration, setIntegration] = useState<any>(null);
   const [githubIntegration, setGithubIntegration] = useState<any>(null);
+  const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -2664,6 +2919,23 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
         const githubData = await githubResponse.json();
         if (githubData.integration) {
           setGithubIntegration(githubData.integration);
+        }
+      }
+
+      // Load Gitea integration
+      const giteaResponse = await fetch(
+        `${getApiUrl()}/api/gitea-integrations/organization/${orgId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (giteaResponse.ok) {
+        const giteaData = await giteaResponse.json();
+        if (giteaData.integration) {
+          setGiteaIntegration(giteaData.integration);
         }
       }
     } catch (err: any) {
@@ -3139,6 +3411,16 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
       {/* GitHub Integration Card */}
       <GitHubIntegrationCard 
         integration={githubIntegration}
+        token={token}
+        orgId={orgId}
+        onUpdate={loadIntegration}
+        setError={setError}
+        setSuccess={setSuccess}
+      />
+
+      {/* Gitea Integration Card */}
+      <GiteaIntegrationCard 
+        integration={giteaIntegration}
         token={token}
         orgId={orgId}
         onUpdate={loadIntegration}

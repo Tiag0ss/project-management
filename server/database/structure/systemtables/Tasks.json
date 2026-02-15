@@ -95,6 +95,11 @@
       "NotNullable": false
     },
     {
+      "FieldName": "GiteaIssueNumber",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
       "FieldName": "ExternalUrl",
       "DataType": "varchar(500)",
       "NotNullable": false

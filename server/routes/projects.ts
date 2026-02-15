@@ -334,7 +334,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const projectId = req.params.id;
-    const { projectName, description, status, startDate, endDate, isHobby, customerId, jiraBoardId, gitHubOwner, gitHubRepo } = req.body;
+    const { projectName, description, status, startDate, endDate, isHobby, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo } = req.body;
 
     // Check if project exists and get current data
     const [existing] = await pool.execute<RowDataPacket[]>(
@@ -393,6 +393,12 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     if (gitHubRepo !== undefined && gitHubRepo !== oldProject.GitHubRepo) {
       changes.push({ field: 'GitHubRepo', oldVal: String(oldProject.GitHubRepo || ''), newVal: String(gitHubRepo || '') });
     }
+    if (giteaOwner !== undefined && giteaOwner !== oldProject.GiteaOwner) {
+      changes.push({ field: 'GiteaOwner', oldVal: String(oldProject.GiteaOwner || ''), newVal: String(giteaOwner || '') });
+    }
+    if (giteaRepo !== undefined && giteaRepo !== oldProject.GiteaRepo) {
+      changes.push({ field: 'GiteaRepo', oldVal: String(oldProject.GiteaRepo || ''), newVal: String(giteaRepo || '') });
+    }
 
     // Convert empty strings to null for date fields
     const normalizedStartDate = startDate === '' ? null : startDate;
@@ -400,9 +406,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Projects 
-       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ? 
+       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ?, GiteaOwner = ?, GiteaRepo = ? 
        WHERE Id = ?`,
-      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, customerId || null, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, projectId]
+      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, customerId || null, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, giteaOwner || null, giteaRepo || null, projectId]
     );
     
     // Log changes to history

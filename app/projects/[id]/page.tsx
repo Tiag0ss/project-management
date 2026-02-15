@@ -70,6 +70,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   });
   const [existingGitHubIssueIds, setExistingGitHubIssueIds] = useState<Set<string>>(new Set());
   const [showAlreadyImportedGitHub, setShowAlreadyImportedGitHub] = useState(false);
+  // Gitea Integration State
+  const [showGiteaImportModal, setShowGiteaImportModal] = useState(false);
+  const [giteaIssues, setGiteaIssues] = useState<any[]>([]);
+  const [selectedGiteaIssues, setSelectedGiteaIssues] = useState<Set<string>>(new Set());
+  const [giteaStatusMapping, setGiteaStatusMapping] = useState<{[key: string]: string}>({});
+  const [giteaLoading, setGiteaLoading] = useState(false);
+  const [giteaError, setGiteaError] = useState('');
+  const [giteaFilters, setGiteaFilters] = useState({
+    search: '',
+    state: '',
+    label: '',
+    type: ''
+  });
+  const [existingGiteaIssueIds, setExistingGiteaIssueIds] = useState<Set<string>>(new Set());
+  const [showAlreadyImportedGitea, setShowAlreadyImportedGitea] = useState(false);
   const { user, token, isLoading: authLoading } = useAuth();
   const { permissions } = usePermissions();
   const router = useRouter();
@@ -1014,6 +1029,226 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     });
   };
 
+  // ======= GITEA INTEGRATION FUNCTIONS =======
+  
+  // Gitea Import Functions
+  const loadExistingGiteaIssues = async () => {
+    if (!token || !projectId) return;
+    
+    try {
+      const response = await fetch(`${getApiUrl()}/api/tasks/gitea-issues/${projectId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const issueIds = new Set<string>(
+          data.issues
+            .map((issue: any) => String(issue.GiteaIssueNumber || ''))
+            .filter((id: string) => id !== '')
+        );
+        setExistingGiteaIssueIds(issueIds);
+      }
+    } catch (err) {
+      console.error('Failed to load existing Gitea issues:', err);
+    }
+  };
+
+  const loadGiteaIssues = async () => {
+    if (!token || !project) return;
+    
+    // Check if project has Gitea repository configured
+    if (!project.GiteaOwner || !project.GiteaRepo) {
+      setGiteaError('Please configure Gitea repository in Project Settings first (Owner and Repository fields)');
+      setGiteaLoading(false);
+      return;
+    }
+    
+    setGiteaLoading(true);
+    setGiteaError('');
+    
+    try {
+      const queryParams = new URLSearchParams();
+      queryParams.append('owner', project.GiteaOwner);
+      queryParams.append('repo', project.GiteaRepo);
+      if (giteaFilters.search) {
+        queryParams.append('query', giteaFilters.search);
+      }
+      if (giteaFilters.state) {
+        queryParams.append('state', giteaFilters.state);
+      }
+      if (giteaFilters.label) {
+        queryParams.append('labels', giteaFilters.label);
+      }
+      if (giteaFilters.type) {
+        queryParams.append('type', giteaFilters.type);
+      }
+      
+      const response = await fetch(`${getApiUrl()}/api/gitea-integrations/organization/${project.OrganizationId}/search?${queryParams.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to load Gitea issues');
+      }
+
+      const data = await response.json();
+      setGiteaIssues(data.issues || []);
+      
+      // Initialize status mapping with auto-mapping
+      const mapping: {[key: string]: string} = {};
+      (data.issues || []).forEach((issue: any) => {
+        const state = issue.state?.toLowerCase();
+        let mappedStatus = '';
+        
+        if (state === 'closed') {
+          // Try to find a "done" or "closed" status
+          const doneStatus = taskStatuses.find(s => 
+            s.StatusName.toLowerCase().includes('done') || 
+            s.StatusName.toLowerCase().includes('closed') ||
+            s.StatusName.toLowerCase().includes('complete')
+          );
+          mappedStatus = doneStatus?.StatusName || taskStatuses[taskStatuses.length - 1]?.StatusName || '';
+        } else {
+          // Map open to first status (typically "To Do" or "Open")
+          mappedStatus = taskStatuses[0]?.StatusName || '';
+        }
+        
+        mapping[issue.number] = mappedStatus;
+      });
+      setGiteaStatusMapping(mapping);
+      
+      // Clear selections
+      setSelectedGiteaIssues(new Set());
+    } catch (err: any) {
+      setGiteaError(err.message || 'Failed to load Gitea issues');
+    } finally {
+      setGiteaLoading(false);
+    }
+  };
+
+  const handleGiteaImport = async () => {
+    // Filter out already imported issues from selection  
+    const validIssues = Array.from(selectedGiteaIssues).filter(id => !existingGiteaIssueIds.has(id));
+    
+    if (!token || validIssues.length === 0) return;
+    
+    setGiteaLoading(true);
+    setGiteaError('');
+    
+    try {
+      const issuesToImport = giteaIssues.filter(issue => validIssues.includes(issue.number?.toString()));
+      
+      const response = await fetch(`${getApiUrl()}/api/tasks/import-from-gitea`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectId: parseInt(projectId),
+          issues: issuesToImport,
+          statusMapping: giteaStatusMapping,
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to import tasks');
+      }
+
+      const result = await response.json();
+      const imported = result.data?.imported || result.createdTasks || 0;
+      const skipped = result.data?.skipped || 0;
+      
+      let message = `Successfully imported ${imported} task(s) from Gitea.`;
+      if (skipped > 0) {
+        message += ` ${skipped} issue(s) were already imported.`;
+      }
+      
+      showAlert('Import Successful', message);
+      
+      setShowGiteaImportModal(false);
+      setSelectedGiteaIssues(new Set());
+      setGiteaStatusMapping({});
+      await loadTasks();
+      await loadExistingGiteaIssues(); // Reload the imported issues list
+    } catch (err: any) {
+      setGiteaError(err.message || 'Failed to import from Gitea');
+    } finally {
+      setGiteaLoading(false);
+    }
+  };
+
+  const toggleGiteaIssueSelection = (issueId: string) => {
+    // Don't allow selection of already imported issues
+    if (existingGiteaIssueIds.has(issueId)) {
+      return;
+    }
+    
+    const newSelection = new Set(selectedGiteaIssues);
+    if (newSelection.has(issueId)) {
+      newSelection.delete(issueId);
+    } else {
+      newSelection.add(issueId);
+    }
+    setSelectedGiteaIssues(newSelection);
+  };
+
+  const toggleAllGiteaIssues = () => {
+    const availableIssues = giteaIssues.filter(issue => !existingGiteaIssueIds.has(issue.number?.toString()));
+    if (selectedGiteaIssues.size === availableIssues.length) {
+      setSelectedGiteaIssues(new Set());
+    } else {
+      setSelectedGiteaIssues(new Set(availableIssues.map(issue => issue.number?.toString())));
+    }
+  };
+
+  // Filter and sort Gitea issues
+  const getFilteredGiteaIssues = () => {
+    return giteaIssues.filter(issue => {
+      // Search filter
+      if (giteaFilters.search && !issue.title?.toLowerCase().includes(giteaFilters.search.toLowerCase()) 
+          && !issue.body?.toLowerCase().includes(giteaFilters.search.toLowerCase())
+          && !issue.number?.toString().includes(giteaFilters.search)) {
+        return false;
+      }
+      
+      // State filter
+      if (giteaFilters.state && issue.state !== giteaFilters.state) {
+        return false;
+      }
+      
+      // Label filter
+      if (giteaFilters.label && !issue.labels?.some((label: any) => label.name === giteaFilters.label)) {
+        return false;
+      }
+      
+      // Type filter (issues vs pull requests)
+      if (giteaFilters.type) {
+        const isPullRequest = issue.pull_request !== undefined && issue.pull_request !== null;
+        if (giteaFilters.type === 'issues' && isPullRequest) {
+          return false;
+        }
+        if (giteaFilters.type === 'pulls' && !isPullRequest) {
+          return false;
+        }
+      }
+      
+      // Already imported filter
+      if (!showAlreadyImportedGitea && existingGiteaIssueIds.has(issue.number?.toString())) {
+        return false;
+      }
+      
+      return true;
+    });
+  };
+
   // Load task statuses and Jira issues when modal opens
   useEffect(() => {
     if (showJiraImportModal && project) {
@@ -1053,6 +1288,25 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setExistingGitHubIssueIds(new Set());
     }
   }, [showGitHubImportModal, project]);
+
+  // Load task statuses and Gitea issues when modal opens
+  useEffect(() => {
+    if (showGiteaImportModal && project) {
+      loadTaskStatuses();
+      loadExistingGiteaIssues();
+      loadGiteaIssues();
+    } else if (!showGiteaImportModal) {
+      // Reset filters when modal closes
+      setGiteaFilters({
+        search: '',
+        state: '',
+        label: '',
+        type: ''
+      });
+      setShowAlreadyImportedGitea(false);
+      setExistingGiteaIssueIds(new Set());
+    }
+  }, [showGiteaImportModal, project]);
 
   if (authLoading || isLoading) {
     return (
@@ -1204,6 +1458,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               onImportClick={handleImportClick}
               onImportFromJira={() => setShowJiraImportModal(true)}
               onImportFromGitHub={() => setShowGitHubImportModal(true)}
+              onImportFromGitea={() => setShowGiteaImportModal(true)}
               canCreate={permissions?.canCreateTasks || false}
               canManage={permissions?.canManageTasks || false}
               canDelete={permissions?.canDeleteTasks || false}
@@ -2040,6 +2295,318 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
+      {/* Gitea Import Modal */}
+      {showGiteaImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <span className="text-3xl">🍵</span>
+                  Import Tasks from Gitea
+                </h2>
+                <button
+                  onClick={() => setShowGiteaImportModal(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {giteaError && (
+                <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
+                  {giteaError}
+                </div>
+              )}
+
+              {giteaLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mb-4"></div>
+                    <p className="text-gray-600 dark:text-gray-400">Loading Gitea issues...</p>
+                  </div>
+                </div>
+              ) : giteaIssues.length === 0 ? (
+                <div className="text-center py-12">
+                  <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No Gitea issues found</h3>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    Make sure your Gitea integration is configured and the repository has issues.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Status Mapping Section */}
+                  {taskStatuses.length > 0 && (
+                    <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">📍 Status Mapping</h3>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                        Map Gitea issue states to your project's task statuses. Auto-mapped by default.
+                      </p>
+                      <div className="grid grid-cols-1 gap-3">
+                        {giteaIssues.length > 0 && Array.from(new Set(giteaIssues.map(issue => issue.state))).map((state) => (
+                          <div key={state} className="flex items-center gap-2">
+                            <span className="capitalize font-medium text-gray-700 dark:text-gray-300 min-w-24">
+                              {state}:
+                            </span>
+                            <select
+                              value={giteaStatusMapping[state] || ''}
+                              onChange={(e) => setGiteaStatusMapping(prev => ({
+                                ...prev,
+                                [state]: e.target.value
+                              }))}
+                              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            >
+                              <option value="">Select status...</option>
+                              {taskStatuses.map((status) => (
+                                <option key={status.Id} value={status.StatusName}>
+                                  {status.StatusName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Filters Section */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Search
+                      </label>
+                      <input
+                        type="text"
+                        value={giteaFilters.search}
+                        onChange={(e) => setGiteaFilters(prev => ({ ...prev, search: e.target.value }))}
+                        placeholder="Title, body, or number..."
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        State
+                      </label>
+                      <select
+                        value={giteaFilters.state}
+                        onChange={(e) => setGiteaFilters(prev => ({ ...prev, state: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      >
+                        <option value="">All States</option>
+                        <option value="open">Open</option>
+                        <option value="closed">Closed</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Type
+                      </label>
+                      <select
+                        value={giteaFilters.type}
+                        onChange={(e) => setGiteaFilters(prev => ({ ...prev, type: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      >
+                        <option value="">Issues & PRs</option>
+                        <option value="issues">Issues Only</option>
+                        <option value="pulls">Pull Requests Only</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-end">
+                      <button
+                        onClick={() => loadGiteaIssues()}
+                        className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                        disabled={giteaLoading}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Refresh
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Show Already Imported Checkbox */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="showAlreadyImportedGitea"
+                      checked={showAlreadyImportedGitea}
+                      onChange={(e) => setShowAlreadyImportedGitea(e.target.checked)}
+                      className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                    />
+                    <label htmlFor="showAlreadyImportedGitea" className="text-sm text-gray-600 dark:text-gray-400">
+                      Show already imported issues
+                    </label>
+                  </div>
+
+                  {/* Issues List */}
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <div className="p-4 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={getFilteredGiteaIssues().length > 0 && selectedGiteaIssues.size === getFilteredGiteaIssues().filter(issue => !existingGiteaIssueIds.has(issue.number?.toString())).length}
+                            onChange={toggleAllGiteaIssues}
+                            disabled={getFilteredGiteaIssues().filter(issue => !existingGiteaIssueIds.has(issue.number?.toString())).length === 0}
+                            className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                          />
+                          Select All Available
+                        </label>
+                      </div>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {getFilteredGiteaIssues().length} issue{getFilteredGiteaIssues().length !== 1 ? 's' : ''}
+                        {existingGiteaIssueIds.size > 0 && ` (${existingGiteaIssueIds.size} already imported)`}
+                      </span>
+                    </div>
+
+                    <div className="max-h-96 overflow-y-auto">
+                      {getFilteredGiteaIssues().map((issue: any) => {
+                        const isAlreadyImported = existingGiteaIssueIds.has(issue.number?.toString());
+                        const isSelected = selectedGiteaIssues.has(issue.number?.toString());
+                        const isPullRequest = issue.pull_request !== undefined && issue.pull_request !== null;
+                        
+                        return (
+                          <div
+                            key={issue.id}
+                            className={`p-4 border-b border-gray-200 dark:border-gray-700 last:border-b-0 ${
+                              isAlreadyImported 
+                                ? 'bg-gray-100 dark:bg-gray-700/50 opacity-60' 
+                                : isSelected 
+                                  ? 'bg-green-50 dark:bg-green-900/20' 
+                                  : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'
+                            } transition-colors`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleGiteaIssueSelection(issue.number?.toString())}
+                                disabled={isAlreadyImported}
+                                className="mt-1 rounded border-gray-300 text-green-600 focus:ring-green-500 disabled:opacity-50"
+                              />
+                              
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                  <h4 className="text-sm font-medium text-gray-900 dark:text-white">
+                                    #{issue.number} - {issue.title}
+                                  </h4>
+                                  {isAlreadyImported && (
+                                    <span className="px-2 py-1 text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 rounded-full">
+                                      Already Imported
+                                    </span>
+                                  )}
+                                  {isPullRequest && (
+                                    <span className="px-2 py-1 text-xs bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 rounded-full">
+                                      Pull Request
+                                    </span>
+                                  )}
+                                  <span className={`px-2 py-1 text-xs rounded-full ${
+                                    issue.state === 'open' 
+                                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                      : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                                  }`}>
+                                    {issue.state}
+                                  </span>
+                                  {issue.labels?.length > 0 && (
+                                    <div className="flex gap-1 flex-wrap">
+                                      {issue.labels.slice(0, 3).map((label: any) => (
+                                        <span
+                                          key={label.name}
+                                          className="px-2 py-1 text-xs rounded-full text-white"
+                                          style={{ backgroundColor: `#${label.color}` }}
+                                        >
+                                          {label.name}
+                                        </span>
+                                      ))}
+                                      {issue.labels.length > 3 && (
+                                        <span className="px-2 py-1 text-xs bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-300 rounded-full">
+                                          +{issue.labels.length - 3}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                {issue.body && (
+                                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">
+                                    {issue.body.substring(0, 200)}{issue.body.length > 200 ? '...' : ''}
+                                  </p>
+                                )}
+                                
+                                <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
+                                  <span>👤 {issue.user?.login || issue.authorName || issue.author}</span>
+                                  {issue.assignee && <span>📋 Assigned: {issue.assignee.login}</span>}
+                                  <span>📅 {new Date(issue.created_at).toLocaleDateString()}</span>
+                                  {issue.html_url && (
+                                    <a
+                                      href={issue.html_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      View on Gitea ↗
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+              <div className="flex justify-between items-center">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {selectedGiteaIssues.size > 0 ? (
+                    <>
+                      <span className="font-semibold">{Array.from(selectedGiteaIssues).filter(id => !existingGiteaIssueIds.has(id)).length}</span> new issue{Array.from(selectedGiteaIssues).filter(id => !existingGiteaIssueIds.has(id)).length !== 1 ? 's' : ''} will be imported as task{Array.from(selectedGiteaIssues).filter(id => !existingGiteaIssueIds.has(id)).length !== 1 ? 's' : ''}
+                      {existingGiteaIssueIds.size > 0 && ` (${existingGiteaIssueIds.size} already imported in project)`}
+                    </>
+                  ) : (
+                    `Select new issues to import (${existingGiteaIssueIds.size > 0 ? `${existingGiteaIssueIds.size} already imported issues are hidden by default` : 'no duplicates will be created'})`
+                  )}
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowGiteaImportModal(false)}
+                    className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleGiteaImport}
+                    disabled={giteaLoading || selectedGiteaIssues.size === 0 || Array.from(selectedGiteaIssues).every(id => existingGiteaIssueIds.has(id))}
+                    className="px-6 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                  >
+                    {giteaLoading ? 'Importing...' : `Import ${Array.from(selectedGiteaIssues).filter(id => !existingGiteaIssueIds.has(id)).length} New Task${Array.from(selectedGiteaIssues).filter(id => !existingGiteaIssueIds.has(id)).length !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Confirm Modal */}
       {modalMessage && modalMessage.type === 'confirm' && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -2714,6 +3281,7 @@ function TasksTab({
   onImportClick,
   onImportFromJira,
   onImportFromGitHub,
+  onImportFromGitea,
   canCreate,
   canManage,
   canDelete,
@@ -2725,6 +3293,7 @@ function TasksTab({
   onImportClick: () => void;
   onImportFromJira: () => void;
   onImportFromGitHub: () => void;
+  onImportFromGitea: () => void;
   canCreate: boolean;
   canManage: boolean;
   canDelete: boolean;
@@ -2914,6 +3483,13 @@ function TasksTab({
                   <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
                 </svg>
                 Import from GitHub
+              </button>
+              <button
+                onClick={onImportFromGitea}
+                className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
+              >
+                <span className="text-xl">🍵</span>
+                Import from Gitea
               </button>
               <button
                 onClick={onCreateTask}
@@ -5897,11 +6473,14 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
     jiraBoardId: project.JiraBoardId || '',
     gitHubOwner: project.GitHubOwner || '',
     gitHubRepo: project.GitHubRepo || '',
+    giteaOwner: project.GiteaOwner || '',
+    giteaRepo: project.GiteaRepo || '',
   });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
   const [githubIntegration, setGithubIntegration] = useState<any>(null);
+  const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
   const [showTransferConfirm, setShowTransferConfirm] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -5912,6 +6491,7 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
     loadProjectStatuses();
     loadJiraIntegration();
     loadGitHubIntegration();
+    loadGiteaIntegration();
   }, []);
 
   const loadOrganizations = async () => {
@@ -5976,6 +6556,25 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
     }
   };
 
+  const loadGiteaIntegration = async () => {
+    try {
+      const response = await fetch(`${getApiUrl()}/api/gitea-integrations/organization/${project.OrganizationId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.integration && data.integration.IsEnabled && data.integration.GiteaUrl) {
+          setGiteaIntegration(data.integration);
+        } else {
+          setGiteaIntegration(null);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to load Gitea integration:', err);
+      setGiteaIntegration(null);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -6008,6 +6607,8 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
         jiraBoardId: formData.jiraBoardId || null,
         gitHubOwner: formData.gitHubOwner || null,
         gitHubRepo: formData.gitHubRepo || null,
+        giteaOwner: formData.giteaOwner || null,
+        giteaRepo: formData.giteaRepo || null,
       };
       await projectsApi.update(project.Id, updateData, token);
       setSuccess(true);
@@ -6266,6 +6867,57 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
             </div>
           )}
 
+          {giteaIntegration && (
+            <div className="p-4 bg-green-50 dark:bg-green-900/30 rounded-lg border border-green-300 dark:border-green-700">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">🍵</span>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Gitea Integration
+                </label>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    Repository Owner/Organization
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.giteaOwner}
+                    onChange={(e) => setFormData({ ...formData, giteaOwner: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    placeholder="username or organization-name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    Repository Name
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.giteaRepo}
+                    onChange={(e) => setFormData({ ...formData, giteaRepo: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    placeholder="repository-name"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                Required for Gitea issues import. Format: <strong>owner/repo</strong>
+              </p>
+              {(formData.giteaOwner || formData.giteaRepo) && (
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, giteaOwner: '', giteaRepo: '' })}
+                    className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+                  >
+                    Clear Repository
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isLoading}
@@ -6301,11 +6953,14 @@ function EditProjectModal({
     jiraBoardId: project.JiraBoardId || undefined,
     gitHubOwner: project.GitHubOwner || undefined,
     gitHubRepo: project.GitHubRepo || undefined,
+    giteaOwner: project.GiteaOwner || undefined,
+    giteaRepo: project.GiteaRepo || undefined,
   });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
   const [githubIntegration, setGithubIntegration] = useState<any>(null);
+  const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
   const [showTransferConfirm, setShowTransferConfirm] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -6315,6 +6970,7 @@ function EditProjectModal({
     loadProjectStatuses();
     loadJiraIntegration();
     loadGitHubIntegration();
+    loadGiteaIntegration();
     // Clear any previous errors when modal opens
     setError('');
   }, []);
@@ -6380,6 +7036,25 @@ function EditProjectModal({
     }
   };
 
+  const loadGiteaIntegration = async () => {
+    try {
+      const response = await fetch(`${getApiUrl()}/api/gitea-integrations/organization/${project.OrganizationId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.integration && data.integration.IsEnabled && data.integration.GiteaUrl) {
+          setGiteaIntegration(data.integration);
+        } else {
+          setGiteaIntegration(null);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to load Gitea integration:', err);
+      setGiteaIntegration(null);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -6413,6 +7088,8 @@ function EditProjectModal({
         jiraBoardId: formData.jiraBoardId || null,
         gitHubOwner: formData.gitHubOwner || null,
         gitHubRepo: formData.gitHubRepo || null,
+        giteaOwner: formData.giteaOwner || null,
+        giteaRepo: formData.giteaRepo || null,
       };
       console.log('Updating project with data:', updateData);
       await projectsApi.update(project.Id, updateData, token);
@@ -6627,6 +7304,46 @@ function EditProjectModal({
                 </div>
                 <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
                   Required for GitHub issues import. Find in your repository URL: github.com/<strong>owner</strong>/<strong>repo</strong>
+                </p>
+              </div>
+            )}
+
+            {giteaIntegration && (
+              <div className="p-4 bg-green-50 dark:bg-green-900/30 rounded-lg border border-green-300 dark:border-green-700">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg">🍵</span>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Gitea Integration
+                  </label>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      Repository Owner/Organization
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.giteaOwner || ''}
+                      onChange={(e) => setFormData({ ...formData, giteaOwner: e.target.value || undefined })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      placeholder="username or organization-name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      Repository Name
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.giteaRepo || ''}
+                      onChange={(e) => setFormData({ ...formData, giteaRepo: e.target.value || undefined })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      placeholder="repository-name"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                  Required for Gitea issues import. Format: <strong>owner/repo</strong>
                 </p>
               </div>
             )}

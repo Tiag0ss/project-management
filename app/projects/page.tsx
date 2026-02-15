@@ -819,6 +819,7 @@ function ProjectModal({
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [jiraIntegration, setJiraIntegration] = useState<{ JiraUrl: string; JiraProjectKey: string } | null>(null);
   const [githubIntegration, setGithubIntegration] = useState<any>(null);
+  const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
   const [formData, setFormData] = useState<CreateProjectData>({
     organizationId: project?.OrganizationId || 0,
     projectName: project?.ProjectName || '',
@@ -831,6 +832,8 @@ function ProjectModal({
     jiraBoardId: project?.JiraBoardId || undefined,
     gitHubOwner: project?.GitHubOwner || undefined,
     gitHubRepo: project?.GitHubRepo || undefined,
+    giteaOwner: project?.GiteaOwner || undefined,
+    giteaRepo: project?.GiteaRepo || undefined,
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -845,11 +848,13 @@ function ProjectModal({
       loadProjectStatuses(formData.organizationId);
       loadJiraIntegration(formData.organizationId);
       loadGitHubIntegration(formData.organizationId);
+      loadGiteaIntegration(formData.organizationId);
     } else {
       setCustomers([]);
       setProjectStatuses([]);
       setJiraIntegration(null);
       setGithubIntegration(null);
+      setGiteaIntegration(null);
     }
   }, [formData.organizationId]);
 
@@ -926,6 +931,25 @@ function ProjectModal({
     } catch (err: any) {
       console.error('Failed to load GitHub integration:', err);
       setGithubIntegration(null);
+    }
+  };
+
+  const loadGiteaIntegration = async (orgId: number) => {
+    try {
+      const response = await fetch(`${getApiUrl()}/api/gitea-integrations/organization/${orgId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.integration && data.integration.IsEnabled && data.integration.GiteaUrl) {
+          setGiteaIntegration(data.integration);
+        } else {
+          setGiteaIntegration(null);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to load Gitea integration:', err);
+      setGiteaIntegration(null);
     }
   };
 
@@ -1070,6 +1094,46 @@ function ProjectModal({
                 </div>
                 <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
                   Required for GitHub issues import. Find in your repository URL: github.com/<strong>owner</strong>/<strong>repo</strong>
+                </p>
+              </div>
+            )}
+
+            {giteaIntegration && (
+              <div className="p-4 bg-green-50 dark:bg-green-900/30 rounded-lg border border-green-300 dark:border-green-700">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg">🍵</span>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Gitea Integration
+                  </label>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      Repository Owner/Organization
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.giteaOwner || ''}
+                      onChange={(e) => setFormData({ ...formData, giteaOwner: e.target.value || undefined })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      placeholder="username or organization-name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      Repository Name
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.giteaRepo || ''}
+                      onChange={(e) => setFormData({ ...formData, giteaRepo: e.target.value || undefined })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      placeholder="repository-name"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                  Required for Gitea issues import. Format: <strong>owner/repo</strong>
                 </p>
               </div>
             )}

@@ -70,6 +70,16 @@
       "NotNullable": false
     },
     {
+      "FieldName": "GiteaOwner",
+      "DataType": "varchar(100)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "GiteaRepo",
+      "DataType": "varchar(100)",
+      "NotNullable": false
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
