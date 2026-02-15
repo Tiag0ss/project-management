@@ -43,7 +43,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const customerId = req.user?.customerId;
-    const { organizationId, status, priority, category, assignedTo, developer, customer, search, excludeClosed, createdFrom, createdTo, scheduledFrom, scheduledTo } = req.query;
+    const { organizationId, projectId, status, priority, category, assignedTo, developer, customer, search, excludeClosed, createdFrom, createdTo, scheduledFrom, scheduledTo } = req.query;
 
     let query = `
       SELECT 
@@ -87,6 +87,11 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     if (organizationId) {
       query += ` AND t.OrganizationId = ?`;
       params.push(organizationId);
+    }
+
+    if (projectId) {
+      query += ` AND t.ProjectId = ?`;
+      params.push(projectId);
     }
 
     if (status) {

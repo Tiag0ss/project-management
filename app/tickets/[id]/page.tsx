@@ -11,6 +11,9 @@ import TicketHistory from '@/components/TicketHistory';
 import AttachmentUploader, { AttachmentList } from '@/components/AttachmentManager';
 import { getTicketAttachments, getTicketAttachment, uploadTicketAttachment, deleteTicketAttachment, TicketAttachment } from '@/lib/api/tickets';
 import { tasksApi, CreateTaskData, Task } from '@/lib/api/tasks';
+import { organizationsApi, Organization } from '@/lib/api/organizations';
+import { projectsApi, Project } from '@/lib/api/projects';
+import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableSelect from '@/components/SearchableSelect';
 
@@ -83,9 +86,7 @@ export default function TicketDetailPage() {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
-  const [organizations, setOrganizations] = useState<{Id: number, Name: string}[]>([]);
   const [customers, setCustomers] = useState<{Id: number, Name: string}[]>([]);
-  const [projects, setProjects] = useState<{Id: number, ProjectName: string}[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -130,6 +131,17 @@ export default function TicketDetailPage() {
     estimatedHours: 0,
   });
   const [creatingTask, setCreatingTask] = useState(false);
+  
+  // Project selection state (when ticket has no project)
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedOrgId, setSelectedOrgId] = useState<number | null>(null);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  
+  // Task status and priority values
+  const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
+  const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
+  const [loadingTaskData, setLoadingTaskData] = useState(false);
 
   // Associated tasks state
   const [associatedTasks, setAssociatedTasks] = useState<Task[]>([]);
@@ -351,15 +363,12 @@ export default function TicketDetailPage() {
     }
   };
 
-  const handleOpenCreateTaskModal = () => {
-    if (!ticket || !ticket.ProjectId) {
-      setError('This ticket must be associated with a project to create a task');
-      return;
-    }
+  const handleOpenCreateTaskModal = async () => {
+    if (!ticket) return;
 
     // Pre-fill task form with ticket data
     setTaskForm({
-      projectId: ticket.ProjectId,
+      projectId: ticket.ProjectId || 0,
       taskName: ticket.Title,
       description: ticket.Description || '',
       status: null,
@@ -368,12 +377,89 @@ export default function TicketDetailPage() {
       estimatedHours: 0,
       ticketId: ticket.Id,
     });
+
+    // If no project associated, load organizations for selection
+    if (!ticket.ProjectId) {
+      await loadOrganizations();
+      setSelectedOrgId(null);
+      setProjects([]);
+    } else {
+      // Load status/priorities for the project's organization
+      await loadTaskStatusesAndPriorities(ticket.OrganizationId);
+    }
+    
     setShowCreateTaskModal(true);
+  };
+
+  const loadOrganizations = async () => {
+    if (!token) return;
+    
+    try {
+      const response = await organizationsApi.getAll(token);
+      setOrganizations(response.organizations || []);
+    } catch (err: any) {
+      console.error('Failed to load organizations:', err);
+    }
+  };
+
+  const loadTaskStatusesAndPriorities = async (orgId: number) => {
+    if (!token) return;
+    
+    setLoadingTaskData(true);
+    try {
+      const [statusesRes, prioritiesRes] = await Promise.all([
+        statusValuesApi.getTaskStatuses(orgId, token),
+        statusValuesApi.getTaskPriorities(orgId, token)
+      ]);
+      
+      setTaskStatuses(statusesRes.statuses || []);
+      setTaskPriorities(prioritiesRes.priorities || []);
+    } catch (err: any) {
+      console.error('Failed to load task statuses/priorities:', err);
+    } finally {
+      setLoadingTaskData(false);
+    }
+  };
+
+  const loadProjectsByOrg = async (orgId: number) => {
+    if (!token) return;
+    
+    setLoadingProjects(true);
+    try {
+      const response = await projectsApi.getAll(token);
+      // Filter projects by organization on frontend since API returns all user projects
+      const orgProjects = response.projects.filter(p => p.OrganizationId === orgId);
+      setProjects(orgProjects);
+    } catch (err: any) {
+      console.error('Failed to load projects:', err);
+      setProjects([]);
+    } finally {
+      setLoadingProjects(false);
+    }
+  };
+
+  const handleOrgChange = async (orgId: number) => {
+    setSelectedOrgId(orgId);
+    setTaskForm(prev => ({ ...prev, projectId: 0 }));
+    if (orgId) {
+      loadProjectsByOrg(orgId);
+      // Load status/priorities for this organization
+      await loadTaskStatusesAndPriorities(orgId);
+    } else {
+      setProjects([]);
+      setTaskStatuses([]);
+      setTaskPriorities([]);
+    }
   };
 
   const handleCreateTask = async () => {
     if (!token || !taskForm.taskName.trim()) {
       setError('Task name is required');
+      return;
+    }
+
+    if (!taskForm.projectId) {
+      setError('Please select a project for this task');
       return;
     }
 
@@ -799,7 +885,7 @@ export default function TicketDetailPage() {
                 </>
               ) : (
                 <>
-                  {permissions?.canCreateTaskFromTicket && ticket.ProjectId && (
+                  {permissions?.canCreateTaskFromTicket && (
                     <button
                       onClick={handleOpenCreateTaskModal}
                       className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center gap-2"
@@ -1097,7 +1183,7 @@ export default function TicketDetailPage() {
                     <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                       No tasks created from this ticket yet
                     </p>
-                    {permissions?.canCreateTaskFromTicket && ticket.ProjectId && (
+                    {permissions?.canCreateTaskFromTicket && (
                       <button
                         onClick={handleOpenCreateTaskModal}
                         className="mt-4 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm"
@@ -1150,6 +1236,23 @@ export default function TicketDetailPage() {
                               {task.EstimatedHours}h
                               {task.WorkedHours ? ` / ${task.WorkedHours}h worked` : ''}
                             </span>
+                          )}
+                          
+                          {/* Jira Integration Badge */}
+                          {task.ExternalTicketId && task.JiraUrl && (
+                            <a
+                              href={`${task.JiraUrl}/browse/${task.ExternalTicketId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors text-xs font-medium"
+                              title={`Open in Jira: ${task.ExternalTicketId}`}
+                            >
+                              🔷 {task.ExternalTicketId}
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </a>
                           )}
                           
                           <span className="ml-auto text-gray-400">
@@ -1509,6 +1612,52 @@ export default function TicketDetailPage() {
               )}
 
               <div className="space-y-4">
+                {/* Organization and Project Selection (when ticket has no project) */}
+                {!ticket?.ProjectId && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Organization *
+                      </label>
+                      <select
+                        value={selectedOrgId || ''}
+                        onChange={(e) => handleOrgChange(e.target.value ? parseInt(e.target.value) : 0)}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      >
+                        <option value="">Select Organization</option>
+                        {organizations.map((org) => (
+                          <option key={org.Id} value={org.Id}>
+                            {org.Name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Project *
+                      </label>
+                      <select
+                        value={taskForm.projectId || ''}
+                        onChange={(e) => setTaskForm({ ...taskForm, projectId: e.target.value ? parseInt(e.target.value) : 0 })}
+                        disabled={!selectedOrgId || loadingProjects}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
+                      >
+                        <option value="">
+                          {loadingProjects ? 'Loading projects...' : 
+                           !selectedOrgId ? 'First select an organization' : 
+                           'Select Project'}
+                        </option>
+                        {projects.map((project) => (
+                          <option key={project.Id} value={project.Id}>
+                            {project.ProjectName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
+                
                 {/* Task Name */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -1528,11 +1677,9 @@ export default function TicketDetailPage() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Description
                   </label>
-                  <textarea
-                    value={taskForm.description}
-                    onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })}
-                    rows={4}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  <RichTextEditor
+                    content={taskForm.description || ''}
+                    onChange={(html) => setTaskForm({ ...taskForm, description: html })}
                     placeholder="Enter task description"
                   />
                 </div>
@@ -1546,13 +1693,17 @@ export default function TicketDetailPage() {
                     <select
                       value={taskForm.priority ?? ''}
                       onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value ? parseInt(e.target.value) : null })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      disabled={loadingTaskData}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
                     >
-                      <option value="">Select Priority</option>
-                      <option value="1">Low</option>
-                      <option value="2">Medium</option>
-                      <option value="3">High</option>
-                      <option value="4">Urgent</option>
+                      <option value="">
+                        {loadingTaskData ? 'Loading priorities...' : 'Select Priority'}
+                      </option>
+                      {taskPriorities.map((priority) => (
+                        <option key={priority.Id} value={priority.Id}>
+                          {priority.PriorityName || priority.StatusName}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -1563,12 +1714,17 @@ export default function TicketDetailPage() {
                     <select
                       value={taskForm.status ?? ''}
                       onChange={(e) => setTaskForm({ ...taskForm, status: e.target.value ? parseInt(e.target.value) : null })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      disabled={loadingTaskData}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
                     >
-                      <option value="">Select Status</option>
-                      <option value="1">To Do</option>
-                      <option value="2">In Progress</option>
-                      <option value="3">Done</option>
+                      <option value="">
+                        {loadingTaskData ? 'Loading statuses...' : 'Select Status'}
+                      </option>
+                      {taskStatuses.map((status) => (
+                        <option key={status.Id} value={status.Id}>
+                          {status.StatusName}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -1611,11 +1767,26 @@ export default function TicketDetailPage() {
                 )}
 
                 {/* Info Message */}
-                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                  <p className="text-sm text-blue-700 dark:text-blue-400">
-                    <strong>Note:</strong> This task will be created in the project: <strong>{ticket?.ProjectName}</strong>
-                  </p>
-                </div>
+                {(ticket?.ProjectId || taskForm.projectId) && (
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    <p className="text-sm text-blue-700 dark:text-blue-400">
+                      <strong>Note:</strong> This task will be created in the project: <strong>
+                        {ticket?.ProjectId 
+                          ? ticket.ProjectName 
+                          : projects.find(p => p.Id === taskForm.projectId)?.ProjectName || 'Selected Project'
+                        }
+                      </strong>
+                    </p>
+                  </div>
+                )}
+                
+                {!ticket?.ProjectId && !taskForm.projectId && (
+                  <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                    <p className="text-sm text-yellow-700 dark:text-yellow-400">
+                      <strong>Notice:</strong> Please select an organization and project to create this task.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3 mt-6">

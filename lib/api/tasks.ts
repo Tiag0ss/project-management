@@ -32,6 +32,8 @@ export interface Task {
   TicketIdRef?: number;
   TicketNumber?: string;
   TicketTitle?: string;
+  ExternalTicketId?: string | null;
+  JiraUrl?: string | null;
   ExternalIssueId?: string | null;
   CreatedBy: number;
   CreatorName?: string;

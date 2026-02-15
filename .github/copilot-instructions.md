@@ -2,11 +2,7 @@
 
 ## Language Guidelines
 
-**IMPORTANT:** Respond ONLY in **English (EN)** or **Portuguese from Portugal (PT-PT)**.
-
-**NEVER use Brazilian Portuguese (PT-BR).** Portuguese from Portugal and Brazilian Portuguese are completely different languages and the developer does not understand Brazilian Portuguese.
-
-When responding in Portuguese, use European Portuguese vocabulary, grammar, and expressions.
+**IMPORTANT:** Respond ONLY in **English (EN)** or **Portuguese from Portugal (PT-PT)** and **NEVER use Brazilian Portuguese (PT-BR).** 
 
 ## Project Context
 
@@ -474,6 +470,56 @@ className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-
 - Check permissions before showing UI elements
 - Backend validates permissions on all mutations
 
+### Jira Integration
+- **Two-tier Integration System**:
+  - **Jira for Tickets** - Main instance for ticket management and issue search
+  - **Jira for Projects** - Separate instance for project boards and kanban views (optional)
+- **Organization-level Configuration** (`OrganizationJiraIntegrations` table):
+  - `IsEnabled` - Master toggle for integration
+  - `JiraUrl`, `JiraEmail`, `JiraApiToken` - Main Jira instance for tickets
+  - `JiraProjectKey` - Default project key for ticket searches
+  - `JiraProjectsUrl`, `JiraProjectsEmail`, `JiraProjectsApiToken` - Separate Projects instance
+- **Project-level Board Association**:
+  - `Projects.JiraBoardId` - Associates project with specific Jira board/URL
+  - Only shows in UI when organization has Jira Projects integration configured
+  - Can be edited in Project Settings tab alongside other project fields
+- **Task-Jira Relationship Chain**:
+  - `Tasks.TicketId` → `Tickets.ExternalTicketId` → `OrganizationJiraIntegrations.JiraUrl`
+  - Tasks created from tickets automatically inherit Jira context
+  - TaskDetailModal shows Jira ticket badges with external links
+  - Ticket task lists display Jira integration status
+- **API Endpoints**:
+  - `/api/jira-integrations/organization/:id` - Get/Create/Update integration
+  - `/api/jira-integrations/organization/:id/test` - Test connection
+  - `/api/jira-integrations/organization/:id/search` - Search Jira issues
+  - `/api/jira-integrations/project/:id/issues` - Get project board issues
+- **Security**: All API tokens encrypted with AES-256-CBC before storage
+
+### Memos System
+- **Calendar-based Interface**: Month navigation with day selection
+- **Filtering System**:
+  - **Date Filter**: By default disabled, shows all memos
+  - Click date → enables filter for that date
+  - Click same selected date → disables date filter (shows all)
+  - **Visibility Filter**: Private, Organizations, Public, All
+  - **Tag Filter**: Filter by custom tags, click tag again to remove
+- **Filter Controls**:
+  - "Clear Date Filter" button when date filter active
+  - "Clear All Filters" button when any filters active
+  - "Show All Memos" button when no results found with date filter
+- **Visibility Levels**:
+  - `private` - Only visible to memo author
+  - `organizations` - Shared with users in author's organizations
+  - `public` - Visible to all system users
+- **Rich Content Support**: Full Tiptap editor with images, formatting
+- **Tag System**: Comma-separated tags for organization and filtering
+- **Calendar Visual Indicators**:
+  - Today highlighted in blue
+  - Selected date (when filtered) highlighted in dark blue
+  - Days with memos shown in bold font
+  - Monthly navigation with Portuguese day abbreviations
+- **Database**: `Memos` table with `UserId`, `Title`, `Content`, `Visibility`, tags in `MemoTags`
+
 ## Critical Patterns
 
 ### Hours Calculation Pattern
@@ -588,7 +634,97 @@ const formatted = date.toLocaleDateString('en-US', {
 ```
 
 ## Common Patterns to Follow
+### Jira Integration Patterns
+**Check organization integration before showing Jira fields:**
 
+```typescript
+const [jiraIntegration, setJiraIntegration] = useState<any>(null);
+
+// Load integration status
+const loadJiraIntegration = async () => {
+  try {
+    const response = await fetch(`${API_URL}/api/jira-integrations/organization/${orgId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (response.ok) {
+      const data = await response.json();
+      if (data.integration?.IsEnabled && data.integration?.JiraProjectsUrl) {
+        setJiraIntegration(data.integration);
+      } else {
+        setJiraIntegration(null);
+      }
+    }
+  } catch (err) {
+    setJiraIntegration(null);
+  }
+};
+
+// Conditional UI rendering
+{jiraIntegration && (
+  <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+    <input
+      type="text"
+      value={formData.jiraBoardId || ''}
+      onChange={(e) => setFormData({ ...formData, jiraBoardId: e.target.value })}
+      placeholder="e.g., 123 (from board URL)"
+    />
+  </div>
+)}
+```
+
+**Task-Jira relationship display:**
+
+```typescript
+// In task queries, always JOIN for Jira data
+SELECT t.*, tk.ExternalTicketId, oji.JiraUrl
+FROM Tasks t
+LEFT JOIN Tickets tk ON t.TicketId = tk.Id
+LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId
+
+// UI display with external link
+{task.ExternalTicketId && task.JiraUrl && (
+  <a
+    href={`${task.JiraUrl}/browse/${task.ExternalTicketId}`}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded"
+    onClick={(e) => e.stopPropagation()}
+  >
+    🔗 {task.ExternalTicketId}
+  </a>
+)}
+```
+
+### Memos Filtering Patterns
+**Date filter state management:**
+
+```typescript
+const [selectedDate, setSelectedDate] = useState(new Date());
+const [enableDateFilter, setEnableDateFilter] = useState(false); // Default: show all
+const [filterTag, setFilterTag] = useState<string | null>(null);
+const [filterVisibility, setFilterVisibility] = useState<'all' | 'private' | 'organizations' | 'public'>('all');
+
+// Date selection with toggle behavior
+const handleDateSelect = (date: Date) => {
+  if (enableDateFilter && isSameDate(date, selectedDate)) {
+    setEnableDateFilter(false); // Toggle off
+  } else {
+    setSelectedDate(date);
+    setEnableDateFilter(true); // Enable filter for new date
+  }
+};
+
+// Filtering logic
+const filteredMemos = memos.filter(memo => {
+  // Date filter (only when enabled)
+  if (enableDateFilter) {
+    const memoDate = new Date(memo.CreatedAt);
+    if (!isSameDate(memoDate, selectedDate)) return false;
+  }
+  // Other filters...
+  return true;
+});
+```
 ### User Dialogs - NO alert() or confirm()
 ```typescript
 // ALWAYS use custom modals, never alert() or confirm()

@@ -17,6 +17,7 @@ export default function MemosPage() {
   const [selectedMemo, setSelectedMemo] = useState<Memo | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [enableDateFilter, setEnableDateFilter] = useState(false);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [filterVisibility, setFilterVisibility] = useState<'all' | 'private' | 'organizations' | 'public'>('all');
 
@@ -154,7 +155,27 @@ export default function MemosPage() {
   };
 
   const handleDateSelect = (date: Date) => {
-    setSelectedDate(date);
+    // Se clicar na mesma data selecionada, remove o filtro de data
+    if (enableDateFilter && 
+        date.getDate() === selectedDate.getDate() &&
+        date.getMonth() === selectedDate.getMonth() &&
+        date.getFullYear() === selectedDate.getFullYear()) {
+      setEnableDateFilter(false);
+    } else {
+      // Seleciona nova data e ativa filtro
+      setSelectedDate(date);
+      setEnableDateFilter(true);
+    }
+  };
+
+  const handleClearDateFilter = () => {
+    setEnableDateFilter(false);
+  };
+
+  const handleClearAllFilters = () => {
+    setEnableDateFilter(false);
+    setFilterTag(null);
+    setFilterVisibility('all');
   };
 
   // Filter memos
@@ -170,13 +191,17 @@ export default function MemosPage() {
       if (!tags.includes(filterTag)) return false;
     }
     
-    // Filter by selected date
-    const memoDate = new Date(memo.CreatedAt);
-    return (
-      memoDate.getDate() === selectedDate.getDate() &&
-      memoDate.getMonth() === selectedDate.getMonth() &&
-      memoDate.getFullYear() === selectedDate.getFullYear()
-    );
+    // Filter by selected date (only if date filter is enabled)
+    if (enableDateFilter) {
+      const memoDate = new Date(memo.CreatedAt);
+      return (
+        memoDate.getDate() === selectedDate.getDate() &&
+        memoDate.getMonth() === selectedDate.getMonth() &&
+        memoDate.getFullYear() === selectedDate.getFullYear()
+      );
+    }
+    
+    return true;
   });
 
   // Get all unique tags
@@ -239,6 +264,15 @@ export default function MemosPage() {
                 </button>
               </div>
 
+              {/* Date Filter Status */}
+              {enableDateFilter && (
+                <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-center">
+                  <p className="text-xs text-blue-700 dark:text-blue-400">
+                    📅 Showing: {selectedDate.toLocaleDateString('pt-PT', { day: 'numeric', month: 'long' })}
+                  </p>
+                </div>
+              )}
+
               {/* Calendar Grid */}
               <div className="grid grid-cols-7 gap-1 text-center">
                 {['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'].map(day => (
@@ -257,6 +291,7 @@ export default function MemosPage() {
                     day.getFullYear() === new Date().getFullYear();
                   
                   const isSelected =
+                    enableDateFilter &&
                     day.getDate() === selectedDate.getDate() &&
                     day.getMonth() === selectedDate.getMonth() &&
                     day.getFullYear() === selectedDate.getFullYear();
@@ -364,7 +399,28 @@ export default function MemosPage() {
                   ))}
                 </div>
               </div>
-            </div>
+              {/* Filter Actions */}
+              <div className="mt-6">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Actions</h3>
+                <div className="flex flex-col gap-2">
+                  {enableDateFilter && (
+                    <button
+                      onClick={handleClearDateFilter}
+                      className="px-3 py-2 text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded hover:bg-orange-200 dark:hover:bg-orange-900/50 flex items-center justify-center gap-2"
+                    >
+                      📅 Clear Date Filter
+                    </button>
+                  )}
+                  {(enableDateFilter || filterTag || filterVisibility !== 'all') && (
+                    <button
+                      onClick={handleClearAllFilters}
+                      className="px-3 py-2 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center gap-2"
+                    >
+                      🗑️ Clear All Filters
+                    </button>
+                  )}
+                </div>
+              </div>            </div>
           </div>
 
           {/* Memos List */}
@@ -375,9 +431,20 @@ export default function MemosPage() {
               </div>
             ) : filteredMemos.length === 0 ? (
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center">
-                <p className="text-gray-500 dark:text-gray-400">
-                  No memos for {selectedDate.toLocaleDateString('pt-PT', { day: 'numeric', month: 'long', year: 'numeric' })}
+                <p className="text-gray-500 dark:text-gray-400 mb-4">
+                  {enableDateFilter
+                    ? `No memos for ${selectedDate.toLocaleDateString('pt-PT', { day: 'numeric', month: 'long', year: 'numeric' })}`
+                    : 'No memos found with the current filters'
+                  }
                 </p>
+                {enableDateFilter && (
+                  <button
+                    onClick={handleClearDateFilter}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm"
+                  >
+                    Show All Memos
+                  </button>
+                )}
               </div>
             ) : (
               <div className="space-y-4">

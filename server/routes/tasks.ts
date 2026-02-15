@@ -73,7 +73,12 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
               tsv.StatusName, tsv.ColorCode as StatusColor,
               COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
               tpv.PriorityName, tpv.ColorCode as PriorityColor,
-              COALESCE((SELECT COUNT(*) FROM Tasks st WHERE st.ParentTaskId = t.Id), 0) as SubtaskCount
+              COALESCE((SELECT COUNT(*) FROM Tasks st WHERE st.ParentTaskId = t.Id), 0) as SubtaskCount,
+              tk.Id as TicketIdRef,
+              tk.TicketNumber,
+              tk.Title as TicketTitle,
+              tk.ExternalTicketId,
+              oji.JiraUrl
        FROM Tasks t
        JOIN Projects p ON t.ProjectId = p.Id
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
@@ -81,6 +86,8 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
        LEFT JOIN Users u2 ON t.AssignedTo = u2.Id
        LEFT JOIN Tasks depTask ON t.DependsOnTaskId = depTask.Id
        LEFT JOIN TaskAllocations ta ON t.Id = ta.TaskId
+       LEFT JOIN Tickets tk ON t.TicketId = tk.Id
+       LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1
        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
        WHERE (t.AssignedTo = ? OR ta.UserId = ? OR EXISTS (
@@ -212,13 +219,16 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 COALESCE(worked.TotalWorked, 0) as WorkedHours,
                 tk.Id as TicketIdRef,
                 tk.TicketNumber,
-                tk.Title as TicketTitle
+                tk.Title as TicketTitle,
+                tk.ExternalTicketId,
+                oji.JiraUrl
          FROM Tasks t
          INNER JOIN Projects p ON t.ProjectId = p.Id
          LEFT JOIN Users u1 ON t.CreatedBy = u1.Id
          LEFT JOIN Users u2 ON t.AssignedTo = u2.Id
          LEFT JOIN Tasks depTask ON t.DependsOnTaskId = depTask.Id
          LEFT JOIN Tickets tk ON t.TicketId = tk.Id
+         LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1
          LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
          LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
          LEFT JOIN (
@@ -251,13 +261,16 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 COALESCE(worked.TotalWorked, 0) as WorkedHours,
                 tk.Id as TicketIdRef,
                 tk.TicketNumber,
-                tk.Title as TicketTitle
+                tk.Title as TicketTitle,
+                tk.ExternalTicketId,
+                oji.JiraUrl
          FROM Tasks t
          INNER JOIN Projects p ON t.ProjectId = p.Id
          LEFT JOIN Users u1 ON t.CreatedBy = u1.Id
          LEFT JOIN Users u2 ON t.AssignedTo = u2.Id
          LEFT JOIN Tasks depTask ON t.DependsOnTaskId = depTask.Id
          LEFT JOIN Tickets tk ON t.TicketId = tk.Id
+         LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1
          LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
          LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
          LEFT JOIN (
@@ -305,12 +318,19 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
               COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
               tpv.PriorityName, tpv.ColorCode as PriorityColor,
               (SELECT SUM(AllocatedHours) FROM TaskAllocations WHERE TaskId = t.Id) as TotalAllocated,
-              (SELECT SUM(Hours) FROM TimeEntries WHERE TaskId = t.Id) as TotalWorked
+              (SELECT SUM(Hours) FROM TimeEntries WHERE TaskId = t.Id) as TotalWorked,
+              tk.Id as TicketIdRef,
+              tk.TicketNumber,
+              tk.Title as TicketTitle,
+              tk.ExternalTicketId,
+              oji.JiraUrl
        FROM Tasks t
        JOIN Projects p ON t.ProjectId = p.Id
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
        LEFT JOIN Users u1 ON t.CreatedBy = u1.Id
        LEFT JOIN Users u2 ON t.AssignedTo = u2.Id
+       LEFT JOIN Tickets tk ON t.TicketId = tk.Id
+       LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1
        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
        WHERE t.TicketId = ? AND om.UserId = ?

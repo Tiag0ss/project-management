@@ -9,11 +9,13 @@ A full-stack, self-hosted project management application with task tracking, res
 - ⏱️ **Time Tracking** — Daily and weekly timesheet views, per-task time entries
 - 👥 **Multi-Tenant Organizations** — Multiple organizations, team management, permission groups
 - 🔐 **Role-Based Permissions** — Developer, Support, Manager roles with granular permission control
-- 🎫 **Ticket System** — Support ticket management with auto-numbering, auto-assignment to default support users, and task conversion
+- 🎫 **Ticket System** — Support ticket management with auto-numbering, auto-assignment to default support users, task conversion, and Jira integration
 - 👤 **Customer Management** — Customer database with organization associations and default support user assignment
+- 🔗 **Jira Integration** — Two-tier Jira system connecting tickets and project boards with external linking and encrypted credentials
 - 📝 **Rich Text Editor** — Tiptap-based editor with formatting, images (inline base64), and markdown support for descriptions and comments
 - 📔 **Memos System** — Calendar-based note-taking with visibility controls (Private, Organizations, Public), tags, and rich content
 - 📧 **Email Notifications** — SMTP integration with encrypted credentials
+- 🔗 **Jira Integration** — Two-tier Jira system for tickets and project boards with external linking
 - 🌙 **Dark Mode** — Full dark mode support across the entire UI
 - 📱 **Responsive Design** — Mobile-friendly interface with organized navigation dropdowns
 - 🧙 **Install Wizard** — Guided first-time setup
@@ -105,17 +107,40 @@ A full-stack, self-hosted project management application with task tracking, res
 
 ### 📔 Memos System
 - **Calendar-based interface** — Navigate by month and select specific dates
+- **Smart date filtering**:
+  - By default shows all memos across all dates
+  - Click a date to filter memos for that specific day
+  - Click the same selected date again to remove date filter
+  - "Clear Date Filter" and "Clear All Filters" buttons for easy reset
 - **Visibility controls**:
-  - 🔒 **Private** — Only visible to you
+  - 🔒 **Private** — Only visible to you  
   - 👥 **Organizations** — Shared with members of your organizations
   - 🌍 **Public** — Visible to all users
 - **Tag system** — Organize and filter memos by custom tags
 - **Rich content** — Full rich text editor support with images
-- **Quick filters** — Filter by visibility level, tags, and date
+- **Visual indicators**:
+  - Calendar shows days with memos in bold
+  - Selected date highlighted when filter active
+  - Current date highlighted in blue
 - **Author display** — See who created each memo
 - **Personal notes** — Great for daily logs, meeting notes, ideas
 
-### 📧 Email Notifications
+### � Jira Integration
+- **Two-tier integration system** for comprehensive Jira connectivity:
+  - **Jira for Tickets** — Primary instance for ticket management and issue search
+  - **Jira for Projects** — Optional separate instance for project boards and kanban views
+- **Organization-level configuration** — Set up Jira credentials and project keys per organization
+- **Project board association** — Link projects to specific Jira boards via Board ID
+- **Task-to-Jira linking** — Tasks created from tickets automatically show Jira context
+- **External navigation** — Direct links to Jira tickets and boards from within the app
+- **Security** — All API tokens encrypted with AES-256-CBC encryption
+- **Flexible setup** — Works with single or multiple Jira instances per organization
+- **Visual integration** — Jira badges and links throughout task and ticket interfaces
+- **Search capability** — Find and import Jira issues directly into tickets
+- **Project settings** — Manage Jira board associations in project configuration
+- **Intelligent detection** — Automatic Jira field display based on organization integration status
+
+### �📧 Email Notifications
 - **SMTP integration** — Send notifications via your email server
 - **Encrypted credentials** — Passwords stored securely with AES-256-CBC
 - **Email preferences** — Users can customize notification settings
@@ -160,6 +185,7 @@ A full-stack, self-hosted project management application with task tracking, res
 | Backend | Node.js 20, Express.js, TypeScript |
 | Database | MySQL 8.0 |
 | Auth | JWT with HTTP-only cookies |
+| Integrations | Jira REST API, AES-256-CBC encryption |
 | Container | Alpine-based Node.js image |
 
 ## Quick Start

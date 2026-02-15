@@ -1076,6 +1076,25 @@ export default function TaskDetailModal({
                       >
                         {task.TicketNumber} - {task.TicketTitle}
                       </a>
+                      
+                      {/* Jira Integration Link */}
+                      {task.ExternalTicketId && task.JiraUrl && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Jira Ticket:</span>
+                          <a
+                            href={`${task.JiraUrl}/browse/${task.ExternalTicketId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                            title={`Open in Jira: ${task.ExternalTicketId}`}
+                          >
+                            🔷 {task.ExternalTicketId}
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
