@@ -813,6 +813,9 @@ router.put('/:id/order', authenticateToken, async (req: AuthRequest, res: Respon
       [displayOrder, taskId]
     );
 
+    // Create task history entry for display order change
+    await createTaskHistory(Number(taskId), userId!, 'updated', 'DisplayOrder', null, String(displayOrder));
+
     res.json({
       success: true,
       message: 'Task order updated successfully'
@@ -873,6 +876,9 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       [taskId]
     );
 
+    // Create task history entry for deletion
+    await createTaskHistory(Number(taskId), userId!, 'deleted', null, null, taskData.TaskName);
+
     // Log task deletion
     await logActivity(
       userId ?? null,
@@ -927,6 +933,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 // Reorder subtasks - update DisplayOrder
 router.post('/reorder-subtasks', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
+    const userId = req.user?.userId;
     const { updates } = req.body; // Array of { taskId, displayOrder }
     
     if (!Array.isArray(updates) || updates.length === 0) {
@@ -938,6 +945,16 @@ router.post('/reorder-subtasks', authenticateToken, async (req: AuthRequest, res
       await pool.execute(
         'UPDATE Tasks SET DisplayOrder = ? WHERE Id = ?',
         [update.displayOrder, update.taskId]
+      );
+      
+      // Create task history entry for reorder
+      await createTaskHistory(
+        Number(update.taskId), 
+        userId!, 
+        'updated', 
+        'DisplayOrder', 
+        null, 
+        String(update.displayOrder)
       );
     }
 
@@ -1020,6 +1037,17 @@ router.post('/utilities/recalculate-hours/:projectId', authenticateToken, async 
 
       if (Math.abs(newHours - oldHours) > 0.01) {
         await pool.execute('UPDATE Tasks SET EstimatedHours = ? WHERE Id = ?', [newHours, parent.Id]);
+        
+        // Create task history entry for estimated hours recalculation
+        await createTaskHistory(
+          parent.Id,
+          userId!,
+          'updated',
+          'EstimatedHours',
+          String(oldHours),
+          String(newHours)
+        );
+        
         updates.push({ taskId: parent.Id, taskName: parent.TaskName, oldHours, newHours });
         updatedCount++;
       }
@@ -1095,7 +1123,19 @@ router.post('/utilities/reassign-from-planning/:projectId', authenticateToken, a
     const updates: { taskId: number; taskName: string; oldUser: string | null; newUser: string }[] = [];
 
     for (const task of mismatches as RowDataPacket[]) {
+      const oldAssignedTo = task.AssignedTo;
       await pool.execute('UPDATE Tasks SET AssignedTo = ? WHERE Id = ?', [task.PlannedUserId, task.Id]);
+      
+      // Create task history entry for reassignment
+      await createTaskHistory(
+        task.Id, 
+        userId!, 
+        'updated', 
+        'AssignedTo', 
+        oldAssignedTo ? String(oldAssignedTo) : null, 
+        String(task.PlannedUserId)
+      );
+      
       updates.push({
         taskId: task.Id,
         taskName: task.TaskName,
@@ -1146,13 +1186,24 @@ router.post('/utilities/update-due-dates/:projectId', authenticateToken, async (
       const newDueDate = task.PlannedEndDate instanceof Date
         ? `${task.PlannedEndDate.getFullYear()}-${String(task.PlannedEndDate.getMonth() + 1).padStart(2, '0')}-${String(task.PlannedEndDate.getDate()).padStart(2, '0')}`
         : String(task.PlannedEndDate).split('T')[0];
-      const oldDueDate = task.DueDate 
+      const oldDueDate = task.DueDate
         ? (task.DueDate instanceof Date 
             ? `${task.DueDate.getFullYear()}-${String(task.DueDate.getMonth() + 1).padStart(2, '0')}-${String(task.DueDate.getDate()).padStart(2, '0')}`
             : String(task.DueDate).split('T')[0])
         : null;
 
       await pool.execute('UPDATE Tasks SET DueDate = ? WHERE Id = ?', [newDueDate, task.Id]);
+      
+      // Create task history entry for due date change
+      await createTaskHistory(
+        task.Id, 
+        userId!, 
+        'updated', 
+        'DueDate', 
+        oldDueDate, 
+        newDueDate
+      );
+      
       updates.push({
         taskId: task.Id,
         taskName: task.TaskName,
@@ -1208,6 +1259,24 @@ router.post('/utilities/clear-planning/:projectId', authenticateToken, async (re
        WHERE ProjectId = ?`,
       [projectId]
     );
+
+    // Get all tasks that were updated for history
+    const [updatedTasks] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id, TaskName FROM Tasks WHERE ProjectId = ?',
+      [projectId]
+    );
+
+    // Create task history entries for cleared planning
+    for (const task of updatedTasks as RowDataPacket[]) {
+      await createTaskHistory(
+        task.Id,
+        userId!,
+        'updated',
+        'PlanningCleared',
+        'Planned dates and assignment',
+        null
+      );
+    }
 
     res.json({
       success: true,
@@ -1302,6 +1371,17 @@ router.post('/utilities/sync-parent-status/:projectId', authenticateToken, async
         const oldStatusName = task.StatusName || 'None';
         const newStatusName = statusValues.find(s => s.Id === newStatusId)?.StatusName || 'Unknown';
         await pool.execute('UPDATE Tasks SET Status = ? WHERE Id = ?', [newStatusId, task.Id]);
+        
+        // Create task history entry for status sync
+        await createTaskHistory(
+          task.Id,
+          userId!,
+          'updated',
+          'Status',
+          oldStatusName,
+          newStatusName
+        );
+        
         updates.push({
           taskId: task.Id,
           taskName: task.TaskName,
@@ -1408,6 +1488,16 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
         ]
       );
 
+      // Create task history entry for Jira import
+      await createTaskHistory(
+        result.insertId,
+        userId!,
+        'created',
+        'JiraImport',
+        null,
+        issue.key
+      );
+
       jiraKeyToTaskId[issue.key] = result.insertId;
       createdTasks.push({
         taskId: result.insertId,
@@ -1425,6 +1515,17 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
           'UPDATE Tasks SET ParentTaskId = ? WHERE Id = ?',
           [jiraKeyToTaskId[task.parentKey], task.taskId]
         );
+        
+        // Create task history entry for parent relationship
+        await createTaskHistory(
+          task.taskId,
+          userId!,
+          'updated',
+          'ParentTaskId',
+          null,
+          String(jiraKeyToTaskId[task.parentKey])
+        );
+        
         hierarchyUpdateCount++;
       }
     }

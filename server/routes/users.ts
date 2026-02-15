@@ -80,11 +80,42 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
       }
     }
 
+    // Get old profile data for logging
+    const [oldProfile] = await pool.execute<RowDataPacket[]>(
+      'SELECT FirstName, LastName, Email FROM Users WHERE Id = ?',
+      [userId]
+    );
+    const oldData = oldProfile[0];
+
     await pool.execute(
       `UPDATE Users 
        SET FirstName = ?, LastName = ?, Email = ?
        WHERE Id = ?`,
       [firstName || null, lastName || null, email, userId]
+    );
+
+    // Log profile changes
+    if (firstName !== oldData.FirstName) {
+      await logUserHistory(userId!, userId!, 'updated', 'FirstName', oldData.FirstName || '', firstName || '');
+    }
+    if (lastName !== oldData.LastName) {
+      await logUserHistory(userId!, userId!, 'updated', 'LastName', oldData.LastName || '', lastName || '');
+    }
+    if (email !== oldData.Email) {
+      await logUserHistory(userId!, userId!, 'updated', 'Email', oldData.Email || '', email || '');
+    }
+
+    // Log activity
+    await logActivity(
+      userId ?? null,
+      req.user?.username || null,
+      'USER_PROFILE_UPDATE',
+      'User',
+      userId!,
+      req.user?.username || null,
+      `Updated profile`,
+      req.ip,
+      req.get('user-agent')
     );
 
     res.json({
@@ -241,6 +272,29 @@ router.put('/work-hours', authenticateToken, async (req: AuthRequest, res: Respo
       await pool.execute(
         `UPDATE Users SET ${updates.join(', ')} WHERE Id = ?`,
         values
+      );
+
+      // Log work hours update
+      await logUserHistory(
+        userId!,
+        userId!,
+        'updated',
+        'WorkHours',
+        'Work hours changed',
+        JSON.stringify(req.body)
+      );
+
+      // Log activity
+      await logActivity(
+        userId ?? null,
+        req.user?.username || null,
+        'USER_WORKHOURS_UPDATE',
+        'User',
+        userId!,
+        req.user?.username || null,
+        `Updated work hours`,
+        req.ip,
+        req.get('user-agent')
       );
     }
 
@@ -421,9 +475,39 @@ router.put('/:id/password', authenticateToken, requireAdmin, async (req: AuthReq
 
     const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
 
+    // Get target user info
+    const [targetUser] = await pool.execute<RowDataPacket[]>(
+      'SELECT Username FROM Users WHERE Id = ?',
+      [userId]
+    );
+    const username = targetUser.length > 0 ? targetUser[0].Username : 'Unknown';
+
     await pool.execute(
       'UPDATE Users SET PasswordHash = ? WHERE Id = ?',
       [passwordHash, userId]
+    );
+
+    // Log password reset
+    await logUserHistory(
+      Number(userId),
+      req.user!.userId!,
+      'updated',
+      'Password',
+      'Password reset by admin',
+      null
+    );
+
+    // Log activity
+    await logActivity(
+      req.user?.userId ?? null,
+      req.user?.username || null,
+      'USER_PASSWORD_RESET',
+      'User',
+      Number(userId),
+      username,
+      `Reset password for user: ${username}`,
+      req.ip,
+      req.get('user-agent')
     );
 
     res.json({
@@ -484,6 +568,16 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, 
       `Deleted user: ${username}`,
       req.ip,
       req.get('user-agent')
+    );
+
+    // Log to detailed history
+    await logUserHistory(
+      Number(userId),
+      currentUserId!,
+      'deleted',
+      null,
+      username,
+      null
     );
 
     res.json({

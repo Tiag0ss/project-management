@@ -506,6 +506,26 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       req.get('user-agent')
     );
 
+    // Log to detailed history
+    await logProjectHistory(
+      Number(projectId),
+      userId!,
+      'deleted',
+      null,
+      projectName,
+      null
+    );
+
+    // Log to detailed history
+    await logProjectHistory(
+      Number(projectId),
+      userId!,
+      'deleted',
+      null,
+      projectName,
+      null
+    );
+
     res.json({
       success: true,
       message: 'Project deleted successfully'

@@ -371,6 +371,16 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       req.get('user-agent')
     );
 
+    // Log to detailed history
+    await logOrganizationHistory(
+      Number(orgId),
+      userId!,
+      'deleted',
+      null,
+      orgName,
+      null
+    );
+
     res.json({
       success: true,
       message: 'Organization deleted successfully'
@@ -532,6 +542,26 @@ router.post('/:id/members', authenticateToken, async (req: AuthRequest, res: Res
       [orgId, newUserId, role || 'Member', permissionGroupId || null]
     );
 
+    // Get user info for logging
+    const [userInfo] = await pool.execute<RowDataPacket[]>(
+      'SELECT Username, FirstName, LastName FROM Users WHERE Id = ?',
+      [newUserId]
+    );
+    const userName = userInfo.length > 0 ? userInfo[0].Username : 'Unknown';
+
+    // Log member addition
+    await logActivity(
+      userId ?? null,
+      req.user?.username || null,
+      'ORGANIZATION_MEMBER_ADD',
+      'OrganizationMember',
+      Number(newUserId),
+      userName,
+      `Added member ${userName} with role ${role} to organization`,
+      req.ip,
+      req.get('user-agent')
+    );
+
     res.status(201).json({
       success: true,
       message: 'Member added successfully'
@@ -572,6 +602,29 @@ router.put('/:id/members/:memberId', authenticateToken, async (req: AuthRequest,
     await pool.execute(
       'UPDATE OrganizationMembers SET Role = ?, PermissionGroupId = ? WHERE Id = ? AND OrganizationId = ?',
       [role, permissionGroupId, memberId, orgId]
+    );
+
+    // Get member info for logging
+    const [memberInfo] = await pool.execute<RowDataPacket[]>(
+      `SELECT u.Username, om.Role as OldRole FROM OrganizationMembers om
+       JOIN Users u ON om.UserId = u.Id
+       WHERE om.Id = ? AND om.OrganizationId = ?`,
+      [memberId, orgId]
+    );
+    const memberName = memberInfo.length > 0 ? memberInfo[0].Username : 'Unknown';
+    const oldRole = memberInfo.length > 0 ? memberInfo[0].OldRole : 'Unknown';
+
+    // Log member update
+    await logActivity(
+      userId ?? null,
+      req.user?.username || null,
+      'ORGANIZATION_MEMBER_UPDATE',
+      'OrganizationMember',
+      Number(memberId),
+      memberName,
+      `Updated member ${memberName} role from ${oldRole} to ${role}`,
+      req.ip,
+      req.get('user-agent')
     );
 
     res.json({
@@ -623,9 +676,32 @@ router.delete('/:id/members/:memberId', authenticateToken, async (req: AuthReque
       });
     }
 
+    // Get member info before deletion
+    const [memberInfo] = await pool.execute<RowDataPacket[]>(
+      `SELECT u.Username, om.Role FROM OrganizationMembers om
+       JOIN Users u ON om.UserId = u.Id
+       WHERE om.Id = ? AND om.OrganizationId = ?`,
+      [memberId, orgId]
+    );
+    const memberName = memberInfo.length > 0 ? memberInfo[0].Username : 'Unknown';
+    const memberRole = memberInfo.length > 0 ? memberInfo[0].Role : 'Unknown';
+
     await pool.execute(
       'DELETE FROM OrganizationMembers WHERE Id = ? AND OrganizationId = ?',
       [memberId, orgId]
+    );
+
+    // Log member removal
+    await logActivity(
+      userId ?? null,
+      req.user?.username || null,
+      'ORGANIZATION_MEMBER_REMOVE',
+      'OrganizationMember',
+      Number(memberId),
+      memberName,
+      `Removed member ${memberName} (${memberRole}) from organization`,
+      req.ip,
+      req.get('user-agent')
     );
 
     res.json({

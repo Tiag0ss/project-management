@@ -1080,21 +1080,47 @@ export default function TaskDetailModal({
                       {/* Jira Integration Link */}
                       {task.ExternalTicketId && task.JiraUrl && (
                         <div className="mt-2 flex items-center gap-2">
-                          <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Jira Ticket:</span>
+                          <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Jira Issue:</span>
                           <a
                             href={`${task.JiraUrl}/browse/${task.ExternalTicketId}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                            className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
                             title={`Open in Jira: ${task.ExternalTicketId}`}
                           >
-                            🔷 {task.ExternalTicketId}
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            🔗 {task.ExternalTicketId}
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                             </svg>
                           </a>
                         </div>
                       )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Jira Integration Link (Independent) */}
+              {!task?.TicketNumber && task?.ExternalTicketId && task?.JiraUrl && (
+                <div className="p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-orange-600 dark:text-orange-400" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
+                    </svg>
+                    <div className="flex-1">
+                      <span className="text-xs font-medium text-orange-700 dark:text-orange-300">Associated Jira Issue:</span>
+                      <a
+                        href={`${task.JiraUrl}/browse/${task.ExternalTicketId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-2 inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors"
+                        title={`Open in Jira: ${task.ExternalTicketId}`}
+                      >
+                        🔗 {task.ExternalTicketId}
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
                     </div>
                   </div>
                 </div>
