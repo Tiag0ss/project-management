@@ -6,43 +6,51 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique attachment identifier"
     },
     {
       "FieldName": "OrganizationId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id"
     },
     {
       "FieldName": "UploadedByUserId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who uploaded the file"
     },
     {
       "FieldName": "FileName",
       "DataType": "varchar(255)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Original filename of the attachment"
     },
     {
       "FieldName": "FileType",
       "DataType": "varchar(100)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "MIME type of the file (e.g., 'image/png', 'application/pdf')"
     },
     {
       "FieldName": "FileSize",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "File size in bytes"
     },
     {
       "FieldName": "FileData",
       "DataType": "longtext",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "File content encoded in Base64"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the file was uploaded"
     }
   ]
 }

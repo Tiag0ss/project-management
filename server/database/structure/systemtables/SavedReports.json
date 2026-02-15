@@ -6,55 +6,65 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique saved report identifier"
     },
     {
       "FieldName": "UserId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who created the report"
     },
     {
       "FieldName": "DataSource",
       "DataType": "varchar(100)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Source of data for the report (e.g., 'tasks', 'projects', 'time-entries')"
     },
     {
       "FieldName": "ReportName",
       "DataType": "varchar(255)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "User-defined name for the saved report"
     },
     {
       "FieldName": "PivotConfig",
       "DataType": "text",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "JSON configuration for pivot table layout and aggregations"
     },
     {
       "FieldName": "Filters",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "JSON configuration for applied filters (date ranges, users, projects, etc.)"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when report was saved"
     },
     {
       "FieldName": "UpdatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when report configuration was last updated"
     },
     {
       "FieldName": "SharedWith",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "JSON array of user IDs with whom the report is shared"
     },
     {
       "FieldName": "IsPublic",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Flag indicating if report is publicly visible to all users"
     }
   ]
 }

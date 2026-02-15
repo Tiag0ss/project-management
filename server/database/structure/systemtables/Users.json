@@ -6,262 +6,306 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique user identifier"
     },
     {
       "FieldName": "Username",
       "DataType": "varchar(100)",
       "NotNullable": true,
-      "Unique": true
+      "Unique": true,
+      "Comment": "Unique username for login"
     },
     {
       "FieldName": "Email",
       "DataType": "varchar(255)",
       "NotNullable": true,
-      "Unique": true
+      "Unique": true,
+      "Comment": "User's email address - must be unique"
     },
     {
       "FieldName": "PasswordHash",
       "DataType": "varchar(255)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Hashed password using bcrypt"
     },
     {
       "FieldName": "FirstName",
       "DataType": "varchar(100)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "User's first name"
     },
     {
       "FieldName": "LastName",
       "DataType": "varchar(100)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "User's last name"
     },
     {
       "FieldName": "IsActive",
       "DataType": "boolean",
       "NotNullable": true,
-      "DefaultValue": true
+      "DefaultValue": true,
+      "Comment": "Whether the user account is active"
     },
     {
       "FieldName": "IsAdmin",
       "DataType": "boolean",
       "NotNullable": true,
-      "DefaultValue": false
+      "DefaultValue": false,
+      "Comment": "Whether user has admin privileges - grants all permissions"
     },
     {
       "FieldName": "CustomerId",
       "DataType": "int",
       "NotNullable": false,
-      "DefaultValue": null
+      "DefaultValue": null,
+      "Comment": "Optional customer ID if user belongs to a specific customer"
     },
     {
       "FieldName": "IsDeveloper",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Whether user has Developer role - can manage projects and tasks"
     },
     {
       "FieldName": "IsSupport",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Whether user has Support role - can manage tickets and customer support"
     },
     {
       "FieldName": "IsManager",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Whether user has Manager role - can view reports and manage team"
     },
     {
       "FieldName": "WorkHoursMonday",
       "DataType": "decimal(4,2)",
       "NotNullable": false,
-      "DefaultValue": "8.00"
+      "DefaultValue": "8.00",
+      "Comment": "Work hours capacity on Monday for resource planning"
     },
     {
       "FieldName": "WorkStartMonday",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "09:00"
+      "DefaultValue": "09:00",
+      "Comment": "Work start time on Monday (HH:MM format)"
     },
     {
       "FieldName": "WorkHoursTuesday",
       "DataType": "decimal(4,2)",
       "NotNullable": false,
-      "DefaultValue": "8.00"
+      "DefaultValue": "8.00",
+      "Comment": "Work hours capacity on Tuesday for resource planning"
     },
     {
       "FieldName": "WorkStartTuesday",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "09:00"
+      "DefaultValue": "09:00",
+      "Comment": "Work start time on Tuesday (HH:MM format)"
     },
     {
       "FieldName": "WorkHoursWednesday",
       "DataType": "decimal(4,2)",
       "NotNullable": false,
-      "DefaultValue": "8.00"
+      "DefaultValue": "8.00",
+      "Comment": "Work hours capacity on Wednesday for resource planning"
     },
     {
       "FieldName": "WorkStartWednesday",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "09:00"
+      "DefaultValue": "09:00",
+      "Comment": "Work start time on Wednesday (HH:MM format)"
     },
     {
       "FieldName": "WorkHoursThursday",
       "DataType": "decimal(4,2)",
       "NotNullable": false,
-      "DefaultValue": "8.00"
+      "DefaultValue": "8.00",
+      "Comment": "Work hours capacity on Thursday for resource planning"
     },
     {
       "FieldName": "WorkStartThursday",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "09:00"
+      "DefaultValue": "09:00",
+      "Comment": "Work start time on Thursday (HH:MM format)"
     },
     {
       "FieldName": "WorkHoursFriday",
       "DataType": "decimal(4,2)",
       "NotNullable": false,
-      "DefaultValue": "8.00"
+      "DefaultValue": "8.00",
+      "Comment": "Work hours capacity on Friday for resource planning"
     },
     {
       "FieldName": "WorkStartFriday",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "09:00"
+      "DefaultValue": "09:00",
+      "Comment": "Work start time on Friday (HH:MM format)"
     },
     {
       "FieldName": "WorkHoursSaturday",
       "DataType": "decimal(4,2)",
       "NotNullable": false,
-      "DefaultValue": "0.00"
+      "DefaultValue": "0.00",
+      "Comment": "Work hours capacity on Saturday for resource planning"
     },
     {
       "FieldName": "WorkStartSaturday",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "09:00"
+      "DefaultValue": "09:00",
+      "Comment": "Work start time on Saturday (HH:MM format)"
     },
     {
       "FieldName": "WorkHoursSunday",
       "DataType": "decimal(4,2)",
       "NotNullable": false,
-      "DefaultValue": "0.00"
+      "DefaultValue": "0.00",
+      "Comment": "Work hours capacity on Sunday for resource planning"
     },
     {
       "FieldName": "WorkStartSunday",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "09:00"
+      "DefaultValue": "09:00",
+      "Comment": "Work start time on Sunday (HH:MM format)"
     },
     {
       "FieldName": "LunchTime",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "12:00"
+      "DefaultValue": "12:00",
+      "Comment": "Lunch break start time (HH:MM format)"
     },
     {
       "FieldName": "LunchDuration",
       "DataType": "int",
       "NotNullable": false,
-      "DefaultValue": "60"
+      "DefaultValue": "60",
+      "Comment": "Lunch break duration in minutes"
     },
     {
       "FieldName": "HobbyStartMonday",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "19:00"
+      "DefaultValue": "19:00",
+      "Comment": "Hobby projects start time on Monday (HH:MM format)"
     },
     {
       "FieldName": "HobbyHoursMonday",
       "DataType": "decimal(4,2)",
       "NotNullable": false,
-      "DefaultValue": "0.00"
+      "DefaultValue": "0.00",
+      "Comment": "Hobby hours capacity on Monday for personal projects"
     },
     {
       "FieldName": "HobbyStartTuesday",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "19:00"
+      "DefaultValue": "19:00",
+      "Comment": "Hobby projects start time on Tuesday (HH:MM format)"
     },
     {
       "FieldName": "HobbyHoursTuesday",
       "DataType": "decimal(4,2)",
       "NotNullable": false,
-      "DefaultValue": "0.00"
+      "DefaultValue": "0.00",
+      "Comment": "Hobby hours capacity on Tuesday for personal projects"
     },
     {
       "FieldName": "HobbyStartWednesday",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "19:00"
+      "DefaultValue": "19:00",
+      "Comment": "Hobby projects start time on Wednesday (HH:MM format)"
     },
     {
       "FieldName": "HobbyHoursWednesday",
       "DataType": "decimal(4,2)",
       "NotNullable": false,
-      "DefaultValue": "0.00"
+      "DefaultValue": "0.00",
+      "Comment": "Hobby hours capacity on Wednesday for personal projects"
     },
     {
       "FieldName": "HobbyStartThursday",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "19:00"
+      "DefaultValue": "19:00",
+      "Comment": "Hobby projects start time on Thursday (HH:MM format)"
     },
     {
       "FieldName": "HobbyHoursThursday",
       "DataType": "decimal(4,2)",
       "NotNullable": false,
-      "DefaultValue": "0.00"
+      "DefaultValue": "0.00",
+      "Comment": "Hobby hours capacity on Thursday for personal projects"
     },
     {
       "FieldName": "HobbyStartFriday",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "19:00"
+      "DefaultValue": "19:00",
+      "Comment": "Hobby projects start time on Friday (HH:MM format)"
     },
     {
       "FieldName": "HobbyHoursFriday",
       "DataType": "decimal(4,2)",
       "NotNullable": false,
-      "DefaultValue": "0.00"
+      "DefaultValue": "0.00",
+      "Comment": "Hobby hours capacity on Friday for personal projects"
     },
     {
       "FieldName": "HobbyStartSaturday",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "10:00"
+      "DefaultValue": "10:00",
+      "Comment": "Hobby projects start time on Saturday (HH:MM format)"
     },
     {
       "FieldName": "HobbyHoursSaturday",
       "DataType": "decimal(4,2)",
       "NotNullable": false,
-      "DefaultValue": "4.00"
+      "DefaultValue": "4.00",
+      "Comment": "Hobby hours capacity on Saturday for personal projects"
     },
     {
       "FieldName": "HobbyStartSunday",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "10:00"
+      "DefaultValue": "10:00",
+      "Comment": "Hobby projects start time on Sunday (HH:MM format)"
     },
     {
       "FieldName": "HobbyHoursSunday",
       "DataType": "decimal(4,2)",
       "NotNullable": false,
-      "DefaultValue": "4.00"
+      "DefaultValue": "4.00",
+      "Comment": "Hobby hours capacity on Sunday for personal projects"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the user was created"
     },
     {
       "FieldName": "UpdatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+      "Comment": "Date and time of last update - auto-updated"
     }
   ]
 }

@@ -5,24 +5,28 @@
     {
       "FieldName": "CustomerId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Customers.Id (part of composite primary key)"
     },
     {
       "FieldName": "UserId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id (part of composite primary key)"
     },
     {
       "FieldName": "Role",
       "DataType": "varchar(50)",
       "NotNullable": true,
-      "DefaultValue": "User"
+      "DefaultValue": "User",
+      "Comment": "User's role for this customer (User, Contact, etc.)"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when user-customer association was created"
     }
   ]
 }

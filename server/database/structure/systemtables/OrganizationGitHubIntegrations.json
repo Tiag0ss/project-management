@@ -5,35 +5,41 @@
     {
       "FieldName": "OrganizationId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Primary key / Foreign key - reference to Organizations.Id"
     },
     {
       "FieldName": "IsEnabled",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Flag indicating if GitHub integration is active"
     },
     {
       "FieldName": "GitHubUrl",
       "DataType": "varchar(255)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "GitHub server URL (e.g., https://github.com or GitHub Enterprise URL)"
     },
     {
       "FieldName": "GitHubToken",
       "DataType": "varchar(500)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Encrypted GitHub API access token"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when integration was created"
     },
     {
       "FieldName": "UpdatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when integration was last updated"
     }
   ]
 }

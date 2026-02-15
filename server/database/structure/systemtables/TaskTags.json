@@ -6,28 +6,33 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique task-tag association identifier"
     },
     {
       "FieldName": "TaskId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Tasks.Id"
     },
     {
       "FieldName": "TagId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Tags.Id"
     },
     {
       "FieldName": "AddedBy",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who added this tag"
     },
     {
       "FieldName": "AddedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when tag was added to task"
     }
   ]
 }

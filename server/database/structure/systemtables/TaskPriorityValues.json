@@ -6,40 +6,47 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique priority value identifier"
     },
     {
       "FieldName": "OrganizationId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id for organization-specific priorities"
     },
     {
       "FieldName": "PriorityName",
       "DataType": "varchar(50)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Display name of the task priority"
     },
     {
       "FieldName": "ColorCode",
       "DataType": "varchar(7)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Color code in hex format (e.g., #FF5733) for UI display"
     },
     {
       "FieldName": "SortOrder",
       "DataType": "int",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Order for displaying priority values in lists"
     },
     {
       "FieldName": "IsDefault",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Whether this is the default priority for new tasks"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when priority value was created"
     }
   ]
 }

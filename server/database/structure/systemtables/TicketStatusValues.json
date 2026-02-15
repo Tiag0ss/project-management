@@ -6,41 +6,48 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique status identifier"
     },
     {
       "FieldName": "OrganizationId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id"
     },
     {
       "FieldName": "StatusName",
       "DataType": "varchar(50)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Status name/label"
     },
     {
       "FieldName": "Color",
       "DataType": "varchar(7)",
       "NotNullable": true,
-      "DefaultValue": "#6B7280"
+      "DefaultValue": "#6B7280",
+      "Comment": "Hex color code for status visualization (e.g., #FF0000)"
     },
     {
       "FieldName": "IsDefault",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Flag indicating if this is the default status for new tickets"
     },
     {
       "FieldName": "IsClosed",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Flag indicating if this status represents a closed/resolved ticket"
     },
     {
       "FieldName": "SortOrder",
       "DataType": "int",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Sort order for displaying statuses in lists"
     }
   ]
 }

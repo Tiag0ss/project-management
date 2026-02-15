@@ -6,40 +6,47 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique memo identifier"
     },
     {
       "FieldName": "UserId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who created this memo"
     },
     {
       "FieldName": "Title",
       "DataType": "varchar(255)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Title or subject of the memo"
     },
     {
       "FieldName": "Content",
       "DataType": "mediumtext",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Memo content with rich text formatting"
     },
     {
       "FieldName": "Visibility",
       "DataType": "enum('private','organizations','public')",
       "NotNullable": true,
-      "DefaultValue": "private"
+      "DefaultValue": "private",
+      "Comment": "Visibility level: private (only author), organizations (shared with author's orgs), public (all users)"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when memo was created"
     },
     {
       "FieldName": "UpdatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+      "Comment": "Auto-updated timestamp of last modification"
     }
   ]
 }

@@ -6,39 +6,46 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique tag identifier"
     },
     {
       "FieldName": "OrganizationId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id for organization-specific tags"
     },
     {
       "FieldName": "Name",
       "DataType": "varchar(50)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Tag name or label"
     },
     {
       "FieldName": "Color",
       "DataType": "varchar(7)",
       "NotNullable": true,
-      "DefaultValue": "#6B7280"
+      "DefaultValue": "#6B7280",
+      "Comment": "Tag color in hex format (e.g., #6B7280) for UI display"
     },
     {
       "FieldName": "Description",
       "DataType": "varchar(255)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Description of tag purpose or usage"
     },
     {
       "FieldName": "CreatedBy",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who created this tag"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when tag was created"
     }
   ]
 }

@@ -6,52 +6,61 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique allocation identifier"
     },
     {
       "FieldName": "TaskId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Tasks.Id"
     },
     {
       "FieldName": "UserId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id for resource allocation"
     },
     {
       "FieldName": "AllocationDate",
       "DataType": "date",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Date for which hours are allocated"
     },
     {
       "FieldName": "AllocatedHours",
       "DataType": "decimal(4,2)",
       "NotNullable": true,
-      "DefaultValue": "0.00"
+      "DefaultValue": "0.00",
+      "Comment": "Number of hours allocated for this date"
     },
     {
       "FieldName": "StartTime",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "09:00"
+      "DefaultValue": "09:00",
+      "Comment": "Planned start time in HH:MM format"
     },
     {
       "FieldName": "EndTime",
       "DataType": "varchar(5)",
       "NotNullable": false,
-      "DefaultValue": "09:00"
+      "DefaultValue": "09:00",
+      "Comment": "Planned end time in HH:MM format"
     },
     {
       "FieldName": "IsManual",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Whether allocation was manually set or auto-calculated"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "datetime",
       "NotNullable": false,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the allocation was created"
     }
   ]
 }

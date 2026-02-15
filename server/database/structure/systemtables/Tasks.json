@@ -6,115 +6,137 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique task identifier"
     },
     {
       "FieldName": "ProjectId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Projects.Id"
     },
     {
       "FieldName": "TaskName",
       "DataType": "varchar(255)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Name or title of the task"
     },
     {
       "FieldName": "Description",
       "DataType": "mediumtext",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Detailed task description with rich text content"
     },
     {
       "FieldName": "Status",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to TaskStatusValues.Id"
     },
     {
       "FieldName": "Priority",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to TaskPriorityValues.Id"
     },
     {
       "FieldName": "AssignedTo",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Users.Id for task assignee"
     },
     {
       "FieldName": "DueDate",
       "DataType": "date",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Task deadline or due date"
     },
     {
       "FieldName": "EstimatedHours",
       "DataType": "decimal(10,2)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Estimated work hours needed for the task"
     },
     {
       "FieldName": "ParentTaskId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Tasks.Id for parent task in hierarchy"
     },
     {
       "FieldName": "DisplayOrder",
       "DataType": "int",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Sort order for displaying tasks"
     },
     {
       "FieldName": "PlannedStartDate",
       "DataType": "date",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Planned start date based on resource allocation"
     },
     {
       "FieldName": "PlannedEndDate",
       "DataType": "date",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Planned end date based on resource allocation"
     },
     {
       "FieldName": "CreatedBy",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who created this task"
     },
     {
       "FieldName": "DependsOnTaskId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Tasks.Id for task dependency"
     },
     {
       "FieldName": "TicketId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Tickets.Id if created from a ticket"
     },
     {
       "FieldName": "ExternalIssueId",
       "DataType": "varchar(100)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "External issue tracking system identifier (e.g., Jira key)"
     },
     {
       "FieldName": "GitHubIssueNumber",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "GitHub issue number for integration"
     },
     {
       "FieldName": "GiteaIssueNumber",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Gitea issue number for integration"
     },
     {
       "FieldName": "ExternalUrl",
       "DataType": "varchar(500)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "URL to external issue or task in other systems"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the task was created"
     },
     {
       "FieldName": "UpdatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+      "Comment": "Auto-updated timestamp of last modification"
     }
   ]
 }

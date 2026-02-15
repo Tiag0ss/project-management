@@ -5,60 +5,71 @@
     {
       "FieldName": "OrganizationId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Primary key / Foreign key - reference to Organizations.Id"
     },
     {
       "FieldName": "IsEnabled",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Flag indicating if Jira integration is active"
     },
     {
       "FieldName": "JiraUrl",
       "DataType": "varchar(255)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Main Jira instance URL for ticket management (e.g., https://company.atlassian.net)"
     },
     {
       "FieldName": "JiraEmail",
       "DataType": "varchar(255)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Email used for Jira API authentication (main instance)"
     },
     {
       "FieldName": "JiraApiToken",
       "DataType": "varchar(500)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Encrypted Jira API token for main instance"
     },
     {
       "FieldName": "JiraProjectKey",
       "DataType": "varchar(50)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Default Jira project key for ticket searches"
     },
     {
       "FieldName": "JiraProjectsUrl",
       "DataType": "varchar(255)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Separate Jira instance URL for project boards (optional)"
     },
     {
       "FieldName": "JiraProjectsEmail",
       "DataType": "varchar(255)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Email used for Jira API authentication (projects instance)"
     },
     {
       "FieldName": "JiraProjectsApiToken",
       "DataType": "varchar(500)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Encrypted Jira API token for projects instance"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when integration was created"
     },
     {
       "FieldName": "UpdatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when integration was last updated"
     }
   ]
 }

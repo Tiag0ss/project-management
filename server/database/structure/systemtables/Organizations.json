@@ -6,39 +6,46 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique organization identifier"
     },
     {
       "FieldName": "Name",
       "DataType": "varchar(255)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Organization name"
     },
     {
       "FieldName": "Abbreviation",
       "DataType": "varchar(10)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Short abbreviation or acronym for the organization"
     },
     {
       "FieldName": "Description",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Detailed description of the organization"
     },
     {
       "FieldName": "CreatedBy",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who created this organization"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the organization was created"
     },
     {
       "FieldName": "UpdatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+      "Comment": "Auto-updated timestamp of last modification"
     }
   ]
 }

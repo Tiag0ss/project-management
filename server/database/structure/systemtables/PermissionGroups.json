@@ -6,58 +6,68 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique permission group identifier"
     },
     {
       "FieldName": "OrganizationId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id"
     },
     {
       "FieldName": "GroupName",
       "DataType": "varchar(100)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Name of the permission group"
     },
     {
       "FieldName": "Description",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Description of permission group's purpose and access level"
     },
     {
       "FieldName": "CanManageProjects",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to manage projects within organization"
     },
     {
       "FieldName": "CanManageTasks",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to manage tasks within organization"
     },
     {
       "FieldName": "CanPlanTasks",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to plan and allocate tasks"
     },
     {
       "FieldName": "CanManageMembers",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to manage organization members"
     },
     {
       "FieldName": "CanManageSettings",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to manage organization settings"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when permission group was created"
     }
   ]
 }

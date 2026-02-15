@@ -5,65 +5,77 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique call record identifier"
     },
     {
       "FieldName": "UserId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who logged this call"
     },
     {
       "FieldName": "CallDate",
       "DataType": "date",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Date when call occurred"
     },
     {
       "FieldName": "StartTime",
       "DataType": "time",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Time when call started"
     },
     {
       "FieldName": "DurationMinutes",
       "DataType": "int",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Duration of call in minutes"
     },
     {
       "FieldName": "CallType",
       "DataType": "varchar(50)",
       "NotNullable": true,
-      "DefaultValue": "Teams"
+      "DefaultValue": "Teams",
+      "Comment": "Type of call (Teams, Phone, Zoom, etc.)"
     },
     {
       "FieldName": "Participants",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "List of call participants"
     },
     {
       "FieldName": "Subject",
       "DataType": "varchar(255)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Subject or topic of the call"
     },
     {
       "FieldName": "Notes",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Notes or summary from the call"
     },
     {
       "FieldName": "ProjectId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Projects.Id if related to a project"
     },
     {
       "FieldName": "TaskId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Tasks.Id if related to a task"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when call record was created"
     }
   ],
   "PrimaryKeyFields": "Id",

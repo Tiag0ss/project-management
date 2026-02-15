@@ -6,180 +6,210 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique role permission identifier"
     },
     {
       "FieldName": "RoleName",
       "DataType": "varchar(50)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Role name (Developer, Support, Manager, etc.)"
     },
     {
       "FieldName": "CanViewDashboard",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Permission to view dashboard page"
     },
     {
       "FieldName": "CanViewPlanning",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Permission to view planning/Gantt page"
     },
     {
       "FieldName": "CanViewProjects",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Permission to view projects"
     },
     {
       "FieldName": "CanManageProjects",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to edit projects"
     },
     {
       "FieldName": "CanCreateProjects",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to create new projects"
     },
     {
       "FieldName": "CanDeleteProjects",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to delete projects"
     },
     {
       "FieldName": "CanViewTasks",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Permission to view tasks"
     },
     {
       "FieldName": "CanManageTasks",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Permission to edit tasks"
     },
     {
       "FieldName": "CanCreateTasks",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Permission to create new tasks"
     },
     {
       "FieldName": "CanDeleteTasks",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to delete tasks"
     },
     {
       "FieldName": "CanAssignTasks",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to assign tasks to users"
     },
     {
       "FieldName": "CanManageTimeEntries",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Permission to manage time entries"
     },
     {
       "FieldName": "CanViewReports",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to view reports"
     },
     {
       "FieldName": "CanManageOrganizations",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to manage organizations"
     },
     {
       "FieldName": "CanViewCustomers",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Permission to view customers"
     },
     {
       "FieldName": "CanManageCustomers",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to edit customers"
     },
     {
       "FieldName": "CanCreateCustomers",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to create new customers"
     },
     {
       "FieldName": "CanDeleteCustomers",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to delete customers"
     },
     {
       "FieldName": "CanManageUsers",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to manage users"
     },
     {
       "FieldName": "CanManageTickets",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Permission to manage tickets"
     },
     {
       "FieldName": "CanCreateTickets",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Permission to create new tickets"
     },
     {
       "FieldName": "CanDeleteTickets",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to delete tickets"
     },
     {
       "FieldName": "CanAssignTickets",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to assign tickets to users"
     },
     {
       "FieldName": "CanCreateTaskFromTicket",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to create tasks from tickets"
     },
     {
       "FieldName": "CanPlanTasks",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to plan and allocate tasks"
     },
     {
       "FieldName": "CanViewOthersPlanning",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Permission to view other users' task planning"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when role was created"
     },
     {
       "FieldName": "UpdatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+      "Comment": "Auto-updated timestamp of last modification"
     }
   ]
 }

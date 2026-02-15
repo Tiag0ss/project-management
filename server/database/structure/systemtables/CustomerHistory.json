@@ -6,43 +6,51 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique history entry identifier"
     },
     {
       "FieldName": "CustomerId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Customers.Id"
     },
     {
       "FieldName": "ChangedBy",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who made the change"
     },
     {
       "FieldName": "ChangeType",
       "DataType": "varchar(50)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Type of change (e.g., 'CREATE', 'UPDATE', 'DELETE')"
     },
     {
       "FieldName": "FieldName",
       "DataType": "varchar(100)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Name of the field that was changed (nullable for CREATE/DELETE)"
     },
     {
       "FieldName": "OldValue",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Previous value before the change"
     },
     {
       "FieldName": "NewValue",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "New value after the change"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the change occurred"
     }
   ]
 }

@@ -6,42 +6,50 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique child allocation identifier"
     },
     {
       "FieldName": "ParentTaskId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to parent Tasks.Id"
     },
     {
       "FieldName": "ChildTaskId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to child Tasks.Id"
     },
     {
       "FieldName": "AllocationDate",
       "DataType": "date",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Date for which hours are allocated from parent to child"
     },
     {
       "FieldName": "AllocatedHours",
       "DataType": "decimal(4,2)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Number of hours allocated from parent to child task"
     },
     {
       "FieldName": "Level",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Hierarchy level for nested task structures"
     },
     {
       "FieldName": "StartTime",
       "DataType": "varchar(5)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Planned start time in HH:MM format"
     },
     {
       "FieldName": "EndTime",
       "DataType": "varchar(5)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Planned end time in HH:MM format"
     }
   ]
 }

@@ -5,35 +5,41 @@
     {
       "FieldName": "OrganizationId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Primary key / Foreign key - reference to Organizations.Id"
     },
     {
       "FieldName": "IsEnabled",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Flag indicating if Gitea integration is active"
     },
     {
       "FieldName": "GiteaUrl",
       "DataType": "varchar(500)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Gitea server URL (e.g., https://gitea.example.com)"
     },
     {
       "FieldName": "GiteaToken",
       "DataType": "text",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Encrypted Gitea API access token"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when integration was created"
     },
     {
       "FieldName": "UpdatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when integration was last updated"
     }
   ]
 }

@@ -6,34 +6,40 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique membership identifier"
     },
     {
       "FieldName": "OrganizationId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id"
     },
     {
       "FieldName": "UserId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id"
     },
     {
       "FieldName": "Role",
       "DataType": "varchar(50)",
       "NotNullable": true,
-      "DefaultValue": "Member"
+      "DefaultValue": "Member",
+      "Comment": "User's role within the organization (Member, Admin, etc.)"
     },
     {
       "FieldName": "PermissionGroupId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to PermissionGroups.Id for org-specific permissions"
     },
     {
       "FieldName": "JoinedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when user joined the organization"
     }
   ]
 }

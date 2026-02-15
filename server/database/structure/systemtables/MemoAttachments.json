@@ -6,38 +6,45 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique attachment identifier"
     },
     {
       "FieldName": "MemoId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Memos.Id"
     },
     {
       "FieldName": "FileName",
       "DataType": "varchar(255)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Original filename of the attachment"
     },
     {
       "FieldName": "FilePath",
       "DataType": "varchar(500)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "File system path where the file is stored"
     },
     {
       "FieldName": "FileSize",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "File size in bytes"
     },
     {
       "FieldName": "UploadedBy",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who uploaded the file"
     },
     {
       "FieldName": "UploadedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the file was uploaded"
     }
   ]
 }

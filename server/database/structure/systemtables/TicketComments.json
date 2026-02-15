@@ -6,34 +6,40 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique comment identifier"
     },
     {
       "FieldName": "TicketId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Tickets.Id"
     },
     {
       "FieldName": "UserId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who wrote this comment"
     },
     {
       "FieldName": "Comment",
       "DataType": "mediumtext",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Comment text content"
     },
     {
       "FieldName": "IsInternal",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Flag indicating if comment is internal (not visible to customers)"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when comment was created"
     }
   ]
 }

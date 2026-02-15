@@ -6,33 +6,39 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique comment identifier"
     },
     {
       "FieldName": "TaskId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Tasks.Id"
     },
     {
       "FieldName": "UserId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who wrote this comment"
     },
     {
       "FieldName": "Comment",
       "DataType": "mediumtext",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Comment text content"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when comment was created"
     },
     {
       "FieldName": "UpdatedAt",
       "DataType": "timestamp",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Date and time when comment was last updated"
     }
   ]
 }

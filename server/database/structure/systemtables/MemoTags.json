@@ -6,17 +6,20 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique memo-tag association identifier"
     },
     {
       "FieldName": "MemoId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Memos.Id"
     },
     {
       "FieldName": "TagName",
       "DataType": "varchar(50)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Tag name (free-form text, not linked to Tags table)"
     }
   ]
 }

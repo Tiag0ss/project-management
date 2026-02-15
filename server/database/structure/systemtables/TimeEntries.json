@@ -6,55 +6,65 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique time entry identifier"
     },
     {
       "FieldName": "TaskId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Tasks.Id"
     },
     {
       "FieldName": "UserId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who logged the time"
     },
     {
       "FieldName": "WorkDate",
       "DataType": "date",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Date when the work was performed"
     },
     {
       "FieldName": "Hours",
       "DataType": "decimal(4,2)",
       "NotNullable": true,
-      "DefaultValue": "0.00"
+      "DefaultValue": "0.00",
+      "Comment": "Number of hours worked"
     },
     {
       "FieldName": "StartTime",
       "DataType": "varchar(5)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Actual start time in HH:MM format"
     },
     {
       "FieldName": "EndTime",
       "DataType": "varchar(5)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Actual end time in HH:MM format"
     },
     {
       "FieldName": "Description",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Description of work performed"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "datetime",
       "NotNullable": false,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the entry was created"
     },
     {
       "FieldName": "UpdatedAt",
       "DataType": "datetime",
       "NotNullable": false,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the entry was last updated"
     }
   ]
 }

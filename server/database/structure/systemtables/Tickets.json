@@ -6,102 +6,121 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique ticket identifier"
     },
     {
       "FieldName": "OrganizationId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id"
     },
     {
       "FieldName": "CustomerId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Customers.Id if associated with a customer"
     },
     {
       "FieldName": "ProjectId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Projects.Id if associated with a project"
     },
     {
       "FieldName": "CreatedByUserId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who created this ticket"
     },
     {
       "FieldName": "AssignedToUserId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Users.Id for assigned support personnel"
     },
     {
       "FieldName": "TicketNumber",
       "DataType": "varchar(20)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Human-readable ticket number (e.g., TICKET-001)"
     },
     {
       "FieldName": "Title",
       "DataType": "varchar(255)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Brief description of the ticket issue"
     },
     {
       "FieldName": "Description",
       "DataType": "mediumtext",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Detailed description of the issue with rich text content"
     },
     {
       "FieldName": "Status",
       "DataType": "varchar(50)",
       "NotNullable": true,
-      "DefaultValue": "Open"
+      "DefaultValue": "Open",
+      "Comment": "Current status of ticket (Open, In Progress, Resolved, Closed, etc.)"
     },
     {
       "FieldName": "Priority",
       "DataType": "varchar(20)",
       "NotNullable": true,
-      "DefaultValue": "Medium"
+      "DefaultValue": "Medium",
+      "Comment": "Priority level (Low, Medium, High, Critical)"
     },
     {
       "FieldName": "Category",
       "DataType": "varchar(50)",
       "NotNullable": true,
-      "DefaultValue": "Support"
+      "DefaultValue": "Support",
+      "Comment": "Ticket category (Support, Bug, Feature Request, etc.)"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when ticket was created"
     },
     {
       "FieldName": "UpdatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Auto-updated timestamp of last modification"
     },
     {
       "FieldName": "ResolvedAt",
       "DataType": "timestamp",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Date and time when ticket was resolved"
     },
     {
       "FieldName": "ClosedAt",
       "DataType": "timestamp",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Date and time when ticket was closed"
     },
     {
       "FieldName": "DeveloperUserId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Users.Id for assigned developer"
     },
     {
       "FieldName": "ScheduledDate",
       "DataType": "date",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Scheduled date for ticket resolution or work"
     },
     {
       "FieldName": "ExternalTicketId",
       "DataType": "varchar(100)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "External ticket ID from integrated systems (Jira, GitHub Issues, etc.)"
     }
   ]
 }

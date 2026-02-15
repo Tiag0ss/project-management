@@ -6,85 +6,101 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique customer identifier"
     },
     {
       "FieldName": "Name",
       "DataType": "varchar(255)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Customer company or organization name"
     },
     {
       "FieldName": "Email",
       "DataType": "varchar(255)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Primary email address for customer"
     },
     {
       "FieldName": "Phone",
       "DataType": "varchar(50)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Primary phone number for customer"
     },
     {
       "FieldName": "Address",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Physical address of customer"
     },
     {
       "FieldName": "Website",
       "DataType": "varchar(255)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Customer's website URL"
     },
     {
       "FieldName": "ContactPerson",
       "DataType": "varchar(255)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Name of primary contact person"
     },
     {
       "FieldName": "ContactEmail",
       "DataType": "varchar(255)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Email address of primary contact person"
     },
     {
       "FieldName": "ContactPhone",
       "DataType": "varchar(50)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Phone number of primary contact person"
     },
     {
       "FieldName": "ProjectManagerId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Users.Id for assigned project manager"
     },
     {
       "FieldName": "DefaultSupportUserId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Users.Id for default support representative"
     },
     {
       "FieldName": "Notes",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Internal notes about customer"
     },
     {
       "FieldName": "IsActive",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "1"
+      "DefaultValue": "1",
+      "Comment": "Whether customer account is active (soft delete flag)"
     },
     {
       "FieldName": "CreatedBy",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who created this customer"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when customer was created"
     },
     {
       "FieldName": "UpdatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Auto-updated timestamp of last modification"
     }
   ]
 }

@@ -6,90 +6,107 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique project identifier"
     },
     {
       "FieldName": "ProjectName",
       "DataType": "varchar(255)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Name of the project"
     },
     {
       "FieldName": "OrganizationId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id"
     },
     {
       "FieldName": "Description",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Detailed project description"
     },
     {
       "FieldName": "CreatedBy",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who created this project"
     },
     {
       "FieldName": "Status",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to ProjectStatusValues.Id"
     },
     {
       "FieldName": "StartDate",
       "DataType": "date",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Project start date"
     },
     {
       "FieldName": "EndDate",
       "DataType": "date",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Project end date or deadline"
     },
     {
       "FieldName": "IsHobby",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Whether this is a personal/hobby project"
     },
     {
       "FieldName": "CustomerId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Customers.Id if associated with a customer"
     },
     {
       "FieldName": "JiraBoardId",
       "DataType": "varchar(100)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Jira board ID for integration"
     },
     {
       "FieldName": "GitHubOwner",
       "DataType": "varchar(100)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "GitHub repository owner/organization name"
     },
     {
       "FieldName": "GitHubRepo",
       "DataType": "varchar(100)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "GitHub repository name"
     },
     {
       "FieldName": "GiteaOwner",
       "DataType": "varchar(100)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Gitea repository owner/organization name"
     },
     {
       "FieldName": "GiteaRepo",
       "DataType": "varchar(100)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Gitea repository name"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the project was created"
     },
     {
       "FieldName": "UpdatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+      "Comment": "Auto-updated timestamp of last modification"
     }
   ]
 }

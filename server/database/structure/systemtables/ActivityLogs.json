@@ -6,58 +6,69 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique log entry identifier"
     },
     {
       "FieldName": "UserId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Users.Id (nullable for system actions)"
     },
     {
       "FieldName": "Username",
       "DataType": "varchar(255)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Cached username for historical reference (if user is deleted)"
     },
     {
       "FieldName": "Action",
       "DataType": "varchar(100)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Action performed (e.g., 'CREATE', 'UPDATE', 'DELETE', 'LOGIN')"
     },
     {
       "FieldName": "EntityType",
       "DataType": "varchar(50)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Type of entity affected (e.g., 'Task', 'Project', 'User')"
     },
     {
       "FieldName": "EntityId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "ID of the affected entity (polymorphic reference)"
     },
     {
       "FieldName": "EntityName",
       "DataType": "varchar(255)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Name of the affected entity for easier log reading"
     },
     {
       "FieldName": "Details",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Additional details about the action (JSON or text)"
     },
     {
       "FieldName": "IpAddress",
       "DataType": "varchar(45)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "IP address from where the action was performed (supports IPv6)"
     },
     {
       "FieldName": "UserAgent",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Browser/client user agent string"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the action was logged"
     }
   ]
 }

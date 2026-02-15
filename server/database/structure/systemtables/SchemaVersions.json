@@ -6,24 +6,28 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique version entry identifier"
     },
     {
       "FieldName": "TableName",
       "DataType": "varchar(255)",
       "NotNullable": true,
-      "Unique": true
+      "Unique": true,
+      "Comment": "Name of the database table"
     },
     {
       "FieldName": "SchemaHash",
       "DataType": "varchar(32)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "MD5 hash of table schema for change detection"
     },
     {
       "FieldName": "LastUpdated",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+      "Comment": "Date and time when schema was last synchronized"
     }
   ]
 }

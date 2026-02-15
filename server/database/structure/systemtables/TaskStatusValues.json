@@ -6,52 +6,61 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique status value identifier"
     },
     {
       "FieldName": "OrganizationId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id for organization-specific statuses"
     },
     {
       "FieldName": "StatusName",
       "DataType": "varchar(100)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Display name of the task status"
     },
     {
       "FieldName": "ColorCode",
       "DataType": "varchar(7)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Color code in hex format (e.g., #FF5733) for UI display"
     },
     {
       "FieldName": "SortOrder",
       "DataType": "int",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Order for displaying status values in lists"
     },
     {
       "FieldName": "IsDefault",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Whether this is the default status for new tasks"
     },
     {
       "FieldName": "IsClosed",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Whether this status indicates task is closed/completed"
     },
     {
       "FieldName": "IsCancelled",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Whether this status indicates task was cancelled"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when status value was created"
     }
   ]
 }

@@ -6,54 +6,64 @@
       "FieldName": "Id",
       "DataType": "int",
       "NotNullable": true,
-      "AutoIncrement": true
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique notification identifier"
     },
     {
       "FieldName": "UserId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who receives this notification"
     },
     {
       "FieldName": "Type",
       "DataType": "varchar(50)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Type of notification (TaskAssigned, ProjectUpdated, etc.)"
     },
     {
       "FieldName": "Title",
       "DataType": "varchar(255)",
-      "NotNullable": true
+      "NotNullable": true,
+      "Comment": "Notification title or headline"
     },
     {
       "FieldName": "Message",
       "DataType": "text",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Detailed notification message"
     },
     {
       "FieldName": "Link",
       "DataType": "varchar(500)",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "URL link to related resource"
     },
     {
       "FieldName": "IsRead",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0"
+      "DefaultValue": "0",
+      "Comment": "Whether notification has been read by user"
     },
     {
       "FieldName": "RelatedTaskId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Tasks.Id if related to a task"
     },
     {
       "FieldName": "RelatedProjectId",
       "DataType": "int",
-      "NotNullable": false
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Projects.Id if related to a project"
     },
     {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
-      "DefaultValue": "CURRENT_TIMESTAMP"
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when notification was created"
     }
   ]
 }
