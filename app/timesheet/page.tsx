@@ -88,6 +88,9 @@ export default function TimesheetPage() {
   const [timesheetView, setTimesheetView] = useState<'daily' | 'weekly' | 'history'>('daily');
   const [weeklyHours, setWeeklyHours] = useState<{[taskId: number]: {[day: string]: string}}>({});
   const [currentWeekOffset, setCurrentWeekOffset] = useState(0);
+  // Track cells with multiple entries (blocked from editing)
+  const [blockedCells, setBlockedCells] = useState<{[taskId: number]: {[date: string]: number}}>({}); // value = number of entries
+  const [multiEntryCellsWarning, setMultiEntryCellsWarning] = useState('');
   // History tab filters
   const [historyDateFrom, setHistoryDateFrom] = useState(() => {
     const d = new Date();
@@ -129,28 +132,46 @@ export default function TimesheetPage() {
   }, [user, token]);
 
   // Populate weeklyHours from existing timeEntries when switching to weekly view or changing week
+  // Also detect cells with multiple entries per day/task
   useEffect(() => {
     if (timesheetView === 'weekly' && timeEntries.length > 0 && myTasks.length > 0) {
       const weekDates = getCurrentWeekDates();
       const newWeeklyHours: {[taskId: number]: {[day: string]: string}} = {};
+      const newBlockedCells: {[taskId: number]: {[date: string]: number}} = {};
+      let hasMultipleEntries = false;
       
       // Populate with existing entries for current week
       myTasks.forEach(task => {
         weekDates.forEach(date => {
-          const existingEntry = timeEntries.find(e => {
+          // Find ALL entries for this task and date (not just first one)
+          const entries = timeEntries.filter(e => {
             return e.TaskId === task.Id && normalizeDateString(e.WorkDate) === date;
           });
           
-          if (existingEntry && parseFloat(existingEntry.Hours as any) > 0) {
-            if (!newWeeklyHours[task.Id]) {
-              newWeeklyHours[task.Id] = {};
-            }
-            newWeeklyHours[task.Id][date] = parseFloat(existingEntry.Hours as any).toString();
+          if (entries.length > 1) {
+            // Multiple entries - calculate total and block cell
+            const totalHours = entries.reduce((sum, e) => sum + parseFloat(e.Hours as any), 0);
+            if (!newWeeklyHours[task.Id]) newWeeklyHours[task.Id] = {};
+            newWeeklyHours[task.Id][date] = totalHours.toFixed(2);
+            if (!newBlockedCells[task.Id]) newBlockedCells[task.Id] = {};
+            newBlockedCells[task.Id][date] = entries.length;
+            hasMultipleEntries = true;
+          } else if (entries.length === 1 && parseFloat(entries[0].Hours as any) > 0) {
+            // Single entry - allow editing
+            if (!newWeeklyHours[task.Id]) newWeeklyHours[task.Id] = {};
+            newWeeklyHours[task.Id][date] = parseFloat(entries[0].Hours as any).toString();
           }
         });
       });
       
       setWeeklyHours(newWeeklyHours);
+      setBlockedCells(newBlockedCells);
+      
+      if (hasMultipleEntries) {
+        setMultiEntryCellsWarning('⚠️ Some cells have multiple time entries and are read-only. Use the Daily tab to edit individual entries.');
+      } else {
+        setMultiEntryCellsWarning('');
+      }
     }
   }, [timesheetView, currentWeekOffset, timeEntries, myTasks]);
 
@@ -484,12 +505,19 @@ export default function TimesheetPage() {
     try {
       let successCount = 0;
       let errorCount = 0;
+      let skippedCount = 0;
 
       // Process all entries in weeklyHours state
       for (const [taskIdStr, dates] of Object.entries(weeklyHours)) {
         const taskId = parseInt(taskIdStr);
         
         for (const [date, hours] of Object.entries(dates)) {
+          // Skip if cell is blocked (multiple entries exist)
+          if (blockedCells[taskId]?.[date]) {
+            skippedCount++;
+            continue;
+          }
+          
           // Skip empty values
           if (!hours || hours.trim() === '') {
             continue;
@@ -497,11 +525,22 @@ export default function TimesheetPage() {
 
           const hoursNum = parseFloat(hours);
           
+          // Find ALL entries for this task/date
+          const existingEntries = timeEntries.filter(e => {
+            return e.TaskId === taskId && normalizeDateString(e.WorkDate) === date;
+          });
+          
+          // Safety check: if multiple entries exist, skip
+          if (existingEntries.length > 1) {
+            console.warn(`Skipping Task ${taskId} on ${date} - ${existingEntries.length} entries exist`);
+            skippedCount++;
+            continue;
+          }
+          
+          const existingEntry = existingEntries[0];
+          
           // If hours is 0, delete the entry if it exists
           if (hoursNum === 0) {
-            const existingEntry = timeEntries.find(e => {
-              return e.TaskId === taskId && normalizeDateString(e.WorkDate) === date;
-            });
             if (existingEntry) {
               try {
                 const response = await fetch(
@@ -527,15 +566,6 @@ export default function TimesheetPage() {
           }
 
           try {
-            // Check if entry already exists
-            const existingEntry = timeEntries.find(e => {
-              if (e.TaskId !== taskId) return false;
-              const entryDate = (e.WorkDate as any) instanceof Date 
-                ? (e.WorkDate as any).toISOString().split('T')[0] 
-                : String(e.WorkDate).split('T')[0];
-              return entryDate === date;
-            });
-
             if (existingEntry) {
               // Update existing entry - preserve StartTime and EndTime
               const response = await fetch(
@@ -596,12 +626,14 @@ export default function TimesheetPage() {
       // Reload time entries to get updated data
       await loadTimeEntries();
 
-      if (errorCount === 0) {
+      if (skippedCount > 0) {
+        setMessage(`Saved ${successCount} entries, ${skippedCount} cells with multiple entries were skipped (use Daily tab to edit)`);
+      } else if (errorCount === 0) {
         setMessage(`Successfully saved ${successCount} time entries!`);
       } else {
         setMessage(`Saved ${successCount} entries with ${errorCount} errors`);
       }
-      setTimeout(() => setMessage(''), 3000);
+      setTimeout(() => setMessage(''), 5000);
     } catch (err) {
       console.error('Failed to save weekly hours:', err);
       setMessage('Failed to save time entries');
@@ -1027,6 +1059,12 @@ export default function TimesheetPage() {
                       </div>
                     )}
 
+                    {multiEntryCellsWarning && (
+                      <div className="mb-4 px-4 py-3 rounded-lg bg-orange-100 dark:bg-orange-900/30 border border-orange-400 text-orange-700 dark:text-orange-400">
+                        {multiEntryCellsWarning}
+                      </div>
+                    )}
+
                     {(() => {
                       // Filter tasks that have allocations OR time entries in the current week
                       const weekDates = getCurrentWeekDates();
@@ -1130,14 +1168,16 @@ export default function TimesheetPage() {
                                     if (localValue) {
                                       return sum + parseFloat(localValue);
                                     }
-                                    const existingEntry = timeEntries.find(e => {
+                                    // Find ALL entries for this task/date and sum them
+                                    const entries = timeEntries.filter(e => {
                                       if (e.TaskId !== task.Id) return false;
                                       const entryDate = (e.WorkDate as any) instanceof Date 
                                         ? (e.WorkDate as any).toISOString().split('T')[0] 
                                         : String(e.WorkDate).split('T')[0];
                                       return entryDate === date;
                                     });
-                                    return sum + (existingEntry ? parseFloat(existingEntry.Hours as any) : 0);
+                                    const totalEntriesHours = entries.reduce((s, e) => s + parseFloat(e.Hours as any), 0);
+                                    return sum + totalEntriesHours;
                                   }, 0);
 
                                   return (
@@ -1152,28 +1192,56 @@ export default function TimesheetPage() {
                                       </td>
                                       {weekDates.map((date, idx) => {
                                         const localValue = weeklyHours[task.Id]?.[date];
-                                        const existingEntry = timeEntries.find(e => {
+                                        // Find ALL entries for this task/date
+                                        const entries = timeEntries.filter(e => {
                                           if (e.TaskId !== task.Id) return false;
                                           const entryDate = (e.WorkDate as any) instanceof Date 
                                             ? (e.WorkDate as any).toISOString().split('T')[0] 
                                             : String(e.WorkDate).split('T')[0];
                                           return entryDate === date;
                                         });
-                                        const savedHours = existingEntry ? parseFloat(existingEntry.Hours as any) : 0;
+                                        
+                                        const hasMultipleEntries = entries.length > 1;
+                                        const savedHours = hasMultipleEntries 
+                                          ? entries.reduce((sum, e) => sum + parseFloat(e.Hours as any), 0)
+                                          : entries.length === 1 ? parseFloat(entries[0].Hours as any) : 0;
                                         const displayValue = localValue !== undefined ? localValue : (savedHours > 0 ? savedHours.toString() : '');
+                                        const isBlocked = !!blockedCells[task.Id]?.[date]; // Convert to boolean
                                         
                                         return (
-                                          <td key={date} className="px-2 py-2 text-center">
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              max="24"
-                                              step="0.25"
-                                              value={displayValue}
-                                              onChange={(e) => handleWeeklyHourChange(task.Id, date, e.target.value)}
-                                              className="w-16 px-2 py-1 text-center text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                                              placeholder="0"
-                                            />
+                                          <td 
+                                            key={date} 
+                                            className={`px-2 py-2 text-center ${
+                                              hasMultipleEntries 
+                                                ? 'bg-orange-100 dark:bg-orange-900/30' 
+                                                : ''
+                                            }`}
+                                            title={hasMultipleEntries ? `${entries.length} entries exist for this day. Use Daily tab to edit.` : ''}
+                                          >
+                                            {hasMultipleEntries ? (
+                                              <div className="flex flex-col items-center">
+                                                <span className="text-sm font-medium text-orange-700 dark:text-orange-400">
+                                                  {savedHours.toFixed(2)}
+                                                </span>
+                                                <span className="text-xs text-orange-600 dark:text-orange-500">
+                                                  🔒 {entries.length} entries
+                                                </span>
+                                              </div>
+                                            ) : (
+                                              <input
+                                                type="number"
+                                                min="0"
+                                                max="24"
+                                                step="0.25"
+                                                value={displayValue}
+                                                onChange={(e) => handleWeeklyHourChange(task.Id, date, e.target.value)}
+                                                disabled={isBlocked}
+                                                className={`w-16 px-2 py-1 text-center text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${
+                                                  isBlocked ? 'opacity-50 cursor-not-allowed' : ''
+                                                }`}
+                                                placeholder="0"
+                                              />
+                                            )}
                                           </td>
                                         );
                                       })}
@@ -1202,14 +1270,16 @@ export default function TimesheetPage() {
                                     if (localValue) {
                                       return sum + parseFloat(localValue);
                                     }
-                                    const existingEntry = timeEntries.find(e => {
+                                    // Find ALL entries for this task/date and sum them
+                                    const entries = timeEntries.filter(e => {
                                       if (e.TaskId !== task.Id) return false;
                                       const entryDate = (e.WorkDate as any) instanceof Date 
                                         ? (e.WorkDate as any).toISOString().split('T')[0] 
                                         : String(e.WorkDate).split('T')[0];
                                       return entryDate === date;
                                     });
-                                    return sum + (existingEntry ? parseFloat(existingEntry.Hours as any) : 0);
+                                    const totalEntriesHours = entries.reduce((s, e) => s + parseFloat(e.Hours as any), 0);
+                                    return sum + totalEntriesHours;
                                   }, 0);
 
                                   return (
@@ -1229,28 +1299,56 @@ export default function TimesheetPage() {
                                       </td>
                                       {weekDates.map((date, idx) => {
                                         const localValue = weeklyHours[task.Id]?.[date];
-                                        const existingEntry = timeEntries.find(e => {
+                                        // Find ALL entries for this task/date
+                                        const entries = timeEntries.filter(e => {
                                           if (e.TaskId !== task.Id) return false;
                                           const entryDate = (e.WorkDate as any) instanceof Date 
                                             ? (e.WorkDate as any).toISOString().split('T')[0] 
                                             : String(e.WorkDate).split('T')[0];
                                           return entryDate === date;
                                         });
-                                        const savedHours = existingEntry ? parseFloat(existingEntry.Hours as any) : 0;
+                                        
+                                        const hasMultipleEntries = entries.length > 1;
+                                        const savedHours = hasMultipleEntries 
+                                          ? entries.reduce((sum, e) => sum + parseFloat(e.Hours as any), 0)
+                                          : entries.length === 1 ? parseFloat(entries[0].Hours as any) : 0;
                                         const displayValue = localValue !== undefined ? localValue : (savedHours > 0 ? savedHours.toString() : '');
+                                        const isBlocked = !!blockedCells[task.Id]?.[date]; // Convert to boolean
                                         
                                         return (
-                                          <td key={date} className="px-2 py-2 text-center bg-purple-50/50 dark:bg-purple-900/10">
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              max="24"
-                                              step="0.25"
-                                              value={displayValue}
-                                              onChange={(e) => handleWeeklyHourChange(task.Id, date, e.target.value)}
-                                              className="w-16 px-2 py-1 text-center text-sm border border-purple-300 dark:border-purple-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500"
-                                              placeholder="0"
-                                            />
+                                          <td 
+                                            key={date} 
+                                            className={`px-2 py-2 text-center ${
+                                              hasMultipleEntries 
+                                                ? 'bg-orange-100 dark:bg-orange-900/30' 
+                                                : 'bg-purple-50/50 dark:bg-purple-900/10'
+                                            }`}
+                                            title={hasMultipleEntries ? `${entries.length} entries exist for this day. Use Daily tab to edit.` : ''}
+                                          >
+                                            {hasMultipleEntries ? (
+                                              <div className="flex flex-col items-center">
+                                                <span className="text-sm font-medium text-orange-700 dark:text-orange-400">
+                                                  {savedHours.toFixed(2)}
+                                                </span>
+                                                <span className="text-xs text-orange-600 dark:text-orange-500">
+                                                  🔒 {entries.length} entries
+                                                </span>
+                                              </div>
+                                            ) : (
+                                              <input
+                                                type="number"
+                                                min="0"
+                                                max="24"
+                                                step="0.25"
+                                                value={displayValue}
+                                                onChange={(e) => handleWeeklyHourChange(task.Id, date, e.target.value)}
+                                                disabled={isBlocked}
+                                                className={`w-16 px-2 py-1 text-center text-sm border border-purple-300 dark:border-purple-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 ${
+                                                  isBlocked ? 'opacity-50 cursor-not-allowed' : ''
+                                                }`}
+                                                placeholder="0"
+                                              />
+                                            )}
                                           </td>
                                         );
                                       })}
@@ -1272,14 +1370,16 @@ export default function TimesheetPage() {
                                       if (localValue) {
                                         return sum + parseFloat(localValue);
                                       }
-                                      const entry = timeEntries.find(e => {
+                                      // Find ALL entries for this task/date and sum them
+                                      const entries = timeEntries.filter(e => {
                                         if (e.TaskId !== task.Id) return false;
                                         const entryDate = (e.WorkDate as any) instanceof Date 
                                           ? (e.WorkDate as any).toISOString().split('T')[0] 
                                           : String(e.WorkDate).split('T')[0];
                                         return entryDate === date;
                                       });
-                                      return sum + (entry ? parseFloat(entry.Hours as any) : 0);
+                                      const totalEntriesHours = entries.reduce((s, e) => s + parseFloat(e.Hours as any), 0);
+                                      return sum + totalEntriesHours;
                                     }, 0);
                                     return (
                                       <td key={date} className="px-2 py-3 text-center text-sm font-bold text-blue-600 dark:text-blue-400">
@@ -1294,14 +1394,16 @@ export default function TimesheetPage() {
                                         if (localValue) {
                                           return sum + parseFloat(localValue);
                                         }
-                                        const entry = timeEntries.find(e => {
+                                        // Find ALL entries for this task/date and sum them
+                                        const entries = timeEntries.filter(e => {
                                           if (e.TaskId !== task.Id) return false;
                                           const entryDate = (e.WorkDate as any) instanceof Date 
                                             ? (e.WorkDate as any).toISOString().split('T')[0] 
                                             : String(e.WorkDate).split('T')[0];
                                           return entryDate === date;
                                         });
-                                        return sum + (entry ? parseFloat(entry.Hours as any) : 0);
+                                        const totalEntriesHours = entries.reduce((s, e) => s + parseFloat(e.Hours as any), 0);
+                                        return sum + totalEntriesHours;
                                       }, 0);
                                     }, 0).toFixed(2)}h
                                   </td>
