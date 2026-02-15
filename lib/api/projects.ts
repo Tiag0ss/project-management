@@ -19,6 +19,8 @@ export interface Project {
   CustomerId?: number;
   CustomerName?: string;
   JiraBoardId?: string | null;
+  GitHubOwner?: string | null;
+  GitHubRepo?: string | null;
   CreatedBy: number;
   CreatorName?: string;
   CreatedAt: string;
@@ -41,6 +43,8 @@ export interface CreateProjectData {
   isHobby?: boolean;
   customerId?: number;
   jiraBoardId?: string;
+  gitHubOwner?: string;
+  gitHubRepo?: string;
 }
 
 export interface UpdateProjectData {
@@ -52,6 +56,8 @@ export interface UpdateProjectData {
   isHobby?: boolean;
   customerId?: number | null;
   jiraBoardId?: string | null;
+  gitHubOwner?: string | null;
+  gitHubRepo?: string | null;
 }
 
 export interface UpdateProjectDataWithId extends UpdateProjectData {

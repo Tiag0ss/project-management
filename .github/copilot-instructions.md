@@ -2,7 +2,7 @@
 
 ## Language Guidelines
 
-**IMPORTANT:** Respond ONLY in **English (EN)** or **Portuguese from Portugal (PT-PT)** and **NEVER use Brazilian Portuguese (PT-BR).** 
+**IMPORTANT:** Respond ONLY in **English (EN)** 
 
 ## Project Context
 

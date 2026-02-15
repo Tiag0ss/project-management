@@ -55,6 +55,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   });
   const [existingIssueIds, setExistingIssueIds] = useState<Set<string>>(new Set());
   const [showAlreadyImported, setShowAlreadyImported] = useState(false);
+  // GitHub Integration State
+  const [showGitHubImportModal, setShowGitHubImportModal] = useState(false);
+  const [gitHubIssues, setGitHubIssues] = useState<any[]>([]);
+  const [selectedGitHubIssues, setSelectedGitHubIssues] = useState<Set<string>>(new Set());
+  const [gitHubStatusMapping, setGitHubStatusMapping] = useState<{[key: string]: string}>({});
+  const [gitHubLoading, setGitHubLoading] = useState(false);
+  const [gitHubError, setGitHubError] = useState('');
+  const [gitHubFilters, setGitHubFilters] = useState({
+    search: '',
+    state: '',
+    label: '',
+    assignee: ''
+  });
+  const [existingGitHubIssueIds, setExistingGitHubIssueIds] = useState<Set<string>>(new Set());
+  const [showAlreadyImportedGitHub, setShowAlreadyImportedGitHub] = useState(false);
   const { user, token, isLoading: authLoading } = useAuth();
   const { permissions } = usePermissions();
   const router = useRouter();
@@ -816,6 +831,189 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // Keep for backward compatibility
   const getFilteredJiraIssues = getSortedFilteredJiraIssues;
 
+  // ======= GITHUB INTEGRATION FUNCTIONS =======
+  
+  // GitHub Import Functions
+  const loadExistingGitHubIssues = async () => {
+    if (!token || !projectId) return;
+    
+    try {
+      const response = await fetch(`${getApiUrl()}/api/tasks/github-issues/${projectId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const issueIds = new Set<string>(
+          data.issues
+            .map((issue: any) => String(issue.GitHubIssueNumber || ''))
+            .filter((id: string) => id !== '')
+        );
+        setExistingGitHubIssueIds(issueIds);
+      }
+    } catch (err) {
+      console.error('Failed to load existing GitHub issues:', err);
+    }
+  };
+
+  const loadGitHubIssues = async () => {
+    if (!token || !project) return;
+    
+    // Check if project has GitHub repository configured
+    if (!project.GitHubOwner || !project.GitHubRepo) {
+      setGitHubError('Please configure GitHub repository in Project Settings first (Owner and Repository fields)');
+      setGitHubLoading(false);
+      return;
+    }
+    
+    setGitHubLoading(true);
+    setGitHubError('');
+    
+    try {
+      const queryParams = new URLSearchParams();
+      queryParams.append('owner', project.GitHubOwner);
+      queryParams.append('repo', project.GitHubRepo);
+      if (gitHubFilters.search) {
+        queryParams.append('query', gitHubFilters.search);
+      }
+      
+      const response = await fetch(`${getApiUrl()}/api/github-integrations/organization/${project.OrganizationId}/search?${queryParams.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to load GitHub issues');
+      }
+
+      const data = await response.json();
+      setGitHubIssues(data.issues || []);
+      
+      // Clear selections and mappings
+      setSelectedGitHubIssues(new Set());
+      setGitHubStatusMapping({});
+    } catch (err: any) {
+      setGitHubError(err.message || 'Failed to load GitHub issues');
+    } finally {
+      setGitHubLoading(false);
+    }
+  };
+
+  const handleGitHubImport = async () => {
+    // Filter out already imported issues from selection  
+    const validIssues = Array.from(selectedGitHubIssues).filter(id => !existingGitHubIssueIds.has(id));
+    
+    if (!token || validIssues.length === 0) return;
+    
+    setGitHubLoading(true);
+    setGitHubError('');
+    
+    try {
+      const issuesToImport = gitHubIssues.filter(issue => validIssues.includes(issue.number?.toString()));
+      
+      const response = await fetch(`${getApiUrl()}/api/tasks/import-from-github`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectId: parseInt(projectId),
+          issues: issuesToImport,
+          statusMapping: gitHubStatusMapping,
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to import tasks');
+      }
+
+      const result = await response.json();
+      const imported = result.data?.imported || result.createdTasks || 0;
+      const skipped = result.data?.skipped || 0;
+      
+      let message = `Successfully imported ${imported} task(s) from GitHub.`;
+      if (skipped > 0) {
+        message += ` ${skipped} issue(s) were already imported.`;
+      }
+      
+      showAlert('Import Successful', message);
+      
+      setShowGitHubImportModal(false);
+      setSelectedGitHubIssues(new Set());
+      setGitHubStatusMapping({});
+      await loadTasks();
+      await loadExistingGitHubIssues(); // Reload the imported issues list
+    } catch (err: any) {
+      setGitHubError(err.message || 'Failed to import from GitHub');
+    } finally {
+      setGitHubLoading(false);
+    }
+  };
+
+  const toggleGitHubIssueSelection = (issueId: string) => {
+    // Don't allow selection of already imported issues
+    if (existingGitHubIssueIds.has(issueId)) {
+      return;
+    }
+    
+    const newSelection = new Set(selectedGitHubIssues);
+    if (newSelection.has(issueId)) {
+      newSelection.delete(issueId);
+    } else {
+      newSelection.add(issueId);
+    }
+    setSelectedGitHubIssues(newSelection);
+  };
+
+  const toggleAllGitHubIssues = () => {
+    const availableIssues = gitHubIssues.filter(issue => !existingGitHubIssueIds.has(issue.number?.toString()));
+    if (selectedGitHubIssues.size === availableIssues.length) {
+      setSelectedGitHubIssues(new Set());
+    } else {
+      setSelectedGitHubIssues(new Set(availableIssues.map(issue => issue.number?.toString())));
+    }
+  };
+
+  // Filter and sort GitHub issues
+  const getFilteredGitHubIssues = () => {
+    return gitHubIssues.filter(issue => {
+      // Search filter
+      if (gitHubFilters.search && !issue.title?.toLowerCase().includes(gitHubFilters.search.toLowerCase()) 
+          && !issue.body?.toLowerCase().includes(gitHubFilters.search.toLowerCase())
+          && !issue.number?.toString().includes(gitHubFilters.search)) {
+        return false;
+      }
+      
+      // State filter
+      if (gitHubFilters.state && issue.state !== gitHubFilters.state) {
+        return false;
+      }
+      
+      // Label filter
+      if (gitHubFilters.label && !issue.labels?.some((label: any) => label.name === gitHubFilters.label)) {
+        return false;
+      }
+      
+      // Assignee filter
+      if (gitHubFilters.assignee && issue.assignee !== gitHubFilters.assignee) {
+        return false;
+      }
+      
+      // Already imported filter
+      if (!showAlreadyImportedGitHub && existingGitHubIssueIds.has(issue.number?.toString())) {
+        return false;
+      }
+      
+      return true;
+    });
+  };
+
   // Load task statuses and Jira issues when modal opens
   useEffect(() => {
     if (showJiraImportModal && project) {
@@ -836,6 +1034,25 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setExistingIssueIds(new Set());
     }
   }, [showJiraImportModal, project]);
+
+  // Load task statuses and GitHub issues when modal opens
+  useEffect(() => {
+    if (showGitHubImportModal && project) {
+      loadTaskStatuses();
+      loadExistingGitHubIssues();
+      loadGitHubIssues();
+    } else if (!showGitHubImportModal) {
+      // Reset filters when modal closes
+      setGitHubFilters({
+        search: '',
+        state: '',
+        label: '',
+        assignee: ''
+      });
+      setShowAlreadyImportedGitHub(false);
+      setExistingGitHubIssueIds(new Set());
+    }
+  }, [showGitHubImportModal, project]);
 
   if (authLoading || isLoading) {
     return (
@@ -986,6 +1203,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               onDeleteTask={handleDeleteTask}
               onImportClick={handleImportClick}
               onImportFromJira={() => setShowJiraImportModal(true)}
+              onImportFromGitHub={() => setShowGitHubImportModal(true)}
               canCreate={permissions?.canCreateTasks || false}
               canManage={permissions?.canManageTasks || false}
               canDelete={permissions?.canDeleteTasks || false}
@@ -1524,6 +1742,296 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
                   >
                     {jiraLoading ? 'Importing...' : `Import ${Array.from(selectedIssues).filter(key => !existingIssueIds.has(key)).length} New Task${Array.from(selectedIssues).filter(key => !existingIssueIds.has(key)).length !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GitHub Import Modal */}
+      {showGitHubImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                  </svg>
+                  Import Tasks from GitHub
+                </h2>
+                <button
+                  onClick={() => setShowGitHubImportModal(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {gitHubError && (
+                <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
+                  {gitHubError}
+                </div>
+              )}
+
+              {gitHubLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-gray-800 mb-4"></div>
+                    <p className="text-gray-600 dark:text-gray-400">Loading GitHub issues...</p>
+                  </div>
+                </div>
+              ) : gitHubIssues.length === 0 ? (
+                <div className="text-center py-12">
+                  <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No GitHub issues found</h3>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    Make sure your GitHub integration is configured and the repository has issues.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Status Mapping Section */}
+                  {taskStatuses.length > 0 && (
+                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">📍 Status Mapping</h3>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                        Map GitHub issue states to your project's task statuses:
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {['open', 'closed'].map((state) => (
+                          <div key={state} className="flex items-center gap-2">
+                            <span className="capitalize font-medium text-gray-700 dark:text-gray-300 min-w-20">
+                              {state}:
+                            </span>
+                            <select
+                              value={gitHubStatusMapping[state] || ''}
+                              onChange={(e) => setGitHubStatusMapping(prev => ({
+                                ...prev,
+                                [state]: e.target.value
+                              }))}
+                              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            >
+                              <option value="">Select status...</option>
+                              {taskStatuses.map((status) => (
+                                <option key={status.Id} value={status.Id}>
+                                  {status.StatusName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Filters Section */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Search
+                      </label>
+                      <input
+                        type="text"
+                        value={gitHubFilters.search}
+                        onChange={(e) => setGitHubFilters(prev => ({ ...prev, search: e.target.value }))}
+                        placeholder="Title, body, or number..."
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        State
+                      </label>
+                      <select
+                        value={gitHubFilters.state}
+                        onChange={(e) => setGitHubFilters(prev => ({ ...prev, state: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      >
+                        <option value="">All States</option>
+                        <option value="open">Open</option>
+                        <option value="closed">Closed</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <button
+                          onClick={() => loadGitHubIssues()}
+                          className="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-lg transition-colors flex items-center gap-2"
+                          disabled={gitHubLoading}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          Refresh
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-end">
+                      <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                        <input
+                          type="checkbox"
+                          checked={showAlreadyImportedGitHub}
+                          onChange={(e) => setShowAlreadyImportedGitHub(e.target.checked)}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        Show already imported
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Issues List */}
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <div className="p-4 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={getFilteredGitHubIssues().length > 0 && selectedGitHubIssues.size === getFilteredGitHubIssues().filter(issue => !existingGitHubIssueIds.has(issue.number?.toString())).length}
+                            onChange={toggleAllGitHubIssues}
+                            disabled={getFilteredGitHubIssues().filter(issue => !existingGitHubIssueIds.has(issue.number?.toString())).length === 0}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          Select All Available
+                        </label>
+                      </div>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {getFilteredGitHubIssues().length} issue{getFilteredGitHubIssues().length !== 1 ? 's' : ''}
+                        {existingGitHubIssueIds.size > 0 && ` (${existingGitHubIssueIds.size} already imported)`}
+                      </span>
+                    </div>
+
+                    <div className="max-h-96 overflow-y-auto">
+                      {getFilteredGitHubIssues().map((issue: any) => {
+                        const isAlreadyImported = existingGitHubIssueIds.has(issue.number?.toString());
+                        const isSelected = selectedGitHubIssues.has(issue.number?.toString());
+                        
+                        return (
+                          <div
+                            key={issue.id}
+                            className={`p-4 border-b border-gray-200 dark:border-gray-700 last:border-b-0 ${
+                              isAlreadyImported 
+                                ? 'bg-gray-100 dark:bg-gray-700/50 opacity-60' 
+                                : isSelected 
+                                  ? 'bg-blue-50 dark:bg-blue-900/20' 
+                                  : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'
+                            } transition-colors`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleGitHubIssueSelection(issue.number?.toString())}
+                                disabled={isAlreadyImported}
+                                className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                              />
+                              
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <h4 className="text-sm font-medium text-gray-900 dark:text-white">
+                                    #{issue.number} - {issue.title}
+                                  </h4>
+                                  {isAlreadyImported && (
+                                    <span className="px-2 py-1 text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 rounded-full">
+                                      Already Imported
+                                    </span>
+                                  )}
+                                  <span className={`px-2 py-1 text-xs rounded-full ${
+                                    issue.state === 'open' 
+                                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                      : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
+                                  }`}>
+                                    {issue.state}
+                                  </span>
+                                  {issue.labels?.length > 0 && (
+                                    <div className="flex gap-1">
+                                      {issue.labels.slice(0, 3).map((label: any) => (
+                                        <span
+                                          key={label.name}
+                                          className="px-2 py-1 text-xs rounded-full text-white"
+                                          style={{ backgroundColor: `#${label.color}` }}
+                                        >
+                                          {label.name}
+                                        </span>
+                                      ))}
+                                      {issue.labels.length > 3 && (
+                                        <span className="px-2 py-1 text-xs bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-300 rounded-full">
+                                          +{issue.labels.length - 3}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                {issue.body && (
+                                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">
+                                    {issue.body.substring(0, 200)}...
+                                  </p>
+                                )}
+                                
+                                <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+                                  <span>👤 {issue.authorName || issue.author}</span>
+                                  {issue.assigneeName && <span>📋 Assigned: {issue.assigneeName}</span>}
+                                  <span>📅 {new Date(issue.created_at).toLocaleDateString()}</span>
+                                  <a
+                                    href={issue.html_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
+                                  >
+                                    View on GitHub ↗
+                                  </a>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+              <div className="flex justify-between items-center">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {selectedGitHubIssues.size > 0 ? (
+                    <>
+                      <span className="font-semibold">{Array.from(selectedGitHubIssues).filter(id => !existingGitHubIssueIds.has(id)).length}</span> new issue{Array.from(selectedGitHubIssues).filter(id => !existingGitHubIssueIds.has(id)).length !== 1 ? 's' : ''} will be imported as task{Array.from(selectedGitHubIssues).filter(id => !existingGitHubIssueIds.has(id)).length !== 1 ? 's' : ''}
+                      {existingGitHubIssueIds.size > 0 && ` (${existingGitHubIssueIds.size} already imported in project)`}
+                    </>
+                  ) : (
+                    `Select new issues to import (${existingGitHubIssueIds.size > 0 ? `${existingGitHubIssueIds.size} already imported issues are hidden by default` : 'no duplicates will be created'})`
+                  )}
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowGitHubImportModal(false)}
+                    className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleGitHubImport}
+                    disabled={gitHubLoading || selectedGitHubIssues.size === 0 || Array.from(selectedGitHubIssues).every(id => existingGitHubIssueIds.has(id))}
+                    className="px-6 py-2 bg-gray-800 hover:bg-gray-900 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                  >
+                    {gitHubLoading ? 'Importing...' : `Import ${Array.from(selectedGitHubIssues).filter(id => !existingGitHubIssueIds.has(id)).length} New Task${Array.from(selectedGitHubIssues).filter(id => !existingGitHubIssueIds.has(id)).length !== 1 ? 's' : ''}`}
                   </button>
                 </div>
               </div>
@@ -2205,6 +2713,7 @@ function TasksTab({
   onDeleteTask,
   onImportClick,
   onImportFromJira,
+  onImportFromGitHub,
   canCreate,
   canManage,
   canDelete,
@@ -2215,6 +2724,7 @@ function TasksTab({
   onDeleteTask: (id: number) => void;
   onImportClick: () => void;
   onImportFromJira: () => void;
+  onImportFromGitHub: () => void;
   canCreate: boolean;
   canManage: boolean;
   canDelete: boolean;
@@ -2395,6 +2905,15 @@ function TasksTab({
                   <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
                 </svg>
                 Import from Jira
+              </button>
+              <button
+                onClick={onImportFromGitHub}
+                className="bg-gray-800 hover:bg-gray-900 text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+                Import from GitHub
               </button>
               <button
                 onClick={onCreateTask}
@@ -5376,10 +5895,13 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
     endDate: project.EndDate ? project.EndDate.split('T')[0] : '',
     isHobby: project.IsHobby || false,
     jiraBoardId: project.JiraBoardId || '',
+    gitHubOwner: project.GitHubOwner || '',
+    gitHubRepo: project.GitHubRepo || '',
   });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
+  const [githubIntegration, setGithubIntegration] = useState<any>(null);
   const [showTransferConfirm, setShowTransferConfirm] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -5389,6 +5911,7 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
     loadOrganizations();
     loadProjectStatuses();
     loadJiraIntegration();
+    loadGitHubIntegration();
   }, []);
 
   const loadOrganizations = async () => {
@@ -5434,6 +5957,25 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
     }
   };
 
+  const loadGitHubIntegration = async () => {
+    try {
+      const response = await fetch(`${getApiUrl()}/api/github-integrations/organization/${project.OrganizationId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.integration && data.integration.IsEnabled && data.integration.GitHubUrl) {
+          setGithubIntegration(data.integration);
+        } else {
+          setGithubIntegration(null);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to load GitHub integration:', err);
+      setGithubIntegration(null);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -5464,6 +6006,8 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
         endDate: formData.endDate || null,
         isHobby: formData.isHobby,
         jiraBoardId: formData.jiraBoardId || null,
+        gitHubOwner: formData.gitHubOwner || null,
+        gitHubRepo: formData.gitHubRepo || null,
       };
       await projectsApi.update(project.Id, updateData, token);
       setSuccess(true);
@@ -5669,6 +6213,59 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
             </div>
           )}
 
+          {githubIntegration && (
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-300 dark:border-gray-700">
+              <div className="flex items-center gap-2 mb-3">
+                <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+                </svg>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  GitHub Integration
+                </label>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    Repository Owner/Organization
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.gitHubOwner}
+                    onChange={(e) => setFormData({ ...formData, gitHubOwner: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    placeholder="username or organization-name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    Repository Name
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.gitHubRepo}
+                    onChange={(e) => setFormData({ ...formData, gitHubRepo: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    placeholder="repository-name"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                Required for GitHub issues import. Find in your repository URL: github.com/<strong>owner</strong>/<strong>repo</strong>
+              </p>
+              {(formData.gitHubOwner || formData.gitHubRepo) && (
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, gitHubOwner: '', gitHubRepo: '' })}
+                    className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+                  >
+                    Clear Repository
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isLoading}
@@ -5701,9 +6298,14 @@ function EditProjectModal({
     status: project.Status,
     startDate: project.StartDate ? project.StartDate.split('T')[0] : '',
     endDate: project.EndDate ? project.EndDate.split('T')[0] : '',
+    jiraBoardId: project.JiraBoardId || undefined,
+    gitHubOwner: project.GitHubOwner || undefined,
+    gitHubRepo: project.GitHubRepo || undefined,
   });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
+  const [jiraIntegration, setJiraIntegration] = useState<any>(null);
+  const [githubIntegration, setGithubIntegration] = useState<any>(null);
   const [showTransferConfirm, setShowTransferConfirm] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -5711,6 +6313,8 @@ function EditProjectModal({
   useEffect(() => {
     loadOrganizations();
     loadProjectStatuses();
+    loadJiraIntegration();
+    loadGitHubIntegration();
     // Clear any previous errors when modal opens
     setError('');
   }, []);
@@ -5735,6 +6339,44 @@ function EditProjectModal({
       setProjectStatuses(response.statuses);
     } catch (err: any) {
       console.error('Failed to load project statuses:', err);
+    }
+  };
+
+  const loadJiraIntegration = async () => {
+    try {
+      const response = await fetch(`${getApiUrl()}/api/jira-integrations/organization/${project.OrganizationId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.integration && data.integration.IsEnabled && data.integration.JiraProjectsUrl) {
+          setJiraIntegration(data.integration);
+        } else {
+          setJiraIntegration(null);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to load Jira integration:', err);
+      setJiraIntegration(null);
+    }
+  };
+
+  const loadGitHubIntegration = async () => {
+    try {
+      const response = await fetch(`${getApiUrl()}/api/github-integrations/organization/${project.OrganizationId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.integration && data.integration.IsEnabled && data.integration.GitHubUrl) {
+          setGithubIntegration(data.integration);
+        } else {
+          setGithubIntegration(null);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to load GitHub integration:', err);
+      setGithubIntegration(null);
     }
   };
 
@@ -5768,6 +6410,9 @@ function EditProjectModal({
         status: formData.status,
         startDate: formData.startDate || null,
         endDate: formData.endDate || null,
+        jiraBoardId: formData.jiraBoardId || null,
+        gitHubOwner: formData.gitHubOwner || null,
+        gitHubRepo: formData.gitHubRepo || null,
       };
       console.log('Updating project with data:', updateData);
       await projectsApi.update(project.Id, updateData, token);
@@ -5920,6 +6565,71 @@ function EditProjectModal({
                 />
               </div>
             </div>
+
+            {jiraIntegration && (
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <div className="flex items-center gap-2 mb-2">
+                  <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
+                  </svg>
+                  <label className="block text-sm font-medium text-blue-700 dark:text-blue-300">
+                    Jira Board ID
+                  </label>
+                </div>
+                <input
+                  type="text"
+                  value={formData.jiraBoardId || ''}
+                  onChange={(e) => setFormData({ ...formData, jiraBoardId: e.target.value || undefined })}
+                  className="w-full px-4 py-2 border border-blue-300 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  placeholder="e.g., 123 (from board URL)"
+                />
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  Associate this project with a Jira board. Find the Board ID in your Jira board URL: /boards/123
+                </p>
+              </div>
+            )}
+
+            {githubIntegration && (
+              <div className="p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-300 dark:border-gray-700">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+                  </svg>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    GitHub Integration
+                  </label>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      Repository Owner/Organization
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.gitHubOwner || ''}
+                      onChange={(e) => setFormData({ ...formData, gitHubOwner: e.target.value || undefined })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      placeholder="username or organization-name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      Repository Name
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.gitHubRepo || ''}
+                      onChange={(e) => setFormData({ ...formData, gitHubRepo: e.target.value || undefined })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      placeholder="repository-name"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                  Required for GitHub issues import. Find in your repository URL: github.com/<strong>owner</strong>/<strong>repo</strong>
+                </p>
+              </div>
+            )}
 
             <div className="flex gap-3 mt-6">
               <button

@@ -60,6 +60,16 @@
       "NotNullable": false
     },
     {
+      "FieldName": "GitHubOwner",
+      "DataType": "varchar(100)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "GitHubRepo",
+      "DataType": "varchar(100)",
+      "NotNullable": false
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

@@ -2340,9 +2340,264 @@ function TagsTab({
   );
 }
 
+// GitHub Integration Card Component
+function GitHubIntegrationCard({
+  integration,
+  token,
+  orgId,
+  onUpdate,
+  setError,
+  setSuccess
+}: {
+  integration: any;
+  token: string;
+  orgId: number;
+  onUpdate: () => void;
+  setError: (error: string) => void;
+  setSuccess: (success: string) => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [formData, setFormData] = useState({
+    isEnabled: true,
+    gitHubUrl: '',
+    gitHubToken: ''
+  });
+
+  useEffect(() => {
+    if (integration) {
+      setFormData({
+        isEnabled: integration.IsEnabled === 1,
+        gitHubUrl: integration.GitHubUrl || '',
+        gitHubToken: ''
+      });
+    }
+  }, [integration]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/github-integrations/organization/${orgId}`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formData)
+        }
+      );
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSuccess('GitHub integration saved successfully');
+        setShowForm(false);
+        onUpdate();
+      } else {
+        setError(data.message || 'Failed to save GitHub integration');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to save GitHub integration');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm('Are you sure you want to remove the GitHub integration?')) return;
+
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/github-integrations/organization/${orgId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        setSuccess('GitHub integration removed successfully');
+        onUpdate();
+      } else {
+        setError('Failed to delete GitHub integration');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete GitHub integration');
+    }
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+      <div className="p-6">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <div className="text-5xl">🐙</div>
+            <div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">GitHub Integration</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Import GitHub issues as tasks
+              </p>
+            </div>
+          </div>
+          {integration && (
+            <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+              integration.IsEnabled 
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-400'
+            }`}>
+              {integration.IsEnabled ? '✓ Active' : 'Inactive'}
+            </div>
+          )}
+        </div>
+
+        {!integration && !showForm ? (
+          <div className="text-center py-8">
+            <div className="text-gray-400 dark:text-gray-500 text-6xl mb-4">🐙</div>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">
+              GitHub integration is not configured for this organization.
+            </p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors"
+            >
+              🔗 Configure GitHub
+            </button>
+          </div>
+        ) : integration && !showForm ? (
+          <div className="space-y-4">
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/20 rounded-lg border border-gray-200 dark:border-gray-800">
+              <div className="grid grid-cols-1 gap-3 text-sm">
+                <div>
+                  <span className="text-gray-500 dark:text-gray-400">GitHub URL:</span>{' '}
+                  <span className="font-medium text-gray-900 dark:text-white">{integration.GitHubUrl}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              Last Updated: <span className="text-gray-900 dark:text-white">{new Date(integration.UpdatedAt).toLocaleDateString()}</span>
+            </div>
+
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+              <p className="text-sm text-blue-800 dark:text-blue-400">
+                ℹ️ Repository configuration is set per project in Project Settings
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowForm(true)}
+                className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors"
+              >
+                ✏️ Edit Configuration
+              </button>
+              <button
+                onClick={handleDelete}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                🗑️ Remove Integration
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSave} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                GitHub URL {!integration && <span className="text-red-500">*</span>}
+              </label>
+              <input
+                type="url"
+                value={formData.gitHubUrl}
+                onChange={(e) => setFormData({ ...formData, gitHubUrl: e.target.value })}
+                placeholder="https://api.github.com"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500"
+                required={!integration}
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Use https://api.github.com for GitHub.com or your GitHub Enterprise API URL
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Personal Access Token {!integration && <span className="text-red-500">*</span>}
+              </label>
+              <input
+                type="password"
+                value={formData.gitHubToken}
+                onChange={(e) => setFormData({ ...formData, gitHubToken: e.target.value })}
+                placeholder={integration ? "Leave empty to keep current token" : "ghp_xxxxxxxxxxxxxxxxxxxx"}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500"
+                required={!integration}
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Token with 'repo' access to read issues and repositories
+              </p>
+            </div>
+
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+              <p className="text-sm text-blue-800 dark:text-blue-400">
+                ℹ️ Repository owner and name will be configured per project in Project Settings
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="githubEnabled"
+                checked={formData.isEnabled}
+                onChange={(e) => setFormData({ ...formData, isEnabled: e.target.checked })}
+                className="w-4 h-4 text-gray-600 bg-gray-100 border-gray-300 rounded focus:ring-gray-500"
+              />
+              <label htmlFor="githubEnabled" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Enable GitHub integration
+              </label>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="px-4 py-2 bg-gray-900 hover:bg-gray-800 disabled:bg-gray-400 text-white rounded-lg transition-colors"
+              >
+                {isSaving ? 'Saving...' : '💾 Save Integration'}
+              </button>
+              {integration && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForm(false);
+                    setFormData({
+                      isEnabled: integration.IsEnabled === 1,
+                      gitHubUrl: integration.GitHubUrl || '',
+                      gitHubToken: ''
+                    });
+                  }}
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Integrations Tab Component
 function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
   const [integration, setIntegration] = useState<any>(null);
+  const [githubIntegration, setGithubIntegration] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -2368,7 +2623,8 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
     setIsLoading(true);
     setError('');
     try {
-      const response = await fetch(
+      // Load Jira integration
+      const jiraResponse = await fetch(
         `${getApiUrl()}/api/jira-integrations/organization/${orgId}`,
         {
           headers: {
@@ -2377,8 +2633,8 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
+      if (jiraResponse.ok) {
+        const data = await jiraResponse.json();
         if (data.integration) {
           setIntegration(data.integration);
           setFormData({
@@ -2393,8 +2649,25 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
           });
         }
       }
+
+      // Load GitHub integration
+      const githubResponse = await fetch(
+        `${getApiUrl()}/api/github-integrations/organization/${orgId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (githubResponse.ok) {
+        const githubData = await githubResponse.json();
+        if (githubData.integration) {
+          setGithubIntegration(githubData.integration);
+        }
+      }
     } catch (err: any) {
-      setError(err.message || 'Failed to load integration');
+      setError(err.message || 'Failed to load integrations');
     } finally {
       setIsLoading(false);
     }
@@ -2571,7 +2844,12 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">🔌 Integrations</h2>
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">🔌 Integrations</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            Connect external services to enhance your organization's workflow
+          </p>
+        </div>
       </div>
 
       {error && (
@@ -2586,8 +2864,9 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
         </div>
       )}
 
-      {/* Jira Integration Card */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Jira Integration Card */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
         <div className="p-6">
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center gap-4">
@@ -2853,18 +3132,20 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
                 )}
               </div>
             </form>
-          )}
-
-          {!integration && !showForm && (
-            <button
-              onClick={() => setShowForm(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-            >
-              + Configure Jira Integration
-            </button>
-          )}
+          )} 
         </div>
       </div>
+
+      {/* GitHub Integration Card */}
+      <GitHubIntegrationCard 
+        integration={githubIntegration}
+        token={token}
+        orgId={orgId}
+        onUpdate={loadIntegration}
+        setError={setError}
+        setSuccess={setSuccess}
+      />
+    </div>
     </div>
   );
 }

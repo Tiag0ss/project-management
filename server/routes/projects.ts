@@ -334,7 +334,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const projectId = req.params.id;
-    const { projectName, description, status, startDate, endDate, isHobby, customerId, jiraBoardId } = req.body;
+    const { projectName, description, status, startDate, endDate, isHobby, customerId, jiraBoardId, gitHubOwner, gitHubRepo } = req.body;
 
     // Check if project exists and get current data
     const [existing] = await pool.execute<RowDataPacket[]>(
@@ -387,6 +387,12 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     if (jiraBoardId !== undefined && jiraBoardId !== oldProject.JiraBoardId) {
       changes.push({ field: 'JiraBoardId', oldVal: String(oldProject.JiraBoardId || ''), newVal: String(jiraBoardId || '') });
     }
+    if (gitHubOwner !== undefined && gitHubOwner !== oldProject.GitHubOwner) {
+      changes.push({ field: 'GitHubOwner', oldVal: String(oldProject.GitHubOwner || ''), newVal: String(gitHubOwner || '') });
+    }
+    if (gitHubRepo !== undefined && gitHubRepo !== oldProject.GitHubRepo) {
+      changes.push({ field: 'GitHubRepo', oldVal: String(oldProject.GitHubRepo || ''), newVal: String(gitHubRepo || '') });
+    }
 
     // Convert empty strings to null for date fields
     const normalizedStartDate = startDate === '' ? null : startDate;
@@ -394,9 +400,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Projects 
-       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, CustomerId = ?, JiraBoardId = ? 
+       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ? 
        WHERE Id = ?`,
-      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, customerId || null, jiraBoardId || null, projectId]
+      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, customerId || null, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, projectId]
     );
     
     // Log changes to history

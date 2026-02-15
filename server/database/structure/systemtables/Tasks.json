@@ -90,6 +90,16 @@
       "NotNullable": false
     },
     {
+      "FieldName": "GitHubIssueNumber",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "ExternalUrl",
+      "DataType": "varchar(500)",
+      "NotNullable": false
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
