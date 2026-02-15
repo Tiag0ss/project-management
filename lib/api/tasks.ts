@@ -32,6 +32,7 @@ export interface Task {
   TicketIdRef?: number;
   TicketNumber?: string;
   TicketTitle?: string;
+  ExternalIssueId?: string | null;
   CreatedBy: number;
   CreatorName?: string;
   CreatedAt: string;

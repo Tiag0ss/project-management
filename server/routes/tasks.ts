@@ -1299,4 +1299,128 @@ router.post('/utilities/sync-parent-status/:projectId', authenticateToken, async
   }
 });
 
+// Import tasks from Jira
+router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { projectId, issues, statusMapping } = req.body;
+
+    if (!projectId || !issues || !Array.isArray(issues) || issues.length === 0) {
+      return res.status(400).json({ success: false, message: 'Project ID and issues are required' });
+    }
+
+    // Verify user has access to project
+    const [projects] = await pool.execute<RowDataPacket[]>(
+      `SELECT p.*, om.UserId 
+       FROM Projects p
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       WHERE p.Id = ? AND om.UserId = ?`,
+      [projectId, userId]
+    );
+
+    if (projects.length === 0) {
+      return res.status(403).json({ success: false, message: 'Project not found or access denied' });
+    }
+
+    const project = projects[0];
+
+    // Get task statuses for the organization
+    const [taskStatuses] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id, StatusName FROM TaskStatusValues WHERE OrganizationId = ?',
+      [project.OrganizationId]
+    );
+
+    // Get task priorities for the organization
+    const [taskPriorities] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id, PriorityName FROM TaskPriorityValues WHERE OrganizationId = ?',
+      [project.OrganizationId]
+    );
+
+    // Build key to internal ID mapping for created tasks
+    const jiraKeyToTaskId: Record<string, number> = {};
+    const createdTasks: any[] = [];
+
+    // First pass: Create all tasks without parent relationships
+    for (const issue of issues) {
+      // Map status
+      let statusId = null;
+      if (issue.status && statusMapping && statusMapping[issue.status]) {
+        // statusMapping contains the mapped status name, need to find its ID
+        const mappedStatusName = statusMapping[issue.status];
+        const matchingStatus = taskStatuses.find(
+          (s: any) => s.StatusName.toLowerCase() === mappedStatusName.toLowerCase()
+        );
+        if (matchingStatus) {
+          statusId = matchingStatus.Id;
+        }
+      } else if (issue.status) {
+        // Try to find matching status by name (case insensitive)
+        const matchingStatus = taskStatuses.find(
+          (s: any) => s.StatusName.toLowerCase() === issue.status.toLowerCase()
+        );
+        if (matchingStatus) {
+          statusId = matchingStatus.Id;
+        }
+      }
+
+      // Map priority
+      let priorityId = null;
+      if (issue.priority) {
+        const matchingPriority = taskPriorities.find(
+          (p: any) => p.PriorityName.toLowerCase() === issue.priority.toLowerCase()
+        );
+        if (matchingPriority) {
+          priorityId = matchingPriority.Id;
+        }
+      }
+
+      const [result] = await pool.execute<ResultSetHeader>(
+        `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, CreatedBy, ExternalIssueId)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          projectId,
+          issue.summary || issue.key,
+          issue.description || '',
+          statusId || taskStatuses[0]?.Id || null,
+          priorityId || taskPriorities[0]?.Id || null,
+          userId,
+          issue.key
+        ]
+      );
+
+      jiraKeyToTaskId[issue.key] = result.insertId;
+      createdTasks.push({
+        taskId: result.insertId,
+        jiraKey: issue.key,
+        parentKey: issue.parentKey,
+        taskName: issue.summary || issue.key
+      });
+    }
+
+    // Second pass: Update parent relationships
+    let hierarchyUpdateCount = 0;
+    for (const task of createdTasks) {
+      if (task.parentKey && jiraKeyToTaskId[task.parentKey]) {
+        await pool.execute(
+          'UPDATE Tasks SET ParentTaskId = ? WHERE Id = ?',
+          [jiraKeyToTaskId[task.parentKey], task.taskId]
+        );
+        hierarchyUpdateCount++;
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Imported ${createdTasks.length} tasks from Jira (${hierarchyUpdateCount} with parent relationships)`,
+      data: {
+        imported: createdTasks.length,
+        hierarchyLinked: hierarchyUpdateCount
+      }
+    });
+  } catch (error) {
+    console.error('Error importing Jira tasks:', error);
+    res.status(500).json({ success: false, message: 'Failed to import tasks from Jira' });
+  }
+});
+
 export default router;

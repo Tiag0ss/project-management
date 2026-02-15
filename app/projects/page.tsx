@@ -817,6 +817,7 @@ function ProjectModal({
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [customers, setCustomers] = useState<{ Id: number; Name: string }[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
+  const [jiraIntegration, setJiraIntegration] = useState<{ JiraUrl: string; JiraProjectKey: string } | null>(null);
   const [formData, setFormData] = useState<CreateProjectData>({
     organizationId: project?.OrganizationId || 0,
     projectName: project?.ProjectName || '',
@@ -826,6 +827,7 @@ function ProjectModal({
     endDate: project?.EndDate ? project.EndDate.split('T')[0] : '',
     isHobby: project?.IsHobby || false,
     customerId: project?.CustomerId || undefined,
+    jiraBoardId: project?.JiraBoardId || undefined,
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -838,9 +840,11 @@ function ProjectModal({
     if (formData.organizationId && formData.organizationId > 0) {
       loadCustomers(formData.organizationId);
       loadProjectStatuses(formData.organizationId);
+      loadJiraIntegration(formData.organizationId);
     } else {
       setCustomers([]);
       setProjectStatuses([]);
+      setJiraIntegration(null);
     }
   }, [formData.organizationId]);
 
@@ -876,6 +880,28 @@ function ProjectModal({
       setProjectStatuses(response.statuses);
     } catch (err: any) {
       console.error('Failed to load project statuses:', err);
+    }
+  };
+
+  const loadJiraIntegration = async (orgId: number) => {
+    try {
+      const response = await fetch(`${getApiUrl()}/api/jira-integrations/organization/${orgId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.integration && data.integration.IsEnabled && data.integration.JiraProjectsUrl) {
+          setJiraIntegration({
+            JiraUrl: data.integration.JiraProjectsUrl,
+            JiraProjectKey: '' // Not needed for boards
+          });
+        } else {
+          setJiraIntegration(null);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to load Jira integration:', err);
+      setJiraIntegration(null);
     }
   };
 
@@ -958,6 +984,29 @@ function ProjectModal({
                 </p>
               )}
             </div>
+
+            {jiraIntegration && (
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <div className="flex items-center gap-2 mb-2">
+                  <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
+                  </svg>
+                  <label className="block text-sm font-medium text-blue-700 dark:text-blue-300">
+                    Jira Board ID
+                  </label>
+                </div>
+                <input
+                  type="text"
+                  value={formData.jiraBoardId || ''}
+                  onChange={(e) => setFormData({ ...formData, jiraBoardId: e.target.value || undefined })}
+                  className="w-full px-4 py-2 border border-blue-300 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  placeholder="e.g., 123 (from board URL)"
+                />
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  Associate this project with a Jira board. Find the Board ID in your Jira board URL: /boards/123
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

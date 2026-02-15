@@ -85,6 +85,11 @@
       "NotNullable": false
     },
     {
+      "FieldName": "ExternalIssueId",
+      "DataType": "varchar(100)",
+      "NotNullable": false
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

@@ -19,7 +19,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
   const orgId = parseInt(resolvedParams.id);
   
   const [organization, setOrganization] = useState<Organization | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'projects' | 'permissions' | 'statuses' | 'tags' | 'attachments' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'projects' | 'permissions' | 'statuses' | 'tags' | 'attachments' | 'integrations' | 'history'>('overview');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const { user, token, isLoading: authLoading } = useAuth();
@@ -370,6 +370,18 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
               >
                 📎 Attachments ({attachments.length})
               </button>
+              {canManageSettings && (
+                <button
+                  onClick={() => setActiveTab('integrations')}
+                  className={`px-6 py-4 text-sm font-medium border-b-2 ${
+                    activeTab === 'integrations'
+                      ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                  }`}
+                >
+                  🔌 Integrations
+                </button>
+              )}
               <button
                 onClick={() => setActiveTab('history')}
                 className={`px-6 py-4 text-sm font-medium border-b-2 ${
@@ -400,6 +412,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
                 onDeleteAttachment={handleDeleteAttachment}
               />
             )}
+            {activeTab === 'integrations' && <IntegrationsTab orgId={orgId} token={token!} />}
             {activeTab === 'history' && (
               <div>
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">📜 Change History</h2>
@@ -2323,6 +2336,529 @@ function TagsTab({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Integrations Tab Component
+function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
+  const [integration, setIntegration] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState({
+    isEnabled: true,
+    jiraUrl: '',
+    jiraEmail: '',
+    jiraApiToken: '',
+    jiraProjectKey: '',
+    jiraProjectsUrl: '',
+    jiraProjectsEmail: '',
+    jiraProjectsApiToken: ''
+  });
+
+  useEffect(() => {
+    loadIntegration();
+  }, [orgId]);
+
+  const loadIntegration = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/jira-integrations/organization/${orgId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.integration) {
+          setIntegration(data.integration);
+          setFormData({
+            isEnabled: data.integration.IsEnabled === 1,
+            jiraUrl: data.integration.JiraUrl || '',
+            jiraEmail: data.integration.JiraEmail || '',
+            jiraApiToken: '',
+            jiraProjectKey: data.integration.JiraProjectKey || '',
+            jiraProjectsUrl: data.integration.JiraProjectsUrl || '',
+            jiraProjectsEmail: data.integration.JiraProjectsEmail || '',
+            jiraProjectsApiToken: ''
+          });
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to load integration');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    if (!formData.jiraUrl || !formData.jiraEmail || !formData.jiraApiToken) {
+      setError('Please fill in Jira for Tickets fields to test connection');
+      return;
+    }
+
+    setIsTesting(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const results: string[] = [];
+      const errors: string[] = [];
+
+      // Test Jira for Tickets
+      try {
+        const response = await fetch(
+          `${getApiUrl()}/api/jira-integrations/organization/${orgId}/test`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              jiraUrl: formData.jiraUrl,
+              jiraEmail: formData.jiraEmail,
+              jiraApiToken: formData.jiraApiToken
+            })
+          }
+        );
+
+        const data = await response.json();
+
+        if (response.ok) {
+          results.push(`✅ Jira Tickets: Connected as ${data.jiraUser}`);
+        } else {
+          errors.push(`❌ Jira Tickets: ${data.message || 'Connection failed'}`);
+        }
+      } catch (err: any) {
+        errors.push(`❌ Jira Tickets: ${err.message || 'Connection failed'}`);
+      }
+
+      // Test Jira for Projects if configured
+      if (formData.jiraProjectsUrl && formData.jiraProjectsEmail && formData.jiraProjectsApiToken) {
+        try {
+          const response = await fetch(
+            `${getApiUrl()}/api/jira-integrations/organization/${orgId}/test`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                jiraUrl: formData.jiraProjectsUrl,
+                jiraEmail: formData.jiraProjectsEmail,
+                jiraApiToken: formData.jiraProjectsApiToken
+              })
+            }
+          );
+
+          const data = await response.json();
+
+          if (response.ok) {
+            results.push(`✅ Jira Projects: Connected as ${data.jiraUser}`);
+          } else {
+            errors.push(`❌ Jira Projects: ${data.message || 'Connection failed'}`);
+          }
+        } catch (err: any) {
+          errors.push(`❌ Jira Projects: ${err.message || 'Connection failed'}`);
+        }
+      }
+
+      // Show combined results
+      if (errors.length > 0) {
+        setError(errors.join('\n'));
+        if (results.length > 0) {
+          setSuccess(results.join('\n'));
+        }
+      } else if (results.length > 0) {
+        setSuccess(results.join('\n'));
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to test connection');
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData.jiraUrl || !formData.jiraEmail || !formData.jiraApiToken) {
+      setError('Please fill in all required fields');
+      return;
+    }
+
+    setIsSaving(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/jira-integrations/organization/${orgId}`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formData)
+        }
+      );
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSuccess('Jira integration saved successfully');
+        setShowForm(false);
+        loadIntegration();
+      } else {
+        setError(data.message || 'Failed to save integration');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to save integration');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm('Are you sure you want to remove this integration?')) return;
+
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/jira-integrations/organization/${orgId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        setSuccess('Integration removed successfully');
+        setIntegration(null);
+        setFormData({
+          isEnabled: true,
+          jiraUrl: '',
+          jiraEmail: '',
+          jiraApiToken: '',
+          jiraProjectKey: ''
+        });
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete integration');
+    }
+  };
+
+  if (isLoading) {
+    return <div className="text-center py-8 text-gray-500 dark:text-gray-400">Loading...</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">🔌 Integrations</h2>
+      </div>
+
+      {error && (
+        <div className="p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded-lg whitespace-pre-line">
+          {error}
+        </div>
+      )}
+
+      {success && (
+        <div className="p-4 bg-green-100 dark:bg-green-900/30 border border-green-400 text-green-700 dark:text-green-400 rounded-lg whitespace-pre-line">
+          {success}
+        </div>
+      )}
+
+      {/* Jira Integration Card */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+        <div className="p-6">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center gap-4">
+              <div className="text-5xl">🔷</div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">Jira Integration</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Connect your Jira instance to link external tickets
+                </p>
+              </div>
+            </div>
+            {integration && (
+              <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                integration.IsEnabled 
+                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-400'
+              }`}>
+                {integration.IsEnabled ? '✓ Active' : 'Inactive'}
+              </div>
+            )}
+          </div>
+
+          {integration && !showForm ? (
+            <div className="space-y-4">
+              {/* Jira for Tickets */}
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">🔷 Jira for Tickets</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">Jira URL</div>
+                    <div className="font-medium text-gray-900 dark:text-white">{integration.JiraUrl}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">Email</div>
+                    <div className="font-medium text-gray-900 dark:text-white">{integration.JiraEmail}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">Project Key</div>
+                    <div className="font-medium text-gray-900 dark:text-white">{integration.JiraProjectKey || 'Not specified'}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Jira for Projects */}
+              {integration.JiraProjectsUrl && (
+                <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                  <h4 className="text-sm font-semibold text-green-900 dark:text-green-100 mb-3">🟢 Jira for Projects / Kanban</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Jira Projects URL</div>
+                      <div className="font-medium text-gray-900 dark:text-white">{integration.JiraProjectsUrl}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Email</div>
+                      <div className="font-medium text-gray-900 dark:text-white">{integration.JiraProjectsEmail || 'Not specified'}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Last Updated */}
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                Last Updated: <span className="text-gray-900 dark:text-white">{new Date(integration.UpdatedAt).toLocaleDateString()}</span>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowForm(true)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  ✏️ Edit Configuration
+                </button>
+                <button
+                  onClick={handleDelete}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                >
+                  🗑️ Remove Integration
+                </button>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleSave} className="space-y-6">
+              {/* Jira for Tickets Section */}
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-4 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
+                  </svg>
+                  Jira for Tickets
+                </h3>
+                <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Jira URL <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={formData.jiraUrl}
+                    onChange={(e) => setFormData({ ...formData, jiraUrl: e.target.value })}
+                    placeholder="https://your-domain.atlassian.net"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Email <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.jiraEmail}
+                    onChange={(e) => setFormData({ ...formData, jiraEmail: e.target.value })}
+                    placeholder="your-email@company.com"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    API Token <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={formData.jiraApiToken}
+                    onChange={(e) => setFormData({ ...formData, jiraApiToken: e.target.value })}
+                    placeholder="Your Jira API Token"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Create an API token at: <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Atlassian Account</a>
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Project Key (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.jiraProjectKey}
+                    onChange={(e) => setFormData({ ...formData, jiraProjectKey: e.target.value })}
+                    placeholder="PROJ"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Limit search to specific project
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Jira for Projects Section */}
+            <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+              <h3 className="text-lg font-semibold text-green-900 dark:text-green-100 mb-4 flex items-center gap-2">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
+                </svg>
+                Jira for Projects / Kanban Boards
+              </h3>
+              <p className="text-sm text-green-700 dark:text-green-300 mb-4">
+                Configure a separate Jira instance for managing project boards and kanban views (optional)
+              </p>
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Jira Projects URL
+                  </label>
+                  <input
+                    type="url"
+                    value={formData.jiraProjectsUrl}
+                    onChange={(e) => setFormData({ ...formData, jiraProjectsUrl: e.target.value })}
+                    placeholder="https://your-projects-domain.atlassian.net"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.jiraProjectsEmail}
+                    onChange={(e) => setFormData({ ...formData, jiraProjectsEmail: e.target.value })}
+                    placeholder="your-email@company.com"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    API Token
+                  </label>
+                  <input
+                    type="password"
+                    value={formData.jiraProjectsApiToken}
+                    onChange={(e) => setFormData({ ...formData, jiraProjectsApiToken: e.target.value })}
+                    placeholder="Your Jira API Token for Projects instance"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    API token for the Projects Jira instance
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Enable Integration Toggle */}
+            <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="isEnabled"
+                    checked={formData.isEnabled}
+                    onChange={(e) => setFormData({ ...formData, isEnabled: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="isEnabled" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Enable integration
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={isTesting}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white rounded-lg transition-colors"
+                >
+                  {isTesting ? 'Testing...' : '🔍 Test Connection'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
+                >
+                  {isSaving ? 'Saving...' : '💾 Save Integration'}
+                </button>
+                {integration && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForm(false);
+                      setFormData({
+                        isEnabled: integration.IsEnabled === 1,
+                        jiraUrl: integration.JiraUrl || '',
+                        jiraEmail: integration.JiraEmail || '',
+                        jiraApiToken: '',
+                        jiraProjectKey: integration.JiraProjectKey || ''
+                      });
+                    }}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+          )}
+
+          {!integration && !showForm && (
+            <button
+              onClick={() => setShowForm(true)}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              + Configure Jira Integration
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

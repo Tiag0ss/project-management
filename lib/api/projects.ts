@@ -18,6 +18,7 @@ export interface Project {
   IsHobby?: boolean;
   CustomerId?: number;
   CustomerName?: string;
+  JiraBoardId?: string | null;
   CreatedBy: number;
   CreatorName?: string;
   CreatedAt: string;
@@ -39,6 +40,7 @@ export interface CreateProjectData {
   endDate?: string;
   isHobby?: boolean;
   customerId?: number;
+  jiraBoardId?: string;
 }
 
 export interface UpdateProjectData {
@@ -49,6 +51,7 @@ export interface UpdateProjectData {
   endDate?: string | null;
   isHobby?: boolean;
   customerId?: number | null;
+  jiraBoardId?: string | null;
 }
 
 export interface UpdateProjectDataWithId extends UpdateProjectData {

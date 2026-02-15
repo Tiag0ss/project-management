@@ -171,7 +171,7 @@ router.get('/:id/permissions', authenticateToken, async (req: AuthRequest, res: 
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { organizationId, projectName, description, status, startDate, endDate, isHobby, customerId } = req.body;
+    const { organizationId, projectName, description, status, startDate, endDate, isHobby, customerId, jiraBoardId } = req.body;
 
     if (!projectName || !organizationId) {
       return res.status(400).json({ 
@@ -194,8 +194,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, CustomerId) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, CustomerId, JiraBoardId) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         organizationId,
         projectName, 
@@ -205,7 +205,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         startDate || null, 
         endDate || null,
         isHobby ? 1 : 0,
-        customerId || null
+        customerId || null,
+        jiraBoardId || null
       ]
     );
 
@@ -333,7 +334,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const projectId = req.params.id;
-    const { projectName, description, status, startDate, endDate, isHobby, customerId } = req.body;
+    const { projectName, description, status, startDate, endDate, isHobby, customerId, jiraBoardId } = req.body;
 
     // Check if project exists and get current data
     const [existing] = await pool.execute<RowDataPacket[]>(
@@ -383,6 +384,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     if (customerId !== undefined && customerId !== oldProject.CustomerId) {
       changes.push({ field: 'CustomerId', oldVal: String(oldProject.CustomerId || ''), newVal: String(customerId || '') });
     }
+    if (jiraBoardId !== undefined && jiraBoardId !== oldProject.JiraBoardId) {
+      changes.push({ field: 'JiraBoardId', oldVal: String(oldProject.JiraBoardId || ''), newVal: String(jiraBoardId || '') });
+    }
 
     // Convert empty strings to null for date fields
     const normalizedStartDate = startDate === '' ? null : startDate;
@@ -390,9 +394,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Projects 
-       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, CustomerId = ? 
+       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, CustomerId = ?, JiraBoardId = ? 
        WHERE Id = ?`,
-      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, customerId || null, projectId]
+      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, customerId || null, jiraBoardId || null, projectId]
     );
     
     // Log changes to history

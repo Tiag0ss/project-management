@@ -38,6 +38,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [importPreview, setImportPreview] = useState<any[]>([]);
   const [importProgress, setImportProgress] = useState<string>('');
   const [importResult, setImportResult] = useState<{created: number; errors: Array<{row: number; error: string}>} | null>(null);
+  const [showJiraImportModal, setShowJiraImportModal] = useState(false);
+  const [jiraIssues, setJiraIssues] = useState<any[]>([]);
+  const [selectedIssues, setSelectedIssues] = useState<Set<string>>(new Set());
+  const [statusMapping, setStatusMapping] = useState<{[key: string]: string}>({});
+  const [jiraLoading, setJiraLoading] = useState(false);
+  const [jiraError, setJiraError] = useState('');
+  const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
+  const [jiraFilters, setJiraFilters] = useState({
+    search: '',
+    status: '',
+    issueType: '',
+    priority: '',
+    showParentsOnly: false,
+    showSubtasksOnly: false
+  });
   const { user, token, isLoading: authLoading } = useAuth();
   const { permissions } = usePermissions();
   const router = useRouter();
@@ -494,6 +509,207 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     return '📎';
   };
 
+  // Jira Import Functions
+  const loadJiraIssues = async () => {
+    if (!token || !project) return;
+    
+    setJiraLoading(true);
+    setJiraError('');
+    
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/jira-integrations/project/${projectId}/issues`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to fetch Jira issues');
+      }
+
+      const data = await response.json();
+      console.log('Jira issues received:', data);
+      setJiraIssues(data.data || []);
+      
+      // Auto-create status mapping based on matching names
+      if (taskStatuses.length > 0 && data.data) {
+        const mapping: {[key: string]: string} = {};
+        const jiraStatuses = new Set<string>();
+        
+        data.data.forEach((issue: any) => {
+          if (issue.status) {
+            jiraStatuses.add(issue.status);
+          }
+        });
+        
+        jiraStatuses.forEach(jiraStatus => {
+          const match = taskStatuses.find(
+            ts => ts.Value.toLowerCase() === jiraStatus.toLowerCase()
+          );
+          if (match) {
+            mapping[jiraStatus] = match.Value;
+          } else {
+            // Default to first status if no match
+            mapping[jiraStatus] = taskStatuses[0]?.Value || '';
+          }
+        });
+        
+        setStatusMapping(mapping);
+      }
+    } catch (err: any) {
+      setJiraError(err.message || 'Failed to load Jira issues');
+    } finally {
+      setJiraLoading(false);
+    }
+  };
+
+  const loadTaskStatuses = async () => {
+    if (!token || !project) return;
+    
+    try {
+      const statuses = await statusValuesApi.getTaskStatuses(project.OrganizationId, token);
+      setTaskStatuses(statuses);
+    } catch (err: any) {
+      console.error('Failed to load task statuses:', err);
+    }
+  };
+
+  const handleJiraImport = async () => {
+    if (!token || selectedIssues.size === 0) return;
+    
+    setJiraLoading(true);
+    setJiraError('');
+    
+    try {
+      const issuesToImport = jiraIssues.filter(issue => 
+        selectedIssues.has(issue.key)
+      );
+      
+      const response = await fetch(
+        `${getApiUrl()}/api/tasks/import-from-jira`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            projectId: parseInt(projectId),
+            issues: issuesToImport,
+            statusMapping: statusMapping,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to import tasks');
+      }
+
+      const result = await response.json();
+      const imported = result.data?.imported || result.createdTasks || 0;
+      const hierarchyLinked = result.data?.hierarchyLinked || 0;
+      
+      showAlert(
+        'Import Successful',
+        `Successfully imported ${imported} task(s). ${hierarchyLinked} parent-child relationship(s) created.`
+      );
+      
+      setShowJiraImportModal(false);
+      setSelectedIssues(new Set());
+      await loadTasks();
+    } catch (err: any) {
+      setJiraError(err.message || 'Failed to import tasks');
+    } finally {
+      setJiraLoading(false);
+    }
+  };
+
+  const toggleIssueSelection = (issueKey: string) => {
+    const newSelection = new Set(selectedIssues);
+    if (newSelection.has(issueKey)) {
+      newSelection.delete(issueKey);
+    } else {
+      newSelection.add(issueKey);
+    }
+    setSelectedIssues(newSelection);
+  };
+
+  const toggleAllIssues = () => {
+    if (selectedIssues.size === jiraIssues.length) {
+      setSelectedIssues(new Set());
+    } else {
+      setSelectedIssues(new Set(jiraIssues.map(issue => issue.key)));
+    }
+  };
+
+  // Filter Jira issues based on current filters
+  const getFilteredJiraIssues = () => {
+    return jiraIssues.filter(issue => {
+      // Text search
+      if (jiraFilters.search) {
+        const searchLower = jiraFilters.search.toLowerCase();
+        const matchesSearch = 
+          issue.key.toLowerCase().includes(searchLower) ||
+          issue.summary?.toLowerCase().includes(searchLower) ||
+          issue.description?.toLowerCase().includes(searchLower);
+        if (!matchesSearch) return false;
+      }
+      
+      // Status filter
+      if (jiraFilters.status && issue.status !== jiraFilters.status) {
+        return false;
+      }
+      
+      // Issue type filter
+      if (jiraFilters.issueType && issue.issueType !== jiraFilters.issueType) {
+        return false;
+      }
+      
+      // Priority filter
+      if (jiraFilters.priority && issue.priority !== jiraFilters.priority) {
+        return false;
+      }
+      
+      // Parent/subtask filters
+      const isParent = issue.subtasks && issue.subtasks.length > 0;
+      const isSubtask = issue.parentKey !== null;
+      
+      if (jiraFilters.showParentsOnly && !isParent) {
+        return false;
+      }
+      
+      if (jiraFilters.showSubtasksOnly && !isSubtask) {
+        return false;
+      }
+      
+      return true;
+    });
+  };
+
+  // Load task statuses and Jira issues when modal opens
+  useEffect(() => {
+    if (showJiraImportModal && project) {
+      loadTaskStatuses();
+      loadJiraIssues();
+    } else if (!showJiraImportModal) {
+      // Reset filters when modal closes
+      setJiraFilters({
+        search: '',
+        status: '',
+        issueType: '',
+        priority: '',
+        showParentsOnly: false,
+        showSubtasksOnly: false
+      });
+    }
+  }, [showJiraImportModal, project]);
+
   if (authLoading || isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -642,6 +858,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               onEditTask={handleEditTask}
               onDeleteTask={handleDeleteTask}
               onImportClick={handleImportClick}
+              onImportFromJira={() => setShowJiraImportModal(true)}
               canCreate={permissions?.canCreateTasks || false}
               canManage={permissions?.canManageTasks || false}
               canDelete={permissions?.canDeleteTasks || false}
@@ -795,6 +1012,341 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           onSaved={handleTaskSaved}
           token={token!}
         />
+      )}
+
+      {/* Jira Import Modal */}
+      {showJiraImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <svg className="w-6 h-6 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
+                  </svg>
+                  Import Tasks from Jira
+                </h2>
+                <button
+                  onClick={() => setShowJiraImportModal(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {jiraError && (
+                <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
+                  {jiraError}
+                </div>
+              )}
+
+              {jiraLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                    <p className="text-gray-600 dark:text-gray-400">Loading Jira issues...</p>
+                  </div>
+                </div>
+              ) : jiraIssues.length === 0 ? (
+                <div className="text-center py-12">
+                  <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No Jira issues found</h3>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    Make sure your Jira integration is configured and the board/project has issues.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Status Mapping Section */}
+                  {Object.keys(statusMapping).length > 0 && (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                      <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-3">📊 Status Mapping</h3>
+                      <p className="text-sm text-blue-800 dark:text-blue-400 mb-3">
+                        Map Jira statuses to your project's task statuses:
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {Object.keys(statusMapping).map(jiraStatus => (
+                          <div key={jiraStatus} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700">
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              {jiraStatus}
+                            </label>
+                            <select
+                              value={statusMapping[jiraStatus]}
+                              onChange={(e) => setStatusMapping({
+                                ...statusMapping,
+                                [jiraStatus]: e.target.value
+                              })}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            >
+                              {taskStatuses.map(status => (
+                                <option key={status.Value} value={status.Value}>
+                                  {status.Value}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Filters Section */}
+                  <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                    <h3 className="font-semibold text-gray-900 dark:text-white mb-3">🔍 Filters</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {/* Search */}
+                      <div className="lg:col-span-3">
+                        <input
+                          type="text"
+                          placeholder="Search by key, summary, or description..."
+                          value={jiraFilters.search}
+                          onChange={(e) => setJiraFilters({ ...jiraFilters, search: e.target.value })}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        />
+                      </div>
+                      
+                      {/* Status filter */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                        <select
+                          value={jiraFilters.status}
+                          onChange={(e) => setJiraFilters({ ...jiraFilters, status: e.target.value })}
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        >
+                          <option value="">All Statuses</option>
+                          {Array.from(new Set(jiraIssues.map(i => i.status).filter(Boolean))).map(status => (
+                            <option key={status} value={status}>{status}</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      {/* Issue Type filter */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Issue Type</label>
+                        <select
+                          value={jiraFilters.issueType}
+                          onChange={(e) => setJiraFilters({ ...jiraFilters, issueType: e.target.value })}
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        >
+                          <option value="">All Types</option>
+                          {Array.from(new Set(jiraIssues.map(i => i.issueType).filter(Boolean))).map(type => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      {/* Priority filter */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Priority</label>
+                        <select
+                          value={jiraFilters.priority}
+                          onChange={(e) => setJiraFilters({ ...jiraFilters, priority: e.target.value })}
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        >
+                          <option value="">All Priorities</option>
+                          {Array.from(new Set(jiraIssues.map(i => i.priority).filter(Boolean))).map(priority => (
+                            <option key={priority} value={priority}>{priority}</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      {/* Hierarchy filters */}
+                      <div className="lg:col-span-3 flex gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={jiraFilters.showParentsOnly}
+                            onChange={(e) => setJiraFilters({ 
+                              ...jiraFilters, 
+                              showParentsOnly: e.target.checked,
+                              showSubtasksOnly: e.target.checked ? false : jiraFilters.showSubtasksOnly
+                            })}
+                            className="rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Show parents only</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={jiraFilters.showSubtasksOnly}
+                            onChange={(e) => setJiraFilters({ 
+                              ...jiraFilters, 
+                              showSubtasksOnly: e.target.checked,
+                              showParentsOnly: e.target.checked ? false : jiraFilters.showParentsOnly
+                            })}
+                            className="rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Show subtasks only</span>
+                        </label>
+                        {(jiraFilters.search || jiraFilters.status || jiraFilters.issueType || jiraFilters.priority || jiraFilters.showParentsOnly || jiraFilters.showSubtasksOnly) && (
+                          <button
+                            onClick={() => setJiraFilters({
+                              search: '',
+                              status: '',
+                              issueType: '',
+                              priority: '',
+                              showParentsOnly: false,
+                              showSubtasksOnly: false
+                            })}
+                            className="ml-auto text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                          >
+                            Clear all filters
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Issues List */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-semibold text-gray-900 dark:text-white">
+                        Issues ({selectedIssues.size} selected, {getFilteredJiraIssues().length} shown of {jiraIssues.length} total)
+                      </h3>
+                      <button
+                        onClick={() => {
+                          const filtered = getFilteredJiraIssues();
+                          if (filtered.every(issue => selectedIssues.has(issue.key))) {
+                            // Deselect all filtered
+                            const newSelection = new Set(selectedIssues);
+                            filtered.forEach(issue => newSelection.delete(issue.key));
+                            setSelectedIssues(newSelection);
+                          } else {
+                            // Select all filtered
+                            const newSelection = new Set(selectedIssues);
+                            filtered.forEach(issue => newSelection.add(issue.key));
+                            setSelectedIssues(newSelection);
+                          }
+                        }}
+                        className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        {getFilteredJiraIssues().every(issue => selectedIssues.has(issue.key)) ? 'Deselect Filtered' : 'Select Filtered'}
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {getFilteredJiraIssues().length === 0 ? (
+                        <div className="text-center py-8">
+                          <p className="text-gray-500 dark:text-gray-400">No issues match the current filters</p>
+                          <button
+                            onClick={() => setJiraFilters({
+                              search: '',
+                              status: '',
+                              issueType: '',
+                              priority: '',
+                              showParentsOnly: false,
+                              showSubtasksOnly: false
+                            })}
+                            className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                          >
+                            Clear filters
+                          </button>
+                        </div>
+                      ) : (
+                        getFilteredJiraIssues().map(issue => {
+                          const isParent = issue.subtasks && issue.subtasks.length > 0;
+                          const isSubtask = issue.parentKey !== null;
+                          
+                          return (
+                            <div
+                              key={issue.key}
+                              className={`border border-gray-200 dark:border-gray-700 rounded-lg p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${
+                                isSubtask ? 'ml-8' : ''
+                              }`}
+                            >
+                            <div className="flex items-start gap-3">
+                              <input
+                                type="checkbox"
+                                checked={selectedIssues.has(issue.key)}
+                                onChange={() => toggleIssueSelection(issue.key)}
+                                className="mt-1"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-mono text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
+                                    {issue.key}
+                                  </span>
+                                  <span className="text-xs px-2 py-0.5 rounded" style={{
+                                    backgroundColor: issue.statusColor ? `${issue.statusColor}20` : '#e5e7eb',
+                                    color: issue.statusColor || '#6b7280'
+                                  }}>
+                                    {issue.status}
+                                  </span>
+                                  {issue.priority && (
+                                    <span className="text-xs px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400">
+                                      {issue.priority}
+                                    </span>
+                                  )}
+                                  {isParent && (
+                                    <span className="text-xs px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400">
+                                      📁 {issue.subtasks.length} subtask{issue.subtasks.length !== 1 ? 's' : ''}
+                                    </span>
+                                  )}
+                                  {isSubtask && (
+                                    <span className="text-xs px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+                                      ↳ Subtask of {issue.parentKey}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="font-medium text-gray-900 dark:text-white text-sm mb-1">
+                                  {issue.summary}
+                                </p>
+                                {issue.description && (
+                                  <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-2">
+                                    {issue.description}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+              <div className="flex justify-between items-center">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {selectedIssues.size > 0 ? (
+                    <>
+                      <span className="font-semibold">{selectedIssues.size}</span> issue{selectedIssues.size !== 1 ? 's' : ''} will be imported as task{selectedIssues.size !== 1 ? 's' : ''}
+                    </>
+                  ) : (
+                    'Select issues to import'
+                  )}
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowJiraImportModal(false)}
+                    className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleJiraImport}
+                    disabled={jiraLoading || selectedIssues.size === 0}
+                    className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                  >
+                    {jiraLoading ? 'Importing...' : `Import ${selectedIssues.size} Task${selectedIssues.size !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Confirm Modal */}
@@ -1469,6 +2021,7 @@ function TasksTab({
   onEditTask,
   onDeleteTask,
   onImportClick,
+  onImportFromJira,
   canCreate,
   canManage,
   canDelete,
@@ -1478,6 +2031,7 @@ function TasksTab({
   onEditTask: (task: Task) => void;
   onDeleteTask: (id: number) => void;
   onImportClick: () => void;
+  onImportFromJira: () => void;
   canCreate: boolean;
   canManage: boolean;
   canDelete: boolean;
@@ -1649,6 +2203,15 @@ function TasksTab({
               >
                 <span className="text-xl">📥</span>
                 Import CSV
+              </button>
+              <button
+                onClick={onImportFromJira}
+                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
+                </svg>
+                Import from Jira
               </button>
               <button
                 onClick={onCreateTask}

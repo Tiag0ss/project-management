@@ -1,0 +1,64 @@
+{
+  "TableName": "OrganizationJiraIntegrations",
+  "PrimaryKeyFields": "OrganizationId",
+  "Fields": [
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "IsEnabled",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "JiraUrl",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "JiraEmail",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "JiraApiToken",
+      "DataType": "varchar(500)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "JiraProjectKey",
+      "DataType": "varchar(50)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "JiraProjectsUrl",
+      "DataType": "varchar(255)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "JiraProjectsEmail",
+      "DataType": "varchar(255)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "JiraProjectsApiToken",
+      "DataType": "varchar(500)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

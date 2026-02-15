@@ -29,6 +29,7 @@ interface Ticket {
   UpdatedAt: string;
   ResolvedAt: string | null;
   ClosedAt: string | null;
+  ExternalTicketId: string | null;
   OrganizationName: string;
   CustomerName: string | null;
   ProjectName: string | null;
@@ -121,9 +122,15 @@ export default function TicketsPage() {
     description: '',
     priority: 'Medium',
     category: 'Support',
+    externalTicketId: '',
   });
   const [creating, setCreating] = useState(false);
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
+  const [jiraIntegration, setJiraIntegration] = useState<any>(null);
+  const [jiraIssues, setJiraIssues] = useState<any[]>([]);
+  const [searchingJira, setSearchingJira] = useState(false);
+  const [jiraSearchQuery, setJiraSearchQuery] = useState('');
+  const [jiraIntegrations, setJiraIntegrations] = useState<Map<number, string>>(new Map());
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -164,6 +171,29 @@ export default function TicketsPage() {
       if (ticketsRes.ok) {
         const data = await ticketsRes.json();
         setTickets(data.tickets || []);
+        
+        // Load Jira integrations for organizations with tickets
+        const uniqueOrgIds = [...new Set((data.tickets || []).map((t: Ticket) => t.OrganizationId))] as number[];
+        const integrationMap = new Map<number, string>();
+        
+        for (const orgId of uniqueOrgIds) {
+          try {
+            const jiraRes = await fetch(
+              `${getApiUrl()}/api/jira-integrations/organization/${orgId}`,
+              { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+            if (jiraRes.ok) {
+              const jiraData = await jiraRes.json();
+              if (jiraData.integration && jiraData.integration.IsEnabled) {
+                integrationMap.set(orgId, jiraData.integration.JiraUrl);
+              }
+            }
+          } catch (err) {
+            console.error(`Failed to load Jira integration for org ${orgId}:`, err);
+          }
+        }
+        
+        setJiraIntegrations(integrationMap);
       }
 
       // Load stats
@@ -246,6 +276,50 @@ export default function TicketsPage() {
     }
   };
 
+  const loadJiraIntegration = async (orgId: string) => {
+    if (!orgId) {
+      setJiraIntegration(null);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `${getApiUrl()}/api/jira-integrations/organization/${orgId}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.integration && data.integration.IsEnabled) {
+          setJiraIntegration(data.integration);
+        } else {
+          setJiraIntegration(null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load Jira integration:', err);
+      setJiraIntegration(null);
+    }
+  };
+
+  const searchJiraIssues = async (query: string) => {
+    if (!createForm.organizationId || !jiraIntegration) return;
+    
+    setSearchingJira(true);
+    try {
+      const res = await fetch(
+        `${getApiUrl()}/api/jira-integrations/organization/${createForm.organizationId}/search?query=${encodeURIComponent(query)}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setJiraIssues(data.issues || []);
+      }
+    } catch (err) {
+      console.error('Failed to search Jira issues:', err);
+    } finally {
+      setSearchingJira(false);
+    }
+  };
+
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createForm.title.trim()) {
@@ -290,6 +364,7 @@ export default function TicketsPage() {
             description: createForm.description || null,
             priority: createForm.priority,
             category: createForm.category,
+            externalTicketId: createForm.externalTicketId || null,
           }),
         }
       );
@@ -350,8 +425,12 @@ export default function TicketsPage() {
         description: '',
         priority: 'Medium',
         category: 'Support',
+        externalTicketId: '',
       });
       setAttachmentFiles([]);
+      setJiraIntegration(null);
+      setJiraIssues([]);
+      setJiraSearchQuery('');
       
       // Navigate to the new ticket
       router.push(`/tickets/${ticketId}`);
@@ -796,7 +875,21 @@ export default function TicketsPage() {
                         <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getPriorityColor(ticket.Priority)}`}>
                           {ticket.Priority}
                         </span>
-
+                        {ticket.ExternalTicketId && jiraIntegrations.get(ticket.OrganizationId) && (
+                          <a
+                            href={`${jiraIntegrations.get(ticket.OrganizationId)}/browse/${ticket.ExternalTicketId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors flex items-center gap-1"
+                            title={`Open in Jira: ${ticket.ExternalTicketId}`}
+                          >
+                            🔷 {ticket.ExternalTicketId}
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                        )}
                       </div>
                       
                       <h3 className="text-base font-medium text-gray-900 dark:text-white truncate">
@@ -907,8 +1000,9 @@ export default function TicketsPage() {
                       <SearchableSelect
                         value={createForm.organizationId}
                         onChange={(value) => {
-                          setCreateForm(prev => ({ ...prev, organizationId: value, projectId: '' }));
+                          setCreateForm(prev => ({ ...prev, organizationId: value, projectId: '', externalTicketId: '' }));
                           loadProjects(value);
+                          loadJiraIntegration(value);
                         }}
                         options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
                         placeholder="Select Organization"
@@ -930,6 +1024,126 @@ export default function TicketsPage() {
                         placeholder="Select Customer"
                         emptyText="Select Customer"
                       />
+                    </div>
+                  )}
+
+                  {/* Jira Ticket Search (if integration is enabled) */}
+                  {!isCustomerUser && jiraIntegration && (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        🔷 Link Jira Ticket (optional)
+                      </label>
+                      <div className="space-y-2">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={jiraSearchQuery}
+                            onChange={(e) => {
+                              setJiraSearchQuery(e.target.value);
+                              if (e.target.value.length >= 2) {
+                                searchJiraIssues(e.target.value);
+                              }
+                            }}
+                            placeholder="Search by Jira ticket number or summary..."
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                          />
+                          {searchingJira && (
+                            <div className="absolute right-3 top-2.5">
+                              <div className="animate-spin w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {createForm.externalTicketId && (
+                          <div className="flex items-center gap-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-2 rounded-lg">
+                            <span className="font-medium">✓ Linked:</span>
+                            <span>{createForm.externalTicketId}</span>
+                            <button
+                              type="button"
+                              onClick={() => setCreateForm(prev => ({ ...prev, externalTicketId: '' }))}
+                              className="ml-auto text-green-600 hover:text-green-700 dark:text-green-400"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        )}
+                        
+                        {jiraSearchQuery.length >= 2 && jiraIssues.length > 0 && !createForm.externalTicketId && (
+                          <div className="max-h-60 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700">
+                            {jiraIssues.map((issue) => (
+                              <button
+                                key={issue.key}
+                                type="button"
+                                onClick={() => {
+                                  // Map Jira priority to app priority
+                                  const mapPriority = (jiraPriority: string) => {
+                                    const lower = jiraPriority?.toLowerCase() || '';
+                                    if (lower.includes('highest') || lower.includes('critical')) return 'High';
+                                    if (lower.includes('high')) return 'High';
+                                    if (lower.includes('low') || lower.includes('lowest')) return 'Low';
+                                    return 'Medium';
+                                  };
+                                  
+                                  // Map Jira issue type to category
+                                  const mapCategory = (issueType: string) => {
+                                    const lower = issueType?.toLowerCase() || '';
+                                    if (lower.includes('bug')) return 'Bug';
+                                    if (lower.includes('feature') || lower.includes('enhancement')) return 'Feature Request';
+                                    if (lower.includes('task')) return 'Support';
+                                    return 'Support';
+                                  };
+                                  
+                                  // Convert Jira description (can be complex format) to plain text or HTML
+                                  const convertDescription = (jiraDesc: any) => {
+                                    if (!jiraDesc) return '';
+                                    if (typeof jiraDesc === 'string') return jiraDesc;
+                                    // Jira uses ADF (Atlassian Document Format) - extract text
+                                    if (jiraDesc.type === 'doc' && jiraDesc.content) {
+                                      let text = '';
+                                      const extractText = (node: any): string => {
+                                        if (node.text) return node.text;
+                                        if (node.content) {
+                                          return node.content.map((n: any) => extractText(n)).join('');
+                                        }
+                                        return '';
+                                      };
+                                      return jiraDesc.content.map((node: any) => extractText(node)).join('\n');
+                                    }
+                                    return '';
+                                  };
+                                  
+                                  setCreateForm(prev => ({ 
+                                    ...prev, 
+                                    externalTicketId: issue.key,
+                                    title: issue.summary || prev.title,
+                                    description: convertDescription(issue.description) || prev.description,
+                                    priority: mapPriority(issue.priority),
+                                    category: mapCategory(issue.issueType)
+                                  }));
+                                  setJiraSearchQuery('');
+                                  setJiraIssues([]);
+                                }}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-600 border-b border-gray-200 dark:border-gray-600 last:border-0"
+                              >
+                                <div className="font-medium text-gray-900 dark:text-white">{issue.key}</div>
+                                <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-1">{issue.summary}</div>
+                                <div className="flex gap-2 mt-1">
+                                  {issue.status && (
+                                    <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
+                                      {issue.status}
+                                    </span>
+                                  )}
+                                  {issue.priority && (
+                                    <span className="text-xs px-2 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded">
+                                      {issue.priority}
+                                    </span>
+                                  )}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 

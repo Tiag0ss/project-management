@@ -33,6 +33,7 @@ interface Ticket {
   UpdatedAt: string;
   ResolvedAt: string | null;
   ClosedAt: string | null;
+  ExternalTicketId: string | null;
   OrganizationName: string;
   CustomerName: string | null;
   ProjectName: string | null;
@@ -134,6 +135,9 @@ export default function TicketDetailPage() {
   const [associatedTasks, setAssociatedTasks] = useState<Task[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [commentAttachmentsMap, setCommentAttachmentsMap] = useState<Record<number, TicketAttachment[]>>({});
+  
+  // Jira integration state
+  const [jiraIntegration, setJiraIntegration] = useState<{JiraUrl: string} | null>(null);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -243,6 +247,24 @@ export default function TicketDetailPage() {
       const data = await res.json();
       setTicket(data.ticket);
       setComments(data.comments || []);
+      
+      // Load Jira integration if ticket has external ID
+      if (data.ticket.ExternalTicketId && data.ticket.OrganizationId) {
+        try {
+          const jiraRes = await fetch(
+            `${getApiUrl()}/api/jira-integrations/organization/${data.ticket.OrganizationId}`,
+            { headers: { 'Authorization': `Bearer ${token}` } }
+          );
+          if (jiraRes.ok) {
+            const jiraData = await jiraRes.json();
+            if (jiraData.integration && jiraData.integration.IsEnabled) {
+              setJiraIntegration(jiraData.integration);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to load Jira integration:', err);
+        }
+      }
       
       // Format scheduled date for input
       const scheduledDateStr = data.ticket.ScheduledDate 
@@ -723,6 +745,24 @@ export default function TicketDetailPage() {
                 <span className={`px-3 py-1 text-sm font-medium rounded-full border ${getPriorityColor(ticket.Priority)}`}>
                   {ticket.Priority}
                 </span>
+                {ticket.ExternalTicketId && jiraIntegration && (
+                  <a
+                    href={`${jiraIntegration.JiraUrl}/browse/${ticket.ExternalTicketId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex items-center gap-1 px-3 py-1 text-sm font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                    title={`Open in Jira: ${ticket.ExternalTicketId}`}
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
+                    </svg>
+                    {ticket.ExternalTicketId}
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                )}
               </div>
               
               {isEditing ? (

@@ -279,7 +279,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const customerId = req.user?.customerId;
-    const { organizationId, projectId, title, description, priority, category, customerId: bodyCustomerId } = req.body;
+    const { organizationId, projectId, title, description, priority, category, customerId: bodyCustomerId, externalTicketId } = req.body;
 
     if (!organizationId || !title) {
       return res.status(400).json({ success: false, message: 'Organization and title are required' });
@@ -342,8 +342,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO Tickets (
         OrganizationId, CustomerId, ProjectId, CreatedByUserId, AssignedToUserId,
-        Title, Description, Priority, Category
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        Title, Description, Priority, Category, ExternalTicketId
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         organizationId,
         ticketCustomerId,
@@ -353,7 +353,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         title,
         description || null,
         priority || 'Medium',
-        category || 'Support'
+        category || 'Support',
+        externalTicketId || null
       ]
     );
 

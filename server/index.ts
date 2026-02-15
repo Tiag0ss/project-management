@@ -46,6 +46,7 @@ import emailPreferencesRoutes from './routes/emailPreferences';
 import installRoutes from './routes/install';
 import savedReportsRoutes from './routes/savedReports';
 import memosRoutes from './routes/memos';
+import jiraIntegrationsRoutes from './routes/jiraIntegrations';
 
 dotenv.config();
 
@@ -202,6 +203,7 @@ app.prepare().then(async () => {
   server.use('/api/email-preferences', emailPreferencesRoutes);
   server.use('/api/saved-reports', savedReportsRoutes);
   server.use('/api/memos', memosRoutes);
+  server.use('/api/jira-integrations', jiraIntegrationsRoutes);
 
   // Error handling middleware
   server.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

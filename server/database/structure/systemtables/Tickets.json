@@ -97,6 +97,11 @@
       "FieldName": "ScheduledDate",
       "DataType": "date",
       "NotNullable": false
+    },
+    {
+      "FieldName": "ExternalTicketId",
+      "DataType": "varchar(100)",
+      "NotNullable": false
     }
   ]
 }
