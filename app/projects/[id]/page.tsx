@@ -1193,14 +1193,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               ) : (
                 <div className="space-y-6">
                   {/* Status Mapping Section */}
-                  {Object.keys(statusMapping).length > 0 && (
+                  {jiraIssues.length > 0 && taskStatuses.length > 0 && (
                     <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
                       <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-3">📊 Status Mapping</h3>
                       <p className="text-sm text-blue-800 dark:text-blue-400 mb-3">
                         Map Jira statuses to your project's task statuses:
                       </p>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {Object.keys(statusMapping).map(jiraStatus => (
+                        {Array.from(new Set(jiraIssues.map(i => i.status).filter(Boolean))).map(jiraStatus => (
                           <div key={jiraStatus} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700">
                             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                               {jiraStatus}
