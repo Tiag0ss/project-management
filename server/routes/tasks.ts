@@ -1436,12 +1436,38 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
       [project.OrganizationId]
     );
 
+    // Get existing tasks with external issue IDs to avoid duplicates
+    const [existingTasks] = await pool.execute<RowDataPacket[]>(
+      'SELECT ExternalIssueId FROM Tasks WHERE ProjectId = ? AND ExternalIssueId IS NOT NULL',
+      [projectId]
+    );
+    
+    const existingIssueIds = new Set(existingTasks.map((t: any) => t.ExternalIssueId));
+    
+    // Filter out issues that are already imported
+    const newIssues = issues.filter(issue => !existingIssueIds.has(issue.key));
+    const skippedCount = issues.length - newIssues.length;
+
+    // If no new issues to import, return early
+    if (newIssues.length === 0) {
+      return res.json({
+        success: true,
+        message: `No new tasks to import. All ${issues.length} issues already exist in the project.`,
+        data: {
+          imported: 0,
+          hierarchyLinked: 0,
+          skipped: skippedCount,
+          total: issues.length
+        }
+      });
+    }
+
     // Build key to internal ID mapping for created tasks
     const jiraKeyToTaskId: Record<string, number> = {};
     const createdTasks: any[] = [];
 
     // First pass: Create all tasks without parent relationships
-    for (const issue of issues) {
+    for (const issue of newIssues) {
       // Map status
       let statusId = null;
       if (issue.status && statusMapping && statusMapping[issue.status]) {
@@ -1532,10 +1558,12 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
 
     res.json({ 
       success: true, 
-      message: `Imported ${createdTasks.length} tasks from Jira (${hierarchyUpdateCount} with parent relationships)`,
+      message: `Imported ${createdTasks.length} tasks from Jira (${hierarchyUpdateCount} with parent relationships)${skippedCount > 0 ? `, skipped ${skippedCount} already existing` : ''}`,
       data: {
         imported: createdTasks.length,
-        hierarchyLinked: hierarchyUpdateCount
+        hierarchyLinked: hierarchyUpdateCount,
+        skipped: skippedCount,
+        total: issues.length
       }
     });
   } catch (error) {

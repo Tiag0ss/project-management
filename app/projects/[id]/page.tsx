@@ -53,6 +53,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     showParentsOnly: false,
     showSubtasksOnly: false
   });
+  const [existingIssueIds, setExistingIssueIds] = useState<Set<string>>(new Set());
+  const [showAlreadyImported, setShowAlreadyImported] = useState(false);
   const { user, token, isLoading: authLoading } = useAuth();
   const { permissions } = usePermissions();
   const router = useRouter();
@@ -510,6 +512,37 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   };
 
   // Jira Import Functions
+  const loadExistingJiraIssues = async () => {
+    if (!token || !projectId) return;
+    
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/tasks/project/${projectId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        const existingIds = new Set<string>(
+          data.tasks
+            .filter((task: any) => {
+              const hasExternalTicketId = task.ExternalTicketId;
+              const hasExternalIssueId = task.ExternalIssueId;
+              return hasExternalTicketId || hasExternalIssueId;
+            })
+            .map((task: any) => String(task.ExternalTicketId || task.ExternalIssueId))
+        );
+        setExistingIssueIds(existingIds);
+      }
+    } catch (err) {
+      console.error('Failed to load existing Jira issues:', err);
+    }
+  };
+
   const loadJiraIssues = async () => {
     if (!token || !project) return;
     
@@ -533,7 +566,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       }
 
       const data = await response.json();
-      console.log('Jira issues received:', data);
       setJiraIssues(data.data || []);
       
       // Auto-create status mapping based on matching names
@@ -549,13 +581,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         
         jiraStatuses.forEach(jiraStatus => {
           const match = taskStatuses.find(
-            ts => ts.Value.toLowerCase() === jiraStatus.toLowerCase()
+            ts => ts.StatusName.toLowerCase() === jiraStatus.toLowerCase()
           );
           if (match) {
-            mapping[jiraStatus] = match.Value;
+            mapping[jiraStatus] = match.StatusName;
           } else {
             // Default to first status if no match
-            mapping[jiraStatus] = taskStatuses[0]?.Value || '';
+            mapping[jiraStatus] = taskStatuses[0]?.StatusName || '';
           }
         });
         
@@ -573,21 +605,24 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     
     try {
       const statuses = await statusValuesApi.getTaskStatuses(project.OrganizationId, token);
-      setTaskStatuses(statuses);
+      setTaskStatuses(statuses.statuses);
     } catch (err: any) {
       console.error('Failed to load task statuses:', err);
     }
   };
 
   const handleJiraImport = async () => {
-    if (!token || selectedIssues.size === 0) return;
+    // Filter out already imported issues from selection
+    const validIssues = Array.from(selectedIssues).filter(key => !existingIssueIds.has(key));
+    
+    if (!token || validIssues.length === 0) return;
     
     setJiraLoading(true);
     setJiraError('');
     
     try {
       const issuesToImport = jiraIssues.filter(issue => 
-        selectedIssues.has(issue.key)
+        validIssues.includes(issue.key)
       );
       
       const response = await fetch(
@@ -613,16 +648,23 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
       const result = await response.json();
       const imported = result.data?.imported || result.createdTasks || 0;
+      const skipped = result.data?.skipped || 0;
       const hierarchyLinked = result.data?.hierarchyLinked || 0;
       
-      showAlert(
-        'Import Successful',
-        `Successfully imported ${imported} task(s). ${hierarchyLinked} parent-child relationship(s) created.`
-      );
+      let message = `Successfully imported ${imported} task(s).`;
+      if (skipped > 0) {
+        message += ` ${skipped} issue(s) were already imported.`;
+      }
+      if (hierarchyLinked > 0) {
+        message += ` ${hierarchyLinked} parent-child relationship(s) created.`;
+      }
+      
+      showAlert('Import Successful', message);
       
       setShowJiraImportModal(false);
       setSelectedIssues(new Set());
       await loadTasks();
+      await loadExistingJiraIssues(); // Reload the imported issues list
     } catch (err: any) {
       setJiraError(err.message || 'Failed to import tasks');
     } finally {
@@ -631,6 +673,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const toggleIssueSelection = (issueKey: string) => {
+    // Don't allow selection of already imported issues
+    if (existingIssueIds.has(issueKey)) {
+      return;
+    }
+    
     const newSelection = new Set(selectedIssues);
     if (newSelection.has(issueKey)) {
       newSelection.delete(issueKey);
@@ -641,16 +688,18 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const toggleAllIssues = () => {
-    if (selectedIssues.size === jiraIssues.length) {
+    const availableIssues = jiraIssues.filter(issue => !existingIssueIds.has(issue.key));
+    if (selectedIssues.size === availableIssues.length) {
       setSelectedIssues(new Set());
     } else {
-      setSelectedIssues(new Set(jiraIssues.map(issue => issue.key)));
+      setSelectedIssues(new Set(availableIssues.map(issue => issue.key)));
     }
   };
 
-  // Filter Jira issues based on current filters
-  const getFilteredJiraIssues = () => {
-    return jiraIssues.filter(issue => {
+  // Filter and sort Jira issues hierarchically (parents followed by their subtasks)
+  const getSortedFilteredJiraIssues = () => {
+    // First, apply basic filters to all issues
+    const basicFilteredIssues = jiraIssues.filter(issue => {
       // Text search
       if (jiraFilters.search) {
         const searchLower = jiraFilters.search.toLowerCase();
@@ -676,10 +725,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         return false;
       }
       
-      // Parent/subtask filters
+      return true;
+    });
+
+    // Apply hierarchy and import filters
+    const finalFilteredIssues = basicFilteredIssues.filter(issue => {
       const isParent = issue.subtasks && issue.subtasks.length > 0;
       const isSubtask = issue.parentKey !== null;
       
+      // Parent/subtask filters
       if (jiraFilters.showParentsOnly && !isParent) {
         return false;
       }
@@ -688,14 +742,85 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         return false;
       }
       
+      // Already imported filter - CORRECTED LOGIC
+      const isAlreadyImported = existingIssueIds.has(issue.key);
+      
+      // If showAlreadyImported is false (default), hide already imported issues
+      if (!showAlreadyImported && isAlreadyImported) {
+        return false;
+      }
+      
+      // If showAlreadyImported is true, show all issues (both imported and not imported)
       return true;
     });
+    
+    // Now sort hierarchically: parents first, then their subtasks
+    const result: any[] = [];
+    const processedKeys = new Set<string>();
+    
+    // Process parent issues first (only those that passed all filters)
+    const parentIssues = finalFilteredIssues.filter(issue => {
+      const isParent = issue.subtasks && issue.subtasks.length > 0;
+      const isSubtask = issue.parentKey !== null;
+      return isParent && !isSubtask; // Parent but not subtask (root parents)
+    });
+    
+    // Process standalone issues (neither parent nor subtask)
+    const standaloneIssues = finalFilteredIssues.filter(issue => {
+      const isParent = issue.subtasks && issue.subtasks.length > 0;
+      const isSubtask = issue.parentKey !== null;
+      return !isParent && !isSubtask;
+    });
+    
+    // Process orphaned subtasks (subtasks whose parents are not in filtered list)
+    const orphanedSubtasks = finalFilteredIssues.filter(issue => {
+      const isSubtask = issue.parentKey !== null;
+      if (!isSubtask) return false;
+      // Check if parent exists in final filtered issues
+      const parentExists = finalFilteredIssues.some(p => p.key === issue.parentKey);
+      return !parentExists;
+    });
+    
+    // Add parents followed by their subtasks (both from finalFilteredIssues)
+    parentIssues.forEach(parent => {
+      result.push(parent);
+      processedKeys.add(parent.key);
+      
+      // Add subtasks of this parent (only those that passed all filters)
+      const childSubtasks = finalFilteredIssues.filter(issue => issue.parentKey === parent.key);
+      childSubtasks.forEach(subtask => {
+        result.push(subtask);
+        processedKeys.add(subtask.key);
+      });
+    });
+    
+    // Add standalone issues
+    standaloneIssues.forEach(issue => {
+      if (!processedKeys.has(issue.key)) {
+        result.push(issue);
+        processedKeys.add(issue.key);
+      }
+    });
+    
+    // Add orphaned subtasks
+    orphanedSubtasks.forEach(issue => {
+      if (!processedKeys.has(issue.key)) {
+        result.push(issue);
+        processedKeys.add(issue.key);
+      }
+    });
+    
+    return result;
   };
+  
+  // Keep for backward compatibility
+  const getFilteredJiraIssues = getSortedFilteredJiraIssues;
 
   // Load task statuses and Jira issues when modal opens
   useEffect(() => {
     if (showJiraImportModal && project) {
       loadTaskStatuses();
+      loadExistingJiraIssues();
       loadJiraIssues();
     } else if (!showJiraImportModal) {
       // Reset filters when modal closes
@@ -707,6 +832,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         showParentsOnly: false,
         showSubtasksOnly: false
       });
+      setShowAlreadyImported(false);
+      setExistingIssueIds(new Set());
     }
   }, [showJiraImportModal, project]);
 
@@ -1087,8 +1214,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                               className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                             >
                               {taskStatuses.map(status => (
-                                <option key={status.Value} value={status.Value}>
-                                  {status.Value}
+                                <option key={status.StatusName} value={status.StatusName}>
+                                  {status.StatusName}
                                 </option>
                               ))}
                             </select>
@@ -1159,7 +1286,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       </div>
                       
                       {/* Hierarchy filters */}
-                      <div className="lg:col-span-3 flex gap-4">
+                      <div className="lg:col-span-3 flex gap-4 flex-wrap">
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
@@ -1186,16 +1313,28 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                           />
                           <span className="text-sm text-gray-700 dark:text-gray-300">Show subtasks only</span>
                         </label>
-                        {(jiraFilters.search || jiraFilters.status || jiraFilters.issueType || jiraFilters.priority || jiraFilters.showParentsOnly || jiraFilters.showSubtasksOnly) && (
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={showAlreadyImported}
+                            onChange={(e) => setShowAlreadyImported(e.target.checked)}
+                            className="rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Show already imported</span>
+                        </label>
+                        {(jiraFilters.search || jiraFilters.status || jiraFilters.issueType || jiraFilters.priority || jiraFilters.showParentsOnly || jiraFilters.showSubtasksOnly || showAlreadyImported) && (
                           <button
-                            onClick={() => setJiraFilters({
-                              search: '',
-                              status: '',
-                              issueType: '',
-                              priority: '',
-                              showParentsOnly: false,
-                              showSubtasksOnly: false
-                            })}
+                            onClick={() => {
+                              setJiraFilters({
+                                search: '',
+                                status: '',
+                                issueType: '',
+                                priority: '',
+                                showParentsOnly: false,
+                                showSubtasksOnly: false
+                              });
+                              setShowAlreadyImported(false);
+                            }}
                             className="ml-auto text-sm text-blue-600 dark:text-blue-400 hover:underline"
                           >
                             Clear all filters
@@ -1209,18 +1348,28 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="font-semibold text-gray-900 dark:text-white">
-                        Issues ({selectedIssues.size} selected, {getFilteredJiraIssues().length} shown of {jiraIssues.length} total)
+                        Issues ({Array.from(selectedIssues).filter(key => !existingIssueIds.has(key)).length} new selected, {getSortedFilteredJiraIssues().length} shown of {jiraIssues.length} total)
+                        {existingIssueIds.size > 0 && !showAlreadyImported && (
+                          <span className="ml-2 text-sm text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">
+                            {Array.from(jiraIssues.filter(issue => existingIssueIds.has(issue.key))).length} hidden (already imported)
+                          </span>
+                        )}
+                        {existingIssueIds.size > 0 && showAlreadyImported && (
+                          <span className="ml-2 text-sm text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/30 px-2 py-1 rounded">
+                            {getSortedFilteredJiraIssues().filter(issue => existingIssueIds.has(issue.key)).length} already imported
+                          </span>
+                        )}
                       </h3>
                       <button
                         onClick={() => {
-                          const filtered = getFilteredJiraIssues();
+                          const filtered = getSortedFilteredJiraIssues().filter(issue => !existingIssueIds.has(issue.key));
                           if (filtered.every(issue => selectedIssues.has(issue.key))) {
-                            // Deselect all filtered
+                            // Deselect all filtered (excluding already imported)
                             const newSelection = new Set(selectedIssues);
                             filtered.forEach(issue => newSelection.delete(issue.key));
                             setSelectedIssues(newSelection);
                           } else {
-                            // Select all filtered
+                            // Select all filtered (excluding already imported)
                             const newSelection = new Set(selectedIssues);
                             filtered.forEach(issue => newSelection.add(issue.key));
                             setSelectedIssues(newSelection);
@@ -1228,39 +1377,61 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         }}
                         className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
                       >
-                        {getFilteredJiraIssues().every(issue => selectedIssues.has(issue.key)) ? 'Deselect Filtered' : 'Select Filtered'}
+                        {getSortedFilteredJiraIssues().filter(issue => !existingIssueIds.has(issue.key)).every(issue => selectedIssues.has(issue.key)) ? 'Deselect All New' : 'Select All New'}
                       </button>
                     </div>
 
                     <div className="space-y-2 max-h-96 overflow-y-auto">
-                      {getFilteredJiraIssues().length === 0 ? (
+                      {getSortedFilteredJiraIssues().length === 0 ? (
                         <div className="text-center py-8">
                           <p className="text-gray-500 dark:text-gray-400">No issues match the current filters</p>
                           <button
-                            onClick={() => setJiraFilters({
-                              search: '',
-                              status: '',
-                              issueType: '',
-                              priority: '',
-                              showParentsOnly: false,
-                              showSubtasksOnly: false
-                            })}
+                            onClick={() => {
+                              setJiraFilters({
+                                search: '',
+                                status: '',
+                                issueType: '',
+                                priority: '',
+                                showParentsOnly: false,
+                                showSubtasksOnly: false
+                              });
+                              setShowAlreadyImported(true);
+                            }}
                             className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
                           >
-                            Clear filters
+                            Clear filters and show all
                           </button>
                         </div>
+                      ) : getSortedFilteredJiraIssues().filter(issue => !existingIssueIds.has(issue.key)).length === 0 && !showAlreadyImported ? (
+                        <div className="text-center py-8">
+                          <div className="flex flex-col items-center">
+                            <svg className="mx-auto h-12 w-12 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">All new issues already imported</h3>
+                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                              All new issues matching your filters have already been imported as tasks.
+                            </p>
+                            <button
+                              onClick={() => setShowAlreadyImported(true)}
+                              className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                            >
+                              Show already imported issues
+                            </button>
+                          </div>
+                        </div>
                       ) : (
-                        getFilteredJiraIssues().map(issue => {
+                        getSortedFilteredJiraIssues().map(issue => {
                           const isParent = issue.subtasks && issue.subtasks.length > 0;
                           const isSubtask = issue.parentKey !== null;
+                          const isAlreadyImported = existingIssueIds.has(issue.key);
                           
                           return (
                             <div
                               key={issue.key}
                               className={`border border-gray-200 dark:border-gray-700 rounded-lg p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${
                                 isSubtask ? 'ml-8' : ''
-                              }`}
+                              } ${isAlreadyImported ? 'opacity-60 bg-gray-50 dark:bg-gray-700/30' : ''}`}
                             >
                             <div className="flex items-start gap-3">
                               <input
@@ -1268,12 +1439,18 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                                 checked={selectedIssues.has(issue.key)}
                                 onChange={() => toggleIssueSelection(issue.key)}
                                 className="mt-1"
+                                disabled={isAlreadyImported}
                               />
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className="font-mono text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
                                     {issue.key}
                                   </span>
+                                  {isAlreadyImported && (
+                                    <span className="text-xs px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-medium">
+                                      ✓ Already imported
+                                    </span>
+                                  )}
                                   <span className="text-xs px-2 py-0.5 rounded" style={{
                                     backgroundColor: issue.statusColor ? `${issue.statusColor}20` : '#e5e7eb',
                                     color: issue.statusColor || '#6b7280'
@@ -1295,8 +1472,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                                       ↳ Subtask of {issue.parentKey}
                                     </span>
                                   )}
+                                  {isAlreadyImported && (
+                                    <span className="text-xs px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                                      ✓ Imported
+                                    </span>
+                                  )}
                                 </div>
-                                <p className="font-medium text-gray-900 dark:text-white text-sm mb-1">
+                                <p className={`font-medium text-sm mb-1 ${isAlreadyImported ? 'text-gray-600 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>
                                   {issue.summary}
                                 </p>
                                 {issue.description && (
@@ -1322,10 +1504,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   {selectedIssues.size > 0 ? (
                     <>
-                      <span className="font-semibold">{selectedIssues.size}</span> issue{selectedIssues.size !== 1 ? 's' : ''} will be imported as task{selectedIssues.size !== 1 ? 's' : ''}
+                      <span className="font-semibold">{Array.from(selectedIssues).filter(key => !existingIssueIds.has(key)).length}</span> new issue{Array.from(selectedIssues).filter(key => !existingIssueIds.has(key)).length !== 1 ? 's' : ''} will be imported as task{Array.from(selectedIssues).filter(key => !existingIssueIds.has(key)).length !== 1 ? 's' : ''}
+                      {existingIssueIds.size > 0 && ` (${existingIssueIds.size} already imported in project)`}
                     </>
                   ) : (
-                    'Select issues to import'
+                    `Select new issues to import (${existingIssueIds.size > 0 ? `${existingIssueIds.size} already imported issues are hidden by default` : 'no duplicates will be created'})`
                   )}
                 </p>
                 <div className="flex gap-3">
@@ -1337,10 +1520,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   </button>
                   <button
                     onClick={handleJiraImport}
-                    disabled={jiraLoading || selectedIssues.size === 0}
+                    disabled={jiraLoading || selectedIssues.size === 0 || Array.from(selectedIssues).every(key => existingIssueIds.has(key))}
                     className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
                   >
-                    {jiraLoading ? 'Importing...' : `Import ${selectedIssues.size} Task${selectedIssues.size !== 1 ? 's' : ''}`}
+                    {jiraLoading ? 'Importing...' : `Import ${Array.from(selectedIssues).filter(key => !existingIssueIds.has(key)).length} New Task${Array.from(selectedIssues).filter(key => !existingIssueIds.has(key)).length !== 1 ? 's' : ''}`}
                   </button>
                 </div>
               </div>
