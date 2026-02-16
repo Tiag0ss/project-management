@@ -66,5 +66,23 @@
       "DefaultValue": "CURRENT_TIMESTAMP",
       "Comment": "Date and time when the entry was last updated"
     }
+  ],
+  "Relationships": [
+    {
+      "Name": "TimeEntryTask",
+      "Description": "Time Entry belongs to a Task",
+      "FromField": "TaskId",
+      "ToTable": "Tasks",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TimeEntryUser",
+      "Description": "Time Entry belongs to a User",
+      "FromField": "UserId",
+      "ToTable": "Users",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    }
   ]
 }

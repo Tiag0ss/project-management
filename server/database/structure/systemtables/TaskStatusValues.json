@@ -62,5 +62,23 @@
       "DefaultValue": "CURRENT_TIMESTAMP",
       "Comment": "Date and time when status value was created"
     }
+  ],
+  "Relationships": [
+    {
+      "Name": "TaskStatusOrganization",
+      "Description": "Task Status belongs to an Organization",
+      "FromField": "OrganizationId",
+      "ToTable": "Organizations",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TaskStatusUsedByTasks",
+      "Description": "Task Status can be used by many Tasks",
+      "FromField": "Id",
+      "ToTable": "Tasks",
+      "ToField": "Status",
+      "Type": "OneToMany"
+    }
   ]
 }

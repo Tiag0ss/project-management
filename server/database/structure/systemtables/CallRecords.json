@@ -84,5 +84,23 @@
       "Field": "UserId",
       "References": "Users(Id)"
     }
+  ],
+  "Relationships": [
+    {
+      "Name": "CallRecordUser",
+      "Description": "Call Record belongs to a User",
+      "FromField": "UserId",
+      "ToTable": "Users",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "CallRecordProject",
+      "Description": "Call Record is related to a Project",
+      "FromField": "ProjectId",
+      "ToTable": "Projects",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    }
   ]
 }

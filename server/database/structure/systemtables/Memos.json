@@ -48,5 +48,31 @@
       "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
       "Comment": "Auto-updated timestamp of last modification"
     }
+  ],
+  "Relationships": [
+    {
+      "Name": "MemoAuthor",
+      "Description": "Memo belongs to a User (author)",
+      "FromField": "UserId",
+      "ToTable": "Users",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "MemoTags",
+      "Description": "Memo can have many Tags",
+      "FromField": "Id",
+      "ToTable": "MemoTags",
+      "ToField": "MemoId",
+      "Type": "OneToMany"
+    },
+    {
+      "Name": "MemoAttachments",
+      "Description": "Memo can have many Attachments",
+      "FromField": "Id",
+      "ToTable": "MemoAttachments",
+      "ToField": "MemoId",
+      "Type": "OneToMany"
+    }
   ]
 }

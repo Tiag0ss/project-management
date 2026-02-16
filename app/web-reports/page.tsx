@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
+import DynamicQueryBuilder from '@/components/DynamicQueryBuilder';
 import * as savedReportsApi from '@/lib/api/savedReports';
 
 interface ReportField {
@@ -105,6 +106,7 @@ export default function WebReportsPage() {
   const [selectedShareUsers, setSelectedShareUsers] = useState<number[]>([]);
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [dynamicFields, setDynamicFields] = useState<ReportField[]>([]); // For dynamic data source
 
   const dataSources: DataSource[] = [
     {
@@ -193,10 +195,25 @@ export default function WebReportsPage() {
         { key: 'EstimatedHours', label: 'Estimated Hours', type: 'number' },
         { key: 'Description', label: 'Description', type: 'text' },
       ]
+    },
+    {
+      id: 'dynamic',
+      name: 'Dynamic Query Builder',
+      endpoint: '/api/dynamic-reports/query',
+      fields: [] // Fields will be dynamically determined by user
     }
   ];
 
-  const currentSource = dataSources.find(ds => ds.id === dataSource);
+  // Get current source with dynamic fields support
+  const getCurrentSource = () => {
+    const source = dataSources.find(ds => ds.id === dataSource);
+    if (source && dataSource === 'dynamic' && dynamicFields.length > 0) {
+      return { ...source, fields: dynamicFields };
+    }
+    return source;
+  };
+
+  const currentSource = getCurrentSource();
 
   useEffect(() => {
     if (dataSource && token) {
@@ -246,6 +263,12 @@ export default function WebReportsPage() {
     try {
       const source = dataSources.find(ds => ds.id === dataSource);
       if (!source) return;
+
+      // Skip loading for dynamic data source (will be loaded via DynamicQueryBuilder)
+      if (dataSource === 'dynamic') {
+        setIsLoadingData(false);
+        return;
+      }
 
       const response = await fetch(`${getApiUrl()}${source.endpoint}`, {
         headers: {
@@ -975,7 +998,33 @@ export default function WebReportsPage() {
                   )}
                 </div>
 
-                {currentSource && rawData.length > 0 && (
+                {/* Dynamic Query Builder */}
+                {dataSource === 'dynamic' && token && (
+                  <DynamicQueryBuilder 
+                    token={token}
+                    onDataLoaded={(data, fields, dynamicPivotConfig) => {
+                      setRawData(data);
+                      setDynamicFields(fields);
+                      
+                      // Use the exact configuration from the dynamic query builder
+                      setPivotConfig({
+                        rows: dynamicPivotConfig.rows,
+                        columns: dynamicPivotConfig.columns,
+                        values: dynamicPivotConfig.values as ValueConfig[]
+                      });
+                      
+                      // Update currentSource to use dynamic fields
+                      const dynamicSource = dataSources.find(ds => ds.id === 'dynamic');
+                      if (dynamicSource) {
+                        dynamicSource.fields = fields;
+                      }
+                    }}
+                  />
+                )}
+
+                {/* Show filters and pivot configuration for regular datasources OR dynamic after query execution */}
+                {((currentSource && rawData.length > 0 && dataSource !== 'dynamic') || 
+                  (dataSource === 'dynamic' && rawData.length > 0 && dynamicFields.length > 0)) && (
                   <>
                     {/* Saved Reports Section */}
                     {savedReports.length > 0 && (
@@ -1069,7 +1118,7 @@ export default function WebReportsPage() {
                       ) : (
                         <div className="space-y-2">
                           {filters.map((filter, idx) => {
-                            const field = currentSource.fields.find(f => f.key === filter.field);
+                            const field = currentSource?.fields.find(f => f.key === filter.field);
                             const fieldType = field?.type || 'text';
 
                             return (
@@ -1084,7 +1133,7 @@ export default function WebReportsPage() {
                                   onChange={(e) => handleUpdateFilter(filter.id, { field: e.target.value })}
                                   className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                                 >
-                                  {currentSource.fields.map(f => (
+                                  {currentSource?.fields.map(f => (
                                     <option key={f.key} value={f.key}>{f.label}</option>
                                   ))}
                                 </select>
@@ -1168,8 +1217,9 @@ export default function WebReportsPage() {
                         </div>
                       )}
                     </div>
-                    {/* Drag & Drop Areas */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    {/* Drag & Drop Areas - Only show for non-dynamic data sources */}
+                    {dataSource !== 'dynamic' && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                       {/* Rows */}
                       <div 
                         className="border-2 border-dashed border-blue-300 dark:border-blue-700 rounded-lg p-4 min-h-[120px] transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/10"
@@ -1297,40 +1347,43 @@ export default function WebReportsPage() {
                         </div>
                       </div>
                     </div>
+                    )}
 
-                    {/* Available Fields */}
-                    <div className="mb-6">
-                      <h3 className="font-semibold text-gray-900 dark:text-white mb-3">
-                        Available Fields - Drag to Rows, Columns, or Values
-                      </h3>
-                      <div className="flex flex-wrap gap-2">
-                        {currentSource.fields.map(field => {
-                          const isUsed = pivotConfig.rows.includes(field.key) || 
-                                        pivotConfig.columns.includes(field.key) || 
-                                        pivotConfig.values.some((v: ValueConfig) => v.field === field.key);
-                          
-                          return (
-                            <div 
-                              key={field.key}
-                              draggable
-                              onDragStart={() => handleDragStart(field.key, 'available')}
-                              onDragEnd={handleDragEnd}
-                              className={`px-3 py-2 rounded-lg text-sm border cursor-move transition-all ${
-                                isUsed 
-                                  ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 border-gray-400 dark:border-gray-500 opacity-50'
-                                  : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 hover:shadow-md'
-                              }`}
-                              title={isUsed ? 'Already in use' : `Drag to add ${field.label}`}
-                            >
-                              <span className="mr-2">
-                                {field.type === 'number' ? '🔢' : field.type === 'date' ? '📅' : '📝'}
-                              </span>
-                              {field.label}
-                            </div>
-                          );
-                        })}
+                    {/* Available Fields - Only show for non-dynamic data sources */}
+                    {dataSource !== 'dynamic' && (
+                      <div className="mb-6">
+                        <h3 className="font-semibold text-gray-900 dark:text-white mb-3">
+                          Available Fields - Drag to Rows, Columns, or Values
+                        </h3>
+                        <div className="flex flex-wrap gap-2">
+                          {(currentSource?.fields || []).map(field => {
+                            const isUsed = pivotConfig.rows.includes(field.key) || 
+                                          pivotConfig.columns.includes(field.key) || 
+                                          pivotConfig.values.some((v: ValueConfig) => v.field === field.key);
+                            
+                            return (
+                              <div 
+                                key={field.key}
+                                draggable
+                                onDragStart={() => handleDragStart(field.key, 'available')}
+                                onDragEnd={handleDragEnd}
+                                className={`px-3 py-2 rounded-lg text-sm border cursor-move transition-all ${
+                                  isUsed 
+                                    ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 border-gray-400 dark:border-gray-500 opacity-50'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 hover:shadow-md'
+                                }`}
+                                title={isUsed ? 'Already in use' : `Drag to add ${field.label}`}
+                              >
+                                <span className="mr-2">
+                                  {field.type === 'number' ? '🔢' : field.type === 'date' ? '📅' : '📝'}
+                                </span>
+                                {field.label}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Actions */}
                     <div className="flex gap-3 flex-wrap">

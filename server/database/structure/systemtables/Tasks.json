@@ -138,5 +138,63 @@
       "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
       "Comment": "Auto-updated timestamp of last modification"
     }
+  ],
+  "Relationships": [
+    {
+      "Name": "TaskProject",
+      "Description": "Task belongs to a Project",
+      "FromField": "ProjectId",
+      "ToTable": "Projects",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TaskStatus",
+      "Description": "Task has a Status",
+      "FromField": "Status",
+      "ToTable": "TaskStatusValues",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TaskPriority",
+      "Description": "Task has a Priority Level",
+      "FromField": "Priority",
+      "ToTable": "TaskPriorityValues",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TaskAssignee",
+      "Description": "Task is assigned to a User",
+      "FromField": "AssignedTo",
+      "ToTable": "Users",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "ParentTask",
+      "Description": "Task can have a Parent Task",
+      "FromField": "ParentTaskId",
+      "ToTable": "Tasks",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "DependentTask",
+      "Description": "Task can depend on another Task",
+      "FromField": "DependsOnTaskId",
+      "ToTable": "Tasks",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TaskTicket",
+      "Description": "Task can be linked to a Ticket",
+      "FromField": "TicketId",
+      "ToTable": "Tickets",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    }
   ]
 }

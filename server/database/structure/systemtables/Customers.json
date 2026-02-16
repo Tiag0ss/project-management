@@ -102,5 +102,23 @@
       "DefaultValue": "CURRENT_TIMESTAMP",
       "Comment": "Auto-updated timestamp of last modification"
     }
+  ],
+  "Relationships": [
+    {
+      "Name": "CustomerTickets",
+      "Description": "Customer can have many Tickets",
+      "FromField": "Id",
+      "ToTable": "Tickets",
+      "ToField": "CustomerId",
+      "Type": "OneToMany"
+    },
+    {
+      "Name": "CustomerOrganizations",
+      "Description": "Customer can be associated with many Organizations",
+      "FromField": "Id",
+      "ToTable": "CustomerOrganizations",
+      "ToField": "CustomerId",
+      "Type": "OneToMany"
+    }
   ]
 }

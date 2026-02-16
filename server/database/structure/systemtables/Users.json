@@ -307,5 +307,39 @@
       "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
       "Comment": "Date and time of last update - auto-updated"
     }
+  ],
+  "Relationships": [
+    {
+      "Name": "UserTasks",
+      "Description": "User can be assigned to many Tasks",
+      "FromField": "Id",
+      "ToTable": "Tasks",
+      "ToField": "AssignedTo",
+      "Type": "OneToMany"
+    },
+    {
+      "Name": "UserProjects",
+      "Description": "User can be assigned to many Projects",
+      "FromField": "Id", 
+      "ToTable": "Projects",
+      "ToField": "AssignedTo",
+      "Type": "OneToMany"
+    },
+    {
+      "Name": "UserTimeEntries",
+      "Description": "User can have many Time Entries",
+      "FromField": "Id",
+      "ToTable": "TimeEntries", 
+      "ToField": "UserId",
+      "Type": "OneToMany"
+    },
+    {
+      "Name": "UserTickets",
+      "Description": "User can have many Tickets assigned",
+      "FromField": "Id",
+      "ToTable": "Tickets",
+      "ToField": "AssignedTo",
+      "Type": "OneToMany"
+    }
   ]
 }

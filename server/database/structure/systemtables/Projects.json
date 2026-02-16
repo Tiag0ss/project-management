@@ -108,5 +108,39 @@
       "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
       "Comment": "Auto-updated timestamp of last modification"
     }
+  ],
+  "Relationships": [
+    {
+      "Name": "ProjectOrganization",
+      "Description": "Project belongs to an Organization",
+      "FromField": "OrganizationId",
+      "ToTable": "Organizations",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "ProjectAssignee",
+      "Description": "Project is assigned to a User",
+      "FromField": "AssignedTo",
+      "ToTable": "Users",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "ProjectTasks",
+      "Description": "Project has many Tasks",
+      "FromField": "Id",
+      "ToTable": "Tasks",
+      "ToField": "ProjectId",
+      "Type": "OneToMany"
+    },
+    {
+      "Name": "ProjectCallRecords",
+      "Description": "Project has many Call Records",
+      "FromField": "Id",
+      "ToTable": "CallRecords",
+      "ToField": "ProjectId",
+      "Type": "OneToMany"
+    }
   ]
 }

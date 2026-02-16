@@ -48,5 +48,23 @@
       "DefaultValue": "CURRENT_TIMESTAMP",
       "Comment": "Date and time when priority value was created"
     }
+  ],
+  "Relationships": [
+    {
+      "Name": "TaskPriorityOrganization",
+      "Description": "Task Priority belongs to an Organization",
+      "FromField": "OrganizationId",
+      "ToTable": "Organizations",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TaskPriorityUsedByTasks",
+      "Description": "Task Priority can be used by many Tasks",
+      "FromField": "Id",
+      "ToTable": "Tasks",
+      "ToField": "Priority",
+      "Type": "OneToMany"
+    }
   ]
 }

@@ -41,5 +41,31 @@
       "DefaultValue": "CURRENT_TIMESTAMP",
       "Comment": "Date and time when user joined the organization"
     }
+  ],
+  "Relationships": [
+    {
+      "Name": "MemberOrganization",
+      "Description": "Member belongs to an Organization",
+      "FromField": "OrganizationId",
+      "ToTable": "Organizations",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "MemberUser",
+      "Description": "Member is a User",
+      "FromField": "UserId",
+      "ToTable": "Users",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "MemberPermissionGroup",
+      "Description": "Member has a Permission Group for organization access",
+      "FromField": "PermissionGroupId",
+      "ToTable": "PermissionGroups",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    }
   ]
 }

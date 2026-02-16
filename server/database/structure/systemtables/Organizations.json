@@ -47,5 +47,39 @@
       "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
       "Comment": "Auto-updated timestamp of last modification"
     }
+  ],
+  "Relationships": [
+    {
+      "Name": "OrganizationCreator",
+      "Description": "Organization was created by a User",
+      "FromField": "CreatedBy",
+      "ToTable": "Users",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "OrganizationProjects",
+      "Description": "Organization has many Projects",
+      "FromField": "Id",
+      "ToTable": "Projects",
+      "ToField": "OrganizationId",
+      "Type": "OneToMany"
+    },
+    {
+      "Name": "OrganizationMembers",
+      "Description": "Organization has many Organization Members",
+      "FromField": "Id",
+      "ToTable": "OrganizationMembers",
+      "ToField": "OrganizationId",
+      "Type": "OneToMany"
+    },
+    {
+      "Name": "OrganizationTickets",
+      "Description": "Organization has many Tickets",
+      "FromField": "Id",
+      "ToTable": "Tickets",
+      "ToField": "OrganizationId",
+      "Type": "OneToMany"
+    }
   ]
 }

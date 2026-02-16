@@ -62,5 +62,23 @@
       "DefaultValue": "CURRENT_TIMESTAMP",
       "Comment": "Date and time when the allocation was created"
     }
+  ],
+  "Relationships": [
+    {
+      "Name": "AllocationTask",
+      "Description": "Task Allocation belongs to a Task",
+      "FromField": "TaskId",
+      "ToTable": "Tasks",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "AllocationUser",
+      "Description": "Task Allocation is for a User",
+      "FromField": "UserId",
+      "ToTable": "Users",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    }
   ]
 }

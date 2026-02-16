@@ -122,5 +122,55 @@
       "NotNullable": false,
       "Comment": "External ticket ID from integrated systems (Jira, GitHub Issues, etc.)"
     }
+  ],
+  "Relationships": [
+    {
+      "Name": "TicketOrganization",
+      "Description": "Ticket belongs to an Organization",
+      "FromField": "OrganizationId",
+      "ToTable": "Organizations",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TicketCustomer",
+      "Description": "Ticket can be associated with a Customer",
+      "FromField": "CustomerId",
+      "ToTable": "Customers",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TicketProject",
+      "Description": "Ticket can be associated with a Project",
+      "FromField": "ProjectId",
+      "ToTable": "Projects",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TicketCreator",
+      "Description": "Ticket was created by a User",
+      "FromField": "CreatedByUserId",
+      "ToTable": "Users",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TicketAssignee",
+      "Description": "Ticket is assigned to a User",
+      "FromField": "AssignedToUserId",
+      "ToTable": "Users",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TicketTasks",
+      "Description": "Ticket can have many Tasks",
+      "FromField": "Id",
+      "ToTable": "Tasks",
+      "ToField": "TicketId",
+      "Type": "OneToMany"
+    }
   ]
 }
