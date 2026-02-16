@@ -38,15 +38,6 @@ interface SelectedField {
   aggregation?: string;
 }
 
-interface FilterCondition {
-  table: string;
-  field: string;
-  operator: 'equals' | 'notEquals' | 'contains' | 'startsWith' | 'endsWith' | 'greaterThan' | 'lessThan' | 'between' | 'isEmpty' | 'notEmpty' | 'inList' | 'dateRange';
-  value: string;
-  value2?: string; // For between and dateRange operators
-  valueList?: string[]; // For inList operator
-}
-
 interface JoinDefinition {
   type: 'LEFT' | 'INNER' | 'RIGHT';
   table: string;
@@ -80,12 +71,19 @@ export default function DynamicQueryBuilder({ token, onDataLoaded }: DynamicQuer
   const [rowFields, setRowFields] = useState<SelectedField[]>([]);
   const [columnFields, setColumnFields] = useState<SelectedField[]>([]);
   const [valueFields, setValueFields] = useState<SelectedField[]>([]);
-  const [filters, setFilters] = useState<FilterCondition[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [showDiagram, setShowDiagram] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [dropdownValues, setDropdownValues] = useState<{[key: string]: string}>({});
+
+  // Debug function to log current state
+  const logRelationshipState = (action: string, tableName?: string) => {
+    console.log(`🔍 [${action}] Relationship State${tableName ? ` for ${tableName}` : ''}:`);
+    console.log('Selected Tables:', selectedTables);
+    console.log('Current Joins:', joins.map(j => `${j.leftTable}.${j.leftField} → ${j.rightTable}.${j.rightField}`));
+    console.log('Available Relationships:', Object.keys(availableRelationships).length, 'tables');
+  };
 
   useEffect(() => {
     loadSchema();
@@ -130,10 +128,18 @@ export default function DynamicQueryBuilder({ token, onDataLoaded }: DynamicQuer
     }
   };
 
-  // Helper function to generate table alias
-  const generateTableAlias = (tableName: string, description: string) => {
-    if (description === tableName) return tableName;
-    return `${tableName}_${description.replace(/\s+/g, '')}`;
+  // Helper function to generate unique alias for each relationship
+  const generateTableAlias = (tableName: string, relation: TableRelation) => {
+    // Create alias from the complete relationship string to ensure uniqueness
+    const relationString = `${relation.fromTable}.${relation.fromField}_to_${relation.toTable}.${relation.toField}`;
+    
+    // Clean all special characters and make it a valid alias
+    const cleanAlias = relationString
+      .replace(/[^\w]/g, '_')  // Replace all non-alphanumeric with underscore
+      .replace(/_+/g, '_')     // Replace multiple underscores with single
+      .replace(/^_|_$/g, '');  // Remove leading/trailing underscores
+      
+    return cleanAlias;
   };
 
   const loadSchema = async () => {
@@ -175,7 +181,9 @@ export default function DynamicQueryBuilder({ token, onDataLoaded }: DynamicQuer
           if (allTableRelations.length > 0) {
             relationshipsMap[table.tableName] = allTableRelations.map((rel: TableRelation) => {
               const description = generateRelationshipDescription(rel);
-              const alias = generateTableAlias(table.tableName, description);
+              const alias = generateTableAlias(table.tableName, rel);
+              
+              console.log(`🔗 Generated alias for ${table.tableName}: "${alias}" -> ${rel.fromTable}.${rel.fromField} → ${rel.toTable}.${rel.toField}`);
               
               return {
                 alias,
@@ -212,8 +220,6 @@ export default function DynamicQueryBuilder({ token, onDataLoaded }: DynamicQuer
       setRowFields(prev => prev.filter(f => f.table !== tableName));
       setColumnFields(prev => prev.filter(f => f.table !== tableName));
       setValueFields(prev => prev.filter(f => f.table !== tableName));
-      // Remove filters from this table
-      setFilters(prev => prev.filter(f => f.table !== tableName));
     } else {
       const newSelectedTables = [...selectedTables, tableName];
       setSelectedTables(newSelectedTables);
@@ -408,30 +414,6 @@ export default function DynamicQueryBuilder({ token, onDataLoaded }: DynamicQuer
     setValueFields(prev => prev.map((f, i) => i === index ? { ...f, aggregation } : f));
   };
 
-  const handleAddFilter = () => {
-    if (selectedTables.length > 0) {
-      const firstTable = selectedTables[0];
-      const firstField = schema?.tables.find(t => t.tableName === firstTable)?.fields[0];
-      if (firstField) {
-        const newFilter: FilterCondition = {
-          table: firstTable,
-          field: firstField.name,
-          operator: 'equals',
-          value: ''
-        };
-        setFilters(prev => [...prev, newFilter]);
-      }
-    }
-  };
-
-  const handleUpdateFilter = (index: number, updates: Partial<FilterCondition>) => {
-    setFilters(prev => prev.map((f, i) => i === index ? { ...f, ...updates } : f));
-  };
-
-  const handleRemoveFilter = (index: number) => {
-    setFilters(prev => prev.filter((_, i) => i !== index));
-  };
-
   const handleExecuteQuery = async () => {
     if (selectedTables.length === 0) {
       setError('Please select at least one table');
@@ -448,7 +430,7 @@ export default function DynamicQueryBuilder({ token, onDataLoaded }: DynamicQuer
         rowFields,
         columnFields,
         valueFields,
-        filters,
+        filters: [], // No filters in DynamicQueryBuilder - use global filters instead
         groupBy: [...rowFields, ...columnFields]
       };
 
@@ -457,8 +439,7 @@ export default function DynamicQueryBuilder({ token, onDataLoaded }: DynamicQuer
         joins,
         rowFields, 
         columnFields, 
-        valueFields,
-        filters
+        valueFields
       });
 
       const response = await fetch(`${getApiUrl()}/api/dynamic-reports/query`, {
@@ -473,17 +454,37 @@ export default function DynamicQueryBuilder({ token, onDataLoaded }: DynamicQuer
       if (response.ok) {
         const result = await response.json();
         
+        // Helper to determine field type from schema
+        const getFieldType = (tableName: string, fieldName: string): 'text' | 'number' | 'date' => {
+          const table = schema?.tables.find(t => t.tableName === tableName);
+          const field = table?.fields.find(f => f.name === fieldName);
+          const dataType = field?.dataType?.toLowerCase() || '';
+          
+          // Check for date types
+          if (dataType.includes('date') || dataType.includes('timestamp') || dataType.includes('datetime')) {
+            return 'date';
+          }
+          
+          // Check for numeric types
+          if (dataType.includes('int') || dataType.includes('decimal') || dataType.includes('numeric') || 
+              dataType.includes('float') || dataType.includes('double')) {
+            return 'number';
+          }
+          
+          return 'text';
+        };
+        
         // Build field definitions for the pivot table
         const fields = [
           ...rowFields.map(f => ({ 
             key: `${f.table}.${f.field}`, 
             label: f.alias || `${f.table}.${f.field}`, 
-            type: 'text' as const 
+            type: getFieldType(f.table, f.field)
           })),
           ...columnFields.map(f => ({ 
             key: `${f.table}.${f.field}`, 
             label: f.alias || `${f.table}.${f.field}`, 
-            type: 'text' as const 
+            type: getFieldType(f.table, f.field)
           })),
           ...valueFields.map(f => ({ 
             key: f.alias || f.field, 
@@ -691,12 +692,58 @@ export default function DynamicQueryBuilder({ token, onDataLoaded }: DynamicQuer
                                   value={dropdownValues[`change-${tableName}`] || 'current'}
                                   onChange={(e) => {
                                     const newValue = e.target.value;
+                                    console.log(`🗗️ CHANGE dropdown - Selected value: ${newValue}`);
+                                    console.log('📁 Available relationships for table:', tableName);
+                                    availableRels.forEach((rel, idx) => {
+                                      console.log(`  [${idx}] alias: "${rel.alias}" -> ${rel.relation.fromTable}.${rel.relation.fromField} → ${rel.relation.toTable}.${rel.relation.toField}`);
+                                    });
+                                    
                                     if (newValue && newValue !== 'current') {
                                       const rel = availableRels.find(r => r.alias === newValue);
+                                      console.log(`🔎 Finding relation with alias "${newValue}":`, rel);
+                                      
                                       if (rel) {
                                         console.log(`♾️ Changing to: ${rel.relation.fromTable}.${rel.relation.fromField} → ${rel.relation.toTable}.${rel.relation.toField}`);
-                                        setJoins(prev => prev.filter(j => !(j.table === tableName || j.rightTable === tableName)));
-                                        handleRelationshipSelect(tableName, rel.alias, rel.relation);
+                                        logRelationshipState('BEFORE Change', tableName);
+                                        
+                                        // Remove ALL existing joins for this table
+                                        setJoins(prev => {
+                                          const filtered = prev.filter(j => !(j.table === tableName || j.rightTable === tableName));
+                                          console.log(`🧹 Removed ${prev.length - filtered.length} existing joins for ${tableName}`);
+                                          return filtered;
+                                        });
+                                        
+                                        // Add new join directly - don't use handleRelationshipSelect to avoid complex logic
+                                        const newJoin: JoinDefinition = {
+                                          type: 'LEFT',
+                                          table: tableName,
+                                          leftTable: rel.relation.fromTable,
+                                          leftField: rel.relation.fromField,
+                                          rightTable: rel.relation.toTable,
+                                          rightField: rel.relation.toField
+                                        };
+                                        
+                                        console.log('🔄 Direct join replacement:', newJoin);
+                                        setJoins(prev => {
+                                          const newJoins = [...prev, newJoin];
+                                          console.log('✅ Joins after change:', newJoins.map(j => `${j.leftTable}.${j.leftField} → ${j.rightTable}.${j.rightField}`));
+                                          return newJoins;
+                                        });
+                                        
+                                        // Ensure both tables are selected if needed
+                                        const tablesNeeded = [rel.relation.fromTable, rel.relation.toTable];
+                                        setSelectedTables(prev => {
+                                          const newTables = [...prev];
+                                          tablesNeeded.forEach(table => {
+                                            if (!newTables.includes(table)) {
+                                              newTables.push(table);
+                                              console.log('➕ Adding required table:', table);
+                                            }
+                                          });
+                                          return newTables;
+                                        });
+                                      } else {
+                                        console.error('❌ No relation found for alias:', newValue);
                                       }
                                     }
                                     // Reset with unique key for this specific dropdown
@@ -727,11 +774,59 @@ export default function DynamicQueryBuilder({ token, onDataLoaded }: DynamicQuer
                                 value={dropdownValues[`select-${tableName}`] || ''}
                                 onChange={(e) => {
                                   const newValue = e.target.value;
+                                  console.log(`🎯 SELECT dropdown - Selected value: ${newValue}`);
+                                  console.log('📁 Available relationships for table:', tableName);
+                                  availableRels.forEach((rel, idx) => {
+                                    console.log(`  [${idx}] alias: "${rel.alias}" -> ${rel.relation.fromTable}.${rel.relation.fromField} → ${rel.relation.toTable}.${rel.relation.toField}`);
+                                  });
+                                  
                                   if (newValue) {
                                     const rel = availableRels.find(r => r.alias === newValue);
+                                    console.log(`🔎 Finding relation with alias "${newValue}":`, rel);
+                                    
                                     if (rel) {
                                       console.log(`🎯 Selected: ${rel.relation.fromTable}.${rel.relation.fromField} → ${rel.relation.toTable}.${rel.relation.toField}`);
-                                      handleRelationshipSelect(tableName, rel.alias, rel.relation);
+                                      logRelationshipState('BEFORE Select', tableName);
+                                      
+                                      // Remove any existing joins for this table to avoid conflicts
+                                      setJoins(prev => {
+                                        const filtered = prev.filter(j => !(j.table === tableName || j.rightTable === tableName));
+                                        console.log(`🧹 Removed ${prev.length - filtered.length} existing joins for ${tableName}`);
+                                        return filtered;
+                                      });
+                                      
+                                      // Add new join directly - ensure it's always added
+                                      const newJoin: JoinDefinition = {
+                                        type: 'LEFT',
+                                        table: tableName,
+                                        leftTable: rel.relation.fromTable,
+                                        leftField: rel.relation.fromField,
+                                        rightTable: rel.relation.toTable,
+                                        rightField: rel.relation.toField
+                                      };
+                                      
+                                      console.log('➕ Adding new join:', newJoin);
+                                      setJoins(prev => {
+                                        const newJoins = [...prev, newJoin];
+                                        console.log('✅ Joins after select:', newJoins.map(j => `${j.leftTable}.${j.leftField} → ${j.rightTable}.${j.rightField}`));
+                                        logRelationshipState('AFTER Select', tableName);
+                                        return newJoins;
+                                      });
+                                      
+                                      // Ensure both tables are selected  
+                                      const tablesNeeded = [rel.relation.fromTable, rel.relation.toTable];
+                                      setSelectedTables(prev => {
+                                        const newTables = [...prev];
+                                        tablesNeeded.forEach(table => {
+                                          if (!newTables.includes(table)) {
+                                            newTables.push(table);
+                                            console.log('➕ Adding required table:', table);
+                                          }
+                                        });
+                                        return newTables;
+                                      });
+                                    } else {
+                                      console.error('❌ No relation found for alias:', newValue);
                                     }
                                     // Reset with unique key for this specific dropdown
                                     setDropdownValues(prev => ({ ...prev, [`select-${tableName}`]: '' }));
@@ -979,100 +1074,6 @@ export default function DynamicQueryBuilder({ token, onDataLoaded }: DynamicQuer
                   );
                 })}
               </select>
-            </div>
-          </div>
-
-          {/* Filters Section */}
-          <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4 bg-white dark:bg-gray-700">
-            <div className="flex items-center justify-between mb-3">
-              <h5 className="font-semibold text-gray-900 dark:text-white">Filters ({filters.length})</h5>
-              <button
-                onClick={handleAddFilter}
-                className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-              >
-                + Add Filter
-              </button>
-            </div>
-            
-            <div className="space-y-3">
-              {filters.map((filter, idx) => (
-                <div key={idx} className="grid grid-cols-1 md:grid-cols-5 gap-2 p-3 bg-gray-50 dark:bg-gray-600 rounded border">
-                  {/* Table.Field Selection */}
-                  <select
-                    className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-500 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    value={`${filter.table}.${filter.field}`}
-                    onChange={(e) => {
-                      const [table, field] = e.target.value.split('.');
-                      handleUpdateFilter(idx, { table, field });
-                    }}
-                  >
-                    {selectedTables.map(tableName => {
-                      const table = schema?.tables.find(t => t.tableName === tableName);
-                      return table?.fields.map(f => (
-                        <option key={`${tableName}.${f.name}`} value={`${tableName}.${f.name}`}>
-                          {tableName}.{f.name} ({f.dataType.split('(')[0]})
-                        </option>
-                      ));
-                    })}
-                  </select>
-
-                  {/* Operator Selection */}
-                  <select
-                    className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-500 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    value={filter.operator}
-                    onChange={(e) => handleUpdateFilter(idx, { operator: e.target.value as FilterCondition['operator'] })}
-                  >
-                    <option value="equals">Equals</option>
-                    <option value="notEquals">Not Equals</option>
-                    <option value="contains">Contains</option>
-                    <option value="startsWith">Starts With</option>
-                    <option value="endsWith">Ends With</option>
-                    <option value="greaterThan">Greater Than</option>
-                    <option value="lessThan">Less Than</option>
-                    <option value="between">Between</option>
-                    <option value="isEmpty">Is Empty</option>
-                    <option value="notEmpty">Not Empty</option>
-                    <option value="inList">In List</option>
-                    <option value="dateRange">Date Range</option>
-                  </select>
-
-                  {/* Value Input */}
-                  {filter.operator !== 'isEmpty' && filter.operator !== 'notEmpty' && (
-                    <input
-                      type="text"
-                      className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-500 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      placeholder="Value..."
-                      value={filter.value}
-                      onChange={(e) => handleUpdateFilter(idx, { value: e.target.value })}
-                    />
-                  )}
-
-                  {/* Second Value (for between/dateRange) */}
-                  {(filter.operator === 'between' || filter.operator === 'dateRange') && (
-                    <input
-                      type="text"  
-                      className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-500 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      placeholder="To value..."
-                      value={filter.value2 || ''}
-                      onChange={(e) => handleUpdateFilter(idx, { value2: e.target.value })}
-                    />
-                  )}
-
-                  {/* Remove Button */}
-                  <button
-                    onClick={() => handleRemoveFilter(idx)}
-                    className="px-2 py-1 text-sm text-red-600 hover:text-red-700 border border-red-300 hover:border-red-400 rounded transition-colors"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-              
-              {filters.length === 0 && (
-                <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
-                  No filters added. Click "Add Filter" to add conditions to your query.
-                </div>
-              )}
             </div>
           </div>
 

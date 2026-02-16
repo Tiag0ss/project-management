@@ -181,7 +181,7 @@ function DashboardContent() {
     projects: { total: number; active: number; completed: number };
     tasks: { total: number; completed: number; inProgress: number; overdue: number; unplanned: number };
     tickets: { total: number; open: number; inProgress: number; withDeveloper: number; scheduled: number; waitingResponse: number; resolved: number; closed: number; unresolvedCount: number };
-    hours: { totalEstimated: number; totalWorked: number; thisWeek: number; thisMonth: number };
+    hours: { totalEstimated: number; totalWorked: number; thisWeek: number; thisMonth: number; totalEstimatedHobby: number; totalWorkedHobby: number; thisWeekHobby: number; thisMonthHobby: number };
     topProjects: { id: number; name: string; organization: string; hours: number }[];
     topUsers: { id: number; name: string; hours: number }[];
   } | null>(null);
@@ -1309,19 +1309,31 @@ function DashboardContent() {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                       <div className="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
                         <p className="text-xs text-purple-600 dark:text-purple-400 font-medium uppercase tracking-wide">Total Estimated</p>
-                        <p className="text-3xl font-bold text-purple-900 dark:text-purple-100 mt-2">{globalStats.hours.totalEstimated.toFixed(0)}h</p>
+                        <div className="flex items-baseline gap-2 mt-2">
+                          <p className="text-3xl font-bold text-purple-900 dark:text-purple-100">{globalStats.hours.totalEstimated.toFixed(0)}h</p>
+                          <p className="text-sm text-purple-700 dark:text-purple-300">+ {globalStats.hours.totalEstimatedHobby.toFixed(0)}h hobby</p>
+                        </div>
                       </div>
                       <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-lg p-4 border border-green-200 dark:border-green-800">
                         <p className="text-xs text-green-600 dark:text-green-400 font-medium uppercase tracking-wide">Total Worked</p>
-                        <p className="text-3xl font-bold text-green-900 dark:text-green-100 mt-2">{globalStats.hours.totalWorked.toFixed(0)}h</p>
+                        <div className="flex items-baseline gap-2 mt-2">
+                          <p className="text-3xl font-bold text-green-900 dark:text-green-100">{globalStats.hours.totalWorked.toFixed(0)}h</p>
+                          <p className="text-sm text-green-700 dark:text-green-300">+ {globalStats.hours.totalWorkedHobby.toFixed(0)}h hobby</p>
+                        </div>
                       </div>
                       <div className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
                         <p className="text-xs text-blue-600 dark:text-blue-400 font-medium uppercase tracking-wide">This Week</p>
-                        <p className="text-3xl font-bold text-blue-900 dark:text-blue-100 mt-2">{globalStats.hours.thisWeek.toFixed(1)}h</p>
+                        <div className="flex items-baseline gap-2 mt-2">
+                          <p className="text-3xl font-bold text-blue-900 dark:text-blue-100">{globalStats.hours.thisWeek.toFixed(1)}h</p>
+                          <p className="text-sm text-blue-700 dark:text-blue-300">+ {globalStats.hours.thisWeekHobby.toFixed(1)}h hobby</p>
+                        </div>
                       </div>
                       <div className="bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
                         <p className="text-xs text-orange-600 dark:text-orange-400 font-medium uppercase tracking-wide">This Month</p>
-                        <p className="text-3xl font-bold text-orange-900 dark:text-orange-100 mt-2">{globalStats.hours.thisMonth.toFixed(1)}h</p>
+                        <div className="flex items-baseline gap-2 mt-2">
+                          <p className="text-3xl font-bold text-orange-900 dark:text-orange-100">{globalStats.hours.thisMonth.toFixed(1)}h</p>
+                          <p className="text-sm text-orange-700 dark:text-orange-300">+ {globalStats.hours.thisMonthHobby.toFixed(1)}h hobby</p>
+                        </div>
                       </div>
                     </div>
                     
@@ -1329,14 +1341,24 @@ function DashboardContent() {
                     <div className="mt-6 pt-4 border-t dark:border-gray-700">
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Global Progress</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">
-                          {globalStats.hours.totalWorked.toFixed(0)}h / {globalStats.hours.totalEstimated.toFixed(0)}h
-                          {globalStats.hours.totalEstimated > 0 && (
-                            <span className="ml-2 text-gray-500">
-                              ({Math.round((globalStats.hours.totalWorked / globalStats.hours.totalEstimated) * 100)}%)
-                            </span>
-                          )}
-                        </span>
+                        <div className="text-right">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">
+                            {globalStats.hours.totalWorked.toFixed(0)}h / {globalStats.hours.totalEstimated.toFixed(0)}h
+                            {globalStats.hours.totalEstimated > 0 && (
+                              <span className="ml-2 text-gray-500">
+                                ({Math.round((globalStats.hours.totalWorked / globalStats.hours.totalEstimated) * 100)}%)
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Hobby: {globalStats.hours.totalWorkedHobby.toFixed(0)}h / {globalStats.hours.totalEstimatedHobby.toFixed(0)}h
+                            {globalStats.hours.totalEstimatedHobby > 0 && (
+                              <span className="ml-1">
+                                ({Math.round((globalStats.hours.totalWorkedHobby / globalStats.hours.totalEstimatedHobby) * 100)}%)
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4">
                         <div 
@@ -1352,13 +1374,22 @@ function DashboardContent() {
                       </div>
                       <div className="flex justify-between mt-2 text-xs text-gray-500 dark:text-gray-400">
                         <span>{globalStats.tasks.completed} of {globalStats.tasks.total} tasks completed</span>
-                        <span>
-                          {globalStats.hours.totalEstimated > globalStats.hours.totalWorked 
-                            ? `${(globalStats.hours.totalEstimated - globalStats.hours.totalWorked).toFixed(0)}h remaining`
-                            : globalStats.hours.totalWorked > globalStats.hours.totalEstimated && globalStats.hours.totalEstimated > 0
-                              ? `${(globalStats.hours.totalWorked - globalStats.hours.totalEstimated).toFixed(0)}h over estimate`
-                              : ''}
-                        </span>
+                        <div className="text-right">
+                          <div>
+                            {globalStats.hours.totalEstimated > globalStats.hours.totalWorked 
+                              ? `${(globalStats.hours.totalEstimated - globalStats.hours.totalWorked).toFixed(0)}h remaining`
+                              : globalStats.hours.totalWorked > globalStats.hours.totalEstimated && globalStats.hours.totalEstimated > 0
+                                ? `${(globalStats.hours.totalWorked - globalStats.hours.totalEstimated).toFixed(0)}h over estimate`
+                                : ''}
+                          </div>
+                          <div className="text-gray-400">
+                            {globalStats.hours.totalEstimatedHobby > globalStats.hours.totalWorkedHobby 
+                              ? `${(globalStats.hours.totalEstimatedHobby - globalStats.hours.totalWorkedHobby).toFixed(0)}h hobby remaining`
+                              : globalStats.hours.totalWorkedHobby > globalStats.hours.totalEstimatedHobby && globalStats.hours.totalEstimatedHobby > 0
+                                ? `${(globalStats.hours.totalWorkedHobby - globalStats.hours.totalEstimatedHobby).toFixed(0)}h hobby over estimate`
+                                : ''}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>

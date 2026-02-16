@@ -420,31 +420,6 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       [newTaskId]
     );
 
-    // Delete all allocations for these tasks from the given date onwards
-    for (const taskData of affectedTasksData) {
-      await pool.execute(
-        `DELETE FROM TaskAllocations 
-         WHERE TaskId = ? AND UserId = ? AND AllocationDate >= ?`,
-        [taskData.TaskId, userId, fromDate]
-      );
-      // Delete child allocations at ALL levels from the given date onwards
-      await pool.execute(
-        `DELETE FROM TaskChildAllocations WHERE ChildTaskId = ? AND AllocationDate >= ?`,
-        [taskData.TaskId, fromDate]
-      );
-      await pool.execute(
-        `DELETE FROM TaskChildAllocations WHERE AllocationDate >= ? AND ParentTaskId IN (
-          WITH RECURSIVE Descendants AS (
-            SELECT Id FROM Tasks WHERE Id = ?
-            UNION ALL
-            SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-          )
-          SELECT Id FROM Descendants
-        )`,
-        [fromDate, taskData.TaskId]
-      );
-    }
-
     // Get lunch settings (only for work tasks, not hobby)
     const lunchTimeRaw = user.LunchTime;
     const lunchTime = (typeof lunchTimeRaw === 'string' && lunchTimeRaw.includes(':')) ? lunchTimeRaw : '12:00';
@@ -475,8 +450,9 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     };
     
-    // Allocate hours for a task using available slots
-    const allocateTask = async (taskId: number, hoursToAllocate: number, startFromDate: Date, isHobby: boolean = false) => {
+    // Allocate hours for a task using available slots - returns the last allocation date
+    const allocateTask = async (taskId: number, hoursToAllocate: number, startFromDate: Date, isHobby: boolean = false): Promise<Date> => {
+      let lastAllocationDate = new Date(startFromDate);
       let currentDate = new Date(startFromDate);
       let remaining = hoursToAllocate;
       
@@ -605,6 +581,9 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
           [taskId, userId, dateStr, hoursNow, formatTime(actualStart), formatTime(actualEnd)]
         );
         
+        // Track the last allocation date
+        lastAllocationDate = new Date(currentDate);
+        
         // Update slot position for this day
         daySlots[dateStr] = actualEnd;
         
@@ -620,15 +599,20 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
           currentDate = advanceToNextWorkDay(currentDate, isHobby);
         }
       }
+      
+      return lastAllocationDate;
     };
 
     const startDate = new Date(fromDate + 'T12:00:00');
 
-    // FIRST: Allocate the NEW task with its hobby flag
+    // FIRST: Allocate the NEW task with its hobby flag and get its end date
     console.log(`Allocating NEW Task ${newTaskId}: ${newTaskHours}h (hobby=${newTaskIsHobby})`);
-    await allocateTask(newTaskId, newTaskHours, startDate, newTaskIsHobby);
+    const newTaskEndDate = await allocateTask(newTaskId, newTaskHours, startDate, newTaskIsHobby);
+    const newTaskEndDateStr = newTaskEndDate.toISOString().split('T')[0];
+    console.log(`New task ends on: ${newTaskEndDateStr}`);
 
-    // THEN: Allocate the affected tasks after the new task (slots now have the new task's allocations)
+    // THEN: Only reallocate tasks that START on or before the new task's END date
+    // Tasks that start after the new task ends are not affected (allocations remain intact)
     for (const taskData of affectedTasksData) {
       // Skip the new task - it was already allocated above with the user-specified hours
       if (taskData.TaskId === newTaskId) continue;
@@ -636,8 +620,39 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       const remainingHours = parseFloat(taskData.AllocatedHoursFromDate) || 0;
       if (remainingHours <= 0) continue;
       
+      // Check if this task starts before or on the new task's end date
+      const taskFirstAllocation = new Date(taskData.FirstAllocationDate);
+      if (taskFirstAllocation > newTaskEndDate) {
+        console.log(`Task ${taskData.TaskId} starts on ${taskData.FirstAllocationDate} (after new task ends on ${newTaskEndDateStr}) - NOT replanning (allocations preserved)`);
+        continue;
+      }
+      
+      // This task IS affected - delete its existing allocations before re-allocating
+      console.log(`Task ${taskData.TaskId} starts on ${taskData.FirstAllocationDate} (overlaps with new task) - DELETING and replanning`);
+      await pool.execute(
+        `DELETE FROM TaskAllocations 
+         WHERE TaskId = ? AND UserId = ? AND AllocationDate >= ?`,
+        [taskData.TaskId, userId, fromDate]
+      );
+      // Delete child allocations at ALL levels from the given date onwards
+      await pool.execute(
+        `DELETE FROM TaskChildAllocations WHERE ChildTaskId = ? AND AllocationDate >= ?`,
+        [taskData.TaskId, fromDate]
+      );
+      await pool.execute(
+        `DELETE FROM TaskChildAllocations WHERE AllocationDate >= ? AND ParentTaskId IN (
+          WITH RECURSIVE Descendants AS (
+            SELECT Id FROM Tasks WHERE Id = ?
+            UNION ALL
+            SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+          )
+          SELECT Id FROM Descendants
+        )`,
+        [fromDate, taskData.TaskId]
+      );
+      
       const taskIsHobby = taskData.IsHobby === 1;
-      console.log(`Allocating Task ${taskData.TaskId}: ${remainingHours}h (hobby=${taskIsHobby})`);
+      console.log(`Re-allocating Task ${taskData.TaskId}: ${remainingHours}h (hobby=${taskIsHobby})`);
       await allocateTask(taskData.TaskId, remainingHours, startDate, taskIsHobby);
     }
 

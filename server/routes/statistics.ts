@@ -110,27 +110,46 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
         AND COALESCE(tsv.IsCancelled, 0) = 0
     `);
 
-    // Get hours statistics
+    // Get hours statistics (separated by hobby/normal)
     const [hoursStats] = await pool.execute<RowDataPacket[]>(`
       SELECT 
-        COALESCE(SUM(t.EstimatedHours), 0) as totalEstimatedHours,
-        COALESCE((SELECT SUM(Hours) FROM TimeEntries), 0) as totalWorkedHours
+        COALESCE(SUM(CASE WHEN p.IsHobby = 0 THEN t.EstimatedHours ELSE 0 END), 0) as totalEstimatedHours,
+        COALESCE(SUM(CASE WHEN p.IsHobby = 1 THEN t.EstimatedHours ELSE 0 END), 0) as totalEstimatedHoursHobby
       FROM Tasks t
+      INNER JOIN Projects p ON t.ProjectId = p.Id
       WHERE t.ParentTaskId IS NULL
     `);
 
-    // Get this week's hours across all users
-    const [weekHoursStats] = await pool.execute<RowDataPacket[]>(`
-      SELECT COALESCE(SUM(Hours), 0) as totalHoursThisWeek
-      FROM TimeEntries
-      WHERE WorkDate >= DATE_SUB(CURDATE(), INTERVAL DAYOFWEEK(CURDATE())-1 DAY)
+    // Get total worked hours (separated by hobby/normal)
+    const [workedHoursStats] = await pool.execute<RowDataPacket[]>(`
+      SELECT 
+        COALESCE(SUM(CASE WHEN p.IsHobby = 0 THEN te.Hours ELSE 0 END), 0) as totalWorkedHours,
+        COALESCE(SUM(CASE WHEN p.IsHobby = 1 THEN te.Hours ELSE 0 END), 0) as totalWorkedHoursHobby
+      FROM TimeEntries te
+      INNER JOIN Tasks t ON te.TaskId = t.Id
+      INNER JOIN Projects p ON t.ProjectId = p.Id
     `);
 
-    // Get this month's hours across all users
+    // Get this week's hours across all users (separated by hobby/normal)
+    const [weekHoursStats] = await pool.execute<RowDataPacket[]>(`
+      SELECT 
+        COALESCE(SUM(CASE WHEN p.IsHobby = 1 THEN te.Hours ELSE 0 END), 0) as hobbyHoursThisWeek,
+        COALESCE(SUM(CASE WHEN p.IsHobby = 0 THEN te.Hours ELSE 0 END), 0) as normalHoursThisWeek
+      FROM TimeEntries te
+      INNER JOIN Tasks t ON te.TaskId = t.Id
+      INNER JOIN Projects p ON t.ProjectId = p.Id
+      WHERE te.WorkDate >= DATE_SUB(CURDATE(), INTERVAL DAYOFWEEK(CURDATE())-1 DAY)
+    `);
+
+    // Get this month's hours across all users (separated by hobby/normal)
     const [monthHoursStats] = await pool.execute<RowDataPacket[]>(`
-      SELECT COALESCE(SUM(Hours), 0) as totalHoursThisMonth
-      FROM TimeEntries
-      WHERE YEAR(WorkDate) = YEAR(CURDATE()) AND MONTH(WorkDate) = MONTH(CURDATE())
+      SELECT 
+        COALESCE(SUM(CASE WHEN p.IsHobby = 1 THEN te.Hours ELSE 0 END), 0) as hobbyHoursThisMonth,
+        COALESCE(SUM(CASE WHEN p.IsHobby = 0 THEN te.Hours ELSE 0 END), 0) as normalHoursThisMonth
+      FROM TimeEntries te
+      INNER JOIN Tasks t ON te.TaskId = t.Id
+      INNER JOIN Projects p ON t.ProjectId = p.Id
+      WHERE YEAR(te.WorkDate) = YEAR(CURDATE()) AND MONTH(te.WorkDate) = MONTH(CURDATE())
     `);
 
     // Get top 5 projects by hours this month
@@ -225,9 +244,13 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
         },
         hours: {
           totalEstimated: Number(hoursStats[0]?.totalEstimatedHours || 0),
-          totalWorked: Number(hoursStats[0]?.totalWorkedHours || 0),
-          thisWeek: Number(weekHoursStats[0]?.totalHoursThisWeek || 0),
-          thisMonth: Number(monthHoursStats[0]?.totalHoursThisMonth || 0)
+          totalWorked: Number(workedHoursStats[0]?.totalWorkedHours || 0),
+          thisWeek: Number(weekHoursStats[0]?.normalHoursThisWeek || 0),
+          thisMonth: Number(monthHoursStats[0]?.normalHoursThisMonth || 0),
+          totalEstimatedHobby: Number(hoursStats[0]?.totalEstimatedHoursHobby || 0),
+          totalWorkedHobby: Number(workedHoursStats[0]?.totalWorkedHoursHobby || 0),
+          thisWeekHobby: Number(weekHoursStats[0]?.hobbyHoursThisWeek || 0),
+          thisMonthHobby: Number(monthHoursStats[0]?.hobbyHoursThisMonth || 0)
         },
         topProjects: topProjects.map(p => ({
           id: p.Id,

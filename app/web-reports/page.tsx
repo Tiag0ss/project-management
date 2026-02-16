@@ -59,7 +59,7 @@ interface SavedReport {
 }
 
 interface ModalState {
-  type: 'save' | 'edit' | 'delete' | 'drillDown' | 'share' | 'chart' | null;
+  type: 'save' | 'edit' | 'delete' | 'drillDown' | 'share' | 'chart' | 'print' | null;
   reportId?: number;
   reportName?: string;
   drillDownData?: any[];
@@ -107,6 +107,7 @@ export default function WebReportsPage() {
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [dynamicFields, setDynamicFields] = useState<ReportField[]>([]); // For dynamic data source
+  const [printLayout, setPrintLayout] = useState<'horizontal' | 'vertical' | null>(null);
 
   const dataSources: DataSource[] = [
     {
@@ -282,16 +283,41 @@ export default function WebReportsPage() {
         // Handle different response structures
         let records = data.entries || data.tasks || data.projects || data.allocations || data.tickets || data.data || [];
         
-        // Normalize numeric fields - convert null/undefined to 0 for number fields
+        // Normalize fields
         if (records.length > 0) {
           const numberFields = source.fields.filter(f => f.type === 'number').map(f => f.key);
+          const dateFields = source.fields.filter(f => f.type === 'date').map(f => f.key);
+          
           records = records.map((record: any) => {
             const normalized = { ...record };
+            
+            // Normalize number fields - convert null/undefined to 0
             numberFields.forEach(field => {
               if (normalized[field] === null || normalized[field] === undefined || normalized[field] === 'N/A') {
                 normalized[field] = 0;
               }
             });
+            
+            // Normalize date fields - convert to YYYY-MM-DD format
+            dateFields.forEach(field => {
+              if (normalized[field]) {
+                const strValue = String(normalized[field]);
+                // If it's an ISO timestamp, extract just the date part
+                if (strValue.includes('T')) {
+                  normalized[field] = strValue.split('T')[0];
+                } else if (/^\d{4}-\d{2}-\d{2}$/.test(strValue)) {
+                  // Already in correct format
+                  normalized[field] = strValue;
+                } else {
+                  // Try to parse and format
+                  const date = new Date(normalized[field]);
+                  if (!isNaN(date.getTime())) {
+                    normalized[field] = date.toISOString().split('T')[0];
+                  }
+                }
+              }
+            });
+            
             return normalized;
           });
         }
@@ -323,12 +349,28 @@ export default function WebReportsPage() {
   };
 
   const applyFilters = () => {
+    // First, normalize date fields in raw data
+    const dateFieldKeys = currentSource?.fields.filter(f => f.type === 'date').map(f => f.key) || [];
+    const normalizedRawData = rawData.map(record => {
+      const normalized = { ...record };
+      dateFieldKeys.forEach(field => {
+        if (normalized[field]) {
+          const strValue = String(normalized[field]);
+          // Extract just YYYY-MM-DD from any date format
+          if (strValue.includes('T')) {
+            normalized[field] = strValue.split('T')[0];
+          }
+        }
+      });
+      return normalized;
+    });
+    
     if (filters.length === 0) {
-      setFilteredData(rawData);
+      setFilteredData(normalizedRawData);
       return;
     }
 
-    const filtered = rawData.filter(record => {
+    const filtered = normalizedRawData.filter(record => {
       return filters.every(filter => {
         const rawValue = record[filter.field];
         const field = currentSource?.fields.find(f => f.key === filter.field);
@@ -398,6 +440,115 @@ export default function WebReportsPage() {
     setFilteredData(filtered);
   };
 
+  // Helper function to determine if a field is a date type
+  const isDateField = (fieldKey: string): boolean => {
+    const field = currentSource?.fields.find(f => f.key === fieldKey);
+    return field?.type === 'date';
+  };
+
+  // Helper function to format date value to YYYY-MM-DD
+  const formatDateValue = (value: any): string => {
+    if (!value || value === 'N/A') return 'N/A';
+    
+    // Convert to string first
+    const strValue = String(value);
+    
+    // If already in YYYY-MM-DD format, return as is
+    if (/^\d{4}-\d{2}-\d{2}$/.test(strValue)) {
+      return strValue;
+    }
+    
+    // If it's an ISO timestamp string, extract just the date part
+    if (/^\d{4}-\d{2}-\d{2}T/.test(strValue)) {
+      return strValue.split('T')[0];
+    }
+    
+    // Try to parse as date
+    const date = new Date(value);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString().split('T')[0]; // YYYY-MM-DD format
+    }
+    
+    return strValue;
+  };
+
+  // Helper function to format date for display (user-friendly)
+  const formatDateForDisplay = (value: any): string => {
+    if (!value || value === 'N/A') return 'N/A';
+    
+    // Try to parse as date
+    const date = new Date(value);
+    if (!isNaN(date.getTime())) {
+      // Format as YYYY-MM-DD for users
+      return date.toISOString().split('T')[0];
+    }
+    
+    return String(value);
+  };
+
+  // Helper function to format field labels for headers
+  const formatFieldLabel = (fieldKey: string, aggregation?: string): string => {
+    const field = currentSource?.fields.find(f => f.key === fieldKey);
+    let label = field?.label || fieldKey;
+    
+    // Simplify aggregation labels
+    if (aggregation) {
+      const aggMap: {[key: string]: string} = {
+        'sum': 'Total',
+        'count': 'Contagem',
+        'avg': 'Média',
+        'min': 'Mín',
+        'max': 'Máx',
+        'distinctCount': 'Únicos'
+      };
+      const aggLabel = aggMap[aggregation.toLowerCase()] || aggregation;
+      label = `${aggLabel} ${label}`;
+    }
+    
+    return label;
+  };
+
+  // Helper function to sort column values (handles dates properly)
+  const sortColumnValues = (values: string[], columnFields: string[]): string[] => {
+    // Check if any of the column fields are date types
+    const hasDateField = columnFields.some(field => isDateField(field));
+    
+    if (!hasDateField) {
+      // No date fields, use regular sort
+      return [...values].sort();
+    }
+    
+    // Sort with date awareness
+    return [...values].sort((a, b) => {
+      // Split multi-field values
+      const aParts = a.split(' | ');
+      const bParts = b.split(' | ');
+      
+      for (let i = 0; i < Math.min(aParts.length, bParts.length); i++) {
+        const fieldKey = columnFields[i];
+        const aVal = aParts[i];
+        const bVal = bParts[i];
+        
+        if (isDateField(fieldKey)) {
+          // Format as dates for comparison
+          const aDate = formatDateValue(aVal);
+          const bDate = formatDateValue(bVal);
+          
+          if (aDate !== bDate) {
+            return aDate.localeCompare(bDate);
+          }
+        } else {
+          // Regular string comparison
+          if (aVal !== bVal) {
+            return aVal.localeCompare(bVal);
+          }
+        }
+      }
+      
+      return 0;
+    });
+  };
+
   const generatePivotTable = () => {
     if (filteredData.length === 0) {
       setPivotData(null);
@@ -411,6 +562,23 @@ export default function WebReportsPage() {
       return;
     }
 
+    // CRITICAL: Normalize ALL date fields in filteredData before ANY processing
+    const dateFieldKeys = currentSource?.fields.filter(f => f.type === 'date').map(f => f.key) || [];
+    const normalizedData = filteredData.map(record => {
+      const normalized = { ...record };
+      dateFieldKeys.forEach(field => {
+        if (normalized[field]) {
+          let strValue = String(normalized[field]);
+          // Strip everything after 'T' to get just YYYY-MM-DD
+          if (strValue.includes('T')) {
+            strValue = strValue.split('T')[0];
+          }
+          normalized[field] = strValue;
+        }
+      });
+      return normalized;
+    });
+
     // Build hierarchical structure when multiple row fields
     const buildHierarchy = (data: any[], level: number = 0): any => {
       if (level >= rows.length) {
@@ -419,7 +587,9 @@ export default function WebReportsPage() {
 
       const grouped: { [key: string]: any[] } = {};
       data.forEach(record => {
-        const key = String(record[rows[level]] || 'N/A');
+        const rawValue = record[rows[level]] || 'N/A';
+        // Data is already normalized, just use string conversion
+        const key = String(rawValue);
         if (!grouped[key]) {
           grouped[key] = [];
         }
@@ -427,10 +597,11 @@ export default function WebReportsPage() {
       });
 
       const result: any = {};
-      Object.keys(grouped).forEach(key => {
+      Object.keys(grouped).sort().forEach(key => {
         result[key] = {
           data: grouped[key],
-          children: level < rows.length - 1 ? buildHierarchy(grouped[key], level + 1) : null
+          children: level < rows.length - 1 ? buildHierarchy(grouped[key], level + 1) : null,
+          displayKey: key
         };
       });
 
@@ -440,8 +611,14 @@ export default function WebReportsPage() {
     // Build column keys - each column value × each value field
     let columnKeys: string[] = [];
     if (columns.length > 0 && values.length > 0) {
-      // Get unique column values
-      const columnValues = [...new Set(filteredData.map(r => columns.map(c => r[c] || 'N/A').join(' | ')))];
+      // Get unique column values (data is already normalized)
+      const rawColumnValues = [...new Set(normalizedData.map(r => 
+        columns.map(c => String(r[c] || 'N/A')).join(' | ')
+      ))];
+      
+      // Sort column values
+      const columnValues = rawColumnValues.sort();
+      
       // Create column key for each combination of column value × value field
       columnKeys = columnValues.flatMap(colVal => 
         values.map((v: ValueConfig) => `${colVal}|||${v.field}|||${v.aggregation}`)
@@ -459,8 +636,8 @@ export default function WebReportsPage() {
     console.log('Columns config:', columns);
     console.log('Values config:', values);
 
-    // Build pivot with hierarchy
-    const hierarchy = buildHierarchy(filteredData);
+    // Build pivot with hierarchy using normalized data
+    const hierarchy = buildHierarchy(normalizedData);
     
     // Calculate aggregated values for a specific column key
     const calculateValues = (records: any[], colKey: string): number => {
@@ -472,7 +649,7 @@ export default function WebReportsPage() {
       // If we have columns configured, filter by column value
       if (columns.length > 0 && colValue !== 'Total') {
         relevantRecords = records.filter(r => {
-          const recordColKey = columns.map(c => r[c] || 'N/A').join(' | ');
+          const recordColKey = columns.map(c => String(r[c] || 'N/A')).join(' | ');
           return recordColKey === colValue;
         });
       }
@@ -514,7 +691,7 @@ export default function WebReportsPage() {
         
         const row: any = {
           key: fullKey,
-          displayKey: key,
+          displayKey: item.displayKey || key, // Use pre-formatted display key
           level,
           hasChildren: item.children !== null && Object.keys(item.children).length > 0,
           data: {}
@@ -679,6 +856,142 @@ export default function WebReportsPage() {
 
   const collapseAll = () => {
     setExpandedRows(new Set());
+  };
+
+  const handlePrint = (layout: 'horizontal' | 'vertical') => {
+    if (!pivotData) return;
+
+    const { rows: pivotRows, columns: cols } = pivotData;
+
+    // Create printable HTML
+    let printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Pivot Table Report - ${new Date().toLocaleDateString()}</title>
+        <style>
+          @page {
+            size: ${layout === 'horizontal' ? 'landscape' : 'portrait'};
+            margin: 1cm;
+          }
+          body {
+            font-family: Arial, sans-serif;
+            font-size: ${layout === 'horizontal' ? '9pt' : '10pt'};
+            margin: 0;
+            padding: 20px;
+          }
+          h1 {
+            font-size: 18pt;
+            margin-bottom: 10px;
+            color: #333;
+          }
+          .meta {
+            font-size: 9pt;
+            color: #666;
+            margin-bottom: 20px;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+          }
+          th, td {
+            border: 1px solid #ddd;
+            padding: ${layout === 'horizontal' ? '4px 6px' : '6px 8px'};
+            text-align: left;
+          }
+          th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+          }
+          .indent-1 { padding-left: 20px; }
+          .indent-2 { padding-left: 40px; }
+          .indent-3 { padding-left: 60px; }
+          .numeric {
+            text-align: right;
+          }
+          .total-row {
+            font-weight: bold;
+            background-color: #f9f9f9;
+          }
+          @media print {
+            body { padding: 0; }
+            button { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>📊 Pivot Table Report</h1>
+        <div class="meta">
+          <div>Data Source: ${currentSource?.name || dataSource}</div>
+          <div>Generated: ${new Date().toLocaleString()}</div>
+          <div>Layout: ${layout === 'horizontal' ? 'Horizontal (Landscape)' : 'Vertical (Portrait)'}</div>
+          <div>Records: ${filteredData.length}</div>
+        </div>
+        <table>
+          <thead>
+            <tr>`;
+
+    // Build headers
+    pivotConfig.rows.forEach(r => {
+      const field = currentSource?.fields.find(f => f.key === r);
+      printContent += `<th>${field?.label || r}</th>`;
+    });
+
+    cols.forEach((col: string) => {
+      const [colValue] = col.split('|||');
+      printContent += `<th class="numeric">${colValue}</th>`;
+    });
+
+    printContent += `<th class="numeric">Total</th></tr></thead><tbody>`;
+
+    // Build rows
+    pivotRows.forEach((row: any) => {
+      printContent += `<tr class="${row.level === 0 ? 'total-row' : ''}">`;
+      
+      // Row headers with indentation
+      const keys = row.key.split('|');
+      pivotConfig.rows.forEach((_, idx) => {
+        if (idx <= row.level) {
+          printContent += `<td class="indent-${row.level}">${keys[idx] || ''}</td>`;
+        } else {
+          printContent += `<td></td>`;
+        }
+      });
+
+      // Values
+      cols.forEach((colKey: string) => {
+        const value = row.data[colKey] || 0;
+        printContent += `<td class="numeric">${typeof value === 'number' ? value.toFixed(2) : value}</td>`;
+      });
+
+      // Row total
+      const rowTotal = cols.reduce((sum: number, col: string) => sum + (row.data[col] || 0), 0);
+      printContent += `<td class="numeric total-row">${rowTotal.toFixed(2)}</td>`;
+      
+      printContent += `</tr>`;
+    });
+
+    printContent += `</tbody></table></body></html>`;
+
+    // Open in new window and print
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.focus();
+      
+      // Wait for content to load, then print
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+    }
+
+    // Close modal
+    setModalState({ type: null });
+    setPrintLayout(null);
   };
 
   const exportToCSV = () => {
@@ -1003,7 +1316,32 @@ export default function WebReportsPage() {
                   <DynamicQueryBuilder 
                     token={token}
                     onDataLoaded={(data, fields, dynamicPivotConfig) => {
-                      setRawData(data);
+                      // Normalize date fields in dynamic query data
+                      const dateFields = fields.filter(f => f.type === 'date').map(f => f.key);
+                      const normalizedData = data.map((record: any) => {
+                        const normalized = { ...record };
+                        dateFields.forEach(field => {
+                          if (normalized[field]) {
+                            const strValue = String(normalized[field]);
+                            // If it's an ISO timestamp, extract just the date part
+                            if (strValue.includes('T')) {
+                              normalized[field] = strValue.split('T')[0];
+                            } else if (/^\d{4}-\d{2}-\d{2}$/.test(strValue)) {
+                              // Already in correct format
+                              normalized[field] = strValue;
+                            } else {
+                              // Try to parse and format
+                              const date = new Date(normalized[field]);
+                              if (!isNaN(date.getTime())) {
+                                normalized[field] = date.toISOString().split('T')[0];
+                              }
+                            }
+                          }
+                        });
+                        return normalized;
+                      });
+                      
+                      setRawData(normalizedData);
                       setDynamicFields(fields);
                       
                       // Use the exact configuration from the dynamic query builder
@@ -1133,8 +1471,8 @@ export default function WebReportsPage() {
                                   onChange={(e) => handleUpdateFilter(filter.id, { field: e.target.value })}
                                   className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                                 >
-                                  {currentSource?.fields.map(f => (
-                                    <option key={f.key} value={f.key}>{f.label}</option>
+                                  {currentSource?.fields.map((f, idx) => (
+                                    <option key={`${f.key}-${idx}`} value={f.key}>{f.label}</option>
                                   ))}
                                 </select>
 
@@ -1432,6 +1770,12 @@ export default function WebReportsPage() {
                           >
                             📥 Export to CSV
                           </button>
+                          <button
+                            onClick={() => setModalState({ type: 'print' })}
+                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                          >
+                            🖨️ Print
+                          </button>
                           <div className="flex gap-2 border-l border-gray-300 dark:border-gray-600 pl-3">
                             <button
                               onClick={() => setViewMode('table')}
@@ -1564,6 +1908,50 @@ export default function WebReportsPage() {
                       className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
                     >
                       Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Print Layout Selection Modal */}
+            {modalState.type === 'print' && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+                    🖨️ Print Pivot Table
+                  </h3>
+                  
+                  <p className="text-gray-700 dark:text-gray-300 mb-6">
+                    Select the page orientation for printing:
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <button
+                      onClick={() => handlePrint('vertical')}
+                      className="p-6 border-2 border-gray-300 dark:border-gray-600 rounded-lg hover:border-blue-500 dark:hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all group"
+                    >
+                      <div className="text-4xl mb-2 group-hover:scale-110 transition-transform">📄</div>
+                      <div className="font-semibold text-gray-900 dark:text-white">Vertical</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Portrait</div>
+                    </button>
+                    
+                    <button
+                      onClick={() => handlePrint('horizontal')}
+                      className="p-6 border-2 border-gray-300 dark:border-gray-600 rounded-lg hover:border-blue-500 dark:hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all group"
+                    >
+                      <div className="text-4xl mb-2 group-hover:scale-110 transition-transform">📃</div>
+                      <div className="font-semibold text-gray-900 dark:text-white">Horizontal</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Landscape</div>
+                    </button>
+                  </div>
+
+                  <div className="flex justify-end gap-3">
+                    <button
+                      onClick={() => setModalState({ type: null })}
+                      className="px-4 py-2 bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
+                    >
+                      Cancel
                     </button>
                   </div>
                 </div>
@@ -1797,10 +2185,9 @@ export default function WebReportsPage() {
                           {pivotData.columns.map((col: string) => {
                             // Parse column key: "colValue|||field|||aggregation"
                             const [colValue, field, aggregation] = col.split('|||');
-                            const fieldLabel = currentSource?.fields.find(f => f.key === field)?.label || field;
-                            const aggLabel = aggregation ? ` (${aggregation.charAt(0).toUpperCase() + aggregation.slice(1)})` : '';
+                            
                             const displayHeader = field && field !== 'undefined' 
-                              ? `${colValue}${colValue !== 'Total' ? ' | ' : ' '}${fieldLabel}${aggLabel}`
+                              ? `${colValue} | ${formatFieldLabel(field, aggregation)}`
                               : colValue;
                             
                             return (

@@ -47,10 +47,11 @@ router.get('/my-entries', authenticateToken, async (req: AuthRequest, res: Respo
     const { startDate, endDate } = req.query;
 
     let query = `
-      SELECT te.*, t.TaskName, t.ProjectId, p.ProjectName, p.IsHobby
+      SELECT te.*, t.TaskName, t.ProjectId, p.ProjectName, p.IsHobby, c.Name as CustomerName
       FROM TimeEntries te
       INNER JOIN Tasks t ON te.TaskId = t.Id
       INNER JOIN Projects p ON t.ProjectId = p.Id
+      LEFT JOIN Customers c ON p.CustomerId = c.Id
       WHERE te.UserId = ?
     `;
     const params: any[] = [userId];

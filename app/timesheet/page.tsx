@@ -25,6 +25,7 @@ interface TimeEntry {
   Description: string;
   TaskName: string;
   ProjectName: string;
+  CustomerName?: string;
   CreatedAt: string;
   StartTime?: string;
   EndTime?: string;
@@ -100,6 +101,7 @@ export default function TimesheetPage() {
   const [historyDateTo, setHistoryDateTo] = useState(() => new Date().toISOString().split('T')[0]);
   const [historyProjectFilter, setHistoryProjectFilter] = useState('');
   const [historyTaskFilter, setHistoryTaskFilter] = useState('');
+  const [groupByDays, setGroupByDays] = useState(false);
   const [modalMessage, setModalMessage] = useState<{
     type: 'alert' | 'confirm';
     title: string;
@@ -1507,6 +1509,19 @@ export default function TimesheetPage() {
                           </select>
                         </div>
                       </div>
+                      <div className="flex items-center">
+                        <label className="flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={groupByDays}
+                            onChange={(e) => setGroupByDays(e.target.checked)}
+                            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                          />
+                          <span className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Group by Days
+                          </span>
+                        </label>
+                      </div>
                     </div>
 
                     {/* Filtered Entries Table */}
@@ -1556,17 +1571,24 @@ export default function TimesheetPage() {
                                     Date
                                   </th>
                                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                    Customer
+                                  </th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                     Project
                                   </th>
                                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                     Task
                                   </th>
-                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                                    Start
-                                  </th>
-                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                                    End
-                                  </th>
+                                  {!groupByDays && (
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                      Start
+                                    </th>
+                                  )}
+                                  {!groupByDays && (
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                      End
+                                    </th>
+                                  )}
                                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                     Hours
                                   </th>
@@ -1578,15 +1600,69 @@ export default function TimesheetPage() {
                               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                                 {filteredEntries.length === 0 ? (
                                   <tr>
-                                    <td colSpan={7} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                                    <td colSpan={groupByDays ? 6 : 8} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                                       No time entries found for the selected filters.
                                     </td>
                                   </tr>
+                                ) : groupByDays ? (
+                                  (() => {
+                                    // Group entries by date
+                                    const groupedByDate: { [date: string]: { entries: TimeEntry[], totalHours: number, customers: Set<string>, projects: Set<string>, tasks: Set<string>, descriptions: Set<string> } } = {};
+                                    filteredEntries.forEach(entry => {
+                                      const date = normalizeDateString(entry.WorkDate);
+                                      if (!groupedByDate[date]) {
+                                        groupedByDate[date] = { entries: [], totalHours: 0, customers: new Set(), projects: new Set(), tasks: new Set(), descriptions: new Set() };
+                                      }
+                                      groupedByDate[date].entries.push(entry);
+                                      groupedByDate[date].totalHours += parseFloat(entry.Hours as any);
+                                      if (entry.CustomerName) groupedByDate[date].customers.add(entry.CustomerName);
+                                      if (entry.ProjectName) groupedByDate[date].projects.add(entry.ProjectName);
+                                      if (entry.TaskName) groupedByDate[date].tasks.add(entry.TaskName);
+                                      if (entry.Description) groupedByDate[date].descriptions.add(entry.Description);
+                                    });
+
+                                    // Sort dates descending
+                                    const sortedDates = Object.keys(groupedByDate).sort((a, b) => b.localeCompare(a));
+
+                                    return sortedDates.map(date => {
+                                      const group = groupedByDate[date];
+                                      const customerNames = Array.from(group.customers).join(', ') || '-';
+                                      const projectNames = Array.from(group.projects).join(', ');
+                                      const taskNames = Array.from(group.tasks).join(', ');
+                                      const descriptions = Array.from(group.descriptions).join(', ') || '-';
+                                      
+                                      return (
+                                        <tr key={date} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                            {new Date(date).toLocaleDateString()}
+                                          </td>
+                                          <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                                            {customerNames}
+                                          </td>
+                                          <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                                            {projectNames}
+                                          </td>
+                                          <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                                            {taskNames}
+                                          </td>
+                                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">
+                                            {group.totalHours.toFixed(2)}h
+                                          </td>
+                                          <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
+                                            {descriptions}
+                                          </td>
+                                        </tr>
+                                      );
+                                    });
+                                  })()
                                 ) : (
                                   filteredEntries.map(entry => (
                                     <tr key={entry.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                                         {new Date(entry.WorkDate).toLocaleDateString()}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                        {entry.CustomerName || '-'}
                                       </td>
                                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                                         {entry.ProjectName}

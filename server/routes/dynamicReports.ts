@@ -30,6 +30,61 @@ interface TableRelation {
   type?: string;
 }
 
+// Helper function to format filter values based on field data type
+function formatFilterValue(value: string, dataType: string): string {
+  const normalizedDataType = dataType.toLowerCase();
+  
+  // Handle date types - convert to YYYY-MM-DD format
+  if (normalizedDataType.includes('date') || normalizedDataType.includes('timestamp') || normalizedDataType.includes('datetime')) {
+    if (value && value.length >= 8) {
+      // If already in YYYY-MM-DD format, keep it
+      if (value.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        return value;
+      }
+      // If in YYYYMMDD format, convert to YYYY-MM-DD
+      if (value.match(/^\d{8}$/)) {
+        return `${value.substr(0,4)}-${value.substr(4,2)}-${value.substr(6,2)}`;
+      }
+      // If in DD/MM/YYYY format, convert
+      if (value.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+        const parts = value.split('/');
+        return `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+      // If in MM/DD/YYYY format, convert  
+      if (value.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/) && parseInt(value.split('/')[0]) <= 12) {
+        const parts = value.split('/');
+        const month = parts[0].padStart(2, '0');
+        const day = parts[1].padStart(2, '0');
+        return `${parts[2]}-${month}-${day}`;
+      }
+    }
+    return value;
+  }
+  
+  // Handle decimal/numeric types for hours
+  if (normalizedDataType.includes('decimal') || normalizedDataType.includes('numeric') || normalizedDataType.includes('float')) {
+    // Convert time format HH:MM to decimal hours if needed
+    if (value.match(/^\d{1,2}:\d{2}$/)) {
+      const [hours, minutes] = value.split(':').map(Number);
+      return (hours + minutes / 60).toString();
+    }
+    // Ensure it's a valid decimal number
+    const num = parseFloat(value);
+    return isNaN(num) ? '0' : num.toString();
+  }
+  
+  return value;
+}
+
+// Helper function to get field data type from schema
+function getFieldDataType(tables: TableSchema[], tableName: string, fieldName: string): string {
+  const table = tables.find(t => t.tableName === tableName);
+  if (!table) return 'varchar';
+  
+  const field = table.fields.find(f => f.name === fieldName);
+  return field ? field.dataType : 'varchar';
+}
+
 // Get database schema with all tables and fields
 router.get('/schema', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -137,6 +192,29 @@ router.post('/query', authenticateToken, async (req: AuthRequest, res: Response)
       });
     }
 
+    // Load schema for data type validation
+    const schemaPath = path.join(__dirname, '../database/structure/systemtables');
+    const schemaFiles = fs.readdirSync(schemaPath).filter(f => f.endsWith('.json'));
+    const schemaData: TableSchema[] = [];
+    
+    for (const file of schemaFiles) {
+      const fileContent = fs.readFileSync(path.join(schemaPath, file), 'utf-8');
+      const tableSchema = JSON.parse(fileContent);
+      
+      const fields: FieldSchema[] = tableSchema.Fields.map((field: any) => ({
+        name: field.FieldName,
+        dataType: field.DataType,
+        comment: field.Comment || '',
+        isNullable: !field.NotNullable
+      }));
+      
+      schemaData.push({
+        tableName: tableSchema.TableName,
+        fields,
+        primaryKey: tableSchema.PrimaryKeyFields || 'Id'
+      });
+    }
+
     // Build SELECT clause
     let selectClause = 'SELECT ';
     const selectFields: string[] = [];
@@ -201,13 +279,16 @@ router.post('/query', authenticateToken, async (req: AuthRequest, res: Response)
       const conditions: string[] = [];
       filters.forEach((filter: any) => {
         const field = `${filter.table}.${filter.field}`;
+        const fieldDataType = getFieldDataType(schemaData, filter.table, filter.field);
         
         switch (filter.operator) {
           case 'equals':
-            conditions.push(`${field} = ${pool.escape(filter.value)}`);
+            const formattedValue = formatFilterValue(filter.value, fieldDataType);
+            conditions.push(`${field} = ${pool.escape(formattedValue)}`);
             break;
           case 'notEquals':
-            conditions.push(`${field} != ${pool.escape(filter.value)}`);
+            const formattedValueNE = formatFilterValue(filter.value, fieldDataType);
+            conditions.push(`${field} != ${pool.escape(formattedValueNE)}`);
             break;
           case 'contains':
             conditions.push(`${field} LIKE ${pool.escape('%' + filter.value + '%')}`);
@@ -219,13 +300,17 @@ router.post('/query', authenticateToken, async (req: AuthRequest, res: Response)
             conditions.push(`${field} LIKE ${pool.escape('%' + filter.value)}`);
             break;
           case 'greaterThan':
-            conditions.push(`${field} > ${pool.escape(filter.value)}`);
+            const formattedValueGT = formatFilterValue(filter.value, fieldDataType);
+            conditions.push(`${field} > ${pool.escape(formattedValueGT)}`);
             break;
           case 'lessThan':
-            conditions.push(`${field} < ${pool.escape(filter.value)}`);
+            const formattedValueLT = formatFilterValue(filter.value, fieldDataType);
+            conditions.push(`${field} < ${pool.escape(formattedValueLT)}`);
             break;
           case 'between':
-            conditions.push(`${field} BETWEEN ${pool.escape(filter.value)} AND ${pool.escape(filter.value2)}`);
+            const formattedValue1 = formatFilterValue(filter.value, fieldDataType);
+            const formattedValue2 = formatFilterValue(filter.value2, fieldDataType);
+            conditions.push(`${field} BETWEEN ${pool.escape(formattedValue1)} AND ${pool.escape(formattedValue2)}`);
             break;
           case 'isEmpty':
             conditions.push(`(${field} IS NULL OR ${field} = '')`);
@@ -235,12 +320,17 @@ router.post('/query', authenticateToken, async (req: AuthRequest, res: Response)
             break;
           case 'inList':
             if (filter.valueList && filter.valueList.length > 0) {
-              const escapedValues = filter.valueList.map((v: string) => pool.escape(v)).join(', ');
+              const escapedValues = filter.valueList.map((v: string) => {
+                const formattedV = formatFilterValue(v, fieldDataType);
+                return pool.escape(formattedV);
+              }).join(', ');
               conditions.push(`${field} IN (${escapedValues})`);
             }
             break;
           case 'dateRange':
-            conditions.push(`${field} BETWEEN ${pool.escape(filter.value)} AND ${pool.escape(filter.value2)}`);
+            const formattedDateValue1 = formatFilterValue(filter.value, fieldDataType);
+            const formattedDateValue2 = formatFilterValue(filter.value2, fieldDataType);
+            conditions.push(`${field} BETWEEN ${pool.escape(formattedDateValue1)} AND ${pool.escape(formattedDateValue2)}`);
             break;
         }
       });
