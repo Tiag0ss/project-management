@@ -1,6 +1,7 @@
 'use client';
 
 import { getApiUrl } from '@/lib/api/config';
+import { RecurringAllocationOccurrence } from '@/lib/api/recurringAllocations';
 
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -89,7 +90,7 @@ interface CalendarEvent {
   start: Date;
   end: Date;
   resource: {
-    type: 'task' | 'timeEntry' | 'call' | 'lunch';
+    type: 'task' | 'timeEntry' | 'call' | 'lunch' | 'recurring';
     projectId?: number;
     taskId?: number;
     entryId?: number;
@@ -97,6 +98,7 @@ interface CalendarEvent {
     callType?: string;
     description?: string;
     workDate?: string;
+    recurringAllocationId?: number;
   };
 }
 
@@ -105,6 +107,7 @@ interface CalendarTabProps {
   timeEntries: TimeEntry[];
   callRecords: CallRecord[];
   taskAllocations: TaskAllocation[];
+  recurringAllocations: RecurringAllocationOccurrence[];
   workStartTimes: {
     monday: string;
     tuesday: string;
@@ -125,7 +128,7 @@ interface SlotInfo {
   end: Date;
 }
 
-export default function CalendarTab({ tasks, timeEntries, callRecords, taskAllocations, workStartTimes, lunchTime, lunchDuration, token, onDataChanged }: CalendarTabProps) {
+export default function CalendarTab({ tasks, timeEntries, callRecords, taskAllocations, recurringAllocations, workStartTimes, lunchTime, lunchDuration, token, onDataChanged }: CalendarTabProps) {
   const router = useRouter();
   const [currentView, setCurrentView] = useState<'week' | 'month'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -289,6 +292,22 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       }
     });
 
+    // Group recurring allocations by date
+    const recurringByDate: { [date: string]: RecurringAllocationOccurrence[] } = {};
+    recurringAllocations.forEach(recurring => {
+      if (recurring.OccurrenceDate) {
+        // Use T12:00:00 to avoid timezone issues
+        const dateStr = typeof recurring.OccurrenceDate === 'string' 
+          ? recurring.OccurrenceDate.split('T')[0]
+          : new Date(recurring.OccurrenceDate).toISOString().split('T')[0];
+        const dateKey = new Date(dateStr + 'T12:00:00').toDateString();
+        if (!recurringByDate[dateKey]) {
+          recurringByDate[dateKey] = [];
+        }
+        recurringByDate[dateKey].push(recurring);
+      }
+    });
+
     // Get all dates that need to be processed (including current week for lunch)
     const today = new Date();
     const startOfCurrentWeek = new Date(today);
@@ -306,11 +325,13 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     Object.keys(allocationsByDate).forEach(d => datesToProcess.add(d));
     Object.keys(entriesByDate).forEach(d => datesToProcess.add(d));
     Object.keys(callsByDate).forEach(d => datesToProcess.add(d));
+    Object.keys(recurringByDate).forEach(d => datesToProcess.add(d));
     
     datesToProcess.forEach(dateKey => {
       const dayAllocations = allocationsByDate[dateKey] || [];
       const dayEntries = entriesByDate[dateKey] || [];
       const dayCalls = callsByDate[dateKey] || [];
+      const dayRecurring = recurringByDate[dateKey] || [];
       
       // Get work start time for this day
       const date = new Date(dateKey);
@@ -385,6 +406,31 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
           });
         }
       });
+
+      // Add recurring allocations with their specific start and end times
+      dayRecurring.forEach(recurring => {
+        if (recurring.StartTime && recurring.EndTime) {
+          const [startHour, startMin] = recurring.StartTime.split(':').map(Number);
+          const [endHour, endMin] = recurring.EndTime.split(':').map(Number);
+          
+          const start = new Date(date);
+          start.setHours(startHour, startMin, 0);
+          
+          const end = new Date(date);
+          end.setHours(endHour, endMin, 0);
+          
+          calendarEvents.push({
+            id: `recurring-${recurring.Id}`,
+            title: `🔄 ${recurring.Title} (${recurring.AllocatedHours}h)`,
+            start,
+            end,
+            resource: {
+              type: 'recurring',
+              recurringAllocationId: recurring.RecurringAllocationId,
+            },
+          });
+        }
+      });
       
       // Track time for time entries (position them after any existing allocations end or at work start)
       const startTime = workStartTimes[dayName] || '09:00';
@@ -453,7 +499,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     });
 
     return calendarEvents;
-  }, [taskAllocations, timeEntries, callRecords, workStartTimes, lunchTime, lunchDuration]);
+  }, [taskAllocations, timeEntries, callRecords, recurringAllocations, workStartTimes, lunchTime, lunchDuration]);
 
   const handleSelectEvent = useCallback((event: CalendarEvent) => {
     if (event.resource.type === 'task' && event.resource.projectId) {
@@ -486,6 +532,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     const isTask = event.resource.type === 'task';
     const isCall = event.resource.type === 'call';
     const isLunch = event.resource.type === 'lunch';
+    const isRecurring = event.resource.type === 'recurring';
     
     let bgColor = '#10b981'; // green for time entries
     let borderColor = '#059669';
@@ -499,6 +546,9 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     } else if (isLunch) {
       bgColor = '#f59e0b'; // amber/orange for lunch
       borderColor = '#d97706';
+    } else if (isRecurring) {
+      bgColor = '#ec4899'; // pink for recurring tasks
+      borderColor = '#db2777';
     }
     
     return {

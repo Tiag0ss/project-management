@@ -1,0 +1,48 @@
+{
+  "TableName": "RecurringAllocationOccurrences",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "RecurringAllocationId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "OccurrenceDate",
+      "DataType": "date",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "StartTime",
+      "DataType": "varchar(5)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "EndTime",
+      "DataType": "varchar(5)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "AllocatedHours",
+      "DataType": "decimal(4,2)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 'use client';
 
 import { getApiUrl } from '@/lib/api/config';
+import { recurringAllocationsApi, RecurringAllocation } from '@/lib/api/recurringAllocations';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -10,7 +11,7 @@ import Navbar from '@/components/Navbar';
 export default function ProfilePage() {
   const { user, token, isLoading: authLoading, isCustomerUser } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'info' | 'attachments' | 'workHours' | 'security' | 'emailAlerts'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'attachments' | 'workHours' | 'security' | 'emailAlerts' | 'recurringTasks'>('info');
   const [attachments, setAttachments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -74,6 +75,23 @@ export default function ProfilePage() {
   // Email preferences state
   const [emailPreferences, setEmailPreferences] = useState<any[]>([]);
   const [isSavingEmailPrefs, setIsSavingEmailPrefs] = useState(false);
+
+  // Recurring Tasks state
+  const [recurringAllocations, setRecurringAllocations] = useState<RecurringAllocation[]>([]);
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+  const [editingRecurring, setEditingRecurring] = useState<RecurringAllocation | null>(null);
+  const [recurringError, setRecurringError] = useState('');
+  const [recurringForm, setRecurringForm] = useState({
+    title: '',
+    description: '',
+    recurrenceType: 'daily',
+    recurrenceInterval: 1,
+    daysOfWeek: '',
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: '',
+    startTime: '09:00',
+    endTime: '17:00',
+  });
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -240,6 +258,172 @@ export default function ProfilePage() {
           : pref
       )
     );
+  };
+
+  // Recurring Allocations Functions
+  const loadRecurringAllocations = async () => {
+    if (!token || !user) return;
+    
+    try {
+      const allocations = await recurringAllocationsApi.getUserAllocations(user.id, token);
+      setRecurringAllocations(allocations);
+    } catch (err: any) {
+      console.error('Failed to load recurring allocations:', err);
+      setMessage('Failed to load recurring tasks');
+    }
+  };
+
+  const handleSaveRecurring = async () => {
+    if (!token || !user) return;
+    
+    setRecurringError('');
+    
+    // Validate required fields
+    if (!recurringForm.title.trim()) {
+      setRecurringError('Title is required');
+      return;
+    }
+    if (!recurringForm.recurrenceType) {
+      setRecurringError('Recurrence type is required');
+      return;
+    }
+    if (!recurringForm.startDate) {
+      setRecurringError('Start date is required');
+      return;
+    }
+    if (!recurringForm.startTime) {
+      setRecurringError('Start time is required');
+      return;
+    }
+    if (!recurringForm.endTime) {
+      setRecurringError('End time is required');
+      return;
+    }
+    
+    // Validate custom_days requires daysOfWeek
+    if (recurringForm.recurrenceType === 'custom_days' && !recurringForm.daysOfWeek) {
+      setRecurringError('Please select at least one day of the week');
+      return;
+    }
+    
+    // Validate interval types require interval value
+    if (['interval_days', 'interval_weeks', 'interval_months'].includes(recurringForm.recurrenceType)) {
+      if (!recurringForm.recurrenceInterval || recurringForm.recurrenceInterval < 1) {
+        setRecurringError('Interval must be at least 1');
+        return;
+      }
+    }
+    
+    setIsSaving(true);
+    
+    try {
+      const allocationData = {
+        userId: user.id,
+        title: recurringForm.title.trim(),
+        description: recurringForm.description.trim() || null,
+        recurrenceType: recurringForm.recurrenceType,
+        recurrenceInterval: recurringForm.recurrenceInterval || null,
+        daysOfWeek: recurringForm.daysOfWeek || null,
+        startDate: recurringForm.startDate,
+        endDate: recurringForm.endDate || null,
+        startTime: recurringForm.startTime,
+        endTime: recurringForm.endTime,
+      };
+
+      console.log('Saving recurring allocation:', allocationData);
+
+      if (editingRecurring) {
+        await recurringAllocationsApi.update(editingRecurring.Id, allocationData, token);
+        setMessage('Recurring task updated successfully');
+      } else {
+        await recurringAllocationsApi.create(allocationData, token);
+        setMessage('Recurring task created successfully');
+      }
+      
+      await loadRecurringAllocations();
+      setShowRecurringModal(false);
+      setEditingRecurring(null);
+      setRecurringError('');
+      resetRecurringForm();
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err: any) {
+      console.error('Error saving recurring task:', err);
+      setRecurringError(err.message || 'Failed to save recurring task');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteRecurring = async (id: number) => {
+    if (!token) return;
+    
+    if (!confirm('Are you sure you want to delete this recurring task? This will remove all future occurrences.')) {
+      return;
+    }
+    
+    try {
+      await recurringAllocationsApi.delete(id, token);
+      setMessage('Recurring task deleted successfully');
+      await loadRecurringAllocations();
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err: any) {
+      setMessage('Failed to delete recurring task');
+    }
+  };
+
+  const handleEditRecurring = (allocation: RecurringAllocation) => {
+    setEditingRecurring(allocation);
+    setRecurringForm({
+      title: allocation.Title,
+      description: allocation.Description || '',
+      recurrenceType: allocation.RecurrenceType,
+      recurrenceInterval: allocation.RecurrenceInterval || 1,
+      daysOfWeek: allocation.DaysOfWeek || '',
+      startDate: allocation.StartDate,
+      endDate: allocation.EndDate || '',
+      startTime: allocation.StartTime,
+      endTime: allocation.EndTime,
+    });
+    setShowRecurringModal(true);
+  };
+
+  const resetRecurringForm = () => {
+    setRecurringForm({
+      title: '',
+      description: '',
+      recurrenceType: 'daily',
+      recurrenceInterval: 1,
+      daysOfWeek: '',
+      startDate: new Date().toISOString().split('T')[0],
+      endDate: '',
+      startTime: '09:00',
+      endTime: '17:00',
+    });
+  };
+
+  const getRecurrenceTypeLabel = (type: string, interval?: number, daysOfWeek?: string) => {
+    switch (type) {
+      case 'daily':
+        return 'Every day';
+      case 'weekly':
+        return 'Every week';
+      case 'monthly':
+        return 'Every month';
+      case 'custom_days':
+        if (daysOfWeek) {
+          const days = daysOfWeek.split(',').map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][parseInt(d)]);
+          return `Every ${days.join(', ')}`;
+        }
+        return 'Custom days';
+      case 'interval_days':
+        return `Every ${interval} day(s)`;
+      case 'interval_weeks':
+        return `Every ${interval} week(s)`;
+      case 'interval_months':
+        return `Every ${interval} month(s)`;
+      default:
+        return type;
+    }
   };
 
   const formatFileSize = (bytes: number) => {
@@ -538,6 +722,21 @@ export default function ProfilePage() {
                     }`}
                   >
                     ⏰ Work Hours
+                  </button>
+                )}
+                {!isCustomerUser && (
+                  <button
+                    onClick={() => {
+                      setActiveTab('recurringTasks');
+                      loadRecurringAllocations();
+                    }}
+                    className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                      activeTab === 'recurringTasks'
+                        ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    🔄 Recurring Tasks
                   </button>
                 )}
                 <button
@@ -1051,6 +1250,284 @@ export default function ProfilePage() {
                       Loading preferences...
                     </div>
                   )}
+                </div>
+              )}
+
+              {activeTab === 'recurringTasks' && (
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+                  <div className="flex justify-between items-center mb-6">
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Recurring Tasks</h2>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        Define recurring time blocks that are automatically allocated to prevent scheduling conflicts
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setEditingRecurring(null);
+                        resetRecurringForm();
+                        setShowRecurringModal(true);
+                      }}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                    >
+                      <span>➕</span> New Recurring Task
+                    </button>
+                  </div>
+
+                  {recurringAllocations.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                      <p className="text-lg mb-2">No recurring tasks defined</p>
+                      <p className="text-sm">Create a recurring task to automatically block time on your calendar</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {recurringAllocations.map(allocation => (
+                        <div
+                          key={allocation.Id}
+                          className="flex items-start justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="font-semibold text-gray-900 dark:text-white">{allocation.Title}</h3>
+                              {!allocation.IsActive && (
+                                <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded">
+                                  Inactive
+                                </span>
+                              )}
+                            </div>
+                            {allocation.Description && (
+                              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">{allocation.Description}</p>
+                            )}
+                            <div className="flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
+                              <span className="flex items-center gap-1">
+                                🔄 {getRecurrenceTypeLabel(allocation.RecurrenceType, allocation.RecurrenceInterval, allocation.DaysOfWeek)}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                ⏰ {allocation.StartTime} - {allocation.EndTime}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                📅 {new Date(allocation.StartDate).toLocaleDateString()}
+                                {allocation.EndDate && ` - ${new Date(allocation.EndDate).toLocaleDateString()}`}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 ml-4">
+                            <button
+                              onClick={() => handleEditRecurring(allocation)}
+                              className="px-3 py-1 text-sm bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                            >
+                              ✏️ Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteRecurring(allocation.Id)}
+                              className="px-3 py-1 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Recurring Task Modal */}
+              {showRecurringModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                    <div className="p-6">
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+                        {editingRecurring ? 'Edit Recurring Task' : 'New Recurring Task'}
+                      </h2>
+
+                      {recurringError && (
+                        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
+                          {recurringError}
+                        </div>
+                      )}
+
+                      <div className="space-y-4">
+                        {/* Title */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Title *
+                          </label>
+                          <input
+                            type="text"
+                            value={recurringForm.title}
+                            onChange={(e) => setRecurringForm({ ...recurringForm, title: e.target.value })}
+                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            placeholder="e.g., Team Meeting, Gym Time"
+                          />
+                        </div>
+
+                        {/* Description */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Description
+                          </label>
+                          <textarea
+                            value={recurringForm.description}
+                            onChange={(e) => setRecurringForm({ ...recurringForm, description: e.target.value })}
+                            rows={2}
+                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            placeholder="Optional description"
+                          />
+                        </div>
+
+                        {/* Recurrence Type */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Recurrence Pattern *
+                          </label>
+                          <select
+                            value={recurringForm.recurrenceType}
+                            onChange={(e) => setRecurringForm({ ...recurringForm, recurrenceType: e.target.value })}
+                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          >
+                            <option value="daily">Every day</option>
+                            <option value="weekly">Every week</option>
+                            <option value="monthly">Every month</option>
+                            <option value="custom_days">Specific days of the week</option>
+                            <option value="interval_days">Every X days</option>
+                            <option value="interval_weeks">Every X weeks</option>
+                            <option value="interval_months">Every X months</option>
+                          </select>
+                        </div>
+
+                        {/* Interval (for interval_days/weeks/months) */}
+                        {['interval_days', 'interval_weeks', 'interval_months'].includes(recurringForm.recurrenceType) && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              Interval *
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={recurringForm.recurrenceInterval}
+                              onChange={(e) => setRecurringForm({ ...recurringForm, recurrenceInterval: parseInt(e.target.value) || 1 })}
+                              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            />
+                          </div>
+                        )}
+
+                        {/* Days of Week (for custom_days) */}
+                        {recurringForm.recurrenceType === 'custom_days' && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                              Select Days *
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                              {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => {
+                                const selectedDays = recurringForm.daysOfWeek.split(',').filter(d => d);
+                                const isSelected = selectedDays.includes(String(index));
+                                return (
+                                  <button
+                                    key={day}
+                                    type="button"
+                                    onClick={() => {
+                                      let days = recurringForm.daysOfWeek.split(',').filter(d => d);
+                                      if (isSelected) {
+                                        days = days.filter(d => d !== String(index));
+                                      } else {
+                                        days.push(String(index));
+                                      }
+                                      setRecurringForm({ ...recurringForm, daysOfWeek: days.join(',') });
+                                    }}
+                                    className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                                      isSelected
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                                    }`}
+                                  >
+                                    {day.substring(0, 3)}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Time Range */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              Start Time *
+                            </label>
+                            <input
+                              type="time"
+                              value={recurringForm.startTime}
+                              onChange={(e) => setRecurringForm({ ...recurringForm, startTime: e.target.value })}
+                              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              End Time *
+                            </label>
+                            <input
+                              type="time"
+                              value={recurringForm.endTime}
+                              onChange={(e) => setRecurringForm({ ...recurringForm, endTime: e.target.value })}
+                              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Date Range */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              Start Date *
+                            </label>
+                            <input
+                              type="date"
+                              value={recurringForm.startDate}
+                              onChange={(e) => setRecurringForm({ ...recurringForm, startDate: e.target.value })}
+                              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              End Date (optional)
+                            </label>
+                            <input
+                              type="date"
+                              value={recurringForm.endDate}
+                              onChange={(e) => setRecurringForm({ ...recurringForm, endDate: e.target.value })}
+                              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            />
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          This recurring task will automatically block time on your calendar to prevent scheduling conflicts.
+                        </p>
+                      </div>
+
+                      <div className="flex gap-3 mt-6">
+                        <button
+                          onClick={() => {
+                            setShowRecurringModal(false);
+                            setEditingRecurring(null);
+                            setRecurringError('');
+                            resetRecurringForm();
+                          }}
+                          className="flex-1 px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSaveRecurring}
+                          disabled={isSaving || !recurringForm.title.trim() || !recurringForm.startTime || !recurringForm.endTime || !recurringForm.startDate}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
+                        >
+                          {isSaving ? 'Saving...' : 'Save Recurring Task'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

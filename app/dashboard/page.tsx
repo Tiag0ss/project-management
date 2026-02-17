@@ -194,6 +194,9 @@ function DashboardContent() {
   // Task Allocations state (for calendar display with times)
   const [taskAllocations, setTaskAllocations] = useState<TaskAllocationForCalendar[]>([]);
 
+  // Recurring Allocations state (for calendar display)
+  const [recurringAllocations, setRecurringAllocations] = useState<any[]>([]);
+
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setModalMessage({ type: 'confirm', title, message, onConfirm });
   };
@@ -222,6 +225,7 @@ function DashboardContent() {
         loadTimeEntries();
         loadCallRecords();
         loadTaskAllocations();
+        loadRecurringAllocations();
       }
     }
   }, [user, isLoading, router, token, activeTab]);
@@ -678,6 +682,29 @@ function DashboardContent() {
       }
     } catch (err) {
       console.error('Failed to load task allocations:', err);
+    }
+  };
+
+  const loadRecurringAllocations = async () => {
+    if (!user) return;
+    
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/recurring-allocations/occurrences/user/${user.id}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        setRecurringAllocations(data.occurrences || []);
+      }
+    } catch (err) {
+      console.error('Failed to load recurring allocations:', err);
     }
   };
   
@@ -1173,6 +1200,7 @@ function DashboardContent() {
               timeEntries={timeEntries}
               callRecords={callRecords}
               taskAllocations={taskAllocations}
+              recurringAllocations={recurringAllocations}
               workStartTimes={workStartTimes}
               lunchTime={lunchTime}
               lunchDuration={lunchDuration}
@@ -1181,6 +1209,7 @@ function DashboardContent() {
                 loadTimeEntries();
                 loadCallRecords();
                 loadTaskAllocations();
+                loadRecurringAllocations();
               }}
             />
           )}

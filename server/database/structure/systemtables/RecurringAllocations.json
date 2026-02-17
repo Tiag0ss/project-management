@@ -1,0 +1,74 @@
+{
+  "TableName": "RecurringAllocations",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Title",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Description",
+      "DataType": "text",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "RecurrenceType",
+      "DataType": "varchar(50)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "RecurrenceInterval",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "DaysOfWeek",
+      "DataType": "varchar(50)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "StartDate",
+      "DataType": "date",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "EndDate",
+      "DataType": "date",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "StartTime",
+      "DataType": "varchar(5)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "EndTime",
+      "DataType": "varchar(5)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "IsActive",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

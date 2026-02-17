@@ -43,6 +43,7 @@ export default function PlanningPage() {
   const [allAllocations, setAllAllocations] = useState<{Id?: number; TaskId: number; UserId: number; AllocationDate: string; AllocatedHours: number; IsHobby: number; IsManual?: number; StartTime?: string; EndTime?: string}[]>([]);
   const [childAllocations, setChildAllocations] = useState<{ParentTaskId: number; ChildTaskId: number; AllocationDate: string; AllocatedHours: number; Level: number}[]>([]);
   const [taskTimeEntries, setTaskTimeEntries] = useState<any[]>([]);
+  const [recurringAllocations, setRecurringAllocations] = useState<any[]>([]);
   const [loadingAllocations, setLoadingAllocations] = useState(false);
   const [showDependencyLines, setShowDependencyLines] = useState(true);
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'year'>('week');
@@ -166,6 +167,15 @@ export default function PlanningPage() {
     draggedSubtask: null,
   });
 
+  // Recurring allocation detail modal state
+  const [recurringDetailModal, setRecurringDetailModal] = useState<{
+    show: boolean;
+    recurring: any | null;
+  }>({
+    show: false,
+    recurring: null,
+  });
+
   const showAlert = (title: string, message: string) => {
     setModalMessage({ type: 'alert', title, message });
   };
@@ -250,6 +260,9 @@ export default function PlanningPage() {
         
         // Load users from all organizations
         await loadAllUsers(projectsRes.projects);
+        
+        // Load recurring allocations (after users are loaded)
+        await loadRecurringAllocations();
         
         // Load all allocations for the visible period
         await loadAllAllocations(loadedTasks);
@@ -386,6 +399,44 @@ export default function PlanningPage() {
       console.log(`Loaded ${allChildAllocs.length} child allocations for ${parentTasks.length} parent tasks`);
     } catch (err) {
       console.error('Failed to load child allocations:', err);
+    }
+  };
+
+  const loadRecurringAllocations = async () => {
+    if (!token || users.length === 0) return;
+    
+    try {
+      // Calculate date range based on viewStartDate and viewMode
+      const daysToShow = viewMode === 'day' ? 1 : viewMode === 'week' ? 28 : viewMode === 'month' ? 90 : 365;
+      const startDate = viewStartDate.toISOString().split('T')[0];
+      const endDate = new Date(viewStartDate.getTime() + daysToShow * 86400000).toISOString().split('T')[0];
+      
+      // Fetch recurring allocation occurrences for all visible users
+      const allRecurringOccurrences: any[] = [];
+      
+      for (const user of users) {
+        const response = await fetch(
+          `${getApiUrl()}/api/recurring-allocations/occurrences/user/${user.Id}?startDate=${startDate}&endDate=${endDate}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.occurrences && data.occurrences.length > 0) {
+            allRecurringOccurrences.push(...data.occurrences);
+          }
+        }
+      }
+      
+      setRecurringAllocations(allRecurringOccurrences);
+      console.log(`Loaded ${allRecurringOccurrences.length} recurring allocation occurrences for ${users.length} users in date range ${startDate} to ${endDate}`);
+    } catch (err) {
+      console.error('Failed to load recurring allocations:', err);
     }
   };
 
@@ -700,6 +751,13 @@ export default function PlanningPage() {
     const timer = setTimeout(updateLines, 100);
     return () => clearTimeout(timer);
   }, [tasks, viewStartDate, showDependencyLines, getDependencyLines]);
+
+  // Reload recurring allocations when view changes
+  useEffect(() => {
+    if (users.length > 0 && token) {
+      loadRecurringAllocations();
+    }
+  }, [viewStartDate, viewMode, users.length]);
 
   const getTasksForUser = (userId: number | null) => {
     let result: Task[];
@@ -1139,16 +1197,27 @@ export default function PlanningPage() {
 
       let existingTaskNames: string[] = [];
       let hasExistingAllocations = false;
+      let hasRecurringOnDay = false;
       
       if (existingAllocationsRes.ok) {
         const existingData = await existingAllocationsRes.json();
         if (existingData.allocations && existingData.allocations.length > 0) {
-          hasExistingAllocations = true;
-          existingTaskNames = existingData.allocations.map((a: any) => a.TaskName || `Task #${a.TaskId}`);
+          // Filter out recurring allocations - they can't be pushed forward
+          const taskAllocations = existingData.allocations.filter((a: any) => !a.IsRecurring);
+          const recurringAllocations = existingData.allocations.filter((a: any) => a.IsRecurring);
+          
+          if (taskAllocations.length > 0) {
+            hasExistingAllocations = true;
+            existingTaskNames = taskAllocations.map((a: any) => a.TaskName || `Task #${a.TaskId}`);
+          }
+          
+          if (recurringAllocations.length > 0) {
+            hasRecurringOnDay = true;
+          }
         }
       }
 
-      // If there are existing allocations, show the conflict modal
+      // If there are existing task allocations (not recurring), show the conflict modal
       if (hasExistingAllocations) {
         setConflictModal({
           show: true,
@@ -1258,12 +1327,17 @@ export default function PlanningPage() {
       if (existingAllocationsRes.ok) {
         const existingData = await existingAllocationsRes.json();
         if (existingData.allocations && existingData.allocations.length > 0) {
-          hasExistingAllocations = true;
-          existingTaskNames = existingData.allocations.map((a: any) => a.TaskName || `Task #${a.TaskId}`);
+          // Filter out recurring allocations - they can't be pushed forward
+          const taskAllocations = existingData.allocations.filter((a: any) => !a.IsRecurring);
+          
+          if (taskAllocations.length > 0) {
+            hasExistingAllocations = true;
+            existingTaskNames = taskAllocations.map((a: any) => a.TaskName || `Task #${a.TaskId}`);
+          }
         }
       }
 
-      // If there are existing allocations, show the conflict modal
+      // If there are existing task allocations (not recurring), show the conflict modal
       if (hasExistingAllocations) {
         setConflictModal({
           show: true,
@@ -2265,11 +2339,11 @@ export default function PlanningPage() {
 
   // Calculate daily totals for a specific user using actual allocations
   const getUserDailyTotals = (userId: number, days: Date[]) => {
-    const totals: { [dateStr: string]: { work: number; hobby: number } } = {};
+    const totals: { [dateStr: string]: { work: number; hobby: number; recurring: number } } = {};
     
     days.forEach(day => {
       const dateStr = day.toISOString().split('T')[0];
-      totals[dateStr] = { work: 0, hobby: 0 };
+      totals[dateStr] = { work: 0, hobby: 0, recurring: 0 };
     });
     
     // Use actual allocations for this user
@@ -2288,6 +2362,23 @@ export default function PlanningPage() {
         } else {
           totals[allocDate].work += hours;
         }
+      }
+    });
+    
+    // Add recurring allocations
+    const userRecurring = recurringAllocations.filter(a => a.UserId === userId);
+    userRecurring.forEach(recurring => {
+      let dateStr: string;
+      if (recurring.OccurrenceDate instanceof Date) {
+        const d = recurring.OccurrenceDate;
+        dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      } else {
+        dateStr = String(recurring.OccurrenceDate).split('T')[0];
+      }
+      
+      if (totals[dateStr] !== undefined) {
+        const hours = Number(recurring.AllocatedHours) || 0;
+        totals[dateStr].recurring += hours;
       }
     });
     
@@ -3232,6 +3323,49 @@ export default function PlanningPage() {
                             </div>
                           );
                         })}
+                        {/* Recurring Allocations */}
+                        {recurringAllocations
+                          .filter(recurring => recurring.UserId === userRow.Id)
+                          .map(recurring => {
+                            // Normalize the occurrence date for comparison
+                            let occurrenceDateStr: string;
+                            if (recurring.OccurrenceDate instanceof Date) {
+                              const d = recurring.OccurrenceDate;
+                              occurrenceDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                            } else {
+                              occurrenceDateStr = String(recurring.OccurrenceDate).split('T')[0];
+                            }
+                            
+                            const dayIndex = days.findIndex(d => {
+                              const dayDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                              return dayDateStr === occurrenceDateStr;
+                            });
+                            
+                            if (dayIndex === -1) return null;
+                            
+                            const dayWidth = 100 / days.length;
+                            const left = `${dayIndex * dayWidth}%`;
+                            const width = `${dayWidth}%`;
+                            
+                            return (
+                              <div
+                                key={`recurring-${recurring.Id}-${occurrenceDateStr}`}
+                                onClick={() => setRecurringDetailModal({ show: true, recurring })}
+                                className="absolute h-8 rounded bg-pink-500 dark:bg-pink-600 opacity-70 hover:opacity-100 cursor-pointer flex items-center text-white text-[10px] px-1 border-l-3 border-pink-700 dark:border-pink-800 z-10"
+                                style={{
+                                  left: left,
+                                  width: width,
+                                  top: '0px',
+                                  borderLeftWidth: '3px'
+                                }}
+                                title={`🔄 ${recurring.Title}\n${recurring.StartTime} - ${recurring.EndTime} (${recurring.AllocatedHours}h)\n${recurring.Description || ''}\nClick for details`}
+                              >
+                                <span className="truncate">
+                                  🔄 {recurring.Title} ({recurring.AllocatedHours}h)
+                                </span>
+                              </div>
+                            );
+                          })}
                       </div>
                     </div>
                     {/* User Daily Totals Row */}
@@ -3244,9 +3378,10 @@ export default function PlanningPage() {
                       <div className="flex-1 flex">
                         {days.map((day, idx) => {
                           const dateStr = day.toISOString().split('T')[0];
-                          const totals = userDailyTotals[dateStr] || { work: 0, hobby: 0 };
+                          const totals = userDailyTotals[dateStr] || { work: 0, hobby: 0, recurring: 0 };
                           const hasWork = totals.work > 0;
                           const hasHobby = totals.hobby > 0;
+                          const hasRecurring = totals.recurring > 0;
                           
                           // Get capacity for this day
                           const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -3265,6 +3400,11 @@ export default function PlanningPage() {
                                   : ''
                               }`}
                             >
+                              {hasRecurring && (
+                                <div className="text-pink-600 dark:text-pink-400 font-medium">
+                                  🔄 {totals.recurring.toFixed(1)}h
+                                </div>
+                              )}
                               {hasWork && (
                                 <div className="text-blue-600 dark:text-blue-400 font-medium">
                                   {totals.work.toFixed(1)}h
@@ -3291,7 +3431,7 @@ export default function PlanningPage() {
                                   0/{hobbyCapacity}h
                                 </div>
                               )}
-                              {!hasWork && !hasHobby && workCapacity === 0 && hobbyCapacity === 0 && (
+                              {!hasWork && !hasHobby && !hasRecurring && workCapacity === 0 && hobbyCapacity === 0 && (
                                 <span className="text-gray-300 dark:text-gray-600">-</span>
                               )}
                             </div>
@@ -3330,6 +3470,98 @@ export default function PlanningPage() {
             />
           );
         })()}
+
+        {/* Recurring Allocation Detail Modal */}
+        {recurringDetailModal.show && recurringDetailModal.recurring && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+              <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                  🔄 Recurring Task Details
+                </h3>
+                <button
+                  onClick={() => setRecurringDetailModal({ show: false, recurring: null })}
+                  className="text-gray-400 hover:text-gray-500 text-xl"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-4 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Title</label>
+                  <div className="text-gray-900 dark:text-white font-medium">
+                    {recurringDetailModal.recurring.Title}
+                  </div>
+                </div>
+                
+                {recurringDetailModal.recurring.Description && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Description</label>
+                    <div className="text-gray-700 dark:text-gray-300 text-sm">
+                      {recurringDetailModal.recurring.Description}
+                    </div>
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Date</label>
+                    <div className="text-gray-900 dark:text-white">
+                      {(() => {
+                        const dateVal = recurringDetailModal.recurring.OccurrenceDate;
+                        if (dateVal instanceof Date) {
+                          return dateVal.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+                        }
+                        // Handle string date - extract just the date part
+                        const dateStr = String(dateVal).split('T')[0];
+                        const parsedDate = new Date(dateStr + 'T12:00:00');
+                        if (isNaN(parsedDate.getTime())) {
+                          return dateStr || 'Unknown';
+                        }
+                        return parsedDate.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+                      })()}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Hours</label>
+                    <div className="text-gray-900 dark:text-white">
+                      {recurringDetailModal.recurring.AllocatedHours}h
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Start Time</label>
+                    <div className="text-gray-900 dark:text-white">
+                      {recurringDetailModal.recurring.StartTime}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">End Time</label>
+                    <div className="text-gray-900 dark:text-white">
+                      {recurringDetailModal.recurring.EndTime}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-pink-50 dark:bg-pink-900/20 border border-pink-200 dark:border-pink-700 rounded-lg p-3">
+                  <p className="text-sm text-pink-700 dark:text-pink-300">
+                    <strong>Note:</strong> This is a recurring task occurrence. To edit recurring task settings, go to <strong>Profile → Recurring Tasks</strong>.
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end p-4 border-t border-gray-200 dark:border-gray-700">
+                <button
+                  onClick={() => setRecurringDetailModal({ show: false, recurring: null })}
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         </>
         )}
 

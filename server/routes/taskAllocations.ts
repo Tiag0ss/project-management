@@ -270,7 +270,27 @@ router.get('/user/:userId/date/:date', authenticateToken, async (req: AuthReques
 
     const [allocations] = await pool.execute<RowDataPacket[]>(query, params);
 
-    res.json({ success: true, allocations });
+    // Also fetch recurring allocation occurrences for this date
+    const [recurringOccurrences] = await pool.execute<RowDataPacket[]>(
+      `SELECT rao.*, ra.Title as TaskName, 0 as IsHobby
+       FROM RecurringAllocationOccurrences rao
+       INNER JOIN RecurringAllocations ra ON rao.RecurringAllocationId = ra.Id
+       WHERE rao.UserId = ? AND rao.OccurrenceDate = ? AND ra.IsActive = 1
+       ORDER BY rao.StartTime`,
+      [userId, date]
+    );
+
+    // Combine allocations with recurring occurrences
+    const combinedAllocations = [
+      ...allocations,
+      ...recurringOccurrences.map(occ => ({
+        ...occ,
+        TaskId: null, // Recurring tasks don't have a TaskId
+        IsRecurring: true
+      }))
+    ];
+
+    res.json({ success: true, allocations: combinedAllocations });
   } catch (error) {
     console.error('Error fetching user date allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch allocations' });
@@ -431,6 +451,50 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
     // Track slots separately for work and hobby tasks
     const workDaySlots: { [date: string]: number } = {};
     const hobbyDaySlots: { [date: string]: number } = {};
+    
+    // Track recurring allocation time blocks per day (these cannot be moved)
+    // Format: { date: [{startMinutes, endMinutes, hours}] }
+    const recurringBlocks: { [date: string]: Array<{startMinutes: number, endMinutes: number, hours: number}> } = {};
+    
+    // Pre-load recurring allocations for the next 365 days
+    const recurringEndDate = new Date(fromDate);
+    recurringEndDate.setDate(recurringEndDate.getDate() + 365);
+    
+    const [recurringOccurrences] = await pool.execute<RowDataPacket[]>(
+      `SELECT rao.OccurrenceDate, rao.StartTime, rao.EndTime, rao.AllocatedHours
+       FROM RecurringAllocationOccurrences rao
+       INNER JOIN RecurringAllocations ra ON rao.RecurringAllocationId = ra.Id
+       WHERE rao.UserId = ? AND rao.OccurrenceDate >= ? AND rao.OccurrenceDate <= ?
+       AND ra.IsActive = 1
+       ORDER BY rao.OccurrenceDate, rao.StartTime`,
+      [userId, fromDate, recurringEndDate.toISOString().split('T')[0]]
+    );
+    
+    // Build recurring blocks map
+    for (const occ of recurringOccurrences as RowDataPacket[]) {
+      let dateStr: string;
+      if (occ.OccurrenceDate instanceof Date) {
+        const d = occ.OccurrenceDate;
+        dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      } else {
+        dateStr = String(occ.OccurrenceDate).split('T')[0];
+      }
+      
+      if (!recurringBlocks[dateStr]) {
+        recurringBlocks[dateStr] = [];
+      }
+      
+      const [startH, startM] = (occ.StartTime || '09:00').split(':').map(Number);
+      const [endH, endM] = (occ.EndTime || '10:00').split(':').map(Number);
+      
+      recurringBlocks[dateStr].push({
+        startMinutes: startH * 60 + startM,
+        endMinutes: endH * 60 + endM,
+        hours: parseFloat(occ.AllocatedHours) || 0
+      });
+    }
+    
+    console.log(`Push-forward: loaded ${recurringOccurrences.length} recurring blocks for user ${userId}`);
 
     // Get IsHobby for the new task
     const [newTaskInfo] = await pool.execute<RowDataPacket[]>(
@@ -488,6 +552,16 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
           slotStart = lunchEndMinutes;
         }
         
+        // Check for recurring blocks on this day and skip past them if we overlap
+        const dayRecurringBlocks = recurringBlocks[dateStr] || [];
+        for (const block of dayRecurringBlocks) {
+          // If our slot start is within a recurring block, skip past it
+          if (slotStart >= block.startMinutes && slotStart < block.endMinutes) {
+            console.log(`  Task ${taskId} @ ${dateStr}: skipping recurring block ${formatTime(block.startMinutes)}-${formatTime(block.endMinutes)}`);
+            slotStart = block.endMinutes;
+          }
+        }
+        
         // Check if day is full
         if (slotStart >= workEndMinutes) {
           currentDate = advanceToNextWorkDay(currentDate, isHobby);
@@ -504,6 +578,21 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
         } else {
           // In afternoon (or no lunch/hobby) - just until work end
           availableMinutes = workEndMinutes - slotStart;
+        }
+        
+        // Subtract any recurring blocks that fall between slotStart and workEnd
+        for (const block of dayRecurringBlocks) {
+          if (block.startMinutes >= slotStart && block.endMinutes <= workEndMinutes) {
+            // Block is entirely within our available window - subtract its duration
+            availableMinutes -= (block.endMinutes - block.startMinutes);
+          } else if (block.startMinutes < workEndMinutes && block.endMinutes > slotStart) {
+            // Partial overlap - handle more carefully
+            const overlapStart = Math.max(block.startMinutes, slotStart);
+            const overlapEnd = Math.min(block.endMinutes, workEndMinutes);
+            if (overlapEnd > overlapStart) {
+              availableMinutes -= (overlapEnd - overlapStart);
+            }
+          }
         }
         
         if (availableMinutes <= 0) {
@@ -572,13 +661,32 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
           actualEnd = workEndMinutes;
         }
         
-        console.log(`  Task ${taskId} @ ${dateStr}: ${formatTime(actualStart)}-${formatTime(actualEnd)} (${hoursNow}h, hobby=${isHobby})`);
+        // Check if allocation would cross a recurring block - if so, stop before it
+        for (const block of dayRecurringBlocks) {
+          if (actualStart < block.startMinutes && actualEnd > block.startMinutes) {
+            // Proposed allocation would cross into a recurring block - stop before it
+            console.log(`  Task ${taskId} @ ${dateStr}: stopping at ${formatTime(block.startMinutes)} due to recurring block`);
+            actualEnd = block.startMinutes;
+            break;
+          }
+        }
+        
+        // Recalculate hours based on potentially shortened allocation
+        const actualMinutes = actualEnd - actualStart;
+        if (actualMinutes <= 0) {
+          // No room left before the recurring block, skip to after the block
+          currentDate = advanceToNextWorkDay(currentDate, isHobby);
+          continue;
+        }
+        const actualHours = actualMinutes / 60;
+        
+        console.log(`  Task ${taskId} @ ${dateStr}: ${formatTime(actualStart)}-${formatTime(actualEnd)} (${actualHours}h, hobby=${isHobby})`);
         
         // Create allocation
         await pool.execute(
           `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
            VALUES (?, ?, ?, ?, ?, ?, 0)`,
-          [taskId, userId, dateStr, hoursNow, formatTime(actualStart), formatTime(actualEnd)]
+          [taskId, userId, dateStr, actualHours, formatTime(actualStart), formatTime(actualEnd)]
         );
         
         // Track the last allocation date
@@ -587,12 +695,19 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
         // Update slot position for this day
         daySlots[dateStr] = actualEnd;
         
+        // Skip past recurring blocks if we're now at one
+        for (const block of dayRecurringBlocks) {
+          if (daySlots[dateStr] >= block.startMinutes && daySlots[dateStr] < block.endMinutes) {
+            daySlots[dateStr] = block.endMinutes;
+          }
+        }
+        
         // Skip lunch if we're now at lunch (only for work tasks)
         if (effectiveLunchDuration > 0 && daySlots[dateStr] >= lunchStartMinutes && daySlots[dateStr] < lunchEndMinutes) {
           daySlots[dateStr] = lunchEndMinutes;
         }
         
-        remaining -= hoursNow;
+        remaining -= actualHours;
         
         // If day is now full, advance
         if (daySlots[dateStr] >= workEndMinutes) {
@@ -754,6 +869,18 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
     // additional availability. The parent's TaskAllocation already reserves the time.
     // Including them would double-count hours.
 
+    // Get recurring allocation occurrences for the date range
+    // These DO consume availability as they are independent time blocks
+    const [recurringOccurrences] = await pool.execute<RowDataPacket[]>(
+      `SELECT rao.OccurrenceDate, SUM(rao.AllocatedHours) as TotalRecurring, MAX(rao.EndTime) as LatestRecurringEndTime
+       FROM RecurringAllocationOccurrences rao
+       INNER JOIN RecurringAllocations ra ON rao.RecurringAllocationId = ra.Id
+       WHERE rao.UserId = ? AND rao.OccurrenceDate BETWEEN ? AND ?
+       AND ra.IsActive = 1
+       GROUP BY rao.OccurrenceDate`,
+      [userId, startDate, endDate]
+    );
+
     // Build allocation map from direct allocations only
     const allocationMap = new Map<string, { totalAllocated: number; latestEndTime: string | null }>();
     
@@ -770,6 +897,40 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
         totalAllocated: parseFloat(alloc.TotalAllocated) || 0,
         latestEndTime: alloc.LatestEndTime || null,
       });
+    }
+
+    // Add recurring allocation occurrences to the map
+    for (const recur of recurringOccurrences as RowDataPacket[]) {
+      let dateStr: string;
+      if (recur.OccurrenceDate instanceof Date) {
+        const d = recur.OccurrenceDate;
+        dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      } else {
+        dateStr = String(recur.OccurrenceDate).split('T')[0];
+      }
+      
+      const existing = allocationMap.get(dateStr);
+      const recurringHours = parseFloat(recur.TotalRecurring) || 0;
+      // NOTE: Do NOT use recurring end time for latestEndTime calculation
+      // Recurring tasks can be in the middle of the day (e.g., 10-11am meeting)
+      // and should not block the time slot calculation - they just reduce available hours
+      
+      if (existing) {
+        // Combine with existing task allocations
+        // Keep the task allocation's latestEndTime, just add recurring hours
+        allocationMap.set(dateStr, {
+          totalAllocated: existing.totalAllocated + recurringHours,
+          // Keep existing task allocation end time - don't use recurring end time
+          latestEndTime: existing.latestEndTime
+        });
+      } else {
+        // Only recurring allocations on this date - no task allocations
+        // Set latestEndTime to null since recurring tasks don't block time slots
+        allocationMap.set(dateStr, {
+          totalAllocated: recurringHours,
+          latestEndTime: null  // Don't use recurring end time for slot calculation
+        });
+      }
     }
 
     // Build availability map
