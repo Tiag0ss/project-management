@@ -14,7 +14,8 @@ A full-stack, self-hosted project management application with task tracking, res
 - 🔗 **Jira Integration** — Two-tier Jira system connecting tickets and project boards with external linking and encrypted credentials
 - 📝 **Rich Text Editor** — Tiptap-based editor with formatting, images (inline base64), and markdown support for descriptions and comments
 - 📔 **Memos System** — Calendar-based note-taking with visibility controls (Private, Organizations, Public), tags, and rich content
-- 📧 **Email Notifications** — SMTP integration with encrypted credentials
+- � **Recurring Tasks** — Outlook-style recurring time blocks for meetings, standups, and fixed schedules that planning respects
+- �📧 **Email Notifications** — SMTP integration with encrypted credentials
 - 🔗 **Jira Integration** — Two-tier Jira system for tickets and project boards with external linking
 - 🌙 **Dark Mode** — Full dark mode support across the entire UI
 - 📱 **Responsive Design** — Mobile-friendly interface with organized navigation dropdowns
@@ -125,7 +126,20 @@ A full-stack, self-hosted project management application with task tracking, res
 - **Author display** — See who created each memo
 - **Personal notes** — Great for daily logs, meeting notes, ideas
 
-### � Jira Integration
+### 🔄 Recurring Tasks
+- **Outlook-style recurrence patterns** — Daily, Weekly, Monthly, Custom Days, or Interval-based scheduling
+- **Time-based scheduling** — Set specific start and end times for each recurring block
+- **Automatic occurrence generation** — System pre-generates occurrences for selected date ranges
+- **Profile management** — Configure recurring allocations from user profile page
+- **Planning integration**:
+  - Visible in Gantt chart with pink color and 🔄 icon
+  - Availability calculation respects recurring time blocks
+  - Push-forward algorithm skips around recurring blocks
+  - Read-only detail modal on click (edit from Profile)
+- **Calendar display** — Shows in Dashboard calendar with pink highlighting
+- **Use cases** — Standups, team meetings, 1:1s, appointments, lunch breaks, fixed schedules
+
+### 🔗 Jira Integration
 - **Two-tier integration system** for comprehensive Jira connectivity:
   - **Jira for Tickets** — Primary instance for ticket management and issue search
   - **Jira for Projects** — Optional separate instance for project boards and kanban views
