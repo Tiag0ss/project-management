@@ -33,6 +33,8 @@ interface TaskAllocation {
   ProjectName: string;
   AllocatedHours: number;
   AllocationDate: string;
+  DueDate: string | null;
+  IsHobby: number;
 }
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -109,12 +111,14 @@ async function getUserAllocationsForDate(userId: number, date: string): Promise<
       t.TaskName,
       p.ProjectName,
       ta.AllocatedHours,
-      ta.AllocationDate
+      ta.AllocationDate,
+      t.DueDate,
+      p.IsHobby
     FROM TaskAllocations ta
     JOIN Tasks t ON ta.TaskId = t.Id
     JOIN Projects p ON t.ProjectId = p.Id
     WHERE ta.UserId = ? AND DATE(ta.AllocationDate) = ?
-    ORDER BY ta.AllocatedHours DESC`,
+    ORDER BY p.IsHobby ASC, ta.AllocatedHours DESC`,
     [userId, date]
   );
   return allocations as TaskAllocation[];
@@ -128,52 +132,118 @@ async function getUserAllocationsForWeek(userId: number, startDate: string, endD
       t.TaskName,
       p.ProjectName,
       SUM(ta.AllocatedHours) as AllocatedHours,
-      MIN(ta.AllocationDate) as AllocationDate
+      MIN(ta.AllocationDate) as AllocationDate,
+      t.DueDate,
+      p.IsHobby
     FROM TaskAllocations ta
     JOIN Tasks t ON ta.TaskId = t.Id
     JOIN Projects p ON t.ProjectId = p.Id
     WHERE ta.UserId = ? AND DATE(ta.AllocationDate) BETWEEN ? AND ?
-    GROUP BY ta.TaskId, t.TaskName, p.ProjectName
-    ORDER BY SUM(ta.AllocatedHours) DESC`,
+    GROUP BY ta.TaskId, t.TaskName, p.ProjectName, t.DueDate, p.IsHobby
+    ORDER BY p.IsHobby ASC, SUM(ta.AllocatedHours) DESC`,
     [userId, startDate, endDate]
   );
   return allocations as TaskAllocation[];
+}
+
+// Build task rows HTML for a group of allocations
+function buildTaskRows(allocations: TaskAllocation[], refDate: string): string {
+  return allocations.map(alloc => {
+    const isOverdue = alloc.DueDate && new Date(alloc.DueDate) < new Date(refDate);
+    const dueDateStr = alloc.DueDate ? new Date(alloc.DueDate).toLocaleDateString('en-GB') : null;
+    return `
+      <tr style="${isOverdue ? 'background-color: #fff5f5;' : ''}">
+        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">
+          ${alloc.TaskName}
+          ${isOverdue ? '<span style="margin-left: 6px; font-size: 11px; background-color: #fee2e2; color: #dc2626; padding: 2px 6px; border-radius: 4px; font-weight: 600;">OVERDUE</span>' : ''}
+          ${dueDateStr ? `<div style="font-size: 11px; color: ${isOverdue ? '#dc2626' : '#6b7280'}; margin-top: 2px;">Due: ${dueDateStr}</div>` : ''}
+        </td>
+        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${alloc.ProjectName}</td>
+        <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e5e7eb;">${Number(alloc.AllocatedHours).toFixed(1)}h</td>
+      </tr>`;
+  }).join('');
+}
+
+function buildTaskTableHtml(allocations: TaskAllocation[], refDate: string, noTasksLabel: string): string {
+  if (allocations.length === 0) {
+    return `<p style="color: #6b7280; font-style: italic;">${noTasksLabel}</p>`;
+  }
+
+  const normal = allocations.filter(a => !a.IsHobby);
+  const hobby  = allocations.filter(a => a.IsHobby);
+  const normalHours = normal.reduce((s, a) => s + Number(a.AllocatedHours), 0);
+  const hobbyHours  = hobby.reduce((s, a)  => s + Number(a.AllocatedHours), 0);
+  const totalHours  = normalHours + hobbyHours;
+  const hasGroups   = normal.length > 0 && hobby.length > 0;
+
+  const tableHead = `
+    <table style="width: 100%; border-collapse: collapse; margin: 0 0 8px 0;">
+      <thead>
+        <tr style="background-color: #f3f4f6;">
+          <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Task</th>
+          <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Project</th>
+          <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Hours</th>
+        </tr>
+      </thead>`;
+
+  let html = '';
+
+  if (normal.length > 0) {
+    if (hasGroups) {
+      html += `<div style="margin: 16px 0 4px 0;"><span style="font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">💼 Work Tasks</span></div>`;
+    }
+    html += `${tableHead}<tbody>${buildTaskRows(normal, refDate)}`;
+    if (!hasGroups) {
+      html += `<tr style="background-color: #f3f4f6; font-weight: bold;">
+        <td style="padding: 12px;" colspan="2">Total</td>
+        <td style="padding: 12px; text-align: right;">${totalHours.toFixed(1)}h</td>
+      </tr>`;
+    } else {
+      html += `<tr style="background-color: #f3f4f6;">
+        <td style="padding: 10px 12px; font-size: 13px; color: #374151;" colspan="2">Work subtotal</td>
+        <td style="padding: 10px 12px; text-align: right; font-size: 13px; color: #374151;">${normalHours.toFixed(1)}h</td>
+      </tr>`;
+    }
+    html += `</tbody></table>`;
+  }
+
+  if (hobby.length > 0) {
+    if (hasGroups) {
+      html += `<div style="margin: 20px 0 4px 0;"><span style="font-size: 12px; font-weight: 600; color: #7c3aed; text-transform: uppercase; letter-spacing: 0.05em;">🎯 Hobby Tasks</span></div>`;
+    }
+    html += `${tableHead}<tbody>${buildTaskRows(hobby, refDate)}`;
+    if (!hasGroups) {
+      html += `<tr style="background-color: #f3f4f6; font-weight: bold;">
+        <td style="padding: 12px;" colspan="2">Total</td>
+        <td style="padding: 12px; text-align: right;">${totalHours.toFixed(1)}h</td>
+      </tr>`;
+    } else {
+      html += `<tr style="background-color: #f5f3ff;">
+        <td style="padding: 10px 12px; font-size: 13px; color: #7c3aed;" colspan="2">Hobby subtotal</td>
+        <td style="padding: 10px 12px; text-align: right; font-size: 13px; color: #7c3aed;">${hobbyHours.toFixed(1)}h</td>
+      </tr>`;
+    }
+    html += `</tbody></table>`;
+  }
+
+  if (hasGroups) {
+    html += `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 8px; background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px;">
+      <tr>
+        <td style="padding: 10px 14px; font-weight: 700; color: #111827;">Grand Total</td>
+        <td style="padding: 10px 14px; text-align: right; font-weight: 700; color: #111827;">${totalHours.toFixed(1)}h</td>
+      </tr>
+    </table>`;
+  }
+
+  return html;
 }
 
 // Generate HTML email template for daily summary
 function generateDailySummaryEmail(user: UserWorkInfo, date: string, allocations: TaskAllocation[], totalHours: number): string {
   const displayName = user.FirstName ? `${user.FirstName} ${user.LastName || ''}`.trim() : user.Username;
   const formattedDate = new Date(date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  
-  let tasksHtml = '';
-  if (allocations.length === 0) {
-    tasksHtml = '<p style="color: #6b7280; font-style: italic;">No tasks allocated for today.</p>';
-  } else {
-    tasksHtml = `
-      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-        <thead>
-          <tr style="background-color: #f3f4f6;">
-            <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Task</th>
-            <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Project</th>
-            <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Hours</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${allocations.map(alloc => `
-            <tr>
-              <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${alloc.TaskName}</td>
-              <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${alloc.ProjectName}</td>
-              <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e5e7eb;">${Number(alloc.AllocatedHours).toFixed(1)}h</td>
-            </tr>
-          `).join('')}
-          <tr style="background-color: #f3f4f6; font-weight: bold;">
-            <td style="padding: 12px;" colspan="2">Total</td>
-            <td style="padding: 12px; text-align: right;">${totalHours.toFixed(1)}h</td>
-          </tr>
-        </tbody>
-      </table>
-    `;
-  }
+  const overdueCount = allocations.filter(a => a.DueDate && new Date(a.DueDate) < new Date(date)).length;
+  const tasksHtml = buildTaskTableHtml(allocations, date, 'No tasks allocated for today.');
 
   return `
     <!DOCTYPE html>
@@ -193,12 +263,22 @@ function generateDailySummaryEmail(user: UserWorkInfo, date: string, allocations
           
           <p>Here's your work summary for today:</p>
           
+          ${overdueCount > 0 ? `
+          <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 15px; margin: 16px 0;">
+            <p style="margin: 0; color: #b91c1c; font-weight: 600;">⚠️ ${overdueCount} overdue task${overdueCount > 1 ? 's' : ''} in today's schedule</p>
+          </div>` : ''}
+          
           ${tasksHtml}
           
           <div style="background-color: #dbeafe; border-radius: 8px; padding: 15px; margin: 20px 0;">
-            <p style="margin: 0; color: #1e40af;">
+            <p style="margin: 0 0 4px 0; color: #1e40af;">
               <strong>📊 Today's scheduled work:</strong> ${totalHours.toFixed(1)} hours across ${allocations.length} task(s)
             </p>
+            ${(() => {
+              const wh = allocations.filter(a => !a.IsHobby).reduce((s, a) => s + Number(a.AllocatedHours), 0);
+              const hh = allocations.filter(a =>  a.IsHobby).reduce((s, a) => s + Number(a.AllocatedHours), 0);
+              return wh > 0 && hh > 0 ? `<p style="margin: 0; font-size: 13px; color: #1e40af;">💼 Work: ${wh.toFixed(1)}h &nbsp;|&nbsp; 🎯 Hobby: ${hh.toFixed(1)}h</p>` : '';
+            })()}
           </div>
           
           <a href="${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/dashboard" 
@@ -223,57 +303,37 @@ function generateWeeklySummaryEmail(
   weekEnd: string, 
   allocations: TaskAllocation[], 
   totalHours: number,
-  dailyBreakdown: { date: string; hours: number }[]
+  dailyBreakdown: { date: string; workHours: number; hobbyHours: number }[]
 ): string {
   const displayName = user.FirstName ? `${user.FirstName} ${user.LastName || ''}`.trim() : user.Username;
   const formattedStart = new Date(weekStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   const formattedEnd = new Date(weekEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  
-  let tasksHtml = '';
-  if (allocations.length === 0) {
-    tasksHtml = '<p style="color: #6b7280; font-style: italic;">No tasks allocated for this week.</p>';
-  } else {
-    tasksHtml = `
-      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-        <thead>
-          <tr style="background-color: #f3f4f6;">
-            <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Task</th>
-            <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Project</th>
-            <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Hours</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${allocations.map(alloc => `
-            <tr>
-              <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${alloc.TaskName}</td>
-              <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${alloc.ProjectName}</td>
-              <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e5e7eb;">${Number(alloc.AllocatedHours).toFixed(1)}h</td>
-            </tr>
-          `).join('')}
-          <tr style="background-color: #f3f4f6; font-weight: bold;">
-            <td style="padding: 12px;" colspan="2">Total</td>
-            <td style="padding: 12px; text-align: right;">${totalHours.toFixed(1)}h</td>
-          </tr>
-        </tbody>
-      </table>
-    `;
-  }
+  const overdueCount = allocations.filter(a => a.DueDate && new Date(a.DueDate) < new Date(weekEnd)).length;
+  const tasksHtml = buildTaskTableHtml(allocations, weekEnd, 'No tasks allocated for this week.');
 
+  const hasHobbyInWeek = dailyBreakdown.some(d => d.hobbyHours > 0);
   const dailyHtml = `
     <div style="margin: 20px 0;">
       <h3 style="margin-bottom: 10px; color: #374151;">Daily Breakdown</h3>
-      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-        ${dailyBreakdown.map(day => {
-          const dayName = new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' });
-          const bgColor = day.hours > 0 ? '#dbeafe' : '#f3f4f6';
-          return `
-            <div style="background-color: ${bgColor}; padding: 10px 15px; border-radius: 6px; text-align: center; min-width: 60px;">
-              <div style="font-size: 12px; color: #6b7280;">${dayName}</div>
-              <div style="font-weight: bold; color: #1f2937;">${day.hours.toFixed(1)}h</div>
-            </div>
-          `;
-        }).join('')}
-      </div>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: separate; border-spacing: 4px;">
+        <tr>
+          ${dailyBreakdown.map(day => {
+            const dayName = new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' });
+            const total   = day.workHours + day.hobbyHours;
+            const bgColor = total > 0 ? '#dbeafe' : '#f3f4f6';
+            return `<td style="background-color: ${bgColor}; border-radius: 6px; text-align: center; padding: 10px 6px; width: 14%;">
+              <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">${dayName}</div>
+              ${day.workHours  > 0 ? `<div style="font-weight: 600; color: #1d4ed8; font-size: 13px; line-height: 1.4;">${day.workHours.toFixed(1)}h</div>` : ''}
+              ${day.hobbyHours > 0 ? `<div style="font-weight: 600; color: #7c3aed; font-size: 13px; line-height: 1.4;">${day.hobbyHours.toFixed(1)}h &#127919;</div>` : ''}
+              ${total === 0       ? `<div style="color: #9ca3af; font-size: 13px;">&#8212;</div>` : ''}
+            </td>`;
+          }).join('')}
+        </tr>
+      </table>
+      ${hasHobbyInWeek ? `<div style="margin-top: 8px; font-size: 11px; color: #6b7280;">
+        <span style="display: inline-block; width: 10px; height: 10px; background-color: #1d4ed8; border-radius: 2px; vertical-align: middle;"></span>&nbsp;Work &nbsp;&nbsp;
+        <span style="display: inline-block; width: 10px; height: 10px; background-color: #7c3aed; border-radius: 2px; vertical-align: middle;"></span>&nbsp;Hobby
+      </div>` : ''}
     </div>
   `;
 
@@ -295,10 +355,20 @@ function generateWeeklySummaryEmail(
           
           <p>Here's your work summary for the upcoming week:</p>
           
+          ${overdueCount > 0 ? `
+          <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 15px; margin: 16px 0;">
+            <p style="margin: 0; color: #b91c1c; font-weight: 600;">⚠️ ${overdueCount} overdue task${overdueCount > 1 ? 's' : ''} in this week's schedule</p>
+          </div>` : ''}
+          
           <div style="background-color: #d1fae5; border-radius: 8px; padding: 15px; margin: 20px 0;">
-            <p style="margin: 0; color: #065f46;">
+            <p style="margin: 0 0 4px 0; color: #065f46;">
               <strong>📊 This week:</strong> ${totalHours.toFixed(1)} hours across ${allocations.length} task(s)
             </p>
+            ${(() => {
+              const wh = allocations.filter(a => !a.IsHobby).reduce((s, a) => s + Number(a.AllocatedHours), 0);
+              const hh = allocations.filter(a =>  a.IsHobby).reduce((s, a) => s + Number(a.AllocatedHours), 0);
+              return wh > 0 && hh > 0 ? `<p style="margin: 0; font-size: 13px; color: #065f46;">💼 Work: ${wh.toFixed(1)}h &nbsp;|&nbsp; 🎯 Hobby: ${hh.toFixed(1)}h</p>` : '';
+            })()}
           </div>
           
           ${dailyHtml}
@@ -435,14 +505,15 @@ export async function checkAndSendWorkSummaries(): Promise<void> {
             const totalHours = allocations.reduce((sum, a) => sum + Number(a.AllocatedHours), 0);
 
             // Calculate daily breakdown
-            const dailyBreakdown: { date: string; hours: number }[] = [];
+            const dailyBreakdown: { date: string; workHours: number; hobbyHours: number }[] = [];
             for (let i = 0; i < 7; i++) {
               const dayDate = new Date(weekStart);
               dayDate.setDate(weekStart.getDate() + i);
               const dayDateStr = formatDate(dayDate);
               const dayAllocations = await getUserAllocationsForDate(user.Id, dayDateStr);
-              const dayHours = dayAllocations.reduce((sum, a) => sum + Number(a.AllocatedHours), 0);
-              dailyBreakdown.push({ date: dayDateStr, hours: dayHours });
+              const workHours  = dayAllocations.filter(a => !a.IsHobby).reduce((sum, a) => sum + Number(a.AllocatedHours), 0);
+              const hobbyHours = dayAllocations.filter(a =>  a.IsHobby).reduce((sum, a) => sum + Number(a.AllocatedHours), 0);
+              dailyBreakdown.push({ date: dayDateStr, workHours, hobbyHours });
             }
 
             // Send weekly summary email
@@ -570,14 +641,15 @@ export async function sendTestSummaryEmail(
       const totalHours = allocations.reduce((sum, a) => sum + Number(a.AllocatedHours), 0);
 
       // Calculate daily breakdown
-      const dailyBreakdown: { date: string; hours: number }[] = [];
+      const dailyBreakdown: { date: string; workHours: number; hobbyHours: number }[] = [];
       for (let i = 0; i < 7; i++) {
         const dayDate = new Date(weekStart);
         dayDate.setDate(weekStart.getDate() + i);
         const dayDateStr = formatDate(dayDate);
         const dayAllocations = await getUserAllocationsForDate(user.Id, dayDateStr);
-        const dayHours = dayAllocations.reduce((sum, a) => sum + Number(a.AllocatedHours), 0);
-        dailyBreakdown.push({ date: dayDateStr, hours: dayHours });
+        const workHours  = dayAllocations.filter(a => !a.IsHobby).reduce((sum, a) => sum + Number(a.AllocatedHours), 0);
+        const hobbyHours = dayAllocations.filter(a =>  a.IsHobby).reduce((sum, a) => sum + Number(a.AllocatedHours), 0);
+        dailyBreakdown.push({ date: dayDateStr, workHours, hobbyHours });
       }
 
       // Send weekly summary email

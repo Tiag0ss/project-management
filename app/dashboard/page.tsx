@@ -357,10 +357,10 @@ function DashboardContent() {
         
         // Check overdue tasks (all tasks, not just leaf)
         tasks.forEach((task: any) => {
-          if (task.PlannedEndDate && 
+          if (task.DueDate && 
               !task.StatusIsClosed &&
               !task.StatusIsCancelled) {
-            const endDate = new Date(task.PlannedEndDate);
+            const endDate = new Date(task.DueDate);
             endDate.setHours(0, 0, 0, 0);
             if (endDate < today) {
               overdueTasks++;
@@ -1117,7 +1117,7 @@ function DashboardContent() {
                 ) : (
                   <div className="space-y-3">
                     {pendingTasks.slice(0, 5).map(task => {
-                      const isOverdue = task.PlannedEndDate && new Date(task.PlannedEndDate) < new Date();
+                      const isOverdue = task.DueDate && new Date(task.DueDate) < new Date();
                       return (
                         <div 
                           key={task.Id}
@@ -1160,9 +1160,9 @@ function DashboardContent() {
                                 >
                                   {task.StatusName || 'Unknown'}
                                 </span>
-                                {task.PlannedEndDate && (
+                                {task.DueDate && (
                                   <span className={`text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
-                                    📅 Due: {new Date(task.PlannedEndDate).toLocaleDateString()}
+                                    📅 Due: {new Date(task.DueDate).toLocaleDateString()}
                                   </span>
                                 )}
                                 {task.EstimatedHours && (

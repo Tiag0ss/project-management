@@ -1229,30 +1229,24 @@ export default function TaskDetailModal({
                 </div>
               </div>
 
-              {/* Planning Dates */}
+              {/* Planning Dates (read-only - managed via resource planning) */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Planned Start Date
                   </label>
-                  <input
-                    type="date"
-                    value={formData.plannedStartDate || ''}
-                    onChange={(e) => setFormData({ ...formData, plannedStartDate: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
+                  <div className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm">
+                    {formData.plannedStartDate ? new Date(formData.plannedStartDate + 'T12:00:00').toLocaleDateString('en-GB') : <span className="text-gray-400 dark:text-gray-500 italic">Not set</span>}
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Planned End Date
                   </label>
-                  <input
-                    type="date"
-                    value={formData.plannedEndDate || ''}
-                    onChange={(e) => setFormData({ ...formData, plannedEndDate: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
+                  <div className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm">
+                    {formData.plannedEndDate ? new Date(formData.plannedEndDate + 'T12:00:00').toLocaleDateString('en-GB') : <span className="text-gray-400 dark:text-gray-500 italic">Not set</span>}
+                  </div>
                 </div>
               </div>
 
