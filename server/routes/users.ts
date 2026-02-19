@@ -25,7 +25,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
               HobbyStartFriday, HobbyStartSaturday, HobbyStartSunday,
               HobbyHoursMonday, HobbyHoursTuesday, HobbyHoursWednesday, HobbyHoursThursday,
               HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
-              CreatedAt, UpdatedAt 
+              Timezone, CreatedAt, UpdatedAt 
        FROM Users 
        WHERE Id = ?`,
       [userId]
@@ -55,7 +55,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
 router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { firstName, lastName, email } = req.body;
+    const { firstName, lastName, email, timezone } = req.body;
 
     // Validate email
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -82,16 +82,16 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
 
     // Get old profile data for logging
     const [oldProfile] = await pool.execute<RowDataPacket[]>(
-      'SELECT FirstName, LastName, Email FROM Users WHERE Id = ?',
+      'SELECT FirstName, LastName, Email, Timezone FROM Users WHERE Id = ?',
       [userId]
     );
     const oldData = oldProfile[0];
 
     await pool.execute(
       `UPDATE Users 
-       SET FirstName = ?, LastName = ?, Email = ?
+       SET FirstName = ?, LastName = ?, Email = ?, Timezone = ?
        WHERE Id = ?`,
-      [firstName || null, lastName || null, email, userId]
+      [firstName || null, lastName || null, email, timezone || null, userId]
     );
 
     // Log profile changes
@@ -103,6 +103,9 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
     }
     if (email !== oldData.Email) {
       await logUserHistory(userId!, userId!, 'updated', 'Email', oldData.Email || '', email || '');
+    }
+    if (timezone !== oldData.Timezone) {
+      await logUserHistory(userId!, userId!, 'updated', 'Timezone', oldData.Timezone || '', timezone || '');
     }
 
     // Log activity

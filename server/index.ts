@@ -51,6 +51,7 @@ import jiraIntegrationsRoutes from './routes/jiraIntegrations';
 import githubIntegrationsRoutes from './routes/githubIntegrations';
 import giteaIntegrationsRoutes from './routes/giteaIntegrations';
 import recurringAllocationsRoutes from './routes/recurringAllocations';
+import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
 
 dotenv.config();
 
@@ -253,6 +254,9 @@ app.prepare().then(async () => {
     logger.info(`> API Documentation: http://localhost:${port}/api-docs`);
     logger.info(`> Health Check: http://localhost:${port}/health`);
     logger.info(`> Environment: ${dev ? 'development' : 'production'}`);
+    
+    // Start the work summary scheduler
+    startWorkSummaryScheduler();
   });
 }).catch((error) => {
   logger.error('Failed to start server', { error });

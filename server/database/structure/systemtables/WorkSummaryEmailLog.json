@@ -1,0 +1,33 @@
+{
+  "TableName": "WorkSummaryEmailLog",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "SummaryType",
+      "DataType": "varchar(20)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "SummaryDate",
+      "DataType": "date",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "SentAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

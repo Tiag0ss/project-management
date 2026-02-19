@@ -8,6 +8,96 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
 
+// Complete list of IANA timezones
+const TIMEZONES = [
+  { value: '', label: 'Use system default' },
+  { value: 'UTC', label: 'UTC (Coordinated Universal Time)' },
+  // Africa
+  { value: 'Africa/Cairo', label: 'Africa/Cairo (EET)' },
+  { value: 'Africa/Casablanca', label: 'Africa/Casablanca (WET)' },
+  { value: 'Africa/Johannesburg', label: 'Africa/Johannesburg (SAST)' },
+  { value: 'Africa/Lagos', label: 'Africa/Lagos (WAT)' },
+  { value: 'Africa/Nairobi', label: 'Africa/Nairobi (EAT)' },
+  // America
+  { value: 'America/Anchorage', label: 'America/Anchorage (AKST)' },
+  { value: 'America/Argentina/Buenos_Aires', label: 'America/Buenos Aires (ART)' },
+  { value: 'America/Bogota', label: 'America/Bogota (COT)' },
+  { value: 'America/Caracas', label: 'America/Caracas (VET)' },
+  { value: 'America/Chicago', label: 'America/Chicago (CST)' },
+  { value: 'America/Denver', label: 'America/Denver (MST)' },
+  { value: 'America/Halifax', label: 'America/Halifax (AST)' },
+  { value: 'America/Lima', label: 'America/Lima (PET)' },
+  { value: 'America/Los_Angeles', label: 'America/Los Angeles (PST)' },
+  { value: 'America/Mexico_City', label: 'America/Mexico City (CST)' },
+  { value: 'America/New_York', label: 'America/New York (EST)' },
+  { value: 'America/Phoenix', label: 'America/Phoenix (MST)' },
+  { value: 'America/Santiago', label: 'America/Santiago (CLT)' },
+  { value: 'America/Sao_Paulo', label: 'America/Sao Paulo (BRT)' },
+  { value: 'America/St_Johns', label: 'America/St Johns (NST)' },
+  { value: 'America/Toronto', label: 'America/Toronto (EST)' },
+  { value: 'America/Vancouver', label: 'America/Vancouver (PST)' },
+  // Asia
+  { value: 'Asia/Baghdad', label: 'Asia/Baghdad (AST)' },
+  { value: 'Asia/Bangkok', label: 'Asia/Bangkok (ICT)' },
+  { value: 'Asia/Colombo', label: 'Asia/Colombo (IST)' },
+  { value: 'Asia/Dubai', label: 'Asia/Dubai (GST)' },
+  { value: 'Asia/Hong_Kong', label: 'Asia/Hong Kong (HKT)' },
+  { value: 'Asia/Istanbul', label: 'Asia/Istanbul (TRT)' },
+  { value: 'Asia/Jakarta', label: 'Asia/Jakarta (WIB)' },
+  { value: 'Asia/Jerusalem', label: 'Asia/Jerusalem (IST)' },
+  { value: 'Asia/Karachi', label: 'Asia/Karachi (PKT)' },
+  { value: 'Asia/Kathmandu', label: 'Asia/Kathmandu (NPT)' },
+  { value: 'Asia/Kolkata', label: 'Asia/Kolkata (IST)' },
+  { value: 'Asia/Kuala_Lumpur', label: 'Asia/Kuala Lumpur (MYT)' },
+  { value: 'Asia/Manila', label: 'Asia/Manila (PHT)' },
+  { value: 'Asia/Seoul', label: 'Asia/Seoul (KST)' },
+  { value: 'Asia/Shanghai', label: 'Asia/Shanghai (CST)' },
+  { value: 'Asia/Singapore', label: 'Asia/Singapore (SGT)' },
+  { value: 'Asia/Taipei', label: 'Asia/Taipei (CST)' },
+  { value: 'Asia/Tehran', label: 'Asia/Tehran (IRST)' },
+  { value: 'Asia/Tokyo', label: 'Asia/Tokyo (JST)' },
+  // Atlantic
+  { value: 'Atlantic/Azores', label: 'Atlantic/Azores (AZOT)' },
+  { value: 'Atlantic/Reykjavik', label: 'Atlantic/Reykjavik (GMT)' },
+  // Australia
+  { value: 'Australia/Adelaide', label: 'Australia/Adelaide (ACST)' },
+  { value: 'Australia/Brisbane', label: 'Australia/Brisbane (AEST)' },
+  { value: 'Australia/Darwin', label: 'Australia/Darwin (ACST)' },
+  { value: 'Australia/Melbourne', label: 'Australia/Melbourne (AEST)' },
+  { value: 'Australia/Perth', label: 'Australia/Perth (AWST)' },
+  { value: 'Australia/Sydney', label: 'Australia/Sydney (AEST)' },
+  // Europe
+  { value: 'Europe/Amsterdam', label: 'Europe/Amsterdam (CET)' },
+  { value: 'Europe/Athens', label: 'Europe/Athens (EET)' },
+  { value: 'Europe/Berlin', label: 'Europe/Berlin (CET)' },
+  { value: 'Europe/Brussels', label: 'Europe/Brussels (CET)' },
+  { value: 'Europe/Bucharest', label: 'Europe/Bucharest (EET)' },
+  { value: 'Europe/Budapest', label: 'Europe/Budapest (CET)' },
+  { value: 'Europe/Copenhagen', label: 'Europe/Copenhagen (CET)' },
+  { value: 'Europe/Dublin', label: 'Europe/Dublin (GMT)' },
+  { value: 'Europe/Helsinki', label: 'Europe/Helsinki (EET)' },
+  { value: 'Europe/Lisbon', label: 'Europe/Lisbon (WET)' },
+  { value: 'Europe/London', label: 'Europe/London (GMT)' },
+  { value: 'Europe/Madrid', label: 'Europe/Madrid (CET)' },
+  { value: 'Europe/Moscow', label: 'Europe/Moscow (MSK)' },
+  { value: 'Europe/Oslo', label: 'Europe/Oslo (CET)' },
+  { value: 'Europe/Paris', label: 'Europe/Paris (CET)' },
+  { value: 'Europe/Prague', label: 'Europe/Prague (CET)' },
+  { value: 'Europe/Rome', label: 'Europe/Rome (CET)' },
+  { value: 'Europe/Stockholm', label: 'Europe/Stockholm (CET)' },
+  { value: 'Europe/Vienna', label: 'Europe/Vienna (CET)' },
+  { value: 'Europe/Warsaw', label: 'Europe/Warsaw (CET)' },
+  { value: 'Europe/Zurich', label: 'Europe/Zurich (CET)' },
+  // Indian
+  { value: 'Indian/Mauritius', label: 'Indian/Mauritius (MUT)' },
+  // Pacific
+  { value: 'Pacific/Auckland', label: 'Pacific/Auckland (NZST)' },
+  { value: 'Pacific/Fiji', label: 'Pacific/Fiji (FJT)' },
+  { value: 'Pacific/Guam', label: 'Pacific/Guam (ChST)' },
+  { value: 'Pacific/Honolulu', label: 'Pacific/Honolulu (HST)' },
+  { value: 'Pacific/Samoa', label: 'Pacific/Samoa (SST)' },
+];
+
 export default function ProfilePage() {
   const { user, token, isLoading: authLoading, isCustomerUser } = useAuth();
   const router = useRouter();
@@ -21,6 +111,7 @@ export default function ProfilePage() {
     firstName: '',
     lastName: '',
     email: '',
+    timezone: '',
   });
   
   // Password change state
@@ -75,6 +166,7 @@ export default function ProfilePage() {
   // Email preferences state
   const [emailPreferences, setEmailPreferences] = useState<any[]>([]);
   const [isSavingEmailPrefs, setIsSavingEmailPrefs] = useState(false);
+  const [sendingTestEmail, setSendingTestEmail] = useState<string | null>(null);
 
   // Recurring Tasks state
   const [recurringAllocations, setRecurringAllocations] = useState<RecurringAllocation[]>([]);
@@ -162,6 +254,7 @@ export default function ProfilePage() {
           firstName: profile.FirstName || '',
           lastName: profile.LastName || '',
           email: profile.Email || '',
+          timezone: profile.Timezone || '',
         });
       }
     } catch (err) {
@@ -260,6 +353,39 @@ export default function ProfilePage() {
     );
   };
 
+  const sendTestSummaryEmail = async (type: 'daily' | 'weekly') => {
+    if (!token) return;
+    
+    const summaryType = type === 'daily' ? 'daily_work_summary' : 'weekly_work_summary';
+    setSendingTestEmail(summaryType);
+    
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/email-preferences/test-summary/${type}`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      
+      const data = await response.json();
+      if (response.ok) {
+        setMessage(data.message || 'Test email sent successfully!');
+      } else {
+        setMessage(data.message || 'Failed to send test email');
+      }
+      setTimeout(() => setMessage(''), 5000);
+    } catch (err: any) {
+      setMessage('Failed to send test email');
+      setTimeout(() => setMessage(''), 5000);
+    } finally {
+      setSendingTestEmail(null);
+    }
+  };
+
   // Recurring Allocations Functions
   const loadRecurringAllocations = async () => {
     if (!token || !user) return;
@@ -317,17 +443,17 @@ export default function ProfilePage() {
     setIsSaving(true);
     
     try {
-      const allocationData = {
-        userId: user.id,
-        title: recurringForm.title.trim(),
-        description: recurringForm.description.trim() || null,
-        recurrenceType: recurringForm.recurrenceType,
-        recurrenceInterval: recurringForm.recurrenceInterval || null,
-        daysOfWeek: recurringForm.daysOfWeek || null,
-        startDate: recurringForm.startDate,
-        endDate: recurringForm.endDate || null,
-        startTime: recurringForm.startTime,
-        endTime: recurringForm.endTime,
+      const allocationData: Partial<RecurringAllocation> = {
+        UserId: user.id,
+        Title: recurringForm.title.trim(),
+        Description: recurringForm.description.trim() || undefined,
+        RecurrenceType: recurringForm.recurrenceType,
+        RecurrenceInterval: recurringForm.recurrenceInterval || undefined,
+        DaysOfWeek: recurringForm.daysOfWeek || undefined,
+        StartDate: recurringForm.startDate,
+        EndDate: recurringForm.endDate || undefined,
+        StartTime: recurringForm.startTime,
+        EndTime: recurringForm.endTime,
       };
 
       console.log('Saving recurring allocation:', allocationData);
@@ -810,6 +936,7 @@ export default function ProfilePage() {
                               firstName: user.firstName || '',
                               lastName: user.lastName || '',
                               email: user.email || '',
+                              timezone: profileForm.timezone || '',
                             });
                           }}
                           className="px-4 py-2 bg-gray-300 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-900 dark:text-white rounded-lg transition-colors"
@@ -882,6 +1009,27 @@ export default function ProfilePage() {
                       />
                     ) : (
                       <p className="text-gray-900 dark:text-white">{user.email}</p>
+                    )}
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Timezone
+                    </label>
+                    {isEditingProfile ? (
+                      <select
+                        value={profileForm.timezone}
+                        onChange={(e) => setProfileForm(prev => ({ ...prev, timezone: e.target.value }))}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      >
+                        {TIMEZONES.map(tz => (
+                          <option key={tz.value} value={tz.value}>{tz.label}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="text-gray-900 dark:text-white">
+                        {profileForm.timezone ? TIMEZONES.find(tz => tz.value === profileForm.timezone)?.label || profileForm.timezone : 'System default'}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -1203,14 +1351,14 @@ export default function ProfilePage() {
                   </div>
 
                   {/* Group preferences by category */}
-                  {['Tasks', 'Projects', 'Tickets', 'Planning'].map(category => {
+                  {['Tasks', 'Projects', 'Tickets', 'Planning', 'Summaries'].map(category => {
                     const categoryPrefs = emailPreferences.filter(pref => pref.category === category);
                     if (categoryPrefs.length === 0) return null;
 
                     return (
                       <div key={category} className="mb-6">
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 pb-2 border-b border-gray-200 dark:border-gray-700">
-                          {category}
+                          {category === 'Summaries' ? '📊 ' + category : category}
                         </h3>
                         <div className="space-y-3">
                           {categoryPrefs.map(pref => (
@@ -1219,25 +1367,54 @@ export default function ProfilePage() {
                               className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                             >
                               <div className="flex items-center gap-3 flex-1">
-                                <label className="flex items-center cursor-pointer">
+                                <label className="flex items-center cursor-pointer flex-1">
                                   <input
                                     type="checkbox"
                                     checked={pref.emailEnabled}
                                     onChange={() => toggleEmailPreference(pref.type)}
                                     className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
                                   />
-                                  <span className="ml-3 text-sm font-medium text-gray-900 dark:text-white">
-                                    {pref.label}
-                                  </span>
+                                  <div className="ml-3 flex-1">
+                                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                      {pref.label}
+                                    </span>
+                                    {pref.description && (
+                                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                        {pref.description}
+                                      </p>
+                                    )}
+                                  </div>
                                 </label>
                               </div>
-                              <span className={`text-xs px-2 py-1 rounded ${
-                                pref.emailEnabled
-                                  ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                                  : 'bg-gray-100 text-gray-600 dark:bg-gray-600 dark:text-gray-300'
-                              }`}>
-                                {pref.emailEnabled ? 'Enabled' : 'Disabled'}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                {/* Test button for summary emails */}
+                                {(pref.type === 'daily_work_summary' || pref.type === 'weekly_work_summary') && (
+                                  <button
+                                    onClick={() => sendTestSummaryEmail(pref.type === 'daily_work_summary' ? 'daily' : 'weekly')}
+                                    disabled={sendingTestEmail !== null}
+                                    className="text-xs px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {sendingTestEmail === pref.type ? (
+                                      <span className="flex items-center gap-1">
+                                        <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Sending...
+                                      </span>
+                                    ) : (
+                                      '📧 Send Test'
+                                    )}
+                                  </button>
+                                )}
+                                <span className={`text-xs px-2 py-1 rounded ${
+                                  pref.emailEnabled
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                    : 'bg-gray-100 text-gray-600 dark:bg-gray-600 dark:text-gray-300'
+                                }`}>
+                                  {pref.emailEnabled ? 'Enabled' : 'Disabled'}
+                                </span>
+                              </div>
                             </div>
                           ))}
                         </div>

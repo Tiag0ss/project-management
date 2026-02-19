@@ -2,6 +2,11 @@ import { Router, Response } from 'express';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { shouldSendEmail } from '../utils/emailPreferencesHelper';
+import { sendTestSummaryEmail } from '../utils/workSummaryScheduler';
+
+// Re-export for backwards compatibility
+export { shouldSendEmail } from '../utils/emailPreferencesHelper';
 
 const router = Router();
 
@@ -22,6 +27,8 @@ export const NOTIFICATION_TYPES = [
   { type: 'ticket_developer', label: 'Assigned as Developer', category: 'Tickets' },
   { type: 'allocation_assigned', label: 'Task Allocation Assigned', category: 'Planning' },
   { type: 'allocation_conflict', label: 'Allocation Conflict Detected', category: 'Planning' },
+  { type: 'daily_work_summary', label: 'Daily Work Summary', category: 'Summaries', description: 'Receive a summary of your scheduled work at the start of each work day' },
+  { type: 'weekly_work_summary', label: 'Weekly Work Summary', category: 'Summaries', description: 'Receive a weekly summary on the first work day of the week' },
 ];
 
 // Get user email preferences
@@ -85,23 +92,27 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// Helper function to check if user wants email for this notification type
-export const shouldSendEmail = async (userId: number, notificationType: string): Promise<boolean> => {
+// Send test summary email
+router.post('/test-summary/:type', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const [prefs] = await pool.execute<RowDataPacket[]>(
-      'SELECT EmailEnabled FROM UserEmailPreferences WHERE UserId = ? AND NotificationType = ?',
-      [userId, notificationType]
-    );
+    const userId = req.user?.userId;
+    const type = req.params.type as string; // 'daily' or 'weekly'
 
-    if (prefs.length === 0) {
-      return true; // Default to enabled if no preference set
+    if (type !== 'daily' && type !== 'weekly') {
+      return res.status(400).json({ success: false, message: 'Invalid summary type. Use "daily" or "weekly"' });
     }
 
-    return prefs[0].EmailEnabled === 1;
+    const result = await sendTestSummaryEmail(userId!, type);
+
+    if (result.success) {
+      res.json({ success: true, message: result.message });
+    } else {
+      res.status(500).json({ success: false, message: result.message });
+    }
   } catch (error) {
-    console.error('Error checking email preference:', error);
-    return true; // Default to enabled on error
+    console.error('Error sending test summary email:', error);
+    res.status(500).json({ success: false, message: 'Failed to send test summary email' });
   }
-};
+});
 
 export default router;

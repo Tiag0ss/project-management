@@ -2,7 +2,7 @@ import nodemailer from 'nodemailer';
 import { pool } from '../config/database';
 import { RowDataPacket } from 'mysql2';
 import { logActivity } from '../routes/activityLogs';
-import { shouldSendEmail } from '../routes/emailPreferences';
+import { shouldSendEmail } from './emailPreferencesHelper';
 import { decrypt } from './encryption';
 
 interface EmailOptions {

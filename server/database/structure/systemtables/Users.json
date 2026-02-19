@@ -294,6 +294,13 @@
       "Comment": "Hobby hours capacity on Sunday for personal projects"
     },
     {
+      "FieldName": "Timezone",
+      "DataType": "varchar(100)",
+      "NotNullable": false,
+      "DefaultValue": null,
+      "Comment": "User's preferred timezone (e.g., 'America/New_York', 'Europe/London')"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
