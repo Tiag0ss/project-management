@@ -20,6 +20,7 @@
     "postbuild": "echo Build completed successfully!"
   },
   "dependencies": {
+    "@floating-ui/dom": "^1.7.5",
     "@tailwindcss/typography": "^0.5.19",
     "@tiptap/extension-image": "^3.19.0",
     "@tiptap/extension-placeholder": "^3.19.0",
