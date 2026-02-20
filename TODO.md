@@ -12,7 +12,7 @@
 - [x] **Timer / start-stop tracking** — `ActiveTimers` table + `/api/timers` backend; start/stop/discard UI in TaskDetailModal with live elapsed counter.
 
 ### Tickets
-- [ ] **Fix ticket status to use `TicketStatusValues` table** — `Tickets.Status` is a raw varchar (`"Open"`, `"Closed"`). Should be FK to `TicketStatusValues` like tasks use `TaskStatusValues`. Same for `Priority`.
+- [x] **Ticket status/priority FK migration** — `Tickets.StatusId` FK → `TicketStatusValues.Id`; `Tickets.PriorityId` FK → `TicketPriorityValues.Id`. Added `StatusType varchar(30)` field to `TicketStatusValues` (values: `open`, `in_progress`, `waiting`, `resolved`, `closed`, `other`) for robust filtering without brittle string matching. All hardcoded status/priority name strings removed from frontend and backend; statistics and dashboard use `StatusType`-based CASE WHEN logic. Organizations can now edit `StatusType` for each ticket status via the org settings modal.
 - [ ] **SLA / response time tracking** — Add `FirstResponseAt`, `ResolvedAt` fields and breach alerts based on SLA rules per organization.
 
 ### Projects
@@ -59,6 +59,7 @@
 
 ## ✅ Completed
 
+- [x] **Ticket status/priority FK migration** — `Tickets.StatusId`/`PriorityId` FKs to `TicketStatusValues`/`TicketPriorityValues`. `StatusType` field for robust, string-independent filtering. All hardcoded strings removed. Dashboard Tickets Overview reduced from 7 to 5 cards matching the new StatusType categories.
 - [x] **Email notifications for task events** — `sendNotificationEmail` called for assignment, priority change, and status change in `server/routes/tasks.ts`.
 - [x] **Export time entries to CSV** — Client-side CSV export in Timesheet → All Entries tab with active filter support.
 - [x] **Automatic RAG health score** — Red/Amber/Green project health banner in Project Overview based on overdue tasks, budget %, and unassigned tasks.

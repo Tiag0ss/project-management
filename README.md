@@ -9,7 +9,7 @@ A full-stack, self-hosted project management application with task tracking, res
 - ⏱️ **Time Tracking** — Daily and weekly timesheet views, per-task time entries, CSV export
 - 👥 **Multi-Tenant Organizations** — Multiple organizations, team management, permission groups
 - 🔐 **Role-Based Permissions** — Developer, Support, Manager roles with granular permission control
-- 🎫 **Ticket System** — Support ticket management with auto-numbering, auto-assignment to default support users, task conversion, and Jira integration
+- 🎫 **Ticket System** — Support ticket management with auto-numbering, auto-assignment to default support users, task conversion, Jira integration, and fully customizable per-organization statuses and priorities
 - 👤 **Customer Management** — Customer database with organization associations and default support user assignment
 - 🔗 **Jira Integration** — Two-tier Jira system connecting tickets and project boards with external linking and encrypted credentials
 - 📝 **Rich Text Editor** — Tiptap-based editor with formatting, images (inline base64), and markdown support for descriptions and comments
@@ -81,7 +81,8 @@ A full-stack, self-hosted project management application with task tracking, res
 - **Auto-assignment** — Tickets for customer projects automatically assigned to customer's default support user
 - **Intelligent detection** — Works for customer users AND internal users creating tickets for customers
 - **Priority & category** — Classify tickets (Support, Bug, Feature Request, etc.)
-- **Status workflow** — Open → In Progress → Waiting → Resolved → Closed
+- **Custom statuses & priorities** — Fully configurable per organization (like task statuses); each status has a `StatusType` (`open`, `in_progress`, `waiting`, `resolved`, `closed`) for consistent filtering independent of label names
+- **Status workflow** — Open → In Progress → Waiting → Resolved → Closed (default); organizations can rename, recolour, or add statuses freely
 - **Developer assignment** — Separate field for developers working on technical issues
 - **Task conversion** — Convert tickets to project tasks
 - **Comment history** — Full conversation thread with rich text
