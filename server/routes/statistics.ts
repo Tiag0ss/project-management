@@ -5,6 +5,26 @@ import { RowDataPacket } from 'mysql2';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Statistics
+ *   description: System statistics
+ */
+
+/**
+ * @swagger
+ * /api/statistics/public:
+ *   get:
+ *     summary: Get public system statistics
+ *     tags: [Statistics]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Public statistics (total users, projects, tasks)
+ *       500:
+ *         description: Server error
+ */
 // Get public statistics (no authentication required)
 router.get('/public', async (req, res: Response) => {
   try {
@@ -38,6 +58,20 @@ router.get('/public', async (req, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/statistics/global:
+ *   get:
+ *     summary: Get global statistics for the authenticated user
+ *     tags: [Statistics]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Global statistics
+ *       401:
+ *         description: Unauthorized
+ */
 // Get global statistics for admin users
 router.get('/global', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

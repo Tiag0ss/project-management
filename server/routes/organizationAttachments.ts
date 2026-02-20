@@ -5,6 +5,13 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: OrganizationAttachments
+ *   description: File attachments for organizations
+ */
+
 const ALLOWED_TYPES = [
   'image/jpeg',
   'image/jpg',
@@ -23,6 +30,24 @@ const ALLOWED_TYPES = [
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
+/**
+ * @swagger
+ * /api/organization-attachments/organization/{organizationId}:
+ *   get:
+ *     summary: Get attachments for an organization
+ *     tags: [OrganizationAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachments retrieved successfully
+ */
 // Get attachments for an organization
 router.get('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -58,6 +83,26 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
   }
 });
 
+/**
+ * @swagger
+ * /api/organization-attachments/{id}:
+ *   get:
+ *     summary: Get a specific attachment
+ *     tags: [OrganizationAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachment retrieved successfully
+ *       404:
+ *         description: Attachment not found
+ */
 // Get single attachment with data
 router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -93,6 +138,34 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/organization-attachments/organization/{organizationId}:
+ *   post:
+ *     summary: Upload attachment to an organization
+ *     tags: [OrganizationAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201:
+ *         description: Attachment uploaded successfully
+ */
 // Upload attachment
 router.post('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -138,6 +211,26 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
   }
 });
 
+/**
+ * @swagger
+ * /api/organization-attachments/{id}:
+ *   delete:
+ *     summary: Delete attachment
+ *     tags: [OrganizationAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachment deleted successfully
+ *       404:
+ *         description: Attachment not found
+ */
 // Delete attachment
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

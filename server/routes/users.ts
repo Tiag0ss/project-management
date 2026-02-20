@@ -9,6 +9,29 @@ import { logUserHistory } from '../utils/changeLog';
 const router = Router();
 const SALT_ROUNDS = 10;
 
+/**
+ * @swagger
+ * tags:
+ *   name: Users
+ *   description: User management endpoints
+ */
+
+/**
+ * @swagger
+ * /api/users/profile:
+ *   get:
+ *     summary: Get current user profile
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User profile data
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: User not found
+ */
 // Get current user profile (must come before /:id route)
 router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -51,6 +74,31 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
   }
 });
 
+/**
+ * @swagger
+ * /api/users/profile:
+ *   put:
+ *     summary: Update current user profile
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               firstName: { type: string }
+ *               lastName: { type: string }
+ *               email: { type: string }
+ *               timezone: { type: string }
+ *     responses:
+ *       200:
+ *         description: Profile updated
+ *       409:
+ *         description: Email already in use
+ */
 // Update current user profile (must come before /:id route)
 router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -134,6 +182,32 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
   }
 });
 
+/**
+ * @swagger
+ * /api/users/change-password:
+ *   put:
+ *     summary: Change current user password
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [currentPassword, newPassword]
+ *             properties:
+ *               currentPassword: { type: string }
+ *               newPassword: { type: string, minLength: 6 }
+ *     responses:
+ *       200:
+ *         description: Password changed
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Current password incorrect
+ */
 // Change password for current user (must come before /:id route)
 router.put('/change-password', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -212,6 +286,37 @@ router.put('/change-password', authenticateToken, async (req: AuthRequest, res: 
   }
 });
 
+/**
+ * @swagger
+ * /api/users/work-hours:
+ *   put:
+ *     summary: Update work hours and schedule for current user
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               workHours:
+ *                 type: object
+ *                 description: Hours per day (monday..sunday)
+ *               workStartTimes:
+ *                 type: object
+ *                 description: Start time per day (e.g. 09:00)
+ *               lunchTime: { type: string, example: '12:00' }
+ *               lunchDuration: { type: number, example: 60 }
+ *               hobbyHours:
+ *                 type: object
+ *               hobbyStartTimes:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Work hours updated
+ */
 // Update work hours for current user (must come before /:id route)
 router.put('/work-hours', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -314,6 +419,20 @@ router.put('/work-hours', authenticateToken, async (req: AuthRequest, res: Respo
   }
 });
 
+/**
+ * @swagger
+ * /api/users:
+ *   get:
+ *     summary: Get all users (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of all users
+ *       403:
+ *         description: Forbidden
+ */
 // Get all users (admin only)
 router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
@@ -341,6 +460,41 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
   }
 });
 
+/**
+ * @swagger
+ * /api/users/{id}:
+ *   put:
+ *     summary: Update a user (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               firstName: { type: string }
+ *               lastName: { type: string }
+ *               email: { type: string }
+ *               isAdmin: { type: boolean }
+ *               isDeveloper: { type: boolean }
+ *               isSupport: { type: boolean }
+ *               isManager: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: User updated
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: User not found
+ */
 // Update user (admin only)
 router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
@@ -473,6 +627,34 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
 });
 
 // Reset user password (admin only)
+/**
+ * @swagger
+ * /api/users/{id}/password:
+ *   put:
+ *     summary: Change a user's password (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [newPassword]
+ *             properties:
+ *               newPassword: { type: string, minLength: 6 }
+ *     responses:
+ *       200:
+ *         description: Password updated
+ *       403:
+ *         description: Forbidden
+ */
 router.put('/:id/password', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.params.id;
@@ -536,6 +718,27 @@ router.put('/:id/password', authenticateToken, requireAdmin, async (req: AuthReq
 });
 
 // Delete user (admin only)
+/**
+ * @swagger
+ * /api/users/{id}:
+ *   delete:
+ *     summary: Delete a user (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: User deleted
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: User not found
+ */
 router.delete('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.params.id;
@@ -606,6 +809,39 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, 
 });
 
 // Create user (admin only)
+/**
+ * @swagger
+ * /api/users:
+ *   post:
+ *     summary: Create a new user (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [username, email, password]
+ *             properties:
+ *               username: { type: string }
+ *               email: { type: string }
+ *               password: { type: string }
+ *               firstName: { type: string }
+ *               lastName: { type: string }
+ *               isAdmin: { type: boolean }
+ *               isDeveloper: { type: boolean }
+ *               isSupport: { type: boolean }
+ *               isManager: { type: boolean }
+ *     responses:
+ *       201:
+ *         description: User created
+ *       403:
+ *         description: Forbidden
+ *       409:
+ *         description: Username or email already exists
+ */
 router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, isDeveloper, isSupport, isManager, teamLeaderId } = req.body;
@@ -683,6 +919,27 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
 });
 
 // Get user details with KPIs (admin only)
+/**
+ * @swagger
+ * /api/users/{id}/details:
+ *   get:
+ *     summary: Get detailed user info including statistics (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: User details with membership and allocation stats
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: User not found
+ */
 router.get('/:id/details', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.params.id;
@@ -817,6 +1074,25 @@ router.get('/:id/details', authenticateToken, requireAdmin, async (req: AuthRequ
 });
 
 // Get user's organization memberships
+/**
+ * @swagger
+ * /api/users/{id}/memberships:
+ *   get:
+ *     summary: Get user organization memberships (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of memberships
+ *       403:
+ *         description: Forbidden
+ */
 router.get('/:id/memberships', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.params.id;
@@ -840,6 +1116,36 @@ router.get('/:id/memberships', authenticateToken, requireAdmin, async (req: Auth
 });
 
 // Add user to organization
+/**
+ * @swagger
+ * /api/users/{id}/memberships:
+ *   post:
+ *     summary: Add user to an organization (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId, role]
+ *             properties:
+ *               organizationId: { type: integer }
+ *               role: { type: string }
+ *               permissionGroupId: { type: integer }
+ *     responses:
+ *       201:
+ *         description: Membership added
+ *       403:
+ *         description: Forbidden
+ */
 router.post('/:id/memberships', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.params.id;
@@ -872,6 +1178,38 @@ router.post('/:id/memberships', authenticateToken, requireAdmin, async (req: Aut
 });
 
 // Update user's organization membership
+/**
+ * @swagger
+ * /api/users/{id}/memberships/{membershipId}:
+ *   put:
+ *     summary: Update user membership (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: path
+ *         name: membershipId
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               role: { type: string }
+ *               permissionGroupId: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Membership updated
+ *       403:
+ *         description: Forbidden
+ */
 router.put('/:id/memberships/:membershipId', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { membershipId } = req.params;
@@ -890,6 +1228,29 @@ router.put('/:id/memberships/:membershipId', authenticateToken, requireAdmin, as
 });
 
 // Remove user from organization
+/**
+ * @swagger
+ * /api/users/{id}/memberships/{membershipId}:
+ *   delete:
+ *     summary: Remove user from an organization (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: path
+ *         name: membershipId
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Membership removed
+ *       403:
+ *         description: Forbidden
+ */
 router.delete('/:id/memberships/:membershipId', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { membershipId } = req.params;
@@ -911,6 +1272,23 @@ router.delete('/:id/memberships/:membershipId', authenticateToken, requireAdmin,
 });
 
 // Get all attachments uploaded by a user
+/**
+ * @swagger
+ * /api/users/{id}/attachments:
+ *   get:
+ *     summary: Get attachments for a user
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of attachments
+ */
 router.get('/:id/attachments', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;

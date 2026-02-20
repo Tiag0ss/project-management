@@ -9,6 +9,31 @@ const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 const SALT_ROUNDS = 10;
 
+/**
+ * @swagger
+ * tags:
+ *   name: Install
+ *   description: Application installation and setup
+ */
+
+/**
+ * @swagger
+ * /api/install/check:
+ *   get:
+ *     summary: Check installation status
+ *     tags: [Install]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Installation status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 needsInstall:
+ *                   type: boolean
+ */
 // Check if the system needs installation (no users exist)
 router.get('/check', async (req: Request, res: Response) => {
   try {
@@ -31,6 +56,46 @@ router.get('/check', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/install/setup:
+ *   post:
+ *     summary: Initial application setup
+ *     description: Creates the admin user, database structure, and initial organization. Can only run when no users exist.
+ *     tags: [Install]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [username, email, password, organizationName]
+ *             properties:
+ *               username:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *               firstName:
+ *                 type: string
+ *               lastName:
+ *                 type: string
+ *               organizationName:
+ *                 type: string
+ *               organizationAbbreviation:
+ *                 type: string
+ *               organizationDescription:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Application set up successfully
+ *       403:
+ *         description: System is already installed
+ */
 // Perform initial setup - create admin user and main organization
 router.post('/setup', async (req: Request, res: Response) => {
   try {

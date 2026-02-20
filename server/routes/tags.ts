@@ -5,6 +5,34 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Tags
+ *   description: Tag management for tasks
+ */
+
+/**
+ * @swagger
+ * /api/tags/organization/{organizationId}:
+ *   get:
+ *     summary: Get all tags for an organization
+ *     tags: [Tags]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Organization ID
+ *     responses:
+ *       200:
+ *         description: List of tags for the organization
+ *       401:
+ *         description: Unauthorized
+ */
 // Get all tags for an organization
 router.get('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -26,6 +54,27 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
   }
 });
 
+/**
+ * @swagger
+ * /api/tags/task/{taskId}:
+ *   get:
+ *     summary: Get tags for a specific task
+ *     tags: [Tags]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Task ID
+ *     responses:
+ *       200:
+ *         description: List of tags assigned to the task
+ *       401:
+ *         description: Unauthorized
+ */
 // Get tags for a specific task
 router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -48,6 +97,37 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
+/**
+ * @swagger
+ * /api/tags:
+ *   post:
+ *     summary: Create a new tag
+ *     tags: [Tags]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - organizationId
+ *             properties:
+ *               name:
+ *                 type: string
+ *               color:
+ *                 type: string
+ *                 description: Hex color code
+ *               organizationId:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Tag created
+ *       401:
+ *         description: Unauthorized
+ */
 // Create a new tag
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -85,6 +165,40 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/tags/{id}:
+ *   put:
+ *     summary: Update a tag
+ *     tags: [Tags]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Tag ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               color:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Tag updated
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Tag not found
+ */
 // Update a tag
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -129,6 +243,29 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/tags/{id}:
+ *   delete:
+ *     summary: Delete a tag
+ *     tags: [Tags]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Tag ID
+ *     responses:
+ *       200:
+ *         description: Tag deleted
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Tag not found
+ */
 // Delete a tag
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -147,6 +284,33 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * @swagger
+ * /api/tags/task/{taskId}/tag/{tagId}:
+ *   post:
+ *     summary: Assign a tag to a task
+ *     tags: [Tags]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Task ID
+ *       - in: path
+ *         name: tagId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Tag ID
+ *     responses:
+ *       201:
+ *         description: Tag assigned to task
+ *       401:
+ *         description: Unauthorized
+ */
 // Add a tag to a task
 router.post('/task/:taskId/tag/:tagId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -176,6 +340,33 @@ router.post('/task/:taskId/tag/:tagId', authenticateToken, async (req: AuthReque
   }
 });
 
+/**
+ * @swagger
+ * /api/tags/task/{taskId}/tag/{tagId}:
+ *   delete:
+ *     summary: Remove a tag from a task
+ *     tags: [Tags]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Task ID
+ *       - in: path
+ *         name: tagId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Tag ID
+ *     responses:
+ *       200:
+ *         description: Tag removed from task
+ *       401:
+ *         description: Unauthorized
+ */
 // Remove a tag from a task
 router.delete('/task/:taskId/tag/:tagId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -194,6 +385,40 @@ router.delete('/task/:taskId/tag/:tagId', authenticateToken, async (req: AuthReq
   }
 });
 
+/**
+ * @swagger
+ * /api/tags/task/{taskId}:
+ *   put:
+ *     summary: Update task tags (replace all tags)
+ *     tags: [Tags]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Task ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - tagIds
+ *             properties:
+ *               tagIds:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *     responses:
+ *       200:
+ *         description: Task tags updated
+ *       401:
+ *         description: Unauthorized
+ */
 // Bulk update tags for a task
 router.put('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

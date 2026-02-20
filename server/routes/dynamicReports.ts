@@ -7,6 +7,13 @@ import path from 'path';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: DynamicReports
+ *   description: Dynamic query and report generation
+ */
+
 interface TableSchema {
   tableName: string;
   fields: FieldSchema[];
@@ -85,6 +92,18 @@ function getFieldDataType(tables: TableSchema[], tableName: string, fieldName: s
   return field ? field.dataType : 'varchar';
 }
 
+/**
+ * @swagger
+ * /api/dynamic-reports/schema:
+ *   get:
+ *     summary: Get available data sources and their schemas
+ *     tags: [DynamicReports]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Database schema with all tables and fields
+ */
 // Get database schema with all tables and fields
 router.get('/schema', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -170,6 +189,40 @@ router.get('/schema', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * @swagger
+ * /api/dynamic-reports/query:
+ *   post:
+ *     summary: Execute a dynamic report query
+ *     tags: [DynamicReports]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               dataSource:
+ *                 type: string
+ *                 description: Primary table/data source
+ *               filters:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *               columns:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               groupBy:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Query results
+ */
 // Execute dynamic query based on user-defined configuration
 router.post('/query', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -391,6 +444,25 @@ router.post('/query', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * @swagger
+ * /api/dynamic-reports/sample/{tableName}:
+ *   get:
+ *     summary: Get sample data from a table
+ *     tags: [DynamicReports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tableName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Name of the table to sample
+ *     responses:
+ *       200:
+ *         description: Sample rows from the table
+ */
 // Get sample data from a table (first 10 rows)
 router.get('/sample/:tableName', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

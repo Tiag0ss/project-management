@@ -8,6 +8,13 @@ import { sanitizeRichText } from '../utils/sanitize';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Tickets
+ *   description: Ticket management endpoints
+ */
+
 // Helper function to normalize string values from request
 function normalizeString(value: any): string | undefined {
   if (value === undefined || value === null) return undefined;
@@ -39,6 +46,37 @@ async function logTicketHistory(
   }
 }
 
+/**
+ * @swagger
+ * /api/tickets:
+ *   get:
+ *     summary: Get all tickets
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: organizationId
+ *         description: Filter by organization
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: projectId
+ *         description: Filter by project
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: status
+ *         description: Filter by status name
+ *         schema: { type: string }
+ *       - in: query
+ *         name: assignedTo
+ *         description: Filter by assigned user ID
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of tickets
+ *       500:
+ *         description: Internal server error
+ */
 // Get all tickets (filtered by user role)
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -174,6 +212,20 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/tickets/my-tickets:
+ *   get:
+ *     summary: Get tickets assigned to the current user
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of tickets assigned to or developed by current user
+ *       500:
+ *         description: Internal server error
+ */
 // Get my tickets (where I'm assignee OR developer)
 // MUST be before /:id to avoid route conflict
 router.get('/my-tickets', authenticateToken, async (req: AuthRequest, res: Response) => {
@@ -224,6 +276,30 @@ router.get('/my-tickets', authenticateToken, async (req: AuthRequest, res: Respo
   }
 });
 
+/**
+ * @swagger
+ * /api/tickets/{id}:
+ *   get:
+ *     summary: Get a single ticket with comments and history
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Ticket ID
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Ticket object with comments
+ *       404:
+ *         description: Ticket not found
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Internal server error
+ */
 // Get single ticket by ID
 router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -304,6 +380,46 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/tickets:
+ *   post:
+ *     summary: Create a new ticket
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId, title]
+ *             properties:
+ *               organizationId:
+ *                 type: integer
+ *               projectId:
+ *                 type: integer
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               priority:
+ *                 type: string
+ *               assignedTo:
+ *                 type: integer
+ *               status:
+ *                 type: string
+ *               externalTicketId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Ticket created successfully
+ *       400:
+ *         description: Validation error
+ *       500:
+ *         description: Internal server error
+ */
 // Create new ticket
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -484,6 +600,46 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/tickets/{id}:
+ *   put:
+ *     summary: Update a ticket
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Ticket ID
+ *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *               priority:
+ *                 type: string
+ *               assignedToUserId:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Ticket updated successfully
+ *       404:
+ *         description: Ticket not found
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Internal server error
+ */
 // Update ticket
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -746,6 +902,42 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/tickets/{id}/comments:
+ *   post:
+ *     summary: Add a comment to a ticket
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Ticket ID
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [comment]
+ *             properties:
+ *               comment:
+ *                 type: string
+ *               isInternal:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Comment added successfully
+ *       404:
+ *         description: Ticket not found
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Internal server error
+ */
 // Add comment to ticket
 router.post('/:id/comments', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -865,6 +1057,25 @@ router.post('/:id/comments', authenticateToken, async (req: AuthRequest, res: Re
   }
 });
 
+/**
+ * @swagger
+ * /api/tickets/stats/summary:
+ *   get:
+ *     summary: Get ticket statistics summary (counts by status)
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: organizationId
+ *         description: Filter statistics by organization
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Ticket statistics object with counts by status and priority
+ *       500:
+ *         description: Internal server error
+ */
 // Get ticket statistics
 router.get('/stats/summary', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -911,6 +1122,28 @@ router.get('/stats/summary', authenticateToken, async (req: AuthRequest, res: Re
   }
 });
 
+/**
+ * @swagger
+ * /api/tickets/{id}:
+ *   delete:
+ *     summary: Delete a ticket (admin only)
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Ticket ID
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Ticket deleted successfully
+ *       403:
+ *         description: Only admins can delete tickets
+ *       500:
+ *         description: Internal server error
+ */
 // Delete ticket (admin only)
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -960,6 +1193,30 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * @swagger
+ * /api/tickets/{id}/history:
+ *   get:
+ *     summary: Get change history for a ticket
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Ticket ID
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of history entries
+ *       404:
+ *         description: Ticket not found
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Internal server error
+ */
 // Get ticket history
 router.get('/:id/history', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1017,6 +1274,22 @@ router.get('/:id/history', authenticateToken, async (req: AuthRequest, res: Resp
   }
 });
 
+/**
+ * @swagger
+ * /api/tickets/migrate-ticket-numbers:
+ *   post:
+ *     summary: Migrate ticket number format (admin utility)
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Successfully migrated ticket numbers
+ *       403:
+ *         description: Only admins can migrate ticket numbers
+ *       500:
+ *         description: Internal server error
+ */
 // Migrate ticket numbers to new format (admin only)
 router.post('/migrate-ticket-numbers', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

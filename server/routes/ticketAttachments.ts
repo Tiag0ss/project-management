@@ -5,6 +5,13 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: TicketAttachments
+ *   description: File attachments for tickets
+ */
+
 // Allowed file types
 const ALLOWED_TYPES = [
   'image/jpeg',
@@ -24,6 +31,24 @@ const ALLOWED_TYPES = [
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
+/**
+ * @swagger
+ * /api/ticket-attachments/ticket/{ticketId}:
+ *   get:
+ *     summary: Get attachments for a ticket
+ *     tags: [TicketAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachments retrieved successfully
+ */
 // Get attachments for a ticket
 router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -78,6 +103,26 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
   }
 });
 
+/**
+ * @swagger
+ * /api/ticket-attachments/{id}:
+ *   get:
+ *     summary: Get a specific attachment
+ *     tags: [TicketAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachment retrieved successfully
+ *       404:
+ *         description: Attachment not found
+ */
 // Get single attachment with data
 router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -123,6 +168,34 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/ticket-attachments/ticket/{ticketId}:
+ *   post:
+ *     summary: Upload attachment to ticket
+ *     tags: [TicketAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201:
+ *         description: Attachment uploaded successfully
+ */
 // Upload attachment
 router.post('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -187,6 +260,26 @@ router.post('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res
   }
 });
 
+/**
+ * @swagger
+ * /api/ticket-attachments/{id}:
+ *   delete:
+ *     summary: Delete attachment
+ *     tags: [TicketAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachment deleted successfully
+ *       404:
+ *         description: Attachment not found
+ */
 // Delete attachment
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -223,6 +316,24 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * @swagger
+ * /api/ticket-attachments/comment/{commentId}:
+ *   get:
+ *     summary: Get attachments for a ticket comment
+ *     tags: [TicketAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Comment attachments retrieved successfully
+ */
 // Get attachments for a comment
 router.get('/comment/:commentId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -280,6 +391,34 @@ router.get('/comment/:commentId', authenticateToken, async (req: AuthRequest, re
   }
 });
 
+/**
+ * @swagger
+ * /api/ticket-attachments/comment/{commentId}:
+ *   post:
+ *     summary: Upload attachment to a ticket comment
+ *     tags: [TicketAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201:
+ *         description: Attachment uploaded to comment successfully
+ */
 // Upload attachment to comment
 router.post('/comment/:commentId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

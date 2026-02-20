@@ -6,6 +6,33 @@ import { logCustomerHistory } from '../utils/changeLog';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Customers
+ *   description: Customer management
+ */
+
+/**
+ * @swagger
+ * /api/customers:
+ *   get:
+ *     summary: Get all customers
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: organizationId
+ *         schema:
+ *           type: integer
+ *         description: Filter customers by organization
+ *     responses:
+ *       200:
+ *         description: List of customers
+ *       401:
+ *         description: Unauthorized
+ */
 // Get all customers for the current user's organizations
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -76,6 +103,29 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/customers/{id}:
+ *   get:
+ *     summary: Get a single customer
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Customer ID
+ *     responses:
+ *       200:
+ *         description: Customer object
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Customer not found
+ */
 // Get a specific customer
 router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -124,6 +174,40 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/customers:
+ *   post:
+ *     summary: Create a new customer
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *             properties:
+ *               name:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               phone:
+ *                 type: string
+ *               company:
+ *                 type: string
+ *               notes:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Customer created
+ *       401:
+ *         description: Unauthorized
+ */
 // Create a new customer
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -231,6 +315,46 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/customers/{id}:
+ *   put:
+ *     summary: Update a customer
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Customer ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               company:
+ *                 type: string
+ *               notes:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Customer updated
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Customer not found
+ */
 // Update a customer
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -462,6 +586,29 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/customers/{id}:
+ *   delete:
+ *     summary: Delete a customer
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Customer ID
+ *     responses:
+ *       200:
+ *         description: Customer deleted
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Customer not found
+ */
 // Delete (deactivate) a customer
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -504,6 +651,29 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * @swagger
+ * /api/customers/{id}/projects:
+ *   get:
+ *     summary: Get projects linked to a customer
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Customer ID
+ *     responses:
+ *       200:
+ *         description: List of projects for the customer
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Customer not found
+ */
 // Get projects for a customer
 router.get('/:id/projects', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -549,6 +719,27 @@ router.get('/:id/projects', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
+/**
+ * @swagger
+ * /api/customers/{id}/users:
+ *   get:
+ *     summary: Get users associated with a customer
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Customer ID
+ *     responses:
+ *       200:
+ *         description: List of users associated with the customer
+ *       401:
+ *         description: Unauthorized
+ */
 // Get users associated with a customer
 router.get('/:id/users', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -585,6 +776,38 @@ router.get('/:id/users', authenticateToken, async (req: AuthRequest, res: Respon
   }
 });
 
+/**
+ * @swagger
+ * /api/customers/{id}/users:
+ *   post:
+ *     summary: Associate a user with a customer
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Customer ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *             properties:
+ *               userId:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: User associated with customer
+ *       401:
+ *         description: Unauthorized
+ */
 // Add a user to a customer
 router.post('/:id/users', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -642,6 +865,33 @@ router.post('/:id/users', authenticateToken, async (req: AuthRequest, res: Respo
   }
 });
 
+/**
+ * @swagger
+ * /api/customers/{id}/users/{userId}:
+ *   delete:
+ *     summary: Remove a user association from a customer
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Customer ID
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: User ID to remove
+ *     responses:
+ *       200:
+ *         description: User association removed
+ *       401:
+ *         description: Unauthorized
+ */
 // Remove a user from a customer
 router.delete('/:id/users/:userId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

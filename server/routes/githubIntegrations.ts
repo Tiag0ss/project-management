@@ -6,6 +6,33 @@ import { encrypt, decrypt } from '../utils/encryption';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: GitHubIntegrations
+ *   description: GitHub integration management
+ */
+
+/**
+ * @swagger
+ * /api/github-integrations/organization/{organizationId}:
+ *   get:
+ *     summary: Get GitHub integration for an organization
+ *     tags: [GitHubIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: GitHub integration retrieved successfully
+ *       403:
+ *         description: Access denied
+ */
 // Get GitHub integration for an organization
 router.get('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -40,6 +67,39 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
   }
 });
 
+/**
+ * @swagger
+ * /api/github-integrations/organization/{organizationId}:
+ *   post:
+ *     summary: Create or update GitHub integration
+ *     tags: [GitHubIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               repoUrl:
+ *                 type: string
+ *               accessToken:
+ *                 type: string
+ *               isEnabled:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Integration saved successfully
+ *       403:
+ *         description: Access denied
+ */
 // Create or update GitHub integration
 router.post('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -114,6 +174,26 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
   }
 });
 
+/**
+ * @swagger
+ * /api/github-integrations/organization/{organizationId}/test:
+ *   post:
+ *     summary: Test GitHub connection
+ *     tags: [GitHubIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Connection test result
+ *       403:
+ *         description: Access denied
+ */
 // Test GitHub connection
 router.post('/organization/:organizationId/test', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -172,6 +252,30 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
   }
 });
 
+/**
+ * @swagger
+ * /api/github-integrations/organization/{organizationId}/search:
+ *   get:
+ *     summary: Search GitHub issues
+ *     tags: [GitHubIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: q
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: GitHub issues returned
+ *       403:
+ *         description: Access denied
+ */
 // Search GitHub issues
 router.get('/organization/:organizationId/search', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

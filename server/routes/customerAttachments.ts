@@ -5,6 +5,13 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: CustomerAttachments
+ *   description: File attachments for customers
+ */
+
 const ALLOWED_TYPES = [
   'image/jpeg',
   'image/jpg',
@@ -23,6 +30,24 @@ const ALLOWED_TYPES = [
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
+/**
+ * @swagger
+ * /api/customer-attachments/customer/{customerId}:
+ *   get:
+ *     summary: Get attachments for a customer
+ *     tags: [CustomerAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: customerId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachments retrieved successfully
+ */
 // Get attachments for a customer
 router.get('/customer/:customerId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -61,6 +86,26 @@ router.get('/customer/:customerId', authenticateToken, async (req: AuthRequest, 
   }
 });
 
+/**
+ * @swagger
+ * /api/customer-attachments/{id}:
+ *   get:
+ *     summary: Get a specific attachment
+ *     tags: [CustomerAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachment retrieved successfully
+ *       404:
+ *         description: Attachment not found
+ */
 // Get single attachment with data
 router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -99,6 +144,34 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/customer-attachments/customer/{customerId}:
+ *   post:
+ *     summary: Upload attachment to a customer
+ *     tags: [CustomerAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: customerId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201:
+ *         description: Attachment uploaded successfully
+ */
 // Upload attachment
 router.post('/customer/:customerId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -148,6 +221,26 @@ router.post('/customer/:customerId', authenticateToken, async (req: AuthRequest,
   }
 });
 
+/**
+ * @swagger
+ * /api/customer-attachments/{id}:
+ *   delete:
+ *     summary: Delete attachment
+ *     tags: [CustomerAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachment deleted successfully
+ *       404:
+ *         description: Attachment not found
+ */
 // Delete attachment
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

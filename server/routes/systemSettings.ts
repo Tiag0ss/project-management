@@ -12,6 +12,24 @@ const MASKED_KEYS = ['smtpPassword'];
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: SystemSettings
+ *   description: Application system settings
+ */
+
+/**
+ * @swagger
+ * /api/system-settings/public:
+ *   get:
+ *     summary: Get public system settings
+ *     tags: [SystemSettings]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Public settings (registration, etc.)
+ */
 // Get public registration setting (no auth required)
 router.get('/public', async (req, res: Response) => {
   try {
@@ -42,6 +60,17 @@ router.get('/public', async (req, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/system-settings/public-frontpage:
+ *   get:
+ *     summary: Get public frontpage content
+ *     tags: [SystemSettings]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Frontpage HTML content (public)
+ */
 // Get public frontpage content (no auth required)
 router.get('/public-frontpage', async (req, res: Response) => {
   try {
@@ -63,9 +92,16 @@ router.get('/public-frontpage', async (req, res: Response) => {
 });
 
 /**
- * @route   GET /api/system-settings/frontpage
- * @desc    Get frontpage HTML content
- * @access  Admin only
+ * @swagger
+ * /api/system-settings/frontpage:
+ *   get:
+ *     summary: Get frontpage content (authenticated)
+ *     tags: [SystemSettings]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Frontpage HTML content
  */
 router.get('/frontpage', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -100,9 +136,26 @@ router.get('/frontpage', authenticateToken, async (req: AuthRequest, res: Respon
 });
 
 /**
- * @route   PUT /api/system-settings/frontpage
- * @desc    Update frontpage HTML content
- * @access  Admin only
+ * @swagger
+ * /api/system-settings/frontpage:
+ *   put:
+ *     summary: Update frontpage content (admin only)
+ *     tags: [SystemSettings]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [content]
+ *             properties:
+ *               content:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Frontpage content updated
  */
 router.put('/frontpage', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -153,6 +206,20 @@ router.put('/frontpage', authenticateToken, async (req: AuthRequest, res: Respon
   }
 });
 
+/**
+ * @swagger
+ * /api/system-settings:
+ *   get:
+ *     summary: Get all system settings (admin only)
+ *     tags: [SystemSettings]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: All system settings
+ *       403:
+ *         description: Admin access required
+ */
 // Get all system settings (admin only)
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -199,6 +266,30 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/system-settings:
+ *   put:
+ *     summary: Update system settings (admin only)
+ *     tags: [SystemSettings]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               settings:
+ *                 type: object
+ *                 description: Key-value pairs of settings to update
+ *     responses:
+ *       200:
+ *         description: System settings updated
+ *       403:
+ *         description: Admin access required
+ */
 // Update system settings (admin only)
 router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

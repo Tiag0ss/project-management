@@ -6,6 +6,45 @@ import { sanitizeRichText } from '../utils/sanitize';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Memos
+ *   description: Memo and note management
+ */
+
+/**
+ * @swagger
+ * /api/memos:
+ *   get:
+ *     summary: Get all memos
+ *     tags: [Memos]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter memos by date
+ *       - in: query
+ *         name: visibility
+ *         schema:
+ *           type: string
+ *           enum: [private, organizations, public]
+ *         description: Filter by visibility level
+ *       - in: query
+ *         name: tag
+ *         schema:
+ *           type: string
+ *         description: Filter by tag name
+ *     responses:
+ *       200:
+ *         description: List of memos
+ *       401:
+ *         description: Unauthorized
+ */
 // Get all memos (filtered by visibility and user's organizations)
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -70,6 +109,29 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/memos/{id}:
+ *   get:
+ *     summary: Get a single memo
+ *     tags: [Memos]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Memo ID
+ *     responses:
+ *       200:
+ *         description: Memo object
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Memo not found
+ */
 // Get single memo
 router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -131,6 +193,41 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/memos:
+ *   post:
+ *     summary: Create a new memo
+ *     tags: [Memos]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - title
+ *               - content
+ *             properties:
+ *               title:
+ *                 type: string
+ *               content:
+ *                 type: string
+ *               visibility:
+ *                 type: string
+ *                 enum: [private, organizations, public]
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       201:
+ *         description: Memo created
+ *       401:
+ *         description: Unauthorized
+ */
 // Create new memo
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -168,6 +265,47 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/memos/{id}:
+ *   put:
+ *     summary: Update a memo
+ *     tags: [Memos]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Memo ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               content:
+ *                 type: string
+ *               visibility:
+ *                 type: string
+ *                 enum: [private, organizations, public]
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Memo updated
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Memo not found
+ */
 // Update memo
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -218,6 +356,29 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/memos/{id}:
+ *   delete:
+ *     summary: Delete a memo
+ *     tags: [Memos]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Memo ID
+ *     responses:
+ *       200:
+ *         description: Memo deleted
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Memo not found
+ */
 // Delete memo
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -254,6 +415,20 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * @swagger
+ * /api/memos/tags:
+ *   get:
+ *     summary: Get all distinct tags used in memos
+ *     tags: [Memos]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of distinct memo tags
+ *       401:
+ *         description: Unauthorized
+ */
 // Get all unique tags
 router.get('/tags', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

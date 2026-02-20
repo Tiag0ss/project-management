@@ -5,6 +5,13 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: TaskImport
+ *   description: Bulk task import
+ */
+
 interface TaskImportRow {
   ProjectId: string;
   TaskName: string;
@@ -88,6 +95,30 @@ async function calculatePlannedEndDate(
   return currentDate;
 }
 
+/**
+ * @swagger
+ * /api/task-import/import:
+ *   post:
+ *     summary: Import tasks from CSV
+ *     tags: [TaskImport]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Tasks imported successfully
+ *       400:
+ *         description: Invalid input
+ */
 // Import tasks from CSV data
 router.post('/import', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

@@ -3,6 +3,27 @@ import { AuthRequest, authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: UserProfile
+ *   description: Legacy user profile endpoint
+ */
+
+/**
+ * @swagger
+ * /api/user/profile:
+ *   get:
+ *     summary: Get current user profile (legacy endpoint)
+ *     tags: [UserProfile]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Current user profile
+ *       401:
+ *         description: Unauthorized
+ */
 // Protected route - requires authentication
 router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

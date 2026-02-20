@@ -5,6 +5,29 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: RolePermissions
+ *   description: Role-based permission management
+ */
+
+/**
+ * @swagger
+ * /api/role-permissions:
+ *   get:
+ *     summary: Get all role permissions (admin only)
+ *     tags: [RolePermissions]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of all role permissions
+ *       403:
+ *         description: Access denied, admin only
+ *       500:
+ *         description: Server error
+ */
 // Get all role permissions
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -31,6 +54,30 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/role-permissions/{roleName}:
+ *   get:
+ *     summary: Get permissions for a specific role
+ *     tags: [RolePermissions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: roleName
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [Developer, Support, Manager]
+ *         description: Role name
+ *     responses:
+ *       200:
+ *         description: Role permissions
+ *       404:
+ *         description: Role permissions not found
+ *       500:
+ *         description: Server error
+ */
 // Get permissions for a specific role
 router.get('/:roleName', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -52,6 +99,71 @@ router.get('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
   }
 });
 
+/**
+ * @swagger
+ * /api/role-permissions/{roleName}:
+ *   put:
+ *     summary: Update permissions for a role (admin only)
+ *     tags: [RolePermissions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: roleName
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [Developer, Support, Manager]
+ *         description: Role name
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               canViewDashboard:
+ *                 type: boolean
+ *               canViewPlanning:
+ *                 type: boolean
+ *               canManageProjects:
+ *                 type: boolean
+ *               canCreateProjects:
+ *                 type: boolean
+ *               canDeleteProjects:
+ *                 type: boolean
+ *               canManageTasks:
+ *                 type: boolean
+ *               canCreateTasks:
+ *                 type: boolean
+ *               canDeleteTasks:
+ *                 type: boolean
+ *               canAssignTasks:
+ *                 type: boolean
+ *               canManageTimeEntries:
+ *                 type: boolean
+ *               canViewReports:
+ *                 type: boolean
+ *               canManageOrganizations:
+ *                 type: boolean
+ *               canManageUsers:
+ *                 type: boolean
+ *               canManageTickets:
+ *                 type: boolean
+ *               canCreateTickets:
+ *                 type: boolean
+ *               canDeleteTickets:
+ *                 type: boolean
+ *               canAssignTickets:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Role permissions updated
+ *       403:
+ *         description: Access denied, admin only
+ *       500:
+ *         description: Server error
+ */
 // Update role permissions
 router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -239,6 +351,29 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
   }
 });
 
+/**
+ * @swagger
+ * /api/role-permissions/user/{userId}:
+ *   get:
+ *     summary: Get combined permissions for a user based on all their roles
+ *     tags: [RolePermissions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: Combined permissions for the user
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Server error
+ */
 // Get user's combined permissions (from all their roles)
 router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

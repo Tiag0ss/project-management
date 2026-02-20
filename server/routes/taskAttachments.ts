@@ -5,6 +5,13 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: TaskAttachments
+ *   description: File attachments for tasks
+ */
+
 const ALLOWED_TYPES = [
   'image/jpeg',
   'image/jpg',
@@ -24,6 +31,24 @@ const ALLOWED_TYPES = [
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
+/**
+ * @swagger
+ * /api/task-attachments/task/{taskId}:
+ *   get:
+ *     summary: Get all attachments for a task
+ *     tags: [TaskAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachments retrieved successfully
+ */
 // Get attachments for a task
 router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -74,6 +99,26 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
+/**
+ * @swagger
+ * /api/task-attachments/{id}:
+ *   get:
+ *     summary: Get a specific attachment
+ *     tags: [TaskAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachment retrieved successfully
+ *       404:
+ *         description: Attachment not found
+ */
 // Get single attachment with data
 router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -113,6 +158,34 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/task-attachments/task/{taskId}:
+ *   post:
+ *     summary: Upload an attachment to a task
+ *     tags: [TaskAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201:
+ *         description: Attachment uploaded successfully
+ */
 // Upload attachment
 router.post('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -173,6 +246,26 @@ router.post('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Re
   }
 });
 
+/**
+ * @swagger
+ * /api/task-attachments/{id}:
+ *   delete:
+ *     summary: Delete an attachment
+ *     tags: [TaskAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachment deleted successfully
+ *       404:
+ *         description: Attachment not found
+ */
 // Delete attachment
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

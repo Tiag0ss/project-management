@@ -7,7 +7,34 @@ import { createNotification } from './notifications';
 
 const router = Router();
 
-// Get all comments for a task
+/**
+ * @swagger
+ * tags:
+ *   name: TaskComments
+ *   description: Comments on tasks
+ */
+
+/**
+ * @swagger
+ * /api/task-comments/task/{taskId}:
+ *   get:
+ *     summary: Get all comments for a task
+ *     tags: [TaskComments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Task ID
+ *     responses:
+ *       200:
+ *         description: List of comments
+ *       500:
+ *         description: Server error
+ */
 router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { taskId } = req.params;
@@ -28,7 +55,36 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
-// Create a new comment
+/**
+ * @swagger
+ * /api/task-comments:
+ *   post:
+ *     summary: Add a comment to a task
+ *     tags: [TaskComments]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - taskId
+ *               - comment
+ *             properties:
+ *               taskId:
+ *                 type: integer
+ *               comment:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Comment created
+ *       400:
+ *         description: Missing required fields
+ *       500:
+ *         description: Server error
+ */
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { taskId, comment } = req.body;
@@ -106,7 +162,42 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// Update a comment
+/**
+ * @swagger
+ * /api/task-comments/{id}:
+ *   put:
+ *     summary: Update a comment
+ *     tags: [TaskComments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Comment ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - comment
+ *             properties:
+ *               comment:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Comment updated
+ *       403:
+ *         description: Not your comment
+ *       404:
+ *         description: Comment not found
+ *       500:
+ *         description: Server error
+ */
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -148,7 +239,31 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
-// Delete a comment
+/**
+ * @swagger
+ * /api/task-comments/{id}:
+ *   delete:
+ *     summary: Delete a comment
+ *     tags: [TaskComments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Comment ID
+ *     responses:
+ *       200:
+ *         description: Comment deleted
+ *       403:
+ *         description: Not your comment
+ *       404:
+ *         description: Comment not found
+ *       500:
+ *         description: Server error
+ */
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;

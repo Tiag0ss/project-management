@@ -5,6 +5,25 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: SavedReports
+ *   description: Saved dynamic report management
+ */
+
+/**
+ * @swagger
+ * /api/saved-reports:
+ *   get:
+ *     summary: Get all saved reports
+ *     tags: [SavedReports]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of saved reports accessible by the current user
+ */
 // Get all saved reports for the current user
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -33,6 +52,25 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/saved-reports/datasource/{dataSource}:
+ *   get:
+ *     summary: Get reports for a specific data source
+ *     tags: [SavedReports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: dataSource
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Data source name
+ *     responses:
+ *       200:
+ *         description: List of saved reports for the data source
+ */
 // Get saved reports for a specific data source
 router.get('/datasource/:dataSource', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -62,6 +100,36 @@ router.get('/datasource/:dataSource', authenticateToken, async (req: AuthRequest
   }
 });
 
+/**
+ * @swagger
+ * /api/saved-reports:
+ *   post:
+ *     summary: Create a saved report
+ *     tags: [SavedReports]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [dataSource, reportName, pivotConfig]
+ *             properties:
+ *               dataSource:
+ *                 type: string
+ *               reportName:
+ *                 type: string
+ *               pivotConfig:
+ *                 type: object
+ *               filters:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *     responses:
+ *       201:
+ *         description: Saved report created
+ */
 // Create a new saved report
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -111,6 +179,39 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/saved-reports/{id}:
+ *   put:
+ *     summary: Update a saved report
+ *     tags: [SavedReports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reportName:
+ *                 type: string
+ *               pivotConfig:
+ *                 type: object
+ *               filters:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *     responses:
+ *       200:
+ *         description: Saved report updated
+ */
 // Update a saved report
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -158,6 +259,24 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/saved-reports/{id}:
+ *   delete:
+ *     summary: Delete a saved report
+ *     tags: [SavedReports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Saved report deleted
+ */
 // Delete a saved report
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -187,6 +306,37 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * @swagger
+ * /api/saved-reports/{id}/share:
+ *   post:
+ *     summary: Share a report with users
+ *     tags: [SavedReports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [userIds]
+ *             properties:
+ *               userIds:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 description: Array of user IDs to share the report with
+ *     responses:
+ *       200:
+ *         description: Report shared successfully
+ */
 // Share a saved report with other users
 router.post('/:id/share', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -223,6 +373,24 @@ router.post('/:id/share', authenticateToken, async (req: AuthRequest, res: Respo
   }
 });
 
+/**
+ * @swagger
+ * /api/saved-reports/{id}/toggle-public:
+ *   post:
+ *     summary: Toggle report public/private status
+ *     tags: [SavedReports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Public status toggled
+ */
 // Toggle public status of a saved report
 router.post('/:id/toggle-public', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

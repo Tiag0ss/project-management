@@ -5,6 +5,27 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Timers
+ *   description: Work timers for time tracking
+ */
+
+/**
+ * @swagger
+ * /api/timers/active:
+ *   get:
+ *     summary: Get the current user's active timer
+ *     tags: [Timers]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Active timer or null
+ *       500:
+ *         description: Server error
+ */
 // GET /api/timers/active — return running timer for current user (with task/project info)
 router.get('/active', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -25,6 +46,37 @@ router.get('/active', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * @swagger
+ * /api/timers/start:
+ *   post:
+ *     summary: Start a timer for a task
+ *     tags: [Timers]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - taskId
+ *             properties:
+ *               taskId:
+ *                 type: integer
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Timer started
+ *       400:
+ *         description: taskId is required
+ *       404:
+ *         description: Task not found or access denied
+ *       500:
+ *         description: Server error
+ */
 // POST /api/timers/start — start a timer for a task (stops any existing timer first, without saving)
 router.post('/start', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -92,6 +144,37 @@ router.post('/start', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * @swagger
+ * /api/timers/{id}/stop:
+ *   post:
+ *     summary: Stop a timer and create a time entry
+ *     tags: [Timers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Timer ID
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Timer stopped and time entry created
+ *       404:
+ *         description: Timer not found
+ *       500:
+ *         description: Server error
+ */
 // POST /api/timers/:id/stop — stop timer, create a time entry, delete timer
 router.post('/:id/stop', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -139,6 +222,27 @@ router.post('/:id/stop', authenticateToken, async (req: AuthRequest, res: Respon
   }
 });
 
+/**
+ * @swagger
+ * /api/timers/{id}:
+ *   delete:
+ *     summary: Delete a timer without saving a time entry
+ *     tags: [Timers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Timer ID
+ *     responses:
+ *       200:
+ *         description: Timer discarded
+ *       500:
+ *         description: Server error
+ */
 // DELETE /api/timers/:id — discard timer without creating a time entry
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

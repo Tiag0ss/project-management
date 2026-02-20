@@ -6,6 +6,33 @@ import { sendNotificationEmail } from '../utils/emailService';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Notifications
+ *   description: User notification management
+ */
+
+/**
+ * @swagger
+ * /api/notifications:
+ *   get:
+ *     summary: Get all notifications for the current user
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: unreadOnly
+ *         schema:
+ *           type: boolean
+ *         description: Return only unread notifications
+ *     responses:
+ *       200:
+ *         description: List of notifications
+ *       401:
+ *         description: Unauthorized
+ */
 // Get all notifications for current user
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -47,6 +74,20 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/notifications/count:
+ *   get:
+ *     summary: Get unread notification count
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Unread notification count
+ *       401:
+ *         description: Unauthorized
+ */
 // Get unread count
 router.get('/count', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -64,6 +105,29 @@ router.get('/count', authenticateToken, async (req: AuthRequest, res: Response) 
   }
 });
 
+/**
+ * @swagger
+ * /api/notifications/{id}/read:
+ *   put:
+ *     summary: Mark a notification as read
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Notification ID
+ *     responses:
+ *       200:
+ *         description: Notification marked as read
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Notification not found
+ */
 // Mark notification as read
 router.put('/:id/read', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -82,6 +146,20 @@ router.put('/:id/read', authenticateToken, async (req: AuthRequest, res: Respons
   }
 });
 
+/**
+ * @swagger
+ * /api/notifications/read-all:
+ *   put:
+ *     summary: Mark all notifications as read
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: All notifications marked as read
+ *       401:
+ *         description: Unauthorized
+ */
 // Mark all notifications as read
 router.put('/read-all', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -99,6 +177,29 @@ router.put('/read-all', authenticateToken, async (req: AuthRequest, res: Respons
   }
 });
 
+/**
+ * @swagger
+ * /api/notifications/{id}:
+ *   delete:
+ *     summary: Delete a notification
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Notification ID
+ *     responses:
+ *       200:
+ *         description: Notification deleted
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Notification not found
+ */
 // Delete a notification
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

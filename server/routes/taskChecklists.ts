@@ -5,7 +5,36 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 const router = Router();
 
-// Get all checklist items for a task
+/**
+ * @swagger
+ * tags:
+ *   name: TaskChecklists
+ *   description: Checklists within tasks
+ */
+
+/**
+ * @swagger
+ * /api/task-checklists/task/{taskId}:
+ *   get:
+ *     summary: Get checklist items for a task
+ *     tags: [TaskChecklists]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Task ID
+ *     responses:
+ *       200:
+ *         description: List of checklist items
+ *       404:
+ *         description: Task not found or access denied
+ *       500:
+ *         description: Server error
+ */
 router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { taskId } = req.params;
@@ -36,7 +65,40 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
-// Create a checklist item
+/**
+ * @swagger
+ * /api/task-checklists:
+ *   post:
+ *     summary: Create a checklist item
+ *     tags: [TaskChecklists]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - taskId
+ *               - text
+ *             properties:
+ *               taskId:
+ *                 type: integer
+ *               text:
+ *                 type: string
+ *               isCompleted:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Checklist item created
+ *       400:
+ *         description: Missing required fields
+ *       404:
+ *         description: Task not found or access denied
+ *       500:
+ *         description: Server error
+ */
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -83,7 +145,42 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// Update a checklist item (toggle checked / edit text)
+/**
+ * @swagger
+ * /api/task-checklists/{id}:
+ *   put:
+ *     summary: Update a checklist item
+ *     tags: [TaskChecklists]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Checklist item ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               isChecked:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Checklist item updated
+ *       400:
+ *         description: Nothing to update
+ *       404:
+ *         description: Item not found or access denied
+ *       500:
+ *         description: Server error
+ */
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -130,7 +227,29 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
-// Delete a checklist item
+/**
+ * @swagger
+ * /api/task-checklists/{id}:
+ *   delete:
+ *     summary: Delete a checklist item
+ *     tags: [TaskChecklists]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Checklist item ID
+ *     responses:
+ *       200:
+ *         description: Checklist item deleted
+ *       404:
+ *         description: Item not found or access denied
+ *       500:
+ *         description: Server error
+ */
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;

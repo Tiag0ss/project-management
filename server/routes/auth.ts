@@ -9,7 +9,55 @@ const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 const SALT_ROUNDS = 10;
 
-// Register endpoint
+/**
+ * @swagger
+ * tags:
+ *   name: Auth
+ *   description: Authentication endpoints
+ */
+
+/**
+ * @swagger
+ * /api/auth/register:
+ *   post:
+ *     summary: Register a new user
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [username, email, password]
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 example: johndoe
+ *               email:
+ *                 type: string
+ *                 example: john@example.com
+ *               password:
+ *                 type: string
+ *                 example: secret123
+ *               firstName:
+ *                 type: string
+ *                 example: John
+ *               lastName:
+ *                 type: string
+ *                 example: Doe
+ *     responses:
+ *       201:
+ *         description: User registered successfully
+ *       400:
+ *         description: Missing required fields
+ *       403:
+ *         description: Public registration disabled
+ *       409:
+ *         description: Username or email already exists
+ *       500:
+ *         description: Server error
+ */
 router.post('/register', async (req: Request, res: Response) => {
   try {
     const { username, email, password, firstName, lastName } = req.body;
@@ -94,6 +142,56 @@ router.post('/register', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     summary: Login and get JWT token
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [username, password]
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 description: Username or email
+ *                 example: johndoe
+ *               password:
+ *                 type: string
+ *                 example: secret123
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 token:
+ *                   type: string
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     id: { type: integer }
+ *                     username: { type: string }
+ *                     email: { type: string }
+ *                     isAdmin: { type: boolean }
+ *       400:
+ *         description: Missing username or password
+ *       401:
+ *         description: Invalid credentials
+ *       403:
+ *         description: Account disabled
+ *       500:
+ *         description: Server error
+ */
 // Login endpoint
 router.post('/login', async (req: Request, res: Response) => {
   try {

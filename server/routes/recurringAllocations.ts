@@ -5,6 +5,34 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: RecurringAllocations
+ *   description: Recurring resource allocation management
+ */
+
+/**
+ * @swagger
+ * /api/recurring-allocations/user/{userId}:
+ *   get:
+ *     summary: Get recurring allocations for a user
+ *     tags: [RecurringAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: List of recurring allocations
+ *       500:
+ *         description: Server error
+ */
 // Get all recurring allocations for a user
 router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -24,6 +52,29 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
+/**
+ * @swagger
+ * /api/recurring-allocations/{id}:
+ *   get:
+ *     summary: Get a single recurring allocation
+ *     tags: [RecurringAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Recurring allocation ID
+ *     responses:
+ *       200:
+ *         description: Recurring allocation
+ *       404:
+ *         description: Not found
+ *       500:
+ *         description: Server error
+ */
 // Get single recurring allocation
 router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -45,6 +96,59 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/recurring-allocations:
+ *   post:
+ *     summary: Create a recurring allocation
+ *     tags: [RecurringAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *               - title
+ *               - recurrenceType
+ *               - startDate
+ *               - startTime
+ *               - endTime
+ *             properties:
+ *               userId:
+ *                 type: integer
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               recurrenceType:
+ *                 type: string
+ *                 enum: [daily, weekly, monthly, custom_days, interval_days, interval_weeks, interval_months]
+ *               recurrenceInterval:
+ *                 type: integer
+ *               daysOfWeek:
+ *                 type: string
+ *               startDate:
+ *                 type: string
+ *                 format: date
+ *               endDate:
+ *                 type: string
+ *                 format: date
+ *               startTime:
+ *                 type: string
+ *               endTime:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Recurring allocation created
+ *       400:
+ *         description: Missing required fields or invalid recurrence type
+ *       500:
+ *         description: Server error
+ */
 // Create recurring allocation and generate occurrences
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -117,6 +221,58 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/recurring-allocations/{id}:
+ *   put:
+ *     summary: Update a recurring allocation
+ *     tags: [RecurringAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Recurring allocation ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               recurrenceType:
+ *                 type: string
+ *               recurrenceInterval:
+ *                 type: integer
+ *               daysOfWeek:
+ *                 type: string
+ *               startDate:
+ *                 type: string
+ *                 format: date
+ *               endDate:
+ *                 type: string
+ *                 format: date
+ *               startTime:
+ *                 type: string
+ *               endTime:
+ *                 type: string
+ *               isActive:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Recurring allocation updated
+ *       404:
+ *         description: Not found
+ *       500:
+ *         description: Server error
+ */
 // Update recurring allocation
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -212,6 +368,29 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/recurring-allocations/{id}:
+ *   delete:
+ *     summary: Delete a recurring allocation
+ *     tags: [RecurringAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Recurring allocation ID
+ *     responses:
+ *       200:
+ *         description: Recurring allocation deleted
+ *       404:
+ *         description: Not found
+ *       500:
+ *         description: Server error
+ */
 // Delete recurring allocation
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -240,6 +419,39 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * @swagger
+ * /api/recurring-allocations/occurrences/user/{userId}:
+ *   get:
+ *     summary: Get upcoming occurrences for a user
+ *     tags: [RecurringAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: User ID
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter start date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter end date
+ *     responses:
+ *       200:
+ *         description: List of occurrences
+ *       500:
+ *         description: Server error
+ */
 // Get occurrences for a user in a date range
 router.get('/occurrences/user/:userId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

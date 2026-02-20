@@ -10,6 +10,13 @@ import { sendNotificationEmail } from '../utils/emailService';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Tasks
+ *   description: Task management endpoints
+ */
+
 // Normalize any date value to YYYY-MM-DD for MySQL DATE columns
 function toDateOnly(value: any): string | null {
   if (!value) return null;
@@ -86,6 +93,18 @@ const getTaskProjectInfo = async (taskId: number): Promise<{ projectId: number; 
   }
 };
 
+/**
+ * @swagger
+ * /api/tasks/my-tasks:
+ *   get:
+ *     summary: Get tasks assigned to current user
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of tasks assigned to current user
+ */
 // Get all tasks assigned to current user across all organizations
 router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -147,6 +166,25 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/project/{projectId}/summary:
+ *   get:
+ *     summary: Get task summary for a project (counts by status/priority)
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Project ID
+ *     responses:
+ *       200:
+ *         description: Task summary with counts by status and priority
+ */
 // Get all tasks for a project with summary (total allocated and worked hours)
 router.get('/project/:projectId/summary', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -218,6 +256,25 @@ router.get('/project/:projectId/summary', authenticateToken, async (req: AuthReq
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/project/{projectId}:
+ *   get:
+ *     summary: Get all tasks for a project (with subtasks)
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Project ID
+ *     responses:
+ *       200:
+ *         description: List of tasks for the project including subtask hierarchy
+ */
 // Get all tasks for a project
 router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -354,6 +411,25 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
     });
   }
 });
+/**
+ * @swagger
+ * /api/tasks/ticket/{ticketId}:
+ *   get:
+ *     summary: Get tasks linked to a ticket
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Ticket ID
+ *     responses:
+ *       200:
+ *         description: List of tasks linked to the specified ticket
+ */
 // Get tasks by ticket ID
 router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -402,6 +478,54 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
     });
   }
 });
+/**
+ * @swagger
+ * /api/tasks:
+ *   post:
+ *     summary: Create a new task
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - projectId
+ *               - taskName
+ *             properties:
+ *               projectId:
+ *                 type: integer
+ *               taskName:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *               priority:
+ *                 type: string
+ *               estimatedHours:
+ *                 type: number
+ *               assignedTo:
+ *                 type: integer
+ *               plannedStartDate:
+ *                 type: string
+ *                 format: date
+ *               plannedEndDate:
+ *                 type: string
+ *                 format: date
+ *               parentTaskId:
+ *                 type: integer
+ *               ticketId:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Task created successfully
+ *       400:
+ *         description: Missing required fields
+ */
 // Create new task
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -539,6 +663,58 @@ async function recalculateParentEstimatedHours(parentTaskId: number) {
   }
 }
 
+/**
+ * @swagger
+ * /api/tasks/{id}:
+ *   put:
+ *     summary: Update a task
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Task ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               taskName:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *               priority:
+ *                 type: string
+ *               estimatedHours:
+ *                 type: number
+ *               assignedTo:
+ *                 type: integer
+ *               plannedStartDate:
+ *                 type: string
+ *                 format: date
+ *               plannedEndDate:
+ *                 type: string
+ *                 format: date
+ *               parentTaskId:
+ *                 type: integer
+ *               ticketId:
+ *                 type: integer
+ *               statusNote:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Task updated successfully
+ *       404:
+ *         description: Task not found
+ */
 // Update task
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -861,6 +1037,25 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
 // ─── Task Assignees ───────────────────────────────────────────────────────────
 
+/**
+ * @swagger
+ * /api/tasks/{id}/assignees:
+ *   get:
+ *     summary: Get assignees of a task
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Task ID
+ *     responses:
+ *       200:
+ *         description: List of assignees for the task
+ */
 // GET /:id/assignees – list all assignees for a task
 router.get('/:id/assignees', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -896,6 +1091,38 @@ router.get('/:id/assignees', authenticateToken, async (req: AuthRequest, res: Re
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/{id}/assignees:
+ *   post:
+ *     summary: Add an assignee to a task
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Task ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *             properties:
+ *               userId:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Assignee added successfully
+ *       409:
+ *         description: User is already an assignee
+ */
 // POST /:id/assignees – add an assignee to a task
 router.post('/:id/assignees', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -970,6 +1197,33 @@ router.post('/:id/assignees', authenticateToken, async (req: AuthRequest, res: R
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/{id}/assignees/{assigneeUserId}:
+ *   delete:
+ *     summary: Remove an assignee from a task
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Task ID
+ *       - in: path
+ *         name: assigneeUserId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: User ID of the assignee to remove
+ *     responses:
+ *       200:
+ *         description: Assignee removed successfully
+ *       404:
+ *         description: Assignee not found
+ */
 // DELETE /:id/assignees/:assigneeUserId – remove an assignee from a task
 router.delete('/:id/assignees/:assigneeUserId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1020,6 +1274,38 @@ router.delete('/:id/assignees/:assigneeUserId', authenticateToken, async (req: A
 
 // ─── End Task Assignees ───────────────────────────────────────────────────────
 
+/**
+ * @swagger
+ * /api/tasks/reorder-kanban:
+ *   post:
+ *     summary: Reorder tasks in kanban view
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - updates
+ *             properties:
+ *               updates:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     taskId:
+ *                       type: integer
+ *                     displayOrder:
+ *                       type: integer
+ *                     status:
+ *                       type: string
+ *     responses:
+ *       200:
+ *         description: Tasks reordered successfully
+ */
 // Batch reorder/restatus tasks – single transaction, single round-trip
 // Body: { updates: Array<{ taskId: number; displayOrder: number; status?: number }> }
 router.post('/reorder-kanban', authenticateToken, async (req: AuthRequest, res: Response) => {
@@ -1070,6 +1356,36 @@ router.post('/reorder-kanban', authenticateToken, async (req: AuthRequest, res: 
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/{id}/order:
+ *   put:
+ *     summary: Update display order of a task
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Task ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - order
+ *             properties:
+ *               order:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Task order updated successfully
+ */
 // Update task order
 router.put('/:id/order', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1132,6 +1448,27 @@ router.put('/:id/order', authenticateToken, async (req: AuthRequest, res: Respon
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/{id}:
+ *   delete:
+ *     summary: Delete a task
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Task ID
+ *     responses:
+ *       200:
+ *         description: Task deleted successfully
+ *       404:
+ *         description: Task not found
+ */
 // Delete task
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1233,6 +1570,36 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/reorder-subtasks:
+ *   post:
+ *     summary: Reorder subtasks
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - subtasks
+ *             properties:
+ *               subtasks:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                     order:
+ *                       type: integer
+ *     responses:
+ *       200:
+ *         description: Subtasks reordered successfully
+ */
 // Reorder subtasks - update DisplayOrder
 router.post('/reorder-subtasks', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1272,6 +1639,25 @@ router.post('/reorder-subtasks', authenticateToken, async (req: AuthRequest, res
 // PROJECT UTILITIES - Bulk operations for project tasks
 // =====================================================
 
+/**
+ * @swagger
+ * /api/tasks/utilities/recalculate-hours/{projectId}:
+ *   post:
+ *     summary: Recalculate estimated hours for parent tasks from children
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Project ID
+ *     responses:
+ *       200:
+ *         description: Parent task hours recalculated successfully
+ */
 // Utility: Recalculate all parent task hours from children (bottom-up, multi-level)
 router.post('/utilities/recalculate-hours/:projectId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1363,6 +1749,25 @@ router.post('/utilities/recalculate-hours/:projectId', authenticateToken, async 
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/utilities/reassign-from-planning/{projectId}:
+ *   post:
+ *     summary: Reassign tasks from planning allocations
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Project ID
+ *     responses:
+ *       200:
+ *         description: Tasks reassigned from planning allocations successfully
+ */
 // Utility: Reassign tasks based on who they are planned/allocated to
 router.post('/utilities/reassign-from-planning/:projectId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1455,6 +1860,25 @@ router.post('/utilities/reassign-from-planning/:projectId', authenticateToken, a
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/utilities/update-due-dates/{projectId}:
+ *   post:
+ *     summary: Update due dates based on planning allocations
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Project ID
+ *     responses:
+ *       200:
+ *         description: Task due dates updated from planned end dates successfully
+ */
 // Utility: Update due dates based on planning (PlannedEndDate → DueDate)
 router.post('/utilities/update-due-dates/:projectId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1523,6 +1947,25 @@ router.post('/utilities/update-due-dates/:projectId', authenticateToken, async (
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/utilities/clear-planning/{projectId}:
+ *   post:
+ *     summary: Clear all planning allocations for a project
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Project ID
+ *     responses:
+ *       200:
+ *         description: Planning allocations cleared successfully
+ */
 // Utility: Clear planning from all tasks (remove allocations, planned dates)
 router.post('/utilities/clear-planning/:projectId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1594,6 +2037,25 @@ router.post('/utilities/clear-planning/:projectId', authenticateToken, async (re
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/utilities/sync-parent-status/{projectId}:
+ *   post:
+ *     summary: Sync parent task status from children
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Project ID
+ *     responses:
+ *       200:
+ *         description: Parent task statuses synced from children successfully
+ */
 // Utility: Sync parent task status from children
 router.post('/utilities/sync-parent-status/:projectId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1702,6 +2164,34 @@ router.post('/utilities/sync-parent-status/:projectId', authenticateToken, async
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/import-from-jira:
+ *   post:
+ *     summary: Import tasks from Jira
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - projectId
+ *               - issues
+ *             properties:
+ *               projectId:
+ *                 type: integer
+ *               issues:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *     responses:
+ *       200:
+ *         description: Tasks imported from Jira successfully
+ */
 // Import tasks from Jira
 router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1875,6 +2365,25 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/github-issues/{projectId}:
+ *   get:
+ *     summary: Get GitHub issues available for import to a project
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Project ID
+ *     responses:
+ *       200:
+ *         description: List of GitHub issues for the project
+ */
 // Get GitHub issues already imported for a project
 router.get('/github-issues/:projectId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1915,6 +2424,34 @@ router.get('/github-issues/:projectId', authenticateToken, async (req: AuthReque
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/import-from-github:
+ *   post:
+ *     summary: Import tasks from GitHub
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - projectId
+ *               - issues
+ *             properties:
+ *               projectId:
+ *                 type: integer
+ *               issues:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *     responses:
+ *       200:
+ *         description: Tasks imported from GitHub successfully
+ */
 // Import tasks from GitHub
 router.post('/import-from-github', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -2070,6 +2607,25 @@ router.post('/import-from-github', authenticateToken, async (req: AuthRequest, r
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/gitea-issues/{projectId}:
+ *   get:
+ *     summary: Get Gitea issues available for import to a project
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Project ID
+ *     responses:
+ *       200:
+ *         description: List of Gitea issues for the project
+ */
 // Get Gitea issues already imported for a project
 router.get('/gitea-issues/:projectId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -2110,6 +2666,34 @@ router.get('/gitea-issues/:projectId', authenticateToken, async (req: AuthReques
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/import-from-gitea:
+ *   post:
+ *     summary: Import tasks from Gitea
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - projectId
+ *               - issues
+ *             properties:
+ *               projectId:
+ *                 type: integer
+ *               issues:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *     responses:
+ *       200:
+ *         description: Tasks imported from Gitea successfully
+ */
 // Import tasks from Gitea
 router.post('/import-from-gitea', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

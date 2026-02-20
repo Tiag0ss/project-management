@@ -5,6 +5,33 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 const router = Router();
 
+/**
+ * @swagger
+ * /api/status-values/project/{organizationId}:
+ *   get:
+ *     summary: Get project status values for an organization
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of project status values
+ *       403:
+ *         description: Access denied
+ */
+/**
+ * @swagger
+ * tags:
+ *   name: StatusValues
+ *   description: Custom status and priority value management
+ */
+
 // Get project status values for an organization
 router.get('/project/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -42,6 +69,26 @@ router.get('/project/:orgId', authenticateToken, async (req: AuthRequest, res: R
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/task/{organizationId}:
+ *   get:
+ *     summary: Get task status values for an organization
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of task status values
+ *       403:
+ *         description: Access denied
+ */
 // Get task status values for an organization
 router.get('/task/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -79,6 +126,40 @@ router.get('/task/:orgId', authenticateToken, async (req: AuthRequest, res: Resp
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/project:
+ *   post:
+ *     summary: Create a project status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId, statusName]
+ *             properties:
+ *               organizationId:
+ *                 type: integer
+ *               statusName:
+ *                 type: string
+ *               colorCode:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Project status value created
+ *       400:
+ *         description: Bad request
+ *       403:
+ *         description: Permission denied
+ */
 // Create project status value
 router.post('/project', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -137,6 +218,40 @@ router.post('/project', authenticateToken, async (req: AuthRequest, res: Respons
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/task:
+ *   post:
+ *     summary: Create a task status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId, statusName]
+ *             properties:
+ *               organizationId:
+ *                 type: integer
+ *               statusName:
+ *                 type: string
+ *               colorCode:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Task status value created
+ *       400:
+ *         description: Bad request
+ *       403:
+ *         description: Permission denied
+ */
 // Create task status value
 router.post('/task', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -195,6 +310,43 @@ router.post('/task', authenticateToken, async (req: AuthRequest, res: Response) 
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/project/{id}:
+ *   put:
+ *     summary: Update a project status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               statusName:
+ *                 type: string
+ *               colorCode:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Project status value updated
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Status not found
+ */
 // Update project status value
 router.put('/project/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -259,6 +411,43 @@ router.put('/project/:id', authenticateToken, async (req: AuthRequest, res: Resp
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/task/{id}:
+ *   put:
+ *     summary: Update a task status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               statusName:
+ *                 type: string
+ *               colorCode:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Task status value updated
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Status not found
+ */
 // Update task status value
 router.put('/task/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -323,6 +512,28 @@ router.put('/task/:id', authenticateToken, async (req: AuthRequest, res: Respons
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/project/{id}:
+ *   delete:
+ *     summary: Delete a project status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Project status value deleted
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Status not found
+ */
 // Delete project status value
 router.delete('/project/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -375,6 +586,28 @@ router.delete('/project/:id', authenticateToken, async (req: AuthRequest, res: R
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/task/{id}:
+ *   delete:
+ *     summary: Delete a task status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Task status value deleted
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Status not found
+ */
 // Delete task status value
 router.delete('/task/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -427,6 +660,26 @@ router.delete('/task/:id', authenticateToken, async (req: AuthRequest, res: Resp
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/priority/{organizationId}:
+ *   get:
+ *     summary: Get task priority values for an organization
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of task priority values
+ *       403:
+ *         description: Access denied
+ */
 // Get task priority values for an organization
 router.get('/priority/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -493,6 +746,40 @@ router.get('/priority/:orgId', authenticateToken, async (req: AuthRequest, res: 
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/priority:
+ *   post:
+ *     summary: Create a task priority value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId, priorityName]
+ *             properties:
+ *               organizationId:
+ *                 type: integer
+ *               priorityName:
+ *                 type: string
+ *               colorCode:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Task priority value created
+ *       400:
+ *         description: Bad request
+ *       403:
+ *         description: Permission denied
+ */
 // Create task priority value
 router.post('/priority', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -548,6 +835,43 @@ router.post('/priority', authenticateToken, async (req: AuthRequest, res: Respon
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/priority/{id}:
+ *   put:
+ *     summary: Update a task priority value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               priorityName:
+ *                 type: string
+ *               colorCode:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Task priority value updated
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Priority not found
+ */
 // Update task priority value
 router.put('/priority/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -611,6 +935,28 @@ router.put('/priority/:id', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/priority/{id}:
+ *   delete:
+ *     summary: Delete a task priority value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Task priority value deleted
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Priority not found
+ */
 // Delete task priority value
 router.delete('/priority/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -718,6 +1064,26 @@ async function ensureTicketPriorities(orgId: number): Promise<RowDataPacket[]> {
   return newRows;
 }
 
+/**
+ * @swagger
+ * /api/status-values/ticket/{organizationId}:
+ *   get:
+ *     summary: Get ticket status values for an organization
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of ticket status values
+ *       403:
+ *         description: Access denied
+ */
 // GET ticket statuses (auto-creates defaults)
 router.get('/ticket/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -736,6 +1102,40 @@ router.get('/ticket/:orgId', authenticateToken, async (req: AuthRequest, res: Re
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/ticket:
+ *   post:
+ *     summary: Create a ticket status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId, statusName]
+ *             properties:
+ *               organizationId:
+ *                 type: integer
+ *               statusName:
+ *                 type: string
+ *               color:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Ticket status value created
+ *       400:
+ *         description: Bad request
+ *       403:
+ *         description: Permission denied
+ */
 // POST ticket status
 router.post('/ticket', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -759,6 +1159,43 @@ router.post('/ticket', authenticateToken, async (req: AuthRequest, res: Response
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/ticket/{id}:
+ *   put:
+ *     summary: Update a ticket status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               statusName:
+ *                 type: string
+ *               color:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Ticket status value updated
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Status not found
+ */
 // PUT ticket status
 router.put('/ticket/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -785,6 +1222,28 @@ router.put('/ticket/:id', authenticateToken, async (req: AuthRequest, res: Respo
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/ticket/{id}:
+ *   delete:
+ *     summary: Delete a ticket status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Ticket status value deleted
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Status not found
+ */
 // DELETE ticket status
 router.delete('/ticket/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -808,6 +1267,26 @@ router.delete('/ticket/:id', authenticateToken, async (req: AuthRequest, res: Re
 
 // ─── Ticket Priority Values ───────────────────────────────────────────────────
 
+/**
+ * @swagger
+ * /api/status-values/ticket-priority/{organizationId}:
+ *   get:
+ *     summary: Get ticket priority values for an organization
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of ticket priority values
+ *       403:
+ *         description: Access denied
+ */
 // GET ticket priorities (auto-creates defaults)
 router.get('/ticket-priority/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -826,6 +1305,40 @@ router.get('/ticket-priority/:orgId', authenticateToken, async (req: AuthRequest
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/ticket-priority:
+ *   post:
+ *     summary: Create a ticket priority value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId, priorityName]
+ *             properties:
+ *               organizationId:
+ *                 type: integer
+ *               priorityName:
+ *                 type: string
+ *               color:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Ticket priority value created
+ *       400:
+ *         description: Bad request
+ *       403:
+ *         description: Permission denied
+ */
 // POST ticket priority
 router.post('/ticket-priority', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -849,6 +1362,43 @@ router.post('/ticket-priority', authenticateToken, async (req: AuthRequest, res:
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/ticket-priority/{id}:
+ *   put:
+ *     summary: Update a ticket priority value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               priorityName:
+ *                 type: string
+ *               color:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Ticket priority value updated
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Priority not found
+ */
 // PUT ticket priority
 router.put('/ticket-priority/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -875,6 +1425,28 @@ router.put('/ticket-priority/:id', authenticateToken, async (req: AuthRequest, r
   }
 });
 
+/**
+ * @swagger
+ * /api/status-values/ticket-priority/{id}:
+ *   delete:
+ *     summary: Delete a ticket priority value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Ticket priority value deleted
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Priority not found
+ */
 // DELETE ticket priority
 router.delete('/ticket-priority/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

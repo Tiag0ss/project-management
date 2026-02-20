@@ -5,6 +5,35 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * /api/time-entries/project/{projectId}:
+ *   get:
+ *     summary: Get all time entries for a project
+ *     tags: [TimeEntries]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         description: Project ID
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of time entries for the project
+ *       404:
+ *         description: Project not found or access denied
+ *       500:
+ *         description: Internal server error
+ */
+/**
+ * @swagger
+ * tags:
+ *   name: TimeEntries
+ *   description: Time tracking endpoints
+ */
+
 // Get time entries for a project
 router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -40,6 +69,29 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
   }
 });
 
+/**
+ * @swagger
+ * /api/time-entries/my-entries:
+ *   get:
+ *     summary: Get current user's time entries
+ *     tags: [TimeEntries]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         description: Filter from this date (YYYY-MM-DD)
+ *         schema: { type: string, format: date }
+ *       - in: query
+ *         name: endDate
+ *         description: Filter to this date (YYYY-MM-DD)
+ *         schema: { type: string, format: date }
+ *     responses:
+ *       200:
+ *         description: List of time entries for the current user
+ *       500:
+ *         description: Internal server error
+ */
 // Get time entries for current user
 router.get('/my-entries', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -72,6 +124,28 @@ router.get('/my-entries', authenticateToken, async (req: AuthRequest, res: Respo
   }
 });
 
+/**
+ * @swagger
+ * /api/time-entries/task/{taskId}:
+ *   get:
+ *     summary: Get time entries for a specific task
+ *     tags: [TimeEntries]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         description: Task ID
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of time entries for the task
+ *       404:
+ *         description: Task not found or access denied
+ *       500:
+ *         description: Internal server error
+ */
 // Get time entries for a specific task
 router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -108,6 +182,41 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
+/**
+ * @swagger
+ * /api/time-entries:
+ *   post:
+ *     summary: Create a time entry
+ *     tags: [TimeEntries]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [taskId, workDate, hours]
+ *             properties:
+ *               taskId:
+ *                 type: integer
+ *               workDate:
+ *                 type: string
+ *                 format: date
+ *               hours:
+ *                 type: number
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Time entry created successfully
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Task not found or access denied
+ *       500:
+ *         description: Internal server error
+ */
 // Create time entry
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -156,6 +265,43 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/time-entries/{id}:
+ *   put:
+ *     summary: Update a time entry
+ *     tags: [TimeEntries]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Time entry ID
+ *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               workDate:
+ *                 type: string
+ *                 format: date
+ *               hours:
+ *                 type: number
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Time entry updated successfully
+ *       403:
+ *         description: Cannot edit an approved time entry
+ *       404:
+ *         description: Time entry not found or access denied
+ *       500:
+ *         description: Internal server error
+ */
 // Update time entry
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -218,6 +364,30 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/time-entries/{id}:
+ *   delete:
+ *     summary: Delete a time entry
+ *     tags: [TimeEntries]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Time entry ID
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Time entry deleted successfully
+ *       403:
+ *         description: Cannot delete an approved time entry
+ *       404:
+ *         description: Time entry not found or access denied
+ *       500:
+ *         description: Internal server error
+ */
 // Delete time entry
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -255,6 +425,50 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 });
 
 
+/**
+ * @swagger
+ * /api/time-entries/pending-approval/team:
+ *   get:
+ *     summary: Get team time entries pending approval (manager only)
+ *     tags: [TimeEntries]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         description: Filter by team member user ID
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: projectId
+ *         description: Filter by project
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: dateFrom
+ *         description: Filter from date
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: dateTo
+ *         description: Filter to date
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: status
+ *         description: "Approval status filter (default: pending)"
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of time entries with subordinate list
+ *       403:
+ *         description: Access denied - must be admin or manager
+ *       500:
+ *         description: Internal server error
+ */
 // Get time entries pending approval for the logged-in team leader (or all if admin)
 // Supports optional filters: userId, projectId, dateFrom, dateTo
 router.get('/pending-approval/team', authenticateToken, async (req: AuthRequest, res: Response) => {
@@ -344,6 +558,43 @@ router.get('/pending-approval/team', authenticateToken, async (req: AuthRequest,
   }
 });
 
+/**
+ * @swagger
+ * /api/time-entries/{id}/approval:
+ *   put:
+ *     summary: Approve or reject a time entry
+ *     tags: [TimeEntries]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Time entry ID
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [approved, rejected]
+ *     responses:
+ *       200:
+ *         description: Time entry approval status updated
+ *       400:
+ *         description: Invalid status value
+ *       403:
+ *         description: Not authorized to approve this entry
+ *       404:
+ *         description: Time entry not found
+ *       500:
+ *         description: Internal server error
+ */
 // Approve or reject a time entry (team leader of entry owner, or admin)
 router.put('/:id/approval', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

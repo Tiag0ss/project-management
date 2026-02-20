@@ -5,6 +5,38 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: TaskChildAllocations
+ *   description: Parent task time allocation to child tasks
+ */
+
+/**
+ * @swagger
+ * /api/task-child-allocations/batch:
+ *   post:
+ *     summary: Create or update child allocations in batch
+ *     tags: [TaskChildAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               parentTaskId:
+ *                 type: integer
+ *               allocations:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *     responses:
+ *       200:
+ *         description: Child allocations saved successfully
+ */
 // Save child allocations in batch
 router.post('/batch', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -73,6 +105,24 @@ router.post('/batch', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * @swagger
+ * /api/task-child-allocations/parent/{parentTaskId}:
+ *   get:
+ *     summary: Get child allocations for a parent task
+ *     tags: [TaskChildAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: parentTaskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Child allocations retrieved successfully
+ */
 // Get child allocations for a parent task
 router.get('/parent/:parentTaskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -97,6 +147,24 @@ router.get('/parent/:parentTaskId', authenticateToken, async (req: AuthRequest, 
   }
 });
 
+/**
+ * @swagger
+ * /api/task-child-allocations/child/{childTaskId}:
+ *   get:
+ *     summary: Get allocations for a child task
+ *     tags: [TaskChildAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: childTaskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Child task allocations retrieved successfully
+ */
 // Get child allocations for a specific child task
 router.get('/child/:childTaskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -118,6 +186,34 @@ router.get('/child/:childTaskId', authenticateToken, async (req: AuthRequest, re
   }
 });
 
+/**
+ * @swagger
+ * /api/task-child-allocations/user/{userId}/date/{date}:
+ *   get:
+ *     summary: Get child allocations for user on a date
+ *     tags: [TaskChildAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: date
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: isHobby
+ *         schema:
+ *           type: boolean
+ *     responses:
+ *       200:
+ *         description: User child allocations for the date
+ */
 // Get child allocations for a user on a specific date (to calculate occupied hours)
 router.get('/user/:userId/date/:date', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -167,6 +263,24 @@ router.get('/user/:userId/date/:date', authenticateToken, async (req: AuthReques
   }
 });
 
+/**
+ * @swagger
+ * /api/task-child-allocations/parent/{parentTaskId}:
+ *   delete:
+ *     summary: Delete all child allocations for a parent task
+ *     tags: [TaskChildAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: parentTaskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Child allocations deleted successfully
+ */
 // Delete child allocations for a parent task (RECURSIVE - all levels)
 router.delete('/parent/:parentTaskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

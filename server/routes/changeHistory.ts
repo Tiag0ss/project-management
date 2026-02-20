@@ -5,6 +5,33 @@ import { RowDataPacket } from 'mysql2';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: ChangeHistory
+ *   description: Entity change history tracking
+ */
+
+/**
+ * @swagger
+ * /api/change-history/organization/{id}:
+ *   get:
+ *     summary: Get change history for an organization
+ *     tags: [ChangeHistory]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Organization change history
+ *       403:
+ *         description: Access denied
+ */
 // Get organization history
 router.get('/organization/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -37,6 +64,26 @@ router.get('/organization/:id', authenticateToken, async (req: AuthRequest, res:
   }
 });
 
+/**
+ * @swagger
+ * /api/change-history/customer/{id}:
+ *   get:
+ *     summary: Get change history for a customer
+ *     tags: [ChangeHistory]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Customer change history
+ *       403:
+ *         description: Access denied
+ */
 // Get customer history
 router.get('/customer/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -73,6 +120,26 @@ router.get('/customer/:id', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
+/**
+ * @swagger
+ * /api/change-history/project/{id}:
+ *   get:
+ *     summary: Get change history for a project
+ *     tags: [ChangeHistory]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Project change history
+ *       403:
+ *         description: Access denied
+ */
 // Get project history
 router.get('/project/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -108,6 +175,26 @@ router.get('/project/:id', authenticateToken, async (req: AuthRequest, res: Resp
   }
 });
 
+/**
+ * @swagger
+ * /api/change-history/user/{id}:
+ *   get:
+ *     summary: Get change history for a user
+ *     tags: [ChangeHistory]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: User change history
+ *       403:
+ *         description: Admin access required or own profile
+ */
 // Get user history (admin only)
 router.get('/user/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

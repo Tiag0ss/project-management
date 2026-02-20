@@ -5,6 +5,36 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: PermissionGroups
+ *   description: Organization-level permission groups
+ */
+
+/**
+ * @swagger
+ * /api/permission-groups/organization/{orgId}:
+ *   get:
+ *     summary: Get permission groups for an organization
+ *     tags: [PermissionGroups]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: orgId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Organization ID
+ *     responses:
+ *       200:
+ *         description: List of permission groups
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Server error
+ */
 // Get permission groups for an organization
 router.get('/organization/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -46,6 +76,50 @@ router.get('/organization/:orgId', authenticateToken, async (req: AuthRequest, r
   }
 });
 
+/**
+ * @swagger
+ * /api/permission-groups:
+ *   post:
+ *     summary: Create a permission group
+ *     tags: [PermissionGroups]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - organizationId
+ *               - groupName
+ *             properties:
+ *               organizationId:
+ *                 type: integer
+ *               groupName:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               canManageProjects:
+ *                 type: boolean
+ *               canManageTasks:
+ *                 type: boolean
+ *               canPlanTasks:
+ *                 type: boolean
+ *               canManageMembers:
+ *                 type: boolean
+ *               canManageSettings:
+ *                 type: boolean
+ *     responses:
+ *       201:
+ *         description: Permission group created
+ *       400:
+ *         description: Missing required fields
+ *       403:
+ *         description: Permission denied
+ *       500:
+ *         description: Server error
+ */
 // Create permission group
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -114,6 +188,52 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/permission-groups/{id}:
+ *   put:
+ *     summary: Update a permission group
+ *     tags: [PermissionGroups]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Permission group ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               groupName:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               canManageProjects:
+ *                 type: boolean
+ *               canManageTasks:
+ *                 type: boolean
+ *               canPlanTasks:
+ *                 type: boolean
+ *               canManageMembers:
+ *                 type: boolean
+ *               canManageSettings:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Permission group updated
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Group not found
+ *       500:
+ *         description: Server error
+ */
 // Update permission group
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -190,6 +310,31 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/permission-groups/{id}:
+ *   delete:
+ *     summary: Delete a permission group
+ *     tags: [PermissionGroups]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Permission group ID
+ *     responses:
+ *       200:
+ *         description: Permission group deleted
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Group not found
+ *       500:
+ *         description: Server error
+ */
 // Delete permission group
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

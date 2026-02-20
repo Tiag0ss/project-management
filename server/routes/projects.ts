@@ -8,6 +8,30 @@ import { logProjectHistory } from '../utils/changeLog';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Projects
+ *   description: Project management endpoints
+ */
+
+/**
+ * @swagger
+ * /api/projects:
+ *   get:
+ *     summary: Get all projects for the current user
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: organizationId
+ *         description: Filter by organization
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of projects with TotalTasks, CompletedTasks, hours, OpenTickets, UnplannedTasks, BudgetSpent
+ */
 // Get all projects for the current user (filtered by organization membership)
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -88,6 +112,25 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 });
 
 // Get single project by ID
+/**
+ * @swagger
+ * /api/projects/{id}:
+ *   get:
+ *     summary: Get a single project by ID
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Project data including BudgetSpent
+ *       404:
+ *         description: Project not found
+ */
 router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -137,6 +180,23 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
 // Get user permissions for a project
 // GET /:id/burndown — burndown/burnup chart data for a project
+/**
+ * @swagger
+ * /api/projects/{id}/burndown:
+ *   get:
+ *     summary: Get burndown and burnup chart data for a project
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Series data with date, worked, cumulative, remaining, ideal fields
+ */
 router.get('/:id/burndown', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -234,6 +294,23 @@ router.get('/:id/burndown', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
+/**
+ * @swagger
+ * /api/projects/{id}/permissions:
+ *   get:
+ *     summary: Get current user permissions for a project
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Permissions object with CanManageTasks, CanPlanTasks flags
+ */
 router.get('/:id/permissions', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -282,6 +359,36 @@ router.get('/:id/permissions', authenticateToken, async (req: AuthRequest, res: 
 });
 
 // Create new project
+/**
+ * @swagger
+ * /api/projects:
+ *   post:
+ *     summary: Create a new project
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId, projectName]
+ *             properties:
+ *               organizationId: { type: integer }
+ *               projectName: { type: string }
+ *               description: { type: string }
+ *               status: { type: string }
+ *               startDate: { type: string, format: date }
+ *               endDate: { type: string, format: date }
+ *               isHobby: { type: boolean }
+ *               budget: { type: number }
+ *     responses:
+ *       201:
+ *         description: Project created
+ *       403:
+ *         description: Forbidden
+ */
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -363,6 +470,34 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 });
 
 // Transfer project to another organization
+/**
+ * @swagger
+ * /api/projects/{id}/transfer:
+ *   put:
+ *     summary: Transfer a project to a different organization
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId]
+ *             properties:
+ *               organizationId: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Project transferred
+ *       403:
+ *         description: Forbidden
+ */
 router.put('/:id/transfer', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -445,6 +580,42 @@ router.put('/:id/transfer', authenticateToken, async (req: AuthRequest, res: Res
 });
 
 // Update project
+/**
+ * @swagger
+ * /api/projects/{id}:
+ *   put:
+ *     summary: Update a project
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               projectName: { type: string }
+ *               description: { type: string }
+ *               status: { type: string }
+ *               startDate: { type: string, format: date }
+ *               endDate: { type: string, format: date }
+ *               isHobby: { type: boolean }
+ *               budget: { type: number }
+ *               jiraBoardId: { type: string }
+ *     responses:
+ *       200:
+ *         description: Project updated
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Not found
+ */
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -598,6 +769,27 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 });
 
 // Delete project
+/**
+ * @swagger
+ * /api/projects/{id}:
+ *   delete:
+ *     summary: Delete a project
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Project deleted
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Not found
+ */
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;

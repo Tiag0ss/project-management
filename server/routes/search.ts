@@ -5,6 +5,48 @@ import { RowDataPacket } from 'mysql2';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Search
+ *   description: Global search across entities
+ */
+
+/**
+ * @swagger
+ * /api/search:
+ *   get:
+ *     summary: Global search across tasks, projects, and other entities
+ *     tags: [Search]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Search term (minimum 2 characters)
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: Maximum number of results
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *     responses:
+ *       200:
+ *         description: Search results
+ *       400:
+ *         description: Query too short
+ *       401:
+ *         description: Unauthorized
+ */
 // Global search endpoint
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

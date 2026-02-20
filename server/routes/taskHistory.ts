@@ -5,6 +5,31 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: TaskHistory
+ *   description: Task change history
+ */
+
+/**
+ * @swagger
+ * /api/task-history/task/{taskId}:
+ *   get:
+ *     summary: Get change history for a specific task
+ *     tags: [TaskHistory]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Task history retrieved successfully
+ */
 // Get history for a task
 router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

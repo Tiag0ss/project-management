@@ -6,6 +6,13 @@ import { createNotification } from './notifications';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: TaskAllocations
+ *   description: Resource planning and allocation endpoints
+ */
+
 // Helper function to replan dependent tasks when a task's end date changes
 async function replanDependentTasks(taskId: number, newEndDate: string): Promise<void> {
   // Find all tasks that depend on this task and have allocations that start on or before the new end date
@@ -164,6 +171,26 @@ async function replanDependentTasks(taskId: number, newEndDate: string): Promise
   }
 }
 
+/**
+ * @swagger
+ * /api/task-allocations:
+ *   get:
+ *     summary: Get all task allocations
+ *     tags: [TaskAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: projectId
+ *         schema:
+ *           type: integer
+ *         description: Optional project ID to filter allocations
+ *     responses:
+ *       200:
+ *         description: List of task allocations
+ *       401:
+ *         description: Unauthorized
+ */
 // Get all allocations (for planning view totals)
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -189,6 +216,29 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/task-allocations/project/{projectId}:
+ *   get:
+ *     summary: Get allocations for a project
+ *     tags: [TaskAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Project ID
+ *     responses:
+ *       200:
+ *         description: List of allocations for the project
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ */
 // Get allocations for a project
 router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -224,6 +274,27 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
   }
 });
 
+/**
+ * @swagger
+ * /api/task-allocations/task/{taskId}:
+ *   get:
+ *     summary: Get allocations for a task
+ *     tags: [TaskAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Task ID
+ *     responses:
+ *       200:
+ *         description: List of allocations for the task
+ *       401:
+ *         description: Unauthorized
+ */
 // Get allocations for a task
 router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -245,6 +316,39 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
+/**
+ * @swagger
+ * /api/task-allocations/user/{userId}/date/{date}:
+ *   get:
+ *     summary: Get allocations for a user on a specific date
+ *     tags: [TaskAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: User ID
+ *       - in: path
+ *         name: date
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Date in YYYY-MM-DD format
+ *       - in: query
+ *         name: isHobby
+ *         schema:
+ *           type: boolean
+ *         description: Filter by hobby/work project type
+ *     responses:
+ *       200:
+ *         description: List of allocations for the user on the date
+ *       401:
+ *         description: Unauthorized
+ */
 // Get allocations for a user on a specific date (optionally filtered by hobby/work)
 router.get('/user/:userId/date/:date', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -297,6 +401,38 @@ router.get('/user/:userId/date/:date', authenticateToken, async (req: AuthReques
   }
 });
 
+/**
+ * @swagger
+ * /api/task-allocations/push-forward:
+ *   post:
+ *     summary: Push forward allocations from a date
+ *     tags: [TaskAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [taskId, fromDate, days]
+ *             properties:
+ *               taskId:
+ *                 type: integer
+ *               fromDate:
+ *                 type: string
+ *                 format: date
+ *               days:
+ *                 type: integer
+ *                 description: Number of days to push forward
+ *     responses:
+ *       200:
+ *         description: Allocations pushed forward successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ */
 // Push forward allocations from a date - clears conflicts and replans tasks
 router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -813,6 +949,49 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
   }
 });
 
+/**
+ * @swagger
+ * /api/task-allocations/availability/{userId}:
+ *   get:
+ *     summary: Get user availability for a date range
+ *     tags: [TaskAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: User ID
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date (YYYY-MM-DD)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date (YYYY-MM-DD)
+ *       - in: query
+ *         name: taskId
+ *         schema:
+ *           type: integer
+ *         description: Task ID to exclude from availability calculation
+ *       - in: query
+ *         name: isHobby
+ *         schema:
+ *           type: boolean
+ *         description: Filter by hobby/work project type
+ *     responses:
+ *       200:
+ *         description: User availability data for the date range
+ *       401:
+ *         description: Unauthorized
+ */
 // Get user availability for a date range
 router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -999,6 +1178,39 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
   }
 });
 
+/**
+ * @swagger
+ * /api/task-allocations:
+ *   post:
+ *     summary: Create or update task allocations
+ *     tags: [TaskAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [taskId, userId, allocationDate, allocatedHours]
+ *             properties:
+ *               taskId:
+ *                 type: integer
+ *               userId:
+ *                 type: integer
+ *               allocationDate:
+ *                 type: string
+ *                 format: date
+ *               allocatedHours:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Allocation created or updated successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ */
 // Create/update task allocations
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1116,6 +1328,40 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/task-allocations/delete:
+ *   delete:
+ *     summary: Delete task allocations
+ *     tags: [TaskAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [taskId, userId, dates]
+ *             properties:
+ *               taskId:
+ *                 type: integer
+ *               userId:
+ *                 type: integer
+ *               dates:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: date
+ *                 description: Array of dates to delete allocations for
+ *     responses:
+ *       200:
+ *         description: Allocations deleted successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ */
 // Delete a specific allocation
 router.delete('/delete', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1195,6 +1441,29 @@ router.delete('/delete', authenticateToken, async (req: AuthRequest, res: Respon
   }
 });
 
+/**
+ * @swagger
+ * /api/task-allocations/task/{taskId}:
+ *   delete:
+ *     summary: Delete all allocations for a task
+ *     tags: [TaskAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Task ID
+ *     responses:
+ *       200:
+ *         description: All allocations for the task deleted
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ */
 // Delete all allocations for a task
 router.delete('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1293,6 +1562,33 @@ router.delete('/task/:taskId', authenticateToken, async (req: AuthRequest, res: 
   }
 });
 
+/**
+ * @swagger
+ * /api/task-allocations/my-allocations:
+ *   get:
+ *     summary: Get current user's allocations
+ *     tags: [TaskAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date filter (YYYY-MM-DD)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date filter (YYYY-MM-DD)
+ *     responses:
+ *       200:
+ *         description: List of allocations for the current user
+ *       401:
+ *         description: Unauthorized
+ */
 // Get my allocations (for calendar view)
 router.get('/my-allocations', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1407,6 +1703,41 @@ router.get('/my-allocations', authenticateToken, async (req: AuthRequest, res: R
   }
 });
 
+/**
+ * @swagger
+ * /api/task-allocations/manual:
+ *   post:
+ *     summary: Create a manual allocation for a task
+ *     tags: [TaskAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [taskId, userId, allocationDate, allocatedHours]
+ *             properties:
+ *               taskId:
+ *                 type: integer
+ *               userId:
+ *                 type: integer
+ *               allocationDate:
+ *                 type: string
+ *                 format: date
+ *               allocatedHours:
+ *                 type: number
+ *     responses:
+ *       201:
+ *         description: Manual allocation created successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ */
 /**
  * @route   POST /api/task-allocations/manual
  * @desc    Create a manual allocation for a task
@@ -1625,6 +1956,42 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
   }
 });
 
+/**
+ * @swagger
+ * /api/task-allocations/manual/{id}:
+ *   put:
+ *     summary: Update a manual allocation
+ *     tags: [TaskAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Allocation ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               allocatedHours:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Manual allocation updated successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Allocation not found
+ */
 /**
  * @route   PUT /api/task-allocations/manual/:id
  * @desc    Update a manual allocation
@@ -1854,6 +2221,31 @@ router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Respo
   }
 });
 
+/**
+ * @swagger
+ * /api/task-allocations/manual/{id}:
+ *   delete:
+ *     summary: Delete a manual allocation
+ *     tags: [TaskAllocations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Allocation ID
+ *     responses:
+ *       200:
+ *         description: Manual allocation deleted successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Allocation not found
+ */
 /**
  * @route   DELETE /api/task-allocations/manual/:id
  * @desc    Delete a manual allocation

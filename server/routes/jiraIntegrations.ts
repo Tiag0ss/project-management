@@ -6,6 +6,33 @@ import { encrypt, decrypt } from '../utils/encryption';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: JiraIntegrations
+ *   description: Jira integration management
+ */
+
+/**
+ * @swagger
+ * /api/jira-integrations/organization/{organizationId}:
+ *   get:
+ *     summary: Get Jira integration for an organization
+ *     tags: [JiraIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Jira integration retrieved successfully
+ *       403:
+ *         description: Access denied
+ */
 // Get Jira integration for an organization
 router.get('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -41,6 +68,49 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
   }
 });
 
+/**
+ * @swagger
+ * /api/jira-integrations/organization/{organizationId}:
+ *   post:
+ *     summary: Create or update Jira integration
+ *     tags: [JiraIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               jiraUrl:
+ *                 type: string
+ *               jiraEmail:
+ *                 type: string
+ *               jiraApiToken:
+ *                 type: string
+ *               jiraProjectKey:
+ *                 type: string
+ *               jiraProjectsUrl:
+ *                 type: string
+ *               jiraProjectsEmail:
+ *                 type: string
+ *               jiraProjectsApiToken:
+ *                 type: string
+ *               isEnabled:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Integration saved successfully
+ *       403:
+ *         description: Access denied
+ */
 // Create or update Jira integration
 router.post('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -102,6 +172,26 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
   }
 });
 
+/**
+ * @swagger
+ * /api/jira-integrations/organization/{organizationId}/test:
+ *   post:
+ *     summary: Test Jira connection
+ *     tags: [JiraIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Connection test result
+ *       403:
+ *         description: Access denied
+ */
 // Test Jira connection
 router.post('/organization/:organizationId/test', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -160,6 +250,34 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
   }
 });
 
+/**
+ * @swagger
+ * /api/jira-integrations/organization/{organizationId}/search:
+ *   get:
+ *     summary: Search Jira issues
+ *     tags: [JiraIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: q
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: projectKey
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Jira issues returned
+ *       403:
+ *         description: Access denied
+ */
 // Search Jira issues
 router.get('/organization/:organizationId/search', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -261,6 +379,26 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
   }
 });
 
+/**
+ * @swagger
+ * /api/jira-integrations/project/{id}/issues:
+ *   get:
+ *     summary: Get Jira board issues for a project
+ *     tags: [JiraIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Jira issues for project board
+ *       403:
+ *         description: Access denied
+ */
 // Get Jira issues for a project (for importing into tasks)
 router.get('/project/:projectId/issues', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -410,6 +548,26 @@ router.get('/project/:projectId/issues', authenticateToken, async (req: AuthRequ
   }
 });
 
+/**
+ * @swagger
+ * /api/jira-integrations/organization/{organizationId}:
+ *   delete:
+ *     summary: Delete Jira integration
+ *     tags: [JiraIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Integration deleted successfully
+ *       403:
+ *         description: Access denied
+ */
 // Delete Jira integration
 router.delete('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

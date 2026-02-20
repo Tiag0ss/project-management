@@ -10,6 +10,13 @@ export { shouldSendEmail } from '../utils/emailPreferencesHelper';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: EmailPreferences
+ *   description: User email notification preferences
+ */
+
 // All notification types available in the system
 export const NOTIFICATION_TYPES = [
   { type: 'task_assigned', label: 'Task Assigned to You', category: 'Tasks' },
@@ -31,6 +38,18 @@ export const NOTIFICATION_TYPES = [
   { type: 'weekly_work_summary', label: 'Weekly Work Summary', category: 'Summaries', description: 'Receive a weekly summary on the first work day of the week' },
 ];
 
+/**
+ * @swagger
+ * /api/email-preferences:
+ *   get:
+ *     summary: Get current user's email preferences
+ *     tags: [EmailPreferences]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of notification types with email enabled/disabled status
+ */
 // Get user email preferences
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -63,6 +82,35 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/email-preferences:
+ *   put:
+ *     summary: Update email preferences
+ *     tags: [EmailPreferences]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [preferences]
+ *             properties:
+ *               preferences:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     type:
+ *                       type: string
+ *                     emailEnabled:
+ *                       type: boolean
+ *     responses:
+ *       200:
+ *         description: Email preferences updated
+ */
 // Update email preferences
 router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -92,6 +140,26 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/email-preferences/test-summary/{type}:
+ *   post:
+ *     summary: Send test email summary
+ *     tags: [EmailPreferences]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: type
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [daily, weekly]
+ *         description: Type of summary email to test
+ *     responses:
+ *       200:
+ *         description: Test email sent
+ */
 // Send test summary email
 router.post('/test-summary/:type', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

@@ -5,6 +5,13 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: ActivityLogs
+ *   description: System activity logs (admin only)
+ */
+
 // Helper function to log activity
 export async function logActivity(
   userId: number | null,
@@ -29,6 +36,47 @@ export async function logActivity(
   }
 }
 
+/**
+ * @swagger
+ * /api/activity-logs:
+ *   get:
+ *     summary: Get activity logs (admin only)
+ *     tags: [ActivityLogs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: action
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Paginated activity logs
+ *       403:
+ *         description: Admin access required
+ */
 // Get activity logs with filters and pagination
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -119,6 +167,20 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/activity-logs/stats:
+ *   get:
+ *     summary: Get activity statistics (admin only)
+ *     tags: [ActivityLogs]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Activity statistics including counts, top actions and users
+ *       403:
+ *         description: Admin access required
+ */
 // Get activity log statistics
 router.get('/stats', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -186,6 +248,32 @@ router.get('/stats', authenticateToken, async (req: AuthRequest, res: Response) 
   }
 });
 
+/**
+ * @swagger
+ * /api/activity-logs/cleanup:
+ *   delete:
+ *     summary: Delete old activity logs (admin only)
+ *     tags: [ActivityLogs]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [beforeDate]
+ *             properties:
+ *               beforeDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Delete logs created before this date
+ *     responses:
+ *       200:
+ *         description: Old logs deleted
+ *       403:
+ *         description: Admin access required
+ */
 // Delete old logs (cleanup)
 router.delete('/cleanup', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

@@ -5,6 +5,36 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: TaskTemplates
+ *   description: Reusable task templates
+ */
+
+/**
+ * @swagger
+ * /api/task-templates:
+ *   get:
+ *     summary: Get all task templates for an organization
+ *     tags: [TaskTemplates]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Organization ID
+ *     responses:
+ *       200:
+ *         description: List of task templates
+ *       400:
+ *         description: organizationId is required
+ *       500:
+ *         description: Server error
+ */
 // GET /api/task-templates?organizationId=X
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -31,6 +61,29 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/task-templates/{id}:
+ *   get:
+ *     summary: Get a specific task template with its items
+ *     tags: [TaskTemplates]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Template ID
+ *     responses:
+ *       200:
+ *         description: Template with items
+ *       404:
+ *         description: Template not found
+ *       500:
+ *         description: Server error
+ */
 // GET /api/task-templates/:id  (with items)
 router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -60,6 +113,42 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/task-templates:
+ *   post:
+ *     summary: Create a task template with items
+ *     tags: [TaskTemplates]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - organizationId
+ *               - name
+ *             properties:
+ *               organizationId:
+ *                 type: integer
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *     responses:
+ *       200:
+ *         description: Template created
+ *       400:
+ *         description: Missing required fields
+ *       500:
+ *         description: Server error
+ */
 // POST /api/task-templates  — create template with items
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   const conn = await pool.getConnection();
@@ -117,6 +206,38 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/task-templates/{id}:
+ *   put:
+ *     summary: Update a task template
+ *     tags: [TaskTemplates]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Template ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Template updated
+ *       500:
+ *         description: Server error
+ */
 // PUT /api/task-templates/:id — update name/description only (items managed separately)
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -135,6 +256,27 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /api/task-templates/{id}:
+ *   delete:
+ *     summary: Delete a task template
+ *     tags: [TaskTemplates]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Template ID
+ *     responses:
+ *       200:
+ *         description: Template deleted
+ *       500:
+ *         description: Server error
+ */
 // DELETE /api/task-templates/:id
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   const conn = await pool.getConnection();
@@ -156,6 +298,44 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * @swagger
+ * /api/task-templates/{id}/apply:
+ *   post:
+ *     summary: Apply a template to a project, creating all tasks
+ *     tags: [TaskTemplates]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Template ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - projectId
+ *             properties:
+ *               projectId:
+ *                 type: integer
+ *               statusOverride:
+ *                 type: string
+ *               priorityOverride:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Tasks created from template
+ *       400:
+ *         description: projectId is required
+ *       500:
+ *         description: Server error
+ */
 // POST /api/task-templates/:id/apply?projectId=X — create Tasks from template
 router.post('/:id/apply', authenticateToken, async (req: AuthRequest, res: Response) => {
   const conn = await pool.getConnection();

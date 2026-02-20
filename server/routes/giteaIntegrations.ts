@@ -6,6 +6,33 @@ import { encrypt, decrypt } from '../utils/encryption';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: GiteaIntegrations
+ *   description: Gitea integration management
+ */
+
+/**
+ * @swagger
+ * /api/gitea-integrations/organization/{organizationId}:
+ *   get:
+ *     summary: Get Gitea integration for an organization
+ *     tags: [GiteaIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Gitea integration retrieved successfully
+ *       403:
+ *         description: Access denied
+ */
 // Get Gitea integration for an organization
 router.get('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -40,6 +67,43 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
   }
 });
 
+/**
+ * @swagger
+ * /api/gitea-integrations/organization/{organizationId}:
+ *   post:
+ *     summary: Create or update Gitea integration
+ *     tags: [GiteaIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               giteaUrl:
+ *                 type: string
+ *               accessToken:
+ *                 type: string
+ *               repoOwner:
+ *                 type: string
+ *               repoName:
+ *                 type: string
+ *               isEnabled:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Integration saved successfully
+ *       403:
+ *         description: Access denied
+ */
 // Create or update Gitea integration
 router.post('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -114,6 +178,26 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
   }
 });
 
+/**
+ * @swagger
+ * /api/gitea-integrations/organization/{organizationId}/test:
+ *   post:
+ *     summary: Test Gitea connection
+ *     tags: [GiteaIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Connection test result
+ *       403:
+ *         description: Access denied
+ */
 // Test Gitea connection
 router.post('/organization/:organizationId/test', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -171,6 +255,30 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
   }
 });
 
+/**
+ * @swagger
+ * /api/gitea-integrations/organization/{organizationId}/search:
+ *   get:
+ *     summary: Search Gitea issues
+ *     tags: [GiteaIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: q
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Gitea issues returned
+ *       403:
+ *         description: Access denied
+ */
 // Search Gitea issues
 router.get('/organization/:organizationId/search', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -285,6 +393,26 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
   }
 });
 
+/**
+ * @swagger
+ * /api/gitea-integrations/organization/{organizationId}:
+ *   delete:
+ *     summary: Delete Gitea integration
+ *     tags: [GiteaIntegrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Integration deleted successfully
+ *       403:
+ *         description: Access denied
+ */
 // Delete integration
 router.delete('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

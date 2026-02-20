@@ -7,6 +7,25 @@ import { logOrganizationHistory } from '../utils/changeLog';
 
 const router = Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Organizations
+ *   description: Organization management endpoints
+ */
+
+/**
+ * @swagger
+ * /api/organizations:
+ *   get:
+ *     summary: Get all organizations for the current user
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of organizations with stats (MemberCount, ProjectCount, OpenTickets, TotalTasks, CompletedTasks, ActiveProjects)
+ */
 // Get all organizations for the current user
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -58,6 +77,25 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 });
 
 // Get single organization
+/**
+ * @swagger
+ * /api/organizations/{id}:
+ *   get:
+ *     summary: Get a single organization by ID
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Organization data
+ *       404:
+ *         description: Organization not found
+ */
 router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -93,6 +131,28 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 });
 
 // Create new organization
+/**
+ * @swagger
+ * /api/organizations:
+ *   post:
+ *     summary: Create a new organization
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string }
+ *     responses:
+ *       201:
+ *         description: Organization created with default permission groups and status values
+ */
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -224,6 +284,36 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 });
 
 // Update organization
+/**
+ * @swagger
+ * /api/organizations/{id}:
+ *   put:
+ *     summary: Update an organization (requires Owner or CanManageSettings)
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string }
+ *     responses:
+ *       200:
+ *         description: Organization updated
+ *       403:
+ *         description: Forbidden - requires Owner or CanManageSettings
+ *       404:
+ *         description: Not found
+ */
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -331,6 +421,27 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 });
 
 // Delete organization
+/**
+ * @swagger
+ * /api/organizations/{id}:
+ *   delete:
+ *     summary: Delete an organization
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Organization deleted
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Not found
+ */
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -396,6 +507,23 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 });
 
 // Get organization members
+/**
+ * @swagger
+ * /api/organizations/{id}/members:
+ *   get:
+ *     summary: Get members of an organization
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of organization members
+ */
 router.get('/:id/members', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -437,6 +565,25 @@ router.get('/:id/members', authenticateToken, async (req: AuthRequest, res: Resp
   }
 });
 
+/**
+ * @swagger
+ * /api/organizations/{id}/users:
+ *   get:
+ *     summary: Get users in an organization (for task assignment)
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of users with work hours info for planning
+ *       403:
+ *         description: Access denied
+ */
 // Get users from organization for task assignment
 router.get('/:id/users', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -488,6 +635,36 @@ router.get('/:id/users', authenticateToken, async (req: AuthRequest, res: Respon
 });
 
 // Add member to organization
+/**
+ * @swagger
+ * /api/organizations/{id}/members:
+ *   post:
+ *     summary: Add a member to an organization
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [userId, role]
+ *             properties:
+ *               userId: { type: integer }
+ *               role: { type: string }
+ *               permissionGroupId: { type: integer }
+ *     responses:
+ *       201:
+ *         description: Member added
+ *       403:
+ *         description: Forbidden
+ */
 router.post('/:id/members', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -577,6 +754,38 @@ router.post('/:id/members', authenticateToken, async (req: AuthRequest, res: Res
 });
 
 // Update member
+/**
+ * @swagger
+ * /api/organizations/{id}/members/{memberId}:
+ *   put:
+ *     summary: Update a member's role or permission group
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: path
+ *         name: memberId
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               role: { type: string }
+ *               permissionGroupId: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Member updated
+ *       403:
+ *         description: Forbidden
+ */
 router.put('/:id/members/:memberId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -642,6 +851,29 @@ router.put('/:id/members/:memberId', authenticateToken, async (req: AuthRequest,
 });
 
 // Remove member
+/**
+ * @swagger
+ * /api/organizations/{id}/members/{memberId}:
+ *   delete:
+ *     summary: Remove a member from an organization
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: path
+ *         name: memberId
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Member removed
+ *       403:
+ *         description: Forbidden
+ */
 router.delete('/:id/members/:memberId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
