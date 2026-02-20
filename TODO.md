@@ -13,14 +13,14 @@
 
 ### Tickets
 - [x] **Ticket status/priority FK migration** — `Tickets.StatusId` FK → `TicketStatusValues.Id`; `Tickets.PriorityId` FK → `TicketPriorityValues.Id`. Added `StatusType varchar(30)` field to `TicketStatusValues` (values: `open`, `in_progress`, `waiting`, `resolved`, `closed`, `other`) for robust filtering without brittle string matching. All hardcoded status/priority name strings removed from frontend and backend; statistics and dashboard use `StatusType`-based CASE WHEN logic. Organizations can now edit `StatusType` for each ticket status via the org settings modal.
-- [ ] **SLA / response time tracking** — Add `FirstResponseAt`, `ResolvedAt` fields and breach alerts based on SLA rules per organization.
+- [x] **SLA / response time tracking** — `SLARules` table (per org/priority: FirstResponseHours, ResolutionHours); `FirstResponseAt` timestamp on Tickets auto-set on first staff reply; `/api/sla-rules` CRUD + `/api/sla-rules/ticket/:id/status` endpoint; color-coded 🟢/🟡/🔴 SLA badges on ticket list page.
 
 ### Projects
 - [x] **Budget tracking** — `Budget` decimal(15,2) field added to `Projects` schema. Auto-calculated `BudgetSpent` from time entries × user hourly rate pending UI.
 - [x] **Automatic RAG health score** — Auto-calculate Red/Amber/Green status based on overdue tasks, unassigned work, and budget overrun. Displayed as a coloured banner in Project Overview.
 
 ### Planning / Gantt
-- [ ] **Critical path highlighting** — Use existing `DependsOnTaskId` dependencies to calculate and visually highlight the critical path in the Gantt.
+- [x] **Critical path highlighting** — CPM (Critical Path Method) forward/backward pass on tasks with `DependsOnTaskId`+`PlannedStartDate`+`PlannedEndDate`; critical tasks highlighted with red ring on Gantt bars; 🔴 Critical Path toggle button in planning toolbar.
 - [ ] **Baseline comparison** — Store original planned dates as a baseline and show drift vs current planned dates (scope creep tracking).
 
 ### Notifications
@@ -37,7 +37,7 @@
 
 - [x] **Project Portfolio Dashboard** — `/portfolio` page with RAG health, progress bars, budget burn, open tickets; filter by org/status/RAG; sort by name/progress/budget/date; Navbar link added.
 - [x] **Due date reminder emails** — `dueDateReminderScheduler.ts` runs hourly; sends amber warning email 1 day before `DueDate` per task. Deduplicates via `DueDateReminderLog` table. Respects `due_date_reminder` email preference.
-- [ ] **Sprint / Iteration Management** — Add `Sprints` table linked to projects. Tasks assigned to sprints with start/end dates, velocity tracking, and burndown charts.
+- [x] **Sprint / Iteration Management** — `Sprints` table linked to Projects; `SprintId` on Tasks; full CRUD API (`/api/sprints`); backlog endpoint; task assignment to sprints; 🏃 Sprints tab in project detail page with sprint cards, progress bars, backlog with multi-select, and inline task management.
 - [ ] **Real-time notifications via WebSocket** — Replace polling-based notifications with `socket.io` push notifications for instant updates on task assignments and comments.
 - [x] **Task Templates** — `TaskTemplates` + `TaskTemplateItems` tables; full CRUD API (`/api/task-templates`); apply-template endpoint; template picker UI in project task tab.
 - [x] **Task Checklists** — `TaskChecklists` table, full CRUD API (`/api/task-checklists`), and checklist tab in TaskDetailModal with progress bar and checkbox items.

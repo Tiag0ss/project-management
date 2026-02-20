@@ -30,6 +30,8 @@ interface Ticket {
   ResolvedAt: string | null;
   ClosedAt: string | null;
   ExternalTicketId: string | null;
+  FirstResponseAt: string | null;
+  PriorityId: number | null;
   OrganizationName: string;
   CustomerName: string | null;
   ProjectName: string | null;
@@ -135,6 +137,7 @@ export default function TicketsPage() {
   const [searchingJira, setSearchingJira] = useState(false);
   const [jiraSearchQuery, setJiraSearchQuery] = useState('');
   const [jiraIntegrations, setJiraIntegrations] = useState<Map<number, string>>(new Map());
+  const [slaRulesMap, setSlaRulesMap] = useState<Map<number, any[]>>(new Map());
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -204,6 +207,22 @@ export default function TicketsPage() {
         }
         
         setJiraIntegrations(integrationMap);
+
+        // Load SLA rules per organization
+        const slaMap = new Map<number, any[]>();
+        await Promise.all(uniqueOrgIds.map(async (orgId: number) => {
+          try {
+            const slaRes = await fetch(
+              `${getApiUrl()}/api/sla-rules/organization/${orgId}`,
+              { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+            if (slaRes.ok) {
+              const slaData = await slaRes.json();
+              slaMap.set(orgId, slaData.rules || []);
+            }
+          } catch { /* ignore */ }
+        }));
+        setSlaRulesMap(slaMap);
       }
 
       // Load stats
@@ -469,6 +488,35 @@ export default function TicketsPage() {
     } finally {
       setCreating(false);
     }
+  };
+
+  const getSlaStatus = (ticket: Ticket): 'ok' | 'warning' | 'breached' | null => {
+    const rules = slaRulesMap.get(ticket.OrganizationId);
+    if (!rules || rules.length === 0) return null;
+    const rule = rules.find((r: any) => r.PriorityId === ticket.PriorityId && r.IsActive) ||
+                 rules.find((r: any) => r.PriorityId == null && r.IsActive);
+    if (!rule) return null;
+    if (!rule.FirstResponseHours && !rule.ResolutionHours) return null;
+    const now = Date.now();
+    const ageMinutes = (now - new Date(ticket.CreatedAt).getTime()) / 60000;
+    const isClosed = ticket.StatusIsClosed === 1;
+    if (rule.FirstResponseHours && !ticket.FirstResponseAt && !isClosed) {
+      const limitMin = rule.FirstResponseHours * 60;
+      if (ageMinutes >= limitMin) return 'breached';
+      if (ageMinutes >= limitMin * 0.75) return 'warning';
+    }
+    if (rule.ResolutionHours && !isClosed) {
+      const limitMin = rule.ResolutionHours * 60;
+      if (ageMinutes >= limitMin) return 'breached';
+      if (ageMinutes >= limitMin * 0.75) return 'warning';
+    }
+    return 'ok';
+  };
+
+  const getSlaIcon = (status: 'ok' | 'warning' | 'breached') => {
+    if (status === 'breached') return <span title="SLA Breached" className="inline-flex items-center text-xs px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 font-medium" onClick={e => e.stopPropagation()}>🔴 SLA</span>;
+    if (status === 'warning') return <span title="SLA Warning" className="inline-flex items-center text-xs px-1.5 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 font-medium" onClick={e => e.stopPropagation()}>🟡 SLA</span>;
+    return <span title="Within SLA" className="inline-flex items-center text-xs px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-medium" onClick={e => e.stopPropagation()}>🟢 SLA</span>;
   };
 
   // Returns inline style for colored status badge using TicketStatusValues
@@ -930,6 +978,7 @@ export default function TicketsPage() {
                             </svg>
                           </a>
                         )}
+                        {(() => { const sla = getSlaStatus(ticket); return sla ? getSlaIcon(sla) : null; })()}
                       </div>
                       
                       <h3 className="text-base font-medium text-gray-900 dark:text-white truncate">

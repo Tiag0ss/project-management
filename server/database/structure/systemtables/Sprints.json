@@ -1,0 +1,83 @@
+{
+  "TableName": "Sprints",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "ProjectId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Projects.Id"
+    },
+    {
+      "FieldName": "Name",
+      "DataType": "varchar(100)",
+      "NotNullable": true,
+      "Comment": "Sprint name (e.g., Sprint 1, Sprint 2)"
+    },
+    {
+      "FieldName": "Goal",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Sprint goal - what should be achieved"
+    },
+    {
+      "FieldName": "StartDate",
+      "DataType": "date",
+      "NotNullable": false,
+      "Comment": "Sprint start date"
+    },
+    {
+      "FieldName": "EndDate",
+      "DataType": "date",
+      "NotNullable": false,
+      "Comment": "Sprint end date"
+    },
+    {
+      "FieldName": "Status",
+      "DataType": "varchar(30)",
+      "NotNullable": true,
+      "DefaultValue": "planned",
+      "Comment": "Sprint status: planned, active, completed, cancelled"
+    },
+    {
+      "FieldName": "Velocity",
+      "DataType": "decimal(8,2)",
+      "NotNullable": false,
+      "Comment": "Completed story points or hours in this sprint (filled after completion)"
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who created this sprint"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    }
+  ],
+  "Relationships": [
+    {
+      "Name": "SprintProject",
+      "Description": "Sprint belongs to a Project",
+      "FromField": "ProjectId",
+      "ToTable": "Projects",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    }
+  ]
+}

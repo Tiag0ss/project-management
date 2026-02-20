@@ -1941,7 +1941,7 @@ export default function TaskDetailModal({
               ) : (
                 <div className="space-y-3">
                   {taskAttachments.map((attachment) => {
-                    const canPreview = attachment.MimeType.startsWith('image/') || attachment.MimeType === 'application/pdf';
+                    const canPreview = attachment.MimeType?.startsWith('image/') || attachment.MimeType === 'application/pdf';
                     return (
                       <div key={attachment.Id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
                         <div className="flex items-center gap-3">

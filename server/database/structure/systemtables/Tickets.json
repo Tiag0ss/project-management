@@ -119,6 +119,12 @@
       "DataType": "varchar(100)",
       "NotNullable": false,
       "Comment": "External ticket ID from integrated systems (Jira, GitHub Issues, etc.)"
+    },
+    {
+      "FieldName": "FirstResponseAt",
+      "DataType": "timestamp",
+      "NotNullable": false,
+      "Comment": "Timestamp of first non-creator staff response for SLA tracking"
     }
   ],
   "Relationships": [

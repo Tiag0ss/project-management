@@ -46,6 +46,7 @@ export default function PlanningPage() {
   const [recurringAllocations, setRecurringAllocations] = useState<any[]>([]);
   const [loadingAllocations, setLoadingAllocations] = useState(false);
   const [showDependencyLines, setShowDependencyLines] = useState(true);
+  const [showCriticalPath, setShowCriticalPath] = useState(false);
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'year'>('week');
   const [activeTab, setActiveTab] = useState<'gantt' | 'allocations'>('gantt');
   const [maxVisibleLevel, setMaxVisibleLevel] = useState<number>(0);
@@ -751,6 +752,57 @@ export default function PlanningPage() {
     const timer = setTimeout(updateLines, 100);
     return () => clearTimeout(timer);
   }, [tasks, viewStartDate, showDependencyLines, getDependencyLines]);
+
+  // Critical path computation using CPM (Critical Path Method)
+  const criticalPathIds = React.useMemo((): Set<number> => {
+    if (!showCriticalPath || !tasks.length) return new Set();
+    const DAY_MS = 86400000;
+    const timedTasks = tasks.filter(t => t.PlannedStartDate && t.PlannedEndDate);
+    if (timedTasks.length === 0) return new Set();
+    const taskMap = new Map(timedTasks.map(t => [t.Id, t]));
+    const durMs = (t: any): number =>
+      Math.max(DAY_MS, new Date(t.PlannedEndDate!).getTime() - new Date(t.PlannedStartDate!).getTime());
+    // Build successor map
+    const successors = new Map<number, number[]>();
+    for (const t of timedTasks) {
+      if (t.DependsOnTaskId && taskMap.has(t.DependsOnTaskId)) {
+        const arr = successors.get(t.DependsOnTaskId) || [];
+        arr.push(t.Id);
+        successors.set(t.DependsOnTaskId, arr);
+      }
+    }
+    // Topological sort by start date
+    const sorted = [...timedTasks].sort((a, b) =>
+      new Date(a.PlannedStartDate!).getTime() - new Date(b.PlannedStartDate!).getTime()
+    );
+    // Forward pass — earliest finish
+    const ef = new Map<number, number>();
+    for (const t of sorted) {
+      const ownStart = new Date(t.PlannedStartDate!).getTime();
+      const predEf = t.DependsOnTaskId ? ef.get(t.DependsOnTaskId) : undefined;
+      const es = predEf !== undefined ? Math.max(ownStart, predEf) : ownStart;
+      ef.set(t.Id, es + durMs(t));
+    }
+    const maxEf = Math.max(...ef.values());
+    // Backward pass — latest finish
+    const lf = new Map<number, number>();
+    for (const t of [...sorted].reverse()) {
+      const succs = successors.get(t.Id) || [];
+      if (succs.length === 0) {
+        lf.set(t.Id, maxEf);
+      } else {
+        const minSuccLs = Math.min(...succs.map(sid => (lf.get(sid) ?? maxEf) - durMs(taskMap.get(sid)!)));
+        lf.set(t.Id, minSuccLs + durMs(t));
+      }
+    }
+    // Critical: float < 0.5 day
+    const critical = new Set<number>();
+    for (const t of timedTasks) {
+      const float = (lf.get(t.Id) ?? 0) - (ef.get(t.Id) ?? 0);
+      if (float < DAY_MS * 0.5) critical.add(t.Id);
+    }
+    return critical;
+  }, [tasks, showCriticalPath]);
 
   // Reload recurring allocations when view changes
   useEffect(() => {
@@ -2838,6 +2890,17 @@ export default function PlanningPage() {
                 >
                   🔗 Dependencies
                 </button>
+                <button
+                  onClick={() => setShowCriticalPath(!showCriticalPath)}
+                  className={`px-4 py-2 rounded transition-colors ${
+                    showCriticalPath
+                      ? 'bg-red-600 hover:bg-red-700 text-white'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'
+                  }`}
+                  title="Highlight critical path"
+                >
+                  🔴 Critical Path
+                </button>
               </div>
             </div>
 
@@ -3298,7 +3361,7 @@ export default function PlanningPage() {
                               draggable={permissions?.canPlanTasks}
                               onDragStart={(e) => handleDragStart(e, task)}
                               onClick={() => handleTaskClick(task)}
-                              className={`absolute ${subtaskHeight} rounded ${!statusColor ? getPriorityColor(task) : ''} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${permissions?.canPlanTasks ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''}`}
+                              className={`absolute ${subtaskHeight} rounded ${!statusColor ? getPriorityColor(task) : ''} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${permissions?.canPlanTasks ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''}`}
                               style={{
                                 left: subtaskLeft,
                                 width: subtaskWidth,

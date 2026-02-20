@@ -1,0 +1,55 @@
+{
+  "TableName": "SLARules",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id"
+    },
+    {
+      "FieldName": "Name",
+      "DataType": "varchar(100)",
+      "NotNullable": true,
+      "Comment": "Human-readable name for this SLA rule"
+    },
+    {
+      "FieldName": "PriorityId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to TicketPriorityValues.Id (null = applies to all priorities)"
+    },
+    {
+      "FieldName": "FirstResponseHours",
+      "DataType": "decimal(6,2)",
+      "NotNullable": false,
+      "Comment": "Maximum hours allowed until first staff response"
+    },
+    {
+      "FieldName": "ResolutionHours",
+      "DataType": "decimal(6,2)",
+      "NotNullable": false,
+      "Comment": "Maximum hours allowed until ticket resolution"
+    },
+    {
+      "FieldName": "IsActive",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1",
+      "Comment": "Whether this SLA rule is currently active"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

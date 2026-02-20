@@ -132,6 +132,12 @@
       "Comment": "Manual completion percentage (0-100) set by the user"
     },
     {
+      "FieldName": "SprintId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Sprints.Id for sprint assignment"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

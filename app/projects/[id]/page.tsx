@@ -27,7 +27,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [tickets, setTickets] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'kanban' | 'gantt' | 'reporting' | 'settings' | 'utilities' | 'attachments' | 'history' | 'dependencies' | 'burndown'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'kanban' | 'gantt' | 'reporting' | 'settings' | 'utilities' | 'attachments' | 'history' | 'dependencies' | 'burndown' | 'sprints'>('overview');
   const [showEditModal, setShowEditModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -1413,6 +1413,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 📉 Burndown
               </button>
               <button
+                onClick={() => setActiveTab('sprints')}
+                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                  activeTab === 'sprints'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                🏃 Sprints
+              </button>
+              <button
                 onClick={() => {
                   setActiveTab('attachments');
                   loadProjectAttachments();
@@ -1638,6 +1648,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
           {activeTab === 'burndown' && (
             <BurndownTab projectId={parseInt(projectId)} token={token!} />
+          )}
+
+          {activeTab === 'sprints' && project && (
+            <SprintsTab projectId={parseInt(projectId)} organizationId={project.OrganizationId} token={token!} />
           )}
         </main>
       </div>
@@ -9079,6 +9093,510 @@ function ApplyTemplateModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── SprintsTab ──────────────────────────────────────────────────────────────
+
+interface Sprint {
+  Id: number;
+  ProjectId: number;
+  Name: string;
+  Goal: string | null;
+  StartDate: string | null;
+  EndDate: string | null;
+  Status: 'planned' | 'active' | 'completed' | 'cancelled';
+  Velocity: number | null;
+  TotalTasks: number;
+  CompletedTasks: number;
+  TotalEstimatedHours: number;
+  CompletedHours: number;
+}
+
+interface BacklogTask {
+  Id: number;
+  TaskName: string;
+  EstimatedHours: number | null;
+  StatusName: string;
+  StatusColor: string;
+  PriorityName: string;
+  PriorityColor: string;
+  AssigneeName: string | null;
+  FirstName: string | null;
+  LastName: string | null;
+}
+
+function SprintsTab({ projectId, organizationId, token }: { projectId: number; organizationId: number; token: string }) {
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+  const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [backlog, setBacklog] = useState<BacklogTask[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [showSprintModal, setShowSprintModal] = useState(false);
+  const [editingSprint, setEditingSprint] = useState<Sprint | null>(null);
+  const [expandedSprints, setExpandedSprints] = useState<Set<number>>(new Set());
+  const [sprintTasks, setSprintTasks] = useState<Record<number, BacklogTask[]>>({});
+  const [selectedBacklogTasks, setSelectedBacklogTasks] = useState<Set<number>>(new Set());
+  const [assigningToSprint, setAssigningToSprint] = useState<number | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
+
+  // Sprint form
+  const [sprintForm, setSprintForm] = useState({ name: '', goal: '', startDate: '', endDate: '', status: 'planned' });
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    loadData();
+  }, [projectId]);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const [sprintsRes, backlogRes] = await Promise.all([
+        fetch(`${API_URL}/api/sprints/project/${projectId}`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_URL}/api/sprints/project/${projectId}/backlog`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      if (sprintsRes.ok) setSprints((await sprintsRes.json()).sprints || []);
+      if (backlogRes.ok) setBacklog((await backlogRes.json()).tasks || []);
+    } catch {
+      setError('Failed to load sprint data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadSprintTasks = async (sprintId: number) => {
+    try {
+      const res = await fetch(`${API_URL}/api/sprints/${sprintId}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        setSprintTasks(prev => ({ ...prev, [sprintId]: data.tasks || [] }));
+      }
+    } catch { /* ignore */ }
+  };
+
+  const toggleSprintExpanded = (sprintId: number) => {
+    setExpandedSprints(prev => {
+      const next = new Set(prev);
+      if (next.has(sprintId)) {
+        next.delete(sprintId);
+      } else {
+        next.add(sprintId);
+        if (!sprintTasks[sprintId]) loadSprintTasks(sprintId);
+      }
+      return next;
+    });
+  };
+
+  const openCreateSprint = () => {
+    setEditingSprint(null);
+    setSprintForm({ name: '', goal: '', startDate: '', endDate: '', status: 'planned' });
+    setShowSprintModal(true);
+  };
+
+  const openEditSprint = (sprint: Sprint) => {
+    setEditingSprint(sprint);
+    setSprintForm({
+      name: sprint.Name,
+      goal: sprint.Goal || '',
+      startDate: sprint.StartDate ? sprint.StartDate.split('T')[0] : '',
+      endDate: sprint.EndDate ? sprint.EndDate.split('T')[0] : '',
+      status: sprint.Status,
+    });
+    setShowSprintModal(true);
+  };
+
+  const saveSprint = async () => {
+    if (!sprintForm.name.trim()) return;
+    setIsSaving(true);
+    try {
+      const url = editingSprint ? `${API_URL}/api/sprints/${editingSprint.Id}` : `${API_URL}/api/sprints`;
+      const method = editingSprint ? 'PUT' : 'POST';
+      const body = editingSprint
+        ? { ...sprintForm }
+        : { projectId, ...sprintForm };
+      const res = await fetch(url, {
+        method,
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.message || 'Failed to save sprint');
+        return;
+      }
+      setShowSprintModal(false);
+      await loadData();
+    } catch {
+      setError('Failed to save sprint');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteSprint = (sprint: Sprint) => {
+    setConfirmModal({
+      message: `Delete sprint "${sprint.Name}"? Tasks will be moved to backlog.`,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        await fetch(`${API_URL}/api/sprints/${sprint.Id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        await loadData();
+      },
+    });
+  };
+
+  const assignTasksToSprint = async (sprintId: number) => {
+    if (selectedBacklogTasks.size === 0) return;
+    setAssigningToSprint(sprintId);
+    try {
+      await fetch(`${API_URL}/api/sprints/${sprintId}/tasks`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskIds: Array.from(selectedBacklogTasks) }),
+      });
+      setSelectedBacklogTasks(new Set());
+      if (expandedSprints.has(sprintId)) {
+        await loadSprintTasks(sprintId);
+      }
+      await loadData();
+    } catch {
+      setError('Failed to assign tasks');
+    } finally {
+      setAssigningToSprint(null);
+    }
+  };
+
+  const removeTaskFromSprint = async (sprintId: number, taskId: number) => {
+    await fetch(`${API_URL}/api/sprints/${sprintId}/tasks/remove`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskIds: [taskId] }),
+    });
+    setSprintTasks(prev => ({ ...prev, [sprintId]: (prev[sprintId] || []).filter(t => t.Id !== taskId) }));
+    await loadData();
+  };
+
+  const sprintStatusBadge = (status: Sprint['Status']) => {
+    const styles: Record<Sprint['Status'], string> = {
+      planned: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300',
+      active: 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300',
+      completed: 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300',
+      cancelled: 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300',
+    };
+    return (
+      <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${styles[status]}`}>
+        {status}
+      </span>
+    );
+  };
+
+  if (isLoading) return <div className="flex items-center justify-center h-64 text-gray-500">Loading sprints…</div>;
+
+  return (
+    <div className="space-y-6">
+      {error && (
+        <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
+          {error}
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Sprints</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{sprints.length} sprint{sprints.length !== 1 ? 's' : ''} · {backlog.length} backlog item{backlog.length !== 1 ? 's' : ''}</p>
+        </div>
+        <button
+          onClick={openCreateSprint}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+        >
+          + New Sprint
+        </button>
+      </div>
+
+      {/* Sprint Cards */}
+      <div className="space-y-4">
+        {sprints.length === 0 && (
+          <div className="text-center py-12 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+            <p className="text-lg font-medium">No sprints yet</p>
+            <p className="text-sm mt-1">Create your first sprint to start organizing work into iterations.</p>
+          </div>
+        )}
+        {sprints.map(sprint => {
+          const progress = sprint.TotalTasks > 0 ? Math.round((sprint.CompletedTasks / sprint.TotalTasks) * 100) : 0;
+          const isExpanded = expandedSprints.has(sprint.Id);
+          const tasks = sprintTasks[sprint.Id] || [];
+          return (
+            <div key={sprint.Id} className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700">
+              {/* Sprint Header */}
+              <div className="p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <button
+                        onClick={() => toggleSprintExpanded(sprint.Id)}
+                        className="font-semibold text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 text-left"
+                      >
+                        {isExpanded ? '▾' : '▸'} {sprint.Name}
+                      </button>
+                      {sprintStatusBadge(sprint.Status)}
+                      {selectedBacklogTasks.size > 0 && (
+                        <button
+                          onClick={() => assignTasksToSprint(sprint.Id)}
+                          disabled={assigningToSprint === sprint.Id}
+                          className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors disabled:opacity-50"
+                        >
+                          {assigningToSprint === sprint.Id ? 'Moving…' : `Move ${selectedBacklogTasks.size} task${selectedBacklogTasks.size !== 1 ? 's' : ''} here`}
+                        </button>
+                      )}
+                    </div>
+                    {sprint.Goal && <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 italic">"{sprint.Goal}"</p>}
+                    <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
+                      {sprint.StartDate && <span>📅 {sprint.StartDate.split('T')[0]} → {sprint.EndDate ? sprint.EndDate.split('T')[0] : '?'}</span>}
+                      <span>📋 {sprint.TotalTasks} tasks ({sprint.CompletedTasks} done)</span>
+                      <span>⏱ {Number(sprint.TotalEstimatedHours || 0).toFixed(1)}h estimated</span>
+                      {sprint.Velocity != null && <span>⚡ Velocity: {sprint.Velocity}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => openEditSprint(sprint)} className="text-xs px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">✏️ Edit</button>
+                    <button onClick={() => deleteSprint(sprint)} className="text-xs px-2 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors">🗑</button>
+                  </div>
+                </div>
+                {/* Progress bar */}
+                <div className="mt-3">
+                  <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                    <span>Progress</span>
+                    <span>{progress}%</span>
+                  </div>
+                  <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                    <div
+                      className={`h-2 rounded-full transition-all ${progress === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Sprint Tasks (expanded) */}
+              {isExpanded && (
+                <div className="border-t border-gray-200 dark:border-gray-700">
+                  {tasks.length === 0 ? (
+                    <p className="text-sm text-gray-400 px-4 py-3 italic">No tasks in this sprint.</p>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 dark:bg-gray-700/50">
+                        <tr>
+                          <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium">Task</th>
+                          <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Status</th>
+                          <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden lg:table-cell">Priority</th>
+                          <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Assignee</th>
+                          <th className="text-right px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden sm:table-cell">Hours</th>
+                          <th className="px-2 py-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                        {tasks.map(task => (
+                          <tr key={task.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                            <td className="px-4 py-2 text-gray-900 dark:text-white">{task.TaskName}</td>
+                            <td className="px-4 py-2 hidden md:table-cell">
+                              <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${task.StatusColor}22`, color: task.StatusColor }}>{task.StatusName}</span>
+                            </td>
+                            <td className="px-4 py-2 hidden lg:table-cell">
+                              <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${task.PriorityColor}22`, color: task.PriorityColor }}>{task.PriorityName}</span>
+                            </td>
+                            <td className="px-4 py-2 text-gray-500 dark:text-gray-400 hidden md:table-cell">
+                              {task.FirstName ? `${task.FirstName} ${task.LastName}` : task.AssigneeName || '—'}
+                            </td>
+                            <td className="px-4 py-2 text-right text-gray-500 dark:text-gray-400 hidden sm:table-cell">
+                              {task.EstimatedHours != null ? `${task.EstimatedHours}h` : '—'}
+                            </td>
+                            <td className="px-2 py-2">
+                              <button
+                                onClick={() => removeTaskFromSprint(sprint.Id, task.Id)}
+                                title="Remove from sprint"
+                                className="text-gray-400 hover:text-red-500 transition-colors"
+                              >
+                                ✕
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Backlog */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-gray-900 dark:text-white">Backlog</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Tasks not assigned to any sprint</p>
+          </div>
+          {selectedBacklogTasks.size > 0 && (
+            <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">{selectedBacklogTasks.size} selected — click a sprint to assign</span>
+          )}
+        </div>
+        {backlog.length === 0 ? (
+          <p className="text-sm text-gray-400 px-4 py-8 text-center italic">All tasks are assigned to sprints.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-gray-700/50">
+              <tr>
+                <th className="px-4 py-2 w-8">
+                  <input
+                    type="checkbox"
+                    checked={selectedBacklogTasks.size === backlog.length && backlog.length > 0}
+                    onChange={e => setSelectedBacklogTasks(e.target.checked ? new Set(backlog.map(t => t.Id)) : new Set())}
+                    className="rounded"
+                  />
+                </th>
+                <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium">Task</th>
+                <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Status</th>
+                <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden lg:table-cell">Priority</th>
+                <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Assignee</th>
+                <th className="text-right px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden sm:table-cell">Hours</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              {backlog.map(task => (
+                <tr
+                  key={task.Id}
+                  className={`cursor-pointer transition-colors ${selectedBacklogTasks.has(task.Id) ? 'bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'}`}
+                  onClick={() => setSelectedBacklogTasks(prev => {
+                    const next = new Set(prev);
+                    if (next.has(task.Id)) next.delete(task.Id); else next.add(task.Id);
+                    return next;
+                  })}
+                >
+                  <td className="px-4 py-2">
+                    <input type="checkbox" checked={selectedBacklogTasks.has(task.Id)} onChange={() => {}} className="rounded" />
+                  </td>
+                  <td className="px-4 py-2 text-gray-900 dark:text-white">{task.TaskName}</td>
+                  <td className="px-4 py-2 hidden md:table-cell">
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${task.StatusColor}22`, color: task.StatusColor }}>{task.StatusName}</span>
+                  </td>
+                  <td className="px-4 py-2 hidden lg:table-cell">
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${task.PriorityColor}22`, color: task.PriorityColor }}>{task.PriorityName}</span>
+                  </td>
+                  <td className="px-4 py-2 text-gray-500 dark:text-gray-400 hidden md:table-cell">
+                    {task.FirstName ? `${task.FirstName} ${task.LastName}` : task.AssigneeName || '—'}
+                  </td>
+                  <td className="px-4 py-2 text-right text-gray-500 dark:text-gray-400 hidden sm:table-cell">
+                    {task.EstimatedHours != null ? `${task.EstimatedHours}h` : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Sprint Create/Edit Modal */}
+      {showSprintModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                {editingSprint ? 'Edit Sprint' : 'New Sprint'}
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
+                  <input
+                    type="text"
+                    value={sprintForm.name}
+                    onChange={e => setSprintForm({ ...sprintForm, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    placeholder="Sprint 1"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Goal</label>
+                  <textarea
+                    value={sprintForm.goal}
+                    onChange={e => setSprintForm({ ...sprintForm, goal: e.target.value })}
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    placeholder="What is the main goal of this sprint?"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      value={sprintForm.startDate}
+                      onChange={e => setSprintForm({ ...sprintForm, startDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
+                    <input
+                      type="date"
+                      value={sprintForm.endDate}
+                      onChange={e => setSprintForm({ ...sprintForm, endDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                  <select
+                    value={sprintForm.status}
+                    onChange={e => setSprintForm({ ...sprintForm, status: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="planned">Planned</option>
+                    <option value="active">Active</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowSprintModal(false)}
+                  className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveSprint}
+                  disabled={isSaving || !sprintForm.name.trim()}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 dark:disabled:bg-blue-800 text-white rounded-lg transition-colors"
+                >
+                  {isSaving ? 'Saving…' : editingSprint ? 'Save Changes' : 'Create Sprint'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-sm w-full mx-4 p-6">
+            <p className="text-gray-900 dark:text-white mb-6">{confirmModal.message}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmModal(null)} className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg transition-colors">Cancel</button>
+              <button onClick={confirmModal.onConfirm} className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -996,6 +996,11 @@ router.post('/:id/comments', authenticateToken, async (req: AuthRequest, res: Re
         if (currentStatus === 'Open') {
           newStatus = 'Waiting Response';
         }
+        // Auto-set FirstResponseAt on first staff response
+        await pool.execute(
+          `UPDATE Tickets SET FirstResponseAt = NOW() WHERE Id = ? AND FirstResponseAt IS NULL AND CreatedByUserId != ?`,
+          [id, userId]
+        );
       }
 
       if (newStatus) {

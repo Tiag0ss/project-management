@@ -19,7 +19,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
   const orgId = parseInt(resolvedParams.id);
   
   const [organization, setOrganization] = useState<Organization | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'projects' | 'permissions' | 'statuses' | 'tags' | 'attachments' | 'integrations' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'projects' | 'permissions' | 'statuses' | 'tags' | 'attachments' | 'integrations' | 'sla' | 'history'>('overview');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const { user, token, isLoading: authLoading } = useAuth();
@@ -382,6 +382,18 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
                   🔌 Integrations
                 </button>
               )}
+              {canManageSettings && (
+                <button
+                  onClick={() => setActiveTab('sla')}
+                  className={`px-6 py-4 text-sm font-medium border-b-2 ${
+                    activeTab === 'sla'
+                      ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                  }`}
+                >
+                  ⏱️ SLA Rules
+                </button>
+              )}
               <button
                 onClick={() => setActiveTab('history')}
                 className={`px-6 py-4 text-sm font-medium border-b-2 ${
@@ -413,6 +425,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
               />
             )}
             {activeTab === 'integrations' && <IntegrationsTab orgId={orgId} token={token!} />}
+            {activeTab === 'sla' && <SlaTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}
             {activeTab === 'history' && (
               <div>
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">📜 Change History</h2>
@@ -3705,6 +3718,415 @@ function AttachmentsTab({
               </div>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── SlaTab ──────────────────────────────────────────────────────────────────
+
+interface SlaRule {
+  Id: number;
+  OrganizationId: number;
+  Name: string;
+  PriorityId: number | null;
+  PriorityName: string | null;
+  PriorityColor: string | null;
+  FirstResponseHours: number | null;
+  ResolutionHours: number | null;
+  IsActive: number;
+}
+
+interface TicketPriority {
+  Id: number;
+  PriorityName: string;
+  Color: string;
+}
+
+function SlaTab({
+  orgId,
+  canManage,
+  token,
+  showConfirm,
+}: {
+  orgId: number;
+  canManage: boolean;
+  token: string;
+  showConfirm: (title: string, message: string, onConfirm: () => void) => void;
+}) {
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+  const [rules, setRules] = useState<SlaRule[]>([]);
+  const [priorities, setPriorities] = useState<TicketPriority[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [editingRule, setEditingRule] = useState<SlaRule | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: '',
+    priorityId: '',
+    firstResponseHours: '',
+    resolutionHours: '',
+    isActive: true,
+  });
+
+  useEffect(() => {
+    loadData();
+  }, [orgId]);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const [rulesRes, priRes] = await Promise.all([
+        fetch(`${API_URL}/api/sla-rules/organization/${orgId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${API_URL}/api/status-values/ticket-priority/${orgId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+      if (rulesRes.ok) setRules((await rulesRes.json()).rules || []);
+      if (priRes.ok) {
+        const d = await priRes.json();
+        setPriorities(d.priorities || d.ticketPriorities || []);
+      }
+    } catch {
+      setError('Failed to load SLA configuration');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const openCreate = () => {
+    setEditingRule(null);
+    setForm({ name: '', priorityId: '', firstResponseHours: '', resolutionHours: '', isActive: true });
+    setShowModal(true);
+  };
+
+  const openEdit = (rule: SlaRule) => {
+    setEditingRule(rule);
+    setForm({
+      name: rule.Name,
+      priorityId: rule.PriorityId != null ? String(rule.PriorityId) : '',
+      firstResponseHours: rule.FirstResponseHours != null ? String(rule.FirstResponseHours) : '',
+      resolutionHours: rule.ResolutionHours != null ? String(rule.ResolutionHours) : '',
+      isActive: rule.IsActive === 1,
+    });
+    setShowModal(true);
+  };
+
+  const saveRule = async () => {
+    if (!form.name.trim()) return;
+    setIsSaving(true);
+    try {
+      const body = {
+        organizationId: orgId,
+        name: form.name.trim(),
+        priorityId: form.priorityId ? parseInt(form.priorityId) : null,
+        firstResponseHours: form.firstResponseHours ? parseFloat(form.firstResponseHours) : null,
+        resolutionHours: form.resolutionHours ? parseFloat(form.resolutionHours) : null,
+        isActive: form.isActive,
+      };
+      const url = editingRule ? `${API_URL}/api/sla-rules/${editingRule.Id}` : `${API_URL}/api/sla-rules`;
+      const method = editingRule ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        setError(d.message || 'Failed to save');
+        return;
+      }
+      setShowModal(false);
+      await loadData();
+    } catch {
+      setError('Failed to save SLA rule');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteRule = (rule: SlaRule) => {
+    showConfirm(
+      'Delete SLA Rule',
+      `Delete "${rule.Name}"? This cannot be undone.`,
+      async () => {
+        await fetch(`${API_URL}/api/sla-rules/${rule.Id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        await loadData();
+      }
+    );
+  };
+
+  const toggleActive = async (rule: SlaRule) => {
+    await fetch(`${API_URL}/api/sla-rules/${rule.Id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: rule.Name,
+        priorityId: rule.PriorityId,
+        firstResponseHours: rule.FirstResponseHours,
+        resolutionHours: rule.ResolutionHours,
+        isActive: !rule.IsActive,
+      }),
+    });
+    await loadData();
+  };
+
+  const formatHours = (h: number | null) => {
+    if (h == null) return '—';
+    if (h < 1) return `${Math.round(h * 60)}m`;
+    if (h === 1) return '1h';
+    if (Number.isInteger(h)) return `${h}h`;
+    const whole = Math.floor(h);
+    const mins = Math.round((h - whole) * 60);
+    return `${whole}h ${mins}m`;
+  };
+
+  if (isLoading) return <div className="py-12 text-center text-gray-500">Loading SLA rules…</div>;
+
+  return (
+    <div>
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">⏱️ SLA Rules</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Define response and resolution time targets for tickets. Breached SLAs are shown in the ticket list.
+          </p>
+        </div>
+        {canManage && (
+          <button
+            onClick={openCreate}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            + New Rule
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
+          {error}
+        </div>
+      )}
+
+      {rules.length === 0 ? (
+        <div className="text-center py-16 bg-gray-50 dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+          <p className="text-gray-500 dark:text-gray-400 text-lg font-medium">No SLA rules configured</p>
+          <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
+            Create a rule to start tracking response and resolution times for tickets.
+          </p>
+          {canManage && (
+            <button
+              onClick={openCreate}
+              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
+            >
+              Create first rule
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 dark:border-gray-700">
+                <th className="text-left py-3 pr-4 text-gray-600 dark:text-gray-400 font-medium">Rule Name</th>
+                <th className="text-left py-3 pr-4 text-gray-600 dark:text-gray-400 font-medium">Applies to Priority</th>
+                <th className="text-left py-3 pr-4 text-gray-600 dark:text-gray-400 font-medium">First Response</th>
+                <th className="text-left py-3 pr-4 text-gray-600 dark:text-gray-400 font-medium">Resolution</th>
+                <th className="text-left py-3 pr-4 text-gray-600 dark:text-gray-400 font-medium">Status</th>
+                {canManage && <th className="text-right py-3 text-gray-600 dark:text-gray-400 font-medium">Actions</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              {rules.map(rule => (
+                <tr key={rule.Id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/30 ${!rule.IsActive ? 'opacity-50' : ''}`}>
+                  <td className="py-3 pr-4 font-medium text-gray-900 dark:text-white">{rule.Name}</td>
+                  <td className="py-3 pr-4">
+                    {rule.PriorityId != null && rule.PriorityName ? (
+                      <span
+                        className="inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium"
+                        style={{
+                          backgroundColor: rule.PriorityColor ? `${rule.PriorityColor}22` : undefined,
+                          color: rule.PriorityColor || undefined,
+                        }}
+                      >
+                        {rule.PriorityName}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 dark:text-gray-500 text-xs italic">All priorities</span>
+                    )}
+                  </td>
+                  <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">
+                    {formatHours(rule.FirstResponseHours)}
+                  </td>
+                  <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">
+                    {formatHours(rule.ResolutionHours)}
+                  </td>
+                  <td className="py-3 pr-4">
+                    {canManage ? (
+                      <button
+                        onClick={() => toggleActive(rule)}
+                        className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium transition-colors ${
+                          rule.IsActive
+                            ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 hover:bg-green-200'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-500 hover:bg-gray-200'
+                        }`}
+                        title="Click to toggle"
+                      >
+                        {rule.IsActive ? '✅ Active' : '⏸ Inactive'}
+                      </button>
+                    ) : (
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${rule.IsActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {rule.IsActive ? 'Active' : 'Inactive'}
+                      </span>
+                    )}
+                  </td>
+                  {canManage && (
+                    <td className="py-3 text-right">
+                      <button
+                        onClick={() => openEdit(rule)}
+                        className="text-blue-600 dark:text-blue-400 hover:underline text-xs mr-3"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => deleteRule(rule)}
+                        className="text-red-600 dark:text-red-400 hover:underline text-xs"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Info box */}
+      <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 text-sm text-blue-800 dark:text-blue-300">
+        <p className="font-medium mb-1">How SLA badges work</p>
+        <ul className="list-disc list-inside space-y-0.5 text-blue-700 dark:text-blue-400">
+          <li>🟢 <strong>Green</strong> — ticket is within SLA time limits</li>
+          <li>🟡 <strong>Yellow</strong> — &gt; 75% of the allowed time has elapsed</li>
+          <li>🔴 <strong>Red</strong> — SLA has been breached (time limit exceeded)</li>
+          <li>Rules with no priority set act as a catch-all for all ticket priorities</li>
+          <li>If a priority-specific rule exists, it takes precedence over the catch-all</li>
+        </ul>
+      </div>
+
+      {/* Create / Edit Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {editingRule ? 'Edit SLA Rule' : 'New SLA Rule'}
+              </h3>
+            </div>
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded text-sm">
+                  {error}
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Rule Name *
+                </label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={e => setForm({ ...form, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                  placeholder="e.g. Urgent tickets, Standard SLA"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Applies to Priority
+                </label>
+                <select
+                  value={form.priorityId}
+                  onChange={e => setForm({ ...form, priorityId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                >
+                  <option value="">All priorities (catch-all)</option>
+                  {priorities.map(p => (
+                    <option key={p.Id} value={p.Id}>{p.PriorityName}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">Leave empty to apply to all priorities not covered by another rule.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    First Response (hours)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={form.firstResponseHours}
+                    onChange={e => setForm({ ...form, firstResponseHours: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                    placeholder="e.g. 4"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Max hours until first staff reply</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Resolution (hours)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={form.resolutionHours}
+                    onChange={e => setForm({ ...form, resolutionHours: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                    placeholder="e.g. 24"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Max hours until ticket is resolved</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="sla-active"
+                  checked={form.isActive}
+                  onChange={e => setForm({ ...form, isActive: e.target.checked })}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor="sla-active" className="text-sm text-gray-700 dark:text-gray-300">
+                  Active (rule is enforced)
+                </label>
+              </div>
+            </div>
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex gap-3">
+              <button
+                onClick={() => { setShowModal(false); setError(''); }}
+                className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg transition-colors text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveRule}
+                disabled={isSaving || !form.name.trim()}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 dark:disabled:bg-blue-800 text-white rounded-lg transition-colors text-sm"
+              >
+                {isSaving ? 'Saving…' : editingRule ? 'Save Changes' : 'Create Rule'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

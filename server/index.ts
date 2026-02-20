@@ -54,6 +54,8 @@ import recurringAllocationsRoutes from './routes/recurringAllocations';
 import taskChecklistsRoutes from './routes/taskChecklists';
 import timersRoutes from './routes/timers';
 import taskTemplatesRoutes from './routes/taskTemplates';
+import slaRulesRoutes from './routes/slaRules';
+import sprintsRoutes from './routes/sprints';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
 import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler';
 
@@ -220,6 +222,8 @@ app.prepare().then(async () => {
   server.use('/api/task-checklists', taskChecklistsRoutes);
   server.use('/api/timers', timersRoutes);
   server.use('/api/task-templates', taskTemplatesRoutes);
+  server.use('/api/sla-rules', slaRulesRoutes);
+  server.use('/api/sprints', sprintsRoutes);
 
   // Error handling middleware
   server.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
