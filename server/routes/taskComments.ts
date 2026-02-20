@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { sanitizeRichText, sanitizePlainText } from '../utils/sanitize';
+import { createNotification } from './notifications';
 
 const router = Router();
 
@@ -36,9 +38,10 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: 'TaskId and comment are required' });
     }
 
+    const sanitizedComment = sanitizeRichText(comment) || comment;
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO TaskComments (TaskId, UserId, Comment) VALUES (?, ?, ?)`,
-      [taskId, userId, comment]
+      [taskId, userId, sanitizedComment]
     );
 
     // Fetch the created comment with user info
@@ -49,6 +52,52 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        WHERE tc.Id = ?`,
       [result.insertId]
     );
+
+    // Parse @mentions and send notifications
+    try {
+      const [commenter] = await pool.execute<RowDataPacket[]>(
+        'SELECT Username, FirstName, LastName FROM Users WHERE Id = ?',
+        [userId]
+      );
+      const [taskRows] = await pool.execute<RowDataPacket[]>(
+        'SELECT TaskName, ProjectId FROM Tasks WHERE Id = ?',
+        [taskId]
+      );
+      const commenterName = commenter.length > 0
+        ? (commenter[0].FirstName && commenter[0].LastName
+            ? `${commenter[0].FirstName} ${commenter[0].LastName}`
+            : commenter[0].Username)
+        : 'Someone';
+      const taskName = taskRows.length > 0 ? taskRows[0].TaskName : 'a task';
+      const projectId = taskRows.length > 0 ? taskRows[0].ProjectId : null;
+      const plainText = sanitizePlainText(sanitizedComment) ?? '';
+      const mentionMatches = plainText.match(/@(\w+)/g) || [];
+      const notifiedUsers = new Set<number>();
+      for (const mention of mentionMatches) {
+        const username = mention.slice(1);
+        const [mentionedUsers] = await pool.execute<RowDataPacket[]>(
+          'SELECT Id FROM Users WHERE Username = ?',
+          [username]
+        );
+        if (mentionedUsers.length > 0) {
+          const mentionedUserId = mentionedUsers[0].Id;
+          if (mentionedUserId !== userId && !notifiedUsers.has(mentionedUserId)) {
+            notifiedUsers.add(mentionedUserId);
+            await createNotification(
+              mentionedUserId,
+              'mention',
+              `You were mentioned in a comment`,
+              `${commenterName} mentioned you in a comment on "${taskName}"`,
+              projectId ? `/projects/${projectId}?task=${taskId}` : undefined,
+              taskId,
+              projectId || undefined
+            );
+          }
+        }
+      }
+    } catch (mentionError) {
+      console.error('Error processing @mentions:', mentionError);
+    }
 
     res.status(201).json({ success: true, comment: comments[0] });
   } catch (error) {
@@ -80,7 +129,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE TaskComments SET Comment = ? WHERE Id = ?`,
-      [comment, id]
+      [sanitizeRichText(comment) || comment, id]
     );
 
     // Fetch updated comment

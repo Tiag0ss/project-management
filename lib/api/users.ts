@@ -45,6 +45,10 @@ export interface User {
   HobbyHoursSaturday?: number;
   HobbyStartSunday?: string;
   HobbyHoursSunday?: number;
+  Timezone?: string;
+  HourlyRate?: number | null;
+  TeamLeaderId?: number | null;
+  TeamLeaderName?: string | null;
   CreatedAt: string;
   UpdatedAt: string;
 }
@@ -67,6 +71,8 @@ export interface UpdateUserData {
   workHoursFriday?: number;
   workHoursSaturday?: number;
   workHoursSunday?: number;
+  hourlyRate?: number | null;
+  teamLeaderId?: number | null;
 }
 
 export interface CreateUserData extends UpdateUserData {

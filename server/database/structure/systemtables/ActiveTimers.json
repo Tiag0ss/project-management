@@ -1,0 +1,32 @@
+{
+  "TableName": "ActiveTimers",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "TaskId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "StartedAt",
+      "DataType": "datetime",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Description",
+      "DataType": "varchar(500)",
+      "NotNullable": false
+    }
+  ]
+}

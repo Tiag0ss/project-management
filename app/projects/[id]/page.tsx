@@ -27,7 +27,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [tickets, setTickets] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'kanban' | 'gantt' | 'reporting' | 'settings' | 'utilities' | 'attachments' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'kanban' | 'gantt' | 'reporting' | 'settings' | 'utilities' | 'attachments' | 'history' | 'dependencies' | 'burndown'>('overview');
   const [showEditModal, setShowEditModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -1403,6 +1403,39 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 📊 Reporting
               </button>
               <button
+                onClick={() => setActiveTab('burndown')}
+                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                  activeTab === 'burndown'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                📉 Burndown
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('attachments');
+                  loadProjectAttachments();
+                }}
+                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                  activeTab === 'attachments'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                📎 Attachments
+              </button>
+              <button
+                onClick={() => setActiveTab('dependencies')}
+                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                  activeTab === 'dependencies'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                🔗 Dependencies
+              </button>
+              <button
                 onClick={() => setActiveTab('utilities')}
                 className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
                   activeTab === 'utilities'
@@ -1421,19 +1454,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 }`}
               >
                 ⚙️ Settings
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab('attachments');
-                  loadProjectAttachments();
-                }}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'attachments'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📎 Attachments
               </button>
               <button
                 onClick={() => setActiveTab('history')}
@@ -1485,6 +1505,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               canCreate={permissions?.canCreateTasks || false}
               canManage={permissions?.canManageTasks || false}
               canDelete={permissions?.canDeleteTasks || false}
+              token={token!}
             />
           )}
 
@@ -1606,6 +1627,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">📜 Change History</h2>
               <ChangeHistory entityType="project" entityId={parseInt(projectId)} />
             </div>
+          )}
+
+          {activeTab === 'dependencies' && (
+            <DependencyGraphTab
+              tasks={tasks}
+              onOpenTask={(task) => { setEditingTask(task); setShowTaskModal(true); }}
+            />
+          )}
+
+          {activeTab === 'burndown' && (
+            <BurndownTab projectId={parseInt(projectId)} token={token!} />
           )}
         </main>
       </div>
@@ -2869,8 +2901,8 @@ function OverviewTab({ project, tasks, tickets }: { project: Project; tasks: Tas
   
   // Ticket statistics
   const totalTickets = tickets.length;
-  const openTickets = tickets.filter(t => t.Status === 'Open').length;
-  const resolvedTickets = tickets.filter(t => t.Status === 'Resolved' || t.Status === 'Closed').length;
+  const openTickets = tickets.filter(t => t.StatusIsClosed === 0).length;
+  const resolvedTickets = tickets.filter(t => t.StatusIsClosed === 1).length;
   const unresolvedTickets = totalTickets - resolvedTickets;
   
   // Priority breakdown (all tasks including subtasks)
@@ -3040,6 +3072,91 @@ function OverviewTab({ project, tasks, tickets }: { project: Project; tasks: Tas
           </div>
         </div>
       </div>
+
+      {/* Budget Tracking */}
+      {project.Budget !== null && project.Budget !== undefined && project.Budget > 0 && (() => {
+        const budgetSpent = Number(project.BudgetSpent || 0);
+        const budgetTotal = Number(project.Budget);
+        const budgetRemaining = budgetTotal - budgetSpent;
+        const budgetPct = Math.min(100, Math.round((budgetSpent / budgetTotal) * 100));
+        const barColor = budgetPct >= 100 ? 'bg-red-500' : budgetPct >= 80 ? 'bg-amber-500' : 'bg-green-500';
+        const textColor = budgetPct >= 100 ? 'text-red-600 dark:text-red-400' : budgetPct >= 80 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400';
+        return (
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">💰 Budget</h2>
+            <div className="mb-4">
+              <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-1">
+                <span>Spent: <span className={`font-semibold ${textColor}`}>${budgetSpent.toFixed(2)}</span></span>
+                <span className="font-semibold">{budgetPct}%</span>
+                <span>Total: <span className="font-semibold text-gray-900 dark:text-white">${budgetTotal.toFixed(2)}</span></span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                <div className={`${barColor} h-3 rounded-full transition-all`} style={{ width: `${budgetPct}%` }}></div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Total Budget</div>
+                <div className="text-lg font-bold text-gray-900 dark:text-white">${budgetTotal.toFixed(2)}</div>
+              </div>
+              <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Spent</div>
+                <div className={`text-lg font-bold ${textColor}`}>${budgetSpent.toFixed(2)}</div>
+              </div>
+              <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Remaining</div>
+                <div className={`text-lg font-bold ${budgetRemaining < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>${budgetRemaining.toFixed(2)}</div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* RAG Health Score */}
+      {(() => {
+        const budgetSpent = Number(project.BudgetSpent || 0);
+        const budgetTotal = Number(project.Budget) || 0;
+        const budgetPct = budgetTotal > 0 ? Math.round((budgetSpent / budgetTotal) * 100) : 0;
+        const totalTasks = tasks.length;
+
+        let ragStatus: 'red' | 'amber' | 'green' = 'green';
+        const ragReasons: string[] = [];
+
+        if (overdueTasks.length > 2) { ragStatus = 'red'; ragReasons.push(`${overdueTasks.length} overdue tasks`); }
+        if (budgetTotal > 0 && budgetPct >= 100) { ragStatus = 'red'; ragReasons.push('Budget exceeded'); }
+        if (ragStatus !== 'red') {
+          if (overdueTasks.length > 0) { ragStatus = 'amber'; ragReasons.push(`${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''}`); }
+          if (budgetTotal > 0 && budgetPct >= 80) { ragStatus = 'amber'; ragReasons.push(`Budget at ${budgetPct}%`); }
+          if (totalTasks > 0 && unassignedTasks.length > totalTasks * 0.3) { ragStatus = 'amber'; ragReasons.push(`${unassignedTasks.length} unassigned tasks`); }
+        }
+
+        const ragConfig = {
+          red:   { label: '🔴 Red',   bg: 'bg-red-50 dark:bg-red-900/20',     border: 'border-red-200 dark:border-red-800',     badge: 'bg-red-500',     text: 'text-red-700 dark:text-red-300',     desc: 'Immediate action required' },
+          amber: { label: '🟡 Amber', bg: 'bg-amber-50 dark:bg-amber-900/20', border: 'border-amber-200 dark:border-amber-800', badge: 'bg-amber-500',   text: 'text-amber-700 dark:text-amber-300', desc: 'Needs attention' },
+          green: { label: '🟢 Green', bg: 'bg-green-50 dark:bg-green-900/20', border: 'border-green-200 dark:border-green-800', badge: 'bg-green-500',   text: 'text-green-700 dark:text-green-300', desc: 'On track' },
+        };
+        const cfg = ragConfig[ragStatus];
+
+        return (
+          <div className={`${cfg.bg} border ${cfg.border} p-5 rounded-lg`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className={`w-5 h-5 rounded-full ${cfg.badge} inline-block flex-shrink-0`}></span>
+                <div>
+                  <span className={`font-bold text-lg ${cfg.text}`}>{cfg.label} — {cfg.desc}</span>
+                  {ragReasons.length > 0 && (
+                    <p className={`text-sm mt-0.5 ${cfg.text} opacity-80`}>{ragReasons.join(' · ')}</p>
+                  )}
+                  {ragReasons.length === 0 && (
+                    <p className={`text-sm mt-0.5 ${cfg.text} opacity-80`}>No issues detected</p>
+                  )}
+                </div>
+              </div>
+              <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Project Health</span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Priority & Alerts Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -3310,6 +3427,7 @@ function TasksTab({
   canCreate,
   canManage,
   canDelete,
+  token,
 }: {
   tasks: Task[];
   project: Project;
@@ -3324,9 +3442,13 @@ function TasksTab({
   canCreate: boolean;
   canManage: boolean;
   canDelete: boolean;
+  token: string;
 }) {
   const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
   const [showImportDropdown, setShowImportDropdown] = useState(false);
+  const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
+  const [showTemplateSaveModal, setShowTemplateSaveModal] = useState(false);
+  const [showTemplateApplyModal, setShowTemplateApplyModal] = useState(false);
 
   // Check which integrations are configured
   const hasJiraIntegration = jiraIntegration?.IsEnabled && jiraIntegration?.JiraUrl;
@@ -3598,6 +3720,48 @@ function TasksTab({
                 <span className="text-xl">+</span>
                 New Task
               </button>
+              {/* Template Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowTemplateDropdown(!showTemplateDropdown)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
+                >
+                  <span className="text-xl">📋</span>
+                  Templates
+                  <svg className={`w-4 h-4 transition-transform ${showTemplateDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {showTemplateDropdown && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowTemplateDropdown(false)}></div>
+                    <div className="absolute right-0 mt-2 w-52 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20">
+                      <div className="py-2">
+                        <button
+                          onClick={() => { setShowTemplateApplyModal(true); setShowTemplateDropdown(false); }}
+                          className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
+                        >
+                          <span className="text-lg">📥</span>
+                          <div>
+                            <div className="font-medium text-gray-900 dark:text-white text-sm">Apply Template</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Create tasks from a template</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => { setShowTemplateSaveModal(true); setShowTemplateDropdown(false); }}
+                          className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
+                        >
+                          <span className="text-lg">💾</span>
+                          <div>
+                            <div className="font-medium text-gray-900 dark:text-white text-sm">Save as Template</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Save these tasks as reusable template</div>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -3651,6 +3815,26 @@ function TasksTab({
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* ── Template Modals ── */}
+      {showTemplateSaveModal && (
+        <SaveTemplateModal
+          projectId={parseInt(String(project.Id))}
+          organizationId={project.OrganizationId}
+          tasks={tasks}
+          token={token}
+          onClose={() => setShowTemplateSaveModal(false)}
+        />
+      )}
+      {showTemplateApplyModal && (
+        <ApplyTemplateModal
+          projectId={parseInt(String(project.Id))}
+          organizationId={project.OrganizationId}
+          token={token}
+          onClose={() => setShowTemplateApplyModal(false)}
+          onApplied={() => { setShowTemplateApplyModal(false); window.location.reload(); }}
+        />
       )}
     </div>
   );
@@ -4316,6 +4500,14 @@ function KanbanTab({
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [draggedOverTask, setDraggedOverTask] = useState<number | null>(null);
+  // Local copy of tasks for optimistic drag-and-drop ordering
+  const [localTasks, setLocalTasks] = useState<Task[]>(tasks);
+  const draggedTaskId = useRef<number | null>(null);
+
+  // Sync when parent refreshes tasks
+  useEffect(() => {
+    setLocalTasks(tasks);
+  }, [tasks]);
 
   useEffect(() => {
     loadTaskStatuses();
@@ -4332,9 +4524,14 @@ function KanbanTab({
     }
   };
 
+  const getTasksByStatus = (statusId: number) => {
+    return localTasks.filter(t => t.Status === statusId).sort((a, b) => a.DisplayOrder - b.DisplayOrder);
+  };
+
   const handleDragStart = (e: React.DragEvent, taskId: number) => {
     e.dataTransfer.setData('taskId', taskId.toString());
     e.dataTransfer.effectAllowed = 'move';
+    draggedTaskId.current = taskId;
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -4352,88 +4549,83 @@ function KanbanTab({
     setDraggedOverTask(null);
   };
 
+  // Drop onto a specific task card — reorder within column (or move + reorder cross-column)
   const handleDropOnTask = async (e: React.DragEvent, targetTask: Task) => {
     e.preventDefault();
     e.stopPropagation();
     setDraggedOverTask(null);
 
-    const draggedTaskId = parseInt(e.dataTransfer.getData('taskId'));
-    const draggedTask = tasks.find(t => t.Id === draggedTaskId);
-    
-    if (!draggedTask || draggedTask.Id === targetTask.Id) return;
-    if (targetTask.Status === null) return;
+    const srcId = parseInt(e.dataTransfer.getData('taskId'));
+    if (!srcId || srcId === targetTask.Id) return;
 
-    // Reorder tasks
-    const statusTasks = getTasksByStatus(targetTask.Status);
-    const targetIndex = statusTasks.findIndex(t => t.Id === targetTask.Id);
+    const srcTask = localTasks.find(t => t.Id === srcId);
+    if (!srcTask) return;
+
+    const newStatus = targetTask.Status;
+
+    // Build the new ordered list for the target column
+    const columnTasks = localTasks
+      .filter(t => t.Status === newStatus && t.Id !== srcId)
+      .sort((a, b) => a.DisplayOrder - b.DisplayOrder);
+
+    const targetIdx = columnTasks.findIndex(t => t.Id === targetTask.Id);
+    columnTasks.splice(targetIdx, 0, { ...srcTask, Status: newStatus });
+
+    // Assign clean gap-based display orders (10, 20, 30, …)
+    const updates = columnTasks.map((t, i) => ({
+      taskId: t.Id,
+      displayOrder: (i + 1) * 10,
+      status: newStatus ?? undefined,
+    }));
+
+    // Optimistic local update
+    const prev = localTasks;
+    setLocalTasks(current => {
+      const others = current.filter(t => t.Status !== newStatus || (t.Status === srcTask.Status && newStatus !== srcTask.Status));
+      const updated = columnTasks.map((t, i) => ({ ...t, Status: newStatus, DisplayOrder: (i + 1) * 10 }));
+      return [...current.filter(t => t.Status !== newStatus && t.Id !== srcId), ...updated];
+    });
 
     try {
-      // Update dragged task status and order
-      await tasksApi.update(draggedTaskId, {
-        taskName: draggedTask.TaskName,
-        description: draggedTask.Description,
-        status: targetTask.Status,
-        priority: draggedTask.Priority,
-        assignedTo: draggedTask.AssignedTo,
-        dueDate: draggedTask.DueDate,
-        estimatedHours: draggedTask.EstimatedHours,
-        parentTaskId: draggedTask.ParentTaskId,
-        displayOrder: targetTask.DisplayOrder,
-        plannedStartDate: draggedTask.PlannedStartDate,
-        plannedEndDate: draggedTask.PlannedEndDate
-      }, token);
-
-      // Update orders for affected tasks
-      for (let i = targetIndex; i < statusTasks.length; i++) {
-        const task = statusTasks[i];
-        if (task.Id !== draggedTaskId) {
-          await tasksApi.updateOrder(task.Id, task.DisplayOrder + 1, token);
-        }
-      }
-
-      onTaskUpdated();
+      await tasksApi.reorderKanban(updates, token);
+      // Only trigger full reload if status changed (so other views stay accurate)
+      if (srcTask.Status !== newStatus) onTaskUpdated();
     } catch (err) {
       console.error('Failed to reorder tasks:', err);
+      setLocalTasks(prev); // rollback
+      onTaskUpdated();
     }
   };
 
+  // Drop onto empty column area — move card to end of that column
   const handleDrop = async (e: React.DragEvent, newStatusId: number) => {
     e.preventDefault();
     setDraggedOverTask(null);
 
-    const taskId = parseInt(e.dataTransfer.getData('taskId'));
-    const task = tasks.find(t => t.Id === taskId);
-    
-    if (!task) return;
+    const srcId = parseInt(e.dataTransfer.getData('taskId'));
+    const srcTask = localTasks.find(t => t.Id === srcId);
+    if (!srcTask || srcTask.Status === newStatusId) return;
 
-    // Get max order in target status
-    const statusTasks = getTasksByStatus(newStatusId);
-    const maxOrder = statusTasks.length > 0 
-      ? Math.max(...statusTasks.map(t => t.DisplayOrder))
-      : 0;
+    const colTasks = localTasks
+      .filter(t => t.Status === newStatusId)
+      .sort((a, b) => a.DisplayOrder - b.DisplayOrder);
+
+    const newOrder = (colTasks.length + 1) * 10;
+
+    // Optimistic local update
+    const prev = localTasks;
+    setLocalTasks(current =>
+      current.map(t => t.Id === srcId ? { ...t, Status: newStatusId, DisplayOrder: newOrder } : t)
+    );
 
     try {
-      await tasksApi.update(taskId, {
-        taskName: task.TaskName,
-        description: task.Description,
-        status: newStatusId,
-        priority: task.Priority,
-        assignedTo: task.AssignedTo,
-        dueDate: task.DueDate,
-        estimatedHours: task.EstimatedHours,
-        parentTaskId: task.ParentTaskId,
-        displayOrder: maxOrder + 1,
-        plannedStartDate: task.PlannedStartDate,
-        plannedEndDate: task.PlannedEndDate
-      }, token);
+      await tasksApi.reorderKanban([{ taskId: srcId, displayOrder: newOrder, status: newStatusId }], token);
       onTaskUpdated();
     } catch (err) {
-      console.error('Failed to update task status:', err);
+      console.error('Failed to move task:', err);
+      setLocalTasks(prev);
+      onTaskUpdated();
     }
-  };
-
-  const getTasksByStatus = (statusId: number) => {
-    return tasks.filter(task => task.Status === statusId).sort((a, b) => a.DisplayOrder - b.DisplayOrder);
   };
 
   const getPriorityBorder = (task: Task) => {
@@ -4573,11 +4765,21 @@ function KanbanTab({
                       </div>
                     )}
 
-                    {task.AssigneeName && (
+                    {/* Assignees */}
+                    {(task.Assignees && task.Assignees.length > 0) ? (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {task.Assignees.map((a: any) => (
+                          <span key={a.UserId} className="inline-flex items-center text-xs text-gray-600 dark:text-gray-400">
+                            👤 {a.Username}
+                          </span>
+                        ))}
+                      </div>
+                    ) : task.AssigneeName ? (
                       <div className="text-xs text-gray-600 dark:text-gray-400">
                         👤 {task.AssigneeName}
                       </div>
-                    )}
+                    ) : null}
+
                   </div>
                 );
               })}
@@ -6575,8 +6777,11 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
     gitHubRepo: project.GitHubRepo || '',
     giteaOwner: project.GiteaOwner || '',
     giteaRepo: project.GiteaRepo || '',
+    budget: project.Budget !== null && project.Budget !== undefined ? String(project.Budget) : '',
+    customerId: project.CustomerId || undefined,
   });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [customers, setCustomers] = useState<{ Id: number; Name: string }[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
   const [githubIntegration, setGithubIntegration] = useState<any>(null);
@@ -6588,6 +6793,7 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
 
   useEffect(() => {
     loadOrganizations();
+    loadCustomers();
     loadProjectStatuses();
     loadJiraIntegration();
     loadGitHubIntegration();
@@ -6603,6 +6809,20 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
       setOrganizations(adminOrgs);
     } catch (err: any) {
       console.error('Failed to load organizations:', err);
+    }
+  };
+
+  const loadCustomers = async () => {
+    try {
+      const response = await fetch(`${getApiUrl()}/api/customers?organizationId=${project.OrganizationId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setCustomers(data.data || []);
+      }
+    } catch (err: any) {
+      console.error('Failed to load customers:', err);
     }
   };
 
@@ -6709,6 +6929,8 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
         gitHubRepo: formData.gitHubRepo || null,
         giteaOwner: formData.giteaOwner || null,
         giteaRepo: formData.giteaRepo || null,
+        budget: formData.budget !== '' ? parseFloat(formData.budget) : null,
+        customerId: formData.customerId || null,
       };
       await projectsApi.update(project.Id, updateData, token);
       setSuccess(true);
@@ -6794,6 +7016,22 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Customer
+            </label>
+            <select
+              value={formData.customerId || ''}
+              onChange={(e) => setFormData({ ...formData, customerId: e.target.value ? parseInt(e.target.value) : undefined })}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              <option value="">No customer</option>
+              {customers.map((c) => (
+                <option key={c.Id} value={c.Id}>{c.Name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Project Name *
             </label>
             <input
@@ -6815,6 +7053,25 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
               rows={4}
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Budget
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={formData.budget}
+                onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
+                className="w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                placeholder="0.00"
+              />
+            </div>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Optional project budget in currency units</p>
           </div>
 
           <div>
@@ -7055,8 +7312,12 @@ function EditProjectModal({
     gitHubRepo: project.GitHubRepo || undefined,
     giteaOwner: project.GiteaOwner || undefined,
     giteaRepo: project.GiteaRepo || undefined,
+    budget: project.Budget ?? undefined,
+    customerId: project.CustomerId || undefined,
+    isHobby: project.IsHobby || false,
   });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [customers, setCustomers] = useState<{ Id: number; Name: string }[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
   const [githubIntegration, setGithubIntegration] = useState<any>(null);
@@ -7067,6 +7328,7 @@ function EditProjectModal({
 
   useEffect(() => {
     loadOrganizations();
+    loadCustomers();
     loadProjectStatuses();
     loadJiraIntegration();
     loadGitHubIntegration();
@@ -7086,6 +7348,20 @@ function EditProjectModal({
     } catch (err: any) {
       console.error('Failed to load organizations:', err);
       setError(err.message || 'Failed to load organizations');
+    }
+  };
+
+  const loadCustomers = async () => {
+    try {
+      const response = await fetch(`${getApiUrl()}/api/customers?organizationId=${project.OrganizationId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setCustomers(data.data || []);
+      }
+    } catch (err: any) {
+      console.error('Failed to load customers:', err);
     }
   };
 
@@ -7190,6 +7466,9 @@ function EditProjectModal({
         gitHubRepo: formData.gitHubRepo || null,
         giteaOwner: formData.giteaOwner || null,
         giteaRepo: formData.giteaRepo || null,
+        budget: formData.budget != null ? formData.budget : null,
+        customerId: formData.customerId || null,
+        isHobby: formData.isHobby || false,
       };
       console.log('Updating project with data:', updateData);
       await projectsApi.update(project.Id, updateData, token);
@@ -7294,6 +7573,25 @@ function EditProjectModal({
                 rows={4}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Budget
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.budget ?? ''}
+                  onChange={(e) => setFormData({ ...formData, budget: e.target.value !== '' ? parseFloat(e.target.value) : undefined })}
+                  className="w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  placeholder="0.00"
+                />
+              </div>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Optional project budget in currency units</p>
             </div>
 
             <div>
@@ -7448,6 +7746,40 @@ function EditProjectModal({
               </div>
             )}
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Customer
+              </label>
+              <select
+                value={formData.customerId || ''}
+                onChange={(e) => setFormData({ ...formData, customerId: e.target.value ? parseInt(e.target.value) : undefined })}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="">No customer</option>
+                {customers.map((c) => (
+                  <option key={c.Id} value={c.Id}>{c.Name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-3 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+              <input
+                type="checkbox"
+                id="editIsHobby"
+                checked={formData.isHobby || false}
+                onChange={(e) => setFormData({ ...formData, isHobby: e.target.checked })}
+                className="w-5 h-5 rounded border-purple-300 text-purple-600 focus:ring-purple-500 dark:bg-gray-700 dark:border-purple-600"
+              />
+              <div>
+                <label htmlFor="editIsHobby" className="block text-sm font-medium text-purple-700 dark:text-purple-300 cursor-pointer">
+                  🎨 Hobby Project
+                </label>
+                <p className="text-xs text-purple-600 dark:text-purple-400">
+                  Hobby projects are scheduled outside of regular work hours
+                </p>
+              </div>
+            </div>
+
             <div className="flex gap-3 mt-6">
               <button
                 type="button"
@@ -7471,6 +7803,209 @@ function EditProjectModal({
   );
 }
 
+// ─── Dependency Graph ────────────────────────────────────────────────────────
+
+interface DGNode {
+  task: Task;
+  level: number;
+  indexInLevel: number;
+  x: number;
+  y: number;
+}
+
+function DependencyGraphTab({ tasks, onOpenTask }: { tasks: Task[]; onOpenTask: (t: Task) => void }) {
+  const BOX_W = 170;
+  const BOX_H = 54;
+  const COL_GAP = 100;
+  const ROW_GAP = 28;
+
+  // Build adjacency (id → task)
+  const byId = new Map<number, Task>(tasks.map(t => [t.Id, t]));
+
+  // Compute level for each task via longest-path BFS
+  const levelMap = new Map<number, number>();
+  const dependants = new Map<number, number[]>(); // depId → [taskId...]
+  tasks.forEach(t => {
+    if (t.DependsOnTaskId && byId.has(t.DependsOnTaskId)) {
+      const arr = dependants.get(t.DependsOnTaskId) || [];
+      arr.push(t.Id);
+      dependants.set(t.DependsOnTaskId, arr);
+    }
+  });
+  // Iterative level assignment
+  let changed = true;
+  tasks.forEach(t => levelMap.set(t.Id, 0));
+  while (changed) {
+    changed = false;
+    tasks.forEach(t => {
+      if (t.DependsOnTaskId && byId.has(t.DependsOnTaskId)) {
+        const nl = (levelMap.get(t.DependsOnTaskId) ?? 0) + 1;
+        if (nl > (levelMap.get(t.Id) ?? 0)) {
+          levelMap.set(t.Id, nl);
+          changed = true;
+        }
+      }
+    });
+  }
+
+  // Only diagram tasks that have deps or are depended upon
+  const linkedIds = new Set<number>();
+  tasks.forEach(t => {
+    if (t.DependsOnTaskId && byId.has(t.DependsOnTaskId)) {
+      linkedIds.add(t.Id);
+      linkedIds.add(t.DependsOnTaskId);
+    }
+  });
+  const diagramTasks = tasks.filter(t => linkedIds.has(t.Id));
+
+  // Group by level
+  const levelGroups = new Map<number, Task[]>();
+  diagramTasks.forEach(t => {
+    const lv = levelMap.get(t.Id) ?? 0;
+    const arr = levelGroups.get(lv) || [];
+    arr.push(t);
+    levelGroups.set(lv, arr);
+  });
+
+  // Sort levels
+  const sortedLevels = Array.from(levelGroups.keys()).sort((a, b) => a - b);
+
+  // Assign positions
+  const nodes = new Map<number, DGNode>();
+  let svgWidth = 20;
+  sortedLevels.forEach((lv, colIdx) => {
+    const col = levelGroups.get(lv)!;
+    col.sort((a, b) => a.TaskName.localeCompare(b.TaskName));
+    col.forEach((task, rowIdx) => {
+      const x = 20 + colIdx * (BOX_W + COL_GAP);
+      const y = 20 + rowIdx * (BOX_H + ROW_GAP);
+      nodes.set(task.Id, { task, level: lv, indexInLevel: rowIdx, x, y });
+    });
+    const rightEdge = 20 + colIdx * (BOX_W + COL_GAP) + BOX_W + 20;
+    if (rightEdge > svgWidth) svgWidth = rightEdge;
+  });
+
+  const maxRows = Math.max(...Array.from(levelGroups.values()).map(g => g.length), 1);
+  const svgHeight = 20 + maxRows * (BOX_H + ROW_GAP) + 20;
+
+  // Edge list
+  const edges: { from: DGNode; to: DGNode }[] = [];
+  diagramTasks.forEach(t => {
+    if (t.DependsOnTaskId && nodes.has(t.DependsOnTaskId) && nodes.has(t.Id)) {
+      edges.push({ from: nodes.get(t.DependsOnTaskId)!, to: nodes.get(t.Id)! });
+    }
+  });
+
+  const statusColor = (s?: string | null) => {
+    const sl = (s || '').toLowerCase();
+    if (sl.includes('done') || sl.includes('complet')) return '#22c55e';
+    if (sl.includes('progress') || sl.includes('doing')) return '#3b82f6';
+    if (sl.includes('block') || sl.includes('cancel')) return '#ef4444';
+    return '#94a3b8';
+  };
+
+  if (diagramTasks.length === 0) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-10 text-center">
+        <div className="text-5xl mb-4">🔗</div>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">No Task Dependencies</h2>
+        <p className="text-gray-500 dark:text-gray-400">
+          Set a <strong>Depends On</strong> value on any task to see the dependency graph here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">🔗 Dependency Graph</h2>
+        <span className="text-sm text-gray-500 dark:text-gray-400">{diagramTasks.length} linked tasks · click to open</span>
+      </div>
+      <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+        <svg width={svgWidth} height={svgHeight} style={{ minWidth: svgWidth, display: 'block' }}>
+          <defs>
+            <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#64748b" />
+            </marker>
+          </defs>
+
+          {/* Edges */}
+          {edges.map(({ from, to }, i) => {
+            const x1 = from.x + BOX_W;
+            const y1 = from.y + BOX_H / 2;
+            const x2 = to.x;
+            const y2 = to.y + BOX_H / 2;
+            const mx = (x1 + x2) / 2;
+            return (
+              <path
+                key={i}
+                d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`}
+                fill="none"
+                stroke="#64748b"
+                strokeWidth="1.5"
+                markerEnd="url(#arrowhead)"
+              />
+            );
+          })}
+
+          {/* Nodes */}
+          {Array.from(nodes.values()).map(({ task, x, y }) => {
+            const sc = statusColor(task.StatusName);
+            const label = task.TaskName.length > 22 ? task.TaskName.slice(0, 21) + '…' : task.TaskName;
+            return (
+              <g key={task.Id} style={{ cursor: 'pointer' }} onClick={() => onOpenTask(task)}>
+                <rect
+                  x={x}
+                  y={y}
+                  width={BOX_W}
+                  height={BOX_H}
+                  rx={8}
+                  fill="white"
+                  stroke={sc}
+                  strokeWidth={2}
+                  filter="drop-shadow(0 1px 2px rgba(0,0,0,0.10))"
+                />
+                {/* Status stripe */}
+                <rect x={x} y={y} width={6} height={BOX_H} rx={8} fill={sc} />
+                <rect x={x} y={y + 6} width={6} height={BOX_H - 6} fill={sc} />
+                <text
+                  x={x + 14}
+                  y={y + 21}
+                  fontSize={12}
+                  fontWeight="600"
+                  fill="#1e293b"
+                  fontFamily="system-ui, sans-serif"
+                >
+                  {label}
+                </text>
+                {task.StatusName && (
+                  <text
+                    x={x + 14}
+                    y={y + 37}
+                    fontSize={10}
+                    fill={sc}
+                    fontFamily="system-ui, sans-serif"
+                  >
+                    {task.StatusName.length > 24 ? task.StatusName.slice(0, 23) + '…' : task.StatusName}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      {/* Legend */}
+      <div className="mt-4 flex flex-wrap gap-4 text-xs text-gray-500 dark:text-gray-400">
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-green-500" /> Completed/Done</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-blue-500" /> In Progress</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-red-500" /> Blocked/Cancelled</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-slate-400" /> Other</span>
+      </div>
+    </div>
+  );
+}
 // Searchable Select Component for large dropdowns
 function SearchableSelect({
   value,
@@ -7979,6 +8514,569 @@ function TaskModal({
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Burndown / Burnup Chart Tab ─────────────────────────────────────────────
+function BurndownTab({ projectId, token }: { projectId: number; token: string }) {
+  const [data, setData] = useState<{
+    startDate: string;
+    endDate: string;
+    today: string;
+    totalEstimatedHours: number;
+    series: { date: string; worked: number; cumulative: number; remaining: number; ideal: number }[];
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [chartMode, setChartMode] = useState<'burndown' | 'burnup'>('burndown');
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const res = await fetch(`${getApiUrl()}/api/projects/${projectId}/burndown`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('Failed to load');
+        const json = await res.json();
+        setData(json.data);
+      } catch {
+        setError('Failed to load burndown data');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [projectId, token]);
+
+  if (loading) return <div className="flex items-center justify-center h-64 text-gray-500 dark:text-gray-400">Loading chart…</div>;
+  if (error) return <div className="p-6 text-red-600">{error}</div>;
+  if (!data) return null;
+
+  const { series, totalEstimatedHours, endDate, today } = data;
+
+  // Trim series to only include dates up to today for rendering
+  const visibleSeries = series.filter(s => s.date <= today);
+  const allSeries = series; // full to show ideal line to end date
+
+  if (allSeries.length === 0) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-10 text-center">
+        <p className="text-4xl mb-3">📉</p>
+        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200 mb-2">No data yet</h3>
+        <p className="text-gray-500 dark:text-gray-400">Log time entries to see the burndown chart.</p>
+      </div>
+    );
+  }
+
+  // SVG chart dimensions
+  const W = 800, H = 320, PAD = { top: 20, right: 30, bottom: 50, left: 60 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+
+  const n = allSeries.length;
+  const maxY = Math.max(totalEstimatedHours, visibleSeries.reduce((m, s) => Math.max(m, s.cumulative), 0)) * 1.05;
+
+  const xScale = (i: number) => (i / Math.max(n - 1, 1)) * chartW;
+  const yScale = (v: number) => chartH - (v / (maxY || 1)) * chartH;
+
+  // Build polyline points
+  const idealPoints = allSeries.map((s, i) => `${xScale(i)},${yScale(s.ideal)}`).join(' ');
+  const burndownPoints = visibleSeries.map((s, i) => `${xScale(i)},${yScale(s.remaining)}`).join(' ');
+  const burnupPoints = visibleSeries.map((s, i) => `${xScale(i)},${yScale(s.cumulative)}`).join(' ');
+
+  // X axis: pick ~6 evenly-spaced labels
+  const tickStep = Math.max(1, Math.floor(n / 6));
+  const xTicks = allSeries.filter((_, i) => i % tickStep === 0 || i === n - 1);
+
+  // Y axis: 5 ticks
+  const yTicks = Array.from({ length: 6 }, (_, i) => Math.round((maxY / 5) * i));
+
+  const workedTotal = visibleSeries[visibleSeries.length - 1]?.cumulative || 0;
+  const remainingTotal = Math.max(0, totalEstimatedHours - workedTotal);
+  const completionPct = totalEstimatedHours > 0 ? Math.round((workedTotal / totalEstimatedHours) * 100) : 0;
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">📉 Burndown / Burnup Chart</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+              {new Date(data.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+              {' → '}
+              {new Date(endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setChartMode('burndown')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                chartMode === 'burndown'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+              }`}
+            >
+              📉 Burndown
+            </button>
+            <button
+              onClick={() => setChartMode('burnup')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                chartMode === 'burnup'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+              }`}
+            >
+              📈 Burnup
+            </button>
+          </div>
+        </div>
+
+        {/* Stats row */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          {[
+            { label: 'Estimated', value: `${totalEstimatedHours.toFixed(0)}h`, color: 'text-gray-700 dark:text-gray-200' },
+            { label: 'Worked', value: `${workedTotal.toFixed(1)}h`, color: 'text-blue-600 dark:text-blue-400' },
+            { label: 'Remaining', value: `${remainingTotal.toFixed(1)}h`, color: remainingTotal > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400' },
+            { label: 'Complete', value: `${completionPct}%`, color: completionPct >= 100 ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400' },
+          ].map(st => (
+            <div key={st.label} className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center">
+              <div className={`text-2xl font-bold ${st.color}`}>{st.value}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{st.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* SVG Chart */}
+        <div className="overflow-x-auto">
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            className="w-full"
+            style={{ maxHeight: 360 }}
+          >
+            <g transform={`translate(${PAD.left},${PAD.top})`}>
+              {/* Grid lines + Y axis */}
+              {yTicks.map(v => (
+                <g key={v}>
+                  <line x1={0} y1={yScale(v)} x2={chartW} y2={yScale(v)} stroke="#e5e7eb" strokeDasharray="4,3" />
+                  <text x={-8} y={yScale(v) + 4} textAnchor="end" fontSize={11} fill="#9ca3af">{v}h</text>
+                </g>
+              ))}
+
+              {/* Today marker */}
+              {(() => {
+                const todayIdx = allSeries.findIndex(s => s.date >= today);
+                if (todayIdx < 0) return null;
+                const tx = xScale(todayIdx);
+                return (
+                  <g>
+                    <line x1={tx} y1={0} x2={tx} y2={chartH} stroke="#3b82f6" strokeDasharray="4,3" strokeWidth={1.5} />
+                    <text x={tx + 4} y={12} fontSize={10} fill="#3b82f6">Today</text>
+                  </g>
+                );
+              })()}
+
+              {/* Ideal line */}
+              <polyline
+                points={idealPoints}
+                fill="none"
+                stroke="#d1d5db"
+                strokeWidth={2}
+                strokeDasharray="6,4"
+              />
+
+              {/* Actual line */}
+              <polyline
+                points={chartMode === 'burndown' ? burndownPoints : burnupPoints}
+                fill="none"
+                stroke={chartMode === 'burndown' ? '#ef4444' : '#22c55e'}
+                strokeWidth={2.5}
+                strokeLinejoin="round"
+              />
+
+              {/* Data dots on actual line */}
+              {visibleSeries.map((s, i) => {
+                const val = chartMode === 'burndown' ? s.remaining : s.cumulative;
+                return (
+                  <circle
+                    key={s.date}
+                    cx={xScale(i)}
+                    cy={yScale(val)}
+                    r={3}
+                    fill={chartMode === 'burndown' ? '#ef4444' : '#22c55e'}
+                  />
+                );
+              })}
+
+              {/* X axis */}
+              <line x1={0} y1={chartH} x2={chartW} y2={chartH} stroke="#e5e7eb" />
+              {xTicks.map((s) => {
+                const idx = allSeries.indexOf(s);
+                const x = xScale(idx);
+                const label = new Date(s.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+                return (
+                  <text key={s.date} x={x} y={chartH + 16} textAnchor="middle" fontSize={10} fill="#9ca3af">
+                    {label}
+                  </text>
+                );
+              })}
+
+              {/* Y axis line */}
+              <line x1={0} y1={0} x2={0} y2={chartH} stroke="#e5e7eb" />
+            </g>
+          </svg>
+        </div>
+
+        {/* Legend */}
+        <div className="flex flex-wrap gap-4 mt-4 text-sm">
+          <div className="flex items-center gap-2">
+            <svg width="24" height="3"><line x1="0" y1="1.5" x2="24" y2="1.5" stroke="#d1d5db" strokeWidth="2" strokeDasharray="5,3"/></svg>
+            <span className="text-gray-500 dark:text-gray-400">Ideal</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <svg width="24" height="3"><line x1="0" y1="1.5" x2="24" y2="1.5" stroke={chartMode === 'burndown' ? '#ef4444' : '#22c55e'} strokeWidth="2.5"/></svg>
+            <span className="text-gray-500 dark:text-gray-400">{chartMode === 'burndown' ? 'Remaining hours' : 'Worked hours'}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <svg width="24" height="3"><line x1="0" y1="1.5" x2="24" y2="1.5" stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="4,3"/></svg>
+            <span className="text-gray-500 dark:text-gray-400">Today</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Daily log table */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Daily Breakdown</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 dark:border-gray-700 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                <th className="pb-2 pr-4">Date</th>
+                <th className="pb-2 pr-4 text-right">Hours logged</th>
+                <th className="pb-2 pr-4 text-right">Cumulative</th>
+                <th className="pb-2 text-right">Remaining</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              {visibleSeries.filter(s => s.worked > 0).map(s => (
+                <tr key={s.date}>
+                  <td className="py-2 pr-4 text-gray-700 dark:text-gray-300">
+                    {new Date(s.date).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })}
+                  </td>
+                  <td className="py-2 pr-4 text-right font-medium text-gray-900 dark:text-white">{s.worked.toFixed(1)}h</td>
+                  <td className="py-2 pr-4 text-right text-blue-600 dark:text-blue-400">{s.cumulative.toFixed(1)}h</td>
+                  <td className="py-2 text-right text-amber-600 dark:text-amber-400">{s.remaining.toFixed(1)}h</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {visibleSeries.filter(s => s.worked > 0).length === 0 && (
+            <p className="text-center text-gray-500 dark:text-gray-400 py-4">No time entries logged yet.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── SaveTemplateModal ──────────────────────────────────────────────────────
+function SaveTemplateModal({
+  projectId,
+  organizationId,
+  tasks,
+  token,
+  onClose,
+}: {
+  projectId: number;
+  organizationId: number;
+  tasks: Task[];
+  token: string;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setIsSaving(true);
+    setError('');
+    try {
+      // Build items array preserving parent-child relationships
+      const taskIdToIndex: Record<number, number> = {};
+      const items = tasks.map((t, i) => {
+        taskIdToIndex[t.Id] = i;
+        return {
+          title: t.TaskName,
+          description: t.Description || null,
+          estimatedHours: t.EstimatedHours || null,
+          priority: t.Priority || null,
+          sortOrder: i,
+          parentIndex: null as number | null,
+          _originalId: t.Id,
+          _parentTaskId: t.ParentTaskId ?? null,
+        };
+      });
+      // Resolve parent indices
+      items.forEach(item => {
+        if (item._parentTaskId !== null) {
+          item.parentIndex = taskIdToIndex[item._parentTaskId] ?? null;
+        }
+      });
+
+      const res = await fetch(`${getApiUrl()}/api/task-templates`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organizationId, name: name.trim(), description: description.trim() || null, items }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Failed to save template');
+      }
+      setSuccess(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to save template');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+        <div className="p-6">
+          {success ? (
+            <div className="text-center">
+              <div className="text-5xl mb-4">✅</div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Template Saved!</h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                &ldquo;{name}&rdquo; has been saved as a template for this organization.
+              </p>
+              <button
+                onClick={onClose}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">💾 Save as Template</h2>
+                <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl">×</button>
+              </div>
+              {error && (
+                <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
+                  {error}
+                </div>
+              )}
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Save all {tasks.length} task{tasks.length !== 1 ? 's' : ''} as a reusable template for this organization.
+              </p>
+              <form onSubmit={handleSave} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Template Name *</label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                    placeholder="e.g., Standard Sprint, Bug Fix Workflow"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={3}
+                    placeholder="Optional description of when to use this template"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button type="button" onClick={onClose} className="flex-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white px-4 py-2 rounded-lg transition-colors">
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={isSaving || !name.trim()} className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white px-4 py-2 rounded-lg transition-colors">
+                    {isSaving ? 'Saving…' : 'Save Template'}
+                  </button>
+                </div>
+              </form>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ApplyTemplateModal ─────────────────────────────────────────────────────
+function ApplyTemplateModal({
+  projectId,
+  organizationId,
+  token,
+  onClose,
+  onApplied,
+}: {
+  projectId: number;
+  organizationId: number;
+  token: string;
+  onClose: () => void;
+  onApplied: () => void;
+}) {
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [isApplying, setIsApplying] = useState(false);
+  const [error, setError] = useState('');
+  const [preview, setPreview] = useState<any[]>([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/task-templates?organizationId=${organizationId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setTemplates(data.templates || []);
+        }
+      } catch { /* ignore */ }
+      finally { setIsLoading(false); }
+    };
+    load();
+  }, [organizationId, token]);
+
+  const handleSelect = async (id: number) => {
+    setSelectedId(id);
+    setPreviewLoading(true);
+    setPreview([]);
+    try {
+      const res = await fetch(`${getApiUrl()}/api/task-templates/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPreview(data.items || []);
+      }
+    } catch { /* ignore */ }
+    finally { setPreviewLoading(false); }
+  };
+
+  const handleApply = async () => {
+    if (!selectedId) return;
+    setIsApplying(true);
+    setError('');
+    try {
+      const res = await fetch(`${getApiUrl()}/api/task-templates/${selectedId}/apply`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Failed to apply template');
+      }
+      const data = await res.json();
+      onApplied();
+    } catch (err: any) {
+      setError(err.message || 'Failed to apply template');
+      setIsApplying(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full max-h-[85vh] flex flex-col">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">📥 Apply Task Template</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl">×</button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 p-6">
+          {error && (
+            <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
+              {error}
+            </div>
+          )}
+
+          {isLoading ? (
+            <div className="text-center py-8 text-gray-500">Loading templates…</div>
+          ) : templates.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="text-5xl mb-4">📋</div>
+              <p className="text-gray-600 dark:text-gray-400">No templates saved for this organization yet.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Use &ldquo;Save as Template&rdquo; to create one from existing tasks.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {templates.map(t => (
+                <div
+                  key={t.Id}
+                  onClick={() => handleSelect(t.Id)}
+                  className={`p-4 rounded-lg border-2 cursor-pointer transition-colors ${
+                    selectedId === t.Id
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600'
+                  }`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-semibold text-gray-900 dark:text-white">{t.Name}</h3>
+                      {t.Description && <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{t.Description}</p>}
+                    </div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-4 shrink-0">{t.ItemCount} task{t.ItemCount !== 1 ? 's' : ''}</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">
+                    By {t.FirstName} {t.LastName} · {new Date(t.CreatedAt).toLocaleDateString()}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {selectedId && (
+            <div className="mt-4">
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Preview tasks to be created:</h3>
+              {previewLoading ? (
+                <p className="text-sm text-gray-500">Loading preview…</p>
+              ) : (
+                <ul className="space-y-1 max-h-44 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded p-2">
+                  {preview.map(item => (
+                    <li key={item.Id} className="text-sm text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                      <span>{item.ParentItemId ? '↳' : '•'}</span>
+                      <span style={{ paddingLeft: item.ParentItemId ? 12 : 0 }}>{item.Title}</span>
+                      {item.EstimatedHours && <span className="text-xs text-gray-400">({item.EstimatedHours}h)</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex gap-3">
+          <button onClick={onClose} className="flex-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white px-4 py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={handleApply}
+            disabled={!selectedId || isApplying}
+            className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 dark:disabled:bg-blue-800 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            {isApplying ? 'Creating tasks…' : 'Apply Template'}
+          </button>
         </div>
       </div>
     </div>

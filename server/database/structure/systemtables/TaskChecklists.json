@@ -1,0 +1,77 @@
+{
+  "TableName": "TaskChecklists",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique checklist item identifier"
+    },
+    {
+      "FieldName": "TaskId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Tasks.Id"
+    },
+    {
+      "FieldName": "Text",
+      "DataType": "varchar(500)",
+      "NotNullable": true,
+      "Comment": "Checklist item description/text"
+    },
+    {
+      "FieldName": "IsChecked",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Whether this checklist item is completed (1) or not (0)"
+    },
+    {
+      "FieldName": "DisplayOrder",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Sort order for displaying checklist items"
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Users.Id who created this item"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the item was created"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+      "Comment": "Auto-updated timestamp of last modification"
+    }
+  ],
+  "Relationships": [
+    {
+      "Name": "ChecklistTask",
+      "Description": "Checklist item belongs to a Task",
+      "FromField": "TaskId",
+      "ToTable": "Tasks",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "ChecklistCreator",
+      "Description": "Checklist item created by a User",
+      "FromField": "CreatedBy",
+      "ToTable": "Users",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    }
+  ]
+}

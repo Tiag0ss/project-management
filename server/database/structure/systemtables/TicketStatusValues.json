@@ -43,6 +43,12 @@
       "Comment": "Flag indicating if this status represents a closed/resolved ticket"
     },
     {
+      "FieldName": "StatusType",
+      "DataType": "varchar(30)",
+      "NotNullable": false,
+      "Comment": "Functional category: open, in_progress, waiting, resolved, closed, other"
+    },
+    {
       "FieldName": "SortOrder",
       "DataType": "int",
       "NotNullable": true,

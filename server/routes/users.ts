@@ -25,7 +25,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
               HobbyStartFriday, HobbyStartSaturday, HobbyStartSunday,
               HobbyHoursMonday, HobbyHoursTuesday, HobbyHoursWednesday, HobbyHoursThursday,
               HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
-              Timezone, CreatedAt, UpdatedAt 
+              Timezone, HourlyRate, CreatedAt, UpdatedAt 
        FROM Users 
        WHERE Id = ?`,
       [userId]
@@ -319,9 +319,12 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
   try {
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName, u.IsActive, u.IsAdmin, 
-              u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager, u.CreatedAt, u.UpdatedAt 
+              u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager,
+              u.TeamLeaderId, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
+              u.CreatedAt, u.UpdatedAt 
        FROM Users u
        LEFT JOIN Customers c ON u.CustomerId = c.Id
+       LEFT JOIN Users tl ON u.TeamLeaderId = tl.Id
        ORDER BY u.CreatedAt DESC`
     );
 
@@ -342,7 +345,7 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
 router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.params.id;
-    const { username, email, firstName, lastName, isActive, isAdmin, customerId, isDeveloper, isSupport, isManager } = req.body;
+    const { username, email, firstName, lastName, isActive, isAdmin, customerId, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId } = req.body;
 
     // Check if user exists
     const [existing] = await pool.execute<RowDataPacket[]>(
@@ -417,12 +420,18 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
     if (customerId !== undefined && customerId !== oldUser.CustomerId) {
       changes.push({ field: 'CustomerId', oldVal: String(oldUser.CustomerId || ''), newVal: String(customerId || '') });
     }
+    if (hourlyRate !== undefined && String(hourlyRate || '') !== String(oldUser.HourlyRate || '')) {
+      changes.push({ field: 'HourlyRate', oldVal: String(oldUser.HourlyRate || ''), newVal: String(hourlyRate || '') });
+    }
+    if (teamLeaderId !== undefined && String(teamLeaderId || '') !== String(oldUser.TeamLeaderId || '')) {
+      changes.push({ field: 'TeamLeaderId', oldVal: String(oldUser.TeamLeaderId || ''), newVal: String(teamLeaderId || '') });
+    }
 
     await pool.execute(
       `UPDATE Users 
-       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ? 
+       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, TeamLeaderId = ? 
        WHERE Id = ?`,
-      [username, email, firstName || null, lastName || null, isActive, isAdmin, customerId || null, isDeveloper || false, isSupport || false, isManager || false, userId]
+      [username, email, firstName || null, lastName || null, isActive, isAdmin, customerId || null, isDeveloper || false, isSupport || false, isManager || false, hourlyRate != null ? parseFloat(hourlyRate) || null : null, teamLeaderId || null, userId]
     );
     
     // Log changes to history
@@ -599,7 +608,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, 
 // Create user (admin only)
 router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, isDeveloper, isSupport, isManager } = req.body;
+    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, isDeveloper, isSupport, isManager, teamLeaderId } = req.body;
 
     if (!username || !email || !password) {
       return res.status(400).json({ 
@@ -631,9 +640,9 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, CustomerId, IsDeveloper, IsSupport, IsManager) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [username, email, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, customerId || null, isDeveloper !== false, isSupport || false, isManager || false]
+      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, CustomerId, IsDeveloper, IsSupport, IsManager, TeamLeaderId) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [username, email, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, customerId || null, isDeveloper !== false, isSupport || false, isManager || false, teamLeaderId || null]
     );
 
     // Log user creation

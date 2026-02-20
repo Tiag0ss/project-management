@@ -4,8 +4,22 @@ import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 import { createNotification } from './notifications';
 import { logActivity } from './activityLogs';
+import { sanitizeRichText } from '../utils/sanitize';
+import { computeCompletionPercentages } from '../utils/taskCompletion';
+import { sendNotificationEmail } from '../utils/emailService';
 
 const router = Router();
+
+// Normalize any date value to YYYY-MM-DD for MySQL DATE columns
+function toDateOnly(value: any): string | null {
+  if (!value) return null;
+  const s = String(value);
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // ISO/datetime string — take the date part
+  const match = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : null;
+}
 
 // Helper function to normalize dates to YYYY-MM-DD format for MySQL DATE columns
 const normalizeDateForDB = (dateValue: any): string | null => {
@@ -41,6 +55,21 @@ const createTaskHistory = async (
   }
 };
 
+// Parse AssigneesJson column returned by MySQL JSON_ARRAYAGG
+function parseAssigneesJson(tasks: any[]): any[] {
+  return tasks.map(t => {
+    let assignees: any[] = [];
+    if (t.AssigneesJson) {
+      try {
+        assignees = typeof t.AssigneesJson === 'string' ? JSON.parse(t.AssigneesJson) : t.AssigneesJson;
+      } catch {
+        assignees = [];
+      }
+    }
+    return { ...t, Assignees: assignees ?? [] };
+  });
+}
+
 // Helper to get project info for a task
 const getTaskProjectInfo = async (taskId: number): Promise<{ projectId: number; projectName: string } | null> => {
   try {
@@ -74,11 +103,17 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
               COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
               tpv.PriorityName, tpv.ColorCode as PriorityColor,
               COALESCE((SELECT COUNT(*) FROM Tasks st WHERE st.ParentTaskId = t.Id), 0) as SubtaskCount,
+              COALESCE((SELECT SUM(Hours) FROM TimeEntries WHERE TaskId = t.Id), 0) as TotalWorked,
               tk.Id as TicketIdRef,
               tk.TicketNumber,
               tk.Title as TicketTitle,
               tk.ExternalTicketId,
-              oji.JiraUrl
+              oji.JiraUrl,
+              (
+                SELECT JSON_ARRAYAGG(JSON_OBJECT('UserId', ua.UserId, 'Username', uu.Username, 'FirstName', uu.FirstName, 'LastName', uu.LastName))
+                FROM TaskAssignees ua JOIN Users uu ON ua.UserId = uu.Id
+                WHERE ua.TaskId = t.Id
+              ) as AssigneesJson
        FROM Tasks t
        JOIN Projects p ON t.ProjectId = p.Id
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
@@ -91,15 +126,17 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
        WHERE (t.AssignedTo = ? OR ta.UserId = ? OR EXISTS (
+         SELECT 1 FROM TaskAssignees WHERE TaskId = t.Id AND UserId = ?
+       ) OR EXISTS (
          SELECT 1 FROM Tasks st WHERE st.ParentTaskId = t.Id
        )) AND om.UserId = ?
        ORDER BY p.IsHobby ASC, t.PlannedStartDate DESC, t.CreatedAt DESC`,
-      [userId, userId, userId]
+      [userId, userId, userId, userId]
     );
 
     res.json({
       success: true,
-      tasks
+      tasks: computeCompletionPercentages(parseAssigneesJson(tasks))
     });
   } catch (error) {
     console.error('Get my tasks error:', error);
@@ -142,7 +179,12 @@ router.get('/project/:projectId/summary', authenticateToken, async (req: AuthReq
         COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
         tpv.PriorityName, tpv.ColorCode as PriorityColor,
         COALESCE(alloc.TotalAllocated, 0) as TotalAllocated,
-        COALESCE(worked.TotalWorked, 0) as TotalWorked
+        COALESCE(worked.TotalWorked, 0) as TotalWorked,
+        (
+          SELECT JSON_ARRAYAGG(JSON_OBJECT('UserId', ua.UserId, 'Username', uu.Username, 'FirstName', uu.FirstName, 'LastName', uu.LastName))
+          FROM TaskAssignees ua JOIN Users uu ON ua.UserId = uu.Id
+          WHERE ua.TaskId = t.Id
+        ) as AssigneesJson
        FROM Tasks t
        LEFT JOIN Users u1 ON t.CreatedBy = u1.Id
        LEFT JOIN Users u2 ON t.AssignedTo = u2.Id
@@ -165,7 +207,7 @@ router.get('/project/:projectId/summary', authenticateToken, async (req: AuthReq
 
     res.json({
       success: true,
-      tasks
+      tasks: computeCompletionPercentages(parseAssigneesJson(tasks))
     });
   } catch (error) {
     console.error('Get project tasks summary error:', error);
@@ -221,7 +263,12 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 tk.TicketNumber,
                 tk.Title as TicketTitle,
                 tk.ExternalTicketId,
-                oji.JiraUrl
+                oji.JiraUrl,
+                (
+                  SELECT JSON_ARRAYAGG(JSON_OBJECT('UserId', ua.UserId, 'Username', uu.Username, 'FirstName', uu.FirstName, 'LastName', uu.LastName))
+                  FROM TaskAssignees ua JOIN Users uu ON ua.UserId = uu.Id
+                  WHERE ua.TaskId = t.Id
+                ) as AssigneesJson
          FROM Tasks t
          INNER JOIN Projects p ON t.ProjectId = p.Id
          LEFT JOIN Users u1 ON t.CreatedBy = u1.Id
@@ -263,7 +310,12 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 tk.TicketNumber,
                 tk.Title as TicketTitle,
                 tk.ExternalTicketId,
-                oji.JiraUrl
+                oji.JiraUrl,
+                (
+                  SELECT JSON_ARRAYAGG(JSON_OBJECT('UserId', ua.UserId, 'Username', uu.Username, 'FirstName', uu.FirstName, 'LastName', uu.LastName))
+                  FROM TaskAssignees ua JOIN Users uu ON ua.UserId = uu.Id
+                  WHERE ua.TaskId = t.Id
+                ) as AssigneesJson
          FROM Tasks t
          INNER JOIN Projects p ON t.ProjectId = p.Id
          LEFT JOIN Users u1 ON t.CreatedBy = u1.Id
@@ -283,16 +335,16 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
            FROM TimeEntries
            GROUP BY TaskId
          ) worked ON t.Id = worked.TaskId
-         WHERE t.ProjectId = ? AND t.AssignedTo = ?
+         WHERE t.ProjectId = ? AND (t.AssignedTo = ? OR EXISTS (SELECT 1 FROM TaskAssignees WHERE TaskId = t.Id AND UserId = ?))
          ORDER BY t.CreatedAt DESC`,
-        [projectId, userId]
+        [projectId, userId, userId]
       );
       tasks = myTasks;
     }
 
     res.json({
       success: true,
-      tasks
+      tasks: computeCompletionPercentages(parseAssigneesJson(tasks))
     });
   } catch (error) {
     console.error('Get tasks error:', error);
@@ -340,7 +392,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
 
     res.json({
       success: true,
-      tasks
+      tasks: computeCompletionPercentages(parseAssigneesJson(tasks))
     });
   } catch (error) {
     console.error('Get tasks by ticket error:', error);
@@ -395,16 +447,16 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       [
         projectId,
         taskName,
-        description || null,
+        sanitizeRichText(description) || null,
         status || null,
         priority || null,
         assignedTo || null,
-        normalizeDateForDB(dueDate),
+        toDateOnly(dueDate),
         estimatedHours || null,
         parentTaskId || null,
         order,
-        normalizeDateForDB(plannedStartDate),
-        normalizeDateForDB(plannedEndDate),
+        toDateOnly(plannedStartDate),
+        toDateOnly(plannedEndDate),
         dependsOnTaskId || null,
         ticketId || null,
         userId
@@ -556,17 +608,17 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
        SET TaskName = ?, Description = ?, Status = ?, Priority = ?, AssignedTo = ?, DueDate = ?, EstimatedHours = ?, ParentTaskId = ?, DisplayOrder = COALESCE(?, DisplayOrder), PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?
        WHERE Id = ?`,
       [
-        taskName, 
-        description || null, 
-        status || null, 
-        priority || null, 
-        assignedTo || null, 
-        normalizeDateForDB(dueDate), 
+        taskName,
+        sanitizeRichText(description) || null,
+        status || null,
+        priority || null,
+        assignedTo || null,
+        toDateOnly(dueDate),
         estimatedHours || null,
         parentTaskId || null,
         displayOrder || null,
-        normalizeDateForDB(plannedStartDate),
-        normalizeDateForDB(plannedEndDate),
+        toDateOnly(plannedStartDate),
+        toDateOnly(plannedEndDate),
         dependsOnTaskId || null,
         taskId
       ]
@@ -688,6 +740,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
           Number(taskId),
           oldTask.ProjectId
         );
+        try {
+          const [uRows] = await pool.execute<RowDataPacket[]>('SELECT Email FROM Users WHERE Id = ?', [oldTask.AssignedTo]);
+          if (uRows.length > 0) {
+            await sendNotificationEmail(oldTask.AssignedTo, uRows[0].Email, 'task_updated', 'Task Priority Changed',
+              `Task "${taskName || oldTask.TaskName}" priority changed from "${oldPriorityName}" to "${newPriorityName}"`,
+              `/projects/${oldTask.ProjectId}`);
+          }
+        } catch {}
       }
       
       // Notify creator (if different)
@@ -701,6 +761,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
           Number(taskId),
           oldTask.ProjectId
         );
+        try {
+          const [uRows] = await pool.execute<RowDataPacket[]>('SELECT Email FROM Users WHERE Id = ?', [oldTask.CreatedBy]);
+          if (uRows.length > 0) {
+            await sendNotificationEmail(oldTask.CreatedBy, uRows[0].Email, 'task_updated', 'Task Priority Changed',
+              `Task "${taskName || oldTask.TaskName}" priority changed from "${oldPriorityName}" to "${newPriorityName}"`,
+              `/projects/${oldTask.ProjectId}`);
+          }
+        } catch {}
       }
     }
 
@@ -715,6 +783,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         Number(taskId),
         oldTask.ProjectId
       );
+      try {
+        const [uRows] = await pool.execute<RowDataPacket[]>('SELECT Email FROM Users WHERE Id = ?', [assignedTo]);
+        if (uRows.length > 0) {
+          await sendNotificationEmail(assignedTo, uRows[0].Email, 'task_assigned', 'Task Assigned to You',
+            `You have been assigned to task "${taskName || oldTask.TaskName}" in project "${oldTask.ProjectName}"`,
+            `/projects/${oldTask.ProjectId}`);
+        }
+      } catch {}
     }
 
     // If status changed, notify the assignee and creator
@@ -738,6 +814,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
           Number(taskId),
           oldTask.ProjectId
         );
+        try {
+          const [uRows] = await pool.execute<RowDataPacket[]>('SELECT Email FROM Users WHERE Id = ?', [oldTask.AssignedTo]);
+          if (uRows.length > 0) {
+            await sendNotificationEmail(oldTask.AssignedTo, uRows[0].Email, 'task_updated', 'Task Status Changed',
+              `Task "${taskName || oldTask.TaskName}" status changed from "${oldStatusName}" to "${newStatusName}"`,
+              `/projects/${oldTask.ProjectId}`);
+          }
+        } catch {}
       }
       
       // Notify creator (if different from current user and assignee)
@@ -751,6 +835,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
           Number(taskId),
           oldTask.ProjectId
         );
+        try {
+          const [uRows] = await pool.execute<RowDataPacket[]>('SELECT Email FROM Users WHERE Id = ?', [oldTask.CreatedBy]);
+          if (uRows.length > 0) {
+            await sendNotificationEmail(oldTask.CreatedBy, uRows[0].Email, 'task_updated', 'Task Status Changed',
+              `Task "${taskName || oldTask.TaskName}" status changed from "${oldStatusName}" to "${newStatusName}"`,
+              `/projects/${oldTask.ProjectId}`);
+          }
+        } catch {}
       }
     }
 
@@ -764,6 +856,217 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       success: false, 
       message: 'Failed to update task' 
     });
+  }
+});
+
+// ─── Task Assignees ───────────────────────────────────────────────────────────
+
+// GET /:id/assignees – list all assignees for a task
+router.get('/:id/assignees', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const taskId = req.params.id;
+
+    // Verify access
+    const [access] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.Id FROM Tasks t
+       JOIN Projects p ON t.ProjectId = p.Id
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       WHERE t.Id = ? AND om.UserId = ?`,
+      [taskId, userId]
+    );
+    if (access.length === 0) {
+      return res.status(404).json({ success: false, message: 'Task not found or access denied' });
+    }
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      `SELECT ta.UserId, ta.AssignedAt, ta.AssignedBy,
+              u.Username, u.FirstName, u.LastName
+       FROM TaskAssignees ta
+       JOIN Users u ON ta.UserId = u.Id
+       WHERE ta.TaskId = ?
+       ORDER BY ta.AssignedAt ASC`,
+      [taskId]
+    );
+
+    res.json({ success: true, assignees: rows });
+  } catch (error) {
+    console.error('Get task assignees error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch assignees' });
+  }
+});
+
+// POST /:id/assignees – add an assignee to a task
+router.post('/:id/assignees', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const taskId = req.params.id;
+    const { assigneeUserId } = req.body;
+
+    if (!assigneeUserId) {
+      return res.status(400).json({ success: false, message: 'assigneeUserId is required' });
+    }
+
+    // Verify access
+    const [access] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.Id, t.TaskName, p.Id as ProjectId, p.ProjectName, p.OrganizationId,
+              COALESCE(pg.CanManageTasks, 0) as CanManageTasks, om.Role
+       FROM Tasks t
+       JOIN Projects p ON t.ProjectId = p.Id
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE t.Id = ? AND om.UserId = ?`,
+      [taskId, userId]
+    );
+    if (access.length === 0) {
+      return res.status(404).json({ success: false, message: 'Task not found or access denied' });
+    }
+    const canManage = access[0].Role === 'Owner' || access[0].Role === 'Admin' || access[0].CanManageTasks === 1;
+    if (!canManage) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    // Verify assignee is a member of the same organisation
+    const [memberCheck] = await pool.execute<RowDataPacket[]>(
+      `SELECT UserId FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?`,
+      [access[0].OrganizationId, assigneeUserId]
+    );
+    if (memberCheck.length === 0) {
+      return res.status(400).json({ success: false, message: 'User is not a member of this organisation' });
+    }
+
+    // Insert (ignore duplicate)
+    await pool.execute(
+      `INSERT IGNORE INTO TaskAssignees (TaskId, UserId, AssignedBy) VALUES (?, ?, ?)`,
+      [taskId, assigneeUserId, userId]
+    );
+
+    // Also sync Tasks.AssignedTo if it is currently null (first assignee)
+    await pool.execute(
+      `UPDATE Tasks SET AssignedTo = ? WHERE Id = ? AND (AssignedTo IS NULL)`,
+      [assigneeUserId, taskId]
+    );
+
+    // Notify the new assignee (if different from current user)
+    if (Number(assigneeUserId) !== userId) {
+      await createNotification(
+        Number(assigneeUserId),
+        'task_assigned',
+        'New Task Assigned',
+        `You have been assigned to task "${access[0].TaskName}" in project "${access[0].ProjectName}"`,
+        `/projects/${access[0].ProjectId}`,
+        Number(taskId),
+        access[0].ProjectId
+      );
+    }
+
+    // Track in history
+    await createTaskHistory(Number(taskId), userId!, 'updated', 'Assignees', null, String(assigneeUserId));
+
+    res.json({ success: true, message: 'Assignee added' });
+  } catch (error) {
+    console.error('Add task assignee error:', error);
+    res.status(500).json({ success: false, message: 'Failed to add assignee' });
+  }
+});
+
+// DELETE /:id/assignees/:assigneeUserId – remove an assignee from a task
+router.delete('/:id/assignees/:assigneeUserId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const taskId = req.params.id;
+    const { assigneeUserId } = req.params;
+
+    // Verify access
+    const [access] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.Id, COALESCE(pg.CanManageTasks, 0) as CanManageTasks, om.Role
+       FROM Tasks t
+       JOIN Projects p ON t.ProjectId = p.Id
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE t.Id = ? AND om.UserId = ?`,
+      [taskId, userId]
+    );
+    if (access.length === 0) {
+      return res.status(404).json({ success: false, message: 'Task not found or access denied' });
+    }
+    const canManage = access[0].Role === 'Owner' || access[0].Role === 'Admin' || access[0].CanManageTasks === 1;
+    if (!canManage) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    await pool.execute(
+      `DELETE FROM TaskAssignees WHERE TaskId = ? AND UserId = ?`,
+      [taskId, assigneeUserId]
+    );
+
+    // Sync Tasks.AssignedTo: set to remaining first assignee or null
+    const [remaining] = await pool.execute<RowDataPacket[]>(
+      `SELECT UserId FROM TaskAssignees WHERE TaskId = ? ORDER BY AssignedAt ASC LIMIT 1`,
+      [taskId]
+    );
+    const newPrimary = remaining.length > 0 ? remaining[0].UserId : null;
+    await pool.execute(`UPDATE Tasks SET AssignedTo = ? WHERE Id = ?`, [newPrimary, taskId]);
+
+    // Track in history
+    await createTaskHistory(Number(taskId), userId!, 'updated', 'Assignees', String(assigneeUserId), null);
+
+    res.json({ success: true, message: 'Assignee removed' });
+  } catch (error) {
+    console.error('Remove task assignee error:', error);
+    res.status(500).json({ success: false, message: 'Failed to remove assignee' });
+  }
+});
+
+// ─── End Task Assignees ───────────────────────────────────────────────────────
+
+// Batch reorder/restatus tasks – single transaction, single round-trip
+// Body: { updates: Array<{ taskId: number; displayOrder: number; status?: number }> }
+router.post('/reorder-kanban', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { updates } = req.body;
+
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return res.status(400).json({ success: false, message: 'Invalid updates array' });
+    }
+
+    const ids = updates.map((u: any) => u.taskId);
+    const placeholders = ids.map(() => '?').join(', ');
+
+    // Verify the requesting user has access to all of these tasks
+    const [accessRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT DISTINCT t.Id
+       FROM Tasks t
+       JOIN Projects p ON t.ProjectId = p.Id
+       JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       WHERE t.Id IN (${placeholders}) AND om.UserId = ?`,
+      [...ids, userId]
+    );
+
+    if (accessRows.length !== ids.length) {
+      return res.status(403).json({ success: false, message: 'Access denied to one or more tasks' });
+    }
+
+    // Build and execute a single CASE-based UPDATE
+    const orderCase  = updates.map(() => 'WHEN ? THEN ?').join(' ');
+    const statusCase = updates.map(() => 'WHEN ? THEN ?').join(' ');
+    const orderParams: any[]  = updates.flatMap((u: any) => [u.taskId, u.displayOrder]);
+    const statusParams: any[] = updates.flatMap((u: any) => [u.taskId, u.status ?? null]);
+
+    await pool.execute(
+      `UPDATE Tasks
+       SET
+         DisplayOrder = CASE Id ${orderCase} ELSE DisplayOrder END,
+         Status       = CASE Id ${statusCase} ELSE Status END
+       WHERE Id IN (${placeholders})`,
+      [...orderParams, ...statusParams, ...ids]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error in reorder-kanban:', error);
+    res.status(500).json({ success: false, message: 'Failed to reorder tasks' });
   }
 });
 

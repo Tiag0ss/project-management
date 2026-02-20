@@ -26,9 +26,13 @@ interface TimeEntry {
   TaskName: string;
   ProjectName: string;
   CustomerName?: string;
+  IsHobby?: boolean;
   CreatedAt: string;
   StartTime?: string;
   EndTime?: string;
+  ApprovalStatus?: string;
+  ApprovedBy?: number;
+  ApprovedAt?: string;
 }
 
 interface TaskAllocationForCalendar {
@@ -78,6 +82,7 @@ export default function TimesheetPage() {
     description: ''
   });
   const [editingEntry, setEditingEntry] = useState<number | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [editEntry, setEditEntry] = useState({
     taskId: '',
     workDate: '',
@@ -91,6 +96,8 @@ export default function TimesheetPage() {
   const [currentWeekOffset, setCurrentWeekOffset] = useState(0);
   // Track cells with multiple entries (blocked from editing)
   const [blockedCells, setBlockedCells] = useState<{[taskId: number]: {[date: string]: number}}>({}); // value = number of entries
+  // Track cells with approved entries (locked from editing/deleting)
+  const [approvedCells, setApprovedCells] = useState<{[taskId: number]: {[date: string]: boolean}}>({});
   const [multiEntryCellsWarning, setMultiEntryCellsWarning] = useState('');
   // History tab filters
   const [historyDateFrom, setHistoryDateFrom] = useState(() => {
@@ -140,6 +147,7 @@ export default function TimesheetPage() {
       const weekDates = getCurrentWeekDates();
       const newWeeklyHours: {[taskId: number]: {[day: string]: string}} = {};
       const newBlockedCells: {[taskId: number]: {[date: string]: number}} = {};
+      const newApprovedCells: {[taskId: number]: {[date: string]: boolean}} = {};
       let hasMultipleEntries = false;
       
       // Populate with existing entries for current week
@@ -158,6 +166,10 @@ export default function TimesheetPage() {
             if (!newBlockedCells[task.Id]) newBlockedCells[task.Id] = {};
             newBlockedCells[task.Id][date] = entries.length;
             hasMultipleEntries = true;
+          } else if (entries.length === 1 && entries[0].ApprovalStatus === 'approved' && !entries[0].IsHobby) {
+            // Approved non-hobby entry - lock cell, do NOT add to weeklyHours so it won't be saved
+            if (!newApprovedCells[task.Id]) newApprovedCells[task.Id] = {};
+            newApprovedCells[task.Id][date] = true;
           } else if (entries.length === 1 && parseFloat(entries[0].Hours as any) > 0) {
             // Single entry - allow editing
             if (!newWeeklyHours[task.Id]) newWeeklyHours[task.Id] = {};
@@ -168,6 +180,7 @@ export default function TimesheetPage() {
       
       setWeeklyHours(newWeeklyHours);
       setBlockedCells(newBlockedCells);
+      setApprovedCells(newApprovedCells);
       
       if (hasMultipleEntries) {
         setMultiEntryCellsWarning('⚠️ Some cells have multiple time entries and are read-only. Use the Daily tab to edit individual entries.');
@@ -341,6 +354,7 @@ export default function TimesheetPage() {
 
   const handleEditTimeEntry = (entry: TimeEntry) => {
     setEditingEntry(entry.Id);
+    setShowEditModal(true);
     setEditEntry({
       taskId: entry.TaskId.toString(),
       workDate: (entry.WorkDate as any) instanceof Date 
@@ -389,6 +403,7 @@ export default function TimesheetPage() {
       if (response.ok) {
         setMessage('Time entry updated successfully!');
         setEditingEntry(null);
+        setShowEditModal(false);
         setEditEntry({
           taskId: '',
           workDate: '',
@@ -412,6 +427,7 @@ export default function TimesheetPage() {
 
   const handleCancelEdit = () => {
     setEditingEntry(null);
+    setShowEditModal(false);
     setEditEntry({
       taskId: '',
       workDate: '',
@@ -514,8 +530,8 @@ export default function TimesheetPage() {
         const taskId = parseInt(taskIdStr);
         
         for (const [date, hours] of Object.entries(dates)) {
-          // Skip if cell is blocked (multiple entries exist)
-          if (blockedCells[taskId]?.[date]) {
+          // Skip if cell is blocked (multiple entries exist) or approved
+          if (blockedCells[taskId]?.[date] || approvedCells[taskId]?.[date]) {
             skippedCount++;
             continue;
           }
@@ -643,6 +659,28 @@ export default function TimesheetPage() {
       setIsSaving(false);
     }
   };
+
+  // ─── Approval helpers ────────────────────────────────────────────────────────
+
+  const getApprovalBadge = (status?: string) => {
+    if (status === 'approved') return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
+        ✓ Approved
+      </span>
+    );
+    if (status === 'rejected') return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+        ✗ Rejected
+      </span>
+    );
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300">
+        ⏳ Pending
+      </span>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   if (isLoading) {
     return (
@@ -870,6 +908,9 @@ export default function TimesheetPage() {
                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                 Description
                               </th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                Status
+                              </th>
                               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                 Actions
                               </th>
@@ -878,117 +919,59 @@ export default function TimesheetPage() {
                           <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                             {recentEntries.length === 0 ? (
                               <tr>
-                                <td colSpan={8} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                                <td colSpan={9} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                                   No time entries in the last 8 days. Add your first entry above!
                                 </td>
                               </tr>
                             ) : (
                               recentEntries.map(entry => (
                                 <tr key={entry.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                  {editingEntry === entry.Id ? (
-                                    <>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        <input
-                                          type="date"
-                                          value={editEntry.workDate}
-                                          onChange={(e) => setEditEntry({ ...editEntry, workDate: e.target.value })}
-                                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                        />
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                                        {entry.ProjectName}
-                                      </td>
-                                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                                        {entry.TaskName}
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        <input
-                                          type="time"
-                                          value={editEntry.startTime}
-                                          onChange={(e) => setEditEntry({ ...editEntry, startTime: e.target.value })}
-                                          className="w-28 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                        />
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        <input
-                                          type="time"
-                                          value={editEntry.endTime}
-                                          onChange={(e) => setEditEntry({ ...editEntry, endTime: e.target.value })}
-                                          className="w-28 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                        />
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          step="0.25"
-                                          value={editEntry.hours}
-                                          onChange={(e) => setEditEntry({ ...editEntry, hours: e.target.value })}
-                                          className="w-20 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                        />
-                                      </td>
-                                      <td className="px-6 py-4 text-sm">
-                                        <input
-                                          type="text"
-                                          value={editEntry.description}
-                                          onChange={(e) => setEditEntry({ ...editEntry, description: e.target.value })}
-                                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                        />
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <button
-                                          onClick={handleUpdateTimeEntry}
-                                          className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 mr-3"
-                                        >
-                                          Save
-                                        </button>
-                                        <button
-                                          onClick={handleCancelEdit}
-                                          className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-300"
-                                        >
-                                          Cancel
-                                        </button>
-                                      </td>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                                        {new Date(entry.WorkDate).toLocaleDateString()}
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                                        {entry.ProjectName}
-                                      </td>
-                                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                                        {entry.TaskName}
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                                        {entry.StartTime || '-'}
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                                        {entry.EndTime || '-'}
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">
-                                        {parseFloat(entry.Hours as any).toFixed(2)}h
-                                      </td>
-                                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
-                                        {entry.Description || '-'}
-                                      </td>
-                                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <button
-                                          onClick={() => handleEditTimeEntry(entry)}
-                                          className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-3"
-                                        >
-                                          Edit
-                                        </button>
-                                        <button
-                                          onClick={() => handleDeleteTimeEntry(entry.Id)}
-                                          className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                                        >
-                                          Delete
-                                        </button>
-                                      </td>
-                                    </>
-                                  )}
+                                  <>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                      {new Date(entry.WorkDate).toLocaleDateString()}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                      {entry.ProjectName}
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                                      {entry.TaskName}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                      {entry.StartTime || '-'}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                      {entry.EndTime || '-'}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">
+                                      {parseFloat(entry.Hours as any).toFixed(2)}h
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
+                                      {entry.Description || '-'}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                      {getApprovalBadge(entry.ApprovalStatus)}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                      {entry.ApprovalStatus === 'approved' && !entry.IsHobby ? (
+                                        <span className="text-xs text-gray-400 dark:text-gray-500 italic">Locked</span>
+                                      ) : (
+                                        <>
+                                          <button
+                                            onClick={() => handleEditTimeEntry(entry)}
+                                            className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-3"
+                                          >
+                                            Edit
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteTimeEntry(entry.Id)}
+                                            className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                                          >
+                                            Delete
+                                          </button>
+                                        </>
+                                      )}
+                                    </td>
+                                  </>
                                 </tr>
                               ))
                             )}
@@ -1204,6 +1187,7 @@ export default function TimesheetPage() {
                                         });
                                         
                                         const hasMultipleEntries = entries.length > 1;
+                                        const isApproved = !!approvedCells[task.Id]?.[date];
                                         const savedHours = hasMultipleEntries 
                                           ? entries.reduce((sum, e) => sum + parseFloat(e.Hours as any), 0)
                                           : entries.length === 1 ? parseFloat(entries[0].Hours as any) : 0;
@@ -1216,9 +1200,11 @@ export default function TimesheetPage() {
                                             className={`px-2 py-2 text-center ${
                                               hasMultipleEntries 
                                                 ? 'bg-orange-100 dark:bg-orange-900/30' 
+                                                : isApproved
+                                                ? 'bg-green-50 dark:bg-green-900/20'
                                                 : ''
                                             }`}
-                                            title={hasMultipleEntries ? `${entries.length} entries exist for this day. Use Daily tab to edit.` : ''}
+                                            title={hasMultipleEntries ? `${entries.length} entries exist for this day. Use Daily tab to edit.` : isApproved ? 'This entry has been approved and cannot be edited.' : ''}
                                           >
                                             {hasMultipleEntries ? (
                                               <div className="flex flex-col items-center">
@@ -1227,6 +1213,15 @@ export default function TimesheetPage() {
                                                 </span>
                                                 <span className="text-xs text-orange-600 dark:text-orange-500">
                                                   🔒 {entries.length} entries
+                                                </span>
+                                              </div>
+                                            ) : isApproved ? (
+                                              <div className="flex flex-col items-center">
+                                                <span className="text-sm font-medium text-green-700 dark:text-green-400">
+                                                  {savedHours.toFixed(2)}
+                                                </span>
+                                                <span className="text-xs text-green-600 dark:text-green-500">
+                                                  ✓ Approved
                                                 </span>
                                               </div>
                                             ) : (
@@ -1311,6 +1306,7 @@ export default function TimesheetPage() {
                                         });
                                         
                                         const hasMultipleEntries = entries.length > 1;
+                                        const isApproved = !!approvedCells[task.Id]?.[date];
                                         const savedHours = hasMultipleEntries 
                                           ? entries.reduce((sum, e) => sum + parseFloat(e.Hours as any), 0)
                                           : entries.length === 1 ? parseFloat(entries[0].Hours as any) : 0;
@@ -1323,9 +1319,11 @@ export default function TimesheetPage() {
                                             className={`px-2 py-2 text-center ${
                                               hasMultipleEntries 
                                                 ? 'bg-orange-100 dark:bg-orange-900/30' 
+                                                : isApproved
+                                                ? 'bg-green-50 dark:bg-green-900/20'
                                                 : 'bg-purple-50/50 dark:bg-purple-900/10'
                                             }`}
-                                            title={hasMultipleEntries ? `${entries.length} entries exist for this day. Use Daily tab to edit.` : ''}
+                                            title={hasMultipleEntries ? `${entries.length} entries exist for this day. Use Daily tab to edit.` : isApproved ? 'This entry has been approved and cannot be edited.' : ''}
                                           >
                                             {hasMultipleEntries ? (
                                               <div className="flex flex-col items-center">
@@ -1334,6 +1332,15 @@ export default function TimesheetPage() {
                                                 </span>
                                                 <span className="text-xs text-orange-600 dark:text-orange-500">
                                                   🔒 {entries.length} entries
+                                                </span>
+                                              </div>
+                                            ) : isApproved ? (
+                                              <div className="flex flex-col items-center">
+                                                <span className="text-sm font-medium text-green-700 dark:text-green-400">
+                                                  {savedHours.toFixed(2)}
+                                                </span>
+                                                <span className="text-xs text-green-600 dark:text-green-500">
+                                                  ✓ Approved
                                                 </span>
                                               </div>
                                             ) : (
@@ -1445,9 +1452,46 @@ export default function TimesheetPage() {
                   <div className="p-6 space-y-6">
                     {/* Filters */}
                     <div>
-                      <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">
-                        All Time Entries
-                      </h2>
+                      <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                          All Time Entries
+                        </h2>
+                        <button
+                          onClick={() => {
+                            const filtered = timeEntries.filter(entry => {
+                              const entryDate = normalizeDateString(entry.WorkDate);
+                              if (historyDateFrom && entryDate < historyDateFrom) return false;
+                              if (historyDateTo && entryDate > historyDateTo) return false;
+                              if (historyProjectFilter && entry.ProjectName !== historyProjectFilter) return false;
+                              if (historyTaskFilter && entry.TaskId !== parseInt(historyTaskFilter)) return false;
+                              return true;
+                            });
+                            const header = ['Date', 'Customer', 'Project', 'Task', 'Start', 'End', 'Hours', 'Description', 'Status'];
+                            const rows = filtered.map(e => [
+                              normalizeDateString(e.WorkDate),
+                              e.CustomerName || '',
+                              e.ProjectName || '',
+                              e.TaskName || '',
+                              e.StartTime || '',
+                              e.EndTime || '',
+                              parseFloat(e.Hours as any).toFixed(2),
+                              (e.Description || '').replace(/"/g, '""'),
+                              e.ApprovalStatus || ''
+                            ].map(v => `"${v}"`).join(','));
+                            const csv = [header.join(','), ...rows].join('\n');
+                            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `time-entries-${historyDateFrom}-${historyDateTo}.csv`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          }}
+                          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                        >
+                          ⬇ Export CSV
+                        </button>
+                      </div>
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1579,87 +1623,126 @@ export default function TimesheetPage() {
                                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                     Task
                                   </th>
-                                  {!groupByDays && (
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                                      Start
-                                    </th>
-                                  )}
-                                  {!groupByDays && (
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                                      End
-                                    </th>
-                                  )}
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                    Start
+                                  </th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                    End
+                                  </th>
                                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                     Hours
                                   </th>
                                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                     Description
                                   </th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                    Status
+                                  </th>
+                                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                    Actions
+                                  </th>
                                 </tr>
                               </thead>
                               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                                 {filteredEntries.length === 0 ? (
                                   <tr>
-                                    <td colSpan={groupByDays ? 6 : 8} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                                    <td colSpan={10} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                                       No time entries found for the selected filters.
                                     </td>
                                   </tr>
                                 ) : groupByDays ? (
                                   (() => {
-                                    // Group entries by date
-                                    const groupedByDate: { [date: string]: { entries: TimeEntry[], totalHours: number, customers: Set<string>, projects: Set<string>, tasks: Set<string>, descriptions: Set<string> } } = {};
+                                    // Group entries by date, preserving individual entries
+                                    const groupedByDate: { [date: string]: { entries: TimeEntry[], totalHours: number } } = {};
                                     filteredEntries.forEach(entry => {
                                       const date = normalizeDateString(entry.WorkDate);
                                       if (!groupedByDate[date]) {
-                                        groupedByDate[date] = { entries: [], totalHours: 0, customers: new Set(), projects: new Set(), tasks: new Set(), descriptions: new Set() };
+                                        groupedByDate[date] = { entries: [], totalHours: 0 };
                                       }
                                       groupedByDate[date].entries.push(entry);
                                       groupedByDate[date].totalHours += parseFloat(entry.Hours as any);
-                                      if (entry.CustomerName) groupedByDate[date].customers.add(entry.CustomerName);
-                                      if (entry.ProjectName) groupedByDate[date].projects.add(entry.ProjectName);
-                                      if (entry.TaskName) groupedByDate[date].tasks.add(entry.TaskName);
-                                      if (entry.Description) groupedByDate[date].descriptions.add(entry.Description);
                                     });
 
                                     // Sort dates descending
                                     const sortedDates = Object.keys(groupedByDate).sort((a, b) => b.localeCompare(a));
 
-                                    return sortedDates.map(date => {
+                                    return sortedDates.flatMap(date => {
                                       const group = groupedByDate[date];
-                                      const customerNames = Array.from(group.customers).join(', ') || '-';
-                                      const projectNames = Array.from(group.projects).join(', ');
-                                      const taskNames = Array.from(group.tasks).join(', ');
-                                      const descriptions = Array.from(group.descriptions).join(', ') || '-';
-                                      
-                                      return (
-                                        <tr key={date} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                                            {new Date(date).toLocaleDateString()}
+                                      const dayLabel = new Date(date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                                      return [
+                                        // Day header row
+                                        <tr key={`header-${date}`} className="bg-gray-100 dark:bg-gray-700">
+                                          <td colSpan={10} className="px-6 py-2">
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                                                📅 {dayLabel}
+                                              </span>
+                                              <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
+                                                {group.totalHours.toFixed(2)}h total
+                                              </span>
+                                            </div>
                                           </td>
-                                          <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                                            {customerNames}
-                                          </td>
-                                          <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                                            {projectNames}
-                                          </td>
-                                          <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                                            {taskNames}
-                                          </td>
-                                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">
-                                            {group.totalHours.toFixed(2)}h
-                                          </td>
-                                          <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
-                                            {descriptions}
-                                          </td>
-                                        </tr>
-                                      );
+                                        </tr>,
+                                        // Individual entry rows for that day
+                                        ...group.entries.map(entry => (
+                                          <tr key={entry.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                            <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                              {new Date(normalizeDateString(entry.WorkDate) + 'T12:00:00').toLocaleDateString()}
+                                            </td>
+                                            <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                              {entry.CustomerName || '-'}
+                                            </td>
+                                            <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                              {entry.ProjectName}
+                                            </td>
+                                            <td className="px-6 py-3 text-sm text-gray-900 dark:text-white">
+                                              {entry.TaskName}
+                                            </td>
+                                            <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                              {entry.StartTime || '-'}
+                                            </td>
+                                            <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                              {entry.EndTime || '-'}
+                                            </td>
+                                            <td className="px-6 py-3 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">
+                                              {parseFloat(entry.Hours as any).toFixed(2)}h
+                                            </td>
+                                            <td className="px-6 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                              {entry.Description || '-'}
+                                            </td>
+                                            <td className="px-6 py-3 whitespace-nowrap text-sm">
+                                              {getApprovalBadge(entry.ApprovalStatus)}
+                                            </td>
+                                            <td className="px-6 py-3 whitespace-nowrap text-right text-sm font-medium">
+                                              {entry.ApprovalStatus === 'approved' && !entry.IsHobby ? (
+                                                <span className="text-xs text-gray-400 dark:text-gray-500 italic">Locked</span>
+                                              ) : (
+                                                <>
+                                                  <button
+                                                    onClick={() => handleEditTimeEntry(entry)}
+                                                    className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-3"
+                                                  >
+                                                    Edit
+                                                  </button>
+                                                  <button
+                                                    onClick={() => handleDeleteTimeEntry(entry.Id)}
+                                                    className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        ))
+                                      ];
                                     });
                                   })()
                                 ) : (
                                   filteredEntries.map(entry => (
                                     <tr key={entry.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                                        {new Date(entry.WorkDate).toLocaleDateString()}
+                                        {new Date(normalizeDateString(entry.WorkDate) + 'T12:00:00').toLocaleDateString()}
                                       </td>
                                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                                         {entry.CustomerName || '-'}
@@ -1681,6 +1764,29 @@ export default function TimesheetPage() {
                                       </td>
                                       <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
                                         {entry.Description || '-'}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                        {getApprovalBadge(entry.ApprovalStatus)}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        {entry.ApprovalStatus === 'approved' && !entry.IsHobby ? (
+                                          <span className="text-xs text-gray-400 dark:text-gray-500 italic">Locked</span>
+                                        ) : (
+                                          <>
+                                            <button
+                                              onClick={() => handleEditTimeEntry(entry)}
+                                              className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-3"
+                                            >
+                                              Edit
+                                            </button>
+                                            <button
+                                              onClick={() => handleDeleteTimeEntry(entry.Id)}
+                                              className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                                            >
+                                              Delete
+                                            </button>
+                                          </>
+                                        )}
                                       </td>
                                     </tr>
                                   ))
@@ -1710,6 +1816,89 @@ export default function TimesheetPage() {
             </div>
           </div>
         </main>
+
+        {/* Edit Time Entry Modal */}
+        {showEditModal && editingEntry && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Time Entry</h3>
+                  <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xl font-bold">
+                    ×
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date</label>
+                    <input
+                      type="date"
+                      value={editEntry.workDate}
+                      onChange={(e) => setEditEntry({ ...editEntry, workDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Time</label>
+                      <input
+                        type="time"
+                        value={editEntry.startTime}
+                        onChange={(e) => setEditEntry({ ...editEntry, startTime: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Time</label>
+                      <input
+                        type="time"
+                        value={editEntry.endTime}
+                        onChange={(e) => setEditEntry({ ...editEntry, endTime: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hours</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.25"
+                      value={editEntry.hours}
+                      onChange={(e) => setEditEntry({ ...editEntry, hours: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                    <input
+                      type="text"
+                      value={editEntry.description}
+                      onChange={(e) => setEditEntry({ ...editEntry, description: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    onClick={handleCancelEdit}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleUpdateTimeEntry}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Confirm Modal */}
         {modalMessage && (

@@ -23,6 +23,8 @@ export interface Project {
   GitHubRepo?: string | null;
   GiteaOwner?: string | null;
   GiteaRepo?: string | null;
+  Budget?: number | null;
+  BudgetSpent?: number;
   CreatedBy: number;
   CreatorName?: string;
   CreatedAt: string;
@@ -49,6 +51,7 @@ export interface CreateProjectData {
   gitHubRepo?: string;
   giteaOwner?: string;
   giteaRepo?: string;
+  budget?: number | null;
 }
 
 export interface UpdateProjectData {
@@ -64,6 +67,7 @@ export interface UpdateProjectData {
   gitHubRepo?: string | null;
   giteaOwner?: string | null;
   giteaRepo?: string | null;
+  budget?: number | null;
 }
 
 export interface UpdateProjectDataWithId extends UpdateProjectData {

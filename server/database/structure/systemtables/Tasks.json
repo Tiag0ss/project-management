@@ -125,6 +125,13 @@
       "Comment": "URL to external issue or task in other systems"
     },
     {
+      "FieldName": "CompletionPercentage",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Manual completion percentage (0-100) set by the user"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

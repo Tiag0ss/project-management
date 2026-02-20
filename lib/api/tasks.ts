@@ -2,6 +2,14 @@ import { getApiUrl } from './config';
 
 const API_BASE_URL = getApiUrl();
 
+export interface TaskAssignee {
+  UserId: number;
+  Username: string;
+  FirstName?: string;
+  LastName?: string;
+  AssignedAt?: string;
+}
+
 export interface Task {
   Id: number;
   ProjectId: number;
@@ -18,6 +26,7 @@ export interface Task {
   PriorityColor?: string;
   AssignedTo?: number;
   AssigneeName?: string;
+  Assignees?: TaskAssignee[];
   DueDate?: string;
   EstimatedHours?: number;
   PlannedHours?: number;
@@ -37,6 +46,7 @@ export interface Task {
   ExternalIssueId?: string | null;
   CreatedBy: number;
   CreatorName?: string;
+  CompletionPercentage?: number;
   CreatedAt: string;
   UpdatedAt: string;
 }
@@ -133,6 +143,23 @@ export const tasksApi = {
     return data;
   },
 
+  async reorderKanban(
+    updates: Array<{ taskId: number; displayOrder: number; status?: number }>,
+    token: string
+  ): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/reorder-kanban`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ updates }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to reorder');
+    return data;
+  },
+
   async updateOrder(taskId: number, displayOrder: number, token: string): Promise<{ success: boolean }> {
     const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/order`, {
       method: 'PUT',
@@ -149,6 +176,36 @@ export const tasksApi = {
       throw new Error(data.message || 'Failed to update task order');
     }
 
+    return data;
+  },
+
+  async getAssignees(taskId: number, token: string): Promise<{ success: boolean; assignees: TaskAssignee[] }> {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/assignees`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch assignees');
+    return data;
+  },
+
+  async addAssignee(taskId: number, assigneeUserId: number, token: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/assignees`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assigneeUserId }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to add assignee');
+    return data;
+  },
+
+  async removeAssignee(taskId: number, assigneeUserId: number, token: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/assignees/${assigneeUserId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to remove assignee');
     return data;
   },
 

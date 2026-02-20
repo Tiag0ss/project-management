@@ -51,7 +51,11 @@ import jiraIntegrationsRoutes from './routes/jiraIntegrations';
 import githubIntegrationsRoutes from './routes/githubIntegrations';
 import giteaIntegrationsRoutes from './routes/giteaIntegrations';
 import recurringAllocationsRoutes from './routes/recurringAllocations';
+import taskChecklistsRoutes from './routes/taskChecklists';
+import timersRoutes from './routes/timers';
+import taskTemplatesRoutes from './routes/taskTemplates';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
+import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler';
 
 dotenv.config();
 
@@ -213,6 +217,9 @@ app.prepare().then(async () => {
   server.use('/api/github-integrations', githubIntegrationsRoutes);
   server.use('/api/gitea-integrations', giteaIntegrationsRoutes);
   server.use('/api/recurring-allocations', recurringAllocationsRoutes);
+  server.use('/api/task-checklists', taskChecklistsRoutes);
+  server.use('/api/timers', timersRoutes);
+  server.use('/api/task-templates', taskTemplatesRoutes);
 
   // Error handling middleware
   server.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -257,6 +264,9 @@ app.prepare().then(async () => {
     
     // Start the work summary scheduler
     startWorkSummaryScheduler();
+
+    // Start the due date reminder scheduler
+    startDueDateReminderScheduler();
   });
 }).catch((error) => {
   logger.error('Failed to start server', { error });

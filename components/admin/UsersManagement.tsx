@@ -169,6 +169,9 @@ export default function UsersManagement() {
                   Role
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Team Leader
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -253,6 +256,16 @@ export default function UsersManagement() {
                       </div>
                     )}
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                    {u.TeamLeaderName ? (
+                      <span className="inline-flex items-center gap-1">
+                        <span>👤</span>
+                        <span>{u.TeamLeaderName}</span>
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 dark:text-gray-500">—</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                       u.IsActive 
@@ -307,6 +320,7 @@ export default function UsersManagement() {
           onUserCreated={handleUserSaved}
           token={token!}
           customers={customers}
+          allUsers={users}
         />
       )}
 
@@ -318,6 +332,7 @@ export default function UsersManagement() {
           onUserUpdated={handleUserSaved}
           token={token!}
           customers={customers}
+          allUsers={users}
         />
       )}
 
@@ -378,12 +393,14 @@ function CreateUserModal({
   onClose, 
   onUserCreated, 
   token,
-  customers 
+  customers,
+  allUsers
 }: { 
   onClose: () => void; 
   onUserCreated: () => void; 
   token: string;
   customers: CustomerOption[];
+  allUsers: User[];
 }) {
   const [formData, setFormData] = useState({
     username: '',
@@ -397,6 +414,7 @@ function CreateUserModal({
     isManager: false,
     isActive: true,
     customerId: '',
+    teamLeaderId: '',
     workHoursMonday: '8',
     workHoursTuesday: '8',
     workHoursWednesday: '8',
@@ -426,6 +444,7 @@ function CreateUserModal({
         isManager: formData.isManager,
         isActive: formData.isActive,
         customerId: formData.customerId ? parseInt(formData.customerId) : undefined,
+        teamLeaderId: formData.teamLeaderId ? parseInt(formData.teamLeaderId) : null,
         workHoursMonday: parseFloat(formData.workHoursMonday),
         workHoursTuesday: parseFloat(formData.workHoursTuesday),
         workHoursWednesday: parseFloat(formData.workHoursWednesday),
@@ -597,6 +616,25 @@ function CreateUserModal({
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Team Leader
+                <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">(approves time entries)</span>
+              </label>
+              <select
+                value={formData.teamLeaderId}
+                onChange={(e) => setFormData({ ...formData, teamLeaderId: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="">No team leader</option>
+                {allUsers.filter(u => !u.CustomerId).map(u => (
+                  <option key={u.Id} value={u.Id}>
+                    {u.FirstName && u.LastName ? `${u.FirstName} ${u.LastName} (@${u.Username})` : u.Username}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="flex gap-3 mt-6">
               <button
                 type="button"
@@ -626,13 +664,15 @@ function EditUserModal({
   onClose, 
   onUserUpdated, 
   token,
-  customers 
+  customers,
+  allUsers
 }: { 
   user: User; 
   onClose: () => void; 
   onUserUpdated: () => void; 
   token: string;
   customers: CustomerOption[];
+  allUsers: User[];
 }) {
   const [formData, setFormData] = useState({
     username: user.Username,
@@ -645,6 +685,7 @@ function EditUserModal({
     isManager: !!user.IsManager,
     isActive: !!user.IsActive,
     customerId: user.CustomerId?.toString() || '',
+    teamLeaderId: user.TeamLeaderId?.toString() || '',
     workHoursMonday: user.WorkHoursMonday?.toString() || '8',
     workHoursTuesday: user.WorkHoursTuesday?.toString() || '8',
     workHoursWednesday: user.WorkHoursWednesday?.toString() || '8',
@@ -652,6 +693,7 @@ function EditUserModal({
     workHoursFriday: user.WorkHoursFriday?.toString() || '8',
     workHoursSaturday: user.WorkHoursSaturday?.toString() || '0',
     workHoursSunday: user.WorkHoursSunday?.toString() || '0',
+    hourlyRate: user.HourlyRate?.toString() || '',
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -673,6 +715,7 @@ function EditUserModal({
         isManager: formData.isManager,
         isActive: formData.isActive,
         customerId: formData.customerId ? parseInt(formData.customerId) : undefined,
+        teamLeaderId: formData.teamLeaderId ? parseInt(formData.teamLeaderId) : null,
         workHoursMonday: parseFloat(formData.workHoursMonday),
         workHoursTuesday: parseFloat(formData.workHoursTuesday),
         workHoursWednesday: parseFloat(formData.workHoursWednesday),
@@ -680,6 +723,7 @@ function EditUserModal({
         workHoursFriday: parseFloat(formData.workHoursFriday),
         workHoursSaturday: parseFloat(formData.workHoursSaturday),
         workHoursSunday: parseFloat(formData.workHoursSunday),
+        hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
       }, token);
       onUserUpdated();
     } catch (err: any) {
@@ -774,6 +818,43 @@ function EditUserModal({
                 <option value="">Internal User</option>
                 {customers.map((c) => (
                   <option key={c.Id} value={c.Id}>{c.Name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Hourly Rate
+                <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">(for budget calculations)</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 text-sm">$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.hourlyRate}
+                  onChange={(e) => setFormData({ ...formData, hourlyRate: e.target.value })}
+                  className="w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Team Leader 
+              </label>
+              <select
+                value={formData.teamLeaderId}
+                onChange={(e) => setFormData({ ...formData, teamLeaderId: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="">No team leader</option>
+                {allUsers.filter(u => !u.CustomerId && u.Id !== user.Id).map(u => (
+                  <option key={u.Id} value={u.Id}>
+                    {u.FirstName && u.LastName ? `${u.FirstName} ${u.LastName} (@${u.Username})` : u.Username}
+                  </option>
                 ))}
               </select>
             </div>

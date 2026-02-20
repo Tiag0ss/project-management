@@ -53,6 +53,25 @@
       "Comment": "Description of work performed"
     },
     {
+      "FieldName": "ApprovalStatus",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "pending",
+      "Comment": "Approval status: pending, approved, rejected"
+    },
+    {
+      "FieldName": "ApprovedBy",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Users.Id who approved or rejected this entry"
+    },
+    {
+      "FieldName": "ApprovedAt",
+      "DataType": "timestamp",
+      "NotNullable": false,
+      "Comment": "Timestamp when the time entry was approved or rejected"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "datetime",
       "NotNullable": false,

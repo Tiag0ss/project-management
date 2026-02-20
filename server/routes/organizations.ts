@@ -19,7 +19,8 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
               (SELECT COUNT(*) FROM Projects WHERE OrganizationId = o.Id) as ProjectCount,
               (SELECT COUNT(*) FROM Tickets tk 
                INNER JOIN Projects p ON tk.ProjectId = p.Id 
-               WHERE p.OrganizationId = o.Id AND tk.Status NOT IN ('Resolved', 'Closed')) as OpenTickets,
+               LEFT JOIN TicketStatusValues tsv ON tk.StatusId = tsv.Id
+               WHERE p.OrganizationId = o.Id AND COALESCE(tsv.IsClosed, 0) = 0) as OpenTickets,
               COALESCE(taskStats.TotalTasks, 0) as TotalTasks,
               COALESCE(taskStats.CompletedTasks, 0) as CompletedTasks,
               COALESCE(taskStats.ActiveProjects, 0) as ActiveProjects

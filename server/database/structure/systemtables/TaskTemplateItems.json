@@ -1,0 +1,48 @@
+{
+  "TableName": "TaskTemplateItems",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "TemplateId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "ParentItemId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Title",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Description",
+      "DataType": "text",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "EstimatedHours",
+      "DataType": "decimal(6,2)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Priority",
+      "DataType": "varchar(100)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "SortOrder",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    }
+  ]
+}

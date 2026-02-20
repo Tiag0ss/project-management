@@ -52,11 +52,12 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       );
       customer.Organizations = orgs;
 
-      // Get open ticket count (excluding Resolved and Closed statuses)
+      // Get open ticket count (excluding closed statuses)
       const [ticketCount] = await pool.execute<RowDataPacket[]>(
         `SELECT COUNT(*) as count
          FROM Tickets t
-         WHERE t.CustomerId = ? AND t.Status NOT IN ('Resolved', 'Closed')`,
+         LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
+         WHERE t.CustomerId = ? AND COALESCE(tsv.IsClosed, 0) = 0`,
         [customer.Id]
       );
       customer.OpenTickets = ticketCount[0].count;

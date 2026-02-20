@@ -193,15 +193,14 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
     const [ticketStats] = await pool.execute<RowDataPacket[]>(`
       SELECT 
         COUNT(*) as totalTickets,
-        SUM(CASE WHEN Status = 'Open' THEN 1 ELSE 0 END) as openTickets,
-        SUM(CASE WHEN Status = 'In Progress' THEN 1 ELSE 0 END) as inProgressTickets,
-        SUM(CASE WHEN Status = 'With Developer' THEN 1 ELSE 0 END) as withDeveloperTickets,
-        SUM(CASE WHEN Status = 'Scheduled' THEN 1 ELSE 0 END) as scheduledTickets,
-        SUM(CASE WHEN Status = 'Waiting Response' THEN 1 ELSE 0 END) as waitingResponseTickets,
-        SUM(CASE WHEN Status = 'Resolved' THEN 1 ELSE 0 END) as resolvedTickets,
-        SUM(CASE WHEN Status = 'Closed' THEN 1 ELSE 0 END) as closedTickets,
-        SUM(CASE WHEN Status NOT IN ('Resolved', 'Closed') THEN 1 ELSE 0 END) as unresolvedTickets
-      FROM Tickets
+        SUM(CASE WHEN tsv.StatusType = 'open' THEN 1 ELSE 0 END) as openTickets,
+        SUM(CASE WHEN tsv.StatusType = 'in_progress' THEN 1 ELSE 0 END) as inProgressTickets,
+        SUM(CASE WHEN tsv.StatusType = 'waiting' THEN 1 ELSE 0 END) as waitingResponseTickets,
+        SUM(CASE WHEN tsv.StatusType = 'resolved' THEN 1 ELSE 0 END) as resolvedTickets,
+        SUM(CASE WHEN tsv.StatusType = 'closed' THEN 1 ELSE 0 END) as closedTickets,
+        SUM(CASE WHEN COALESCE(tsv.IsClosed, 0) = 0 THEN 1 ELSE 0 END) as unresolvedTickets
+      FROM Tickets t
+      LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
     `);
 
     res.json({
@@ -235,8 +234,6 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
           total: ticketStats[0]?.totalTickets || 0,
           open: ticketStats[0]?.openTickets || 0,
           inProgress: ticketStats[0]?.inProgressTickets || 0,
-          withDeveloper: ticketStats[0]?.withDeveloperTickets || 0,
-          scheduled: ticketStats[0]?.scheduledTickets || 0,
           waitingResponse: ticketStats[0]?.waitingResponseTickets || 0,
           resolved: ticketStats[0]?.resolvedTickets || 0,
           closed: ticketStats[0]?.closedTickets || 0,

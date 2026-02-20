@@ -13,8 +13,32 @@ import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import SearchableSelect from '@/components/SearchableSelect';
 
-type ProjectSortField = 'name' | 'status' | 'tasks' | 'hours' | 'tickets' | 'startDate' | 'endDate';
+type ProjectSortField = 'name' | 'status' | 'tasks' | 'hours' | 'tickets' | 'startDate' | 'endDate' | 'budget' | 'rag' | 'progress';
 type SortDirection = 'asc' | 'desc';
+type RAGStatus = 'red' | 'amber' | 'green';
+
+function computeRAG(project: Project): { status: RAGStatus; reasons: string[] } {
+  const budgetTotal = Number(project.Budget) || 0;
+  const budgetSpent = Number(project.BudgetSpent) || 0;
+  const budgetPct = budgetTotal > 0 ? Math.round((budgetSpent / budgetTotal) * 100) : 0;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const isOverdue = project.EndDate && !project.StatusIsClosed && !project.StatusIsCancelled
+    && new Date(project.EndDate) < today;
+  const reasons: string[] = [];
+  let status: RAGStatus = 'green';
+  if (budgetPct >= 100) { status = 'red'; reasons.push(`Budget exceeded (${budgetPct}%)`); }
+  if (isOverdue) { status = 'red'; reasons.push('Past end date'); }
+  if (status !== 'red') {
+    if (budgetPct >= 80) { status = 'amber'; reasons.push(`Budget at ${budgetPct}%`); }
+    if (project.EndDate) {
+      const daysLeft = Math.ceil((new Date(project.EndDate).getTime() - today.getTime()) / 86400000);
+      if (daysLeft <= 7 && daysLeft > 0 && !project.StatusIsClosed && !project.StatusIsCancelled) {
+        status = 'amber'; reasons.push(`Due in ${daysLeft}d`);
+      }
+    }
+  }
+  return { status, reasons };
+}
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -22,6 +46,10 @@ export default function ProjectsPage() {
   const [error, setError] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [filterText, setFilterText] = useState('');
+  const [filterOrg, setFilterOrg] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterRAG, setFilterRAG] = useState<RAGStatus | ''>('');
+  const [hideCompleted, setHideCompleted] = useState(false);
   const [sortField, setSortField] = useState<ProjectSortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -114,13 +142,32 @@ export default function ProjectsPage() {
   };
 
   // Filter and sort projects
+  const ragMap = useMemo(() => {
+    const map = new Map<number, { status: RAGStatus; reasons: string[] }>();
+    projects.forEach(p => map.set(p.Id, computeRAG(p)));
+    return map;
+  }, [projects]);
+
+  const orgs = useMemo(() => Array.from(new Set(projects.map(p => p.OrganizationName || '').filter(Boolean))).sort(), [projects]);
+  const statuses = useMemo(() => Array.from(new Set(projects.map(p => p.StatusName || '').filter(Boolean))).sort(), [projects]);
+
+  const ragSummary = useMemo(() => {
+    const vals = Array.from(ragMap.values());
+    return {
+      red: vals.filter(r => r.status === 'red').length,
+      amber: vals.filter(r => r.status === 'amber').length,
+      green: vals.filter(r => r.status === 'green').length,
+      total: projects.length,
+    };
+  }, [ragMap, projects.length]);
+
   const filteredAndSortedProjects = useMemo(() => {
     let result = [...projects];
-    
+
     // Apply filter
     if (filterText.trim()) {
       const search = filterText.toLowerCase();
-      result = result.filter(project => 
+      result = result.filter(project =>
         project.ProjectName.toLowerCase().includes(search) ||
         (project.Description && project.Description.toLowerCase().includes(search)) ||
         (project.OrganizationName && project.OrganizationName.toLowerCase().includes(search)) ||
@@ -128,7 +175,11 @@ export default function ProjectsPage() {
         (project.StatusName || '').toLowerCase().includes(search)
       );
     }
-    
+    if (filterOrg) result = result.filter(p => p.OrganizationName === filterOrg);
+    if (filterStatus) result = result.filter(p => p.StatusName === filterStatus);
+    if (filterRAG) result = result.filter(p => ragMap.get(p.Id)?.status === filterRAG);
+    if (hideCompleted) result = result.filter(p => !p.StatusIsClosed && !p.StatusIsCancelled);
+
     // Apply sort
     result.sort((a, b) => {
       let comparison = 0;
@@ -140,36 +191,43 @@ export default function ProjectsPage() {
           comparison = (a.StatusName || '').localeCompare(b.StatusName || '');
           break;
         case 'tasks':
-          const aTasks = Number(a.TotalTasks) || 0;
-          const bTasks = Number(b.TotalTasks) || 0;
-          comparison = aTasks - bTasks;
+          comparison = (Number(a.TotalTasks) || 0) - (Number(b.TotalTasks) || 0);
           break;
+        case 'progress': {
+          const pA = a.TotalTasks ? (Number(a.CompletedTasks) || 0) / Number(a.TotalTasks) : 0;
+          const pB = b.TotalTasks ? (Number(b.CompletedTasks) || 0) / Number(b.TotalTasks) : 0;
+          comparison = pA - pB;
+          break;
+        }
         case 'hours':
-          const aHours = Number(a.TotalWorkedHours) || 0;
-          const bHours = Number(b.TotalWorkedHours) || 0;
-          comparison = aHours - bHours;
+          comparison = (Number(a.TotalWorkedHours) || 0) - (Number(b.TotalWorkedHours) || 0);
           break;
+        case 'budget': {
+          const bA = a.Budget ? (Number(a.BudgetSpent) || 0) / Number(a.Budget) : 0;
+          const bB = b.Budget ? (Number(b.BudgetSpent) || 0) / Number(b.Budget) : 0;
+          comparison = bA - bB;
+          break;
+        }
         case 'tickets':
-          const aTickets = Number(a.OpenTickets) || 0;
-          const bTickets = Number(b.OpenTickets) || 0;
-          comparison = aTickets - bTickets;
+          comparison = (Number(a.OpenTickets) || 0) - (Number(b.OpenTickets) || 0);
           break;
         case 'startDate':
-          const aStart = a.StartDate ? new Date(a.StartDate).getTime() : 0;
-          const bStart = b.StartDate ? new Date(b.StartDate).getTime() : 0;
-          comparison = aStart - bStart;
+          comparison = (a.StartDate ? new Date(a.StartDate).getTime() : 0) - (b.StartDate ? new Date(b.StartDate).getTime() : 0);
           break;
         case 'endDate':
-          const aEnd = a.EndDate ? new Date(a.EndDate).getTime() : 0;
-          const bEnd = b.EndDate ? new Date(b.EndDate).getTime() : 0;
-          comparison = aEnd - bEnd;
+          comparison = (a.EndDate ? new Date(a.EndDate).getTime() : 0) - (b.EndDate ? new Date(b.EndDate).getTime() : 0);
           break;
+        case 'rag': {
+          const order: Record<RAGStatus, number> = { red: 0, amber: 1, green: 2 };
+          comparison = order[ragMap.get(a.Id)?.status || 'green'] - order[ragMap.get(b.Id)?.status || 'green'];
+          break;
+        }
       }
       return sortDirection === 'asc' ? comparison : -comparison;
     });
-    
+
     return result;
-  }, [projects, filterText, sortField, sortDirection]);
+  }, [projects, filterText, filterOrg, filterStatus, filterRAG, hideCompleted, sortField, sortDirection, ragMap]);
 
   const handleSort = (field: ProjectSortField) => {
     if (sortField === field) {
@@ -218,10 +276,11 @@ export default function ProjectsPage() {
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
           {/* Header */}
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
-              My Projects
-            </h2>
+          <div className="flex flex-wrap justify-between items-center gap-4 mb-5">
+            <div>
+              <h2 className="text-3xl font-bold text-gray-900 dark:text-white">My Projects</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{projects.length} project{projects.length !== 1 ? 's' : ''} across your organisations</p>
+            </div>
             <div className="flex items-center gap-3">
               {/* View Toggle */}
               <div className="flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
@@ -256,6 +315,40 @@ export default function ProjectsPage() {
             </div>
           </div>
 
+          {/* RAG Summary tiles */}
+          {projects.length > 0 && (
+            <div className="grid grid-cols-4 gap-3 mb-5">
+              <button
+                onClick={() => setFilterRAG('')}
+                className={`rounded-xl px-4 py-3 text-center transition-all border-2 ${filterRAG === '' ? 'border-gray-400 dark:border-gray-500 shadow-md' : 'border-transparent'} bg-white dark:bg-gray-800 shadow-sm hover:shadow-md`}
+              >
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">{ragSummary.total}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Total</div>
+              </button>
+              <button
+                onClick={() => setFilterRAG(filterRAG === 'red' ? '' : 'red')}
+                className={`rounded-xl px-4 py-3 text-center transition-all border-2 ${filterRAG === 'red' ? 'border-red-500 shadow-md' : 'border-transparent'} bg-red-50 dark:bg-red-900/20 shadow-sm hover:shadow-md`}
+              >
+                <div className="text-2xl font-bold text-red-700 dark:text-red-300">{ragSummary.red}</div>
+                <div className="text-xs text-red-500 mt-0.5">🔴 Red</div>
+              </button>
+              <button
+                onClick={() => setFilterRAG(filterRAG === 'amber' ? '' : 'amber')}
+                className={`rounded-xl px-4 py-3 text-center transition-all border-2 ${filterRAG === 'amber' ? 'border-amber-500 shadow-md' : 'border-transparent'} bg-amber-50 dark:bg-amber-900/20 shadow-sm hover:shadow-md`}
+              >
+                <div className="text-2xl font-bold text-amber-700 dark:text-amber-300">{ragSummary.amber}</div>
+                <div className="text-xs text-amber-500 mt-0.5">🟡 Amber</div>
+              </button>
+              <button
+                onClick={() => setFilterRAG(filterRAG === 'green' ? '' : 'green')}
+                className={`rounded-xl px-4 py-3 text-center transition-all border-2 ${filterRAG === 'green' ? 'border-green-500 shadow-md' : 'border-transparent'} bg-green-50 dark:bg-green-900/20 shadow-sm hover:shadow-md`}
+              >
+                <div className="text-2xl font-bold text-green-700 dark:text-green-300">{ragSummary.green}</div>
+                <div className="text-xs text-green-500 mt-0.5">🟢 Green</div>
+              </button>
+            </div>
+          )}
+
           {/* Error ProjectsMessage */}
           {error && (
             <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
@@ -287,269 +380,194 @@ export default function ProjectsPage() {
                 </button>
               )}
             </div>
-          ) : viewMode === 'grid' ? (
-            /* Projects Grid */
-            <>
-              {/* Filter Input */}
-              <div className="mb-4">
-                <div className="relative">
-                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  <input
-                    type="text"
-                    placeholder="Filter projects..."
-                    value={filterText}
-                    onChange={(e) => setFilterText(e.target.value)}
-                    className="w-full md:w-80 pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                  {filterText && (
-                    <button
-                      onClick={() => setFilterText('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-                {filterText && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                    Showing {filteredAndSortedProjects.length} of {projects.length} projects
-                  </p>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredAndSortedProjects.map((project) => (
-                  <ProjectCard
-                    key={project.Id}
-                    project={project}
-                    onEdit={handleEditProject}
-                    onDelete={handleDeleteProject}
-                    canEdit={permissions?.canManageProjects || false}
-                    canDelete={permissions?.canDeleteProjects || false}
-                  />
-                ))}
-              </div>
-            </>
           ) : (
-            /* Projects List */
+            /* Has projects — show filter bar + view */
             <>
-              {/* Filter Input */}
-              <div className="mb-4">
-                <div className="relative">
-                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  <input
-                    type="text"
-                    placeholder="Filter projects..."
-                    value={filterText}
-                    onChange={(e) => setFilterText(e.target.value)}
-                    className="w-full md:w-80 pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                  {filterText && (
-                    <button
-                      onClick={() => setFilterText('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  )}
+              {/* Unified filter bar */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                  {/* Search */}
+                  <div className="relative lg:col-span-2">
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Search projects..."
+                      value={filterText}
+                      onChange={e => setFilterText(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  {/* Org */}
+                  <select value={filterOrg} onChange={e => setFilterOrg(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">All Organisations</option>
+                    {orgs.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  {/* Status */}
+                  <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">All Statuses</option>
+                    {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  {/* Sort */}
+                  <select value={`${sortField}-${sortDirection}`}
+                    onChange={e => {
+                      const [f, d] = e.target.value.split('-');
+                      setSortField(f as ProjectSortField);
+                      setSortDirection(d as SortDirection);
+                    }}
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="name-asc">Name A→Z</option>
+                    <option value="name-desc">Name Z→A</option>
+                    <option value="rag-asc">Health (worst first)</option>
+                    <option value="progress-desc">Progress (most first)</option>
+                    <option value="progress-asc">Progress (least first)</option>
+                    <option value="budget-desc">Budget burn (highest)</option>
+                    <option value="hours-desc">Hours worked (most)</option>
+                    <option value="tickets-desc">Open tickets (most)</option>
+                    <option value="endDate-asc">End date (soonest)</option>
+                    <option value="endDate-desc">End date (latest)</option>
+                  </select>
                 </div>
-                {filterText && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                    Showing {filteredAndSortedProjects.length} of {projects.length} projects
-                  </p>
-                )}
+                <div className="flex items-center justify-between mt-3">
+                  <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+                    <input type="checkbox" checked={hideCompleted} onChange={e => setHideCompleted(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
+                    Hide closed / cancelled
+                  </label>
+                  <span className="text-xs text-gray-400">
+                    {filteredAndSortedProjects.length !== projects.length
+                      ? `${filteredAndSortedProjects.length} of ${projects.length} projects`
+                      : `${projects.length} project${projects.length !== 1 ? 's' : ''}`}
+                  </span>
+                </div>
               </div>
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-gray-700">
-                    <tr>
-                      <th 
-                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
-                        onClick={() => handleSort('name')}
-                      >
-                        <div className="flex items-center gap-1">
-                          Project
-                          <SortIcon field="name" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
-                        onClick={() => handleSort('status')}
-                      >
-                        <div className="flex items-center justify-center gap-1">
-                          Status
-                          <SortIcon field="status" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
-                        onClick={() => handleSort('tasks')}
-                      >
-                        <div className="flex items-center justify-center gap-1">
-                          Tasks
-                          <SortIcon field="tasks" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
-                        onClick={() => handleSort('hours')}
-                      >
-                        <div className="flex items-center justify-center gap-1">
-                          Hours
-                          <SortIcon field="hours" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
-                        onClick={() => handleSort('tickets')}
-                      >
-                        <div className="flex items-center justify-center gap-1">
-                          Open Tickets
-                          <SortIcon field="tickets" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
-                        onClick={() => handleSort('endDate')}
-                      >
-                        <div className="flex items-center justify-center gap-1">
-                          Dates
-                          <SortIcon field="endDate" />
-                        </div>
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {filteredAndSortedProjects.map((project) => {
-                    const totalTasks = Number(project.TotalTasks) || 0;
-                    const completedTasks = Number(project.CompletedTasks) || 0;
-                    const unplannedTasks = Number(project.UnplannedTasks) || 0;
-                    const progressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-                    const estimatedHours = Number(project.TotalEstimatedHours) || 0;
-                    const workedHours = Number(project.TotalWorkedHours) || 0;
-                    const hoursPercent = estimatedHours > 0 ? Math.min(100, Math.round((workedHours / estimatedHours) * 100)) : 0;
-                    const isOverdue = project.EndDate && new Date(project.EndDate) < new Date() && !project.StatusIsClosed;
-                    
-                    return (
-                      <tr 
-                        key={project.Id} 
-                        className="hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer"
-                        onClick={() => router.push(`/projects/${project.Id}`)}
-                      >
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <div className="font-medium text-gray-900 dark:text-white">{project.ProjectName}</div>
-                            {!!project.IsHobby && (
-                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                                Hobby
-                              </span>
-                            )}
-                            {isOverdue && (
-                              <span className="text-red-600 dark:text-red-400" title="Overdue">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
-                            {project.OrganizationName}
-                            {project.CustomerName && (
-                              <span className="ml-2 text-blue-600 dark:text-blue-400">• {project.CustomerName}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold"
-                            style={project.StatusColor ? {
-                              backgroundColor: project.StatusColor + '20',
-                              color: project.StatusColor
-                            } : undefined}
-                          >
-                            {project.StatusName || 'Unknown'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-center gap-2">
-                            <span className="text-sm text-gray-900 dark:text-white">{completedTasks}/{totalTasks}</span>
-                            {unplannedTasks > 0 && (
-                              <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" title={`${unplannedTasks} unplanned task${unplannedTasks > 1 ? 's' : ''}`}>
-                                {unplannedTasks} unplanned
-                              </span>
-                            )}
-                            {totalTasks > 0 && (
-                              <div className="w-16 bg-gray-200 dark:bg-gray-600 rounded-full h-1.5">
-                                <div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${progressPercent}%` }} />
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-center gap-2">
-                            <span className={`text-sm ${hoursPercent > 100 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
-                              {workedHours.toFixed(1)}h / {estimatedHours.toFixed(1)}h
-                            </span>
-                            {estimatedHours > 0 && (
-                              <div className="w-16 bg-gray-200 dark:bg-gray-600 rounded-full h-1.5">
-                                <div className={`h-1.5 rounded-full ${hoursPercent > 100 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${Math.min(100, hoursPercent)}%` }} />
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-center text-sm text-gray-900 dark:text-white">
-                          {Number(project.OpenTickets) || 0}
-                        </td>
-                        <td className="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                          {project.StartDate 
-                            ? new Date(project.StartDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                            : '-'
-                          }
-                          {' → '}
-                          {project.EndDate 
-                            ? new Date(project.EndDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                            : '-'
-                          }
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); router.push(`/projects/${project.Id}`); }}
-                              className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium"
-                            >
-                              Manage
-                            </button>
-                            {permissions?.canManageProjects && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleEditProject(project); }}
-                                className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 text-sm font-medium"
-                              >
-                                Edit
-                              </button>
-                            )}
-                            {permissions?.canDeleteProjects && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDeleteProject(project.Id); }}
-                                className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium"
-                              >
-                                Delete
-                              </button>
-                            )}
-                          </div>
-                        </td>
+
+              {filteredAndSortedProjects.length === 0 ? (
+                <div className="text-center py-12 text-gray-500 dark:text-gray-400">No projects match the selected filters.</div>
+              ) : viewMode === 'grid' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {filteredAndSortedProjects.map(project => (
+                    <ProjectCard
+                      key={project.Id}
+                      project={project}
+                      rag={ragMap.get(project.Id)!}
+                      onEdit={handleEditProject}
+                      onDelete={handleDeleteProject}
+                      canEdit={permissions?.canManageProjects || false}
+                      canDelete={permissions?.canDeleteProjects || false}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-700">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('name')}>
+                          <div className="flex items-center gap-1">Project <SortIcon field="name" /></div>
+                        </th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('rag')}>
+                          <div className="flex items-center justify-center gap-1">Health <SortIcon field="rag" /></div>
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('status')}>
+                          <div className="flex items-center justify-center gap-1">Status <SortIcon field="status" /></div>
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('progress')}>
+                          <div className="flex items-center justify-center gap-1">Progress <SortIcon field="progress" /></div>
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('hours')}>
+                          <div className="flex items-center justify-center gap-1">Hours <SortIcon field="hours" /></div>
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('budget')}>
+                          <div className="flex items-center justify-center gap-1">Budget <SortIcon field="budget" /></div>
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('tickets')}>
+                          <div className="flex items-center justify-center gap-1">Tickets <SortIcon field="tickets" /></div>
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('endDate')}>
+                          <div className="flex items-center justify-center gap-1">Dates <SortIcon field="endDate" /></div>
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
                       </tr>
-                    );
-                  })}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {filteredAndSortedProjects.map(project => {
+                        const totalTasks = Number(project.TotalTasks) || 0;
+                        const completedTasks = Number(project.CompletedTasks) || 0;
+                        const progressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+                        const estimatedHours = Number(project.TotalEstimatedHours) || 0;
+                        const workedHours = Number(project.TotalWorkedHours) || 0;
+                        const hoursPercent = estimatedHours > 0 ? Math.min(100, Math.round((workedHours / estimatedHours) * 100)) : 0;
+                        const budgetTotal = Number(project.Budget) || 0;
+                        const budgetSpent = Number(project.BudgetSpent) || 0;
+                        const budgetPct = budgetTotal > 0 ? Math.min(100, Math.round((budgetSpent / budgetTotal) * 100)) : 0;
+                        const rag = ragMap.get(project.Id) || { status: 'green' as RAGStatus, reasons: [] };
+                        const ragDot = rag.status === 'red' ? '🔴' : rag.status === 'amber' ? '🟡' : '🟢';
+                        const isOverdue = project.EndDate && new Date(project.EndDate) < new Date() && !project.StatusIsClosed;
+                        return (
+                          <tr key={project.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer" onClick={() => router.push(`/projects/${project.Id}`)}>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <div className="font-medium text-gray-900 dark:text-white">{project.ProjectName}</div>
+                                {!!project.IsHobby && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">Hobby</span>}
+                                {isOverdue && <span className="text-red-500 text-xs font-semibold">Overdue</span>}
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                {project.OrganizationName}{project.CustomerName && <span className="ml-2 text-blue-500">• {project.CustomerName}</span>}
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 text-center">
+                              <span title={rag.reasons.join(', ') || 'On track'} className="text-lg leading-none cursor-default">{ragDot}</span>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold" style={project.StatusColor ? { backgroundColor: project.StatusColor + '20', color: project.StatusColor } : undefined}>
+                                {project.StatusName || 'Unknown'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col items-center gap-1 min-w-[80px]">
+                                <span className="text-xs text-gray-900 dark:text-white font-medium">{completedTasks}/{totalTasks} ({progressPercent}%)</span>
+                                {totalTasks > 0 && <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5"><div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${progressPercent}%` }} /></div>}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col items-center gap-1 min-w-[80px]">
+                                <span className={`text-xs font-medium ${hoursPercent > 100 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>{workedHours.toFixed(1)}h / {estimatedHours.toFixed(1)}h</span>
+                                {estimatedHours > 0 && <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5"><div className={`h-1.5 rounded-full ${hoursPercent > 100 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${Math.min(100, hoursPercent)}%` }} /></div>}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              {budgetTotal > 0 ? (
+                                <div className="flex flex-col items-center gap-1 min-w-[80px]">
+                                  <span className={`text-xs font-medium ${budgetPct >= 100 ? 'text-red-600 dark:text-red-400' : budgetPct >= 80 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>${budgetSpent.toFixed(0)} / ${budgetTotal.toFixed(0)} ({budgetPct}%)</span>
+                                  <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5"><div className={`h-1.5 rounded-full ${budgetPct >= 100 ? 'bg-red-500' : budgetPct >= 80 ? 'bg-amber-500' : 'bg-green-500'}`} style={{ width: `${budgetPct}%` }} /></div>
+                                </div>
+                              ) : <span className="text-xs text-gray-400 text-center block">—</span>}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <span className={`text-sm font-medium ${(Number(project.OpenTickets) || 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>{Number(project.OpenTickets) || 0}</span>
+                            </td>
+                            <td className="px-6 py-4 text-center text-xs text-gray-500 dark:text-gray-400">
+                              {project.StartDate ? new Date(project.StartDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '-'}
+                              {' → '}
+                              <span className={isOverdue ? 'text-red-500 font-medium' : ''}>{project.EndDate ? new Date(project.EndDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '-'}</span>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button onClick={e => { e.stopPropagation(); router.push(`/projects/${project.Id}`); }} className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium">Open</button>
+                                {permissions?.canManageProjects && <button onClick={e => { e.stopPropagation(); handleEditProject(project); }} className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 text-sm font-medium">Edit</button>}
+                                {permissions?.canDeleteProjects && <button onClick={e => { e.stopPropagation(); handleDeleteProject(project.Id); }} className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium">Delete</button>}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -608,192 +626,162 @@ export default function ProjectsPage() {
   );
 }
 
+// RAG border colours
+const RAG_BORDER: Record<RAGStatus, string> = {
+  red:   'border-l-4 border-red-500',
+  amber: 'border-l-4 border-amber-500',
+  green: 'border-l-4 border-green-500',
+};
+
 // Project Card Component
 function ProjectCard({ 
-  project, 
+  project,
+  rag,
   onEdit, 
   onDelete,
   canEdit,
   canDelete 
 }: { 
-  project: Project; 
+  project: Project;
+  rag: { status: RAGStatus; reasons: string[] };
   onEdit: (project: Project) => void; 
   onDelete: (id: number) => void;
   canEdit: boolean;
   canDelete: boolean;
 }) {
   const router = useRouter();
-  
-  const totalTasks = Number(project.TotalTasks) || 0;
-  const completedTasks = Number(project.CompletedTasks) || 0;
-  const unplannedTasks = Number(project.UnplannedTasks) || 0;
-  const progressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-  const estimatedHours = Number(project.TotalEstimatedHours) || 0;
-  const workedHours = Number(project.TotalWorkedHours) || 0;
-  const hoursPercent = estimatedHours > 0 ? Math.min(100, Math.round((workedHours / estimatedHours) * 100)) : 0;
 
-  const isOverdue = project.EndDate && new Date(project.EndDate) < new Date() && !project.StatusIsClosed;
+  const totalTasks      = Number(project.TotalTasks) || 0;
+  const completedTasks  = Number(project.CompletedTasks) || 0;
+  const unplannedTasks  = Number(project.UnplannedTasks) || 0;
+  const progressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  const estimatedHours  = Number(project.TotalEstimatedHours) || 0;
+  const workedHours     = Number(project.TotalWorkedHours) || 0;
+  const budgetTotal     = Number(project.Budget) || 0;
+  const budgetSpent     = Number(project.BudgetSpent) || 0;
+  const budgetPct       = budgetTotal > 0 ? Math.min(100, Math.round((budgetSpent / budgetTotal) * 100)) : 0;
+  const budgetBarColor  = budgetPct >= 100 ? 'bg-red-500' : budgetPct >= 80 ? 'bg-amber-500' : 'bg-green-500';
+  const isOverdue       = project.EndDate && new Date(project.EndDate) < new Date() && !project.StatusIsClosed;
+  const ragDot          = rag.status === 'red' ? '🔴' : rag.status === 'amber' ? '🟡' : '🟢';
 
   return (
-    <div 
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden cursor-pointer group"
+    <div
+      className={`bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden cursor-pointer group ${RAG_BORDER[rag.status]}`}
       onClick={() => router.push(`/projects/${project.Id}`)}
     >
-      {/* Header with status bar */}
-      <div className="h-1" style={{ backgroundColor: project.StatusColor || '#9ca3af' }} />
-      
       <div className="p-5">
-        {/* Title and Status */}
-        <div className="flex justify-between items-start mb-3">
-          <div className="flex-1 min-w-0 pr-3">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+        {/* Title row */}
+        <div className="flex justify-between items-start gap-2 mb-1">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-bold text-gray-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
               {project.ProjectName}
             </h3>
-            {project.OrganizationName && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                {project.OrganizationName}
-                {project.CustomerName && (
-                  <span className="ml-2 text-blue-600 dark:text-blue-400">• {project.CustomerName}</span>
-                )}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {project.IsHobby && (
-              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                Hobby
-              </span>
-            )}
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold"
-              style={project.StatusColor ? {
-                backgroundColor: project.StatusColor + '20',
-                color: project.StatusColor
-              } : undefined}
-            >
-              {project.StatusName || 'Unknown'}
-            </span>
-          </div>
-        </div>
-        
-        {/* Description */}
-        {project.Description && (() => {
-          const plainText = project.Description.replace(/<[^>]*>/g, '').trim();
-          return plainText ? (
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-2">
-              {plainText}
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              {project.OrganizationName}
+              {project.CustomerName && <span className="ml-2 text-blue-500">• {project.CustomerName}</span>}
             </p>
-          ) : null;
-        })()}
+          </div>
+          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            <span title={rag.reasons.join(', ') || 'On track'} className="text-lg leading-none">{ragDot}</span>
+            {project.StatusName && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                style={project.StatusColor ? { backgroundColor: project.StatusColor + '20', color: project.StatusColor } : undefined}>
+                {project.StatusName}
+              </span>
+            )}
+            {!!project.IsHobby && <span className="text-xs text-purple-500 font-medium">Hobby</span>}
+          </div>
+        </div>
 
-        {/* Progress Section */}
-        <div className="space-y-3 mb-4">
-          {/* Tasks Progress */}
-          <div>
-            <div className="flex justify-between items-center text-xs mb-1">
-              <span className="text-gray-600 dark:text-gray-400">Tasks</span>
-              <div className="flex items-center gap-1.5">
-                <span className="font-medium text-gray-900 dark:text-white">
-                  {completedTasks}/{totalTasks}
+        {/* RAG reasons hint */}
+        {rag.reasons.length > 0 && (
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-3">{rag.reasons.join(' · ')}</p>
+        )}
+
+        {/* Task progress */}
+        <div className="mb-3">
+          <div className="flex justify-between text-xs mb-1">
+            <span className="text-gray-500 dark:text-gray-400">Progress</span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-semibold text-gray-900 dark:text-white">{progressPercent}%</span>
+              {unplannedTasks > 0 && (
+                <span className="px-1 py-0.5 rounded text-[10px] font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                  title={`${unplannedTasks} unplanned task${unplannedTasks > 1 ? 's' : ''}`}>
+                  {unplannedTasks} unplanned
                 </span>
-                {unplannedTasks > 0 && (
-                  <span className="px-1 py-0.5 rounded text-[10px] font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" title={`${unplannedTasks} unplanned task${unplannedTasks > 1 ? 's' : ''}`}>
-                    {unplannedTasks} unplanned
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-              <div 
-                className="bg-blue-600 h-1.5 rounded-full transition-all duration-300" 
-                style={{ width: `${progressPercent}%` }}
-              />
+              )}
             </div>
           </div>
+          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+            <div className="h-2 rounded-full bg-blue-500 transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+          </div>
+          <p className="text-xs text-gray-400 mt-0.5">{completedTasks} / {totalTasks} tasks</p>
+        </div>
 
-          {/* Hours Progress */}
-          <div>
-            <div className="flex justify-between items-center text-xs mb-1">
-              <span className="text-gray-600 dark:text-gray-400">Hours</span>
-              <span className={`font-medium ${hoursPercent > 100 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
-                {workedHours.toFixed(1)}h / {estimatedHours.toFixed(1)}h
+        {/* Budget bar (only when budget is set) */}
+        {budgetTotal > 0 && (
+          <div className="mb-3">
+            <div className="flex justify-between text-xs mb-1">
+              <span className="text-gray-500 dark:text-gray-400">Budget</span>
+              <span className="font-semibold text-gray-900 dark:text-white">
+                ${budgetSpent.toFixed(0)} / ${budgetTotal.toFixed(0)}
+                <span className="ml-1 text-gray-400">({budgetPct}%)</span>
               </span>
             </div>
-            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-              <div 
-                className={`h-1.5 rounded-full transition-all duration-300 ${hoursPercent > 100 ? 'bg-red-500' : 'bg-green-500'}`}
-                style={{ width: `${Math.min(100, hoursPercent)}%` }}
-              />
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+              <div className={`${budgetBarColor} h-2 rounded-full transition-all duration-300`} style={{ width: `${budgetPct}%` }} />
+            </div>
+          </div>
+        )}
+
+        {/* Stats row */}
+        <div className="grid grid-cols-3 gap-2 pt-3 border-t border-gray-100 dark:border-gray-700 text-center">
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Hours</div>
+            <div className="text-sm font-semibold text-gray-900 dark:text-white">
+              {workedHours.toFixed(0)}h{estimatedHours > 0 ? ` / ${estimatedHours.toFixed(0)}h` : ''}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Tickets</div>
+            <div className={`text-sm font-semibold ${(project.OpenTickets || 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>
+              {project.OpenTickets || 0}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">End</div>
+            <div className={`text-sm font-semibold ${isOverdue ? 'text-red-500 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+              {project.EndDate
+                ? new Date(project.EndDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+                : '—'}
             </div>
           </div>
         </div>
 
-        {/* Dates */}
-        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-4">
-          <div className="flex items-center gap-1">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <span>
-              {project.StartDate 
-                ? new Date(project.StartDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                : 'No start'
-              }
-              {' - '}
-              {project.EndDate 
-                ? new Date(project.EndDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                : 'No end'
-              }
-            </span>
-          </div>
-          {isOverdue && (
-            <span className="flex items-center gap-1 text-red-600 dark:text-red-400 font-medium">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              Overdue
-            </span>
-          )}
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex gap-2 pt-3 border-t border-gray-100 dark:border-gray-700">
+        {/* Actions */}
+        <div className="flex gap-2 pt-3 border-t border-gray-100 dark:border-gray-700 mt-3">
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              router.push(`/projects/${project.Id}`);
-            }}
-            className="flex-1 flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg transition-colors text-sm font-medium"
+            onClick={(e) => { e.stopPropagation(); router.push(`/projects/${project.Id}`); }}
+            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
             Open
           </button>
           {canEdit && (
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit(project);
-              }}
-              className="flex items-center justify-center gap-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 px-3 py-2 rounded-lg transition-colors text-sm font-medium"
+              onClick={(e) => { e.stopPropagation(); onEdit(project); }}
+              className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 px-3 py-2 rounded-lg text-sm transition-colors"
+              title="Edit"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
+              ✏️
             </button>
           )}
           {canDelete && (
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(project.Id);
-              }}
-              className="flex items-center justify-center gap-1.5 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 px-3 py-2 rounded-lg transition-colors text-sm font-medium"
+              onClick={(e) => { e.stopPropagation(); onDelete(project.Id); }}
+              className="bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 px-3 py-2 rounded-lg text-sm transition-colors"
+              title="Delete"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
+              🗑
             </button>
           )}
         </div>
@@ -834,6 +822,7 @@ function ProjectModal({
     gitHubRepo: project?.GitHubRepo || undefined,
     giteaOwner: project?.GiteaOwner || undefined,
     giteaRepo: project?.GiteaRepo || undefined,
+    budget: project?.Budget ?? undefined,
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -1163,6 +1152,25 @@ function ProjectModal({
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 placeholder="Enter project description"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Budget
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.budget ?? ''}
+                  onChange={(e) => setFormData({ ...formData, budget: e.target.value !== '' ? parseFloat(e.target.value) : undefined })}
+                  className="w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  placeholder="0.00"
+                />
+              </div>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Optional project budget in currency units</p>
             </div>
 
             <div>

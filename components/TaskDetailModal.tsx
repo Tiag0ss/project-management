@@ -3,7 +3,7 @@
 import { getApiUrl } from '@/lib/api/config';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Task, CreateTaskData, tasksApi } from '@/lib/api/tasks';
+import { Task, CreateTaskData, tasksApi, TaskAssignee } from '@/lib/api/tasks';
 import { Project } from '@/lib/api/projects';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { usersApi, User } from '@/lib/api/users';
@@ -206,7 +206,7 @@ export default function TaskDetailModal({
   showRemovePlanning = false,
   onRemovePlanning,
 }: TaskDetailModalProps) {
-  const [activeTab, setActiveTab] = useState<'details' | 'history' | 'comments' | 'attachments' | 'hours'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'history' | 'comments' | 'attachments' | 'hours' | 'checklist'>('details');
   
   // Form data for editing
   const [formData, setFormData] = useState<CreateTaskData>({
@@ -228,6 +228,7 @@ export default function TaskDetailModal({
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
   const [organizationUsers, setOrganizationUsers] = useState<User[]>([]);
+  const [taskAssignees, setTaskAssignees] = useState<TaskAssignee[]>(task?.Assignees || []);
   const [taskHistory, setTaskHistory] = useState<TaskHistory[]>([]);
   const [taskComments, setTaskComments] = useState<TaskComment[]>([]);
   const [taskAttachments, setTaskAttachments] = useState<TaskAttachment[]>([]);
@@ -235,6 +236,11 @@ export default function TaskDetailModal({
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
   const [taskAllocations, setTaskAllocations] = useState<TaskAllocation[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
+  
+  // Checklist state
+  const [checklists, setChecklists] = useState<{ Id: number; TaskId: number; Text: string; IsChecked: number; DisplayOrder: number }[]>([]);
+  const [newChecklistText, setNewChecklistText] = useState('');
+  const [addingChecklist, setAddingChecklist] = useState(false);
   
   // Manual allocation modal state
   const [manualAllocationModal, setManualAllocationModal] = useState<{
@@ -273,6 +279,11 @@ export default function TaskDetailModal({
     ? subtasks.reduce((sum, st) => sum + (parseFloat(st.EstimatedHours as any) || 0), 0) 
     : 0;
 
+  // Timer state
+  const [activeTimer, setActiveTimer] = useState<{ Id: number; TaskId: number; TaskName: string; ProjectId: number; StartedAt: string } | null>(null);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     loadTaskStatuses();
     loadTaskPriorities();
@@ -281,7 +292,78 @@ export default function TaskDetailModal({
       loadTaskDetails();
       checkHasChildren();
     }
+    // Load active timer
+    if (token) {
+      fetch(`${getApiUrl()}/api/timers/active`, { headers: { 'Authorization': `Bearer ${token}` } })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data) setActiveTimer(data.timer); })
+        .catch(() => {});
+    }
+    return () => { if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); };
   }, [task?.Id]);
+
+  // Tick elapsed time when timer is for current task
+  useEffect(() => {
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    if (activeTimer && task && activeTimer.TaskId === task.Id) {
+      const update = () => setTimerSeconds(Math.floor((Date.now() - new Date(activeTimer.StartedAt).getTime()) / 1000));
+      update();
+      timerIntervalRef.current = setInterval(update, 1000);
+    }
+    return () => { if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); };
+  }, [activeTimer, task?.Id]);
+
+  const formatElapsed = (secs: number) => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    return h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`;
+  };
+
+  const handleStartTimer = async () => {
+    if (!task) return;
+    try {
+      const res = await fetch(`${getApiUrl()}/api/timers/start`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: task.Id }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setActiveTimer(data.timer);
+        window.dispatchEvent(new CustomEvent('timer-changed'));
+      }
+    } catch {}
+  };
+
+  const handleStopTimer = async () => {
+    if (!activeTimer) return;
+    try {
+      const res = await fetch(`${getApiUrl()}/api/timers/${activeTimer.Id}/stop`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        setActiveTimer(null);
+        setTimerSeconds(0);
+        window.dispatchEvent(new CustomEvent('timer-changed'));
+        await loadTaskDetails(); // refresh time entries
+      }
+    } catch {}
+  };
+
+  const handleDiscardTimer = async () => {
+    if (!activeTimer) return;
+    try {
+      await fetch(`${getApiUrl()}/api/timers/${activeTimer.Id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      setActiveTimer(null);
+      setTimerSeconds(0);
+      window.dispatchEvent(new CustomEvent('timer-changed'));
+    } catch {}
+  };
 
   // Set default values when creating a new task
   useEffect(() => {
@@ -428,7 +510,7 @@ export default function TaskDetailModal({
     
     try {
       // Load all task-related data in parallel
-      const [historyRes, commentsRes, attachmentsRes, tagsRes, allocationsRes, timeEntriesRes] = await Promise.all([
+      const [historyRes, commentsRes, attachmentsRes, tagsRes, allocationsRes, timeEntriesRes, ...responses] = await Promise.all([
         fetch(`${getApiUrl()}/api/task-history/task/${task.Id}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }),
@@ -445,6 +527,9 @@ export default function TaskDetailModal({
           headers: { 'Authorization': `Bearer ${token}` }
         }),
         fetch(`${getApiUrl()}/api/time-entries/task/${task.Id}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch(`${getApiUrl()}/api/task-checklists/task/${task.Id}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }),
       ]);
@@ -473,6 +558,11 @@ export default function TaskDetailModal({
         const data = await timeEntriesRes.json();
         setTimeEntries(data.entries || []);
       }
+      const checklistRes = responses[0];
+      if (checklistRes && checklistRes.ok) {
+        const data = await checklistRes.json();
+        setChecklists(data.items || []);
+      }
 
       // Load available tags
       const availableTagsRes = await fetch(
@@ -498,8 +588,21 @@ export default function TaskDetailModal({
     try {
       if (task) {
         await tasksApi.update(task.Id, formData, token);
+
+        // Sync assignees: add newly added ones, remove removed ones
+        const originalIds = new Set((task.Assignees || []).map((a) => a.UserId));
+        const currentIds = new Set(taskAssignees.map((a) => a.UserId));
+        const toAdd = taskAssignees.filter((a) => !originalIds.has(a.UserId));
+        const toRemove = (task.Assignees || []).filter((a) => !currentIds.has(a.UserId));
+        await Promise.all([
+          ...toAdd.map((a) => tasksApi.addAssignee(task.Id, a.UserId, token)),
+          ...toRemove.map((a) => tasksApi.removeAssignee(task.Id, a.UserId, token)),
+        ]);
       } else {
-        await tasksApi.create(formData, token);
+        const result = await tasksApi.create(formData, token);
+        // Add assignees to the newly created task
+        const newTaskId = result.taskId;
+        await Promise.all(taskAssignees.map((a) => tasksApi.addAssignee(newTaskId, a.UserId, token)));
       }
       onSaved();
     } catch (err: any) {
@@ -507,6 +610,24 @@ export default function TaskDetailModal({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleAddAssignee = (userId: number) => {
+    const user = organizationUsers.find((u) => u.Id === userId);
+    if (!user) return;
+    if (taskAssignees.some((a) => a.UserId === userId)) return;
+    setTaskAssignees([...taskAssignees, { UserId: user.Id, Username: user.Username, FirstName: user.FirstName, LastName: user.LastName }]);
+    // Keep legacy single assignedTo in sync with the first assignee
+    if (taskAssignees.length === 0) {
+      setFormData({ ...formData, assignedTo: userId });
+    }
+  };
+
+  const handleRemoveAssignee = (userId: number) => {
+    const updated = taskAssignees.filter((a) => a.UserId !== userId);
+    setTaskAssignees(updated);
+    // Keep legacy single assignedTo in sync
+    setFormData({ ...formData, assignedTo: updated.length > 0 ? updated[0].UserId : undefined });
   };
 
   const handleAddComment = async (e: React.FormEvent) => {
@@ -926,6 +1047,51 @@ export default function TaskDetailModal({
                       {task.PriorityName}
                     </span>
                   )}
+                  {/* Timer widget */}
+                  <div className="flex items-center gap-1 ml-auto">
+                    {activeTimer && activeTimer.TaskId === task.Id ? (
+                      <>
+                        <span className="text-xs font-mono bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-1 rounded animate-pulse">
+                          ⏱ {formatElapsed(timerSeconds)}
+                        </span>
+                        <button
+                          onClick={handleStopTimer}
+                          title="Stop timer and save time entry"
+                          className="text-xs px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded transition-colors"
+                        >
+                          ⏹ Stop
+                        </button>
+                        <button
+                          onClick={handleDiscardTimer}
+                          title="Discard timer without saving"
+                          className="text-xs px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded transition-colors"
+                        >
+                          ✕
+                        </button>
+                      </>
+                    ) : activeTimer ? (
+                      <>
+                        <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded">
+                          ⏱ Running: {activeTimer.TaskName}
+                        </span>
+                        <button
+                          onClick={handleStartTimer}
+                          title="Save current timer and switch to this task"
+                          className="text-xs px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
+                        >
+                          ↩ Switch &amp; Save
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={handleStartTimer}
+                        title="Start timer for this task"
+                        className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded transition-colors"
+                      >
+                        ▶ Start Timer
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
               {/* Tags */}
@@ -991,7 +1157,7 @@ export default function TaskDetailModal({
           {/* Tabs */}
           {task && (
             <div className="flex gap-1 mt-4 border-b border-gray-200 dark:border-gray-700 -mb-6 pb-0">
-              {(['details', 'hours', 'comments', 'attachments', 'history'] as const).map((tab) => (
+              {(['details', 'checklist', 'hours', 'comments', 'attachments', 'history'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -1002,6 +1168,7 @@ export default function TaskDetailModal({
                   }`}
                 >
                   {tab === 'details' && '📝 Details'}
+                  {tab === 'checklist' && `✅ Checklist (${checklists.length})`}
                   {tab === 'hours' && `⏱️ Hours (${totalWorked.toFixed(1)}h)`}
                   {tab === 'comments' && `💬 Comments (${taskComments.length})`}
                   {tab === 'attachments' && `📎 Files (${taskAttachments.length})`}
@@ -1178,19 +1345,46 @@ export default function TaskDetailModal({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Assigned To
+                  Assignees
                 </label>
+                {/* Assigned users chips */}
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {taskAssignees.map((a) => (
+                    <span
+                      key={a.UserId}
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 rounded-full text-sm"
+                    >
+                      👤 {a.Username}{a.FirstName && a.LastName ? ` (${a.FirstName} ${a.LastName})` : ''}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAssignee(a.UserId)}
+                        className="ml-1 text-blue-600 dark:text-blue-400 hover:text-red-500 dark:hover:text-red-400 font-bold leading-none"
+                        title="Remove assignee"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  {taskAssignees.length === 0 && (
+                    <span className="text-sm text-gray-400 dark:text-gray-500 italic">No assignees</span>
+                  )}
+                </div>
+                {/* Add assignee dropdown */}
                 <select
-                  value={formData.assignedTo || ''}
-                  onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value ? parseInt(e.target.value) : undefined })}
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) handleAddAssignee(parseInt(e.target.value));
+                  }}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 >
-                  <option value="">Unassigned</option>
-                  {organizationUsers.map(user => (
-                    <option key={user.Id} value={user.Id}>
-                      {user.Username} {user.FirstName && user.LastName ? `(${user.FirstName} ${user.LastName})` : ''}
-                    </option>
-                  ))}
+                  <option value="">+ Add assignee…</option>
+                  {organizationUsers
+                    .filter((u) => !taskAssignees.some((a) => a.UserId === u.Id))
+                    .map((user) => (
+                      <option key={user.Id} value={user.Id}>
+                        {user.Username}{user.FirstName && user.LastName ? ` (${user.FirstName} ${user.LastName})` : ''}
+                      </option>
+                    ))}
                 </select>
               </div>
 
@@ -1226,6 +1420,29 @@ export default function TaskDetailModal({
                     }`}
                     placeholder="e.g., 4.5"
                   />
+                </div>
+              </div>
+
+              {/* Completion Percentage (computed from time entries vs estimated hours) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Completion
+                  <span className="ml-2 text-blue-600 dark:text-blue-400 font-semibold">{task?.CompletionPercentage ?? 0}%</span>
+                  <span className="ml-2 text-xs text-gray-400 dark:text-gray-500 font-normal">(auto-calculated from time entries)</span>
+                </label>
+                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{ 
+                      width: `${task?.CompletionPercentage ?? 0}%`,
+                      backgroundColor: (task?.CompletionPercentage ?? 0) >= 100 ? '#22c55e' : (task?.CompletionPercentage ?? 0) >= 50 ? '#3b82f6' : '#f59e0b'
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  <span>0%</span>
+                  <span>50%</span>
+                  <span>100%</span>
                 </div>
               </div>
 
@@ -1299,6 +1516,145 @@ export default function TaskDetailModal({
                 </button>
               </div>
             </form>
+          )}
+
+          {/* Checklist Tab */}
+          {activeTab === 'checklist' && task && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Checklist
+                  {checklists.length > 0 && (
+                    <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
+                      {checklists.filter(c => c.IsChecked).length}/{checklists.length} done
+                    </span>
+                  )}
+                </h3>
+              </div>
+
+              {/* Progress bar */}
+              {checklists.length > 0 && (
+                <div className="mb-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-green-500 rounded-full transition-all"
+                        style={{ width: `${Math.round((checklists.filter(c => c.IsChecked).length / checklists.length) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-sm text-gray-600 dark:text-gray-400 min-w-[3rem] text-right">
+                      {Math.round((checklists.filter(c => c.IsChecked).length / checklists.length) * 100)}%
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Checklist items */}
+              <div className="space-y-2">
+                {checklists.map((item) => (
+                  <div key={item.Id} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg group">
+                    <input
+                      type="checkbox"
+                      checked={!!item.IsChecked}
+                      onChange={async () => {
+                        try {
+                          const res = await fetch(`${getApiUrl()}/api/task-checklists/${item.Id}`, {
+                            method: 'PUT',
+                            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ isChecked: item.IsChecked ? 0 : 1 }),
+                          });
+                          if (res.ok) {
+                            setChecklists(prev => prev.map(c => c.Id === item.Id ? { ...c, IsChecked: item.IsChecked ? 0 : 1 } : c));
+                          }
+                        } catch (err) { console.error('Failed to toggle checklist item:', err); }
+                      }}
+                      className="w-4 h-4 rounded accent-blue-600 cursor-pointer flex-shrink-0"
+                    />
+                    <span className={`flex-1 text-sm ${item.IsChecked ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>
+                      {item.Text}
+                    </span>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`${getApiUrl()}/api/task-checklists/${item.Id}`, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${token}` },
+                          });
+                          if (res.ok) {
+                            setChecklists(prev => prev.filter(c => c.Id !== item.Id));
+                          }
+                        } catch (err) { console.error('Failed to delete checklist item:', err); }
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 text-sm transition-opacity ml-2"
+                      title="Delete item"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Add new item */}
+              <div className="flex gap-2 mt-4">
+                <input
+                  type="text"
+                  value={newChecklistText}
+                  onChange={(e) => setNewChecklistText(e.target.value)}
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter' && newChecklistText.trim()) {
+                      e.preventDefault();
+                      setAddingChecklist(true);
+                      try {
+                        const res = await fetch(`${getApiUrl()}/api/task-checklists`, {
+                          method: 'POST',
+                          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ taskId: task.Id, text: newChecklistText.trim() }),
+                        });
+                        if (res.ok) {
+                          const data = await res.json();
+                          setChecklists(prev => [...prev, data.item]);
+                          setNewChecklistText('');
+                        }
+                      } catch (err) { console.error('Failed to add checklist item:', err); }
+                      finally { setAddingChecklist(false); }
+                    }
+                  }}
+                  placeholder="Add checklist item (press Enter)"
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                />
+                <button
+                  disabled={!newChecklistText.trim() || addingChecklist}
+                  onClick={async () => {
+                    if (!newChecklistText.trim()) return;
+                    setAddingChecklist(true);
+                    try {
+                      const res = await fetch(`${getApiUrl()}/api/task-checklists`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ taskId: task.Id, text: newChecklistText.trim() }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        setChecklists(prev => [...prev, data.item]);
+                        setNewChecklistText('');
+                      }
+                    } catch (err) { console.error('Failed to add checklist item:', err); }
+                    finally { setAddingChecklist(false); }
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {addingChecklist ? '...' : 'Add'}
+                </button>
+              </div>
+
+              {checklists.length === 0 && (
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                  <div className="text-4xl mb-2">✅</div>
+                  <p>No checklist items yet.</p>
+                  <p className="text-sm mt-1">Add items above to track sub-steps.</p>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Hours Tab */}

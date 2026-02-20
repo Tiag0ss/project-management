@@ -2,6 +2,7 @@ import express, { Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { sanitizeRichText } from '../utils/sanitize';
 
 const router = express.Router();
 
@@ -143,7 +144,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     // Create memo
     const [result] = await pool.execute<ResultSetHeader>(
       'INSERT INTO Memos (UserId, Title, Content, Visibility) VALUES (?, ?, ?, ?)',
-      [userId, title, content || null, visibility || 'private']
+      [userId, title, sanitizeRichText(content) ?? null, visibility || 'private']
     );
 
     const memoId = result.insertId;
@@ -191,7 +192,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     // Update memo
     await pool.execute(
       'UPDATE Memos SET Title = ?, Content = ?, Visibility = ? WHERE Id = ?',
-      [title, content || null, visibility || 'private', id]
+      [title, sanitizeRichText(content) ?? null, visibility || 'private', id]
     );
 
     // Update tags - delete old ones and insert new ones

@@ -180,7 +180,7 @@ function DashboardContent() {
     users: { total: number; admins: number; regular: number; customerUsers: number };
     projects: { total: number; active: number; completed: number };
     tasks: { total: number; completed: number; inProgress: number; overdue: number; unplanned: number };
-    tickets: { total: number; open: number; inProgress: number; withDeveloper: number; scheduled: number; waitingResponse: number; resolved: number; closed: number; unresolvedCount: number };
+    tickets: { total: number; open: number; inProgress: number; waitingResponse: number; resolved: number; closed: number; unresolvedCount: number };
     hours: { totalEstimated: number; totalWorked: number; thisWeek: number; thisMonth: number; totalEstimatedHobby: number; totalWorkedHobby: number; thisWeekHobby: number; thisMonthHobby: number };
     topProjects: { id: number; name: string; organization: string; hours: number }[];
     topUsers: { id: number; name: string; hours: number }[];
@@ -1300,7 +1300,7 @@ function DashboardContent() {
                   {/* Tickets Overview */}
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">🎫 Tickets Overview</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                       <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
                         <p className="text-xs text-blue-600 dark:text-blue-400 font-medium uppercase tracking-wide">Open</p>
                         <p className="text-2xl font-bold text-blue-900 dark:text-blue-100 mt-1">{globalStats.tickets?.open || 0}</p>
@@ -1308,14 +1308,6 @@ function DashboardContent() {
                       <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20 rounded-lg p-3 border border-yellow-200 dark:border-yellow-800">
                         <p className="text-xs text-yellow-600 dark:text-yellow-400 font-medium uppercase tracking-wide">In Progress</p>
                         <p className="text-2xl font-bold text-yellow-900 dark:text-yellow-100 mt-1">{globalStats.tickets?.inProgress || 0}</p>
-                      </div>
-                      <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg p-3 border border-purple-200 dark:border-purple-800">
-                        <p className="text-xs text-purple-600 dark:text-purple-400 font-medium uppercase tracking-wide">With Developer</p>
-                        <p className="text-2xl font-bold text-purple-900 dark:text-purple-100 mt-1">{globalStats.tickets?.withDeveloper || 0}</p>
-                      </div>
-                      <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-900/20 dark:to-indigo-800/20 rounded-lg p-3 border border-indigo-200 dark:border-indigo-800">
-                        <p className="text-xs text-indigo-600 dark:text-indigo-400 font-medium uppercase tracking-wide">Scheduled</p>
-                        <p className="text-2xl font-bold text-indigo-900 dark:text-indigo-100 mt-1">{globalStats.tickets?.scheduled || 0}</p>
                       </div>
                       <div className="bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 rounded-lg p-3 border border-orange-200 dark:border-orange-800">
                         <p className="text-xs text-orange-600 dark:text-orange-400 font-medium uppercase tracking-wide">Waiting Response</p>

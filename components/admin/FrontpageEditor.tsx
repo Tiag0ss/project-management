@@ -349,7 +349,7 @@ export default function FrontpageEditor() {
               srcDoc={content}
               className="w-full h-full"
               title="Frontpage Preview"
-              sandbox="allow-same-origin"
+              sandbox="allow-same-origin allow-scripts"
             />
           </div>
         </div>

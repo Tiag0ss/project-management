@@ -301,6 +301,20 @@
       "Comment": "User's preferred timezone (e.g., 'America/New_York', 'Europe/London')"
     },
     {
+      "FieldName": "HourlyRate",
+      "DataType": "decimal(10,2)",
+      "NotNullable": false,
+      "DefaultValue": null,
+      "Comment": "User's hourly billing/cost rate for budget calculations"
+    },
+    {
+      "FieldName": "TeamLeaderId",
+      "DataType": "int",
+      "NotNullable": false,
+      "DefaultValue": null,
+      "Comment": "ID of the user's team leader, used for time entry approval workflow"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

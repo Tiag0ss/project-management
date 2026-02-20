@@ -37,6 +37,9 @@ interface Ticket {
   ResolvedAt: string | null;
   ClosedAt: string | null;
   ExternalTicketId: string | null;
+  StatusColor: string | null;
+  StatusIsClosed: number;
+  PriorityColor: string | null;
   OrganizationName: string;
   CustomerName: string | null;
   ProjectName: string | null;
@@ -72,9 +75,7 @@ interface OrgMember {
   Username: string;
 }
 
-const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 const CATEGORIES = ['Support', 'Bug', 'Feature Request', 'Question', 'Other'];
-const STATUSES = ['Open', 'In Progress', 'With Developer', 'Scheduled', 'Waiting Response', 'Resolved', 'Closed'];
 
 export default function TicketDetailPage() {
   const { user, token, isLoading, isCustomerUser } = useAuth();
@@ -89,6 +90,8 @@ export default function TicketDetailPage() {
   const [customers, setCustomers] = useState<{Id: number, Name: string}[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [ticketStatuses, setTicketStatuses] = useState<{ Id: number; StatusName: string; Color: string; IsClosed: number; IsDefault: number }[]>([]);
+  const [ticketPriorities, setTicketPriorities] = useState<{ Id: number; PriorityName: string; Color: string; IsDefault: number }[]>([]);
 
   // Edit state
   const [isEditing, setIsEditing] = useState(false);
@@ -298,6 +301,20 @@ export default function TicketDetailPage() {
         customerId: data.ticket.CustomerId?.toString() || '',
         projectId: data.ticket.ProjectId?.toString() || '',
       });
+
+      // Load ticket status/priority values for this organization
+      if (data.ticket.OrganizationId) {
+        try {
+          const [statusRes, priorityRes] = await Promise.all([
+            fetch(`${getApiUrl()}/api/status-values/ticket/${data.ticket.OrganizationId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+            fetch(`${getApiUrl()}/api/status-values/ticket-priority/${data.ticket.OrganizationId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          ]);
+          if (statusRes.ok) { const d = await statusRes.json(); setTicketStatuses(d.statuses || []); }
+          if (priorityRes.ok) { const d = await priorityRes.json(); setTicketPriorities(d.priorities || []); }
+        } catch (err) {
+          console.error('Failed to load ticket status/priority values:', err);
+        }
+      }
 
       // Load org members for assignment (if not customer user)
       if (!isCustomerUser && data.ticket.OrganizationId) {
@@ -710,27 +727,25 @@ export default function TicketDetailPage() {
     }
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'Urgent': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-300 dark:border-red-700';
-      case 'High': return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 border-orange-300 dark:border-orange-700';
-      case 'Medium': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 border-yellow-300 dark:border-yellow-700';
-      case 'Low': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-300 dark:border-green-700';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
-    }
+  const getStatusStyle = (statusName: string): React.CSSProperties => {
+    const found = ticketStatuses.find(s => s.StatusName === statusName);
+    const color = found?.Color || ticket?.StatusColor;
+    if (color) return { backgroundColor: color + '25', color, border: `1px solid ${color}50` };
+    return {};
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Open': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400';
-      case 'In Progress': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400';
-      case 'With Developer': return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400';
-      case 'Scheduled': return 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400';
-      case 'Waiting Response': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400';
-      case 'Resolved': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400';
-      case 'Closed': return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
-    }
+  const getPriorityStyle = (priorityName: string): React.CSSProperties => {
+    const found = ticketPriorities.find(p => p.PriorityName === priorityName);
+    const color = found?.Color || ticket?.PriorityColor;
+    if (color) return { backgroundColor: color + '25', color, border: `1px solid ${color}50` };
+    return {};
+  };
+
+  const isCurrentStatusClosed = (): boolean => {
+    if (!ticket) return false;
+    const found = ticketStatuses.find(s => s.StatusName === ticket.Status);
+    if (found) return found.IsClosed === 1;
+    return ticket.StatusIsClosed === 1;
   };
 
   const getCategoryIcon = (category: string) => {
@@ -825,10 +840,10 @@ export default function TicketDetailPage() {
               <div className="flex items-center gap-3 mb-2">
                 <span className="text-2xl">{getCategoryIcon(ticket.Category)}</span>
                 <span className="font-mono text-sm text-gray-500 dark:text-gray-400">{ticket.TicketNumber}</span>
-                <span className={`px-3 py-1 text-sm font-medium rounded-full ${getStatusColor(ticket.Status)}`}>
+                <span className="px-3 py-1 text-sm font-medium rounded-full" style={getStatusStyle(ticket.Status)}>
                   {ticket.Status}
                 </span>
-                <span className={`px-3 py-1 text-sm font-medium rounded-full border ${getPriorityColor(ticket.Priority)}`}>
+                <span className="px-3 py-1 text-sm font-medium rounded-full" style={getPriorityStyle(ticket.Priority)}>
                   {ticket.Priority}
                 </span>
                 {ticket.ExternalTicketId && jiraIntegration && (
@@ -1305,14 +1320,21 @@ export default function TicketDetailPage() {
                 <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">
                   Quick Actions
                 </h3>
+                {isCurrentStatusClosed() && (
+                  <div className="mb-3 px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-lg flex items-center gap-2">
+                    <span>🔒</span>
+                    <span>This ticket is closed. You can reopen it by selecting a new status below.</span>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2">
-                  {STATUSES.filter(s => s !== ticket.Status).map(status => (
+                  {(ticketStatuses.length > 0 ? ticketStatuses : []).filter(s => s.StatusName !== ticket.Status).map(s => (
                     <button
-                      key={status}
-                      onClick={() => quickStatusChange(status)}
-                      className={`px-3 py-1.5 text-sm rounded-lg border transition-colors hover:opacity-80 ${getStatusColor(status)}`}
+                      key={s.Id}
+                      onClick={() => quickStatusChange(s.StatusName)}
+                      style={getStatusStyle(s.StatusName)}
+                      className="px-3 py-1.5 text-sm rounded-lg transition-colors hover:opacity-80"
                     >
-                      → {status}
+                      → {s.StatusName}
                     </button>
                   ))}
                 </div>
@@ -1334,10 +1356,10 @@ export default function TicketDetailPage() {
                       onChange={(e) => setEditForm(prev => ({ ...prev, status: e.target.value }))}
                       className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
                     >
-                      {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                      {ticketStatuses.map(s => <option key={s.Id} value={s.StatusName}>{s.StatusName}</option>)}
                     </select>
                   ) : (
-                    <dd className={`mt-1 inline-block px-2 py-1 text-sm rounded-full ${getStatusColor(ticket.Status)}`}>
+                    <dd className="mt-1 inline-block px-2 py-1 text-sm rounded-full" style={getStatusStyle(ticket.Status)}>
                       {ticket.Status}
                     </dd>
                   )}
@@ -1352,10 +1374,10 @@ export default function TicketDetailPage() {
                       onChange={(e) => setEditForm(prev => ({ ...prev, priority: e.target.value }))}
                       className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
                     >
-                      {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                      {ticketPriorities.map(p => <option key={p.Id} value={p.PriorityName}>{p.PriorityName}</option>)}
                     </select>
                   ) : (
-                    <dd className={`mt-1 inline-block px-2 py-1 text-sm rounded-full border ${getPriorityColor(ticket.Priority)}`}>
+                    <dd className="mt-1 inline-block px-2 py-1 text-sm rounded-full" style={getPriorityStyle(ticket.Priority)}>
                       {ticket.Priority}
                     </dd>
                   )}

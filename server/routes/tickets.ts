@@ -4,6 +4,7 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { createNotification } from './notifications';
 import { logActivity } from './activityLogs';
+import { sanitizeRichText } from '../utils/sanitize';
 
 const router = Router();
 
@@ -60,7 +61,13 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         developer.FirstName as DeveloperFirstName,
         developer.LastName as DeveloperLastName,
         developer.Username as DeveloperUsername,
-        (SELECT COUNT(*) FROM TicketComments tc WHERE tc.TicketId = t.Id) as CommentCount
+        (SELECT COUNT(*) FROM TicketComments tc WHERE tc.TicketId = t.Id) as CommentCount,
+        tsv.StatusName as Status,
+        tsv.Color as StatusColor,
+        COALESCE(tsv.IsClosed, 0) as StatusIsClosed,
+        tsv.StatusType as StatusType,
+        tpv.PriorityName as Priority,
+        tpv.Color as PriorityColor
       FROM Tickets t
       LEFT JOIN Organizations o ON t.OrganizationId = o.Id
       LEFT JOIN Customers c ON t.CustomerId = c.Id
@@ -68,6 +75,8 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       LEFT JOIN Users creator ON t.CreatedByUserId = creator.Id
       LEFT JOIN Users assignee ON t.AssignedToUserId = assignee.Id
       LEFT JOIN Users developer ON t.DeveloperUserId = developer.Id
+      LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
+      LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
       WHERE 1=1
     `;
     const params: any[] = [];
@@ -95,12 +104,12 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     if (status) {
-      query += ` AND t.Status = ?`;
+      query += ` AND tsv.StatusName = ?`;
       params.push(status);
     }
 
     if (priority) {
-      query += ` AND t.Priority = ?`;
+      query += ` AND tpv.PriorityName = ?`;
       params.push(priority);
     }
 
@@ -131,7 +140,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     if (excludeClosed === 'true') {
-      query += ` AND t.Status NOT IN ('Resolved', 'Closed')`;
+      query += ` AND COALESCE(tsv.IsClosed, 0) = 0`;
     }
 
     if (createdFrom) {
@@ -186,7 +195,13 @@ router.get('/my-tickets', authenticateToken, async (req: AuthRequest, res: Respo
         developer.FirstName as DeveloperFirstName,
         developer.LastName as DeveloperLastName,
         developer.Username as DeveloperUsername,
-        (SELECT COUNT(*) FROM TicketComments tc WHERE tc.TicketId = t.Id) as CommentCount
+        (SELECT COUNT(*) FROM TicketComments tc WHERE tc.TicketId = t.Id) as CommentCount,
+        tsv.StatusName as Status,
+        tsv.Color as StatusColor,
+        COALESCE(tsv.IsClosed, 0) as StatusIsClosed,
+        tsv.StatusType as StatusType,
+        tpv.PriorityName as Priority,
+        tpv.Color as PriorityColor
       FROM Tickets t
       LEFT JOIN Organizations o ON t.OrganizationId = o.Id
       LEFT JOIN Customers c ON t.CustomerId = c.Id
@@ -194,6 +209,8 @@ router.get('/my-tickets', authenticateToken, async (req: AuthRequest, res: Respo
       LEFT JOIN Users creator ON t.CreatedByUserId = creator.Id
       LEFT JOIN Users assignee ON t.AssignedToUserId = assignee.Id
       LEFT JOIN Users developer ON t.DeveloperUserId = developer.Id
+      LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
+      LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
       WHERE (t.AssignedToUserId = ? OR t.DeveloperUserId = ?)
       ORDER BY t.CreatedAt DESC
     `;
@@ -229,7 +246,13 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         assignee.Username as AssigneeUsername,
         developer.FirstName as DeveloperFirstName,
         developer.LastName as DeveloperLastName,
-        developer.Username as DeveloperUsername
+        developer.Username as DeveloperUsername,
+        tsv.StatusName as Status,
+        tsv.Color as StatusColor,
+        COALESCE(tsv.IsClosed, 0) as StatusIsClosed,
+        tsv.StatusType as StatusType,
+        tpv.PriorityName as Priority,
+        tpv.Color as PriorityColor
       FROM Tickets t
       LEFT JOIN Organizations o ON t.OrganizationId = o.Id
       LEFT JOIN Customers c ON t.CustomerId = c.Id
@@ -237,6 +260,8 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       LEFT JOIN Users creator ON t.CreatedByUserId = creator.Id
       LEFT JOIN Users assignee ON t.AssignedToUserId = assignee.Id
       LEFT JOIN Users developer ON t.DeveloperUserId = developer.Id
+      LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
+      LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
       WHERE t.Id = ?
     `, [id]);
 
@@ -342,13 +367,35 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       console.log('[Ticket Creation] No customer for this ticket (neither from user nor project)');
     }
 
+    // Resolve StatusId (default for org) and PriorityId from name
+    const [defaultStatusRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM TicketStatusValues WHERE OrganizationId = ? AND IsDefault = 1 LIMIT 1',
+      [organizationId]
+    );
+    const [firstStatusRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM TicketStatusValues WHERE OrganizationId = ? ORDER BY SortOrder LIMIT 1',
+      [organizationId]
+    );
+    const newStatusId = defaultStatusRows[0]?.Id || firstStatusRows[0]?.Id || null;
+
+    const priorityName = priority || 'Medium';
+    const [priorityRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM TicketPriorityValues WHERE OrganizationId = ? AND PriorityName = ?',
+      [organizationId, priorityName]
+    );
+    const [defaultPriorityRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM TicketPriorityValues WHERE OrganizationId = ? AND IsDefault = 1 LIMIT 1',
+      [organizationId]
+    );
+    const newPriorityId = priorityRows[0]?.Id || defaultPriorityRows[0]?.Id || null;
+
     // Insert ticket first to get the ID
     console.log('[Ticket Creation] Inserting ticket with AssignedToUserId:', assignedToUserId);
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO Tickets (
         OrganizationId, CustomerId, ProjectId, CreatedByUserId, AssignedToUserId,
-        Title, Description, Priority, Category, ExternalTicketId
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        Title, Description, StatusId, PriorityId, Category, ExternalTicketId
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         organizationId,
         ticketCustomerId,
@@ -356,8 +403,9 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         userId,
         assignedToUserId,
         title,
-        description || null,
-        priority || 'Medium',
+        sanitizeRichText(description) || null,
+        newStatusId,
+        newPriorityId,
         category || 'Support',
         externalTicketId || null
       ]
@@ -457,9 +505,13 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const organizationId = req.body.organizationId;
     const customerId_new = req.body.customerId; // Different from user's customerId
 
-    // Verify access
+    // Verify access - include status/priority names via JOIN for logging
     const [tickets] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM Tickets WHERE Id = ?',
+      `SELECT t.*, tsv.StatusName as Status, tpv.PriorityName as Priority
+       FROM Tickets t
+       LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
+       LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
+       WHERE t.Id = ?`,
       [ticketId]
     );
 
@@ -491,7 +543,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       
       await pool.execute(
         `UPDATE Tickets SET Title = ?, Description = ?, UpdatedAt = NOW() WHERE Id = ?`,
-        [title || ticket.Title, description || ticket.Description, ticketId]
+        [title || ticket.Title, sanitizeRichText(description) || ticket.Description, ticketId]
       );
     } else {
       // Regular users can update all fields
@@ -513,6 +565,17 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         params.push(description);
       }
       if (status !== undefined) {
+        // Resolve new StatusId from name
+        const [statusRow] = await pool.execute<RowDataPacket[]>(
+          'SELECT Id, IsClosed FROM TicketStatusValues WHERE OrganizationId = ? AND StatusName = ?',
+          [ticket.OrganizationId, status]
+        );
+        if (statusRow.length === 0) {
+          return res.status(400).json({ success: false, message: `Invalid status: ${status}` });
+        }
+        const newStatusId = statusRow[0].Id;
+        const newStatusIsClosed = statusRow[0].IsClosed;
+
         if (status !== ticket.Status) {
           await logTicketHistory(ticketId, userId!, 'StatusChanged', 'Status', ticket.Status, status);
           
@@ -538,23 +601,33 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
             );
           }
         }
-        updates.push('Status = ?');
-        params.push(status);
+        updates.push('StatusId = ?');
+        params.push(newStatusId);
         
-        // Set resolved/closed timestamps
-        if (status === 'Resolved' && !ticket.ResolvedAt) {
+        // Set timestamps based on IsClosed flag (not hardcoded status names)
+        if (newStatusIsClosed && !ticket.ResolvedAt) {
           updates.push('ResolvedAt = NOW()');
         }
-        if (status === 'Closed' && !ticket.ClosedAt) {
+        if (newStatusIsClosed && !ticket.ClosedAt) {
           updates.push('ClosedAt = NOW()');
         }
       }
       if (priority !== undefined) {
+        // Resolve new PriorityId from name
+        const [priorityRow] = await pool.execute<RowDataPacket[]>(
+          'SELECT Id FROM TicketPriorityValues WHERE OrganizationId = ? AND PriorityName = ?',
+          [ticket.OrganizationId, priority]
+        );
+        if (priorityRow.length === 0) {
+          return res.status(400).json({ success: false, message: `Invalid priority: ${priority}` });
+        }
+        const newPriorityId = priorityRow[0].Id;
+
         if (priority !== ticket.Priority) {
           await logTicketHistory(ticketId, userId!, 'PriorityChanged', 'Priority', ticket.Priority, priority);
         }
-        updates.push('Priority = ?');
-        params.push(priority);
+        updates.push('PriorityId = ?');
+        params.push(newPriorityId);
       }
       if (category !== undefined) {
         if (category !== ticket.Category) {
@@ -687,7 +760,10 @@ router.post('/:id/comments', authenticateToken, async (req: AuthRequest, res: Re
 
     // Verify ticket exists and user has access
     const [tickets] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM Tickets WHERE Id = ?',
+      `SELECT t.*, tsv.StatusName as Status, COALESCE(tsv.IsClosed, 0) as StatusIsClosed
+       FROM Tickets t
+       LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
+       WHERE t.Id = ?`,
       [id]
     );
 
@@ -731,10 +807,19 @@ router.post('/:id/comments', authenticateToken, async (req: AuthRequest, res: Re
       }
 
       if (newStatus) {
-        await pool.execute(
-          'UPDATE Tickets SET Status = ?, UpdatedAt = NOW() WHERE Id = ?',
-          [newStatus, id]
+        // Look up the StatusId for the new status name in this org
+        const [newStatusRow] = await pool.execute<RowDataPacket[]>(
+          'SELECT Id FROM TicketStatusValues WHERE OrganizationId = ? AND StatusName = ?',
+          [ticket.OrganizationId, newStatus]
         );
+        if (newStatusRow.length > 0) {
+          await pool.execute(
+            'UPDATE Tickets SET StatusId = ?, UpdatedAt = NOW() WHERE Id = ?',
+            [newStatusRow[0].Id, id]
+          );
+        } else {
+          await pool.execute('UPDATE Tickets SET UpdatedAt = NOW() WHERE Id = ?', [id]);
+        }
       } else {
         // Just update the timestamp
         await pool.execute('UPDATE Tickets SET UpdatedAt = NOW() WHERE Id = ?', [id]);
@@ -791,13 +876,13 @@ router.get('/stats/summary', authenticateToken, async (req: AuthRequest, res: Re
     const params: any[] = [];
 
     if (customerId) {
-      baseCondition = 'WHERE CustomerId = ?';
+      baseCondition = 'WHERE t.CustomerId = ?';
       params.push(customerId);
     } else if (organizationId) {
-      baseCondition = 'WHERE OrganizationId = ?';
+      baseCondition = 'WHERE t.OrganizationId = ?';
       params.push(organizationId);
     } else {
-      baseCondition = `WHERE OrganizationId IN (
+      baseCondition = `WHERE t.OrganizationId IN (
         SELECT OrganizationId FROM OrganizationMembers WHERE UserId = ?
       )`;
       params.push(userId);
@@ -806,14 +891,17 @@ router.get('/stats/summary', authenticateToken, async (req: AuthRequest, res: Re
     const [stats] = await pool.execute<RowDataPacket[]>(`
       SELECT 
         COUNT(*) as total,
-        SUM(CASE WHEN Status = 'Open' THEN 1 ELSE 0 END) as open,
-        SUM(CASE WHEN Status IN ('In Progress', 'With Developer', 'Scheduled') THEN 1 ELSE 0 END) as inProgress,
-        SUM(CASE WHEN Status = 'Waiting Response' THEN 1 ELSE 0 END) as waiting,
-        SUM(CASE WHEN Status = 'Resolved' THEN 1 ELSE 0 END) as resolved,
-        SUM(CASE WHEN Status = 'Closed' THEN 1 ELSE 0 END) as closed,
-        SUM(CASE WHEN Priority = 'Urgent' THEN 1 ELSE 0 END) as urgent,
-        SUM(CASE WHEN Priority = 'High' THEN 1 ELSE 0 END) as high
-      FROM Tickets ${baseCondition}
+        SUM(CASE WHEN tsv.StatusType = 'open' THEN 1 ELSE 0 END) as open,
+        SUM(CASE WHEN tsv.StatusType = 'in_progress' THEN 1 ELSE 0 END) as inProgress,
+        SUM(CASE WHEN tsv.StatusType = 'waiting' THEN 1 ELSE 0 END) as waiting,
+        SUM(CASE WHEN tsv.StatusType = 'resolved' THEN 1 ELSE 0 END) as resolved,
+        SUM(CASE WHEN tsv.StatusType = 'closed' THEN 1 ELSE 0 END) as closed,
+        SUM(CASE WHEN tpv.PriorityName = 'Urgent' THEN 1 ELSE 0 END) as urgent,
+        SUM(CASE WHEN tpv.PriorityName = 'High' THEN 1 ELSE 0 END) as high
+      FROM Tickets t
+      LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
+      LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
+      ${baseCondition}
     `, params);
 
     res.json({ success: true, stats: stats[0] });

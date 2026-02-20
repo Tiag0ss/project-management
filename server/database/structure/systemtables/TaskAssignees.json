@@ -1,0 +1,49 @@
+{
+  "TableName": "TaskAssignees",
+  "PrimaryKeyFields": "TaskId,UserId",
+  "Fields": [
+    {
+      "FieldName": "TaskId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Tasks.Id"
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id"
+    },
+    {
+      "FieldName": "AssignedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Timestamp when the user was assigned to the task"
+    },
+    {
+      "FieldName": "AssignedBy",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Users.Id who made the assignment"
+    }
+  ],
+  "Relationships": [
+    {
+      "Name": "AssigneeTask",
+      "Description": "Assignment belongs to a Task",
+      "FromField": "TaskId",
+      "ToTable": "Tasks",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "AssigneeUser",
+      "Description": "Assignment belongs to a User",
+      "FromField": "UserId",
+      "ToTable": "Users",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    }
+  ]
+}

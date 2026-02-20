@@ -95,6 +95,13 @@
       "Comment": "Gitea repository name"
     },
     {
+      "FieldName": "Budget",
+      "DataType": "decimal(15,2)",
+      "NotNullable": false,
+      "DefaultValue": null,
+      "Comment": "Project budget in currency units"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

@@ -1,0 +1,46 @@
+{
+  "TableName": "TicketPriorityValues",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key"
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id"
+    },
+    {
+      "FieldName": "PriorityName",
+      "DataType": "varchar(50)",
+      "NotNullable": true,
+      "Comment": "Priority label (e.g. Low, Medium, High, Urgent)"
+    },
+    {
+      "FieldName": "Color",
+      "DataType": "varchar(7)",
+      "NotNullable": true,
+      "DefaultValue": "#6B7280",
+      "Comment": "Hex color code for priority visualization"
+    },
+    {
+      "FieldName": "IsDefault",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Flag indicating if this is the default priority for new tickets"
+    },
+    {
+      "FieldName": "SortOrder",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Sort order for display"
+    }
+  ]
+}

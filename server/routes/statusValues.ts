@@ -661,4 +661,239 @@ router.delete('/priority/:id', authenticateToken, async (req: AuthRequest, res: 
   }
 });
 
+// ─── Ticket Status Values ────────────────────────────────────────────────────
+
+const DEFAULT_TICKET_STATUSES = [
+  { name: 'Open',              color: '#3b82f6', order: 1, isDefault: 1, isClosed: 0, statusType: 'open' },
+  { name: 'In Progress',      color: '#f59e0b', order: 2, isDefault: 0, isClosed: 0, statusType: 'in_progress' },
+  { name: 'With Developer',   color: '#8b5cf6', order: 3, isDefault: 0, isClosed: 0, statusType: 'in_progress' },
+  { name: 'Scheduled',        color: '#06b6d4', order: 4, isDefault: 0, isClosed: 0, statusType: 'in_progress' },
+  { name: 'Waiting Response', color: '#f97316', order: 5, isDefault: 0, isClosed: 0, statusType: 'waiting' },
+  { name: 'Resolved',         color: '#22c55e', order: 6, isDefault: 0, isClosed: 1, statusType: 'resolved' },
+  { name: 'Closed',           color: '#6b7280', order: 7, isDefault: 0, isClosed: 1, statusType: 'closed' },
+];
+
+const DEFAULT_TICKET_PRIORITIES = [
+  { name: 'Low',    color: '#6b7280', order: 1, isDefault: 0 },
+  { name: 'Medium', color: '#3b82f6', order: 2, isDefault: 1 },
+  { name: 'High',   color: '#f59e0b', order: 3, isDefault: 0 },
+  { name: 'Urgent', color: '#ef4444', order: 4, isDefault: 0 },
+];
+
+async function ensureTicketStatuses(orgId: number): Promise<RowDataPacket[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM TicketStatusValues WHERE OrganizationId = ? ORDER BY SortOrder, StatusName',
+    [orgId]
+  );
+  if (rows.length > 0) return rows;
+  for (const s of DEFAULT_TICKET_STATUSES) {
+    await pool.execute(
+      'INSERT INTO TicketStatusValues (OrganizationId, StatusName, Color, IsDefault, IsClosed, SortOrder, StatusType) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [orgId, s.name, s.color, s.isDefault, s.isClosed, s.order, s.statusType]
+    );
+  }
+  const [newRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM TicketStatusValues WHERE OrganizationId = ? ORDER BY SortOrder, StatusName',
+    [orgId]
+  );
+  return newRows;
+}
+
+async function ensureTicketPriorities(orgId: number): Promise<RowDataPacket[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM TicketPriorityValues WHERE OrganizationId = ? ORDER BY SortOrder, PriorityName',
+    [orgId]
+  );
+  if (rows.length > 0) return rows;
+  for (const p of DEFAULT_TICKET_PRIORITIES) {
+    await pool.execute(
+      'INSERT INTO TicketPriorityValues (OrganizationId, PriorityName, Color, IsDefault, SortOrder) VALUES (?, ?, ?, ?, ?)',
+      [orgId, p.name, p.color, p.isDefault, p.order]
+    );
+  }
+  const [newRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM TicketPriorityValues WHERE OrganizationId = ? ORDER BY SortOrder, PriorityName',
+    [orgId]
+  );
+  return newRows;
+}
+
+// GET ticket statuses (auto-creates defaults)
+router.get('/ticket/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = parseInt(req.params.orgId as string);
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+    if (access.length === 0) return res.status(403).json({ success: false, message: 'Access denied' });
+    const statuses = await ensureTicketStatuses(orgId);
+    res.json({ success: true, statuses });
+  } catch (error) {
+    console.error('Get ticket status values error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch ticket status values' });
+  }
+});
+
+// POST ticket status
+router.post('/ticket', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, statusName, color, sortOrder, isDefault, isClosed, statusType } = req.body;
+    if (!statusName || !organizationId) return res.status(400).json({ success: false, message: 'Status name and organization ID are required' });
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings FROM OrganizationMembers om LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [organizationId, userId]
+    );
+    if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
+    if (isDefault) await pool.execute('UPDATE TicketStatusValues SET IsDefault = 0 WHERE OrganizationId = ?', [organizationId]);
+    const [result] = await pool.execute<ResultSetHeader>(
+      'INSERT INTO TicketStatusValues (OrganizationId, StatusName, Color, SortOrder, IsDefault, IsClosed, StatusType) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [organizationId, statusName, color || '#6b7280', sortOrder || 0, isDefault ? 1 : 0, isClosed ? 1 : 0, statusType || 'other']
+    );
+    res.status(201).json({ success: true, statusId: result.insertId });
+  } catch (error) {
+    console.error('Create ticket status error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create ticket status' });
+  }
+});
+
+// PUT ticket status
+router.put('/ticket/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const statusId = req.params.id;
+    const { statusName, color, sortOrder, isDefault, isClosed, statusType } = req.body;
+    const [rows] = await pool.execute<RowDataPacket[]>('SELECT OrganizationId FROM TicketStatusValues WHERE Id = ?', [statusId]);
+    if (rows.length === 0) return res.status(404).json({ success: false, message: 'Status not found' });
+    const orgId = rows[0].OrganizationId;
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings FROM OrganizationMembers om LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+    if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
+    if (isDefault) await pool.execute('UPDATE TicketStatusValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, statusId]);
+    await pool.execute(
+      'UPDATE TicketStatusValues SET StatusName = ?, Color = ?, SortOrder = ?, IsDefault = ?, IsClosed = ?, StatusType = ? WHERE Id = ?',
+      [statusName, color, sortOrder, isDefault ? 1 : 0, isClosed ? 1 : 0, statusType || 'other', statusId]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update ticket status error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update ticket status' });
+  }
+});
+
+// DELETE ticket status
+router.delete('/ticket/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const statusId = req.params.id;
+    const [rows] = await pool.execute<RowDataPacket[]>('SELECT OrganizationId FROM TicketStatusValues WHERE Id = ?', [statusId]);
+    if (rows.length === 0) return res.status(404).json({ success: false, message: 'Status not found' });
+    const orgId = rows[0].OrganizationId;
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings FROM OrganizationMembers om LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+    if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
+    await pool.execute('DELETE FROM TicketStatusValues WHERE Id = ?', [statusId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete ticket status error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete ticket status' });
+  }
+});
+
+// ─── Ticket Priority Values ───────────────────────────────────────────────────
+
+// GET ticket priorities (auto-creates defaults)
+router.get('/ticket-priority/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = parseInt(req.params.orgId as string);
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+    if (access.length === 0) return res.status(403).json({ success: false, message: 'Access denied' });
+    const priorities = await ensureTicketPriorities(orgId);
+    res.json({ success: true, priorities });
+  } catch (error) {
+    console.error('Get ticket priority values error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch ticket priority values' });
+  }
+});
+
+// POST ticket priority
+router.post('/ticket-priority', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, priorityName, color, sortOrder, isDefault } = req.body;
+    if (!priorityName || !organizationId) return res.status(400).json({ success: false, message: 'Priority name and organization ID are required' });
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings FROM OrganizationMembers om LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [organizationId, userId]
+    );
+    if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
+    if (isDefault) await pool.execute('UPDATE TicketPriorityValues SET IsDefault = 0 WHERE OrganizationId = ?', [organizationId]);
+    const [result] = await pool.execute<ResultSetHeader>(
+      'INSERT INTO TicketPriorityValues (OrganizationId, PriorityName, Color, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?)',
+      [organizationId, priorityName, color || '#6b7280', sortOrder || 0, isDefault ? 1 : 0]
+    );
+    res.status(201).json({ success: true, priorityId: result.insertId });
+  } catch (error) {
+    console.error('Create ticket priority error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create ticket priority' });
+  }
+});
+
+// PUT ticket priority
+router.put('/ticket-priority/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const priorityId = req.params.id;
+    const { priorityName, color, sortOrder, isDefault } = req.body;
+    const [rows] = await pool.execute<RowDataPacket[]>('SELECT OrganizationId FROM TicketPriorityValues WHERE Id = ?', [priorityId]);
+    if (rows.length === 0) return res.status(404).json({ success: false, message: 'Priority not found' });
+    const orgId = rows[0].OrganizationId;
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings FROM OrganizationMembers om LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+    if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
+    if (isDefault) await pool.execute('UPDATE TicketPriorityValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, priorityId]);
+    await pool.execute(
+      'UPDATE TicketPriorityValues SET PriorityName = ?, Color = ?, SortOrder = ?, IsDefault = ? WHERE Id = ?',
+      [priorityName, color, sortOrder, isDefault ? 1 : 0, priorityId]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update ticket priority error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update ticket priority' });
+  }
+});
+
+// DELETE ticket priority
+router.delete('/ticket-priority/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const priorityId = req.params.id;
+    const [rows] = await pool.execute<RowDataPacket[]>('SELECT OrganizationId FROM TicketPriorityValues WHERE Id = ?', [priorityId]);
+    if (rows.length === 0) return res.status(404).json({ success: false, message: 'Priority not found' });
+    const orgId = rows[0].OrganizationId;
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings FROM OrganizationMembers om LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+    if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
+    await pool.execute('DELETE FROM TicketPriorityValues WHERE Id = ?', [priorityId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete ticket priority error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete ticket priority' });
+  }
+});
+
 export default router;

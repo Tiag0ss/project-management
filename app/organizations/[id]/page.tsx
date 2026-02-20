@@ -1437,9 +1437,11 @@ function StatusesTab({
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
+  const [ticketStatuses, setTicketStatuses] = useState<any[]>([]);
+  const [ticketPriorities, setTicketPriorities] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeType, setActiveType] = useState<'project' | 'task' | 'priority'>('project');
+  const [activeType, setActiveType] = useState<'project' | 'task' | 'priority' | 'ticket' | 'ticket-priority'>('project');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingStatus, setEditingStatus] = useState<StatusValue | null>(null);
 
@@ -1450,14 +1452,18 @@ function StatusesTab({
   const loadStatuses = async () => {
     try {
       setIsLoading(true);
-      const [projectRes, taskRes, priorityRes] = await Promise.all([
+      const [projectRes, taskRes, priorityRes, ticketRes, ticketPriRes] = await Promise.all([
         statusValuesApi.getProjectStatuses(orgId, token),
         statusValuesApi.getTaskStatuses(orgId, token),
         statusValuesApi.getTaskPriorities(orgId, token),
+        fetch(`${getApiUrl()}/api/status-values/ticket/${orgId}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+        fetch(`${getApiUrl()}/api/status-values/ticket-priority/${orgId}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
       ]);
       setProjectStatuses(projectRes.statuses);
       setTaskStatuses(taskRes.statuses);
       setTaskPriorities(priorityRes.priorities);
+      setTicketStatuses(ticketRes.statuses || []);
+      setTicketPriorities(ticketPriRes.priorities || []);
       setError('');
     } catch (err: any) {
       setError(err.message || 'Failed to load status values');
@@ -1466,8 +1472,8 @@ function StatusesTab({
     }
   };
 
-  const handleDelete = async (id: number, type: 'project' | 'task' | 'priority') => {
-    const itemType = type === 'priority' ? 'priority' : 'status value';
+  const handleDelete = async (id: number, type: 'project' | 'task' | 'priority' | 'ticket' | 'ticket-priority') => {
+    const itemType = (type === 'priority' || type === 'ticket-priority') ? 'priority' : 'status value';
     showConfirm(
       `Delete ${itemType.charAt(0).toUpperCase() + itemType.slice(1)}`,
       `Are you sure you want to delete this ${itemType}?`,
@@ -1477,8 +1483,14 @@ function StatusesTab({
             await statusValuesApi.deleteProjectStatus(id, token);
           } else if (type === 'task') {
             await statusValuesApi.deleteTaskStatus(id, token);
-          } else {
+          } else if (type === 'priority') {
             await statusValuesApi.deleteTaskPriority(id, token);
+          } else {
+            const endpoint = type === 'ticket' ? 'ticket' : 'ticket-priority';
+            await fetch(`${getApiUrl()}/api/status-values/${endpoint}/${id}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${token}` },
+            });
           }
           await loadStatuses();
         } catch (err: any) {
@@ -1490,8 +1502,12 @@ function StatusesTab({
 
   if (isLoading) return <div>Loading status values...</div>;
 
-  const currentStatuses = activeType === 'project' ? projectStatuses : activeType === 'task' ? taskStatuses : taskPriorities;
-  const buttonLabel = activeType === 'priority' ? 'Add Priority' : 'Add Status';
+  const currentStatuses = activeType === 'project' ? projectStatuses
+    : activeType === 'task' ? taskStatuses
+    : activeType === 'priority' ? taskPriorities
+    : activeType === 'ticket' ? ticketStatuses
+    : ticketPriorities;
+  const buttonLabel = (activeType === 'priority' || activeType === 'ticket-priority') ? 'Add Priority' : 'Add Status';
 
   return (
     <div>
@@ -1527,6 +1543,26 @@ function StatusesTab({
           >
             Task Priorities
           </button>
+          <button
+            onClick={() => setActiveType('ticket')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeType === 'ticket'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+            }`}
+          >
+            Ticket Statuses
+          </button>
+          <button
+            onClick={() => setActiveType('ticket-priority')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeType === 'ticket-priority'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+            }`}
+          >
+            Ticket Priorities
+          </button>
         </div>
         {canManage && (
           <button
@@ -1548,16 +1584,16 @@ function StatusesTab({
         {currentStatuses.map((status) => (
           <div key={status.Id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
             <div className="flex items-center gap-4">
-              {status.ColorCode && (
+              {(status.ColorCode || status.Color) && (
                 <div
                   className="w-6 h-6 rounded"
-                  style={{ backgroundColor: status.ColorCode }}
+                  style={{ backgroundColor: status.ColorCode || status.Color }}
                 />
               )}
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-gray-900 dark:text-white">
-                    {activeType === 'priority' ? status.PriorityName : status.StatusName}
+                    {(activeType === 'priority' || activeType === 'ticket-priority') ? status.PriorityName : status.StatusName}
                   </span>
                   {status.IsDefault ? <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 rounded-full">Default</span> : ''}
                   {status.IsClosed ? <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400 rounded-full">Closed</span> : ''}
@@ -1621,20 +1657,31 @@ function StatusesTab({
 
 function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
   orgId: number;
-  type: 'project' | 'task' | 'priority';
-  status?: StatusValue;
+  type: 'project' | 'task' | 'priority' | 'ticket' | 'ticket-priority';
+  status?: any;
   onClose: () => void;
   onSaved: () => void;
   token: string;
 }) {
-  const [formData, setFormData] = useState<CreateStatusValueData>({
+  const isPriority = type === 'priority' || type === 'ticket-priority';
+  const isTicketStatus = type === 'ticket';
+  const STATUS_TYPE_OPTIONS = [
+    { value: 'open',        label: 'Open — new tickets awaiting action' },
+    { value: 'in_progress', label: 'In Progress — actively being worked' },
+    { value: 'waiting',     label: 'Waiting — awaiting customer response' },
+    { value: 'resolved',    label: 'Resolved — work done, pending confirmation' },
+    { value: 'closed',      label: 'Closed — fully closed' },
+    { value: 'other',       label: 'Other' },
+  ];
+  const [formData, setFormData] = useState<CreateStatusValueData & { statusType: string }>({
     organizationId: orgId,
-    statusName: type === 'priority' ? (status?.PriorityName || '') : (status?.StatusName || ''),
-    colorCode: status?.ColorCode || '#3b82f6',
+    statusName: isPriority ? (status?.PriorityName || '') : (status?.StatusName || ''),
+    colorCode: status?.ColorCode || status?.Color || '#3b82f6',
     sortOrder: status?.SortOrder || 0,
     isDefault: !!status?.IsDefault,
     isClosed: !!status?.IsClosed,
     isCancelled: !!status?.IsCancelled,
+    statusType: status?.StatusType || 'other',
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -1645,26 +1692,52 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
     setIsLoading(true);
 
     try {
+      const ticketPayload = {
+        organizationId: orgId,
+        statusName: formData.statusName,
+        priorityName: formData.statusName,
+        color: formData.colorCode,
+        sortOrder: formData.sortOrder,
+        isDefault: formData.isDefault,
+        isClosed: formData.isClosed,
+        statusType: formData.statusType,
+      };
       if (status) {
         if (type === 'project') {
           await statusValuesApi.updateProjectStatus(status.Id, formData, token);
         } else if (type === 'task') {
           await statusValuesApi.updateTaskStatus(status.Id, formData, token);
-        } else {
+        } else if (type === 'priority') {
           await statusValuesApi.updateTaskPriority(status.Id, formData, token);
+        } else {
+          const endpoint = type === 'ticket' ? 'ticket' : 'ticket-priority';
+          const res = await fetch(`${getApiUrl()}/api/status-values/${endpoint}/${status.Id}`, {
+            method: 'PUT',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(ticketPayload),
+          });
+          if (!res.ok) throw new Error('Failed to update');
         }
       } else {
         if (type === 'project') {
           await statusValuesApi.createProjectStatus(formData, token);
         } else if (type === 'task') {
           await statusValuesApi.createTaskStatus(formData, token);
-        } else {
+        } else if (type === 'priority') {
           await statusValuesApi.createTaskPriority(formData, token);
+        } else {
+          const endpoint = type === 'ticket' ? 'ticket' : 'ticket-priority';
+          const res = await fetch(`${getApiUrl()}/api/status-values/${endpoint}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(ticketPayload),
+          });
+          if (!res.ok) throw new Error('Failed to create');
         }
       }
       onSaved();
     } catch (err: any) {
-      setError(err.message || 'Failed to save ' + (type === 'priority' ? 'priority' : 'status value'));
+      setError(err.message || 'Failed to save ' + (isPriority ? 'priority' : 'status value'));
     } finally {
       setIsLoading(false);
     }
@@ -1676,7 +1749,7 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {status ? 'Edit' : 'Create'} {type === 'priority' ? 'Priority' : type === 'project' ? 'Project Status' : 'Task Status'}
+              {status ? 'Edit' : 'Create'} {type === 'ticket-priority' ? 'Ticket Priority' : type === 'ticket' ? 'Ticket Status' : type === 'priority' ? 'Task Priority' : type === 'project' ? 'Project Status' : 'Task Status'}
             </h2>
             <button
               onClick={onClose}
@@ -1695,7 +1768,7 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {type === 'priority' ? 'Priority' : 'Status'} Name *
+                {isPriority ? 'Priority' : 'Status'} Name *
               </label>
               <input
                 type="text"
@@ -1741,7 +1814,7 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
               <span className="text-sm text-gray-700 dark:text-gray-300">Set as default status</span>
             </label>
 
-            {type !== 'priority' && (
+            {!isPriority && (
               <>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1753,15 +1826,34 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
                   <span className="text-sm text-gray-700 dark:text-gray-300">Mark as closed status</span>
                 </label>
 
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.isCancelled}
-                    onChange={(e) => setFormData({ ...formData, isCancelled: e.target.checked })}
-                    className="w-4 h-4 text-red-600 rounded focus:ring-2 focus:ring-red-500"
-                  />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">Mark as cancelled status</span>
-                </label>
+                {type !== 'ticket' && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.isCancelled}
+                      onChange={(e) => setFormData({ ...formData, isCancelled: e.target.checked })}
+                      className="w-4 h-4 text-red-600 rounded focus:ring-2 focus:ring-red-500"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Mark as cancelled status</span>
+                  </label>
+                )}
+
+                {isTicketStatus && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Status Type <span className="text-xs text-gray-500">(used for statistics & automation)</span>
+                    </label>
+                    <select
+                      value={formData.statusType}
+                      onChange={(e) => setFormData({ ...formData, statusType: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    >
+                      {STATUS_TYPE_OPTIONS.map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </>
             )}
 

@@ -64,6 +64,8 @@ export default function Navbar() {
   const [searchResults, setSearchResults] = useState<any>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchPage, setSearchPage] = useState(1);
+  const [searchHasMore, setSearchHasMore] = useState(false);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Notifications state
@@ -71,6 +73,12 @@ export default function Navbar() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+  // Active timer state
+  const [navTimer, setNavTimer] = useState<{ Id: number; TaskId: number; TaskName: string; ProjectId: number; ProjectName: string; StartedAt: string } | null>(null);
+  const [navTimerSeconds, setNavTimerSeconds] = useState(0);
+  const navTimerTickRef = useRef<NodeJS.Timeout | null>(null);
+  const navTimerPollRef = useRef<NodeJS.Timeout | null>(null);
 
   // Quick Actions dropdown state
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
@@ -186,6 +194,75 @@ export default function Navbar() {
     }
   }, [token]);
 
+  // Active timer: load + tick
+  useEffect(() => {
+    if (!token) return;
+    const loadTimer = async () => {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/timers/active`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setNavTimer(data.timer || null);
+        }
+      } catch {}
+    };
+    loadTimer();
+    navTimerPollRef.current = setInterval(loadTimer, 30000);
+    // Also reload whenever a timer event fires from TaskDetailModal
+    window.addEventListener('timer-changed', loadTimer);
+    return () => {
+      if (navTimerPollRef.current) clearInterval(navTimerPollRef.current);
+      window.removeEventListener('timer-changed', loadTimer);
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (navTimerTickRef.current) clearInterval(navTimerTickRef.current);
+    if (navTimer) {
+      const tick = () => setNavTimerSeconds(Math.floor((Date.now() - new Date(navTimer.StartedAt).getTime()) / 1000));
+      tick();
+      navTimerTickRef.current = setInterval(tick, 1000);
+    } else {
+      setNavTimerSeconds(0);
+    }
+    return () => { if (navTimerTickRef.current) clearInterval(navTimerTickRef.current); };
+  }, [navTimer]);
+
+  const navFormatElapsed = (secs: number) => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    return h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`;
+  };
+
+  const handleNavStopTimer = async () => {
+    if (!navTimer) return;
+    try {
+      const res = await fetch(`${getApiUrl()}/api/timers/${navTimer.Id}/stop`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        setNavTimer(null);
+        window.dispatchEvent(new CustomEvent('timer-changed'));
+      }
+    } catch {}
+  };
+
+  const handleNavDiscardTimer = async () => {
+    if (!navTimer) return;
+    try {
+      await fetch(`${getApiUrl()}/api/timers/${navTimer.Id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      setNavTimer(null);
+      window.dispatchEvent(new CustomEvent('timer-changed'));
+    } catch {}
+  };
+
   const loadNotificationCount = async () => {
     try {
       const res = await fetch(`${getApiUrl()}/api/notifications/count`, {
@@ -270,16 +347,18 @@ export default function Navbar() {
     searchDebounceRef.current = setTimeout(async () => {
       setIsSearching(true);
       setSearchOpen(true);
+      setSearchPage(1);
       
       try {
         const res = await fetch(
-          `${getApiUrl()}/api/search?q=${encodeURIComponent(query.trim())}`,
+          `${getApiUrl()}/api/search?q=${encodeURIComponent(query.trim())}&page=1`,
           { headers: { 'Authorization': `Bearer ${token}` } }
         );
         
         if (res.ok) {
           const data = await res.json();
           setSearchResults(data.results);
+          setSearchHasMore(data.hasMore || false);
         }
       } catch (err) {
         console.error('Search failed:', err);
@@ -869,7 +948,7 @@ export default function Navbar() {
                 )}
 
                 {/* Management Dropdown (Customers & Organizations) */}
-                {!isCustomerUser && (permissionsLoading || permissions?.canViewCustomers || permissions?.canManageOrganizations) && (
+                {!isCustomerUser && (permissionsLoading || permissions?.canViewCustomers || permissions?.canManageOrganizations || user?.isAdmin || user?.isManager) && (
                   <div className="relative" ref={managementMenuRef}>
                     <button
                       onClick={() => setManagementMenuOpen(!managementMenuOpen)}
@@ -898,6 +977,15 @@ export default function Navbar() {
                             onClick={() => setManagementMenuOpen(false)}
                           >
                             Organizations
+                          </a>
+                        )}
+                        {(user?.isAdmin || user?.isManager) && (
+                          <a
+                            href="/approvals"
+                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            onClick={() => setManagementMenuOpen(false)}
+                          >
+                            Time Approvals
                           </a>
                         )}
                       </div>
@@ -953,6 +1041,40 @@ export default function Navbar() {
                       </div>
                     ) : (
                       <div className="p-2">
+                        {/* Load More helper – appends next page results */}
+                        {searchHasMore && (
+                          <div className="border-b border-gray-200 dark:border-gray-700 pb-2 mb-2 flex justify-end">
+                            <button
+                              disabled={isSearching}
+                              onClick={async () => {
+                                const nextPage = searchPage + 1;
+                                setIsSearching(true);
+                                try {
+                                  const res = await fetch(
+                                    `${getApiUrl()}/api/search?q=${encodeURIComponent(searchQuery.trim())}&page=${nextPage}`,
+                                    { headers: { 'Authorization': `Bearer ${token}` } }
+                                  );
+                                  if (res.ok) {
+                                    const data = await res.json();
+                                    setSearchResults((prev: any) => ({
+                                      tasks: [...(prev?.tasks || []), ...(data.results?.tasks || [])],
+                                      projects: [...(prev?.projects || []), ...(data.results?.projects || [])],
+                                      organizations: [...(prev?.organizations || []), ...(data.results?.organizations || [])],
+                                      users: [...(prev?.users || []), ...(data.results?.users || [])],
+                                      total: (prev?.total || 0) + (data.results?.total || 0),
+                                    }));
+                                    setSearchPage(nextPage);
+                                    setSearchHasMore(data.hasMore || false);
+                                  }
+                                } catch {}
+                                finally { setIsSearching(false); }
+                              }}
+                              className="text-xs px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50"
+                            >
+                              {isSearching ? 'Loading…' : 'Load More'}
+                            </button>
+                          </div>
+                        )}
                         {/* Tasks */}
                         {searchResults.tasks && searchResults.tasks.length > 0 && (
                           <div className="mb-3">
@@ -1133,6 +1255,35 @@ export default function Navbar() {
                   </div>
                 )}
               </div>
+              )}
+
+              {/* Active Timer indicator */}
+              {!isCustomerUser && navTimer && (
+                <div className="flex items-center gap-1">
+                  <a
+                    href={`/projects/${navTimer.ProjectId}`}
+                    className="flex items-center gap-1.5 text-xs font-mono bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2.5 py-1.5 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors animate-pulse"
+                    title={`Timer running: ${navTimer.TaskName} — ${navTimer.ProjectName}`}
+                  >
+                    <span>⏱</span>
+                    <span className="hidden sm:inline max-w-[120px] truncate">{navTimer.TaskName}</span>
+                    <span className="font-bold">{navFormatElapsed(navTimerSeconds)}</span>
+                  </a>
+                  <button
+                    onClick={handleNavStopTimer}
+                    title="Stop timer and save time entry"
+                    className="text-xs px-2 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors font-medium"
+                  >
+                    ⏹
+                  </button>
+                  <button
+                    onClick={handleNavDiscardTimer}
+                    title="Discard timer without saving"
+                    className="text-xs px-2 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-lg transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
               )}
 
               {/* Notifications Dropdown - Hidden for customer users */}

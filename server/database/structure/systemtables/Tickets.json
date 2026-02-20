@@ -58,18 +58,16 @@
       "Comment": "Detailed description of the issue with rich text content"
     },
     {
-      "FieldName": "Status",
-      "DataType": "varchar(50)",
-      "NotNullable": true,
-      "DefaultValue": "Open",
-      "Comment": "Current status of ticket (Open, In Progress, Resolved, Closed, etc.)"
+      "FieldName": "StatusId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to TicketStatusValues.Id"
     },
     {
-      "FieldName": "Priority",
-      "DataType": "varchar(20)",
-      "NotNullable": true,
-      "DefaultValue": "Medium",
-      "Comment": "Priority level (Low, Medium, High, Critical)"
+      "FieldName": "PriorityId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to TicketPriorityValues.Id"
     },
     {
       "FieldName": "Category",

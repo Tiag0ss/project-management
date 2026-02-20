@@ -22,8 +22,9 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        COALESCE(taskStats.CompletedTasks, 0) as CompletedTasks,
        COALESCE(taskStats.TotalEstimatedHours, 0) as TotalEstimatedHours,
        COALESCE(taskStats.TotalWorkedHours, 0) as TotalWorkedHours,
-       (SELECT COUNT(*) FROM Tickets tk WHERE tk.ProjectId = p.Id AND tk.Status NOT IN ('Resolved', 'Closed')) as OpenTickets,
-       COALESCE(unplannedStats.UnplannedTasks, 0) as UnplannedTasks
+       (SELECT COUNT(*) FROM Tickets tk LEFT JOIN TicketStatusValues tsv2 ON tk.StatusId = tsv2.Id WHERE tk.ProjectId = p.Id AND COALESCE(tsv2.IsClosed, 0) = 0) as OpenTickets,
+       COALESCE(unplannedStats.UnplannedTasks, 0) as UnplannedTasks,
+       COALESCE(budgetStats.BudgetSpent, 0) as BudgetSpent
        FROM Projects p 
        LEFT JOIN Users u ON p.CreatedBy = u.Id
        LEFT JOIN Organizations o ON p.OrganizationId = o.Id
@@ -54,6 +55,13 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
            AND COALESCE(tsv.IsCancelled, 0) = 0
          GROUP BY t.ProjectId
        ) unplannedStats ON p.Id = unplannedStats.ProjectId
+       LEFT JOIN (
+         SELECT t2.ProjectId, SUM(te2.Hours * COALESCE(u2.HourlyRate, 0)) as BudgetSpent
+         FROM TimeEntries te2
+         INNER JOIN Tasks t2 ON te2.TaskId = t2.Id
+         LEFT JOIN Users u2 ON te2.UserId = u2.Id
+         GROUP BY t2.ProjectId
+       ) budgetStats ON p.Id = budgetStats.ProjectId
        WHERE om.UserId = ?`;
     const params: any[] = [userId];
 
@@ -88,12 +96,20 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const [projects] = await pool.execute<RowDataPacket[]>(
       `SELECT p.*, u.Username as CreatorName, o.Name as OrganizationName, c.Name as CustomerName,
               psv.StatusName, psv.ColorCode as StatusColor,
-              COALESCE(psv.IsClosed, 0) as StatusIsClosed, COALESCE(psv.IsCancelled, 0) as StatusIsCancelled
+              COALESCE(psv.IsClosed, 0) as StatusIsClosed, COALESCE(psv.IsCancelled, 0) as StatusIsCancelled,
+              COALESCE(budgetStats.BudgetSpent, 0) as BudgetSpent
        FROM Projects p 
        LEFT JOIN Users u ON p.CreatedBy = u.Id
        LEFT JOIN Organizations o ON p.OrganizationId = o.Id
        LEFT JOIN Customers c ON p.CustomerId = c.Id
        LEFT JOIN ProjectStatusValues psv ON p.Status = psv.Id
+       LEFT JOIN (
+         SELECT t2.ProjectId, SUM(te2.Hours * COALESCE(u2.HourlyRate, 0)) as BudgetSpent
+         FROM TimeEntries te2
+         INNER JOIN Tasks t2 ON te2.TaskId = t2.Id
+         LEFT JOIN Users u2 ON te2.UserId = u2.Id
+         GROUP BY t2.ProjectId
+       ) budgetStats ON p.Id = budgetStats.ProjectId
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
        WHERE p.Id = ? AND om.UserId = ?`,
       [projectId, userId]
@@ -120,6 +136,104 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 });
 
 // Get user permissions for a project
+// GET /:id/burndown — burndown/burnup chart data for a project
+router.get('/:id/burndown', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const projectId = parseInt(req.params.id as string);
+
+    // Verify access
+    const [accessCheck] = await pool.execute<RowDataPacket[]>(
+      `SELECT p.Id, p.StartDate, p.EndDate FROM Projects p
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId AND om.UserId = ?
+       WHERE p.Id = ?`,
+      [userId, projectId]
+    );
+    if (accessCheck.length === 0) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
+    const project = accessCheck[0];
+
+    // Total estimated hours from leaf tasks only (tasks without children)
+    const [leafHoursRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT COALESCE(SUM(t.EstimatedHours), 0) as TotalEstimatedHours
+       FROM Tasks t
+       WHERE t.ProjectId = ?
+         AND t.Id NOT IN (SELECT DISTINCT ParentTaskId FROM Tasks WHERE ParentTaskId IS NOT NULL AND ProjectId = ?)`,
+      [projectId, projectId]
+    );
+    const totalEstimatedHours = parseFloat(leafHoursRows[0]?.TotalEstimatedHours || '0');
+
+    // Get all time entries for this project grouped by date
+    const [dailyEntries] = await pool.execute<RowDataPacket[]>(
+      `SELECT DATE_FORMAT(te.WorkDate, '%Y-%m-%d') as WorkDate, SUM(te.Hours) as DailyHours
+       FROM TimeEntries te
+       INNER JOIN Tasks t ON te.TaskId = t.Id
+       WHERE t.ProjectId = ?
+       GROUP BY te.WorkDate
+       ORDER BY te.WorkDate ASC`,
+      [projectId]
+    );
+
+    // Determine chart date range
+    const firstEntry = dailyEntries.length > 0 ? dailyEntries[0].WorkDate : null;
+    const today = new Date().toISOString().split('T')[0];
+    const startDate = project.StartDate
+      ? new Date(project.StartDate).toISOString().split('T')[0]
+      : (firstEntry || today);
+    const endDate = project.EndDate
+      ? new Date(project.EndDate).toISOString().split('T')[0]
+      : today;
+
+    // Build daily map
+    const dailyMap: Record<string, number> = {};
+    for (const row of dailyEntries) {
+      dailyMap[row.WorkDate] = parseFloat(row.DailyHours);
+    }
+
+    // Generate date series from startDate to max(endDate, today)
+    const maxDate = endDate > today ? endDate : today;
+    const series: { date: string; worked: number; cumulative: number; remaining: number; ideal: number }[] = [];
+    const start = new Date(startDate);
+    const end = new Date(maxDate);
+    const totalDays = Math.max(1, Math.round((new Date(endDate).getTime() - start.getTime()) / 86400000));
+
+    let cumulative = 0;
+    let dayIndex = 0;
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split('T')[0];
+      const worked = dailyMap[dateStr] || 0;
+      cumulative += worked;
+      const daysFromStart = Math.round((d.getTime() - start.getTime()) / 86400000);
+      const idealProgress = totalEstimatedHours > 0
+        ? Math.max(0, totalEstimatedHours - (totalEstimatedHours * (daysFromStart / totalDays)))
+        : 0;
+      series.push({
+        date: dateStr,
+        worked,
+        cumulative,
+        remaining: Math.max(0, totalEstimatedHours - cumulative),
+        ideal: Math.round(idealProgress * 100) / 100
+      });
+      dayIndex++;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        startDate,
+        endDate,
+        today,
+        totalEstimatedHours,
+        series
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching burndown data:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch burndown data' });
+  }
+});
+
 router.get('/:id/permissions', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -171,7 +285,7 @@ router.get('/:id/permissions', authenticateToken, async (req: AuthRequest, res: 
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { organizationId, projectName, description, status, startDate, endDate, isHobby, customerId, jiraBoardId } = req.body;
+    const { organizationId, projectName, description, status, startDate, endDate, isHobby, customerId, jiraBoardId, budget } = req.body;
 
     if (!projectName || !organizationId) {
       return res.status(400).json({ 
@@ -194,8 +308,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, CustomerId, JiraBoardId) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, CustomerId, JiraBoardId, Budget) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         organizationId,
         projectName, 
@@ -206,7 +320,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         endDate || null,
         isHobby ? 1 : 0,
         customerId || null,
-        jiraBoardId || null
+        jiraBoardId || null,
+        budget !== undefined && budget !== '' ? parseFloat(budget) : null
       ]
     );
 
@@ -334,7 +449,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const projectId = req.params.id;
-    const { projectName, description, status, startDate, endDate, isHobby, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo } = req.body;
+    const { projectName, description, status, startDate, endDate, isHobby, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo, budget } = req.body;
 
     // Check if project exists and get current data
     const [existing] = await pool.execute<RowDataPacket[]>(
@@ -399,6 +514,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     if (giteaRepo !== undefined && giteaRepo !== oldProject.GiteaRepo) {
       changes.push({ field: 'GiteaRepo', oldVal: String(oldProject.GiteaRepo || ''), newVal: String(giteaRepo || '') });
     }
+    if (budget !== undefined && parseFloat(budget) !== parseFloat(oldProject.Budget)) {
+      changes.push({ field: 'Budget', oldVal: String(oldProject.Budget || ''), newVal: String(budget || '') });
+    }
 
     // Convert empty strings to null for date fields
     const normalizedStartDate = startDate === '' ? null : startDate;
@@ -406,9 +524,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Projects 
-       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ?, GiteaOwner = ?, GiteaRepo = ? 
+       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ?, GiteaOwner = ?, GiteaRepo = ?, Budget = ?
        WHERE Id = ?`,
-      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, customerId || null, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, giteaOwner || null, giteaRepo || null, projectId]
+      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, customerId || null, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, giteaOwner || null, giteaRepo || null, budget !== undefined && budget !== '' ? parseFloat(budget) : null, projectId]
     );
     
     // Log changes to history

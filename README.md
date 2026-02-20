@@ -6,7 +6,7 @@ A full-stack, self-hosted project management application with task tracking, res
 
 - 📋 **Project & Task Management** — Kanban boards, task hierarchy (parent/subtasks), dependencies, custom statuses and priorities
 - 📊 **Resource Planning** — Gantt chart with drag-and-drop allocation, user availability tracking, intelligent replanning
-- ⏱️ **Time Tracking** — Daily and weekly timesheet views, per-task time entries
+- ⏱️ **Time Tracking** — Daily and weekly timesheet views, per-task time entries, CSV export
 - 👥 **Multi-Tenant Organizations** — Multiple organizations, team management, permission groups
 - 🔐 **Role-Based Permissions** — Developer, Support, Manager roles with granular permission control
 - 🎫 **Ticket System** — Support ticket management with auto-numbering, auto-assignment to default support users, task conversion, and Jira integration
@@ -14,11 +14,12 @@ A full-stack, self-hosted project management application with task tracking, res
 - 🔗 **Jira Integration** — Two-tier Jira system connecting tickets and project boards with external linking and encrypted credentials
 - 📝 **Rich Text Editor** — Tiptap-based editor with formatting, images (inline base64), and markdown support for descriptions and comments
 - 📔 **Memos System** — Calendar-based note-taking with visibility controls (Private, Organizations, Public), tags, and rich content
-- � **Recurring Tasks** — Outlook-style recurring time blocks for meetings, standups, and fixed schedules that planning respects
-- �📧 **Email Notifications** — SMTP integration with encrypted credentials
-- 🔗 **Jira Integration** — Two-tier Jira system for tickets and project boards with external linking
+- 🔄 **Recurring Tasks** — Outlook-style recurring time blocks for meetings, standups, and fixed schedules that planning respects
+- 📧 **Email Notifications** — SMTP integration; task assignment, status change, priority change, @mention, and due-date reminder emails
+- 🚦 **RAG Health Score** — Automatic Red/Amber/Green project health indicator based on overdue tasks, budget burn, and unassigned work
+- 🔍 **Global Search** — Cross-entity search with paginated results and direct navigation
 - 🌙 **Dark Mode** — Full dark mode support across the entire UI
-- 📱 **Responsive Design** — Mobile-friendly interface with organized navigation dropdowns
+- 📱 **Responsive Design** — Mobile-friendly interface with organised navigation dropdowns
 - 🧙 **Install Wizard** — Guided first-time setup
 
 ## Key Features in Detail
@@ -48,9 +49,12 @@ A full-stack, self-hosted project management application with task tracking, res
 - **Timesheet views**:
   - **Daily Entry** — Quick form for logging hours today
   - **Weekly Grid** — Spreadsheet-style view of the entire week
+  - **All Entries** — Filterable history of all time entries with summary cards
+- **CSV Export** — Export filtered time entries to CSV directly from the All Entries tab
 - **Manual save** — Review before submitting time entries
 - **Task-based tracking** — Associate hours with specific tasks
 - **Historical view** — Week navigation to review past entries
+- **Approval workflow** — Managers can approve/reject time entries; approved entries are locked from editing
 - **Reporting integration** — Time data feeds into project reports
 
 ### 👥 Multi-Tenant Organizations
@@ -154,17 +158,33 @@ A full-stack, self-hosted project management application with task tracking, res
 - **Project settings** — Manage Jira board associations in project configuration
 - **Intelligent detection** — Automatic Jira field display based on organization integration status
 
-### �📧 Email Notifications
+### 🚦 RAG Health Score
+- **Automatic project health** — Red/Amber/Green banner shown in every Project Overview
+- **Red** — More than 2 overdue tasks, or budget fully spent/exceeded
+- **Amber** — Any overdue task, budget at 80 %+, or more than 30 % of tasks unassigned
+- **Green** — No issues detected
+- **Reason labels** — Concise text explains why the score is Amber or Red
+- **Always visible** — Displayed above the Priority Breakdown section regardless of whether a budget is set
+
+### 🔍 Global Search
+- **Cross-entity search** — Finds tasks, projects, organisations, and users in a single query
+- **Keyboard-friendly** — Debounced input in the Navbar, results appear instantly
+- **Paginated results** — Each category is paginated; a **Load More** button appends the next page without resetting the view
+- **Direct navigation** — Click any result to jump straight to the relevant page or task
+
+### 📧 Email Notifications
 - **SMTP integration** — Send notifications via your email server
 - **Encrypted credentials** — Passwords stored securely with AES-256-CBC
-- **Email preferences** — Users can customize notification settings
+- **Email preferences** — Users can customise which notification types they receive
 - **Notification types**:
-  - Task assignments
-  - Ticket assignments
-  - Project updates
-  - Mention notifications
-  - Status changes
-- **Template system** — Customizable email templates
+  - Task assignment
+  - Task status change
+  - Task priority change
+  - Ticket assignments and updates
+  - @mention in task comments
+  - Due date reminders (1 day before)
+  - Daily / weekly work summaries
+- **Deduplication** — Reminder and summary logs prevent duplicate sends on server restart
 
 ### 🌙 Dark Mode
 - **Full dark mode support** — Every page and component
