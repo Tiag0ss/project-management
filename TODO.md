@@ -39,9 +39,9 @@
 - [x] **Due date reminder emails** — `dueDateReminderScheduler.ts` runs hourly; sends amber warning email 1 day before `DueDate` per task. Deduplicates via `DueDateReminderLog` table. Respects `due_date_reminder` email preference.
 - [ ] **Sprint / Iteration Management** — Add `Sprints` table linked to projects. Tasks assigned to sprints with start/end dates, velocity tracking, and burndown charts.
 - [ ] **Real-time notifications via WebSocket** — Replace polling-based notifications with `socket.io` push notifications for instant updates on task assignments and comments.
-- [ ] **Task Templates** — Save a task (with subtasks and standard estimates) as a reusable template to speed up repeated project setups.
+- [x] **Task Templates** — `TaskTemplates` + `TaskTemplateItems` tables; full CRUD API (`/api/task-templates`); apply-template endpoint; template picker UI in project task tab.
 - [x] **Task Checklists** — `TaskChecklists` table, full CRUD API (`/api/task-checklists`), and checklist tab in TaskDetailModal with progress bar and checkbox items.
-- [ ] **Burndown / Burnup Charts** — Use `TimeEntries` + `EstimatedHours` + sprint dates to render burndown per project or sprint. Data already exists.
+- [x] **Burndown / Burnup Charts** — `BurndownTab` in project detail page (`📉 Burndown` tab); SVG chart with toggle between Burndown and Burnup modes; uses `/api/projects/:id/burndown` endpoint returning date/worked/cumulative/remaining/ideal series.
 - [ ] **Customer Portal** — Dedicated portal view for customers (using existing `CustomerUsers` + `CustomerUserGuard`) — see their own tickets and project status without internal access.
 - [x] **Task Dependency Graph** — New 🔗 Dependencies tab in the project detail page; SVG DAG with topological layout, colour-coded status stripes, bezier arrows and click-to-open task modal.
 
@@ -81,3 +81,5 @@
 - [x] **@mention in task comments** — Parses `@username` after comment save; creates notification + email per mentioned user.
 - [x] **Due date reminder emails** — `dueDateReminderScheduler.ts` sends 1-day-before reminders; `DueDateReminderLog` prevents duplicates.
 - [x] **Kanban drag-to-reorder** — `DisplayOrder` persistence via `tasksApi.updateOrder` in Kanban board.
+- [x] **Task Templates** — `TaskTemplates` + `TaskTemplateItems` tables; full CRUD API; apply-template endpoint; picker UI in project task tab.
+- [x] **Burndown / Burnup Charts** — `BurndownTab` in project detail (📉 tab); SVG chart with Burndown/Burnup toggle; `/api/projects/:id/burndown` endpoint.
