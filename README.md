@@ -14,7 +14,8 @@ A full-stack, self-hosted project management application with task tracking, res
 - 🔐 **Role-Based Permissions** — Developer, Support, Manager roles with granular permission control
 - 🎫 **Ticket System** — Support ticket management with auto-numbering, auto-assignment to default support users, task conversion, Jira integration, and fully customizable per-organization statuses and priorities
 - 👤 **Customer Management** — Customer database with organization associations and default support user assignment
-- 🔗 **Jira Integration** — Two-tier Jira system connecting tickets and project boards with external linking and encrypted credentials
+- � **Application Lifecycle Management** — Application registry, version control, release management with PDF exports, task-to-release linking
+- �🔗 **Jira Integration** — Two-tier Jira system connecting tickets and project boards with external linking and encrypted credentials
 - 📝 **Rich Text Editor** — Tiptap-based editor with formatting, images (inline base64), and markdown support for descriptions and comments
 - 📔 **Memos System** — Calendar-based note-taking with visibility controls (Private, Organizations, Public), tags, and rich content
 - 🔄 **Recurring Tasks** — Outlook-style recurring time blocks for meetings, standups, and fixed schedules that planning respects
@@ -74,6 +75,7 @@ A full-stack, self-hosted project management application with task tracking, res
   - **Project permissions** — Create, Manage, Delete projects
   - **Task permissions** — Create, Assign, Manage, Delete tasks
   - **Ticket permissions** — Create, Assign, Manage, Delete tickets
+  - **Application permissions** — Manage applications, Manage application releases
   - **Admin permissions** — Manage organizations, users, system settings
 - **Permission combination** — Users get permissions from ALL their roles (OR logic)
 - **Admin override** — Admin users have all permissions automatically
@@ -99,9 +101,33 @@ A full-stack, self-hosted project management application with task tracking, res
 - **Organization association** — Link customers to internal organizations
 - **Default support user** — Assign a dedicated support representative per customer
 - **Project linking** — Associate projects with customers
+- **Application linking** — Link customers to applications for access management
 - **Ticket tracking** — View all tickets for a customer
 - **Contact management** — Store customer contact details
 - **Custom fields** — Rich text descriptions and notes
+- **Searchable dropdowns** — Efficiently manage large customer lists with search functionality
+
+### 📱 Application Lifecycle Management
+- **Application registry** — Centralized database of all applications within organizations
+- **Version control** — Track application versions with status workflow (Planning → In Development → Testing → Released → Archived)
+- **Release management**:
+  - Create releases with version numbers and patch notes (rich text)
+  - Link tasks to specific releases
+  - Prevent duplicate task assignments across releases
+  - Auto-update task versions when release is created
+- **PDF exports**:
+  - **Single release PDF** — Export individual release notes with task lists
+  - **Date range PDF** — Export multiple releases within a date range
+  - Rich text patch notes rendered in PDFs
+- **Customer associations** — Link applications to customers for license/access management
+- **Project associations** — Connect applications to projects for development tracking
+- **Repository integration** — Store repository URLs for quick access
+- **Permission system**:
+  - `CanManageApplications` — Create, edit, delete applications (global and organization-level)
+  - `CanManageApplicationReleases` — Manage application releases (global and organization-level)
+- **Searchable interface** — Find applications, versions, and customers quickly with integrated search
+- **Task filtering** — View only tasks not yet assigned to any release
+- **Version statistics** — See task counts per version at a glance
 
 ### 📝 Rich Text Editor
 - **Tiptap-based editor** with full formatting toolbar:
@@ -210,7 +236,7 @@ A full-stack, self-hosted project management application with task tracking, res
 ### 🗂️ Navigation Organization
 - **Grouped menus** for better organization:
   - **Work** dropdown: Projects, Planning
-  - **Management** dropdown: Customers, Organizations
+  - **Management** dropdown: Applications, Customers, Organizations
 - **Quick access** to: Dashboard, Tickets, Memos, Reports
 - **User menu** — Profile, notifications, logout
 - **Role-based visibility** — Menu items shown based on permissions
@@ -401,9 +427,9 @@ This is a **single container** that serves both the Next.js frontend and Express
 │  ┌───────────┐  ┌────────────┐  │
 │  │  Next.js  │  │  Express   │  │
 │  │  Frontend │  │  API       │  │
-│  └───────────┘  └─────┬──────┘  │
-│                       │         │
-│              Port 3000          │
+│  └─────────┬─┘  └─┬──────────┘  │
+│            │      │             │
+│            Port 3000            │
 └───────────────┬─────────────────┘
                 │
          ┌──────┴──────┐
