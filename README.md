@@ -1,4 +1,7 @@
-# Project Management App
+﻿# Project Management App
+
+[![Docker Hub](https://img.shields.io/docker/pulls/tiag0ss/project-management?label=Docker%20Pulls&logo=docker)](https://hub.docker.com/r/tiag0ss/project-management)
+[![Docker Image](https://img.shields.io/badge/Docker%20Hub-tiag0ss%2Fproject--management-blue?logo=docker)](https://hub.docker.com/r/tiag0ss/project-management)
 
 A full-stack, self-hosted project management application with task tracking, resource planning, time tracking, and multi-tenant organization support.
 
@@ -67,14 +70,16 @@ A full-stack, self-hosted project management application with task tracking, res
 ### 🔐 Role-Based Permissions
 - **Global roles**: Admin, Developer, Support, Manager
 - **Permission system**:
-  - **View permissions** — Dashboard, Planning, Reports
+  - **View permissions** — Dashboard, Planning, Reports, Others' planning schedules
   - **Project permissions** — Create, Manage, Delete projects
   - **Task permissions** — Create, Assign, Manage, Delete tasks
   - **Ticket permissions** — Create, Assign, Manage, Delete tickets
   - **Admin permissions** — Manage organizations, users, system settings
-- **Permission combination** — Users get permissions from ALL their roles
+- **Permission combination** — Users get permissions from ALL their roles (OR logic)
 - **Admin override** — Admin users have all permissions automatically
-- **Context-based validation** — Frontend and backend permission checks
+- **Granular UI gates** — Every action button, form, and section is gated individually (save, assign, delete, edit)
+- **Backend enforcement** — All API mutations validate permissions server-side
+- **Organization-level groups** — PermissionGroups layer adds per-org overrides on top of global roles
 
 ### 🎫 Ticket System
 - **Auto-numbering** — Tickets get unique IDs like `TKT-ORG-123`
@@ -229,7 +234,7 @@ A full-stack, self-hosted project management application with task tracking, res
 
 ```bash
 # Download the example and edit with your values
-curl -o .env.docker https://raw.githubusercontent.com/YOUR_REPO/main/.env.docker.example
+curl -o .env.docker https://raw.githubusercontent.com/tiag0ss/project-management/main/.env.docker.example
 ```
 
 Or create `.env.docker` manually:
@@ -440,5 +445,6 @@ MIT
 
 ## Links
 
+- 🐳 [Docker Hub](https://hub.docker.com/r/tiag0ss/project-management)
 - 🐛 [Report Issues](https://github.com/tiag0ss/project-management/issues)
-- 📖 [Documentation](https://github.com/tiag0ss/project-management)
+- 📖 [Source Code](https://github.com/tiag0ss/project-management)
