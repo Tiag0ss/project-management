@@ -421,21 +421,22 @@ GET http://localhost:3000/health
 This is a **single container** that serves both the Next.js frontend and Express.js API:
 
 ```
-┌─────────────────────────────────┐
-│     project-management:latest   │
-│                                 │
-│  ┌───────────┐  ┌────────────┐  │
-│  │  Next.js  │  │  Express   │  │
-│  │  Frontend │  │  API       │  │
-│  └─────────┬─┘  └─┬──────────┘  │
-│            │      │             │
-│            Port 3000            │
-└───────────────┬─────────────────┘
-                │
-         ┌──────┴──────┐
-         │   MySQL 8   │
-         │  Port 3306  │
-         └─────────────┘
++----------------------------------+
+|   project-management:latest      |
+|                                  |
+|  +-----------+  +------------+   |
+|  | Next.js   |  | Express    |   |
+|  | Frontend  |  | API        |   |
+|  +-----------+  +------------+   |
+|                                  |
+|         Port 3000                |
++----------------------------------+
+               |
+               |
+      +--------+--------+
+      |   MySQL 8       |
+      |   Port 3306     |
+      +-----------------+
 ```
 
 - **Base image**: `node:20-alpine`
@@ -465,6 +466,21 @@ docker exec -i project-management-mysql \
   mysql -u root -p"$DB_PASSWORD" projectmanagement < backup.sql
 ```
 
+## Testing
+
+Comprehensive testing scenarios covering all features are available in [TESTING_SCENARIOS.md](TESTING_SCENARIOS.md). The test suite includes:
+
+- **150+ test scenarios** covering all major features
+- Authentication & authorization testing
+- Feature-specific tests (projects, tasks, tickets, etc.)
+- Integration and end-to-end scenarios
+- Security testing (SQL injection, XSS, authorization bypass)
+- Performance and stress testing
+- Browser compatibility testing
+- Edge cases and error handling
+
+See the [Testing Scenarios document](TESTING_SCENARIOS.md) for detailed test cases and expected results.
+
 ## License
 
 MIT
@@ -474,3 +490,4 @@ MIT
 - 🐳 [Docker Hub](https://hub.docker.com/r/tiag0ss/project-management)
 - 🐛 [Report Issues](https://github.com/tiag0ss/project-management/issues)
 - 📖 [Source Code](https://github.com/tiag0ss/project-management)
+- 🧪 [Testing Scenarios](TESTING_SCENARIOS.md) — Comprehensive test suite with 150+ scenarios
