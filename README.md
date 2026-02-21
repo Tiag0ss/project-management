@@ -490,4 +490,4 @@ MIT
 - 🐳 [Docker Hub](https://hub.docker.com/r/tiag0ss/project-management)
 - 🐛 [Report Issues](https://github.com/tiag0ss/project-management/issues)
 - 📖 [Source Code](https://github.com/tiag0ss/project-management)
-- 🧪 [Testing Scenarios](TESTING_SCENARIOS.md) — Comprehensive test suite with 150+ scenarios
+- 🧪 [Testing Scenarios](https://github.com/Tiag0ss/project-management/blob/main/TESTING_SCENARIOS.md) — Comprehensive test suite with 150+ scenarios
