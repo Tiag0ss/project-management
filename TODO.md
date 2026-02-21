@@ -21,7 +21,7 @@
 
 ### Planning / Gantt
 - [x] **Critical path highlighting** — CPM (Critical Path Method) forward/backward pass on tasks with `DependsOnTaskId`+`PlannedStartDate`+`PlannedEndDate`; critical tasks highlighted with red ring on Gantt bars; 🔴 Critical Path toggle button in planning toolbar.
-- [ ] **Baseline comparison** — Store original planned dates as a baseline and show drift vs current planned dates (scope creep tracking).
+- [x] **Baseline comparison** — Store original planned dates as a baseline and show drift vs current planned dates (scope creep tracking). `BaselineStartDate`/`BaselineEndDate` in Tasks; `PUT /api/tasks/project/:id/baseline` snapshots planned dates; 📏 Baseline toggle + 📐 Set Baseline in planning toolbar; drift bars rendered as 🟢/🟡/🟣 colour-coded thin strips beside each task bar.
 
 ### Notifications
 - [x] **Email notifications for task events** — `sendNotificationEmail` wired in `server/routes/tasks.ts` for assignment, priority change, and status change events (alongside existing in-app `createNotification` calls).
@@ -29,7 +29,7 @@
 
 ### Reports
 - [x] **Export time entries to CSV** — Export CSV button in the All Entries (History) tab of the Timesheet page. Applies current date/project/task filters. PDF and scheduled reports still pending.
-- [ ] **Scheduled PDF report by email** — Weekly/monthly project report PDF sent automatically to project managers.
+- [x] **Scheduled PDF report by email** — Weekly/monthly project report PDF sent automatically to project managers. `ProjectReportSchedules` table; `pdfReportScheduler.ts` runs hourly, generates PDF with pdfkit (summary cards, task table, time entries, budget bar), sends via `sendEmail` with attachment. CRUD API at `/api/project-report-schedules`. "📅 Scheduled Reports" sub-tab in project Reporting page with create/edit/delete/send-now UI.
 
 ---
 
@@ -38,11 +38,11 @@
 - [x] **Project Portfolio Dashboard** — `/portfolio` page with RAG health, progress bars, budget burn, open tickets; filter by org/status/RAG; sort by name/progress/budget/date; Navbar link added.
 - [x] **Due date reminder emails** — `dueDateReminderScheduler.ts` runs hourly; sends amber warning email 1 day before `DueDate` per task. Deduplicates via `DueDateReminderLog` table. Respects `due_date_reminder` email preference.
 - [x] **Sprint / Iteration Management** — `Sprints` table linked to Projects; `SprintId` on Tasks; full CRUD API (`/api/sprints`); backlog endpoint; task assignment to sprints; 🏃 Sprints tab in project detail page with sprint cards, progress bars, backlog with multi-select, and inline task management.
-- [ ] **Real-time notifications via WebSocket** — Replace polling-based notifications with `socket.io` push notifications for instant updates on task assignments and comments.
+- [x] **Real-time notifications via WebSocket** — `socket.io` server on `/api/socket.io` path with JWT handshake auth; `socketHub.ts` singleton tracks user→socket mapping with `emitToUser(userId, event, data)`; `createNotification()` emits `'notification'` event instantly after DB insert; Navbar connects on mount, receives events to update badge and prepend to list; polling reduced to 5-min fallback.
 - [x] **Task Templates** — `TaskTemplates` + `TaskTemplateItems` tables; full CRUD API (`/api/task-templates`); apply-template endpoint; template picker UI in project task tab.
 - [x] **Task Checklists** — `TaskChecklists` table, full CRUD API (`/api/task-checklists`), and checklist tab in TaskDetailModal with progress bar and checkbox items.
 - [x] **Burndown / Burnup Charts** — `BurndownTab` in project detail page (`📉 Burndown` tab); SVG chart with toggle between Burndown and Burnup modes; uses `/api/projects/:id/burndown` endpoint returning date/worked/cumulative/remaining/ideal series.
-- [ ] **Customer Portal** — Dedicated portal view for customers (using existing `CustomerUsers` + `CustomerUserGuard`) — see their own tickets and project status without internal access.
+- [x] **Customer Portal** — Dedicated portal view for customers (using existing `CustomerUsers` + `CustomerUserGuard`) — see their own tickets and project status without internal access. `/api/portal/overview` backend; `/portal` frontend page with stats cards, projects grid, tickets table and New Ticket modal.
 - [x] **Task Dependency Graph** — New 🔗 Dependencies tab in the project detail page; SVG DAG with topological layout, colour-coded status stripes, bezier arrows and click-to-open task modal.
 
 ---
@@ -51,7 +51,7 @@
 
 - [x] **API rate limiting** — `express-rate-limit` middleware applied to all API routes (`authLimiter` + `apiLimiter` in `server/index.ts`).
 - [x] **Server-side HTML sanitisation** — `sanitize-html` installed; `sanitizeRichText()` and `sanitizePlainText()` in `server/utils/sanitize.ts`. Applied to tasks, task comments, memos, and tickets.
-- [ ] **Expand automated test coverage** — `__tests__/` only has basic health and validation tests. Add integration tests for key routes (tasks, time entries, projects).
+- [x] **Expand automated test coverage** — Added integration test suites for `tasks`, `timeEntries`, and `projects` routes (`__tests__/integration/`). Tests cover auth guards (401/403), access control (404/403), validation (400), success paths (201/200), and error handling (500) using mocked DB pool and JWT tokens. 42 tests total, all passing.
 - [x] **Global search pagination** — `page` query param + `OFFSET` added to all four search queries in `search.ts`. Response includes `{ page, limit, hasMore }`. Navbar shows a **Load More** button when more pages exist.
 - [x] **User hourly rate field** — `HourlyRate` decimal(10,2) added to `Users` table. Editable in profile page ($ prefix) and admin Users Management. Used in budget calculations.
 

@@ -2854,4 +2854,44 @@ router.post('/import-from-gitea', authenticateToken, async (req: AuthRequest, re
   }
 });
 
+/**
+ * PUT /api/tasks/project/:projectId/baseline
+ * Snapshot current PlannedStartDate/PlannedEndDate into BaselineStartDate/BaselineEndDate
+ * for all tasks in the project that have planned dates.
+ */
+router.put('/project/:projectId/baseline', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { projectId } = req.params;
+
+    // Verify user has access to this project
+    const [projects] = await pool.execute<RowDataPacket[]>(
+      `SELECT p.Id FROM Projects p
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       WHERE p.Id = ? AND (om.UserId = ? OR p.CreatedBy = ?)`,
+      [projectId, userId, userId]
+    );
+    if (projects.length === 0) {
+      return res.status(404).json({ success: false, message: 'Project not found or access denied' });
+    }
+
+    const [result] = await pool.execute<ResultSetHeader>(
+      `UPDATE Tasks
+       SET BaselineStartDate = PlannedStartDate,
+           BaselineEndDate   = PlannedEndDate
+       WHERE ProjectId = ? AND PlannedStartDate IS NOT NULL AND PlannedEndDate IS NOT NULL`,
+      [projectId]
+    );
+
+    res.json({
+      success: true,
+      message: `Baseline set for ${result.affectedRows} task(s)`,
+      affectedRows: result.affectedRows,
+    });
+  } catch (error) {
+    console.error('Set baseline error:', error);
+    res.status(500).json({ success: false, message: 'Failed to set baseline' });
+  }
+});
+
 export default router;

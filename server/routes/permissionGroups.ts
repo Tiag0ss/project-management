@@ -129,8 +129,20 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       groupName, 
       description,
       canManageProjects,
+      canCreateProjects,
+      canDeleteProjects,
       canManageTasks,
+      canCreateTasks,
+      canDeleteTasks,
+      canAssignTasks,
       canPlanTasks,
+      canManageTimeEntries,
+      canViewReports,
+      canManageTickets,
+      canCreateTickets,
+      canDeleteTickets,
+      canAssignTickets,
+      canCreateTaskFromTicket,
       canManageMembers,
       canManageSettings
     } = req.body;
@@ -160,15 +172,27 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO PermissionGroups 
-       (OrganizationId, GroupName, Description, CanManageProjects, CanManageTasks, CanPlanTasks, CanManageMembers, CanManageSettings) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (OrganizationId, GroupName, Description, CanManageProjects, CanCreateProjects, CanDeleteProjects, CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks, CanPlanTasks, CanManageTimeEntries, CanViewReports, CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets, CanCreateTaskFromTicket, CanManageMembers, CanManageSettings) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         organizationId,
         groupName,
         description || null,
         canManageProjects ? 1 : 0,
+        canCreateProjects ? 1 : 0,
+        canDeleteProjects ? 1 : 0,
         canManageTasks ? 1 : 0,
+        canCreateTasks ? 1 : 0,
+        canDeleteTasks ? 1 : 0,
+        canAssignTasks ? 1 : 0,
         canPlanTasks ? 1 : 0,
+        canManageTimeEntries ? 1 : 0,
+        canViewReports ? 1 : 0,
+        canManageTickets ? 1 : 0,
+        canCreateTickets ? 1 : 0,
+        canDeleteTickets ? 1 : 0,
+        canAssignTickets ? 1 : 0,
+        canCreateTaskFromTicket ? 1 : 0,
         canManageMembers ? 1 : 0,
         canManageSettings ? 1 : 0
       ]
@@ -243,8 +267,20 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       groupName, 
       description,
       canManageProjects,
+      canCreateProjects,
+      canDeleteProjects,
       canManageTasks,
+      canCreateTasks,
+      canDeleteTasks,
+      canAssignTasks,
       canPlanTasks,
+      canManageTimeEntries,
+      canViewReports,
+      canManageTickets,
+      canCreateTickets,
+      canDeleteTickets,
+      canAssignTickets,
+      canCreateTaskFromTicket,
       canManageMembers,
       canManageSettings
     } = req.body;
@@ -283,14 +319,30 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     await pool.execute(
       `UPDATE PermissionGroups 
        SET GroupName = ?, Description = ?, 
-           CanManageProjects = ?, CanManageTasks = ?, CanPlanTasks = ?, CanManageMembers = ?, CanManageSettings = ?
+           CanManageProjects = ?, CanCreateProjects = ?, CanDeleteProjects = ?,
+           CanManageTasks = ?, CanCreateTasks = ?, CanDeleteTasks = ?, CanAssignTasks = ?,
+           CanPlanTasks = ?, CanManageTimeEntries = ?, CanViewReports = ?,
+           CanManageTickets = ?, CanCreateTickets = ?, CanDeleteTickets = ?, CanAssignTickets = ?,
+           CanCreateTaskFromTicket = ?, CanManageMembers = ?, CanManageSettings = ?
        WHERE Id = ?`,
       [
         groupName,
         description,
         canManageProjects ? 1 : 0,
+        canCreateProjects ? 1 : 0,
+        canDeleteProjects ? 1 : 0,
         canManageTasks ? 1 : 0,
+        canCreateTasks ? 1 : 0,
+        canDeleteTasks ? 1 : 0,
+        canAssignTasks ? 1 : 0,
         canPlanTasks ? 1 : 0,
+        canManageTimeEntries ? 1 : 0,
+        canViewReports ? 1 : 0,
+        canManageTickets ? 1 : 0,
+        canCreateTickets ? 1 : 0,
+        canDeleteTickets ? 1 : 0,
+        canAssignTickets ? 1 : 0,
+        canCreateTaskFromTicket ? 1 : 0,
         canManageMembers ? 1 : 0,
         canManageSettings ? 1 : 0,
         groupId

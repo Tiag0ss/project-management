@@ -138,6 +138,18 @@
       "Comment": "Foreign key - reference to Sprints.Id for sprint assignment"
     },
     {
+      "FieldName": "BaselineStartDate",
+      "DataType": "date",
+      "NotNullable": false,
+      "Comment": "Baseline planned start date for drift/scope-creep comparison"
+    },
+    {
+      "FieldName": "BaselineEndDate",
+      "DataType": "date",
+      "NotNullable": false,
+      "Comment": "Baseline planned end date for drift/scope-creep comparison"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

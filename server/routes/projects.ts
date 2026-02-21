@@ -392,7 +392,7 @@ router.get('/:id/permissions', authenticateToken, async (req: AuthRequest, res: 
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { organizationId, projectName, description, status, startDate, endDate, isHobby, customerId, jiraBoardId, budget } = req.body;
+    const { organizationId, projectName, description, status, startDate, endDate, isHobby, isVisibleToCustomer, customerId, jiraBoardId, budget } = req.body;
 
     if (!projectName || !organizationId) {
       return res.status(400).json({ 
@@ -415,8 +415,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, CustomerId, JiraBoardId, Budget) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, IsVisibleToCustomer, CustomerId, JiraBoardId, Budget) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         organizationId,
         projectName, 
@@ -426,6 +426,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         startDate || null, 
         endDate || null,
         isHobby ? 1 : 0,
+        isVisibleToCustomer ? 1 : 0,
         customerId || null,
         jiraBoardId || null,
         budget !== undefined && budget !== '' ? parseFloat(budget) : null
@@ -620,7 +621,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const projectId = req.params.id;
-    const { projectName, description, status, startDate, endDate, isHobby, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo, budget } = req.body;
+    const { projectName, description, status, startDate, endDate, isHobby, isVisibleToCustomer, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo, budget } = req.body;
 
     // Check if project exists and get current data
     const [existing] = await pool.execute<RowDataPacket[]>(
@@ -689,15 +690,19 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       changes.push({ field: 'Budget', oldVal: String(oldProject.Budget || ''), newVal: String(budget || '') });
     }
 
+    if (isVisibleToCustomer !== undefined && Boolean(isVisibleToCustomer) !== Boolean(oldProject.IsVisibleToCustomer)) {
+      changes.push({ field: 'IsVisibleToCustomer', oldVal: String(oldProject.IsVisibleToCustomer), newVal: String(isVisibleToCustomer) });
+    }
+
     // Convert empty strings to null for date fields
     const normalizedStartDate = startDate === '' ? null : startDate;
     const normalizedEndDate = endDate === '' ? null : endDate;
 
     await pool.execute(
       `UPDATE Projects 
-       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ?, GiteaOwner = ?, GiteaRepo = ?, Budget = ?
+       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, IsVisibleToCustomer = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ?, GiteaOwner = ?, GiteaRepo = ?, Budget = ?
        WHERE Id = ?`,
-      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, customerId || null, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, giteaOwner || null, giteaRepo || null, budget !== undefined && budget !== '' ? parseFloat(budget) : null, projectId]
+      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, isVisibleToCustomer ? 1 : 0, customerId || null, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, giteaOwner || null, giteaRepo || null, budget !== undefined && budget !== '' ? parseFloat(budget) : null, projectId]
     );
     
     // Log changes to history

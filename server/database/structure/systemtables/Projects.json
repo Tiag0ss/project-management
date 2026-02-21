@@ -65,6 +65,13 @@
       "Comment": "Foreign key - reference to Customers.Id if associated with a customer"
     },
     {
+      "FieldName": "IsVisibleToCustomer",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Whether this project is visible to the associated customer in their portal"
+    },
+    {
       "FieldName": "JiraBoardId",
       "DataType": "varchar(100)",
       "NotNullable": false,

@@ -3,6 +3,7 @@ import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { sendNotificationEmail } from '../utils/emailService';
+import { emitToUser } from '../utils/socketHub';
 
 const router = Router();
 
@@ -229,11 +230,26 @@ export const createNotification = async (
   relatedProjectId?: number
 ) => {
   try {
-    await pool.execute(
+    const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO Notifications (UserId, Type, Title, Message, Link, RelatedTaskId, RelatedProjectId) 
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [userId, type, title, message, link || null, relatedTaskId || null, relatedProjectId || null]
     );
+
+    // Push real-time notification via socket.io (best-effort, non-blocking)
+    const notifPayload = {
+      Id: result.insertId,
+      UserId: userId,
+      Type: type,
+      Title: title,
+      Message: message,
+      Link: link || null,
+      RelatedTaskId: relatedTaskId || null,
+      RelatedProjectId: relatedProjectId || null,
+      IsRead: 0,
+      CreatedAt: new Date().toISOString(),
+    };
+    emitToUser(userId, 'notification', notifPayload);
 
     // Get user email for email notification
     const [users] = await pool.execute<RowDataPacket[]>(

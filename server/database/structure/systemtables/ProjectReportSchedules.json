@@ -1,0 +1,88 @@
+{
+  "TableName": "ProjectReportSchedules",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "ProjectId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Frequency",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "weekly",
+      "Comment": "weekly or monthly"
+    },
+    {
+      "FieldName": "DayOfWeek",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "0=Sunday ... 6=Saturday; used when Frequency=weekly"
+    },
+    {
+      "FieldName": "DayOfMonth",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "1-28; used when Frequency=monthly"
+    },
+    {
+      "FieldName": "Recipients",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Comma-separated email addresses"
+    },
+    {
+      "FieldName": "IncludeTaskTable",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "IncludeTimeEntries",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "IncludeBudget",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "IsEnabled",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "LastSentAt",
+      "DataType": "timestamp",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

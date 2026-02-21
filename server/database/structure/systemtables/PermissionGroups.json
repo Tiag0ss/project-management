@@ -32,21 +32,105 @@
       "DataType": "tinyint(1)",
       "NotNullable": true,
       "DefaultValue": "0",
-      "Comment": "Permission to manage projects within organization"
+      "Comment": "Permission to edit projects within organization"
+    },
+    {
+      "FieldName": "CanCreateProjects",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to create new projects within organization"
+    },
+    {
+      "FieldName": "CanDeleteProjects",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to delete projects within organization"
     },
     {
       "FieldName": "CanManageTasks",
       "DataType": "tinyint(1)",
       "NotNullable": true,
       "DefaultValue": "0",
-      "Comment": "Permission to manage tasks within organization"
+      "Comment": "Permission to edit tasks within organization"
+    },
+    {
+      "FieldName": "CanCreateTasks",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to create new tasks within organization"
+    },
+    {
+      "FieldName": "CanDeleteTasks",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to delete tasks within organization"
+    },
+    {
+      "FieldName": "CanAssignTasks",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to assign tasks to users within organization"
     },
     {
       "FieldName": "CanPlanTasks",
       "DataType": "tinyint(1)",
       "NotNullable": true,
       "DefaultValue": "0",
-      "Comment": "Permission to plan and allocate tasks"
+      "Comment": "Permission to plan and allocate tasks within organization"
+    },
+    {
+      "FieldName": "CanManageTimeEntries",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to manage time entries within organization"
+    },
+    {
+      "FieldName": "CanViewReports",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to view project reports within organization"
+    },
+    {
+      "FieldName": "CanManageTickets",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to edit tickets within organization"
+    },
+    {
+      "FieldName": "CanCreateTickets",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to create new tickets within organization"
+    },
+    {
+      "FieldName": "CanDeleteTickets",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to delete tickets within organization"
+    },
+    {
+      "FieldName": "CanAssignTickets",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to assign tickets within organization"
+    },
+    {
+      "FieldName": "CanCreateTaskFromTicket",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to create tasks directly from tickets within organization"
     },
     {
       "FieldName": "CanManageMembers",

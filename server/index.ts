@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import next from 'next';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -56,8 +57,12 @@ import timersRoutes from './routes/timers';
 import taskTemplatesRoutes from './routes/taskTemplates';
 import slaRulesRoutes from './routes/slaRules';
 import sprintsRoutes from './routes/sprints';
+import portalRoutes from './routes/portal';
+import projectReportSchedulesRoutes from './routes/projectReportSchedules';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
 import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler';
+import { startPdfReportScheduler } from './utils/pdfReportScheduler';
+import { initSocketHub } from './utils/socketHub';
 
 dotenv.config();
 
@@ -224,6 +229,8 @@ app.prepare().then(async () => {
   server.use('/api/task-templates', taskTemplatesRoutes);
   server.use('/api/sla-rules', slaRulesRoutes);
   server.use('/api/sprints', sprintsRoutes);
+  server.use('/api/portal', portalRoutes);
+  server.use('/api/project-report-schedules', projectReportSchedulesRoutes);
 
   // Error handling middleware
   server.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -260,7 +267,11 @@ app.prepare().then(async () => {
     return handle(req, res);
   });
 
-  server.listen(port, () => {
+  // Create HTTP server and attach socket.io
+  const httpServer = http.createServer(server);
+  initSocketHub(httpServer, allowedOrigins);
+
+  httpServer.listen(port, () => {
     logger.info(`> Server ready on http://localhost:${port}`);
     logger.info(`> API Documentation: http://localhost:${port}/api-docs`);
     logger.info(`> Health Check: http://localhost:${port}/health`);
@@ -271,6 +282,9 @@ app.prepare().then(async () => {
 
     // Start the due date reminder scheduler
     startDueDateReminderScheduler();
+
+    // Start the PDF report scheduler
+    startPdfReportScheduler();
   });
 }).catch((error) => {
   logger.error('Failed to start server', { error });

@@ -474,7 +474,8 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
           canDeleteTickets: false,
           canAssignTickets: false,
           canPlanTasks: false,
-          canViewOthersPlanning: false
+          canViewOthersPlanning: false,
+          canCreateTaskFromTicket: false
         }
       });
     }
@@ -514,7 +515,8 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
       canDeleteTickets: false,
       canAssignTickets: false,
       canPlanTasks: false,
-      canViewOthersPlanning: false
+      canViewOthersPlanning: false,
+      canCreateTaskFromTicket: false
     };
 
     permissions.forEach((perm: any) => {
@@ -543,6 +545,7 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
       if (perm.CanAssignTickets) combined.canAssignTickets = true;
       if (perm.CanPlanTasks) combined.canPlanTasks = true;
       if (perm.CanViewOthersPlanning) combined.canViewOthersPlanning = true;
+      if (perm.CanCreateTaskFromTicket) combined.canCreateTaskFromTicket = true;
     });
 
     res.json({ success: true, data: combined });

@@ -5,12 +5,19 @@ import { logActivity } from '../routes/activityLogs';
 import { shouldSendEmail } from './emailPreferencesHelper';
 import { decrypt } from './encryption';
 
+interface EmailAttachment {
+  filename: string;
+  content: Buffer | string;
+  contentType?: string;
+}
+
 interface EmailOptions {
   to: string;
   subject: string;
   html: string;
   userId?: number;
   username?: string;
+  attachments?: EmailAttachment[];
 }
 
 interface SMTPConfig {
@@ -106,6 +113,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
       to: options.to,
       subject: options.subject,
       html: options.html,
+      ...(options.attachments?.length ? { attachments: options.attachments } : {}),
     });
 
     return true;

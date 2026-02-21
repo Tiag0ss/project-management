@@ -35,6 +35,8 @@ export interface Task {
   DisplayOrder: number;
   PlannedStartDate?: string;
   PlannedEndDate?: string;
+  BaselineStartDate?: string;
+  BaselineEndDate?: string;
   DependsOnTaskId?: number;
   DependsOnTaskName?: string;
   TicketId?: number;

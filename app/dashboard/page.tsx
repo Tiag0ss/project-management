@@ -188,6 +188,16 @@ function DashboardContent() {
   const [calendarView, setCalendarView] = useState<'month' | 'week'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   
+  // Customer portal state
+  const [portalData, setPortalData] = useState<{
+    customer: { Id: number; Name: string; Email: string | null; Phone: string | null; ContactPerson: string | null; ContactEmail: string | null; Website: string | null };
+    stats: { total: number; open: number; closed: number; inProgress: number; urgent: number };
+    tickets: { Id: number; Title: string; Category: string; CreatedAt: string; UpdatedAt: string; StatusName: string; StatusColor: string; IsClosed: number; PriorityName: string; PriorityColor: string; ProjectName: string | null; AssigneeName: string | null; AssigneeFirst: string | null; AssigneeLast: string | null }[];
+    projects: { Id: number; ProjectName: string; Description: string | null; StatusLabel: string | null; StatusColor: string | null; OrganizationName: string; TotalTasks: number; CompletedTasks: number; StartDate: string | null; EndDate: string | null }[];
+  } | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState('');
+  
   // Call Records state (for calendar display)
   const [callRecords, setCallRecords] = useState<CallRecordForCalendar[]>([]);
 
@@ -216,16 +226,20 @@ function DashboardContent() {
     if (!isLoading && !user) {
       router.push('/login');
     } else if (user && token) {
-      loadUserProfile();
-      loadSummaryStats();
-      loadPendingTasks();
-      loadGlobalStats();
-      if (activeTab === 'calendar') {
-        loadMyTasks();
-        loadTimeEntries();
-        loadCallRecords();
-        loadTaskAllocations();
-        loadRecurringAllocations();
+      if (isCustomerUser) {
+        loadPortalData();
+      } else {
+        loadUserProfile();
+        loadSummaryStats();
+        loadPendingTasks();
+        loadGlobalStats();
+        if (activeTab === 'calendar') {
+          loadMyTasks();
+          loadTimeEntries();
+          loadCallRecords();
+          loadTaskAllocations();
+          loadRecurringAllocations();
+        }
       }
     }
   }, [user, isLoading, router, token, activeTab]);
@@ -243,6 +257,25 @@ function DashboardContent() {
       return dateValue.toISOString().split('T')[0];
     }
     return String(dateValue).split('T')[0];
+  };
+
+  const loadPortalData = async () => {
+    setPortalLoading(true);
+    setPortalError('');
+    try {
+      const res = await fetch(`${getApiUrl()}/api/portal/overview`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.message || 'Failed to load portal');
+      }
+      setPortalData(await res.json());
+    } catch (err: any) {
+      setPortalError(err.message || 'Failed to load portal data');
+    } finally {
+      setPortalLoading(false);
+    }
   };
 
   const loadUserProfile = async () => {
@@ -726,57 +759,133 @@ function DashboardContent() {
 
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
-          {/* Customer User View - Minimal Dashboard */}
+          {/* Customer User View */}
           {isCustomerUser ? (
-            <div className="space-y-6">
-              {/* Welcome Header */}
-              <div className="bg-gradient-to-r from-teal-600 to-cyan-600 rounded-lg shadow p-8 text-white">
-                <div className="flex items-center justify-between">
+            portalLoading ? (
+              <div className="flex items-center justify-center py-24">
+                <div className="text-gray-500 dark:text-gray-400">Loading…</div>
+              </div>
+            ) : portalError ? (
+              <div className="flex flex-col items-center justify-center py-24 gap-4">
+                <p className="text-red-500 font-medium">{portalError}</p>
+                <button onClick={loadPortalData} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">Retry</button>
+              </div>
+            ) : portalData ? (
+              <div className="max-w-6xl mx-auto space-y-8">
+                {/* Header */}
+                <div className="flex items-start justify-between">
                   <div>
-                    <h2 className="text-3xl font-bold">
-                      Welcome, {user?.firstName || user?.username}!
-                    </h2>
-                    <p className="text-teal-100 mt-2">
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">🏢 {portalData.customer.Name}</h1>
+                    <p className="text-gray-500 dark:text-gray-400 mt-1">
                       {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     </p>
+                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
+                      {portalData.customer.ContactPerson && <span>👤 {portalData.customer.ContactPerson}</span>}
+                      {portalData.customer.ContactEmail && <a href={`mailto:${portalData.customer.ContactEmail}`} className="hover:text-blue-600">{portalData.customer.ContactEmail}</a>}
+                      {portalData.customer.Phone && <span>📞 {portalData.customer.Phone}</span>}
+                      {portalData.customer.Website && <a href={portalData.customer.Website} target="_blank" rel="noreferrer" className="hover:text-blue-600">🔗 {portalData.customer.Website}</a>}
+                    </div>
                   </div>
-                  <div className="text-6xl opacity-80">👋</div>
                 </div>
-              </div>
 
-              {/* Customer Info Card */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 bg-teal-100 dark:bg-teal-900 rounded-full flex items-center justify-center">
-                    <span className="text-3xl">🏢</span>
-                  </div>
+                {/* Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  {[
+                    { label: 'Total Tickets', value: portalData.stats.total, color: 'text-gray-900 dark:text-white', bg: 'bg-white dark:bg-gray-800' },
+                    { label: 'Open', value: portalData.stats.open, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/30' },
+                    { label: 'In Progress', value: portalData.stats.inProgress, color: 'text-yellow-600 dark:text-yellow-400', bg: 'bg-yellow-50 dark:bg-yellow-900/30' },
+                    { label: 'Resolved', value: portalData.stats.closed, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-900/30' },
+                    { label: 'Urgent', value: portalData.stats.urgent, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/30' },
+                  ].map(s => (
+                    <div key={s.label} className={`${s.bg} rounded-lg p-4 shadow-sm border border-gray-100 dark:border-gray-700`}>
+                      <div className={`text-2xl font-bold ${s.color}`}>{Number(s.value)}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Projects */}
+                {portalData.projects.length > 0 && (
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Customer Portal</h3>
-                    <p className="text-gray-500 dark:text-gray-400">
-                      You are logged in as a customer user. Contact your account manager for project updates.
-                    </p>
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">📁 Your Projects</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {portalData.projects.map(project => {
+                        const pct = project.TotalTasks > 0 ? Math.round((Number(project.CompletedTasks) / Number(project.TotalTasks)) * 100) : 0;
+                        return (
+                          <div key={project.Id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="font-medium text-gray-900 dark:text-white leading-tight">{project.ProjectName}</div>
+                              {project.StatusLabel && (
+                                <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0" style={{ backgroundColor: `${project.StatusColor || '#888'}22`, color: project.StatusColor || '#888' }}>
+                                  {project.StatusLabel}
+                                </span>
+                              )}
+                            </div>
+                            {project.Description && <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{project.Description}</p>}
+                            <div className="mt-3">
+                              <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                                <span>{Number(project.CompletedTasks)} / {Number(project.TotalTasks)} tasks done</span>
+                                <span>{pct}%</span>
+                              </div>
+                              <div className="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                <div className={`h-1.5 rounded-full ${pct === 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                            {(project.StartDate || project.EndDate) && (
+                              <div className="text-xs text-gray-400 mt-2">📅 {project.StartDate ? String(project.StartDate).split('T')[0] : '?'} — {project.EndDate ? String(project.EndDate).split('T')[0] : '?'}</div>
+                            )}
+                            <div className="text-xs text-gray-400 mt-1">{project.OrganizationName}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              </div>
+                )}
 
-              {/* Contact Support Card */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                  <span>📞</span> Need Assistance?
-                </h3>
-                <p className="text-gray-600 dark:text-gray-400 mb-4">
-                  If you have any questions about your projects or need support, please reach out to our team.
-                </p>
-                <div className="flex gap-4">
-                  <a 
-                    href="mailto:support@company.com"
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors"
-                  >
-                    <span>✉️</span> Email Support
-                  </a>
+                {/* Tickets */}
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">🎫 Your Tickets</h2>
+                  {portalData.tickets.length === 0 ? (
+                    <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+                      <p className="text-gray-500 dark:text-gray-400">No tickets yet.</p>
+                    </div>
+                  ) : (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 dark:bg-gray-700/50">
+                          <tr>
+                            <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">#</th>
+                            <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">Title</th>
+                            <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Category</th>
+                            <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">Status</th>
+                            <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium hidden lg:table-cell">Priority</th>
+                            <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Project</th>
+                            <th className="text-right px-4 py-3 text-gray-600 dark:text-gray-400 font-medium hidden sm:table-cell">Updated</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                          {portalData.tickets.map(ticket => (
+                            <tr key={ticket.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer" onClick={() => router.push(`/tickets/${ticket.Id}`)}>
+                              <td className="px-4 py-3 text-gray-400 dark:text-gray-500 font-mono text-xs">#{ticket.Id}</td>
+                              <td className="px-4 py-3 font-medium text-gray-900 dark:text-white max-w-xs"><span className="line-clamp-1">{ticket.Title}</span></td>
+                              <td className="px-4 py-3 text-gray-500 dark:text-gray-400 hidden md:table-cell">{ticket.Category}</td>
+                              <td className="px-4 py-3">
+                                <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: `${ticket.StatusColor || '#888'}22`, color: ticket.StatusColor || '#888' }}>{ticket.StatusName}</span>
+                              </td>
+                              <td className="px-4 py-3 hidden lg:table-cell">
+                                <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: `${ticket.PriorityColor || '#888'}22`, color: ticket.PriorityColor || '#888' }}>{ticket.PriorityName}</span>
+                              </td>
+                              <td className="px-4 py-3 text-gray-500 dark:text-gray-400 hidden md:table-cell">{ticket.ProjectName || '—'}</td>
+                              <td className="px-4 py-3 text-right text-xs text-gray-400 hidden sm:table-cell">{new Date(ticket.UpdatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
+            ) : null
           ) : (
             <>
               {/* Dashboard Tabs - Regular Users Only */}
@@ -1573,6 +1682,7 @@ function DashboardContent() {
           </div>
         )}
       </main>
+
     </div>
   );
 }

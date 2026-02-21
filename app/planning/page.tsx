@@ -47,6 +47,7 @@ export default function PlanningPage() {
   const [loadingAllocations, setLoadingAllocations] = useState(false);
   const [showDependencyLines, setShowDependencyLines] = useState(true);
   const [showCriticalPath, setShowCriticalPath] = useState(false);
+  const [showBaseline, setShowBaseline] = useState(false);
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'year'>('week');
   const [activeTab, setActiveTab] = useState<'gantt' | 'allocations'>('gantt');
   const [maxVisibleLevel, setMaxVisibleLevel] = useState<number>(0);
@@ -2901,6 +2902,48 @@ export default function PlanningPage() {
                 >
                   🔴 Critical Path
                 </button>
+                <button
+                  onClick={() => setShowBaseline(!showBaseline)}
+                  className={`px-4 py-2 rounded transition-colors ${
+                    showBaseline
+                      ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'
+                  }`}
+                  title="Toggle baseline comparison bars"
+                >
+                  📏 Baseline
+                </button>
+                {permissions?.canPlanTasks && allocationFilters.projectId && (
+                  <button
+                    onClick={() => {
+                      const project = projects.find(p => String(p.Id) === allocationFilters.projectId);
+                      if (!project) return;
+                      showConfirm(
+                        'Set Baseline',
+                        `Snapshot all current planned dates for "${project.ProjectName}" as the baseline? This will overwrite any existing baseline.`,
+                        async () => {
+                          try {
+                            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/tasks/project/${allocationFilters.projectId}/baseline`, {
+                              method: 'PUT',
+                              headers: { Authorization: `Bearer ${token!}` },
+                            });
+                            const d = await res.json();
+                            if (!res.ok) throw new Error(d.message);
+                            showAlert('Baseline Set', d.message);
+                            await loadData();
+                            setShowBaseline(true);
+                          } catch (err: any) {
+                            showAlert('Error', `Failed to set baseline: ${err.message}`);
+                          }
+                        }
+                      );
+                    }}
+                    className="px-4 py-2 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-purple-100 dark:hover:bg-purple-900 transition-colors"
+                    title="Snapshot current planned dates as baseline for selected project"
+                  >
+                    📐 Set Baseline
+                  </button>
+                )}
               </div>
             </div>
 
@@ -3354,7 +3397,35 @@ export default function PlanningPage() {
                           const subtaskPadding = isSubtask ? 'px-1' : 'px-2';
                           const indentPrefix = isSubtask && level ? '└' + '─'.repeat(level) + ' ' : '';
                           
+                          // Compute baseline bar position if applicable
+                          const baselinePosition = showBaseline && task.BaselineStartDate && task.BaselineEndDate
+                            ? getTaskPosition({ ...task, PlannedStartDate: task.BaselineStartDate, PlannedEndDate: task.BaselineEndDate }, days)
+                            : null;
+                          const driftDays = (baselinePosition && subtaskLeft && subtaskWidth)
+                            ? (() => {
+                                const curStart = new Date(task.PlannedStartDate || task.BaselineStartDate!).getTime();
+                                const basStart = new Date(task.BaselineStartDate!).getTime();
+                                return Math.round((curStart - basStart) / 86_400_000);
+                              })()
+                            : 0;
+
                           return (
+                            <React.Fragment key={`bar-${task.Id}`}>
+                            {baselinePosition && (
+                              <div
+                                className="absolute rounded-sm pointer-events-none"
+                                style={{
+                                  left: baselinePosition.left,
+                                  width: baselinePosition.width,
+                                  top: `${8 + row * 44 + (isSubtask ? 18 : 22)}px`,
+                                  height: '4px',
+                                  backgroundColor: driftDays === 0 ? '#10b981' : driftDays > 0 ? '#f59e0b' : '#a855f7',
+                                  opacity: 0.7,
+                                  zIndex: 1,
+                                }}
+                                title={`Baseline: ${task.BaselineStartDate} → ${task.BaselineEndDate}${driftDays !== 0 ? `\nDrift: ${driftDays > 0 ? '+' : ''}${driftDays} days` : ''}`}
+                              />
+                            )}
                             <div
                               key={task.Id}
                               data-task-id={task.Id}
@@ -3384,6 +3455,7 @@ export default function PlanningPage() {
                                 <span className={`ml-1 text-[10px] whitespace-nowrap ${isOverPlanned ? 'bg-red-600 px-1 rounded font-bold' : 'opacity-80'}`}>{hoursDisplay}</span>
                               )}
                             </div>
+                            </React.Fragment>
                           );
                         })}
                         {/* Recurring Allocations */}

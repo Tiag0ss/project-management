@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import RichTextEditor from './RichTextEditor';
 import SearchableSelect from './SearchableSelect';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
+import { io, Socket } from 'socket.io-client';
 
 interface Organization {
   Id: number;
@@ -185,13 +186,46 @@ export default function Navbar() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Load notification count on mount and periodically
+  // Load notification count on mount and periodically (fallback polling at 5 min)
   useEffect(() => {
     if (token) {
       loadNotificationCount();
-      const interval = setInterval(loadNotificationCount, 60000); // Check every minute
+      const interval = setInterval(loadNotificationCount, 300000); // Fallback: 5 minutes
       return () => clearInterval(interval);
     }
+  }, [token]);
+
+  // Real-time socket.io connection for instant notification push
+  useEffect(() => {
+    if (!token) return;
+
+    const apiBase = getApiUrl() || 'http://localhost:3000';
+    const socket: Socket = io(apiBase, {
+      path: '/api/socket.io',
+      auth: { token },
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5,
+      reconnectionDelay: 2000,
+    });
+
+    socket.on('connect', () => {
+      console.debug('[Socket] Connected for real-time notifications');
+    });
+
+    socket.on('notification', (notif: any) => {
+      // Increment unread badge
+      setUnreadCount(prev => prev + 1);
+      // Prepend to the notifications list (if the dropdown is open)
+      setNotifications(prev => [notif, ...prev].slice(0, 50));
+    });
+
+    socket.on('disconnect', () => {
+      console.debug('[Socket] Disconnected from real-time notifications');
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, [token]);
 
   // Active timer: load + tick
@@ -881,7 +915,7 @@ export default function Navbar() {
               </h1>
               <div className="hidden md:flex space-x-4">
                 {/* Dashboard */}
-                {(permissionsLoading || permissions?.canViewDashboard) && (
+                {(isCustomerUser || (!isCustomerUser && (permissionsLoading || permissions?.canViewDashboard))) && (
                   <a 
                     href="/dashboard" 
                     className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
