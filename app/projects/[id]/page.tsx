@@ -9552,8 +9552,13 @@ interface Sprint {
 
 interface BacklogTask {
   Id: number;
+  ParentTaskId: number | null;
   TaskName: string;
   EstimatedHours: number | null;
+  TotalAllocatedHours: number | null;
+  PlannedStartDate: string | null;
+  PlannedEndDate: string | null;
+  DueDate: string | null;
   StatusName: string;
   StatusColor: string;
   PriorityName: string;
@@ -9576,6 +9581,9 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
   const [selectedBacklogTasks, setSelectedBacklogTasks] = useState<Set<number>>(new Set());
   const [assigningToSprint, setAssigningToSprint] = useState<number | null>(null);
   const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [sprintTaskFilter, setSprintTaskFilter] = useState({ search: '', status: '', priority: '', assignee: '' });
+  const [backlogFilter, setBacklogFilter] = useState({ search: '', status: '', priority: '', assignee: '' });
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<number>>(new Set());
 
   // Sprint form
   const [sprintForm, setSprintForm] = useState({ name: '', goal: '', startDate: '', endDate: '', status: 'planned' });
@@ -9732,6 +9740,70 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
 
   if (isLoading) return <div className="flex items-center justify-center h-64 text-gray-500">Loading sprints…</div>;
 
+  // ─── Filter helpers ────────────────────────────────────────────────────────
+  const fmtDate = (d: string | null | undefined) => (d ? String(d).split('T')[0] : null);
+  const applyFilter = (tasks: BacklogTask[], f: typeof sprintTaskFilter) =>
+    tasks.filter(t => {
+      if (f.search && !t.TaskName.toLowerCase().includes(f.search.toLowerCase())) return false;
+      if (f.status && t.StatusName !== f.status) return false;
+      if (f.priority && t.PriorityName !== f.priority) return false;
+      if (f.assignee) {
+        const name = t.FirstName ? `${t.FirstName} ${t.LastName}`.trim() : t.AssigneeName || '';
+        if (name !== f.assignee) return false;
+      }
+      return true;
+    });
+  const allSprintTasksList = Object.values(sprintTasks).flat();
+  const sprintTaskStatuses = [...new Set(allSprintTasksList.map(t => t.StatusName).filter(Boolean))];
+  const sprintTaskPriorities = [...new Set(allSprintTasksList.map(t => t.PriorityName).filter(Boolean))];
+  const sprintTaskAssignees = [...new Set(allSprintTasksList.map(t => t.FirstName ? `${t.FirstName} ${t.LastName}`.trim() : t.AssigneeName || '').filter(Boolean))];
+  const backlogStatuses = [...new Set(backlog.map(t => t.StatusName).filter(Boolean))];
+  const backlogPriorities = [...new Set(backlog.map(t => t.PriorityName).filter(Boolean))];
+  const backlogAssignees = [...new Set(backlog.map(t => t.FirstName ? `${t.FirstName} ${t.LastName}`.trim() : t.AssigneeName || '').filter(Boolean))];
+  const filteredBacklog = applyFilter(backlog, backlogFilter);
+  const hasSprintTaskFilter = !!(sprintTaskFilter.search || sprintTaskFilter.status || sprintTaskFilter.priority || sprintTaskFilter.assignee);
+  const hasBacklogFilter = !!(backlogFilter.search || backlogFilter.status || backlogFilter.priority || backlogFilter.assignee);
+
+  // ─── Hierarchy helpers ────────────────────────────────────────────────────
+  const getDescendants = (taskId: number, tasks: BacklogTask[]): number[] => {
+    const children = tasks.filter(t => t.ParentTaskId === taskId);
+    return children.flatMap(c => [c.Id, ...getDescendants(c.Id, tasks)]);
+  };
+  const buildTaskRows = (tasks: BacklogTask[], filt: typeof sprintTaskFilter): { task: BacklogTask; depth: number; hasChildren: boolean }[] => {
+    const isFiltered = !!(filt.search || filt.status || filt.priority || filt.assignee);
+    if (isFiltered) return applyFilter(tasks, filt).map(t => ({ task: t, depth: 0, hasChildren: false }));
+    const taskIds = new Set(tasks.map(t => t.Id));
+    const childMap = new Map<number, BacklogTask[]>();
+    for (const t of tasks) {
+      if (t.ParentTaskId && taskIds.has(t.ParentTaskId)) {
+        if (!childMap.has(t.ParentTaskId)) childMap.set(t.ParentTaskId, []);
+        childMap.get(t.ParentTaskId)!.push(t);
+      }
+    }
+    const rows: { task: BacklogTask; depth: number; hasChildren: boolean }[] = [];
+    const visit = (t: BacklogTask, depth: number) => {
+      const children = childMap.get(t.Id) || [];
+      rows.push({ task: t, depth, hasChildren: children.length > 0 });
+      if (children.length > 0 && expandedTaskIds.has(t.Id)) children.forEach(c => visit(c, depth + 1));
+    };
+    tasks.filter(t => !t.ParentTaskId || !taskIds.has(t.ParentTaskId)).forEach(r => visit(r, 0));
+    return rows;
+  };
+  const toggleBacklogTask = (taskId: number) => {
+    const descendants = getDescendants(taskId, backlog);
+    setSelectedBacklogTasks(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+        descendants.forEach(id => next.delete(id));
+      } else {
+        next.add(taskId);
+        descendants.forEach(id => next.add(id));
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="space-y-6">
       {error && (
@@ -9753,6 +9825,37 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
           + New Sprint
         </button>
       </div>
+
+      {/* Sprint Task Filters */}
+      {sprints.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide shrink-0">Filter tasks:</span>
+            <input
+              type="text"
+              placeholder="Search tasks…"
+              value={sprintTaskFilter.search}
+              onChange={e => setSprintTaskFilter(f => ({ ...f, search: e.target.value }))}
+              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 w-48"
+            />
+            <select value={sprintTaskFilter.status} onChange={e => setSprintTaskFilter(f => ({ ...f, status: e.target.value }))} className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+              <option value="">All statuses</option>
+              {sprintTaskStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={sprintTaskFilter.priority} onChange={e => setSprintTaskFilter(f => ({ ...f, priority: e.target.value }))} className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+              <option value="">All priorities</option>
+              {sprintTaskPriorities.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <select value={sprintTaskFilter.assignee} onChange={e => setSprintTaskFilter(f => ({ ...f, assignee: e.target.value }))} className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+              <option value="">All assignees</option>
+              {sprintTaskAssignees.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            {hasSprintTaskFilter && (
+              <button onClick={() => setSprintTaskFilter({ search: '', status: '', priority: '', assignee: '' })} className="text-xs px-2 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors">✕ Clear</button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Sprint Cards */}
       <div className="space-y-4">
@@ -9831,37 +9934,70 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
                           <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Status</th>
                           <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden lg:table-cell">Priority</th>
                           <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Assignee</th>
-                          <th className="text-right px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden sm:table-cell">Hours</th>
+                          <th className="text-right px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden sm:table-cell">Est.</th>
+                          <th className="text-right px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden xl:table-cell">Alloc.</th>
+                          <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden xl:table-cell">Planned</th>
+                          <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden lg:table-cell">Due</th>
                           <th className="px-2 py-2"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {tasks.map(task => (
-                          <tr key={task.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                            <td className="px-4 py-2 text-gray-900 dark:text-white">{task.TaskName}</td>
-                            <td className="px-4 py-2 hidden md:table-cell">
-                              <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${task.StatusColor}22`, color: task.StatusColor }}>{task.StatusName}</span>
-                            </td>
-                            <td className="px-4 py-2 hidden lg:table-cell">
-                              <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${task.PriorityColor}22`, color: task.PriorityColor }}>{task.PriorityName}</span>
-                            </td>
-                            <td className="px-4 py-2 text-gray-500 dark:text-gray-400 hidden md:table-cell">
-                              {task.FirstName ? `${task.FirstName} ${task.LastName}` : task.AssigneeName || '—'}
-                            </td>
-                            <td className="px-4 py-2 text-right text-gray-500 dark:text-gray-400 hidden sm:table-cell">
-                              {task.EstimatedHours != null ? `${task.EstimatedHours}h` : '—'}
-                            </td>
-                            <td className="px-2 py-2">
-                              <button
-                                onClick={() => removeTaskFromSprint(sprint.Id, task.Id)}
-                                title="Remove from sprint"
-                                className="text-gray-400 hover:text-red-500 transition-colors"
-                              >
-                                ✕
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {(() => {
+                          const rows = buildTaskRows(tasks, sprintTaskFilter);
+                          if (rows.length === 0) return (
+                            <tr><td colSpan={9} className="px-4 py-4 text-center text-sm text-gray-400 italic">No tasks match the current filters.</td></tr>
+                          );
+                          return rows.map(({ task, depth, hasChildren }) => (
+                            <tr key={task.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                              <td className="px-4 py-2 text-gray-900 dark:text-white">
+                                <div className="flex items-center" style={{ paddingLeft: `${depth * 20}px` }}>
+                                  {hasChildren ? (
+                                    <button
+                                      type="button"
+                                      onClick={e => { e.stopPropagation(); setExpandedTaskIds(prev => { const s = new Set(prev); s.has(task.Id) ? s.delete(task.Id) : s.add(task.Id); return s; }); }}
+                                      className="mr-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-xs w-4 shrink-0"
+                                    >
+                                      {expandedTaskIds.has(task.Id) ? '▾' : '▸'}
+                                    </button>
+                                  ) : <span className="inline-block w-4 mr-1 shrink-0" />}
+                                  {task.TaskName}
+                                </div>
+                              </td>
+                              <td className="px-4 py-2 hidden md:table-cell">
+                                <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${task.StatusColor}22`, color: task.StatusColor }}>{task.StatusName}</span>
+                              </td>
+                              <td className="px-4 py-2 hidden lg:table-cell">
+                                <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${task.PriorityColor}22`, color: task.PriorityColor }}>{task.PriorityName}</span>
+                              </td>
+                              <td className="px-4 py-2 text-gray-500 dark:text-gray-400 hidden md:table-cell">
+                                {task.FirstName ? `${task.FirstName} ${task.LastName}` : task.AssigneeName || '—'}
+                              </td>
+                              <td className="px-4 py-2 text-right text-gray-500 dark:text-gray-400 hidden sm:table-cell">
+                                {task.EstimatedHours != null ? `${Number(task.EstimatedHours).toFixed(1)}h` : '—'}
+                              </td>
+                              <td className="px-4 py-2 text-right text-gray-500 dark:text-gray-400 hidden xl:table-cell">
+                                {task.TotalAllocatedHours ? `${Number(task.TotalAllocatedHours).toFixed(1)}h` : '—'}
+                              </td>
+                              <td className="px-4 py-2 text-gray-500 dark:text-gray-400 hidden xl:table-cell whitespace-nowrap">
+                                {task.PlannedStartDate || task.PlannedEndDate
+                                  ? `${fmtDate(task.PlannedStartDate) || '?'} → ${fmtDate(task.PlannedEndDate) || '?'}`
+                                  : '—'}
+                              </td>
+                              <td className="px-4 py-2 text-gray-500 dark:text-gray-400 hidden lg:table-cell whitespace-nowrap">
+                                {fmtDate(task.DueDate) || '—'}
+                              </td>
+                              <td className="px-2 py-2">
+                                <button
+                                  onClick={() => removeTaskFromSprint(sprint.Id, task.Id)}
+                                  title="Remove from sprint"
+                                  className="text-gray-400 hover:text-red-500 transition-colors"
+                                >
+                                  ✕
+                                </button>
+                              </td>
+                            </tr>
+                          ));
+                        })()}
                       </tbody>
                     </table>
                   )}
@@ -9874,17 +10010,46 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
 
       {/* Backlog */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700">
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-gray-900 dark:text-white">Backlog</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Tasks not assigned to any sprint</p>
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-900 dark:text-white">Backlog</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Tasks not assigned to any sprint</p>
+            </div>
+            {selectedBacklogTasks.size > 0 && (
+              <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">{selectedBacklogTasks.size} selected — click a sprint to assign</span>
+            )}
           </div>
-          {selectedBacklogTasks.size > 0 && (
-            <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">{selectedBacklogTasks.size} selected — click a sprint to assign</span>
-          )}
+          {/* Backlog filters */}
+          <div className="flex flex-wrap gap-2 items-center">
+            <input
+              type="text"
+              placeholder="Search backlog…"
+              value={backlogFilter.search}
+              onChange={e => setBacklogFilter(f => ({ ...f, search: e.target.value }))}
+              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 w-44"
+            />
+            <select value={backlogFilter.status} onChange={e => setBacklogFilter(f => ({ ...f, status: e.target.value }))} className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+              <option value="">All statuses</option>
+              {backlogStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={backlogFilter.priority} onChange={e => setBacklogFilter(f => ({ ...f, priority: e.target.value }))} className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+              <option value="">All priorities</option>
+              {backlogPriorities.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <select value={backlogFilter.assignee} onChange={e => setBacklogFilter(f => ({ ...f, assignee: e.target.value }))} className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+              <option value="">All assignees</option>
+              {backlogAssignees.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            {hasBacklogFilter && (
+              <button onClick={() => setBacklogFilter({ search: '', status: '', priority: '', assignee: '' })} className="text-xs px-2 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors">✕ Clear</button>
+            )}
+          </div>
         </div>
         {backlog.length === 0 ? (
           <p className="text-sm text-gray-400 px-4 py-8 text-center italic">All tasks are assigned to sprints.</p>
+        ) : buildTaskRows(backlog, backlogFilter).length === 0 ? (
+          <p className="text-sm text-gray-400 px-4 py-8 text-center italic">No backlog tasks match the current filters.</p>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-700/50">
@@ -9892,7 +10057,7 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
                 <th className="px-4 py-2 w-8">
                   <input
                     type="checkbox"
-                    checked={selectedBacklogTasks.size === backlog.length && backlog.length > 0}
+                    checked={buildTaskRows(backlog, backlogFilter).length > 0 && buildTaskRows(backlog, backlogFilter).every(({ task: t }) => selectedBacklogTasks.has(t.Id))}
                     onChange={e => setSelectedBacklogTasks(e.target.checked ? new Set(backlog.map(t => t.Id)) : new Set())}
                     className="rounded"
                   />
@@ -9901,24 +10066,36 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
                 <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Status</th>
                 <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden lg:table-cell">Priority</th>
                 <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Assignee</th>
-                <th className="text-right px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden sm:table-cell">Hours</th>
+                <th className="text-right px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden sm:table-cell">Est.</th>
+                <th className="text-right px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden xl:table-cell">Alloc.</th>
+                <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden xl:table-cell">Planned</th>
+                <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden lg:table-cell">Due</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {backlog.map(task => (
+              {buildTaskRows(backlog, backlogFilter).map(({ task, depth, hasChildren }) => (
                 <tr
                   key={task.Id}
                   className={`cursor-pointer transition-colors ${selectedBacklogTasks.has(task.Id) ? 'bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'}`}
-                  onClick={() => setSelectedBacklogTasks(prev => {
-                    const next = new Set(prev);
-                    if (next.has(task.Id)) next.delete(task.Id); else next.add(task.Id);
-                    return next;
-                  })}
+                  onClick={() => toggleBacklogTask(task.Id)}
                 >
                   <td className="px-4 py-2">
                     <input type="checkbox" checked={selectedBacklogTasks.has(task.Id)} onChange={() => {}} className="rounded" />
                   </td>
-                  <td className="px-4 py-2 text-gray-900 dark:text-white">{task.TaskName}</td>
+                  <td className="px-4 py-2 text-gray-900 dark:text-white">
+                    <div className="flex items-center" style={{ paddingLeft: `${depth * 20}px` }}>
+                      {hasChildren ? (
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); setExpandedTaskIds(prev => { const s = new Set(prev); s.has(task.Id) ? s.delete(task.Id) : s.add(task.Id); return s; }); }}
+                          className="mr-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-xs w-4 shrink-0"
+                        >
+                          {expandedTaskIds.has(task.Id) ? '▾' : '▸'}
+                        </button>
+                      ) : <span className="inline-block w-4 mr-1 shrink-0" />}
+                      {task.TaskName}
+                    </div>
+                  </td>
                   <td className="px-4 py-2 hidden md:table-cell">
                     <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${task.StatusColor}22`, color: task.StatusColor }}>{task.StatusName}</span>
                   </td>
@@ -9929,7 +10106,18 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
                     {task.FirstName ? `${task.FirstName} ${task.LastName}` : task.AssigneeName || '—'}
                   </td>
                   <td className="px-4 py-2 text-right text-gray-500 dark:text-gray-400 hidden sm:table-cell">
-                    {task.EstimatedHours != null ? `${task.EstimatedHours}h` : '—'}
+                    {task.EstimatedHours != null ? `${Number(task.EstimatedHours).toFixed(1)}h` : '—'}
+                  </td>
+                  <td className="px-4 py-2 text-right text-gray-500 dark:text-gray-400 hidden xl:table-cell">
+                    {task.TotalAllocatedHours ? `${Number(task.TotalAllocatedHours).toFixed(1)}h` : '—'}
+                  </td>
+                  <td className="px-4 py-2 text-gray-500 dark:text-gray-400 hidden xl:table-cell whitespace-nowrap">
+                    {task.PlannedStartDate || task.PlannedEndDate
+                      ? `${fmtDate(task.PlannedStartDate) || '?'} → ${fmtDate(task.PlannedEndDate) || '?'}`
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-2 text-gray-500 dark:text-gray-400 hidden lg:table-cell whitespace-nowrap">
+                    {fmtDate(task.DueDate) || '—'}
                   </td>
                 </tr>
               ))}

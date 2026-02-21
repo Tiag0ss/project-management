@@ -88,7 +88,9 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const [tasks] = await pool.execute<RowDataPacket[]>(
       `SELECT t.*, tsv.StatusName, tsv.ColorCode as StatusColor, tsv.IsClosed,
               tpv.PriorityName, tpv.ColorCode as PriorityColor,
-              u.Username as AssigneeName, u.FirstName, u.LastName
+              u.Username as AssigneeName, u.FirstName, u.LastName,
+              COALESCE((SELECT SUM(ta.AllocatedHours) FROM TaskAllocations ta WHERE ta.TaskId = t.Id), 0) +
+              COALESCE((SELECT SUM(tca.AllocatedHours) FROM TaskChildAllocations tca WHERE tca.ChildTaskId = t.Id), 0) as TotalAllocatedHours
        FROM Tasks t
        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
@@ -369,7 +371,9 @@ router.get('/project/:projectId/backlog', authenticateToken, async (req: AuthReq
     const [tasks] = await pool.execute<RowDataPacket[]>(
       `SELECT t.*, tsv.StatusName, tsv.ColorCode as StatusColor,
               tpv.PriorityName, tpv.ColorCode as PriorityColor,
-              u.Username as AssigneeName, u.FirstName, u.LastName
+              u.Username as AssigneeName, u.FirstName, u.LastName,
+              COALESCE((SELECT SUM(ta.AllocatedHours) FROM TaskAllocations ta WHERE ta.TaskId = t.Id), 0) +
+              COALESCE((SELECT SUM(tca.AllocatedHours) FROM TaskChildAllocations tca WHERE tca.ChildTaskId = t.Id), 0) as TotalAllocatedHours
        FROM Tasks t
        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
