@@ -1004,7 +1004,7 @@ export default function Navbar() {
                             Customers
                           </a>
                         )}
-                        {permissions?.canManageOrganizations && (
+                        {!!permissions?.canManageOrganizations && (
                           <a
                             href="/organizations"
                             className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -1013,7 +1013,7 @@ export default function Navbar() {
                             Organizations
                           </a>
                         )}
-                        {(user?.isAdmin || user?.isManager) && (
+                        {(!!user?.isAdmin || !!user?.isManager) && (
                           <a
                             href="/approvals"
                             className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"

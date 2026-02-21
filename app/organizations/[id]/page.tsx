@@ -1184,6 +1184,21 @@ function PermissionsTab({
     );
   };
 
+  const handleSync = async (group: PermissionGroup) => {
+    showConfirm(
+      'Sync from Global Defaults',
+      `Reset "${group.GroupName}" permissions to match the current global "${group.LinkedRole}" role defaults? Any org-specific customizations will be overwritten.`,
+      async () => {
+        try {
+          await permissionGroupsApi.syncFromGlobal(group.Id, token);
+          await loadGroups();
+        } catch (err: any) {
+          setError(err.message || 'Failed to sync permission group');
+        }
+      }
+    );
+  };
+
   if (isLoading) return <div>Loading permission groups...</div>;
 
   return (
@@ -1212,6 +1227,11 @@ function PermissionsTab({
             <div className="flex justify-between items-start mb-3">
               <div>
                 <h4 className="text-lg font-semibold text-gray-900 dark:text-white">{group.GroupName}</h4>
+                {group.IsSystemGroup && group.LinkedRole && (
+                  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 font-medium mt-1">
+                    🔗 Global role: {group.LinkedRole}
+                  </span>
+                )}
                 {group.Description && (() => {
                   const plainText = group.Description.replace(/<[^>]*>/g, '').trim();
                   return plainText ? (
@@ -1335,12 +1355,22 @@ function PermissionsTab({
                 >
                   Edit
                 </button>
-                <button
-                  onClick={() => handleDelete(group.Id)}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm"
-                >
-                  Delete
-                </button>
+                {group.IsSystemGroup ? (
+                  <button
+                    onClick={() => handleSync(group)}
+                    className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-sm"
+                    title={`Reset to global ${group.LinkedRole} defaults`}
+                  >
+                    🔄 Sync
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleDelete(group.Id)}
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm"
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1431,9 +1461,16 @@ function PermissionGroupModal({ orgId, group, onClose, onSaved, token }: {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {group ? 'Edit' : 'Create'} Permission Group
-            </h2>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                {group ? 'Edit' : 'Create'} Permission Group
+              </h2>
+              {group?.IsSystemGroup && group?.LinkedRole && (
+                <p className="text-sm text-purple-600 dark:text-purple-400 mt-1">
+                  🔗 Linked to global <strong>{group.LinkedRole}</strong> role — editing overrides org defaults
+                </p>
+              )}
+            </div>
             <button
               onClick={onClose}
               className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
@@ -1458,7 +1495,8 @@ function PermissionGroupModal({ orgId, group, onClose, onSaved, token }: {
                 value={formData.groupName}
                 onChange={(e) => setFormData({ ...formData, groupName: e.target.value })}
                 required
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                readOnly={!!group?.IsSystemGroup}
+                className={`w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${group?.IsSystemGroup ? 'opacity-60 cursor-not-allowed' : ''}`}
               />
             </div>
 

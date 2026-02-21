@@ -24,6 +24,8 @@ export interface PermissionGroup {
   CanCreateTaskFromTicket: number;
   CanManageMembers: number;
   CanManageSettings: number;
+  LinkedRole?: string | null;
+  IsSystemGroup?: number;
   MemberCount?: number;
   CreatedAt: string;
 }
@@ -121,6 +123,24 @@ export const permissionGroupsApi = {
     
     if (!response.ok) {
       throw new Error(data.message || 'Failed to delete permission group');
+    }
+
+    return data;
+  },
+
+  async syncFromGlobal(id: number, token: string): Promise<{ success: boolean; message: string }> {
+    const response = await fetch(`${API_BASE_URL}/api/permission-groups/${id}/sync-from-global`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to sync permission group');
     }
 
     return data;

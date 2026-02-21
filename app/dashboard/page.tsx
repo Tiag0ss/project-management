@@ -5,6 +5,7 @@ import { getApiUrl } from '@/lib/api/config';
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/contexts/PermissionsContext';
 import { usersApi, User } from '@/lib/api/users';
 import { tasksApi, Task } from '@/lib/api/tasks';
 import Navbar from '@/components/Navbar';
@@ -92,6 +93,7 @@ export default function DashboardPage() {
 
 function DashboardContent() {
   const { user, isLoading, token, isCustomerUser } = useAuth();
+  const { permissions, isLoading: isLoadingPermissions } = usePermissions();
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
@@ -751,6 +753,21 @@ function DashboardContent() {
 
   if (!user) {
     return null;
+  }
+
+  if (!isLoadingPermissions && !permissions?.canViewDashboard) {
+    return (
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+        <Navbar />
+        <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
+            <div className="text-5xl mb-4">🔒</div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Access Denied</h2>
+            <p className="text-gray-600 dark:text-gray-400">You don&apos;t have permission to view the dashboard.</p>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (

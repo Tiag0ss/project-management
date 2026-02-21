@@ -5,6 +5,7 @@ import { getApiUrl } from '@/lib/api/config';
 import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
@@ -56,6 +57,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const customerId = parseInt(resolvedParams.id);
   
   const { user, token, isLoading: authLoading } = useAuth();
+  const { permissions } = usePermissions();
   const router = useRouter();
   
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -703,6 +705,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white">Customer Users</h3>
+              {permissions?.canManageCustomers && (
               <button
                 onClick={() => setShowAddUserModal(true)}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors font-medium flex items-center gap-2"
@@ -710,6 +713,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 <span>+</span>
                 Add User
               </button>
+              )}
             </div>
             
             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -749,12 +753,14 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right">
+                          {permissions?.canManageCustomers && (
                           <button
                             onClick={() => handleRemoveUser(cu.UserId)}
                             className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium"
                           >
                             Remove
                           </button>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -904,6 +910,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 />
               </div>
 
+              {permissions?.canManageCustomers && (
               <div className="flex justify-end">
                 <button
                   type="submit"
@@ -913,6 +920,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                   {isSaving ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
+              )}
             </form>
           </div>
         )}

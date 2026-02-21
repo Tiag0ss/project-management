@@ -179,20 +179,31 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       [orgId, userId, 'Owner']
     );
 
-    // Create default permission groups
-    const defaultGroups = [
-      { name: 'Admin', canManageProjects: 1, canManageTasks: 1, canPlanTasks: 1, canManageMembers: 1, canManageSettings: 1 },
-      { name: 'Manager', canManageProjects: 1, canManageTasks: 1, canPlanTasks: 1, canManageMembers: 0, canManageSettings: 0 },
-      { name: 'Planner', canManageProjects: 0, canManageTasks: 0, canPlanTasks: 1, canManageMembers: 0, canManageSettings: 0 },
-      { name: 'Member', canManageProjects: 0, canManageTasks: 0, canPlanTasks: 0, canManageMembers: 0, canManageSettings: 0 }
-    ];
+    // Create default permission groups based on global role permissions
+    const [rolePerms] = await pool.execute<RowDataPacket[]>(
+      `SELECT * FROM RolePermissions WHERE RoleName IN ('Developer', 'Support', 'Manager') ORDER BY FIELD(RoleName, 'Developer', 'Support', 'Manager')`
+    );
 
-    for (const group of defaultGroups) {
+    for (const rp of rolePerms) {
       await pool.execute(
         `INSERT INTO PermissionGroups 
-         (OrganizationId, GroupName, CanManageProjects, CanManageTasks, CanPlanTasks, CanManageMembers, CanManageSettings) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [orgId, group.name, group.canManageProjects, group.canManageTasks, group.canPlanTasks, group.canManageMembers, group.canManageSettings]
+         (OrganizationId, GroupName, LinkedRole, IsSystemGroup,
+          CanManageProjects, CanCreateProjects, CanDeleteProjects,
+          CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks, CanPlanTasks,
+          CanManageTimeEntries, CanViewReports,
+          CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets, CanCreateTaskFromTicket,
+          CanManageMembers, CanManageSettings)
+         VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
+        [
+          orgId, rp.RoleName, rp.RoleName,
+          rp.CanManageProjects ? 1 : 0, rp.CanCreateProjects ? 1 : 0, rp.CanDeleteProjects ? 1 : 0,
+          rp.CanManageTasks ? 1 : 0, rp.CanCreateTasks ? 1 : 0, rp.CanDeleteTasks ? 1 : 0,
+          rp.CanAssignTasks ? 1 : 0, rp.CanPlanTasks ? 1 : 0,
+          rp.CanManageTimeEntries ? 1 : 0, rp.CanViewReports ? 1 : 0,
+          rp.CanManageTickets ? 1 : 0, rp.CanCreateTickets ? 1 : 0,
+          rp.CanDeleteTickets ? 1 : 0, rp.CanAssignTickets ? 1 : 0,
+          rp.CanCreateTaskFromTicket ? 1 : 0,
+        ]
       );
     }
 
@@ -946,6 +957,111 @@ router.delete('/:id/members/:memberId', authenticateToken, async (req: AuthReque
     res.status(500).json({ 
       success: false, 
       message: 'Failed to remove member' 
+    });
+  }
+});
+
+/**
+ * POST /api/organizations/admin/create-system-groups
+ * Admin-only: Retroactively create missing system permission groups for all existing organizations.
+ * System groups (Developer, Support, Manager) are created from current global RolePermissions values.
+ * Orgs that already have system groups for a given role are skipped for that role.
+ */
+router.post('/admin/create-system-groups', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    // Admin only
+    const [userRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT isAdmin FROM Users WHERE Id = ?',
+      [userId]
+    );
+
+    if (!userRows.length || !userRows[0].isAdmin) {
+      return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+
+    // Fetch all global role permissions
+    const [rolePerms] = await pool.execute<RowDataPacket[]>(
+      `SELECT * FROM RolePermissions WHERE RoleName IN ('Developer', 'Support', 'Manager')`
+    );
+
+    if (!rolePerms.length) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Global role permissions not found. Please configure them in Administration first.' 
+      });
+    }
+
+    const roleMap: Record<string, any> = {};
+    rolePerms.forEach((rp: any) => { roleMap[rp.RoleName] = rp; });
+
+    // Fetch all organizations
+    const [orgs] = await pool.execute<RowDataPacket[]>('SELECT Id, Name FROM Organizations');
+
+    // Fetch all existing system groups to avoid duplicates
+    const [existingGroups] = await pool.execute<RowDataPacket[]>(
+      `SELECT OrganizationId, LinkedRole FROM PermissionGroups WHERE IsSystemGroup = 1`
+    );
+
+    const existingSet = new Set(
+      existingGroups.map((g: any) => `${g.OrganizationId}:${g.LinkedRole}`)
+    );
+
+    const roles = ['Developer', 'Support', 'Manager'];
+    let created = 0;
+    let skipped = 0;
+
+    for (const org of orgs) {
+      for (const roleName of roles) {
+        const key = `${org.Id}:${roleName}`;
+        if (existingSet.has(key)) {
+          skipped++;
+          continue;
+        }
+
+        const rp = roleMap[roleName];
+        if (!rp) {
+          skipped++;
+          continue;
+        }
+
+        await pool.execute(
+          `INSERT INTO PermissionGroups (
+            OrganizationId, GroupName, Description, LinkedRole, IsSystemGroup,
+            CanManageProjects, CanCreateProjects, CanDeleteProjects,
+            CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks,
+            CanPlanTasks, CanManageTimeEntries, CanViewReports,
+            CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets,
+            CanCreateTaskFromTicket, CanManageMembers, CanManageSettings
+          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
+          [
+            org.Id,
+            roleName,
+            `Default permissions for ${roleName} role (synced from global settings)`,
+            roleName,
+            rp.CanManageProjects ? 1 : 0, rp.CanCreateProjects ? 1 : 0, rp.CanDeleteProjects ? 1 : 0,
+            rp.CanManageTasks ? 1 : 0, rp.CanCreateTasks ? 1 : 0, rp.CanDeleteTasks ? 1 : 0, rp.CanAssignTasks ? 1 : 0,
+            rp.CanPlanTasks ? 1 : 0, rp.CanManageTimeEntries ? 1 : 0, rp.CanViewReports ? 1 : 0,
+            rp.CanManageTickets ? 1 : 0, rp.CanCreateTickets ? 1 : 0, rp.CanDeleteTickets ? 1 : 0, rp.CanAssignTickets ? 1 : 0,
+            rp.CanCreateTaskFromTicket ? 1 : 0
+          ]
+        );
+        created++;
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Migration complete: ${created} system groups created, ${skipped} already existed.`,
+      created,
+      skipped
+    });
+  } catch (error) {
+    console.error('Create system groups migration error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to create system groups' 
     });
   }
 });

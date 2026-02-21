@@ -363,6 +363,80 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 });
 
 /**
+ * POST /api/permission-groups/:id/sync-from-global
+ * Reset a system permission group to the current global role defaults.
+ */
+router.post('/:id/sync-from-global', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const groupId = req.params.id;
+
+    const [groups] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId, LinkedRole, IsSystemGroup FROM PermissionGroups WHERE Id = ?',
+      [groupId]
+    );
+
+    if (groups.length === 0) {
+      return res.status(404).json({ success: false, message: 'Permission group not found' });
+    }
+
+    if (!groups[0].IsSystemGroup || !groups[0].LinkedRole) {
+      return res.status(400).json({ success: false, message: 'Only system groups linked to a global role can be synced' });
+    }
+
+    const orgId = groups[0].OrganizationId;
+
+    // Check permissions
+    const [requester] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+
+    if (requester.length === 0 || (requester[0].Role !== 'Owner' && !requester[0].CanManageSettings)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    // Get the global role permissions
+    const [rolePerms] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM RolePermissions WHERE RoleName = ?',
+      [groups[0].LinkedRole]
+    );
+
+    if (rolePerms.length === 0) {
+      return res.status(404).json({ success: false, message: 'Global role not found' });
+    }
+
+    const rp = rolePerms[0];
+
+    await pool.execute(
+      `UPDATE PermissionGroups
+       SET CanManageProjects = ?, CanCreateProjects = ?, CanDeleteProjects = ?,
+           CanManageTasks = ?, CanCreateTasks = ?, CanDeleteTasks = ?, CanAssignTasks = ?,
+           CanPlanTasks = ?, CanManageTimeEntries = ?, CanViewReports = ?,
+           CanManageTickets = ?, CanCreateTickets = ?, CanDeleteTickets = ?, CanAssignTickets = ?,
+           CanCreateTaskFromTicket = ?
+       WHERE Id = ?`,
+      [
+        rp.CanManageProjects ? 1 : 0, rp.CanCreateProjects ? 1 : 0, rp.CanDeleteProjects ? 1 : 0,
+        rp.CanManageTasks ? 1 : 0, rp.CanCreateTasks ? 1 : 0, rp.CanDeleteTasks ? 1 : 0, rp.CanAssignTasks ? 1 : 0,
+        rp.CanPlanTasks ? 1 : 0, rp.CanManageTimeEntries ? 1 : 0, rp.CanViewReports ? 1 : 0,
+        rp.CanManageTickets ? 1 : 0, rp.CanCreateTickets ? 1 : 0, rp.CanDeleteTickets ? 1 : 0, rp.CanAssignTickets ? 1 : 0,
+        rp.CanCreateTaskFromTicket ? 1 : 0,
+        groupId
+      ]
+    );
+
+    res.json({ success: true, message: `Permission group synced from global ${groups[0].LinkedRole} role defaults` });
+  } catch (error) {
+    console.error('Sync permission group error:', error);
+    res.status(500).json({ success: false, message: 'Failed to sync permission group' });
+  }
+});
+
+/**
  * @swagger
  * /api/permission-groups/{id}:
  *   delete:
@@ -395,7 +469,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     // Get organization ID from group
     const [groups] = await pool.execute<RowDataPacket[]>(
-      'SELECT OrganizationId FROM PermissionGroups WHERE Id = ?',
+      'SELECT OrganizationId, IsSystemGroup FROM PermissionGroups WHERE Id = ?',
       [groupId]
     );
 
@@ -407,6 +481,14 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     }
 
     const orgId = groups[0].OrganizationId;
+
+    // Prevent deletion of system groups (linked to global roles)
+    if (groups[0].IsSystemGroup) {
+      return res.status(400).json({
+        success: false,
+        message: 'System permission groups (linked to global roles) cannot be deleted. You can edit their permissions to override defaults for this organization.'
+      });
+    }
 
     // Check if user has permission
     const [requester] = await pool.execute<RowDataPacket[]>(

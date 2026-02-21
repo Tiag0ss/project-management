@@ -109,6 +109,12 @@ export default function TicketDetailPage() {
     projectId: '',
   });
   const [saving, setSaving] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Comment state
   const [newComment, setNewComment] = useState('');
@@ -705,6 +711,31 @@ export default function TicketDetailPage() {
     }
   };
 
+  const handleDeleteTicket = () => {
+    setConfirmModal({
+      show: true,
+      title: 'Delete Ticket',
+      message: 'Are you sure you want to delete this ticket? This action cannot be undone.',
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          const res = await fetch(`${getApiUrl()}/api/tickets/${ticketId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          if (res.ok) {
+            router.push('/tickets');
+          } else {
+            const data = await res.json();
+            setError(data.message || 'Failed to delete ticket');
+          }
+        } catch (err) {
+          setError('Failed to delete ticket');
+        }
+      },
+    });
+  };
+
   const quickStatusChange = async (newStatus: string) => {
     try {
       const res = await fetch(
@@ -917,6 +948,14 @@ export default function TicketDetailPage() {
                       className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
                     >
                       Edit
+                    </button>
+                  )}
+                  {permissions?.canDeleteTickets && (
+                    <button
+                      onClick={handleDeleteTicket}
+                      className="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50"
+                    >
+                      Delete
                     </button>
                   )}
                 </>
@@ -1314,8 +1353,8 @@ export default function TicketDetailPage() {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Quick Actions (for non-customer users) */}
-            {!isCustomerUser && (
+            {/* Quick Actions (for non-customer users with manage ticket permission) */}
+            {!isCustomerUser && permissions?.canManageTickets && (
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">
                   Quick Actions
@@ -1828,6 +1867,30 @@ export default function TicketDetailPage() {
                   {creatingTask ? 'Creating...' : 'Create Task'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Modal */}
+      {confirmModal?.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-sm w-full mx-4 p-6">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">{confirmModal.title}</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">{confirmModal.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmModal.onConfirm}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>

@@ -28,6 +28,19 @@
       "Comment": "Description of permission group's purpose and access level"
     },
     {
+      "FieldName": "LinkedRole",
+      "DataType": "varchar(50)",
+      "NotNullable": false,
+      "Comment": "Links this group to a global role (Developer, Support, Manager). Null for custom groups."
+    },
+    {
+      "FieldName": "IsSystemGroup",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "1 if this is an auto-created system group mirroring a global role; cannot be deleted"
+    },
+    {
       "FieldName": "CanManageProjects",
       "DataType": "tinyint(1)",
       "NotNullable": true,

@@ -1149,14 +1149,27 @@ router.get('/stats/summary', authenticateToken, async (req: AuthRequest, res: Re
  *       500:
  *         description: Internal server error
  */
-// Delete ticket (admin only)
+// Delete ticket (admin or users with CanDeleteTickets permission)
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const isAdmin = req.user?.isAdmin;
+    const requestingUserId = req.user?.userId;
 
     if (!isAdmin) {
-      return res.status(403).json({ success: false, message: 'Only admins can delete tickets' });
+      const [permRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT COUNT(*) as cnt FROM Users u
+         INNER JOIN RolePermissions rp ON (
+           (u.IsDeveloper = 1 AND rp.RoleName = 'Developer') OR
+           (u.IsSupport = 1 AND rp.RoleName = 'Support') OR
+           (u.IsManager = 1 AND rp.RoleName = 'Manager')
+         )
+         WHERE u.Id = ? AND rp.CanDeleteTickets = 1`,
+        [requestingUserId]
+      );
+      if ((permRows as any)[0].cnt === 0) {
+        return res.status(403).json({ success: false, message: 'You do not have permission to delete tickets' });
+      }
     }
 
     // Get ticket info before deletion

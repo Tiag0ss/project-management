@@ -66,6 +66,12 @@ export default function CallRecordsPage() {
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [confirmModal, setConfirmModal] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -216,25 +222,31 @@ export default function CallRecordsPage() {
     setError('');
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this call record?')) return;
+  const handleDelete = (id: number) => {
+    setConfirmModal({
+      show: true,
+      title: 'Delete Call Record',
+      message: 'Are you sure you want to delete this call record? This action cannot be undone.',
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          const response = await fetch(`${getApiUrl()}/api/call-records/${id}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          });
 
-    try {
-      const response = await fetch(`${getApiUrl()}/api/call-records/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (response.ok) {
-        setMessage('Call record deleted');
-        setTimeout(() => setMessage(''), 3000);
-        loadCallRecords();
-      }
-    } catch (err) {
-      setError('Error deleting call record');
-    }
+          if (response.ok) {
+            setMessage('Call record deleted');
+            setTimeout(() => setMessage(''), 3000);
+            loadCallRecords();
+          }
+        } catch (err) {
+          setError('Error deleting call record');
+        }
+      },
+    });
   };
 
   const resetForm = () => {
@@ -615,6 +627,30 @@ export default function CallRecordsPage() {
           )}
         </div>
       </main>
+
+      {/* Confirm Modal */}
+      {confirmModal?.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-sm w-full mx-4 p-6">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">{confirmModal.title}</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">{confirmModal.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmModal.onConfirm}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

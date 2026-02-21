@@ -548,6 +548,33 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
       if (perm.CanCreateTaskFromTicket) combined.canCreateTaskFromTicket = true;
     });
 
+    // Also merge in org-level permission groups assigned to this user
+    // (via OrganizationMembers.PermissionGroupId — these can extend or override global defaults per org)
+    const [orgGroupPerms] = await pool.execute<RowDataPacket[]>(
+      `SELECT pg.* FROM PermissionGroups pg
+       INNER JOIN OrganizationMembers om ON om.PermissionGroupId = pg.Id
+       WHERE om.UserId = ?`,
+      [userId]
+    );
+
+    orgGroupPerms.forEach((perm: any) => {
+      if (perm.CanManageProjects) combined.canManageProjects = true;
+      if (perm.CanCreateProjects) combined.canCreateProjects = true;
+      if (perm.CanDeleteProjects) combined.canDeleteProjects = true;
+      if (perm.CanManageTasks) combined.canManageTasks = true;
+      if (perm.CanCreateTasks) combined.canCreateTasks = true;
+      if (perm.CanDeleteTasks) combined.canDeleteTasks = true;
+      if (perm.CanAssignTasks) combined.canAssignTasks = true;
+      if (perm.CanPlanTasks) combined.canPlanTasks = true;
+      if (perm.CanManageTimeEntries) combined.canManageTimeEntries = true;
+      if (perm.CanViewReports) combined.canViewReports = true;
+      if (perm.CanManageTickets) combined.canManageTickets = true;
+      if (perm.CanCreateTickets) combined.canCreateTickets = true;
+      if (perm.CanDeleteTickets) combined.canDeleteTickets = true;
+      if (perm.CanAssignTickets) combined.canAssignTickets = true;
+      if (perm.CanCreateTaskFromTicket) combined.canCreateTaskFromTicket = true;
+    });
+
     res.json({ success: true, data: combined });
   } catch (error) {
     console.error('Error fetching user permissions:', error);

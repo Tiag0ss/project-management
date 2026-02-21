@@ -4,6 +4,7 @@ import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/contexts/PermissionsContext';
 import { usersApi, User } from '@/lib/api/users';
 import { tasksApi, Task } from '@/lib/api/tasks';
 import Navbar from '@/components/Navbar';
@@ -49,6 +50,7 @@ interface TaskAllocationForCalendar {
 
 export default function TimesheetPage() {
   const { user, isLoading, token } = useAuth();
+  const { permissions } = usePermissions();
   const [userProfile, setUserProfile] = useState<User | null>(null);
   const [workHours, setWorkHours] = useState({
     monday: 8,
@@ -755,6 +757,7 @@ export default function TimesheetPage() {
                 {timesheetView === 'daily' && (
                   <div className="p-6 space-y-6">
                     {/* Add New Time Entry */}
+                    {permissions?.canManageTimeEntries && (
                     <div>
                       <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">
                         Add Time Entry
@@ -860,6 +863,7 @@ export default function TimesheetPage() {
                         Add Entry
                       </button>
                     </div>
+                    )}
 
                     {/* Time Entries List - Last 8 days */}
                     <div>
@@ -954,7 +958,7 @@ export default function TimesheetPage() {
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                       {entry.ApprovalStatus === 'approved' && !entry.IsHobby ? (
                                         <span className="text-xs text-gray-400 dark:text-gray-500 italic">Locked</span>
-                                      ) : (
+                                      ) : permissions?.canManageTimeEntries ? (
                                         <>
                                           <button
                                             onClick={() => handleEditTimeEntry(entry)}
@@ -969,7 +973,7 @@ export default function TimesheetPage() {
                                             Delete
                                           </button>
                                         </>
-                                      )}
+                                      ) : null}
                                     </td>
                                   </>
                                 </tr>
@@ -1422,6 +1426,7 @@ export default function TimesheetPage() {
                           </div>
 
                           {/* Save Button */}
+                          {permissions?.canManageTimeEntries && (
                           <div className="flex justify-end gap-3">
                             <button
                               onClick={() => {
@@ -1441,6 +1446,7 @@ export default function TimesheetPage() {
                               {isSaving ? 'Saving...' : 'Save All Changes'}
                             </button>
                           </div>
+                          )}
                         </>
                       );
                     })()}
@@ -1716,7 +1722,7 @@ export default function TimesheetPage() {
                                             <td className="px-6 py-3 whitespace-nowrap text-right text-sm font-medium">
                                               {entry.ApprovalStatus === 'approved' && !entry.IsHobby ? (
                                                 <span className="text-xs text-gray-400 dark:text-gray-500 italic">Locked</span>
-                                              ) : (
+                                              ) : permissions?.canManageTimeEntries ? (
                                                 <>
                                                   <button
                                                     onClick={() => handleEditTimeEntry(entry)}
@@ -1731,7 +1737,7 @@ export default function TimesheetPage() {
                                                     Delete
                                                   </button>
                                                 </>
-                                              )}
+                                              ) : null}
                                             </td>
                                           </tr>
                                         ))
@@ -1771,7 +1777,7 @@ export default function TimesheetPage() {
                                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         {entry.ApprovalStatus === 'approved' && !entry.IsHobby ? (
                                           <span className="text-xs text-gray-400 dark:text-gray-500 italic">Locked</span>
-                                        ) : (
+                                        ) : permissions?.canManageTimeEntries ? (
                                           <>
                                             <button
                                               onClick={() => handleEditTimeEntry(entry)}
@@ -1786,7 +1792,7 @@ export default function TimesheetPage() {
                                               Delete
                                             </button>
                                           </>
-                                        )}
+                                        ) : null}
                                       </td>
                                     </tr>
                                   ))

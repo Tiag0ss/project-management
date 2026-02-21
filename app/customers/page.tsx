@@ -29,7 +29,7 @@ interface Organization {
 
 export default function CustomersPage() {
   const { user, token, isLoading: authLoading } = useAuth();
-  const { permissions } = usePermissions();
+  const { permissions, isLoading: isLoadingPermissions } = usePermissions();
   const router = useRouter();
   
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -310,6 +310,21 @@ export default function CustomersPage() {
   }
 
   if (!user) return null;
+
+  if (!isLoadingPermissions && !permissions?.canViewCustomers) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <Navbar />
+        <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
+            <div className="text-5xl mb-4">🔒</div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Access Denied</h2>
+            <p className="text-gray-600 dark:text-gray-400">You don&apos;t have permission to view customers.</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <CustomerUserGuard>

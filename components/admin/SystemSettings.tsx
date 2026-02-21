@@ -141,6 +141,9 @@ export default function SystemSettings() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [migrationResult, setMigrationResult] = useState<{ created: number; skipped: number } | null>(null);
+  const [migrationError, setMigrationError] = useState('');
 
   useEffect(() => {
     if (token) {
@@ -229,6 +232,32 @@ export default function SystemSettings() {
       }
     } catch (err) {
       console.error('Failed to load customers:', err);
+    }
+  };
+
+  const handleMigrateSystemGroups = async () => {
+    if (!token) return;
+    setIsMigrating(true);
+    setMigrationResult(null);
+    setMigrationError('');
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/organizations/admin/create-system-groups`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+        }
+      );
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setMigrationResult({ created: data.created, skipped: data.skipped });
+      } else {
+        setMigrationError(data.message || 'Migration failed');
+      }
+    } catch (err: any) {
+      setMigrationError(err.message || 'Migration failed');
+    } finally {
+      setIsMigrating(false);
     }
   };
 
@@ -507,6 +536,54 @@ export default function SystemSettings() {
               <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                 This timezone will be used as the default for all users who have not set their own timezone preference.
               </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Maintenance / Migration */}
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 p-6 rounded-lg border border-yellow-200 dark:border-yellow-800">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+            🔧 Maintenance
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Administrative utilities for data consistency and migrations.
+          </p>
+
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-start gap-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="flex-1">
+                <h4 className="font-medium text-gray-900 dark:text-white mb-1">Create System Permission Groups</h4>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Creates the default Developer, Support, and Manager permission groups for any organization that is missing them.
+                  Safe to run multiple times — existing groups are not modified.
+                </p>
+                {migrationResult && (
+                  <p className="mt-2 text-sm text-green-600 dark:text-green-400">
+                    ✅ Done: {migrationResult.created} groups created, {migrationResult.skipped} already existed.
+                  </p>
+                )}
+                {migrationError && (
+                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">❌ {migrationError}</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleMigrateSystemGroups}
+                disabled={isMigrating}
+                className="flex-shrink-0 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-400 text-white rounded-lg transition-colors font-medium flex items-center gap-2"
+              >
+                {isMigrating ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Running...
+                  </>
+                ) : (
+                  '🔄 Run Migration'
+                )}
+              </button>
             </div>
           </div>
         </div>

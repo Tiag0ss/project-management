@@ -3,6 +3,7 @@
 import { getApiUrl } from '@/lib/api/config';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import DynamicQueryBuilder from '@/components/DynamicQueryBuilder';
@@ -75,6 +76,7 @@ interface ChartPoint {
 
 export default function WebReportsPage() {
   const { user, token, isLoading } = useAuth();
+  const { permissions, isLoading: isLoadingPermissions } = usePermissions();
   const [dataSource, setDataSource] = useState<string>('');
   const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
   const [modalState, setModalState] = useState<ModalState>({ type: null });
@@ -1249,6 +1251,21 @@ export default function WebReportsPage() {
 
   if (!user) {
     return null;
+  }
+
+  if (!isLoadingPermissions && !permissions?.canViewReports) {
+    return (
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+        <Navbar />
+        <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
+            <div className="text-5xl mb-4">🔒</div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Access Denied</h2>
+            <p className="text-gray-500 dark:text-gray-400">You don&apos;t have permission to view reports.</p>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (

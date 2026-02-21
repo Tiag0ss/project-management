@@ -8,6 +8,7 @@ import { Project } from '@/lib/api/projects';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { usersApi, User } from '@/lib/api/users';
 import RichTextEditor from './RichTextEditor';
+import { usePermissions } from '@/contexts/PermissionsContext';
 
 interface TaskDetailModalProps {
   projectId: number;
@@ -206,6 +207,7 @@ export default function TaskDetailModal({
   showRemovePlanning = false,
   onRemovePlanning,
 }: TaskDetailModalProps) {
+  const { permissions } = usePermissions();
   const [activeTab, setActiveTab] = useState<'details' | 'history' | 'comments' | 'attachments' | 'hours' | 'checklist'>('details');
   
   // Form data for editing
@@ -1355,14 +1357,16 @@ export default function TaskDetailModal({
                       className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 rounded-full text-sm"
                     >
                       👤 {a.Username}{a.FirstName && a.LastName ? ` (${a.FirstName} ${a.LastName})` : ''}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveAssignee(a.UserId)}
-                        className="ml-1 text-blue-600 dark:text-blue-400 hover:text-red-500 dark:hover:text-red-400 font-bold leading-none"
-                        title="Remove assignee"
-                      >
-                        ×
-                      </button>
+                      {permissions?.canAssignTasks && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAssignee(a.UserId)}
+                          className="ml-1 text-blue-600 dark:text-blue-400 hover:text-red-500 dark:hover:text-red-400 font-bold leading-none"
+                          title="Remove assignee"
+                        >
+                          ×
+                        </button>
+                      )}
                     </span>
                   ))}
                   {taskAssignees.length === 0 && (
@@ -1370,6 +1374,7 @@ export default function TaskDetailModal({
                   )}
                 </div>
                 {/* Add assignee dropdown */}
+                {permissions?.canAssignTasks && (
                 <select
                   value=""
                   onChange={(e) => {
@@ -1386,6 +1391,7 @@ export default function TaskDetailModal({
                       </option>
                     ))}
                 </select>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1511,6 +1517,7 @@ export default function TaskDetailModal({
                   type="submit"
                   disabled={isLoading}
                   className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
+                  style={{ display: (task ? permissions?.canManageTasks : permissions?.canCreateTasks) ? undefined : 'none' }}
                 >
                   {isLoading ? 'Saving...' : task ? 'Update Task' : 'Create Task'}
                 </button>
@@ -1895,6 +1902,7 @@ export default function TaskDetailModal({
                           <span className="text-xs text-gray-500 dark:text-gray-400">
                             {new Date(comment.CreatedAt).toLocaleString()}
                           </span>
+                          {permissions?.canManageTasks && (
                           <button
                             onClick={() => handleDeleteComment(comment.Id)}
                             className="text-gray-400 hover:text-red-500 transition-colors"
@@ -1902,6 +1910,7 @@ export default function TaskDetailModal({
                           >
                             🗑️
                           </button>
+                          )}
                         </div>
                       </div>
                       <div
@@ -1975,6 +1984,7 @@ export default function TaskDetailModal({
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                             </svg>
                           </button>
+                          {permissions?.canManageTasks && (
                           <button
                             onClick={() => handleDeleteAttachment(attachment.Id)}
                             className="p-1 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors"
@@ -1984,6 +1994,7 @@ export default function TaskDetailModal({
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
                           </button>
+                          )}
                         </div>
                       </div>
                     );
