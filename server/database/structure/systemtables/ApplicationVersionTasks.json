@@ -1,0 +1,25 @@
+{
+  "TableName": "ApplicationVersionTasks",
+  "PrimaryKeyFields": "VersionId,TaskId",
+  "Fields": [
+    {
+      "FieldName": "VersionId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to ApplicationVersions.Id"
+    },
+    {
+      "FieldName": "TaskId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Tasks.Id"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the task was added to the version"
+    }
+  ]
+}

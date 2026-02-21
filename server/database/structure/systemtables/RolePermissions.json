@@ -198,6 +198,41 @@
       "Comment": "Permission to view other users' task planning"
     },
     {
+      "FieldName": "CanViewApplications",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1",
+      "Comment": "Permission to view applications"
+    },
+    {
+      "FieldName": "CanManageApplications",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to edit applications"
+    },
+    {
+      "FieldName": "CanCreateApplications",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to create new applications"
+    },
+    {
+      "FieldName": "CanDeleteApplications",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to delete applications"
+    },
+    {
+      "FieldName": "CanManageReleases",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to create, edit and delete application releases/versions"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

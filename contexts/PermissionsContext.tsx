@@ -53,6 +53,11 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
         canCreateTaskFromTicket: true,
         canPlanTasks: true,
         canViewOthersPlanning: true,
+        canViewApplications: true,
+        canManageApplications: true,
+        canCreateApplications: true,
+        canDeleteApplications: true,
+        canManageReleases: true,
       });
       setIsLoading(false);
       return;
@@ -92,6 +97,11 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
         canCreateTaskFromTicket: false,
         canPlanTasks: false,
         canViewOthersPlanning: false,
+        canViewApplications: false,
+        canManageApplications: false,
+        canCreateApplications: false,
+        canDeleteApplications: false,
+        canManageReleases: false,
       });
     } finally {
       setIsLoading(false);

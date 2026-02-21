@@ -31,6 +31,11 @@ const DEFAULT_ROLE_PERMISSIONS = [
       CanManageCustomers: 0,
       CanCreateCustomers: 0,
       CanDeleteCustomers: 0,
+      CanViewApplications: 1,
+      CanManageApplications: 0,
+      CanCreateApplications: 0,
+      CanDeleteApplications: 0,
+      CanManageReleases: 0,
     },
   },
   {
@@ -62,6 +67,11 @@ const DEFAULT_ROLE_PERMISSIONS = [
       CanCreateTaskFromTicket: 0,
       CanPlanTasks: 0,  // Support não planeia tarefas
       CanViewOthersPlanning: 0,  // Nem vê o planning de outros
+      CanViewApplications: 1,
+      CanManageApplications: 0,
+      CanCreateApplications: 0,
+      CanDeleteApplications: 0,
+      CanManageReleases: 0,
     },
   },
   {
@@ -93,6 +103,11 @@ const DEFAULT_ROLE_PERMISSIONS = [
       CanCreateTaskFromTicket: 1,
       CanPlanTasks: 1,  // Managers podem planear todas as tarefas
       CanViewOthersPlanning: 1,  // E veem o planning de toda a equipa
+      CanViewApplications: 1,
+      CanManageApplications: 1,
+      CanCreateApplications: 1,
+      CanDeleteApplications: 1,
+      CanManageReleases: 1,
     },
   },
 ];
@@ -142,8 +157,13 @@ export async function seedRolePermissions(): Promise<void> {
           CanAssignTickets,
           CanCreateTaskFromTicket,
           CanPlanTasks,
-          CanViewOthersPlanning
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          CanViewOthersPlanning,
+          CanViewApplications,
+          CanManageApplications,
+          CanCreateApplications,
+          CanDeleteApplications,
+          CanManageReleases
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           roleName,
           permissions.CanViewDashboard,
@@ -172,6 +192,11 @@ export async function seedRolePermissions(): Promise<void> {
           permissions.CanCreateTaskFromTicket,
           permissions.CanPlanTasks,
           permissions.CanViewOthersPlanning,
+          permissions.CanViewApplications,
+          permissions.CanManageApplications,
+          permissions.CanCreateApplications,
+          permissions.CanDeleteApplications,
+          permissions.CanManageReleases,
         ]
       );
 

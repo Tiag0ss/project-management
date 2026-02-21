@@ -58,6 +58,7 @@ import taskTemplatesRoutes from './routes/taskTemplates';
 import slaRulesRoutes from './routes/slaRules';
 import sprintsRoutes from './routes/sprints';
 import portalRoutes from './routes/portal';
+import applicationsRoutes from './routes/applications';
 import projectReportSchedulesRoutes from './routes/projectReportSchedules';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
 import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler';
@@ -209,6 +210,7 @@ app.prepare().then(async () => {
   server.use('/api/tags', tagsRoutes);
   server.use('/api/search', searchRoutes);
   server.use('/api/customers', customersRoutes);
+  server.use('/api/applications', applicationsRoutes);
   server.use('/api/statistics', statisticsRoutes);
   server.use('/api/tickets', ticketsRoutes);
   server.use('/api/task-import', taskImportRoutes);

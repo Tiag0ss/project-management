@@ -1525,10 +1525,11 @@ export default function PlanningPage() {
       const avgDailyHours = weeklyHours / 7;
       const effectiveAvg = Math.max(avgDailyHours, 0.5); // minimum 0.5h/day to avoid huge windows
       const estimatedDays = Math.ceil(totalHours / effectiveAvg);
-      // Use 3x multiplier to account for existing allocations consuming availability
-      const windowDays = Math.max(Math.ceil(estimatedDays * 3), 180); // At least 180 days
+      // Use 5x multiplier to account for existing allocations consuming availability
+      // This is especially important when user already has planning years ahead
+      const windowDays = Math.max(Math.ceil(estimatedDays * 5), 365); // At least 1 year
       const preliminaryEndDate = new Date(startDate);
-      preliminaryEndDate.setDate(preliminaryEndDate.getDate() + Math.min(windowDays, 3650));
+      preliminaryEndDate.setDate(preliminaryEndDate.getDate() + Math.min(windowDays, 5475)); // Cap at 15 years
 
       console.log('Availability window calculation:', { 
         isHobbyTask, weeklyHours, avgDailyHours, effectiveAvg, 
@@ -1556,6 +1557,26 @@ export default function PlanningPage() {
       const availabilityData = await availabilityRes.json();
       const availability = availabilityData.availability;
 
+      console.log('Availability data received:', {
+        totalDays: availability.length,
+        daysWithAvailability: availability.filter((a: any) => (parseFloat(String(a.availableHours)) || 0) > 0).length,
+        totalAvailableHours: availability.reduce((sum: number, a: any) => sum + (parseFloat(String(a.availableHours)) || 0), 0),
+        totalMaxHours: availability.reduce((sum: number, a: any) => sum + (parseFloat(String(a.maxHours)) || 0), 0),
+        totalAllocatedHours: availability.reduce((sum: number, a: any) => sum + (parseFloat(String(a.allocatedHours)) || 0), 0),
+        hoursNeeded: totalHours,
+        userIdRequested: userId,
+        parentTaskId: parentTask.Id,
+        windowDays,
+        searchPeriod: `${startDate.toISOString().split('T')[0]} to ${preliminaryEndDate.toISOString().split('T')[0]}`,
+        sampleFirstFiveDays: availability.slice(0, 5).map((a: any) => ({
+          date: a.date,
+          maxHours: a.maxHours,
+          allocatedHours: a.allocatedHours,
+          availableHours: a.availableHours,
+          latestEndTime: a.latestEndTime
+        }))
+      });
+
       setPlanningProgress(prev => ({
         ...prev,
         progress: 15,
@@ -1563,66 +1584,82 @@ export default function PlanningPage() {
       }));
 
       // Step 2: Calculate allocations locally using availability data
+      // Safety: if hoursPerDay is 0/NaN (edge case), derive from user's actual schedule
+      let effectiveHoursPerDay = hoursPerDay;
+      if (!effectiveHoursPerDay || isNaN(effectiveHoursPerDay) || effectiveHoursPerDay <= 0) {
+        effectiveHoursPerDay = Math.max(...WEEK_DAYS.map(d => {
+          const k = isHobbyTask ? `HobbyHours${d}` as keyof User : `WorkHours${d}` as keyof User;
+          return parseFloat(user[k] as any) || 0;
+        }));
+        if (effectiveHoursPerDay <= 0) effectiveHoursPerDay = 8; // absolute fallback
+        console.warn(`hoursPerDay was ${hoursPerDay} — derived ${effectiveHoursPerDay}h from user schedule`);
+      }
+
       const allocations: any[] = [];
       let remainingHours = totalHours;
 
       for (const dayAvailability of availability) {
         if (remainingHours <= 0) break;
 
-        if (dayAvailability.availableHours > 0) {
-          // Get effective start time
-          const effectiveStartTime = dayAvailability.latestEndTime || dayAvailability.workStartTime;
-          
-          // Calculate the window end time (slot start + max hours for this day)
-          const [slotSH, slotSM] = (dayAvailability.workStartTime || '09:00').split(':').map(Number);
-          const slotEndMins = (slotSH * 60 + slotSM) + dayAvailability.maxHours * 60;
-          
-          // Calculate how much time remains in the window from the effective start
-          const [effSH, effSM] = effectiveStartTime.split(':').map(Number);
-          const effStartMins = effSH * 60 + effSM;
-          const remainingWindowH = Math.max(0, (slotEndMins - effStartMins) / 60);
-          
-          // Skip this day if effective start is past the window end
-          if (remainingWindowH <= 0) continue;
-          
-          const dayMaxHoursP = dayAvailability.maxHours || 0;
-          const hoursToAllocate = Math.min(remainingHours, dayAvailability.availableHours, hoursPerDay, dayMaxHoursP, remainingWindowH);
-          
-          if (hoursToAllocate <= 0) continue;
-          
-          // Calculate end time based on start time and hours
-          const [startHour, startMin] = effectiveStartTime.split(':').map(Number);
-          const workStartMinutes = startHour * 60 + startMin;
-          
-          const totalMinutes = workStartMinutes + hoursToAllocate * 60;
-          const endHour = Math.floor(totalMinutes / 60);
-          const endMin = Math.round(totalMinutes % 60);
-          const endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
-          
-          allocations.push({
-            date: dayAvailability.date,
-            hours: hoursToAllocate,
-            startTime: effectiveStartTime,
-            endTime: endTime
-          });
-          remainingHours -= hoursToAllocate;
-        }
+        // Trust the backend's availableHours — it already accounts for capacity and the time window.
+        const dayAvail = parseFloat(String(dayAvailability.availableHours)) || 0;
+        if (dayAvail <= 0) continue;
+
+        // Get effective start time for time-slot tracking
+        const effectiveStartTime = (dayAvailability.latestEndTime || dayAvailability.workStartTime || '09:00') as string;
+
+        // hoursToAllocate = min of: remaining total, day's available hours, user's daily cap
+        const hoursToAllocate = Math.min(remainingHours, dayAvail, effectiveHoursPerDay);
+        if (hoursToAllocate <= 0) continue;
+
+        // Calculate end time
+        const [startHour, startMin] = effectiveStartTime.split(':').map(Number);
+        const totalMinutes = (startHour * 60 + startMin) + hoursToAllocate * 60;
+        const endTime = `${String(Math.floor(totalMinutes / 60)).padStart(2, '0')}:${String(Math.round(totalMinutes % 60)).padStart(2, '0')}`;
+
+        allocations.push({
+          date: dayAvailability.date,
+          hours: hoursToAllocate,
+          startTime: effectiveStartTime,
+          endTime: endTime
+        });
+        remainingHours -= hoursToAllocate;
       }
 
       if (remainingHours > 0) {
+        const totalAvailH = availability.reduce((sum: number, a: any) => sum + (parseFloat(String(a.availableHours)) || 0), 0);
+        const availDayCount = availability.filter((a: any) => (parseFloat(String(a.availableHours)) || 0) > 0).length;
+        
+        // Find the last date checked
+        const lastDateChecked = availability[availability.length - 1]?.date || preliminaryEndDate.toISOString().split('T')[0];
+        
         console.error('Partial allocation failed:', {
           totalHours,
           remainingHours,
           allocationsCreated: allocations.length,
           availabilityDays: availability.length,
-          availableDaysWithHours: availability.filter((a: any) => a.availableHours > 0).length,
-          totalAvailableHours: availability.reduce((sum: number, a: any) => sum + a.availableHours, 0),
+          availableDaysWithHours: availDayCount,
+          totalAvailableHours: totalAvailH,
+          effectiveHoursPerDay,
           hoursPerDay,
           leafTasksCount: leafTasks.length,
-          leafTasksHours: leafTasks.map((t: Task) => ({ name: t.TaskName, hours: t.EstimatedHours })),
+          windowDays,
+          searchPeriod: `${startDate.toISOString().split('T')[0]} to ${lastDateChecked}`,
+          yearsDiff: Math.ceil(windowDays / 365),
         });
         setPlanningProgress(prev => ({ ...prev, show: false }));
-        showAlert('Partial Allocation', `Unable to fully allocate task - ${remainingHours.toFixed(2)}h remaining. User doesn't have enough availability.\n\nTotal available: ${availability.reduce((sum: number, a: any) => sum + a.availableHours, 0).toFixed(2)}h across ${availability.filter((a: any) => a.availableHours > 0).length} days.`);
+        
+        const yearsDiff = Math.ceil(windowDays / 365);
+        showAlert('Partial Allocation', 
+          `Unable to fully allocate task - ${remainingHours.toFixed(2)}h remaining.\n\n` +
+          `Searched: ${windowDays} days (~${yearsDiff} years)\n` +
+          `From: ${startDate.toISOString().split('T')[0]}\n` +
+          `To: ${lastDateChecked}\n\n` +
+          `Available: ${totalAvailH.toFixed(2)}h across ${availDayCount} days\n` +
+          `Per day cap: ${effectiveHoursPerDay}h\n\n` +
+          `The user may have other tasks scheduled consuming time.\n` +
+          `Consider increasing daily capacity or rescheduling tasks.`
+        );
         return;
       }
 
@@ -2145,10 +2182,10 @@ export default function PlanningPage() {
       const avgDailyHoursForTask = weeklyHoursForTask / 7;
       const effectiveAvgForTask = Math.max(avgDailyHoursForTask, 0.5); // minimum 0.5h/day to avoid huge windows
       const estimatedDays = Math.ceil(remainingHoursToWork / effectiveAvgForTask);
-      // Use 3x multiplier to account for existing allocations consuming availability
-      const windowDaysForTask = Math.max(Math.ceil(estimatedDays * 3), 180); // At least 180 days
+      // Use 5x multiplier to account for existing allocations consuming availability
+      const windowDaysForTask = Math.max(Math.ceil(estimatedDays * 5), 365); // At least 1 year
       const preliminaryEndDate = new Date(startDate);
-      preliminaryEndDate.setDate(preliminaryEndDate.getDate() + Math.min(windowDaysForTask, 3650)); // Cap at 10 years
+      preliminaryEndDate.setDate(preliminaryEndDate.getDate() + Math.min(windowDaysForTask, 5475)); // Cap at 15 years
       
       const availabilityRes = await fetch(
         `${getApiUrl()}/api/task-allocations/availability/${userId}?startDate=${startDate.toISOString().split('T')[0]}&endDate=${preliminaryEndDate.toISOString().split('T')[0]}&excludeTaskId=${task.Id}&isHobby=${isHobby}`,

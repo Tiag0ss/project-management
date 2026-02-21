@@ -121,203 +121,172 @@ async function calculatePlannedEndDate(
  */
 // Import tasks from CSV data
 router.post('/import', authenticateToken, async (req: AuthRequest, res: Response) => {
-  try {
-    const { tasks } = req.body as { tasks: TaskImportRow[] };
-    const userId = req.user?.userId;
+  const { tasks } = req.body as { tasks: TaskImportRow[] };
+  const userId = req.user?.userId;
 
-    if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'No tasks provided' 
-      });
+  if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
+    return res.status(400).json({ success: false, message: 'No tasks provided' });
+  }
+
+  // ── PASS 1: Full pre-validation (no DB writes) ────────────────────────────
+  const validationErrors: Array<{ row: number; error: string }> = [];
+
+  for (let i = 0; i < tasks.length; i++) {
+    const task = tasks[i];
+    const row = i + 2; // row 1 is the CSV header
+
+    if (!task.ProjectId || !task.TaskName) {
+      validationErrors.push({ row, error: 'ProjectId and TaskName are required' });
+      continue;
     }
 
-    const result: ImportResult = {
-      success: true,
-      created: 0,
-      errors: [],
-      tasks: []
-    };
+    const projectId = parseInt(task.ProjectId);
+    if (isNaN(projectId)) {
+      validationErrors.push({ row, error: 'Invalid ProjectId (must be a number)' });
+      continue;
+    }
 
-    // First pass: Validate and collect project IDs
-    const projectIds = new Set<number>();
+    // Verify project exists
+    const [projects] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM Projects WHERE Id = ?',
+      [projectId]
+    );
+    if ((projects as RowDataPacket[]).length === 0) {
+      validationErrors.push({ row, error: `Project ${projectId} not found` });
+      continue;
+    }
+
+    // Verify assigned user exists
+    if (task.AssignedToUsername) {
+      const [users] = await pool.execute<RowDataPacket[]>(
+        'SELECT Id FROM Users WHERE Username = ?',
+        [task.AssignedToUsername]
+      );
+      if ((users as RowDataPacket[]).length === 0) {
+        validationErrors.push({ row, error: `User '${task.AssignedToUsername}' not found` });
+      }
+    }
+  }
+
+  if (validationErrors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: `Import cancelled: ${validationErrors.length} validation error(s) found. No tasks were created.`,
+      errors: validationErrors,
+      created: 0,
+      tasks: [],
+    });
+  }
+
+  // ── PASS 2 & 3: Insert inside a transaction ───────────────────────────────
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const taskMap = new Map<string, number>(); // TaskName -> inserted TaskId
+    const insertedTasks: Array<{ id: number; name: string }> = [];
+
+    // Pass 2: insert tasks
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i];
-      
-      if (!task.ProjectId || !task.TaskName) {
-        result.errors.push({ 
-          row: i + 2, // +2 because row 1 is header, array is 0-indexed
-          error: 'ProjectId and TaskName are required' 
-        });
-        continue;
-      }
-
       const projectId = parseInt(task.ProjectId);
-      if (isNaN(projectId)) {
-        result.errors.push({ 
-          row: i + 2, 
-          error: 'Invalid ProjectId' 
-        });
-        continue;
+
+      // Resolve AssignedTo user id (already validated above, so will always be found)
+      let assignedTo: number | null = null;
+      if (task.AssignedToUsername) {
+        const [users] = await connection.execute<RowDataPacket[]>(
+          'SELECT Id FROM Users WHERE Username = ?',
+          [task.AssignedToUsername]
+        );
+        assignedTo = (users as RowDataPacket[])[0].Id;
       }
 
-      projectIds.add(projectId);
-    }
+      // Calculate planned end date when only start date is provided
+      let plannedStartDate = task.PlannedStartDate || null;
+      let plannedEndDate = task.PlannedEndDate || null;
+      if (task.EstimatedHours && assignedTo && plannedStartDate && !plannedEndDate) {
+        const estimatedHours = parseFloat(task.EstimatedHours);
+        if (!isNaN(estimatedHours) && estimatedHours > 0) {
+          const endDate = await calculatePlannedEndDate(new Date(plannedStartDate), estimatedHours, assignedTo);
+          plannedEndDate = endDate.toISOString().split('T')[0];
+        }
+      }
 
-    // Validate project access
-    for (const projectId of projectIds) {
-      const [projects] = await pool.execute<RowDataPacket[]>(
-        'SELECT Id FROM Projects WHERE Id = ?',
-        [projectId]
+      // Status/Priority are already mapped to numeric IDs by the frontend
+      const statusId = task.Status ? (isNaN(parseInt(String(task.Status))) ? null : parseInt(String(task.Status))) : null;
+      const priorityId = task.Priority ? (isNaN(parseInt(String(task.Priority))) ? null : parseInt(String(task.Priority))) : null;
+
+      const [insertResult] = await connection.execute<ResultSetHeader>(
+        `INSERT INTO Tasks (
+          ProjectId, TaskName, Description, Status, Priority,
+          AssignedTo, DueDate, EstimatedHours,
+          PlannedStartDate, PlannedEndDate, CreatedBy, DisplayOrder
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          projectId,
+          task.TaskName,
+          task.Description || null,
+          statusId,
+          priorityId,
+          assignedTo,
+          task.DueDate || null,
+          task.EstimatedHours ? parseFloat(task.EstimatedHours) : null,
+          plannedStartDate,
+          plannedEndDate,
+          userId,
+          i,
+        ]
       );
 
-      if (projects.length === 0) {
-        return res.status(404).json({ 
-          success: false, 
-          message: `Project ${projectId} not found` 
-        });
-      }
+      const taskId = (insertResult as ResultSetHeader).insertId;
+      taskMap.set(task.TaskName, taskId);
+      insertedTasks.push({ id: taskId, name: task.TaskName });
     }
 
-    // Second pass: Create tasks
-    const taskMap = new Map<string, number>(); // TaskName -> TaskId mapping
-
+    // Pass 3: set parent/dependency relationships
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i];
-      
-      if (!task.ProjectId || !task.TaskName) {
-        continue; // Skip already validated errors
-      }
-
-      const projectId = parseInt(task.ProjectId);
-
-      try {
-        // Get user ID if username provided
-        let assignedTo: number | null = null;
-        if (task.AssignedToUsername) {
-          const [users] = await pool.execute<RowDataPacket[]>(
-            'SELECT Id FROM Users WHERE Username = ?',
-            [task.AssignedToUsername]
-          );
-
-          if (users.length === 0) {
-            result.errors.push({ 
-              row: i + 2, 
-              error: `User '${task.AssignedToUsername}' not found` 
-            });
-            continue;
-          }
-
-          assignedTo = users[0].Id;
-        }
-
-        // Calculate planned dates if estimated hours and assigned user
-        let plannedStartDate = task.PlannedStartDate || null;
-        let plannedEndDate = task.PlannedEndDate || null;
-
-        if (task.EstimatedHours && assignedTo && plannedStartDate && !plannedEndDate) {
-          const estimatedHours = parseFloat(task.EstimatedHours);
-          if (!isNaN(estimatedHours) && estimatedHours > 0) {
-            const startDate = new Date(plannedStartDate);
-            const endDate = await calculatePlannedEndDate(startDate, estimatedHours, assignedTo);
-            plannedEndDate = endDate.toISOString().split('T')[0];
-          }
-        }
-
-        // Insert task
-        const [insertResult] = await pool.execute<ResultSetHeader>(
-          `INSERT INTO Tasks (
-            ProjectId, TaskName, Description, Status, Priority, 
-            AssignedTo, DueDate, EstimatedHours, 
-            PlannedStartDate, PlannedEndDate, CreatedBy, DisplayOrder
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            projectId,
-            task.TaskName,
-            task.Description || null,
-            task.Status || 'To Do',
-            task.Priority || 'Medium',
-            assignedTo,
-            task.DueDate || null,
-            task.EstimatedHours ? parseFloat(task.EstimatedHours) : null,
-            plannedStartDate,
-            plannedEndDate,
-            userId,
-            i // Use row index as display order
-          ]
-        );
-
-        const taskId = insertResult.insertId;
-        taskMap.set(task.TaskName, taskId);
-        
-        result.created++;
-        result.tasks.push({ id: taskId, name: task.TaskName });
-
-      } catch (error: any) {
-        result.errors.push({ 
-          row: i + 2, 
-          error: error.message || 'Failed to create task' 
-        });
-      }
-    }
-
-    // Third pass: Set parent tasks and dependencies
-    for (let i = 0; i < tasks.length; i++) {
-      const task = tasks[i];
-      
       if (!task.TaskName) continue;
-
       const taskId = taskMap.get(task.TaskName);
       if (!taskId) continue;
 
-      try {
-        // Set parent task
-        if (task.ParentTaskName) {
-          const parentId = taskMap.get(task.ParentTaskName);
-          if (parentId) {
-            await pool.execute(
-              'UPDATE Tasks SET ParentTaskId = ? WHERE Id = ?',
-              [parentId, taskId]
-            );
-          } else {
-            result.errors.push({ 
-              row: i + 2, 
-              error: `Parent task '${task.ParentTaskName}' not found in import` 
-            });
-          }
+      if (task.ParentTaskName) {
+        const parentId = taskMap.get(task.ParentTaskName);
+        if (!parentId) {
+          throw new Error(`Row ${i + 2}: Parent task '${task.ParentTaskName}' not found in import`);
         }
+        await connection.execute('UPDATE Tasks SET ParentTaskId = ? WHERE Id = ?', [parentId, taskId]);
+      }
 
-        // Set dependency
-        if (task.DependsOnTaskName) {
-          const dependsOnId = taskMap.get(task.DependsOnTaskName);
-          if (dependsOnId) {
-            await pool.execute(
-              'UPDATE Tasks SET DependsOnTaskId = ? WHERE Id = ?',
-              [dependsOnId, taskId]
-            );
-          } else {
-            result.errors.push({ 
-              row: i + 2, 
-              error: `Dependency task '${task.DependsOnTaskName}' not found in import` 
-            });
-          }
+      if (task.DependsOnTaskName) {
+        const dependsOnId = taskMap.get(task.DependsOnTaskName);
+        if (!dependsOnId) {
+          throw new Error(`Row ${i + 2}: Dependency task '${task.DependsOnTaskName}' not found in import`);
         }
-      } catch (error: any) {
-        result.errors.push({ 
-          row: i + 2, 
-          error: `Failed to set relationships: ${error.message}` 
-        });
+        await connection.execute('UPDATE Tasks SET DependsOnTaskId = ? WHERE Id = ?', [dependsOnId, taskId]);
       }
     }
 
-    res.json(result);
-  } catch (error) {
-    console.error('Import tasks error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to import tasks',
-      error: error instanceof Error ? error.message : 'Unknown error'
+    await connection.commit();
+
+    res.json({
+      success: true,
+      created: insertedTasks.length,
+      errors: [],
+      tasks: insertedTasks,
     });
+  } catch (error: any) {
+    await connection.rollback();
+    console.error('Import tasks error (rolled back):', error);
+    res.status(500).json({
+      success: false,
+      message: `Import failed and was rolled back: ${error.message}`,
+      errors: [{ row: 0, error: error.message }],
+      created: 0,
+      tasks: [],
+    });
+  } finally {
+    connection.release();
   }
 });
 

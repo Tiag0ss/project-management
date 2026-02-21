@@ -46,6 +46,10 @@ export interface Task {
   ExternalTicketId?: string | null;
   JiraUrl?: string | null;
   ExternalIssueId?: string | null;
+  ApplicationId?: number | null;
+  ApplicationName?: string | null;
+  ReleaseVersionId?: number | null;
+  ReleaseVersionNumber?: string | null;
   CreatedBy: number;
   CreatorName?: string;
   CompletionPercentage?: number;
@@ -68,6 +72,8 @@ export interface CreateTaskData {
   plannedEndDate?: string;
   dependsOnTaskId?: number;
   ticketId?: number;
+  applicationId?: number | null;
+  releaseVersionId?: number | null;
 }
 
 export const tasksApi = {

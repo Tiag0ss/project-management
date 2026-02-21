@@ -1,0 +1,70 @@
+{
+  "TableName": "ApplicationVersions",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique version identifier"
+    },
+    {
+      "FieldName": "ApplicationId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Applications.Id"
+    },
+    {
+      "FieldName": "VersionNumber",
+      "DataType": "varchar(50)",
+      "NotNullable": true,
+      "Comment": "Version number string e.g. 1.0.0, 2.3.1-beta"
+    },
+    {
+      "FieldName": "VersionName",
+      "DataType": "varchar(255)",
+      "NotNullable": false,
+      "Comment": "Optional friendly name for the version e.g. Summer Release"
+    },
+    {
+      "FieldName": "Status",
+      "DataType": "varchar(50)",
+      "NotNullable": true,
+      "DefaultValue": "Planning",
+      "Comment": "Status of the version: Planning, In Development, Testing, Released, Archived"
+    },
+    {
+      "FieldName": "ReleaseDate",
+      "DataType": "date",
+      "NotNullable": false,
+      "Comment": "Actual or planned release date"
+    },
+    {
+      "FieldName": "PatchNotes",
+      "DataType": "mediumtext",
+      "NotNullable": false,
+      "Comment": "Release notes and patch notes (rich text)"
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who created this version"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the version was created"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+      "Comment": "Auto-updated timestamp of last modification"
+    }
+  ]
+}

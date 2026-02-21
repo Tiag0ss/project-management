@@ -160,6 +160,34 @@
       "Comment": "Permission to manage organization settings"
     },
     {
+      "FieldName": "CanManageApplications",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to edit applications within organization"
+    },
+    {
+      "FieldName": "CanCreateApplications",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to create new applications within organization"
+    },
+    {
+      "FieldName": "CanDeleteApplications",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to delete applications within organization"
+    },
+    {
+      "FieldName": "CanManageReleases",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to create, edit and delete application releases/versions within organization"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

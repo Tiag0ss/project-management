@@ -8,6 +8,7 @@ import { Project } from '@/lib/api/projects';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { usersApi, User } from '@/lib/api/users';
 import RichTextEditor from './RichTextEditor';
+import SearchableSelectComponent from './SearchableSelect';
 import { usePermissions } from '@/contexts/PermissionsContext';
 
 interface TaskDetailModalProps {
@@ -224,6 +225,8 @@ export default function TaskDetailModal({
     plannedStartDate: task?.PlannedStartDate ? task.PlannedStartDate.split('T')[0] : '',
     plannedEndDate: task?.PlannedEndDate ? task.PlannedEndDate.split('T')[0] : '',
     dependsOnTaskId: task?.DependsOnTaskId || undefined,
+    applicationId: task?.ApplicationId ?? null,
+    releaseVersionId: task?.ReleaseVersionId ?? null,
   });
   
   // Data states
@@ -256,6 +259,10 @@ export default function TaskDetailModal({
   const [users, setUsers] = useState<User[]>([]);
   const [hasChildren, setHasChildren] = useState(false);
   
+  // Application & Version state
+  const [applications, setApplications] = useState<{ Id: number; Name: string }[]>([]);
+  const [applicationVersions, setApplicationVersions] = useState<{ Id: number; VersionNumber: string; VersionName: string | null; Status: string }[]>([]);
+
   // UI states
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -290,6 +297,7 @@ export default function TaskDetailModal({
     loadTaskStatuses();
     loadTaskPriorities();
     loadOrganizationUsers();
+    loadApplications();
     if (task) {
       loadTaskDetails();
       checkHasChildren();
@@ -469,6 +477,39 @@ export default function TaskDetailModal({
       setTaskPriorities(response.priorities);
     } catch (err) {
       console.error('Failed to load task priorities:', err);
+    }
+  };
+
+  const loadApplications = async () => {
+    try {
+      const res = await fetch(`${getApiUrl()}/api/applications?organizationId=${organizationId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setApplications(data.applications || []);
+        // Pre-load versions if task already has an application
+        const existingAppId = task?.ApplicationId;
+        if (existingAppId) {
+          loadApplicationVersions(existingAppId);
+        }
+      }
+    } catch {
+      // silently skip
+    }
+  };
+
+  const loadApplicationVersions = async (appId: number) => {
+    try {
+      const res = await fetch(`${getApiUrl()}/api/applications/${appId}/versions`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setApplicationVersions(data.versions || []);
+      }
+    } catch {
+      setApplicationVersions([]);
     }
   };
 
@@ -1504,6 +1545,49 @@ export default function TaskDetailModal({
                   This task cannot start until the selected task is completed
                 </p>
               </div>
+
+              {/* Application */}
+              {applications.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Application (Optional)
+                  </label>
+                  <SearchableSelectComponent
+                    value={formData.applicationId?.toString() ?? ''}
+                    onChange={(val) => {
+                      const appId = val ? parseInt(val) : null;
+                      setFormData({ ...formData, applicationId: appId, releaseVersionId: null });
+                      if (appId) loadApplicationVersions(appId);
+                      else setApplicationVersions([]);
+                    }}
+                    options={applications.map(a => ({ value: a.Id, label: a.Name }))}
+                    placeholder="Select application..."
+                    emptyText="No application"
+                  />
+                </div>
+              )}
+
+              {/* Release Version — only when an application is selected */}
+              {formData.applicationId && applicationVersions.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Release Version (Optional)
+                  </label>
+                  <SearchableSelectComponent
+                    value={formData.releaseVersionId?.toString() ?? ''}
+                    onChange={(val) => setFormData({ ...formData, releaseVersionId: val ? parseInt(val) : null })}
+                    options={applicationVersions.map(v => ({
+                      value: v.Id,
+                      label: `${v.VersionNumber}${v.VersionName ? ` – ${v.VersionName}` : ''} (${v.Status})`
+                    }))}
+                    placeholder="Select version..."
+                    emptyText="Not yet released"
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    The version in which this task was or will be released
+                  </p>
+                </div>
+              )}
 
               <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button

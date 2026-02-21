@@ -12,31 +12,64 @@ import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import SearchableSelect from '@/components/SearchableSelect';
+import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 
 type ProjectSortField = 'name' | 'status' | 'tasks' | 'hours' | 'tickets' | 'startDate' | 'endDate' | 'budget' | 'rag' | 'progress';
 type SortDirection = 'asc' | 'desc';
 type RAGStatus = 'red' | 'amber' | 'green';
 
 function computeRAG(project: Project): { status: RAGStatus; reasons: string[] } {
+  // Closed or cancelled projects are always green — work is done
+  if (project.StatusIsClosed || project.StatusIsCancelled) {
+    return { status: 'green', reasons: [] };
+  }
+
   const budgetTotal = Number(project.Budget) || 0;
   const budgetSpent = Number(project.BudgetSpent) || 0;
   const budgetPct = budgetTotal > 0 ? Math.round((budgetSpent / budgetTotal) * 100) : 0;
+
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const isOverdue = project.EndDate && !project.StatusIsClosed && !project.StatusIsCancelled
-    && new Date(project.EndDate) < today;
+  const endDate = project.EndDate ? new Date(project.EndDate) : null;
+  const isOverdue = endDate !== null && endDate < today;
+
   const reasons: string[] = [];
   let status: RAGStatus = 'green';
+
+  // --- RED conditions ---
   if (budgetPct >= 100) { status = 'red'; reasons.push(`Budget exceeded (${budgetPct}%)`); }
   if (isOverdue) { status = 'red'; reasons.push('Past end date'); }
+
+  const overdueTasks = Number(project.OverdueTasks) || 0;
+  const totalTasks = Number(project.TotalTasks) || 0;
+
+  // --- RED conditions (match detail page logic) ---
+  if (overdueTasks > 2) { status = 'red'; reasons.push(`${overdueTasks} overdue tasks`); }
+
   if (status !== 'red') {
+    // --- AMBER conditions ---
     if (budgetPct >= 80) { status = 'amber'; reasons.push(`Budget at ${budgetPct}%`); }
-    if (project.EndDate) {
-      const daysLeft = Math.ceil((new Date(project.EndDate).getTime() - today.getTime()) / 86400000);
-      if (daysLeft <= 7 && daysLeft > 0 && !project.StatusIsClosed && !project.StatusIsCancelled) {
-        status = 'amber'; reasons.push(`Due in ${daysLeft}d`);
+
+    if (overdueTasks > 0) {
+      status = 'amber';
+      reasons.push(`${overdueTasks} overdue task${overdueTasks > 1 ? 's' : ''}`);
+    }
+
+    if (endDate) {
+      const daysLeft = Math.ceil((endDate.getTime() - today.getTime()) / 86400000);
+      if (daysLeft <= 7 && daysLeft > 0) {
+        if (status !== 'amber') status = 'amber';
+        reasons.push(`Due in ${daysLeft}d`);
       }
     }
+
+    // Unassigned tasks > 30% of total
+    const unassigned = Number(project.UnplannedTasks) || 0;
+    if (totalTasks > 0 && unassigned > totalTasks * 0.3) {
+      if (status !== 'amber') status = 'amber';
+      reasons.push(`${unassigned} unassigned tasks`);
+    }
   }
+
   return { status, reasons };
 }
 
@@ -823,6 +856,7 @@ function ProjectModal({
   const [jiraIntegration, setJiraIntegration] = useState<{ JiraUrl: string; JiraProjectKey: string } | null>(null);
   const [githubIntegration, setGithubIntegration] = useState<any>(null);
   const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
+  const [availableApplications, setAvailableApplications] = useState<{ Id: number; Name: string }[]>([]);
   const [formData, setFormData] = useState<CreateProjectData>({
     organizationId: project?.OrganizationId || 0,
     projectName: project?.ProjectName || '',
@@ -838,6 +872,7 @@ function ProjectModal({
     giteaOwner: project?.GiteaOwner || undefined,
     giteaRepo: project?.GiteaRepo || undefined,
     budget: project?.Budget ?? undefined,
+    applicationIds: project?.ApplicationIds || [],
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -853,14 +888,30 @@ function ProjectModal({
       loadJiraIntegration(formData.organizationId);
       loadGitHubIntegration(formData.organizationId);
       loadGiteaIntegration(formData.organizationId);
+      loadApplicationsList(formData.organizationId);
     } else {
       setCustomers([]);
       setProjectStatuses([]);
       setJiraIntegration(null);
       setGithubIntegration(null);
       setGiteaIntegration(null);
+      setAvailableApplications([]);
     }
   }, [formData.organizationId]);
+
+  const loadApplicationsList = async (orgId: number) => {
+    try {
+      const res = await fetch(`${getApiUrl()}/api/applications?organizationId=${orgId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableApplications(data.applications || []);
+      }
+    } catch {
+      setAvailableApplications([]);
+    }
+  };
 
   const loadOrganizations = async () => {
     try {
@@ -1036,6 +1087,23 @@ function ProjectModal({
                 </p>
               )}
             </div>
+
+            {availableApplications.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Applications
+                </label>
+                <SearchableMultiSelect
+                  values={formData.applicationIds || []}
+                  onChange={(values) => setFormData({ ...formData, applicationIds: values as number[] })}
+                  options={availableApplications.map(app => ({
+                    value: app.Id,
+                    label: app.Name
+                  }))}
+                  placeholder="Select applications..."
+                />
+              </div>
+            )}
 
             {jiraIntegration && (
               <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">

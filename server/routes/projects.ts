@@ -46,6 +46,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        COALESCE(taskStats.CompletedTasks, 0) as CompletedTasks,
        COALESCE(taskStats.TotalEstimatedHours, 0) as TotalEstimatedHours,
        COALESCE(taskStats.TotalWorkedHours, 0) as TotalWorkedHours,
+       COALESCE(taskStats.OverdueTasks, 0) as OverdueTasks,
        (SELECT COUNT(*) FROM Tickets tk LEFT JOIN TicketStatusValues tsv2 ON tk.StatusId = tsv2.Id WHERE tk.ProjectId = p.Id AND COALESCE(tsv2.IsClosed, 0) = 0) as OpenTickets,
        COALESCE(unplannedStats.UnplannedTasks, 0) as UnplannedTasks,
        COALESCE(budgetStats.BudgetSpent, 0) as BudgetSpent
@@ -58,10 +59,11 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        LEFT JOIN (
          SELECT 
            t.ProjectId,
-           COUNT(CASE WHEN t.ParentTaskId IS NULL THEN 1 END) as TotalTasks,
-           COUNT(CASE WHEN t.ParentTaskId IS NULL AND COALESCE(tsv2.IsClosed, 0) = 1 THEN 1 END) as CompletedTasks,
+           COUNT(*) as TotalTasks,
+           COUNT(CASE WHEN COALESCE(tsv2.IsClosed, 0) = 1 THEN 1 END) as CompletedTasks,
            SUM(CASE WHEN t.ParentTaskId IS NULL THEN t.EstimatedHours ELSE 0 END) as TotalEstimatedHours,
-           COALESCE((SELECT SUM(te.Hours) FROM TimeEntries te WHERE te.TaskId IN (SELECT Id FROM Tasks WHERE ProjectId = t.ProjectId)), 0) as TotalWorkedHours
+           COALESCE((SELECT SUM(te.Hours) FROM TimeEntries te WHERE te.TaskId IN (SELECT Id FROM Tasks WHERE ProjectId = t.ProjectId)), 0) as TotalWorkedHours,
+           COUNT(CASE WHEN t.DueDate IS NOT NULL AND t.DueDate < CURDATE() AND COALESCE(tsv2.IsClosed, 0) = 0 AND COALESCE(tsv2.IsCancelled, 0) = 0 THEN 1 END) as OverdueTasks
          FROM Tasks t
          LEFT JOIN TaskStatusValues tsv2 ON t.Status = tsv2.Id
          GROUP BY t.ProjectId
@@ -165,9 +167,23 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       });
     }
 
+    // Load associated applications
+    const [appRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT a.Id, a.Name FROM ApplicationProjects ap
+       INNER JOIN Applications a ON ap.ApplicationId = a.Id
+       WHERE ap.ProjectId = ?`,
+      [projectId]
+    );
+
+    const project = {
+      ...projects[0],
+      ApplicationIds: appRows.map((r: any) => r.Id),
+      ApplicationNames: appRows.map((r: any) => r.Name),
+    };
+
     res.json({
       success: true,
-      project: projects[0]
+      project
     });
   } catch (error) {
     console.error('Get project error:', error);
@@ -392,7 +408,7 @@ router.get('/:id/permissions', authenticateToken, async (req: AuthRequest, res: 
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { organizationId, projectName, description, status, startDate, endDate, isHobby, isVisibleToCustomer, customerId, jiraBoardId, budget } = req.body;
+    const { organizationId, projectName, description, status, startDate, endDate, isHobby, isVisibleToCustomer, customerId, jiraBoardId, budget, applicationIds } = req.body;
 
     if (!projectName || !organizationId) {
       return res.status(400).json({ 
@@ -455,6 +471,16 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       null,
       null
     );
+
+    // Sync application associations
+    if (applicationIds && Array.isArray(applicationIds) && applicationIds.length > 0) {
+      for (const appId of applicationIds) {
+        await pool.execute(
+          'INSERT IGNORE INTO ApplicationProjects (ApplicationId, ProjectId) VALUES (?, ?)',
+          [appId, result.insertId]
+        );
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -621,7 +647,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const projectId = req.params.id;
-    const { projectName, description, status, startDate, endDate, isHobby, isVisibleToCustomer, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo, budget } = req.body;
+    const { projectName, description, status, startDate, endDate, isHobby, isVisibleToCustomer, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo, budget, applicationIds } = req.body;
 
     // Check if project exists and get current data
     const [existing] = await pool.execute<RowDataPacket[]>(
@@ -756,6 +782,17 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
           `/projects/${projectId}`,
           undefined,
           Number(projectId)
+        );
+      }
+    }
+
+    // Sync application associations
+    if (applicationIds !== undefined && Array.isArray(applicationIds)) {
+      await pool.execute('DELETE FROM ApplicationProjects WHERE ProjectId = ?', [projectId]);
+      for (const appId of applicationIds) {
+        await pool.execute(
+          'INSERT IGNORE INTO ApplicationProjects (ApplicationId, ProjectId) VALUES (?, ?)',
+          [appId, projectId]
         );
       }
     }

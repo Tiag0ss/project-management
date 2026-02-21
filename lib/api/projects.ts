@@ -26,6 +26,8 @@ export interface Project {
   GiteaRepo?: string | null;
   Budget?: number | null;
   BudgetSpent?: number;
+  ApplicationIds?: number[];
+  ApplicationNames?: string[];
   CreatedBy: number;
   CreatorName?: string;
   CreatedAt: string;
@@ -36,6 +38,7 @@ export interface Project {
   TotalWorkedHours?: number;
   OpenTickets?: number;
   UnplannedTasks?: number;
+  OverdueTasks?: number;
 }
 
 export interface CreateProjectData {
@@ -54,6 +57,7 @@ export interface CreateProjectData {
   giteaOwner?: string;
   giteaRepo?: string;
   budget?: number | null;
+  applicationIds?: number[];
 }
 
 export interface UpdateProjectData {
@@ -71,6 +75,7 @@ export interface UpdateProjectData {
   giteaOwner?: string | null;
   giteaRepo?: string | null;
   budget?: number | null;
+  applicationIds?: number[];
 }
 
 export interface UpdateProjectDataWithId extends UpdateProjectData {

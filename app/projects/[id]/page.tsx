@@ -16,6 +16,7 @@ import TaskDetailModal from '@/components/TaskDetailModal';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
 import RichTextEditor from '@/components/RichTextEditor';
+import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import { getTaskAttachment } from '@/lib/api/taskAttachments';
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -38,6 +39,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [importPreview, setImportPreview] = useState<any[]>([]);
   const [importProgress, setImportProgress] = useState<string>('');
   const [importResult, setImportResult] = useState<{created: number; errors: Array<{row: number; error: string}>} | null>(null);
+  const [importAllRows, setImportAllRows] = useState<any[]>([]);
+  const [csvUniqueStatuses, setCsvUniqueStatuses] = useState<string[]>([]);
+  const [csvUniquePriorities, setCsvUniquePriorities] = useState<string[]>([]);
+  const [importStatusMapping, setImportStatusMapping] = useState<Record<string, string>>({});
+  const [importPriorityMapping, setImportPriorityMapping] = useState<Record<string, string>>({});
+  const [importAvailStatuses, setImportAvailStatuses] = useState<StatusValue[]>([]);
+  const [importAvailPriorities, setImportAvailPriorities] = useState<StatusValue[]>([]);
   const [showJiraImportModal, setShowJiraImportModal] = useState(false);
   const [jiraIssues, setJiraIssues] = useState<any[]>([]);
   const [selectedIssues, setSelectedIssues] = useState<Set<string>>(new Set());
@@ -234,12 +242,31 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   };
 
   // CSV Import Functions
-  const handleImportClick = () => {
+  const handleImportClick = async () => {
     setShowImportModal(true);
     setImportFile(null);
     setImportPreview([]);
+    setImportAllRows([]);
     setImportResult(null);
     setImportProgress('');
+    setCsvUniqueStatuses([]);
+    setCsvUniquePriorities([]);
+    setImportStatusMapping({});
+    setImportPriorityMapping({});
+
+    // Load available statuses and priorities for the project's organization
+    if (project?.OrganizationId && token) {
+      try {
+        const [statusRes, priorityRes] = await Promise.all([
+          statusValuesApi.getTaskStatuses(project.OrganizationId, token),
+          statusValuesApi.getTaskPriorities(project.OrganizationId, token),
+        ]);
+        setImportAvailStatuses(statusRes.statuses || []);
+        setImportAvailPriorities(priorityRes.priorities || []);
+      } catch (err) {
+        console.error('Failed to load statuses/priorities for import:', err);
+      }
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -248,30 +275,62 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
     setImportFile(file);
     setImportPreview([]);
+    setImportAllRows([]);
     setImportProgress('Reading file...');
+    setCsvUniqueStatuses([]);
+    setCsvUniquePriorities([]);
+    setImportStatusMapping({});
+    setImportPriorityMapping({});
 
     try {
       const text = await file.text();
       const lines = text.split('\n').map(line => line.trim()).filter(line => line);
-      
+
       if (lines.length < 2) {
         setImportProgress('Error: File is empty or invalid');
         return;
       }
 
-      const headers = lines[0].split(',');
-      const rows = lines.slice(1, Math.min(6, lines.length)); // Preview first 5 rows
-      
-      const preview = rows.map(row => {
-        const values = row.split(',');
+      const headers = lines[0].split(',').map(h => h.trim());
+
+      // Parse ALL rows
+      const allRows = lines.slice(1).map(line => {
+        const values = line.split(',');
         const obj: any = {};
         headers.forEach((header, idx) => {
-          obj[header.trim()] = values[idx]?.trim() || '';
+          obj[header] = values[idx]?.trim() || '';
         });
         return obj;
       });
 
-      setImportPreview(preview);
+      setImportAllRows(allRows);
+      setImportPreview(allRows.slice(0, 5));
+
+      // Extract unique non-empty Status and Priority values
+      const statuses = Array.from(new Set(allRows.map(r => r.Status).filter(Boolean))) as string[];
+      const priorities = Array.from(new Set(allRows.map(r => r.Priority).filter(Boolean))) as string[];
+      setCsvUniqueStatuses(statuses);
+      setCsvUniquePriorities(priorities);
+
+      // Auto-map: find exact match (case-insensitive) for each unique value
+      const autoStatusMap: Record<string, string> = {};
+      statuses.forEach(csvVal => {
+        const match = importAvailStatuses.find(s =>
+          s.StatusName.toLowerCase().trim() === csvVal.toLowerCase().trim()
+        );
+        autoStatusMap[csvVal] = match ? String(match.Id) : '';
+      });
+      setImportStatusMapping(autoStatusMap);
+
+      const autoPriorityMap: Record<string, string> = {};
+      priorities.forEach(csvVal => {
+        const match = importAvailPriorities.find(p =>
+          (p.PriorityName || p.StatusName).toLowerCase().trim() === csvVal.toLowerCase().trim()
+        );
+        autoPriorityMap[csvVal] = match ? String(match.Id) : '';
+      });
+      setImportPriorityMapping(autoPriorityMap);
+
       setImportProgress(`Ready to import ${lines.length - 1} tasks`);
     } catch (err) {
       setImportProgress('Error reading file');
@@ -301,13 +360,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
     try {
       const text = await importFile.text();
-      const tasks = parseCSV(text);
+      const parsed = parseCSV(text);
 
-      // Add ProjectId to each task
-      const tasksWithProject = tasks.map(task => ({
-        ...task,
-        ProjectId: projectId
-      }));
+      // Apply status/priority mappings and add ProjectId
+      const tasksWithProject = (importAllRows.length > 0 ? importAllRows : parsed).map(task => {
+        const mappedStatus = task.Status ? importStatusMapping[task.Status] : undefined;
+        const mappedPriority = task.Priority ? importPriorityMapping[task.Priority] : undefined;
+        return {
+          ...task,
+          ProjectId: projectId,
+          Status: mappedStatus || '',
+          Priority: mappedPriority || '',
+        };
+      });
 
       const response = await fetch(
         `${getApiUrl()}/api/task-import/import`,
@@ -329,7 +394,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           errors: result.errors || []
         });
         setImportProgress(`Successfully imported ${result.created} tasks`);
-        
+
         // Reload tasks
         await loadTasks();
       } else {
@@ -2759,7 +2824,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             <div className="p-6">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Import Tasks from CSV</h2>
               
-              <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                 <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">📄 CSV Format</h3>
                 <p className="text-sm text-blue-800 dark:text-blue-400 mb-2">
                   Your CSV should have the following columns (header required):
@@ -2768,29 +2833,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   ProjectId,TaskName,Description,Status,Priority,AssignedToUsername,DueDate,EstimatedHours,ParentTaskName,PlannedStartDate,PlannedEndDate,DependsOnTaskName
                 </code>
                 <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
-                  <a 
-                    href="/templates/tasks_import_template.csv" 
-                    download
-                    className="underline hover:text-blue-600 dark:hover:text-blue-200"
-                  >
-                    Download template CSV
-                  </a>
+                  <a href="/templates/tasks_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
                   {' | '}
-                  <a 
-                    href="/templates/README_TASKS_IMPORT.md" 
-                    target="_blank"
-                    className="underline hover:text-blue-600 dark:hover:text-blue-200"
-                  >
-                    Read documentation
-                  </a>
+                  <a href="/templates/README_TASKS_IMPORT.md" target="_blank" className="underline hover:text-blue-600 dark:hover:text-blue-200">Read documentation</a>
                 </p>
               </div>
 
               {/* File Upload */}
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Select CSV File
-                </label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select CSV File</label>
                 <input
                   type="file"
                   accept=".csv"
@@ -2802,7 +2853,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               {/* Progress Message */}
               {importProgress && (
                 <div className={`mb-4 p-3 rounded-lg ${
-                  importProgress.startsWith('Error') 
+                  importProgress.startsWith('Error')
                     ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400'
                     : importProgress.startsWith('Success')
                     ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400'
@@ -2814,7 +2865,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
               {/* Preview */}
               {importPreview.length > 0 && (
-                <div className="mb-4">
+                <div className="mb-5">
                   <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Preview (first 5 rows)</h3>
                   <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -2822,8 +2873,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         <tr>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Task Name</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Assigned To</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Status</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Priority</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Status (CSV)</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Priority (CSV)</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Estimated</th>
                         </tr>
                       </thead>
@@ -2832,13 +2883,87 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                           <tr key={idx} className="bg-white dark:bg-gray-800">
                             <td className="px-3 py-2 text-sm text-gray-900 dark:text-white">{row.TaskName}</td>
                             <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.AssignedToUsername || '-'}</td>
-                            <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.Status || 'To Do'}</td>
-                            <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.Priority || 'Medium'}</td>
+                            <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.Status || '-'}</td>
+                            <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.Priority || '-'}</td>
                             <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.EstimatedHours || '-'}h</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Status Mapping */}
+              {csvUniqueStatuses.length > 0 && importAvailStatuses.length > 0 && (
+                <div className="mb-5 p-4 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg">
+                  <h3 className="font-semibold text-gray-900 dark:text-white mb-3">🔀 Status Mapping</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                    Map each status value from your CSV to an existing project status. Unmapped values will be left blank.
+                  </p>
+                  <div className="space-y-2">
+                    {csvUniqueStatuses.map(csvVal => (
+                      <div key={csvVal} className="flex items-center gap-3">
+                        <span className="w-40 text-sm font-medium text-gray-700 dark:text-gray-300 truncate" title={csvVal}>
+                          <span className="px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded text-xs">{csvVal}</span>
+                        </span>
+                        <span className="text-gray-400">→</span>
+                        <select
+                          value={importStatusMapping[csvVal] || ''}
+                          onChange={e => setImportStatusMapping(prev => ({ ...prev, [csvVal]: e.target.value }))}
+                          className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        >
+                          <option value="">— skip / leave blank —</option>
+                          {importAvailStatuses.map(s => (
+                            <option key={s.Id} value={String(s.Id)}>
+                              {s.StatusName}
+                            </option>
+                          ))}
+                        </select>
+                        {importStatusMapping[csvVal] ? (
+                          <span className="text-green-500 text-sm">✓</span>
+                        ) : (
+                          <span className="text-gray-400 text-sm">○</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Priority Mapping */}
+              {csvUniquePriorities.length > 0 && importAvailPriorities.length > 0 && (
+                <div className="mb-5 p-4 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg">
+                  <h3 className="font-semibold text-gray-900 dark:text-white mb-3">🎯 Priority Mapping</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                    Map each priority value from your CSV to an existing project priority. Unmapped values will be left blank.
+                  </p>
+                  <div className="space-y-2">
+                    {csvUniquePriorities.map(csvVal => (
+                      <div key={csvVal} className="flex items-center gap-3">
+                        <span className="w-40 text-sm font-medium text-gray-700 dark:text-gray-300 truncate" title={csvVal}>
+                          <span className="px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded text-xs">{csvVal}</span>
+                        </span>
+                        <span className="text-gray-400">→</span>
+                        <select
+                          value={importPriorityMapping[csvVal] || ''}
+                          onChange={e => setImportPriorityMapping(prev => ({ ...prev, [csvVal]: e.target.value }))}
+                          className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        >
+                          <option value="">— skip / leave blank —</option>
+                          {importAvailPriorities.map(p => (
+                            <option key={p.Id} value={String(p.Id)}>
+                              {p.PriorityName || p.StatusName}
+                            </option>
+                          ))}
+                        </select>
+                        {importPriorityMapping[csvVal] ? (
+                          <span className="text-green-500 text-sm">✓</span>
+                        ) : (
+                          <span className="text-gray-400 text-sm">○</span>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -2851,7 +2976,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       ✅ Successfully imported {importResult.created} tasks
                     </h3>
                   </div>
-                  
                   {importResult.errors.length > 0 && (
                     <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                       <h3 className="font-semibold text-yellow-900 dark:text-yellow-300 mb-2">
@@ -3136,16 +3260,29 @@ function OverviewTab({ project, tasks, tickets }: { project: Project; tasks: Tas
         const budgetTotal = Number(project.Budget) || 0;
         const budgetPct = budgetTotal > 0 ? Math.round((budgetSpent / budgetTotal) * 100) : 0;
         const totalTasks = tasks.length;
+        const today2 = new Date(); today2.setHours(0, 0, 0, 0);
+        const projectEndDate = project.EndDate ? new Date(project.EndDate) : null;
 
         let ragStatus: 'red' | 'amber' | 'green' = 'green';
         const ragReasons: string[] = [];
 
-        if (overdueTasks.length > 2) { ragStatus = 'red'; ragReasons.push(`${overdueTasks.length} overdue tasks`); }
-        if (budgetTotal > 0 && budgetPct >= 100) { ragStatus = 'red'; ragReasons.push('Budget exceeded'); }
-        if (ragStatus !== 'red') {
-          if (overdueTasks.length > 0) { ragStatus = 'amber'; ragReasons.push(`${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''}`); }
-          if (budgetTotal > 0 && budgetPct >= 80) { ragStatus = 'amber'; ragReasons.push(`Budget at ${budgetPct}%`); }
-          if (totalTasks > 0 && unassignedTasks.length > totalTasks * 0.3) { ragStatus = 'amber'; ragReasons.push(`${unassignedTasks.length} unassigned tasks`); }
+        // Closed/cancelled → always green
+        if (!project.StatusIsClosed && !project.StatusIsCancelled) {
+          // RED
+          if (overdueTasks.length > 2) { ragStatus = 'red'; ragReasons.push(`${overdueTasks.length} overdue tasks`); }
+          if (budgetTotal > 0 && budgetPct >= 100) { ragStatus = 'red'; ragReasons.push('Budget exceeded'); }
+          if (projectEndDate && projectEndDate < today2) { ragStatus = 'red'; ragReasons.push('Past end date'); }
+
+          if (ragStatus !== 'red') {
+            // AMBER
+            if (overdueTasks.length > 0) { ragStatus = 'amber'; ragReasons.push(`${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''}`); }
+            if (budgetTotal > 0 && budgetPct >= 80) { ragStatus = 'amber'; ragReasons.push(`Budget at ${budgetPct}%`); }
+            if (totalTasks > 0 && unassignedTasks.length > totalTasks * 0.3) { ragStatus = 'amber'; ragReasons.push(`${unassignedTasks.length} unassigned tasks`); }
+            if (projectEndDate) {
+              const daysLeft = Math.ceil((projectEndDate.getTime() - today2.getTime()) / 86400000);
+              if (daysLeft > 0 && daysLeft <= 7) { ragStatus = 'amber'; ragReasons.push(`Due in ${daysLeft}d`); }
+            }
+          }
         }
 
         const ragConfig = {
@@ -3472,7 +3609,6 @@ function TasksTab({
   const hasJiraIntegration = jiraIntegration?.IsEnabled && jiraIntegration?.JiraUrl;
   const hasGitHubIntegration = project.GitHubOwner && project.GitHubRepo;
   const hasGiteaIntegration = project.GiteaOwner && project.GiteaRepo;
-  const hasAnyIntegration = hasJiraIntegration || hasGitHubIntegration || hasGiteaIntegration;
 
   const toggleExpand = (taskId: number) => {
     setExpandedTasks(prev => {
@@ -3633,103 +3769,101 @@ function TasksTab({
         <div className="flex gap-3">
           {canCreate && (
             <>
-              {/* Import Dropdown - only show if any integration is configured */}
-              {hasAnyIntegration && (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowImportDropdown(!showImportDropdown)}
-                    className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
-                  >
-                    <span className="text-xl">📥</span>
-                    Import Tasks
-                    <svg className={`w-4 h-4 transition-transform ${showImportDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  
-                  {showImportDropdown && (
-                    <>
-                      {/* Backdrop to close dropdown */}
-                      <div className="fixed inset-0 z-10" onClick={() => setShowImportDropdown(false)}></div>
-                      
-                      {/* Dropdown menu */}
-                      <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20">
-                        <div className="py-2">
-                          {/* CSV Import - always available */}
+              {/* Import Dropdown - always visible, CSV always available */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowImportDropdown(!showImportDropdown)}
+                  className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
+                >
+                  <span className="text-xl">📥</span>
+                  Import Tasks
+                  <svg className={`w-4 h-4 transition-transform ${showImportDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {showImportDropdown && (
+                  <>
+                    {/* Backdrop to close dropdown */}
+                    <div className="fixed inset-0 z-10" onClick={() => setShowImportDropdown(false)}></div>
+                    
+                    {/* Dropdown menu */}
+                    <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20">
+                      <div className="py-2">
+                        {/* CSV Import - always available */}
+                        <button
+                          onClick={() => {
+                            onImportClick();
+                            setShowImportDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
+                        >
+                          <span className="text-xl">📥</span>
+                          <div>
+                            <div className="font-medium text-gray-900 dark:text-white">Import CSV</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Upload tasks from file</div>
+                          </div>
+                        </button>
+                        
+                        {/* Jira Import - only if configured */}
+                        {hasJiraIntegration && (
                           <button
                             onClick={() => {
-                              onImportClick();
+                              onImportFromJira();
                               setShowImportDropdown(false);
                             }}
                             className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
                           >
-                            <span className="text-xl">📥</span>
+                            <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
+                            </svg>
                             <div>
-                              <div className="font-medium text-gray-900 dark:text-white">Import CSV</div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">Upload tasks from file</div>
+                              <div className="font-medium text-gray-900 dark:text-white">Import from Jira</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">Sync Jira issues</div>
                             </div>
                           </button>
-                          
-                          {/* Jira Import - only if configured */}
-                          {hasJiraIntegration && (
-                            <button
-                              onClick={() => {
-                                onImportFromJira();
-                                setShowImportDropdown(false);
-                              }}
-                              className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
-                            >
-                              <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
-                              </svg>
-                              <div>
-                                <div className="font-medium text-gray-900 dark:text-white">Import from Jira</div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400">Sync Jira issues</div>
-                              </div>
-                            </button>
-                          )}
-                          
-                          {/* GitHub Import - only if configured */}
-                          {hasGitHubIntegration && (
-                            <button
-                              onClick={() => {
-                                onImportFromGitHub();
-                                setShowImportDropdown(false);
-                              }}
-                              className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
-                            >
-                              <svg className="w-5 h-5 text-gray-800 dark:text-gray-200" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-                              </svg>
-                              <div>
-                                <div className="font-medium text-gray-900 dark:text-white">Import from GitHub</div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400">Sync GitHub issues</div>
-                              </div>
-                            </button>
-                          )}
-                          
-                          {/* Gitea Import - only if configured */}
-                          {hasGiteaIntegration && (
-                            <button
-                              onClick={() => {
-                                onImportFromGitea();
-                                setShowImportDropdown(false);
-                              }}
-                              className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
-                            >
-                              <span className="text-xl">🍵</span>
-                              <div>
-                                <div className="font-medium text-gray-900 dark:text-white">Import from Gitea</div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400">Sync Gitea issues</div>
-                              </div>
-                            </button>
-                          )}
-                        </div>
+                        )}
+                        
+                        {/* GitHub Import - only if configured */}
+                        {hasGitHubIntegration && (
+                          <button
+                            onClick={() => {
+                              onImportFromGitHub();
+                              setShowImportDropdown(false);
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
+                          >
+                            <svg className="w-5 h-5 text-gray-800 dark:text-gray-200" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                            </svg>
+                            <div>
+                              <div className="font-medium text-gray-900 dark:text-white">Import from GitHub</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">Sync GitHub issues</div>
+                            </div>
+                          </button>
+                        )}
+                        
+                        {/* Gitea Import - only if configured */}
+                        {hasGiteaIntegration && (
+                          <button
+                            onClick={() => {
+                              onImportFromGitea();
+                              setShowImportDropdown(false);
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
+                          >
+                            <span className="text-xl">🍵</span>
+                            <div>
+                              <div className="font-medium text-gray-900 dark:text-white">Import from Gitea</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">Sync Gitea issues</div>
+                            </div>
+                          </button>
+                        )}
                       </div>
-                    </>
-                  )}
-                </div>
-              )}
+                    </div>
+                  </>
+                )}
+              </div>
               
               <button
                 onClick={onCreateTask}
@@ -7186,6 +7320,7 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
     giteaRepo: project.GiteaRepo || '',
     budget: project.Budget !== null && project.Budget !== undefined ? String(project.Budget) : '',
     customerId: project.CustomerId || undefined,
+    applicationIds: project.ApplicationIds || [] as number[],
   });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [customers, setCustomers] = useState<{ Id: number; Name: string }[]>([]);
@@ -7193,6 +7328,7 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
   const [githubIntegration, setGithubIntegration] = useState<any>(null);
   const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
+  const [availableApplications, setAvailableApplications] = useState<{ Id: number; Name: string }[]>([]);
   const [showTransferConfirm, setShowTransferConfirm] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -7205,7 +7341,22 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
     loadJiraIntegration();
     loadGitHubIntegration();
     loadGiteaIntegration();
+    loadApplicationsList();
   }, []);
+
+  const loadApplicationsList = async () => {
+    try {
+      const res = await fetch(`${getApiUrl()}/api/applications?organizationId=${project.OrganizationId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableApplications(data.applications || []);
+      }
+    } catch {
+      setAvailableApplications([]);
+    }
+  };
 
   const loadOrganizations = async () => {
     try {
@@ -7339,6 +7490,7 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
         giteaRepo: formData.giteaRepo || null,
         budget: formData.budget !== '' ? parseFloat(formData.budget) : null,
         customerId: formData.customerId || null,
+        applicationIds: formData.applicationIds || [],
       };
       await projectsApi.update(project.Id, updateData, token);
       setSuccess(true);
@@ -7565,6 +7717,23 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
             </div>
           )}
 
+          {availableApplications.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Applications
+              </label>
+              <SearchableMultiSelect
+                values={formData.applicationIds || []}
+                onChange={(values) => setFormData({ ...formData, applicationIds: values as number[] })}
+                options={availableApplications.map(app => ({
+                  value: app.Id,
+                  label: app.Name
+                }))}
+                placeholder="Select applications..."
+              />
+            </div>
+          )}
+
           {jiraIntegration && (
             <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
               <div className="flex items-center gap-2 mb-2">
@@ -7744,6 +7913,7 @@ function EditProjectModal({
     customerId: project.CustomerId || undefined,
     isHobby: project.IsHobby || false,
     isVisibleToCustomer: !!project.IsVisibleToCustomer,
+    applicationIds: project.ApplicationIds || [],
   });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [customers, setCustomers] = useState<{ Id: number; Name: string }[]>([]);
@@ -7751,6 +7921,7 @@ function EditProjectModal({
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
   const [githubIntegration, setGithubIntegration] = useState<any>(null);
   const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
+  const [availableApplications, setAvailableApplications] = useState<{ Id: number; Name: string }[]>([]);
   const [showTransferConfirm, setShowTransferConfirm] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -7762,6 +7933,7 @@ function EditProjectModal({
     loadJiraIntegration();
     loadGitHubIntegration();
     loadGiteaIntegration();
+    loadApplicationsList();
     // Clear any previous errors when modal opens
     setError('');
   }, []);
@@ -7777,6 +7949,20 @@ function EditProjectModal({
     } catch (err: any) {
       console.error('Failed to load organizations:', err);
       setError(err.message || 'Failed to load organizations');
+    }
+  };
+
+  const loadApplicationsList = async () => {
+    try {
+      const res = await fetch(`${getApiUrl()}/api/applications?organizationId=${project.OrganizationId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableApplications(data.applications || []);
+      }
+    } catch {
+      setAvailableApplications([]);
     }
   };
 
@@ -7899,6 +8085,7 @@ function EditProjectModal({
         customerId: formData.customerId || null,
         isHobby: formData.isHobby || false,
         isVisibleToCustomer: formData.isVisibleToCustomer || false,
+        applicationIds: formData.applicationIds || [],
       };
       console.log('Updating project with data:', updateData);
       await projectsApi.update(project.Id, updateData, token);
@@ -8070,6 +8257,23 @@ function EditProjectModal({
                 />
               </div>
             </div>
+
+            {availableApplications.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Applications
+                </label>
+                <SearchableMultiSelect
+                  values={formData.applicationIds || []}
+                  onChange={(values) => setFormData({ ...formData, applicationIds: values as number[] })}
+                  options={availableApplications.map(app => ({
+                    value: app.Id,
+                    label: app.Name
+                  }))}
+                  placeholder="Select applications..."
+                />
+              </div>
+            )}
 
             {jiraIntegration && (
               <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
@@ -9111,8 +9315,8 @@ function BurndownTab({ projectId, token }: { projectId: number; token: string })
           >
             <g transform={`translate(${PAD.left},${PAD.top})`}>
               {/* Grid lines + Y axis */}
-              {yTicks.map(v => (
-                <g key={v}>
+              {yTicks.map((v, i) => (
+                <g key={i}>
                   <line x1={0} y1={yScale(v)} x2={chartW} y2={yScale(v)} stroke="#e5e7eb" strokeDasharray="4,3" />
                   <text x={-8} y={yScale(v) + 4} textAnchor="end" fontSize={11} fill="#9ca3af">{v}h</text>
                 </g>

@@ -530,7 +530,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, taskName, description, status, priority, assignedTo, dueDate, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId } = req.body;
+    const { projectId, taskName, description, status, priority, assignedTo, dueDate, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, applicationId, releaseVersionId } = req.body;
 
     if (!taskName || !projectId) {
       return res.status(400).json({ 
@@ -566,8 +566,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, AssignedTo, DueDate, EstimatedHours, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CreatedBy) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, AssignedTo, DueDate, EstimatedHours, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, ApplicationId, CreatedBy) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         projectId,
         taskName,
@@ -583,6 +583,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         toDateOnly(plannedEndDate),
         dependsOnTaskId || null,
         ticketId || null,
+        applicationId || null,
         userId
       ]
     );
@@ -720,7 +721,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const taskId = req.params.id;
-    const { taskName, description, status, priority, assignedTo, dueDate, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId } = req.body;
+    const { taskName, description, status, priority, assignedTo, dueDate, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, applicationId, releaseVersionId } = req.body;
 
     // Verify user has access to this task's project through organization membership and has CanManageTasks permission
     const [access] = await pool.execute<RowDataPacket[]>(
@@ -781,7 +782,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Tasks 
-       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, AssignedTo = ?, DueDate = ?, EstimatedHours = ?, ParentTaskId = ?, DisplayOrder = COALESCE(?, DisplayOrder), PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?
+       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, AssignedTo = ?, DueDate = ?, EstimatedHours = ?, ParentTaskId = ?, DisplayOrder = COALESCE(?, DisplayOrder), PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, ApplicationId = ?, ReleaseVersionId = ?
        WHERE Id = ?`,
       [
         taskName,
@@ -796,6 +797,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         toDateOnly(plannedStartDate),
         toDateOnly(plannedEndDate),
         dependsOnTaskId || null,
+        applicationId !== undefined ? (applicationId || null) : null,
+        releaseVersionId !== undefined ? (releaseVersionId || null) : null,
         taskId
       ]
     );
@@ -1510,6 +1513,36 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       [taskId]
     );
     const taskData = taskInfo[0];
+
+    // Recursively collect all descendant task IDs
+    const collectDescendants = async (parentId: number | string): Promise<number[]> => {
+      const [children] = await pool.execute<RowDataPacket[]>(
+        'SELECT Id FROM Tasks WHERE ParentTaskId = ?', [parentId]
+      );
+      let ids: number[] = [];
+      for (const child of children) {
+        ids.push(child.Id);
+        ids = ids.concat(await collectDescendants(child.Id));
+      }
+      return ids;
+    };
+
+    const descendantIds = await collectDescendants(Number(taskId));
+    const allTaskIds = [Number(taskId), ...descendantIds];
+
+    // Delete dependent data for all tasks (the task itself + all subtasks)
+    for (const tid of allTaskIds) {
+      await pool.execute('DELETE FROM TaskAllocations WHERE TaskId = ?', [tid]);
+      await pool.execute('DELETE FROM TaskChildAllocations WHERE ParentTaskId = ? OR ChildTaskId = ?', [tid, tid]);
+      await pool.execute('DELETE FROM ApplicationVersionTasks WHERE TaskId = ?', [tid]);
+      // Null out ReleaseVersionId references in other tables we can reach
+    }
+
+    // Delete all descendant tasks first (deepest first to avoid FK issues)
+    if (descendantIds.length > 0) {
+      const placeholders = descendantIds.map(() => '?').join(',');
+      await pool.execute(`DELETE FROM Tasks WHERE Id IN (${placeholders})`, descendantIds);
+    }
 
     const [result] = await pool.execute<ResultSetHeader>(
       'DELETE FROM Tasks WHERE Id = ?',

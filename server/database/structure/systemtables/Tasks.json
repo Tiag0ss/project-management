@@ -138,6 +138,18 @@
       "Comment": "Foreign key - reference to Sprints.Id for sprint assignment"
     },
     {
+      "FieldName": "ApplicationId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Applications.Id this task directly relates to"
+    },
+    {
+      "FieldName": "ReleaseVersionId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to ApplicationVersions.Id indicating which version released this task"
+    },
+    {
       "FieldName": "BaselineStartDate",
       "DataType": "date",
       "NotNullable": false,

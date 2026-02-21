@@ -207,6 +207,11 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
     const canAssignTickets = getValue('CanAssignTickets', 'canAssignTickets');
     const canPlanTasks = getValue('CanPlanTasks', 'canPlanTasks');
     const canViewOthersPlanning = getValue('CanViewOthersPlanning', 'canViewOthersPlanning');
+    const canViewApplications = getValue('CanViewApplications', 'canViewApplications');
+    const canManageApplications = getValue('CanManageApplications', 'canManageApplications');
+    const canCreateApplications = getValue('CanCreateApplications', 'canCreateApplications');
+    const canDeleteApplications = getValue('CanDeleteApplications', 'canDeleteApplications');
+    const canManageReleases = getValue('CanManageReleases', 'canManageReleases');
     const canViewCustomers = getValue('CanViewCustomers', 'canViewCustomers');
     const canManageCustomers = getValue('CanManageCustomers', 'canManageCustomers');
     const canCreateCustomers = getValue('CanCreateCustomers', 'canCreateCustomers');
@@ -248,7 +253,12 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
           CanAssignTickets = ?,
           CanCreateTaskFromTicket = ?,
           CanPlanTasks = ?,
-          CanViewOthersPlanning = ?
+          CanViewOthersPlanning = ?,
+          CanViewApplications = ?,
+          CanManageApplications = ?,
+          CanCreateApplications = ?,
+          CanDeleteApplications = ?,
+          CanManageReleases = ?
         WHERE RoleName = ?`,
         [
           canViewDashboard ? 1 : 0,
@@ -277,6 +287,11 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
           canCreateTaskFromTicket ? 1 : 0,
           canPlanTasks ? 1 : 0,
           canViewOthersPlanning ? 1 : 0,
+          canViewApplications ? 1 : 0,
+          canManageApplications ? 1 : 0,
+          canCreateApplications ? 1 : 0,
+          canDeleteApplications ? 1 : 0,
+          canManageReleases ? 1 : 0,
           roleName
         ]
       );
@@ -310,8 +325,13 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
           CanAssignTickets,
           CanCreateTaskFromTicket,
           CanPlanTasks,
-          CanViewOthersPlanning
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          CanViewOthersPlanning,
+          CanViewApplications,
+          CanManageApplications,
+          CanCreateApplications,
+          CanDeleteApplications,
+          CanManageReleases
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           roleName,
           canViewDashboard ? 1 : 0,
@@ -339,7 +359,12 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
           canAssignTickets ? 1 : 0,
           canCreateTaskFromTicket ? 1 : 0,
           canPlanTasks ? 1 : 0,
-          canViewOthersPlanning ? 1 : 0
+          canViewOthersPlanning ? 1 : 0,
+          canViewApplications ? 1 : 0,
+          canManageApplications ? 1 : 0,
+          canCreateApplications ? 1 : 0,
+          canDeleteApplications ? 1 : 0,
+          canManageReleases ? 1 : 0
         ]
       );
     }
@@ -433,7 +458,12 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
           canDeleteTickets: true,
           canAssignTickets: true,
           canPlanTasks: true,
-          canViewOthersPlanning: true
+          canViewOthersPlanning: true,
+          canViewApplications: true,
+          canManageApplications: true,
+          canCreateApplications: true,
+          canDeleteApplications: true,
+          canManageReleases: true
         }
       });
     }
@@ -475,7 +505,12 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
           canAssignTickets: false,
           canPlanTasks: false,
           canViewOthersPlanning: false,
-          canCreateTaskFromTicket: false
+          canCreateTaskFromTicket: false,
+          canViewApplications: false,
+          canManageApplications: false,
+          canCreateApplications: false,
+          canDeleteApplications: false,
+          canManageReleases: false
         }
       });
     }
@@ -516,7 +551,12 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
       canAssignTickets: false,
       canPlanTasks: false,
       canViewOthersPlanning: false,
-      canCreateTaskFromTicket: false
+      canCreateTaskFromTicket: false,
+      canViewApplications: false,
+      canManageApplications: false,
+      canCreateApplications: false,
+      canDeleteApplications: false,
+      canManageReleases: false
     };
 
     permissions.forEach((perm: any) => {
@@ -546,6 +586,11 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
       if (perm.CanPlanTasks) combined.canPlanTasks = true;
       if (perm.CanViewOthersPlanning) combined.canViewOthersPlanning = true;
       if (perm.CanCreateTaskFromTicket) combined.canCreateTaskFromTicket = true;
+      if (perm.CanViewApplications) combined.canViewApplications = true;
+      if (perm.CanManageApplications) combined.canManageApplications = true;
+      if (perm.CanCreateApplications) combined.canCreateApplications = true;
+      if (perm.CanDeleteApplications) combined.canDeleteApplications = true;
+      if (perm.CanManageReleases) combined.canManageReleases = true;
     });
 
     // Also merge in org-level permission groups assigned to this user
@@ -573,6 +618,10 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
       if (perm.CanDeleteTickets) combined.canDeleteTickets = true;
       if (perm.CanAssignTickets) combined.canAssignTickets = true;
       if (perm.CanCreateTaskFromTicket) combined.canCreateTaskFromTicket = true;
+      if (perm.CanManageApplications) combined.canManageApplications = true;
+      if (perm.CanCreateApplications) combined.canCreateApplications = true;
+      if (perm.CanDeleteApplications) combined.canDeleteApplications = true;
+      if (perm.CanManageReleases) combined.canManageReleases = true;
     });
 
     res.json({ success: true, data: combined });

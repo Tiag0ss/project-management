@@ -31,6 +31,11 @@ export interface RolePermission {
   CanCreateTaskFromTicket: boolean;
   CanPlanTasks: boolean;
   CanViewOthersPlanning: boolean;
+  CanViewApplications: boolean;
+  CanManageApplications: boolean;
+  CanCreateApplications: boolean;
+  CanDeleteApplications: boolean;
+  CanManageReleases: boolean;
   CreatedAt?: string;
   UpdatedAt?: string;
 }
@@ -62,6 +67,11 @@ export interface UserPermissions {
   canCreateTaskFromTicket: boolean;
   canPlanTasks: boolean;
   canViewOthersPlanning: boolean;
+  canViewApplications: boolean;
+  canManageApplications: boolean;
+  canCreateApplications: boolean;
+  canDeleteApplications: boolean;
+  canManageReleases: boolean;
 }
 
 export const getRolePermissions = async (token: string): Promise<RolePermission[]> => {
