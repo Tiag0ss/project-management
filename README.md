@@ -14,8 +14,8 @@ A full-stack, self-hosted project management application with task tracking, res
 - 🔐 **Role-Based Permissions** — Developer, Support, Manager roles with granular permission control
 - 🎫 **Ticket System** — Support ticket management with auto-numbering, auto-assignment to default support users, task conversion, Jira integration, and fully customizable per-organization statuses and priorities
 - 👤 **Customer Management** — Customer database with organization associations and default support user assignment
-- � **Application Lifecycle Management** — Application registry, version control, release management with PDF exports, task-to-release linking
-- �🔗 **Jira Integration** — Two-tier Jira system connecting tickets and project boards with external linking and encrypted credentials
+- 🛠️ **Application Lifecycle Management** — Application registry, version control, release management with PDF exports, task-to-release linking
+- 🔗 **Jira Integration** — Two-tier Jira system connecting tickets and project boards with external linking and encrypted credentials
 - 📝 **Rich Text Editor** — Tiptap-based editor with formatting, images (inline base64), and markdown support for descriptions and comments
 - 📔 **Memos System** — Calendar-based note-taking with visibility controls (Private, Organizations, Public), tags, and rich content
 - 🔄 **Recurring Tasks** — Outlook-style recurring time blocks for meetings, standups, and fixed schedules that planning respects
