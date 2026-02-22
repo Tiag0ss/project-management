@@ -41,6 +41,34 @@ export function authenticateToken(req: AuthRequest, res: Response, next: NextFun
       isAdmin: decoded.isAdmin,
       customerId: decoded.customerId || null
     };
+
+    // Auto-refresh token if it expires in less than 6 hours
+    const now = Math.floor(Date.now() / 1000);
+    const timeUntilExpiry = decoded.exp - now;
+    const sixHoursInSeconds = 6 * 60 * 60;
+
+    if (timeUntilExpiry < sixHoursInSeconds) {
+      // Generate new token with same payload but fresh expiration
+      const newToken = jwt.sign(
+        {
+          userId: decoded.userId,
+          username: decoded.username,
+          email: decoded.email,
+          isAdmin: decoded.isAdmin,
+          isSupport: decoded.isSupport,
+          isDeveloper: decoded.isDeveloper,
+          isManager: decoded.isManager,
+          customerId: decoded.customerId
+        },
+        JWT_SECRET!,
+        { expiresIn: '24h' }
+      );
+
+      // Send new token in response header
+      res.setHeader('X-New-Token', newToken);
+      logger.info(`Token auto-refreshed for user ${decoded.userId} (${decoded.username})`);
+    }
+
     next();
   } catch (error) {
     logger.warn('Authentication failed: Invalid token', { error, ip: req.ip });

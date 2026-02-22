@@ -774,11 +774,10 @@ function DashboardContent() {
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
       <Navbar />
 
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          {/* Customer User View */}
-          {isCustomerUser ? (
-            portalLoading ? (
+      {isCustomerUser ? (
+        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+          <div className="px-4 py-6 sm:px-0">
+            {portalLoading ? (
               <div className="flex items-center justify-center py-24">
                 <div className="text-gray-500 dark:text-gray-400">Loading…</div>
               </div>
@@ -902,60 +901,75 @@ function DashboardContent() {
                   )}
                 </div>
               </div>
-            ) : null
-          ) : (
-            <>
-              {/* Dashboard Tabs - Regular Users Only */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow mb-6">
-                <div className="border-b border-gray-200 dark:border-gray-700">
-                  <nav className="flex space-x-8 px-6">
-                    <button
-                      onClick={() => {
-                        setActiveTab('overview');
-                        window.history.pushState({}, '', '/dashboard');
-                      }}
-                      className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                        activeTab === 'overview'
-                          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-                      }`}
-                    >
-                      🏠 Overview
-                    </button>
-                    <button
-                      onClick={() => {
-                        setActiveTab('calendar');
-                        window.history.pushState({}, '', '/dashboard?tab=calendar');
-                      }}
-                      className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                        activeTab === 'calendar'
-                          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-                      }`}
-                    >
-                      📅 Calendar
-                    </button>
-                    {!!user?.isAdmin && (
-                      <button
-                        onClick={() => {
-                          setActiveTab('analytics');
-                          window.history.pushState({}, '', '/dashboard?tab=analytics');
-                        }}
-                        className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                          activeTab === 'analytics'
-                            ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-                        }`}
-                      >
-                        📊 Analytics
-                      </button>
-                    )}
-                  </nav>
-                </div>
-              </div>
+            ) : null}
+          </div>
+        </main>
+      ) : (
+        /* Regular User View with Sidebar */
+        <div className="flex max-w-[1920px] mx-auto min-h-[calc(100vh-64px)]">
+          {/* Sidebar */}
+          <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Dashboard</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+              </p>
+            </div>
 
-              {/* Overview Tab */}
-              {activeTab === 'overview' && (
+            <nav className="flex-1 p-4 space-y-1">
+              <button
+                onClick={() => {
+                  setActiveTab('overview');
+                  window.history.pushState({}, '', '/dashboard');
+                }}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                  activeTab === 'overview'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="text-xl">🏠</span>
+                <span className="font-medium">Overview</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('calendar');
+                  window.history.pushState({}, '', '/dashboard?tab=calendar');
+                }}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                  activeTab === 'calendar'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="text-xl">📅</span>
+                <span className="font-medium">Calendar</span>
+              </button>
+
+              {!!user?.isAdmin && (
+                <button
+                  onClick={() => {
+                    setActiveTab('analytics');
+                    window.history.pushState({}, '', '/dashboard?tab=analytics');
+                  }}
+                  className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                    activeTab === 'analytics'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <span className="text-xl">📊</span>
+                  <span className="font-medium">Analytics</span>
+                </button>
+              )}
+            </nav>
+          </aside>
+
+          {/* Main Content */}
+          <main className="flex-1 overflow-auto p-6">
+            {/* Overview Tab */}
+            {activeTab === 'overview' && (
             <div className="space-y-6">
               {/* Welcome Header */}
               <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow p-6 text-white">
@@ -1655,13 +1669,12 @@ function DashboardContent() {
               )}
             </div>
           )}
-
-            </>
-          )}
+          </main>
         </div>
+      )}
 
-        {/* Confirm Modal */}
-        {modalMessage && (
+      {/* Confirm Modal */}
+      {modalMessage && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
               <div className="p-6">
@@ -1698,8 +1711,6 @@ function DashboardContent() {
             </div>
           </div>
         )}
-      </main>
-
     </div>
   );
 }

@@ -803,107 +803,119 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
       <Navbar />
 
-        <div className="container mx-auto px-4 py-8">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-            {/* Header */}
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center gap-4">
-                <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white text-3xl font-bold">
-                  {user.firstName?.[0] || user.username?.[0] || 'U'}
-                </div>
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username}
-                  </h1>
-                  <p className="text-gray-600 dark:text-gray-400">{user.email}</p>
-                  {user.isAdmin && (
-                    <span className="inline-block mt-1 px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
-                      Administrator
-                    </span>
-                  )}
-                </div>
+      <div className="flex max-w-[1920px] mx-auto min-h-[calc(100vh-64px)]">
+        {/* Sidebar */}
+        <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+          {/* User Profile Header */}
+          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white text-3xl font-bold mb-3">
+                {user.firstName?.[0] || user.username?.[0] || 'U'}
               </div>
+              <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+                {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username}
+              </h1>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{user.email}</p>
+              {user.isAdmin && (
+                <span className="inline-block mt-2 px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                  Administrator
+                </span>
+              )}
             </div>
+          </div>
 
-            {/* Tabs */}
-            <div className="border-b border-gray-200 dark:border-gray-700">
-              <nav className="flex -mb-px">
-                <button
-                  onClick={() => setActiveTab('info')}
-                  className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'info'
-                      ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                  }`}
-                >
-                  👤 Profile Info
-                </button>
-                {!isCustomerUser && (
-                  <button
-                    onClick={() => setActiveTab('workHours')}
-                    className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                      activeTab === 'workHours'
-                        ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    ⏰ Work Hours
-                  </button>
-                )}
-                {!isCustomerUser && (
-                  <button
-                    onClick={() => {
-                      setActiveTab('recurringTasks');
-                      loadRecurringAllocations();
-                    }}
-                    className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                      activeTab === 'recurringTasks'
-                        ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    🔄 Recurring Tasks
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setActiveTab('attachments');
-                    loadAttachments();
-                  }}
-                  className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'attachments'
-                      ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                  }`}
-                >
-                  📎 My Attachments ({attachments.length})
-                </button>
-                <button
-                  onClick={() => setActiveTab('security')}
-                  className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'security'
-                      ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                  }`}
-                >
-                  🔒 Security
-                </button>                <button
-                  onClick={() => {
-                    setActiveTab('emailAlerts');
-                    loadEmailPreferences();
-                  }}
-                  className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'emailAlerts'
-                      ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                  }`}
-                >
-                  📧 Email Alerts
-                </button>              </nav>
-            </div>
+          {/* Navigation */}
+          <nav className="flex-1 p-4 space-y-1">
+            <button
+              onClick={() => setActiveTab('info')}
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                activeTab === 'info'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <span className="text-xl">👤</span>
+              <span className="font-medium">Profile Info</span>
+            </button>
 
-            {/* Content */}
-            <div className="p-6">
+            {!isCustomerUser && (
+              <button
+                onClick={() => setActiveTab('workHours')}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                  activeTab === 'workHours'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="text-xl">⏰</span>
+                <span className="font-medium">Work Hours</span>
+              </button>
+            )}
+
+            {!isCustomerUser && (
+              <button
+                onClick={() => {
+                  setActiveTab('recurringTasks');
+                  loadRecurringAllocations();
+                }}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                  activeTab === 'recurringTasks'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="text-xl">🔄</span>
+                <span className="font-medium">Recurring Tasks</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                setActiveTab('attachments');
+                loadAttachments();
+              }}
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                activeTab === 'attachments'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <span className="text-xl">📎</span>
+              <span className="font-medium">My Attachments ({attachments.length})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('security')}
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                activeTab === 'security'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <span className="text-xl">🔒</span>
+              <span className="font-medium">Security</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab('emailAlerts');
+                loadEmailPreferences();
+              }}
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                activeTab === 'emailAlerts'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <span className="text-xl">📧</span>
+              <span className="font-medium">Email Alerts</span>
+            </button>
+          </nav>
+        </aside>
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-auto">
+          <div className="p-6">
               {message && (
                 <div className={`mb-4 p-3 rounded ${
                   message.includes('successfully') || message.includes('Success')
@@ -1709,9 +1721,9 @@ export default function ProfilePage() {
                   </div>
                 </div>
               )}
-            </div>
           </div>
-        </div>
+        </main>
       </div>
+    </div>
   );
 }

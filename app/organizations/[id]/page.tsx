@@ -258,125 +258,108 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
       <Navbar />
 
-      <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div className="mb-6">
-          <a href="/organizations" className="text-blue-600 dark:text-blue-400 hover:underline mb-2 inline-block">
-            ← Back to Organizations
-          </a>
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{organization.Name}</h1>
-              {organization.Description && (
-                <div 
-                  className="text-gray-600 dark:text-gray-400 mt-2 prose prose-sm dark:prose-invert max-w-none"
-                  dangerouslySetInnerHTML={{ __html: organization.Description }}
-                />
+      <div className="flex max-w-[1920px] mx-auto">
+        {/* Sidebar */}
+        <aside className="w-64 bg-white dark:bg-gray-800 min-h-[calc(100vh-64px)] border-r border-gray-200 dark:border-gray-700">
+          <div className="p-4">
+            {/* Organization Header */}
+            <div className="mb-6">
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-1">{organization.Name}</h1>
+              {canManageSettings && (
+                <button
+                  onClick={() => {
+                    setEditForm({ name: organization.Name, description: organization.Description || '' });
+                    setShowEditModal(true);
+                  }}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  ✏️ Edit
+                </button>
               )}
             </div>
-            {canManageSettings && (
-              <button
-                onClick={() => {
-                  setEditForm({ name: organization.Name, description: organization.Description || '' });
-                  setShowEditModal(true);
-                }}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                ✏️ Edit
-              </button>
-            )}
-          </div>
-        </div>
 
-        {error && (
-          <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
-            {error}
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow mb-6">
-          <div className="border-b border-gray-200 dark:border-gray-700">
-            <nav className="flex -mb-px">
+            {/* Navigation */}
+            <nav className="space-y-1">
               <button
                 onClick={() => setActiveTab('overview')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 ${
+                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
                   activeTab === 'overview'
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
-                Overview
+                📊 Overview
               </button>
               <button
                 onClick={() => setActiveTab('members')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 ${
+                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
                   activeTab === 'members'
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
-                Members
+                👥 Members
               </button>
               <button
                 onClick={() => setActiveTab('projects')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 ${
+                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
                   activeTab === 'projects'
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
-                Projects
+                📁 Projects
               </button>
               <button
                 onClick={() => setActiveTab('permissions')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 ${
+                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
                   activeTab === 'permissions'
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
-                Permission Groups
+                🔐 Permission Groups
               </button>
               <button
                 onClick={() => setActiveTab('statuses')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 ${
+                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
                   activeTab === 'statuses'
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
-                Status & Priorities
+                🎨 Status & Priorities
               </button>
               <button
                 onClick={() => setActiveTab('tags')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 ${
+                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
                   activeTab === 'tags'
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
-                Tags
+                🏷️ Tags
               </button>
               <button
                 onClick={() => {
                   setActiveTab('attachments');
                   loadAttachments();
                 }}
-                className={`px-6 py-4 text-sm font-medium border-b-2 ${
+                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
                   activeTab === 'attachments'
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
-                📎 Attachments ({attachments.length})
+                📎 Attachments
               </button>
               {canManageSettings && (
                 <button
                   onClick={() => setActiveTab('integrations')}
-                  className={`px-6 py-4 text-sm font-medium border-b-2 ${
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
                     activeTab === 'integrations'
-                      ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
                 >
                   🔌 Integrations
@@ -385,10 +368,10 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
               {canManageSettings && (
                 <button
                   onClick={() => setActiveTab('sla')}
-                  className={`px-6 py-4 text-sm font-medium border-b-2 ${
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
                     activeTab === 'sla'
-                      ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
                 >
                   ⏱️ SLA Rules
@@ -396,18 +379,36 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
               )}
               <button
                 onClick={() => setActiveTab('history')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 ${
+                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
                   activeTab === 'history'
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
                 📜 History
               </button>
             </nav>
-          </div>
 
-          <div className="p-6">
+            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+              <a
+                href="/organizations"
+                className="block text-center px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+              >
+                ← Back to Organizations
+              </a>
+            </div>
+          </div>
+        </aside>
+
+        {/* Main Content */}
+        <main className="flex-1 p-6">
+          {error && (
+            <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
+              {error}
+            </div>
+          )}
+
+          <div>
             {activeTab === 'overview' && <OverviewTab organization={organization} orgId={orgId} token={token!} />}
             {activeTab === 'members' && <MembersTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}
             {activeTab === 'projects' && <ProjectsTab orgId={orgId} canManage={canManageSettings} token={token!} />}
@@ -433,7 +434,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
               </div>
             )}
           </div>
-        </div>
+        </main>
       </div>
 
       {/* Edit Organization Modal */}

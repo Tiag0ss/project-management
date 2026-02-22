@@ -41,75 +41,82 @@ export default function AdministrationPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Navbar />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Administration
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Manage system settings and configurations
-          </p>
-        </div>
 
-        {/* Tab Navigation */}
-        <div className="mb-6 border-b border-gray-200 dark:border-gray-700">
-          <nav className="flex space-x-8">
+      <div className="flex max-w-[1920px] mx-auto min-h-[calc(100vh-64px)]">
+        {/* Sidebar */}
+        <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white">Administration</h1>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Manage system settings and configurations</p>
+          </div>
+
+          <nav className="flex-1 p-4 space-y-1">
             <button
               onClick={() => setActiveTab('users')}
-              className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
                 activeTab === 'users'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
             >
-              👥 Users
+              <span className="text-xl">👥</span>
+              <span className="font-medium">Users</span>
             </button>
+
             <button
               onClick={() => setActiveTab('permissions')}
-              className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
                 activeTab === 'permissions'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
             >
-              🔐 Role Permissions
+              <span className="text-xl">🔐</span>
+              <span className="font-medium">Role Permissions</span>
             </button>
+
             <button
               onClick={() => setActiveTab('settings')}
-              className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
                 activeTab === 'settings'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
             >
-              ⚙️ System Settings
+              <span className="text-xl">⚙️</span>
+              <span className="font-medium">System Settings</span>
             </button>
+
             <button
               onClick={() => setActiveTab('logs')}
-              className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
                 activeTab === 'logs'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
             >
-              📋 Activity Logs
+              <span className="text-xl">📋</span>
+              <span className="font-medium">Activity Logs</span>
             </button>
+
             <button
               onClick={() => setActiveTab('frontpage')}
-              className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
                 activeTab === 'frontpage'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
             >
-              🏠 Frontpage
+              <span className="text-xl">🏠</span>
+              <span className="font-medium">Frontpage</span>
             </button>
           </nav>
-        </div>
+        </aside>
 
-        {/* Tab Content */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-          {activeTab === 'users' && <UsersManagement />}
+        {/* Main Content */}
+        <main className="flex-1 overflow-auto">
+          <div className="p-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow">{activeTab === 'users' && <UsersManagement />}
           
           {activeTab === 'permissions' && <RolePermissionsManagement />}
           
@@ -118,7 +125,9 @@ export default function AdministrationPage() {
           {activeTab === 'logs' && <ActivityLogsManagement />}
           
           {activeTab === 'frontpage' && <FrontpageEditor />}
-        </div>
+            </div>
+          </div>
+        </main>
       </div>
     </div>
   );

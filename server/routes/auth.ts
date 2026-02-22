@@ -293,4 +293,102 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/auth/refresh:
+ *   post:
+ *     summary: Refresh authentication token
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Token refreshed successfully
+ *       401:
+ *         description: No token provided
+ *       403:
+ *         description: Invalid or expired token
+ *       500:
+ *         description: Server error
+ */
+router.post('/refresh', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Access token required' 
+      });
+    }
+
+    // Verify current token (even if expired, decode it)
+    let decoded: any;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (error: any) {
+      // If token is expired, try to decode it anyway to get user info
+      if (error.name === 'TokenExpiredError') {
+        decoded = jwt.decode(token);
+      } else {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Invalid token' 
+        });
+      }
+    }
+
+    if (!decoded || !decoded.userId) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Invalid token payload' 
+      });
+    }
+
+    // Verify user still exists and is active
+    const [users] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id, Username, Email, IsAdmin, IsSupport, IsDeveloper, IsManager, CustomerId FROM Users WHERE Id = ?',
+      [decoded.userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+
+    const user = users[0];
+
+    // Generate new token
+    const newToken = jwt.sign(
+      {
+        userId: user.Id,
+        username: user.Username,
+        email: user.Email,
+        isAdmin: user.IsAdmin,
+        isSupport: user.IsSupport,
+        isDeveloper: user.IsDeveloper,
+        isManager: user.IsManager,
+        customerId: user.CustomerId
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      success: true,
+      message: 'Token refreshed successfully',
+      token: newToken
+    });
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error during token refresh' 
+    });
+  }
+});
+
 export default router;

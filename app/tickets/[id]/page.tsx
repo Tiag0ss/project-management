@@ -16,6 +16,7 @@ import { projectsApi, Project } from '@/lib/api/projects';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableSelect from '@/components/SearchableSelect';
+import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 
 interface Ticket {
   Id: number;
@@ -107,6 +108,7 @@ export default function TicketDetailPage() {
     organizationId: '',
     customerId: '',
     projectId: '',
+    applicationIds: [] as number[],
   });
   const [saving, setSaving] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
@@ -159,6 +161,10 @@ export default function TicketDetailPage() {
   
   // Jira integration state
   const [jiraIntegration, setJiraIntegration] = useState<{JiraUrl: string} | null>(null);
+
+  // Applications state
+  const [applications, setApplications] = useState<{Id: number, Name: string, OrganizationName: string}[]>([]);
+  const [ticketApplications, setTicketApplications] = useState<{Id: number, Name: string}[]>([]);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -306,6 +312,7 @@ export default function TicketDetailPage() {
         organizationId: data.ticket.OrganizationId?.toString() || '',
         customerId: data.ticket.CustomerId?.toString() || '',
         projectId: data.ticket.ProjectId?.toString() || '',
+        applicationIds: [],
       });
 
       // Load ticket status/priority values for this organization
@@ -349,12 +356,46 @@ export default function TicketDetailPage() {
         if (data.ticket.OrganizationId) {
           await loadCustomersAndProjects(data.ticket.OrganizationId);
         }
+
+        // Load all applications for dropdown
+        const appsRes = await fetch(
+          `${getApiUrl()}/api/applications`,
+          { headers: { 'Authorization': `Bearer ${token}` } }
+        );
+        if (appsRes.ok) {
+          const appsData = await appsRes.json();
+          setApplications(appsData.applications || []);
+        }
       }
+
+      // Load ticket applications
+      await loadTicketApplications();
     } catch (err) {
       console.error('Failed to load ticket:', err);
       setError('Failed to load ticket');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadTicketApplications = async () => {
+    if (!token || !ticketId) return;
+    
+    try {
+      const res = await fetch(
+        `${getApiUrl()}/api/tickets/${ticketId}/applications`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setTicketApplications(data.applications || []);
+        setEditForm(prev => ({
+          ...prev,
+          applicationIds: data.applications.map((app: any) => app.Id)
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to load ticket applications:', err);
     }
   };
 
@@ -619,6 +660,25 @@ export default function TicketDetailPage() {
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.message || 'Failed to update ticket');
+      }
+
+      // Save applications
+      const appsRes = await fetch(
+        `${getApiUrl()}/api/tickets/${ticketId}/applications`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            applicationIds: editForm.applicationIds,
+          }),
+        }
+      );
+
+      if (!appsRes.ok) {
+        console.error('Failed to update ticket applications');
       }
 
       setIsEditing(false);
@@ -1594,6 +1654,44 @@ export default function TicketDetailPage() {
                           </span>
                         ) : (
                           <span className="text-gray-400 dark:text-gray-500">Not scheduled</span>
+                        )}
+                      </dd>
+                    )}
+                  </div>
+                )}
+
+                {/* Applications */}
+                {(user?.isManager || user?.isAdmin) && (
+                  <div>
+                    <dt className="text-sm text-gray-500 dark:text-gray-400">Applications</dt>
+                    {isEditing ? (
+                      <SearchableMultiSelect
+                        values={editForm.applicationIds}
+                        onChange={(values) => setEditForm(prev => ({ 
+                          ...prev, 
+                          applicationIds: values.map(v => typeof v === 'string' ? parseInt(v) : v)
+                        }))}
+                        options={applications.map(app => ({
+                          value: app.Id,
+                          label: app.Name,
+                          subtitle: app.OrganizationName
+                        }))}
+                        placeholder="Select Applications"
+                        className="mt-1"
+                      />
+                    ) : (
+                      <dd className="mt-1">
+                        {ticketApplications.length > 0 ? (
+                          <div className="space-y-1">
+                            {ticketApplications.map(app => (
+                              <div key={app.Id} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded text-sm mr-1 mb-1">
+                                <span>📦</span>
+                                <span>{app.Name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-gray-400 dark:text-gray-500">No applications</span>
                         )}
                       </dd>
                     )}

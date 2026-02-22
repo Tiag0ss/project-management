@@ -439,7 +439,7 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName, u.IsActive, u.IsAdmin, 
               u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager,
-              u.TeamLeaderId, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
+              u.HourlyRate, u.TeamLeaderId, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
               u.CreatedAt, u.UpdatedAt 
        FROM Users u
        LEFT JOIN Customers c ON u.CustomerId = c.Id
@@ -581,11 +581,15 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
       changes.push({ field: 'TeamLeaderId', oldVal: String(oldUser.TeamLeaderId || ''), newVal: String(teamLeaderId || '') });
     }
 
+    // Parse hourlyRate correctly (handle 0 values)
+    const parsedHourlyRate = (hourlyRate != null && hourlyRate !== '') ? parseFloat(hourlyRate) : null;
+    const sanitizedHourlyRate = (parsedHourlyRate !== null && !isNaN(parsedHourlyRate)) ? parsedHourlyRate : null;
+
     await pool.execute(
       `UPDATE Users 
        SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, TeamLeaderId = ? 
        WHERE Id = ?`,
-      [username, email, firstName || null, lastName || null, isActive, isAdmin, customerId || null, isDeveloper || false, isSupport || false, isManager || false, hourlyRate != null ? parseFloat(hourlyRate) || null : null, teamLeaderId || null, userId]
+      [username, email, firstName || null, lastName || null, isActive, isAdmin, customerId || null, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null, userId]
     );
     
     // Log changes to history
@@ -844,7 +848,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, 
  */
 router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, isDeveloper, isSupport, isManager, teamLeaderId } = req.body;
+    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId } = req.body;
 
     if (!username || !email || !password) {
       return res.status(400).json({ 
@@ -875,10 +879,14 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
+    // Parse hourlyRate correctly (handle 0 values)
+    const parsedHourlyRate = (hourlyRate != null && hourlyRate !== '') ? parseFloat(hourlyRate) : null;
+    const sanitizedHourlyRate = (parsedHourlyRate !== null && !isNaN(parsedHourlyRate)) ? parsedHourlyRate : null;
+
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, CustomerId, IsDeveloper, IsSupport, IsManager, TeamLeaderId) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [username, email, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, customerId || null, isDeveloper !== false, isSupport || false, isManager || false, teamLeaderId || null]
+      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, TeamLeaderId) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [username, email, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, customerId || null, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null]
     );
 
     // Log user creation
@@ -947,7 +955,7 @@ router.get('/:id/details', authenticateToken, requireAdmin, async (req: AuthRequ
     // Get user info
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName, u.IsActive, u.IsAdmin, 
-              u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager, u.CreatedAt, u.UpdatedAt,
+              u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager, u.HourlyRate, u.CreatedAt, u.UpdatedAt,
               u.WorkHoursMonday, u.WorkHoursTuesday, u.WorkHoursWednesday, u.WorkHoursThursday,
               u.WorkHoursFriday, u.WorkHoursSaturday, u.WorkHoursSunday
        FROM Users u
@@ -1017,9 +1025,11 @@ router.get('/:id/details', authenticateToken, requireAdmin, async (req: AuthRequ
     // Get KPIs - Tickets (if user is associated with a customer or created tickets)
     const [tickets] = await pool.execute<RowDataPacket[]>(
       `SELECT COUNT(*) as Total,
-              SUM(CASE WHEN Status = 'Open' THEN 1 ELSE 0 END) as Open,
-              SUM(CASE WHEN Status = 'Resolved' OR Status = 'Closed' THEN 1 ELSE 0 END) as Resolved
-       FROM Tickets WHERE CreatedByUserId = ?`,
+              SUM(CASE WHEN tsv.StatusName = 'Open' OR tsv.IsClosed = 0 THEN 1 ELSE 0 END) as Open,
+              SUM(CASE WHEN tsv.IsClosed = 1 THEN 1 ELSE 0 END) as Resolved
+       FROM Tickets t
+       LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
+       WHERE t.CreatedByUserId = ?`,
       [userId]
     );
 

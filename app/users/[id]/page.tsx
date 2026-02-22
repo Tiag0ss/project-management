@@ -83,7 +83,9 @@ export default function UserDetailPage() {
   const [permissionGroups, setPermissionGroups] = useState<{ [orgId: number]: PermissionGroup[] }>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'attachments' | 'history'>('overview');
+  const [attachments, setAttachments] = useState<any[]>([]);
+  const [loadingAttachments, setLoadingAttachments] = useState(false);
 
   // Add membership modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -135,6 +137,32 @@ export default function UserDetailPage() {
       setError('Failed to load user details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAttachments = async () => {
+    if (!token || !userId) return;
+    
+    setLoadingAttachments(true);
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/users/${userId}/attachments`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        setAttachments(data.attachments || []);
+      }
+    } catch (err: any) {
+      console.error('Failed to load attachments:', err);
+    } finally {
+      setLoadingAttachments(false);
     }
   };
 
@@ -273,6 +301,94 @@ export default function UserDetailPage() {
       }
     } catch (err) {
       console.error('Failed to remove membership:', err);
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const getFileIcon = (mimeType: string) => {
+    if (mimeType.startsWith('image/')) return '🖼️';
+    if (mimeType === 'application/pdf') return '📄';
+    if (mimeType.includes('word')) return '📝';
+    if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return '📊';
+    if (mimeType.includes('zip') || mimeType.includes('rar')) return '📦';
+    return '📎';
+  };
+
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case 'Task': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400';
+      case 'Ticket': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400';
+      case 'Project': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400';
+      case 'Customer': return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400';
+      case 'Organization': return 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-400';
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
+    }
+  };
+
+  const handleDownloadAttachment = async (attachment: any) => {
+    if (!token) return;
+    
+    try {
+      let endpoint = '';
+      switch (attachment.Type) {
+        case 'Task':
+          endpoint = `/api/task-attachments/${attachment.Id}`;
+          break;
+        case 'Ticket':
+          endpoint = `/api/ticket-attachments/${attachment.Id}`;
+          break;
+        case 'Project':
+          endpoint = `/api/project-attachments/${attachment.Id}`;
+          break;
+        case 'Customer':
+          endpoint = `/api/customer-attachments/${attachment.Id}`;
+          break;
+        case 'Organization':
+          endpoint = `/api/organization-attachments/${attachment.Id}`;
+          break;
+        default:
+          return;
+      }
+
+      const response = await fetch(
+        `${getApiUrl()}${endpoint}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const fileData = data.data;
+        
+        // Convert base64 to blob
+        const byteCharacters = atob(fileData.FileData);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: fileData.FileType });
+        
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileData.FileName;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
+    } catch (err) {
+      console.error('Failed to download attachment:', err);
     }
   };
 
@@ -483,6 +599,21 @@ export default function UserDetailPage() {
               📊 Overview
             </button>
             <button
+              onClick={() => {
+                setActiveTab('attachments');
+                if (attachments.length === 0) {
+                  loadAttachments();
+                }
+              }}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'attachments'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+              }`}
+            >
+              📎 Attachments ({attachments.length})
+            </button>
+            <button
               onClick={() => setActiveTab('history')}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'history'
@@ -682,6 +813,63 @@ export default function UserDetailPage() {
             </div>
           </div>
         </div>
+        )}
+
+        {activeTab === 'attachments' && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+              User Uploaded Files
+            </h2>
+            
+            {loadingAttachments ? (
+              <p className="text-gray-500 dark:text-gray-400">Loading...</p>
+            ) : attachments.length === 0 ? (
+              <p className="text-gray-500 dark:text-gray-400 text-center py-8">
+                This user hasn't uploaded any files yet.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {attachments.map((attachment: any) => (
+                  <div
+                    key={`${attachment.Type}-${attachment.Id}`}
+                    className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600"
+                  >
+                    <div className="flex items-start gap-4">
+                      <span className="text-3xl flex-shrink-0">{getFileIcon(attachment.FileType)}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`px-2 py-0.5 text-xs font-semibold rounded ${getTypeColor(attachment.Type)}`}>
+                            {attachment.Type}
+                          </span>
+                          <span className="text-sm text-gray-600 dark:text-gray-400">
+                            {attachment.EntityName}
+                          </span>
+                          {attachment.ProjectName && (
+                            <span className="text-sm text-gray-500 dark:text-gray-500">
+                              · {attachment.ProjectName}
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-medium text-gray-900 dark:text-white truncate">
+                          {attachment.FileName}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          {formatFileSize(attachment.FileSize)} · {new Date(attachment.CreatedAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDownloadAttachment(attachment)}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors flex-shrink-0"
+                        title="Download"
+                      >
+                        ⬇️ Download
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {activeTab === 'history' && user && currentUser?.isAdmin && (

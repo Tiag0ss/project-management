@@ -1350,4 +1350,132 @@ router.post('/migrate-ticket-numbers', authenticateToken, async (req: AuthReques
   }
 });
 
+/**
+ * @swagger
+ * /api/tickets/{id}/applications:
+ *   get:
+ *     summary: Get applications associated with a ticket
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of applications associated with the ticket
+ *       500:
+ *         description: Internal server error
+ */
+router.get('/:id/applications', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const [applications] = await pool.execute<RowDataPacket[]>(`
+      SELECT 
+        a.Id,
+        a.Name,
+        a.Description,
+        a.RepositoryUrl,
+        a.OrganizationId,
+        o.Name as OrganizationName
+      FROM TicketApplications ta
+      INNER JOIN Applications a ON ta.ApplicationId = a.Id
+      LEFT JOIN Organizations o ON a.OrganizationId = o.Id
+      WHERE ta.TicketId = ?
+      ORDER BY a.Name
+    `, [id]);
+
+    res.json({ success: true, applications });
+  } catch (error) {
+    console.error('Error fetching ticket applications:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch ticket applications' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/tickets/{id}/applications:
+ *   put:
+ *     summary: Update applications associated with a ticket
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               applicationIds:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *     responses:
+ *       200:
+ *         description: Successfully updated ticket applications
+ *       500:
+ *         description: Internal server error
+ */
+router.put('/:id/applications', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { applicationIds } = req.body;
+    const userId = req.user?.userId;
+
+    // Validate applicationIds is an array
+    if (!Array.isArray(applicationIds)) {
+      return res.status(400).json({ success: false, message: 'applicationIds must be an array' });
+    }
+
+    // Get old applications for history log
+    const [oldApps] = await pool.execute<RowDataPacket[]>(
+      'SELECT ApplicationId FROM TicketApplications WHERE TicketId = ?',
+      [id]
+    );
+    const oldAppIds = oldApps.map(a => a.ApplicationId);
+
+    // Delete existing associations
+    await pool.execute(
+      'DELETE FROM TicketApplications WHERE TicketId = ?',
+      [id]
+    );
+
+    // Insert new associations
+    if (applicationIds.length > 0) {
+      const values = applicationIds.map(appId => [id, appId]);
+      await pool.query(
+        'INSERT INTO TicketApplications (TicketId, ApplicationId) VALUES ?',
+        [values]
+      );
+    }
+
+    // Log history
+    if (userId) {
+      const ticketIdNum = parseInt(Array.isArray(id) ? id[0] : id);
+      await logTicketHistory(
+        ticketIdNum,
+        userId,
+        'updated',
+        'applications',
+        oldAppIds.join(',') || null,
+        applicationIds.join(',') || null
+      );
+    }
+
+    res.json({ success: true, message: 'Ticket applications updated successfully' });
+  } catch (error) {
+    console.error('Error updating ticket applications:', error);
+    res.status(500).json({ success: false, message: 'Failed to update ticket applications' });
+  }
+});
+
 export default router;

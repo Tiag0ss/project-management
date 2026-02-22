@@ -32,18 +32,27 @@ interface Customer {
   Name: string;
 }
 
+type ApplicationSortField = 'name' | 'organization' | 'projects' | 'versions' | 'customers';
+type SortDirection = 'asc' | 'desc';
+
 export default function ApplicationsPage() {
   const { user, token, isLoading: authLoading } = useAuth();
   const { permissions, isLoading: permissionsLoading } = usePermissions();
   const router = useRouter();
 
   const [applications, setApplications] = useState<Application[]>([]);
-  const [filteredApplications, setFilteredApplications] = useState<Application[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // View and filters
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterOrg, setFilterOrg] = useState('');
+  const [filterVersions, setFilterVersions] = useState<'all' | 'with' | 'without'>('all');
+  const [sortField, setSortField] = useState<ApplicationSortField>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   // Modal
   const [showModal, setShowModal] = useState(false);
@@ -72,21 +81,88 @@ export default function ApplicationsPage() {
     if (token) loadData();
   }, [token]);
 
-  useEffect(() => {
-    if (!searchQuery) {
-      setFilteredApplications(applications);
-    } else {
+  // Get unique organizations
+  const orgNames = Array.from(new Set(applications.map(a => a.OrganizationName).filter(Boolean))).sort();
+
+  // Filtered and sorted applications
+  const filteredAndSortedApplications = (() => {
+    let result = [...applications];
+
+    // Text search
+    if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      setFilteredApplications(
-        applications.filter(
-          (a) =>
-            a.Name.toLowerCase().includes(q) ||
-            a.Description?.toLowerCase().includes(q) ||
-            a.OrganizationName?.toLowerCase().includes(q)
-        )
+      result = result.filter(app =>
+        app.Name.toLowerCase().includes(q) ||
+        app.Description?.toLowerCase().includes(q) ||
+        app.OrganizationName?.toLowerCase().includes(q)
       );
     }
-  }, [applications, searchQuery]);
+
+    // Organization filter
+    if (filterOrg) {
+      result = result.filter(app => app.OrganizationName === filterOrg);
+    }
+
+    // Versions filter
+    if (filterVersions === 'with') {
+      result = result.filter(app => app.VersionCount > 0);
+    } else if (filterVersions === 'without') {
+      result = result.filter(app => app.VersionCount === 0);
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      let comparison = 0;
+      switch (sortField) {
+        case 'name':
+          comparison = a.Name.localeCompare(b.Name);
+          break;
+        case 'organization':
+          comparison = (a.OrganizationName || '').localeCompare(b.OrganizationName || '');
+          break;
+        case 'projects':
+          comparison = a.ProjectCount - b.ProjectCount;
+          break;
+        case 'versions':
+          comparison = a.VersionCount - b.VersionCount;
+          break;
+        case 'customers':
+          comparison = a.CustomerCount - b.CustomerCount;
+          break;
+      }
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    return result;
+  })();
+
+  const handleSort = (field: ApplicationSortField) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const SortIcon = ({ field }: { field: ApplicationSortField }) => {
+    if (sortField !== field) {
+      return (
+        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+        </svg>
+      );
+    }
+    return sortDirection === 'asc' ? (
+      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+      </svg>
+    ) : (
+      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    );
+  };
 
   const loadData = async () => {
     setIsLoading(true);
@@ -232,41 +308,114 @@ export default function ApplicationsPage() {
       <div className="max-w-7xl mx-auto px-4 py-8">
 
         {/* Header */}
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex flex-wrap justify-between items-center gap-4 mb-5">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Applications</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Manage applications, versions, and patch notes
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Applications</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+              {applications.length} application{applications.length !== 1 ? 's' : ''} across your organisations
             </p>
           </div>
-          {permissions?.canCreateApplications && (
-            <button
-              onClick={openCreateModal}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
-            >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            New Application
-          </button>
-          )}
-        </div>
-
-        {/* Search */}
-        <div className="mb-4">
-          <div className="relative">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search applications..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-            />
-            <svg className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+          <div className="flex items-center gap-3">
+            {/* View Toggle */}
+            <div className="flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                title="Grid view"
+              >
+                <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                title="List view"
+              >
+                <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+              </button>
+            </div>
+            {permissions?.canCreateApplications && (
+              <button
+                onClick={openCreateModal}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
+              >
+                <span className="text-xl">+</span>
+                New Application
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Filters */}
+        {applications.length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Search - 2 columns on large screens */}
+              <div className="relative lg:col-span-1">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search applications..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              {/* Organization */}
+              <select
+                value={filterOrg}
+                onChange={e => setFilterOrg(e.target.value)}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="">All Organisations</option>
+                {orgNames.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+              {/* Versions */}
+              <select
+                value={filterVersions}
+                onChange={e => setFilterVersions(e.target.value as 'all' | 'with' | 'without')}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="all">All Applications</option>
+                <option value="with">With Versions</option>
+                <option value="without">Without Versions</option>
+              </select>
+              {/* Sort */}
+              <select
+                value={`${sortField}-${sortDirection}`}
+                onChange={e => {
+                  const [f, d] = e.target.value.split('-');
+                  setSortField(f as ApplicationSortField);
+                  setSortDirection(d as SortDirection);
+                }}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="name-asc">Name A→Z</option>
+                <option value="name-desc">Name Z→A</option>
+                <option value="organization-asc">Organisation A→Z</option>
+                <option value="organization-desc">Organisation Z→A</option>
+                <option value="projects-desc">Projects (most)</option>
+                <option value="projects-asc">Projects (least)</option>
+                <option value="versions-desc">Versions (most)</option>
+                <option value="versions-asc">Versions (least)</option>
+                <option value="customers-desc">Customers (most)</option>
+                <option value="customers-asc">Customers (least)</option>
+              </select>
+            </div>
+            <div className="flex items-center justify-end mt-3">
+              <span className="text-xs text-gray-400">
+                {filteredAndSortedApplications.length !== applications.length
+                  ? `${filteredAndSortedApplications.length} of ${applications.length} applications`
+                  : `${applications.length} application${applications.length !== 1 ? 's' : ''}`}
+              </span>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
@@ -274,24 +423,151 @@ export default function ApplicationsPage() {
           </div>
         )}
 
-        {/* Applications Grid */}
-        {filteredApplications.length === 0 ? (
+        {/* Applications View */}
+        {filteredAndSortedApplications.length === 0 && applications.length === 0 ? (
           <div className="text-center py-16 bg-white dark:bg-gray-800 rounded-lg shadow">
             <div className="text-5xl mb-4">📦</div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No applications yet</h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-4">Get started by creating your first application.</p>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">No applications yet</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">Get started by creating your first application</p>
             {permissions?.canCreateApplications && (
               <button
                 onClick={openCreateModal}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors font-medium"
               >
-                New Application
+                Create Application
               </button>
             )}
           </div>
+        ) : filteredAndSortedApplications.length === 0 ? (
+          <div className="text-center py-12 text-gray-500 dark:text-gray-400">No applications match the selected filters.</div>
+        ) : viewMode === 'list' ? (
+          /* List View */
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-900">
+                <tr>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('name')}>
+                    <div className="flex items-center gap-1">Application <SortIcon field="name" /></div>
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('organization')}>
+                    <div className="flex items-center gap-1">Organization <SortIcon field="organization" /></div>
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('projects')}>
+                    <div className="flex items-center justify-center gap-1">Projects <SortIcon field="projects" /></div>
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('versions')}>
+                    <div className="flex items-center justify-center gap-1">Versions <SortIcon field="versions" /></div>
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('customers')}>
+                    <div className="flex items-center justify-center gap-1">Customers <SortIcon field="customers" /></div>
+                  </th>
+                  <th scope="col" className="relative px-6 py-3">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {filteredAndSortedApplications.map((app) => (
+                  <tr
+                    key={app.Id}
+                    onClick={() => router.push(`/applications/${app.Id}`)}
+                    className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+                  >
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">📦</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                            {app.Name}
+                          </div>
+                          {app.Description && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                              {app.Description}
+                            </div>
+                          )}
+                          {app.RepositoryUrl && (
+                            <a
+                              href={app.RepositoryUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                              Repository
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-gray-900 dark:text-white">
+                        {app.OrganizationName}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="inline-flex items-center gap-1 text-sm text-gray-900 dark:text-white">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                        </svg>
+                        {app.ProjectCount}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="inline-flex items-center gap-1 text-sm text-gray-900 dark:text-white">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                        </svg>
+                        {app.VersionCount}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="inline-flex items-center gap-1 text-sm text-gray-900 dark:text-white">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        {app.CustomerCount}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
+                      {(permissions?.canManageApplications || permissions?.canDeleteApplications) && (
+                        <div className="flex items-center justify-end gap-1">
+                          {permissions?.canManageApplications && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openEditModal(app); }}
+                              className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded transition-colors"
+                              title="Edit"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                          )}
+                          {permissions?.canDeleteApplications && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleDelete(app); }}
+                              className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"
+                              title="Delete"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredApplications.map((app) => (
+          /* Grid View */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredAndSortedApplications.map((app) => (
               <div
                 key={app.Id}
                 className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow cursor-pointer"

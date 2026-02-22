@@ -121,10 +121,23 @@ function generateDueDateReminderEmail(
   `;
 }
 
+// Check if current time is within working hours (8 AM - 6 PM)
+function isWorkingHours(): boolean {
+  const now = new Date();
+  const hour = now.getHours();
+  return hour >= 8 && hour < 18; // 8:00 AM to 5:59 PM
+}
+
 // Main function to check and send due date reminders
 export async function checkAndSendDueDateReminders(): Promise<void> {
   try {
     logger.info('Running due date reminder scheduler check...');
+
+    // Only send emails during working hours (8 AM - 6 PM)
+    if (!isWorkingHours()) {
+      logger.info('Outside working hours (8 AM - 6 PM), skipping due date reminder emails');
+      return;
+    }
 
     const today = formatDate(new Date());
 
@@ -245,32 +258,49 @@ export async function checkAndSendDueDateReminders(): Promise<void> {
   }
 }
 
-// Start the scheduler (runs every hour; reminder logic deduplicates via log table)
-let schedulerInterval: NodeJS.Timeout | null = null;
+// Start the scheduler (runs every hour at minute 0; reminder logic deduplicates via log table)
+let schedulerTimeout: NodeJS.Timeout | null = null;
+
+// Schedule the next run at the top of the next hour (minute 0)
+function scheduleNextRun(): void {
+  const now = new Date();
+  const nextHour = new Date(now);
+  nextHour.setHours(now.getHours() + 1, 0, 0, 0); // Next hour at minute 0
+  
+  const msUntilNextHour = nextHour.getTime() - now.getTime();
+  
+  schedulerTimeout = setTimeout(() => {
+    checkAndSendDueDateReminders().catch(err =>
+      logger.error('Due date reminder check failed:', err)
+    );
+    
+    // Schedule the next run
+    scheduleNextRun();
+  }, msUntilNextHour);
+  
+  logger.info(`Next due date reminder check scheduled for ${nextHour.toISOString()}`);
+}
 
 export function startDueDateReminderScheduler(): void {
-  if (schedulerInterval) {
+  if (schedulerTimeout) {
     return; // Already running
   }
 
   logger.info('Starting due date reminder scheduler...');
 
-  // Run immediately on start, then every hour
+  // Run immediately on start if within working hours
   checkAndSendDueDateReminders().catch(err =>
     logger.error('Initial due date reminder check failed:', err)
   );
 
-  schedulerInterval = setInterval(() => {
-    checkAndSendDueDateReminders().catch(err =>
-      logger.error('Due date reminder check failed:', err)
-    );
-  }, 60 * 60 * 1000); // Every hour
+  // Schedule the next run at the top of the next hour
+  scheduleNextRun();
 }
 
 export function stopDueDateReminderScheduler(): void {
-  if (schedulerInterval) {
-    clearInterval(schedulerInterval);
-    schedulerInterval = null;
+  if (schedulerTimeout) {
+    clearTimeout(schedulerTimeout);
+    schedulerTimeout = null;
     logger.info('Due date reminder scheduler stopped');
   }
 }

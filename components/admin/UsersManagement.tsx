@@ -422,6 +422,7 @@ function CreateUserModal({
     workHoursFriday: '8',
     workHoursSaturday: '0',
     workHoursSunday: '0',
+    hourlyRate: '',
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -452,6 +453,7 @@ function CreateUserModal({
         workHoursFriday: parseFloat(formData.workHoursFriday),
         workHoursSaturday: parseFloat(formData.workHoursSaturday),
         workHoursSunday: parseFloat(formData.workHoursSunday),
+        hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
       }, token);
       onUserCreated();
     } catch (err: any) {
@@ -561,6 +563,25 @@ function CreateUserModal({
                   <option key={c.Id} value={c.Id}>{c.Name}</option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Hourly Rate
+                <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">(for budget calculations)</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 text-sm">$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.hourlyRate}
+                  onChange={(e) => setFormData({ ...formData, hourlyRate: e.target.value })}
+                  className="w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  placeholder="0.00"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
