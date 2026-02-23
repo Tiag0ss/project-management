@@ -46,6 +46,7 @@ export interface Task {
   ExternalTicketId?: string | null;
   JiraUrl?: string | null;
   ExternalIssueId?: string | null;
+  JiraIssueKey?: string | null;
   ApplicationId?: number | null;
   ApplicationName?: string | null;
   ReleaseVersionId?: number | null;
@@ -72,6 +73,7 @@ export interface CreateTaskData {
   plannedEndDate?: string;
   dependsOnTaskId?: number;
   ticketId?: number;
+  jiraIssueKey?: string;
   applicationId?: number | null;
   releaseVersionId?: number | null;
 }

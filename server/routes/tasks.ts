@@ -321,6 +321,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 tk.Title as TicketTitle,
                 tk.ExternalTicketId,
                 oji.JiraUrl,
+                t.JiraIssueKey,
                 (
                   SELECT JSON_ARRAYAGG(JSON_OBJECT('UserId', ua.UserId, 'Username', uu.Username, 'FirstName', uu.FirstName, 'LastName', uu.LastName))
                   FROM TaskAssignees ua JOIN Users uu ON ua.UserId = uu.Id
@@ -368,6 +369,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 tk.Title as TicketTitle,
                 tk.ExternalTicketId,
                 oji.JiraUrl,
+                t.JiraIssueKey,
                 (
                   SELECT JSON_ARRAYAGG(JSON_OBJECT('UserId', ua.UserId, 'Username', uu.Username, 'FirstName', uu.FirstName, 'LastName', uu.LastName))
                   FROM TaskAssignees ua JOIN Users uu ON ua.UserId = uu.Id
@@ -451,7 +453,8 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
               tk.TicketNumber,
               tk.Title as TicketTitle,
               tk.ExternalTicketId,
-              oji.JiraUrl
+              oji.JiraUrl,
+              t.JiraIssueKey
        FROM Tasks t
        JOIN Projects p ON t.ProjectId = p.Id
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
@@ -530,7 +533,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, taskName, description, status, priority, assignedTo, dueDate, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, applicationId, releaseVersionId } = req.body;
+    const { projectId, taskName, description, status, priority, assignedTo, dueDate, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, jiraIssueKey, applicationId, releaseVersionId } = req.body;
 
     if (!taskName || !projectId) {
       return res.status(400).json({ 
@@ -566,8 +569,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, AssignedTo, DueDate, EstimatedHours, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, ApplicationId, CreatedBy) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, AssignedTo, DueDate, EstimatedHours, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, JiraIssueKey, ApplicationId, CreatedBy) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         projectId,
         taskName,
@@ -583,6 +586,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         toDateOnly(plannedEndDate),
         dependsOnTaskId || null,
         ticketId || null,
+        jiraIssueKey || null,
         applicationId || null,
         userId
       ]

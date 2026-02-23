@@ -107,6 +107,12 @@
       "Comment": "External issue tracking system identifier (e.g., Jira key)"
     },
     {
+      "FieldName": "JiraIssueKey",
+      "DataType": "varchar(100)",
+      "NotNullable": false,
+      "Comment": "Jira issue key from Jira ticket integration (e.g., PROJ-123)"
+    },
+    {
       "FieldName": "GitHubIssueNumber",
       "DataType": "int",
       "NotNullable": false,

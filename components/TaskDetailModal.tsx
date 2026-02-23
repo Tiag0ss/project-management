@@ -20,6 +20,7 @@ interface TaskDetailModalProps {
   onClose: () => void;
   onSaved: () => void;
   token: string;
+  jiraIntegration?: any;
   // Optional planning features
   showRemovePlanning?: boolean;
   onRemovePlanning?: () => void;
@@ -205,6 +206,7 @@ export default function TaskDetailModal({
   onClose,
   onSaved,
   token,
+  jiraIntegration,
   showRemovePlanning = false,
   onRemovePlanning,
 }: TaskDetailModalProps) {
@@ -225,6 +227,7 @@ export default function TaskDetailModal({
     plannedStartDate: task?.PlannedStartDate ? task.PlannedStartDate.split('T')[0] : '',
     plannedEndDate: task?.PlannedEndDate ? task.PlannedEndDate.split('T')[0] : '',
     dependsOnTaskId: task?.DependsOnTaskId || undefined,
+    jiraIssueKey: task?.JiraIssueKey || undefined,
     applicationId: task?.ApplicationId ?? null,
     releaseVersionId: task?.ReleaseVersionId ?? null,
   });
@@ -331,7 +334,7 @@ export default function TaskDetailModal({
   };
 
   const handleStartTimer = async () => {
-    if (!task) return;
+    if (!task?.Id) return;
     try {
       const res = await fetch(`${getApiUrl()}/api/timers/start`, {
         method: 'POST',
@@ -629,7 +632,7 @@ export default function TaskDetailModal({
     setIsLoading(true);
 
     try {
-      if (task) {
+      if (task?.Id) {
         await tasksApi.update(task.Id, formData, token);
 
         // Sync assignees: add newly added ones, remove removed ones
@@ -1078,9 +1081,9 @@ export default function TaskDetailModal({
           <div className="flex justify-between items-start">
             <div className="flex-1">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {task ? task.TaskName : 'Create New Task'}
+                {task?.Id ? task.TaskName : 'Create New Task'}
               </h2>
-              {task && (
+              {task?.Id && (
                 <div className="flex items-center gap-3 mt-2">
                   <span className="px-2 py-1 text-xs font-semibold rounded-full" style={{ backgroundColor: task.StatusColor ? `${task.StatusColor}20` : undefined, color: task.StatusColor || undefined }}>
                     {task.StatusName || 'Unknown'}
@@ -1138,7 +1141,7 @@ export default function TaskDetailModal({
                 </div>
               )}
               {/* Tags */}
-              {task && (
+              {task?.Id && (
                 <div className="flex flex-wrap items-center gap-2 mt-3">
                   {taskTags.map((tag) => (
                     <span
@@ -1198,7 +1201,7 @@ export default function TaskDetailModal({
           </div>
 
           {/* Tabs */}
-          {task && (
+          {task?.Id && (
             <div className="flex gap-1 mt-4 border-b border-gray-200 dark:border-gray-700 -mb-6 pb-0">
               {(['details', 'checklist', 'hours', 'comments', 'attachments', 'history'] as const).map((tab) => (
                 <button
@@ -1231,7 +1234,7 @@ export default function TaskDetailModal({
           )}
 
           {/* Details Tab (Edit Form) */}
-          {(activeTab === 'details' || !task) && (
+          {(activeTab === 'details' || !task?.Id) && (
             <form onSubmit={handleSubmit} className="space-y-4">
               {task?.CreatorName && (
                 <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
@@ -1327,6 +1330,32 @@ export default function TaskDetailModal({
                         title={`Open in Jira: ${task.ExternalTicketId}`}
                       >
                         🔗 {task.ExternalTicketId}
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Jira Ticket Link (from Jira Ticket Import) */}
+              {task?.JiraIssueKey && jiraIntegration?.JiraUrl && (
+                <div className="p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
+                    </svg>
+                    <div className="flex-1">
+                      <span className="text-xs font-medium text-purple-700 dark:text-purple-300">Imported from Jira Ticket:</span>
+                      <a
+                        href={`${jiraIntegration.JiraUrl}/browse/${task.JiraIssueKey}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-2 inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
+                        title={`Open in Jira: ${task.JiraIssueKey}`}
+                      >
+                        🎫 {task.JiraIssueKey}
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                         </svg>
@@ -1601,9 +1630,9 @@ export default function TaskDetailModal({
                   type="submit"
                   disabled={isLoading}
                   className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-                  style={{ display: (task ? permissions?.canManageTasks : permissions?.canCreateTasks) ? undefined : 'none' }}
+                  style={{ display: (task?.Id ? permissions?.canManageTasks : permissions?.canCreateTasks) ? undefined : 'none' }}
                 >
-                  {isLoading ? 'Saving...' : task ? 'Update Task' : 'Create Task'}
+                  {isLoading ? 'Saving...' : task?.Id ? 'Update Task' : 'Create Task'}
                 </button>
               </div>
             </form>
