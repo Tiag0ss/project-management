@@ -327,11 +327,26 @@ router.post('/setup', async (req: Request, res: Response) => {
     } finally {
       connection.release();
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Setup error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      errno: error.errno,
+      sql: error.sql,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage,
+      stack: error.stack
+    });
+    
     res.status(500).json({
       success: false,
-      message: 'Failed to complete setup',
+      message: error.message || 'Failed to complete setup',
+      error: process.env.NODE_ENV === 'development' ? {
+        code: error.code,
+        sqlMessage: error.sqlMessage,
+        details: error.message
+      } : undefined
     });
   }
 });

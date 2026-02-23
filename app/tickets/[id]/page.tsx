@@ -303,9 +303,9 @@ export default function TicketDetailPage() {
       setEditForm({
         title: data.ticket.Title,
         description: data.ticket.Description || '',
-        status: data.ticket.Status,
-        priority: data.ticket.Priority,
-        category: data.ticket.Category,
+        status: data.ticket.Status || '',
+        priority: data.ticket.Priority || '',
+        category: data.ticket.Category || '',
         assignedToUserId: data.ticket.AssignedToUserId?.toString() || '',
         developerUserId: data.ticket.DeveloperUserId?.toString() || '',
         scheduledDate: scheduledDateStr,

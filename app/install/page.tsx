@@ -126,7 +126,25 @@ export default function InstallPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Setup failed');
+        // Log detailed error for debugging
+        console.error('Install setup error:', {
+          status: response.status,
+          statusText: response.statusText,
+          data
+        });
+        
+        let errorMessage = data.message || 'Setup failed';
+        
+        // Include additional error details if available
+        if (data.error) {
+          if (data.error.sqlMessage) {
+            errorMessage += `\nDatabase Error: ${data.error.sqlMessage}`;
+          } else if (data.error.details) {
+            errorMessage += `\nDetails: ${data.error.details}`;
+          }
+        }
+        
+        throw new Error(errorMessage);
       }
 
       // Auto-login: save token and user

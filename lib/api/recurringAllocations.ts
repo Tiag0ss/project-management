@@ -64,13 +64,27 @@ export const recurringAllocationsApi = {
 
   // Create recurring allocation
   create: async (allocation: Partial<RecurringAllocation>, token: string): Promise<number> => {
+    // Convert interface fields to API format (camelCase)
+    const payload = {
+      userId: allocation.UserId,
+      title: allocation.Title,
+      description: allocation.Description,
+      recurrenceType: allocation.RecurrenceType,
+      recurrenceInterval: allocation.RecurrenceInterval,
+      daysOfWeek: allocation.DaysOfWeek,
+      startDate: allocation.StartDate,
+      endDate: allocation.EndDate,
+      startTime: allocation.StartTime,
+      endTime: allocation.EndTime,
+    };
+
     const response = await fetch(`${API_URL}/api/recurring-allocations`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(allocation),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -84,13 +98,27 @@ export const recurringAllocationsApi = {
 
   // Update recurring allocation
   update: async (id: number, allocation: Partial<RecurringAllocation>, token: string): Promise<void> => {
+    // Convert interface fields to API format (camelCase)
+    const payload = {
+      title: allocation.Title,
+      description: allocation.Description,
+      recurrenceType: allocation.RecurrenceType,
+      recurrenceInterval: allocation.RecurrenceInterval,
+      daysOfWeek: allocation.DaysOfWeek,
+      startDate: allocation.StartDate,
+      endDate: allocation.EndDate,
+      startTime: allocation.StartTime,
+      endTime: allocation.EndTime,
+      isActive: allocation.IsActive,
+    };
+
     const response = await fetch(`${API_URL}/api/recurring-allocations/${id}`, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(allocation),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {

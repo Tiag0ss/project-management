@@ -162,8 +162,10 @@ export async function seedRolePermissions(): Promise<void> {
           CanManageApplications,
           CanCreateApplications,
           CanDeleteApplications,
-          CanManageReleases
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          CanManageReleases,
+          CreatedAt,
+          UpdatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [
           roleName,
           permissions.CanViewDashboard,
@@ -211,5 +213,14 @@ export async function seedRolePermissions(): Promise<void> {
       return;
     }
     console.error('Error seeding role permissions:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      errno: error.errno,
+      sql: error.sql,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
+    // Don't throw - let the system continue
   }
 }
