@@ -5,6 +5,8 @@
 
 A full-stack, self-hosted project management application with task tracking, resource planning, time tracking, and multi-tenant organization support.
 
+This project is a work in progress, can be still found bugs, report the bugs in github.
+
 ## Features
 
 - 📋 **Project & Task Management** — Kanban boards, task hierarchy (parent/subtasks), dependencies, custom statuses and priorities
