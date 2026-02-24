@@ -4,6 +4,21 @@
 
 **IMPORTANT:** Respond ONLY in **English (EN)** 
 
+## Prompt Library (Skills-like)
+
+Use reusable prompt templates from `.github/prompts/` when tasks match these categories:
+
+- `skill-frontend-feature.prompt.md`
+- `skill-backend-route.prompt.md`
+- `skill-db-schema-json.prompt.md`
+- `skill-bugfix-debug.prompt.md`
+- `skill-timesheet-summary.prompt.md`
+- `skill-jira-integration.prompt.md`
+- `skill-permission-gated-ui.prompt.md`
+- `skill-release-pdf-flow.prompt.md`
+
+If a request is close to one of these templates, follow that template structure first, then adapt to the user-specific scope.
+
 ## Project Context
 
 This is a full-stack project management application built with **Next.js 16** (App Router) and **Express.js** backend with **MySQL** database. The application supports multi-tenant organizations with comprehensive task management, resource planning, and time tracking features.
