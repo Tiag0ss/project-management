@@ -431,6 +431,10 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: 'Organization and title are required' });
     }
 
+    if (!priority) {
+      return res.status(400).json({ success: false, message: 'Priority is required' });
+    }
+
     // Get organization abbreviation
     const [orgResult] = await pool.execute<RowDataPacket[]>(
       'SELECT Abbreviation FROM Organizations WHERE Id = ?',
@@ -494,7 +498,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     );
     const newStatusId = defaultStatusRows[0]?.Id || firstStatusRows[0]?.Id || null;
 
-    const priorityName = priority || 'Medium';
+    const priorityName = priority;
     const [priorityRows] = await pool.execute<RowDataPacket[]>(
       'SELECT Id FROM TicketPriorityValues WHERE OrganizationId = ? AND PriorityName = ?',
       [organizationId, priorityName]
@@ -504,6 +508,14 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       [organizationId]
     );
     const newPriorityId = priorityRows[0]?.Id || defaultPriorityRows[0]?.Id || null;
+
+    if (!newStatusId) {
+      return res.status(400).json({ success: false, message: 'Ticket status is required but no status values are configured for this organization' });
+    }
+
+    if (!newPriorityId) {
+      return res.status(400).json({ success: false, message: 'Ticket priority is required but no matching priority was found for this organization' });
+    }
 
     // Insert ticket first to get the ID
     console.log('[Ticket Creation] Inserting ticket with AssignedToUserId:', assignedToUserId);
@@ -660,6 +672,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const scheduledDate = normalizeString(req.body.scheduledDate);
     const organizationId = req.body.organizationId;
     const customerId_new = req.body.customerId; // Different from user's customerId
+
+    if (status !== undefined && status !== null && status === '') {
+      return res.status(400).json({ success: false, message: 'Status is required' });
+    }
+
+    if (priority !== undefined && priority !== null && priority === '') {
+      return res.status(400).json({ success: false, message: 'Priority is required' });
+    }
 
     // Verify access - include status/priority names via JOIN for logging
     const [tickets] = await pool.execute<RowDataPacket[]>(

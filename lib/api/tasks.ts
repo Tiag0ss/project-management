@@ -24,6 +24,9 @@ export interface Task {
   Priority: number | null;
   PriorityName?: string;
   PriorityColor?: string;
+  TaskType?: number | null;
+  TaskTypeName?: string;
+  TaskTypeColor?: string;
   AssignedTo?: number;
   AssigneeName?: string;
   Assignees?: TaskAssignee[];
@@ -64,6 +67,7 @@ export interface CreateTaskData {
   description?: string;
   status?: number | null;
   priority?: number | null;
+  taskType?: number | null;
   assignedTo?: number;
   dueDate?: string;
   estimatedHours?: number;

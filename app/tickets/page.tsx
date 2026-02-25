@@ -349,6 +349,39 @@ export default function TicketsPage() {
     }
   };
 
+  const handleOpenCreateModal = () => {
+    setError('');
+    setShowCreateModal(true);
+
+    const fallbackOrgId = organizations.length === 1
+      ? organizations[0].Id.toString()
+      : isCustomerUser && organizations.length > 0
+        ? organizations[0].Id.toString()
+        : '';
+
+    const targetOrgId = createForm.organizationId || fallbackOrgId;
+
+    if (targetOrgId && targetOrgId !== createForm.organizationId) {
+      setCreateForm(prev => ({
+        ...prev,
+        organizationId: targetOrgId,
+        projectId: '',
+        externalTicketId: ''
+      }));
+    }
+
+    if (!targetOrgId) {
+      setProjects([]);
+      setJiraIntegration(null);
+      setJiraIssues([]);
+      setJiraSearchQuery('');
+      return;
+    }
+
+    loadProjects(targetOrgId);
+    loadJiraIntegration(targetOrgId);
+  };
+
   const searchJiraIssues = async (query: string) => {
     if (!createForm.organizationId || !jiraIntegration) return;
     
@@ -384,6 +417,11 @@ export default function TicketsPage() {
     
     if (!orgId) {
       setError('Organization is required');
+      return;
+    }
+
+    if (!createForm.priority) {
+      setError('Priority is required');
       return;
     }
 
@@ -610,7 +648,7 @@ export default function TicketsPage() {
           </div>
           {permissions?.canCreateTickets && (
             <button
-              onClick={() => setShowCreateModal(true)}
+              onClick={handleOpenCreateModal}
               className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -927,7 +965,7 @@ export default function TicketsPage() {
               </p>
               {permissions?.canCreateTickets && (
                 <button
-                  onClick={() => setShowCreateModal(true)}
+                  onClick={handleOpenCreateModal}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1116,123 +1154,129 @@ export default function TicketsPage() {
                     </div>
                   )}
 
-                  {/* Jira Ticket Search (if integration is enabled) */}
-                  {!isCustomerUser && jiraIntegration && (
+                  {/* Jira Ticket Search (organization required first) */}
+                  {!isCustomerUser && (
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         🔷 Link Jira Ticket (optional)
                       </label>
-                      <div className="space-y-2">
-                        <div className="relative">
-                          <input
-                            type="text"
-                            value={jiraSearchQuery}
-                            onChange={(e) => {
-                              setJiraSearchQuery(e.target.value);
-                              if (e.target.value.length >= 2) {
-                                searchJiraIssues(e.target.value);
-                              }
-                            }}
-                            placeholder="Search by Jira ticket number or summary..."
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                          />
-                          {searchingJira && (
-                            <div className="absolute right-3 top-2.5">
-                              <div className="animate-spin w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+
+                      {!createForm.organizationId ? (
+                        <div className="text-sm text-blue-700 dark:text-blue-300">
+                          Select an organization first to load Jira integration.
+                        </div>
+                      ) : !jiraIntegration ? (
+                        <div className="text-sm text-blue-700 dark:text-blue-300">
+                          Jira integration is not enabled for the selected organization.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={jiraSearchQuery}
+                              onChange={(e) => {
+                                setJiraSearchQuery(e.target.value);
+                                if (e.target.value.length >= 2) {
+                                  searchJiraIssues(e.target.value);
+                                }
+                              }}
+                              placeholder="Search by Jira ticket number or summary..."
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                            />
+                            {searchingJira && (
+                              <div className="absolute right-3 top-2.5">
+                                <div className="animate-spin w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+                              </div>
+                            )}
+                          </div>
+
+                          {createForm.externalTicketId && (
+                            <div className="flex items-center gap-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-2 rounded-lg">
+                              <span className="font-medium">✓ Linked:</span>
+                              <span>{createForm.externalTicketId}</span>
+                              <button
+                                type="button"
+                                onClick={() => setCreateForm(prev => ({ ...prev, externalTicketId: '' }))}
+                                className="ml-auto text-green-600 hover:text-green-700 dark:text-green-400"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          )}
+
+                          {jiraSearchQuery.length >= 2 && jiraIssues.length > 0 && !createForm.externalTicketId && (
+                            <div className="max-h-60 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700">
+                              {jiraIssues.map((issue) => (
+                                <button
+                                  key={issue.key}
+                                  type="button"
+                                  onClick={() => {
+                                    const mapPriority = (jiraPriority: string) => {
+                                      const lower = jiraPriority?.toLowerCase() || '';
+                                      if (lower.includes('highest') || lower.includes('critical')) return 'High';
+                                      if (lower.includes('high')) return 'High';
+                                      if (lower.includes('low') || lower.includes('lowest')) return 'Low';
+                                      return 'Medium';
+                                    };
+
+                                    const mapCategory = (issueType: string) => {
+                                      const lower = issueType?.toLowerCase() || '';
+                                      if (lower.includes('bug')) return 'Bug';
+                                      if (lower.includes('feature') || lower.includes('enhancement')) return 'Feature Request';
+                                      if (lower.includes('task')) return 'Support';
+                                      return 'Support';
+                                    };
+
+                                    const convertDescription = (jiraDesc: any) => {
+                                      if (!jiraDesc) return '';
+                                      if (typeof jiraDesc === 'string') return jiraDesc;
+                                      if (jiraDesc.type === 'doc' && jiraDesc.content) {
+                                        const extractText = (node: any): string => {
+                                          if (node.text) return node.text;
+                                          if (node.content) {
+                                            return node.content.map((n: any) => extractText(n)).join('');
+                                          }
+                                          return '';
+                                        };
+                                        return jiraDesc.content.map((node: any) => extractText(node)).join('\n');
+                                      }
+                                      return '';
+                                    };
+
+                                    setCreateForm(prev => ({
+                                      ...prev,
+                                      externalTicketId: issue.key,
+                                      title: issue.summary || prev.title,
+                                      description: convertDescription(issue.description) || prev.description,
+                                      priority: mapPriority(issue.priority),
+                                      category: mapCategory(issue.issueType)
+                                    }));
+                                    setJiraSearchQuery('');
+                                    setJiraIssues([]);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-600 border-b border-gray-200 dark:border-gray-600 last:border-0"
+                                >
+                                  <div className="font-medium text-gray-900 dark:text-white">{issue.key}</div>
+                                  <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-1">{issue.summary}</div>
+                                  <div className="flex gap-2 mt-1">
+                                    {issue.status && (
+                                      <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
+                                        {issue.status}
+                                      </span>
+                                    )}
+                                    {issue.priority && (
+                                      <span className="text-xs px-2 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded">
+                                        {issue.priority}
+                                      </span>
+                                    )}
+                                  </div>
+                                </button>
+                              ))}
                             </div>
                           )}
                         </div>
-                        
-                        {createForm.externalTicketId && (
-                          <div className="flex items-center gap-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-2 rounded-lg">
-                            <span className="font-medium">✓ Linked:</span>
-                            <span>{createForm.externalTicketId}</span>
-                            <button
-                              type="button"
-                              onClick={() => setCreateForm(prev => ({ ...prev, externalTicketId: '' }))}
-                              className="ml-auto text-green-600 hover:text-green-700 dark:text-green-400"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        )}
-                        
-                        {jiraSearchQuery.length >= 2 && jiraIssues.length > 0 && !createForm.externalTicketId && (
-                          <div className="max-h-60 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700">
-                            {jiraIssues.map((issue) => (
-                              <button
-                                key={issue.key}
-                                type="button"
-                                onClick={() => {
-                                  // Map Jira priority to app priority
-                                  const mapPriority = (jiraPriority: string) => {
-                                    const lower = jiraPriority?.toLowerCase() || '';
-                                    if (lower.includes('highest') || lower.includes('critical')) return 'High';
-                                    if (lower.includes('high')) return 'High';
-                                    if (lower.includes('low') || lower.includes('lowest')) return 'Low';
-                                    return 'Medium';
-                                  };
-                                  
-                                  // Map Jira issue type to category
-                                  const mapCategory = (issueType: string) => {
-                                    const lower = issueType?.toLowerCase() || '';
-                                    if (lower.includes('bug')) return 'Bug';
-                                    if (lower.includes('feature') || lower.includes('enhancement')) return 'Feature Request';
-                                    if (lower.includes('task')) return 'Support';
-                                    return 'Support';
-                                  };
-                                  
-                                  // Convert Jira description (can be complex format) to plain text or HTML
-                                  const convertDescription = (jiraDesc: any) => {
-                                    if (!jiraDesc) return '';
-                                    if (typeof jiraDesc === 'string') return jiraDesc;
-                                    // Jira uses ADF (Atlassian Document Format) - extract text
-                                    if (jiraDesc.type === 'doc' && jiraDesc.content) {
-                                      let text = '';
-                                      const extractText = (node: any): string => {
-                                        if (node.text) return node.text;
-                                        if (node.content) {
-                                          return node.content.map((n: any) => extractText(n)).join('');
-                                        }
-                                        return '';
-                                      };
-                                      return jiraDesc.content.map((node: any) => extractText(node)).join('\n');
-                                    }
-                                    return '';
-                                  };
-                                  
-                                  setCreateForm(prev => ({ 
-                                    ...prev, 
-                                    externalTicketId: issue.key,
-                                    title: issue.summary || prev.title,
-                                    description: convertDescription(issue.description) || prev.description,
-                                    priority: mapPriority(issue.priority),
-                                    category: mapCategory(issue.issueType)
-                                  }));
-                                  setJiraSearchQuery('');
-                                  setJiraIssues([]);
-                                }}
-                                className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-600 border-b border-gray-200 dark:border-gray-600 last:border-0"
-                              >
-                                <div className="font-medium text-gray-900 dark:text-white">{issue.key}</div>
-                                <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-1">{issue.summary}</div>
-                                <div className="flex gap-2 mt-1">
-                                  {issue.status && (
-                                    <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
-                                      {issue.status}
-                                    </span>
-                                  )}
-                                  {issue.priority && (
-                                    <span className="text-xs px-2 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded">
-                                      {issue.priority}
-                                    </span>
-                                  )}
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                      )}
                     </div>
                   )}
 
@@ -1297,11 +1341,12 @@ export default function TicketsPage() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Priority
+                        Priority <span className="text-red-500">*</span>
                       </label>
                       <select
                         value={createForm.priority}
                         onChange={(e) => setCreateForm(prev => ({ ...prev, priority: e.target.value }))}
+                        required
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">Select priority...</option>

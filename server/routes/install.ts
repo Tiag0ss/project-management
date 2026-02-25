@@ -191,20 +191,31 @@ router.post('/setup', async (req: Request, res: Response) => {
         [organizationId, userId, 'Owner']
       );
 
-      // 4. Create default permission groups
-      const defaultGroups = [
-        { name: 'Admin', canManageProjects: 1, canManageTasks: 1, canPlanTasks: 1, canManageMembers: 1, canManageSettings: 1 },
-        { name: 'Manager', canManageProjects: 1, canManageTasks: 1, canPlanTasks: 1, canManageMembers: 0, canManageSettings: 0 },
-        { name: 'Planner', canManageProjects: 0, canManageTasks: 0, canPlanTasks: 1, canManageMembers: 0, canManageSettings: 0 },
-        { name: 'Member', canManageProjects: 0, canManageTasks: 0, canPlanTasks: 0, canManageMembers: 0, canManageSettings: 0 },
-      ];
+      // 4. Create permission groups from global role permissions (same behavior as normal org creation)
+      const [rolePerms] = await connection.execute<RowDataPacket[]>(
+        `SELECT * FROM RolePermissions WHERE RoleName IN ('Developer', 'Support', 'Manager') ORDER BY FIELD(RoleName, 'Developer', 'Support', 'Manager')`
+      );
 
-      for (const group of defaultGroups) {
+      for (const rp of rolePerms) {
         await connection.execute(
           `INSERT INTO PermissionGroups 
-           (OrganizationId, GroupName, CanManageProjects, CanManageTasks, CanPlanTasks, CanManageMembers, CanManageSettings) 
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [organizationId, group.name, group.canManageProjects, group.canManageTasks, group.canPlanTasks, group.canManageMembers, group.canManageSettings]
+           (OrganizationId, GroupName, LinkedRole, IsSystemGroup,
+            CanManageProjects, CanCreateProjects, CanDeleteProjects,
+            CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks, CanPlanTasks,
+            CanManageTimeEntries, CanViewReports,
+            CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets, CanCreateTaskFromTicket,
+            CanManageMembers, CanManageSettings)
+           VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
+          [
+            organizationId, rp.RoleName, rp.RoleName,
+            rp.CanManageProjects ? 1 : 0, rp.CanCreateProjects ? 1 : 0, rp.CanDeleteProjects ? 1 : 0,
+            rp.CanManageTasks ? 1 : 0, rp.CanCreateTasks ? 1 : 0, rp.CanDeleteTasks ? 1 : 0,
+            rp.CanAssignTasks ? 1 : 0, rp.CanPlanTasks ? 1 : 0,
+            rp.CanManageTimeEntries ? 1 : 0, rp.CanViewReports ? 1 : 0,
+            rp.CanManageTickets ? 1 : 0, rp.CanCreateTickets ? 1 : 0,
+            rp.CanDeleteTickets ? 1 : 0, rp.CanAssignTickets ? 1 : 0,
+            rp.CanCreateTaskFromTicket ? 1 : 0,
+          ]
         );
       }
 
@@ -258,7 +269,24 @@ router.post('/setup', async (req: Request, res: Response) => {
         );
       }
 
-      // 8. Set default system settings
+      // 8. Create default task type values
+      const defaultTaskTypes = [
+        { name: 'Feature', color: '#3b82f6', order: 1, isDefault: 1 },
+        { name: 'Bug', color: '#ef4444', order: 2, isDefault: 0 },
+        { name: 'Improvement', color: '#f59e0b', order: 3, isDefault: 0 },
+        { name: 'Chore', color: '#6b7280', order: 4, isDefault: 0 },
+      ];
+
+      for (const type of defaultTaskTypes) {
+        await connection.execute(
+          `INSERT INTO TaskTypeValues 
+           (OrganizationId, TypeName, ColorCode, SortOrder, IsDefault) 
+           VALUES (?, ?, ?, ?, ?)`,
+          [organizationId, type.name, type.color, type.order, type.isDefault]
+        );
+      }
+
+      // 9. Set default system settings
       const defaultSettings = [
         ['allowPublicRegistration', 'false'],
         ['publicRegistrationType', 'internal'],

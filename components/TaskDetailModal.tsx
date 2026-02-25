@@ -220,6 +220,7 @@ export default function TaskDetailModal({
     description: task?.Description || '',
     status: task?.Status ?? null,
     priority: task?.Priority ?? null,
+    taskType: task?.TaskType ?? null,
     assignedTo: task?.AssignedTo || undefined,
     dueDate: task?.DueDate ? task.DueDate.split('T')[0] : '',
     estimatedHours: task?.EstimatedHours || undefined,
@@ -235,6 +236,7 @@ export default function TaskDetailModal({
   // Data states
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
+  const [taskTypes, setTaskTypes] = useState<StatusValue[]>([]);
   const [organizationUsers, setOrganizationUsers] = useState<User[]>([]);
   const [taskAssignees, setTaskAssignees] = useState<TaskAssignee[]>(task?.Assignees || []);
   const [taskHistory, setTaskHistory] = useState<TaskHistory[]>([]);
@@ -285,7 +287,7 @@ export default function TaskDetailModal({
   };
 
   // Calculate if this task has subtasks
-  const subtasks = task ? tasks.filter(t => t.ParentTaskId === task.Id) : [];
+  const subtasks = task?.Id ? tasks.filter(t => t.ParentTaskId === task.Id) : [];
   const hasSubtasks = subtasks.length > 0;
   const subtasksTotal = hasSubtasks 
     ? subtasks.reduce((sum, st) => sum + (parseFloat(st.EstimatedHours as any) || 0), 0) 
@@ -299,9 +301,10 @@ export default function TaskDetailModal({
   useEffect(() => {
     loadTaskStatuses();
     loadTaskPriorities();
+    loadTaskTypes();
     loadOrganizationUsers();
     loadApplications();
-    if (task) {
+    if (task?.Id) {
       loadTaskDetails();
       checkHasChildren();
     }
@@ -318,7 +321,7 @@ export default function TaskDetailModal({
   // Tick elapsed time when timer is for current task
   useEffect(() => {
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-    if (activeTimer && task && activeTimer.TaskId === task.Id) {
+    if (activeTimer && task?.Id && activeTimer.TaskId === task.Id) {
       const update = () => setTimerSeconds(Math.floor((Date.now() - new Date(activeTimer.StartedAt).getTime()) / 1000));
       update();
       timerIntervalRef.current = setInterval(update, 1000);
@@ -380,7 +383,7 @@ export default function TaskDetailModal({
 
   // Set default values when creating a new task
   useEffect(() => {
-    if (!task && taskStatuses.length > 0 && taskPriorities.length > 0) {
+    if (!task?.Id && taskStatuses.length > 0 && taskPriorities.length > 0 && taskTypes.length > 0) {
       setFormData(prev => {
         const updates: Partial<CreateTaskData> = {};
         
@@ -399,11 +402,18 @@ export default function TaskDetailModal({
             updates.priority = defaultPriority.Id;
           }
         }
+
+        if (prev.taskType === null) {
+          const defaultTaskType = taskTypes.find(t => t.IsDefault);
+          if (defaultTaskType) {
+            updates.taskType = defaultTaskType.Id;
+          }
+        }
         
         return Object.keys(updates).length > 0 ? { ...prev, ...updates } : prev;
       });
     }
-  }, [task, taskStatuses, taskPriorities]);
+  }, [task, taskStatuses, taskPriorities, taskTypes]);
 
   useEffect(() => {
     if (hasSubtasks && task) {
@@ -426,7 +436,7 @@ export default function TaskDetailModal({
 
   // Get available tasks for Parent Task dropdown (exclude self and descendants)
   const getAvailableParentTasks = (): { id: number; label: string }[] => {
-    if (!task) {
+    if (!task?.Id) {
       // Creating new task - all tasks are available
       return tasks.map(t => ({
         id: t.Id,
@@ -448,7 +458,7 @@ export default function TaskDetailModal({
 
   // Get available tasks for Depends On dropdown (exclude self)
   const getAvailableDependencyTasks = (): { id: number; label: string }[] => {
-    if (!task) {
+    if (!task?.Id) {
       // Creating new task - all tasks are available
       return tasks.map(t => ({
         id: t.Id,
@@ -480,6 +490,15 @@ export default function TaskDetailModal({
       setTaskPriorities(response.priorities);
     } catch (err) {
       console.error('Failed to load task priorities:', err);
+    }
+  };
+
+  const loadTaskTypes = async () => {
+    try {
+      const response = await statusValuesApi.getTaskTypes(organizationId, token);
+      setTaskTypes(response.types);
+    } catch (err) {
+      console.error('Failed to load task types:', err);
     }
   };
 
@@ -527,7 +546,7 @@ export default function TaskDetailModal({
   };
 
   const checkHasChildren = async () => {
-    if (!task) {
+    if (!task?.Id) {
       setHasChildren(false);
       return;
     }
@@ -551,7 +570,7 @@ export default function TaskDetailModal({
   };
 
   const loadTaskDetails = async () => {
-    if (!task) return;
+    if (!task?.Id) return;
     setLoadingData(true);
     
     try {
@@ -629,6 +648,12 @@ export default function TaskDetailModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!formData.taskType) {
+      setError('Task type is required');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -678,7 +703,7 @@ export default function TaskDetailModal({
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newComment.trim() || !task) return;
+    if (!newComment.trim() || !task?.Id) return;
 
     setSubmittingComment(true);
     try {
@@ -725,7 +750,7 @@ export default function TaskDetailModal({
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !task) return;
+    if (!file || !task?.Id) return;
 
     // Validate file type
     const allowedTypes = [
@@ -902,7 +927,7 @@ export default function TaskDetailModal({
   };
 
   const handleSaveManualAllocation = async () => {
-    if (!task) return;
+    if (!task?.Id) return;
     
     const { allocationId, userId, allocationDate, allocatedHours, mode } = manualAllocationModal;
     
@@ -1004,7 +1029,7 @@ export default function TaskDetailModal({
   };
 
   const handleAddTag = async (tagId: number) => {
-    if (!task) return;
+    if (!task?.Id) return;
     try {
       await fetch(
         `${getApiUrl()}/api/tags/task/${task.Id}/tag/${tagId}`,
@@ -1021,7 +1046,7 @@ export default function TaskDetailModal({
   };
 
   const handleRemoveTag = async (tagId: number) => {
-    if (!task) return;
+    if (!task?.Id) return;
     try {
       await fetch(
         `${getApiUrl()}/api/tags/task/${task.Id}/tag/${tagId}`,
@@ -1416,6 +1441,61 @@ export default function TaskDetailModal({
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Task Type *
+                </label>
+                <select
+                  value={formData.taskType ?? ''}
+                  onChange={(e) => setFormData({ ...formData, taskType: e.target.value ? parseInt(e.target.value) : null })}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  {taskTypes.length > 0 ? (
+                    <>
+                      <option value="">Select a task type</option>
+                      {taskTypes.sort((a, b) => a.SortOrder - b.SortOrder).map((type) => (
+                        <option key={type.Id} value={type.Id}>
+                          {type.TypeName}
+                        </option>
+                      ))}
+                    </>
+                  ) : (
+                    <option value="">No task types available</option>
+                  )}
+                </select>
+              </div>
+
+              <div>
+                {/* Principal Assignee field (searchable) */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Principal Assignee
+                  </label>
+                  <SearchableSelect
+                    options={organizationUsers.map((u) => ({
+                      id: u.Id,
+                      label: `${u.Username}${u.FirstName && u.LastName ? ` (${u.FirstName} ${u.LastName})` : ''}`
+                    }))}
+                    value={typeof formData.assignedTo === 'number' ? formData.assignedTo : undefined}
+                    onChange={(val: number | undefined) => {
+                      setFormData({ ...formData, assignedTo: val });
+                      if (typeof val === 'number' && (!taskAssignees.length || taskAssignees[0].UserId !== val)) {
+                        const mainUser = organizationUsers.find(u => u.Id === val);
+                        if (mainUser) {
+                          setTaskAssignees([{
+                            UserId: mainUser.Id,
+                            Username: mainUser.Username,
+                            FirstName: mainUser.FirstName,
+                            LastName: mainUser.LastName
+                          }, ...taskAssignees.filter(a => a.UserId !== val)]);
+                        }
+                      }
+                    }}
+                    placeholder="Select principal assignee..."
+                  />
+                </div>
+
+                {/* Multi-assignee dropdown and chips (unchanged) */}
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Assignees
                 </label>

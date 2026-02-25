@@ -152,6 +152,7 @@ export default function TicketDetailPage() {
   // Task status and priority values
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
+  const [taskTypes, setTaskTypes] = useState<StatusValue[]>([]);
   const [loadingTaskData, setLoadingTaskData] = useState(false);
 
   // Associated tasks state
@@ -437,6 +438,7 @@ export default function TicketDetailPage() {
       description: ticket.Description || '',
       status: null,
       priority: null,
+      taskType: null,
       assignedTo: ticket.AssignedToUserId || undefined,
       estimatedHours: 0,
       ticketId: ticket.Id,
@@ -471,13 +473,28 @@ export default function TicketDetailPage() {
     
     setLoadingTaskData(true);
     try {
-      const [statusesRes, prioritiesRes] = await Promise.all([
+      const [statusesRes, prioritiesRes, typesRes] = await Promise.all([
         statusValuesApi.getTaskStatuses(orgId, token),
-        statusValuesApi.getTaskPriorities(orgId, token)
+        statusValuesApi.getTaskPriorities(orgId, token),
+        statusValuesApi.getTaskTypes(orgId, token)
       ]);
       
       setTaskStatuses(statusesRes.statuses || []);
       setTaskPriorities(prioritiesRes.priorities || []);
+
+      const loadedTypes = typesRes.types || [];
+      setTaskTypes(loadedTypes);
+
+      const defaultStatus = (statusesRes.statuses || []).find((s) => s.IsDefault);
+      const defaultPriority = (prioritiesRes.priorities || []).find((p) => p.IsDefault);
+      const defaultType = loadedTypes.find((t) => t.IsDefault);
+
+      setTaskForm(prev => ({
+        ...prev,
+        status: prev.status ?? (defaultStatus?.Id ?? null),
+        priority: prev.priority ?? (defaultPriority?.Id ?? null),
+        taskType: prev.taskType ?? (defaultType?.Id ?? null),
+      }));
     } catch (err: any) {
       console.error('Failed to load task statuses/priorities:', err);
     } finally {
@@ -513,6 +530,7 @@ export default function TicketDetailPage() {
       setProjects([]);
       setTaskStatuses([]);
       setTaskPriorities([]);
+      setTaskTypes([]);
     }
   };
 
@@ -524,6 +542,11 @@ export default function TicketDetailPage() {
 
     if (!taskForm.projectId) {
       setError('Please select a project for this task');
+      return;
+    }
+
+    if (!taskForm.taskType) {
+      setError('Task type is required');
       return;
     }
 
@@ -1888,6 +1911,28 @@ export default function TicketDetailPage() {
                   </div>
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Task Type <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={taskForm.taskType ?? ''}
+                    onChange={(e) => setTaskForm({ ...taskForm, taskType: e.target.value ? parseInt(e.target.value) : null })}
+                    required
+                    disabled={loadingTaskData}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
+                  >
+                    <option value="">
+                      {loadingTaskData ? 'Loading task types...' : 'Select Task Type'}
+                    </option>
+                    {taskTypes.map((type) => (
+                      <option key={type.Id} value={type.Id}>
+                        {type.TypeName || type.StatusName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 {/* Estimated Hours */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -1959,7 +2004,7 @@ export default function TicketDetailPage() {
                 <button
                   type="button"
                   onClick={handleCreateTask}
-                  disabled={creatingTask || !taskForm.taskName.trim()}
+                  disabled={creatingTask || !taskForm.taskName.trim() || !taskForm.taskType}
                   className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
                 >
                   {creatingTask ? 'Creating...' : 'Create Task'}

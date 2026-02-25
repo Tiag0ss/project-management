@@ -93,6 +93,37 @@ const getTaskProjectInfo = async (taskId: number): Promise<{ projectId: number; 
   }
 };
 
+const DEFAULT_TASK_TYPES = [
+  { name: 'Feature', color: '#3b82f6', order: 1, isDefault: 1 },
+  { name: 'Bug', color: '#ef4444', order: 2, isDefault: 0 },
+  { name: 'Improvement', color: '#f59e0b', order: 3, isDefault: 0 },
+  { name: 'Chore', color: '#6b7280', order: 4, isDefault: 0 },
+];
+
+const ensureTaskTypesForOrg = async (organizationId: number): Promise<RowDataPacket[]> => {
+  const [taskTypes] = await pool.execute<RowDataPacket[]>(
+    'SELECT Id, TypeName, IsDefault, SortOrder FROM TaskTypeValues WHERE OrganizationId = ? ORDER BY SortOrder ASC, Id ASC',
+    [organizationId]
+  );
+
+  if (taskTypes.length > 0) return taskTypes;
+
+  for (const type of DEFAULT_TASK_TYPES) {
+    await pool.execute(
+      `INSERT INTO TaskTypeValues (OrganizationId, TypeName, ColorCode, SortOrder, IsDefault)
+       VALUES (?, ?, ?, ?, ?)`,
+      [organizationId, type.name, type.color, type.order, type.isDefault]
+    );
+  }
+
+  const [newTaskTypes] = await pool.execute<RowDataPacket[]>(
+    'SELECT Id, TypeName, IsDefault, SortOrder FROM TaskTypeValues WHERE OrganizationId = ? ORDER BY SortOrder ASC, Id ASC',
+    [organizationId]
+  );
+
+  return newTaskTypes;
+};
+
 /**
  * @swagger
  * /api/tasks/my-tasks:
@@ -121,6 +152,7 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
               tsv.StatusName, tsv.ColorCode as StatusColor,
               COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
               tpv.PriorityName, tpv.ColorCode as PriorityColor,
+              ttv.TypeName as TaskTypeName, ttv.ColorCode as TaskTypeColor,
               COALESCE((SELECT COUNT(*) FROM Tasks st WHERE st.ParentTaskId = t.Id), 0) as SubtaskCount,
               COALESCE((SELECT SUM(Hours) FROM TimeEntries WHERE TaskId = t.Id), 0) as TotalWorked,
               tk.Id as TicketIdRef,
@@ -144,6 +176,7 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
        LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1
        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
+      LEFT JOIN TaskTypeValues ttv ON t.TaskType = ttv.Id
        WHERE (t.AssignedTo = ? OR ta.UserId = ? OR EXISTS (
          SELECT 1 FROM TaskAssignees WHERE TaskId = t.Id AND UserId = ?
        ) OR EXISTS (
@@ -216,6 +249,7 @@ router.get('/project/:projectId/summary', authenticateToken, async (req: AuthReq
         tsv.StatusName, tsv.ColorCode as StatusColor,
         COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
         tpv.PriorityName, tpv.ColorCode as PriorityColor,
+        ttv.TypeName as TaskTypeName, ttv.ColorCode as TaskTypeColor,
         COALESCE(alloc.TotalAllocated, 0) as TotalAllocated,
         COALESCE(worked.TotalWorked, 0) as TotalWorked,
         (
@@ -228,6 +262,7 @@ router.get('/project/:projectId/summary', authenticateToken, async (req: AuthReq
        LEFT JOIN Users u2 ON t.AssignedTo = u2.Id
        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
+      LEFT JOIN TaskTypeValues ttv ON t.TaskType = ttv.Id
        LEFT JOIN (
          SELECT TaskId, SUM(AllocatedHours) as TotalAllocated
          FROM TaskAllocations
@@ -314,6 +349,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 tsv.StatusName, tsv.ColorCode as StatusColor,
                 COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
                 tpv.PriorityName, tpv.ColorCode as PriorityColor,
+                ttv.TypeName as TaskTypeName, ttv.ColorCode as TaskTypeColor,
                 COALESCE(alloc.TotalAllocated, 0) as PlannedHours,
                 COALESCE(worked.TotalWorked, 0) as WorkedHours,
                 tk.Id as TicketIdRef,
@@ -336,6 +372,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
          LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1
          LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
          LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
+         LEFT JOIN TaskTypeValues ttv ON t.TaskType = ttv.Id
          LEFT JOIN (
            SELECT TaskId, SUM(AllocatedHours) as TotalAllocated
            FROM TaskAllocations
@@ -362,6 +399,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 tsv.StatusName, tsv.ColorCode as StatusColor,
                 COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
                 tpv.PriorityName, tpv.ColorCode as PriorityColor,
+                ttv.TypeName as TaskTypeName, ttv.ColorCode as TaskTypeColor,
                 COALESCE(alloc.TotalAllocated, 0) as PlannedHours,
                 COALESCE(worked.TotalWorked, 0) as WorkedHours,
                 tk.Id as TicketIdRef,
@@ -384,6 +422,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
          LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1
          LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
          LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
+         LEFT JOIN TaskTypeValues ttv ON t.TaskType = ttv.Id
          LEFT JOIN (
            SELECT TaskId, SUM(AllocatedHours) as TotalAllocated
            FROM TaskAllocations
@@ -447,6 +486,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
               tsv.StatusName, tsv.ColorCode as StatusColor,
               COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
               tpv.PriorityName, tpv.ColorCode as PriorityColor,
+              ttv.TypeName as TaskTypeName, ttv.ColorCode as TaskTypeColor,
               (SELECT SUM(AllocatedHours) FROM TaskAllocations WHERE TaskId = t.Id) as TotalAllocated,
               (SELECT SUM(Hours) FROM TimeEntries WHERE TaskId = t.Id) as TotalWorked,
               tk.Id as TicketIdRef,
@@ -464,6 +504,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
        LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1
        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
+      LEFT JOIN TaskTypeValues ttv ON t.TaskType = ttv.Id
        WHERE t.TicketId = ? AND om.UserId = ?
        ORDER BY t.CreatedAt DESC`,
       [ticketId, userId]
@@ -533,7 +574,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, taskName, description, status, priority, assignedTo, dueDate, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, jiraIssueKey, applicationId, releaseVersionId } = req.body;
+    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, jiraIssueKey, applicationId, releaseVersionId } = req.body;
 
     if (!taskName || !projectId) {
       return res.status(400).json({ 
@@ -542,9 +583,16 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       });
     }
 
+    if (status === undefined || status === null || status === '' || priority === undefined || priority === null || priority === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'Task status and priority are required'
+      });
+    }
+
     // Verify user has access to this project through organization membership
     const [projects] = await pool.execute<RowDataPacket[]>(
-      `SELECT p.Id 
+      `SELECT p.Id, p.OrganizationId 
        FROM Projects p
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
        WHERE p.Id = ? AND om.UserId = ?`,
@@ -555,6 +603,19 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ 
         success: false, 
         message: 'Project not found or access denied' 
+      });
+    }
+
+    let resolvedTaskTypeId: number | null = taskType || null;
+    if (!resolvedTaskTypeId) {
+      const taskTypes = await ensureTaskTypesForOrg(projects[0].OrganizationId);
+      resolvedTaskTypeId = taskTypes.find((t: any) => Number(t.IsDefault) === 1)?.Id || taskTypes[0]?.Id || null;
+    }
+
+    if (!resolvedTaskTypeId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Task type is required'
       });
     }
 
@@ -569,14 +630,15 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, AssignedTo, DueDate, EstimatedHours, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, JiraIssueKey, ApplicationId, CreatedBy) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, EstimatedHours, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, JiraIssueKey, ApplicationId, CreatedBy) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         projectId,
         taskName,
         sanitizeRichText(description) || null,
         status || null,
         priority || null,
+        resolvedTaskTypeId,
         assignedTo || null,
         toDateOnly(dueDate),
         estimatedHours || null,
@@ -725,7 +787,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const taskId = req.params.id;
-    const { taskName, description, status, priority, assignedTo, dueDate, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, applicationId, releaseVersionId } = req.body;
+    const { taskName, description, status, priority, taskType, assignedTo, dueDate, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, applicationId, releaseVersionId } = req.body;
 
     // Verify user has access to this task's project through organization membership and has CanManageTasks permission
     const [access] = await pool.execute<RowDataPacket[]>(
@@ -760,6 +822,21 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     );
     const oldTask = currentTask[0];
 
+    const finalStatus = status !== undefined ? status : oldTask.Status;
+    const finalPriority = priority !== undefined ? priority : oldTask.Priority;
+    const finalTaskType = taskType !== undefined ? taskType : oldTask.TaskType;
+
+    if (
+      finalStatus === undefined || finalStatus === null || finalStatus === '' ||
+      finalPriority === undefined || finalPriority === null || finalPriority === '' ||
+      finalTaskType === undefined || finalTaskType === null || finalTaskType === ''
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Task status, priority, and type are required'
+      });
+    }
+
     // Check if user has permission to manage or plan tasks
     const canManage = access[0].Role === 'Owner' || access[0].Role === 'Admin' || access[0].CanManageTasks === 1;
     const canPlan = canManage || access[0].CanPlanTasks === 1;
@@ -786,13 +863,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Tasks 
-       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, AssignedTo = ?, DueDate = ?, EstimatedHours = ?, ParentTaskId = ?, DisplayOrder = COALESCE(?, DisplayOrder), PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, ApplicationId = ?, ReleaseVersionId = ?
+       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, EstimatedHours = ?, ParentTaskId = ?, DisplayOrder = COALESCE(?, DisplayOrder), PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, ApplicationId = ?, ReleaseVersionId = ?
        WHERE Id = ?`,
       [
         taskName,
         sanitizeRichText(description) || null,
-        status || null,
-        priority || null,
+        finalStatus,
+        finalPriority,
+        finalTaskType,
         assignedTo || null,
         toDateOnly(dueDate),
         estimatedHours || null,
@@ -2233,7 +2311,7 @@ router.post('/utilities/sync-parent-status/:projectId', authenticateToken, async
 router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, issues, statusMapping } = req.body;
+    const { projectId, issues, statusMapping, priorityMapping, taskTypeMapping } = req.body;
 
     if (!projectId || !issues || !Array.isArray(issues) || issues.length === 0) {
       return res.status(400).json({ success: false, message: 'Project ID and issues are required' });
@@ -2254,17 +2332,43 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
 
     const project = projects[0];
 
+    // Persist current Jira mapping preferences on the project for next imports
+    await pool.execute(
+      `UPDATE Projects
+       SET JiraTaskStatusMappingJson = ?, JiraTaskPriorityMappingJson = ?, JiraTaskTypeMappingJson = ?
+       WHERE Id = ?`,
+      [
+        statusMapping && typeof statusMapping === 'object' ? JSON.stringify(statusMapping) : null,
+        priorityMapping && typeof priorityMapping === 'object' ? JSON.stringify(priorityMapping) : null,
+        taskTypeMapping && typeof taskTypeMapping === 'object' ? JSON.stringify(taskTypeMapping) : null,
+        projectId
+      ]
+    );
+
     // Get task statuses for the organization
     const [taskStatuses] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id, StatusName FROM TaskStatusValues WHERE OrganizationId = ?',
+      'SELECT Id, StatusName, IsDefault, SortOrder FROM TaskStatusValues WHERE OrganizationId = ? ORDER BY SortOrder ASC, Id ASC',
       [project.OrganizationId]
     );
 
     // Get task priorities for the organization
     const [taskPriorities] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id, PriorityName FROM TaskPriorityValues WHERE OrganizationId = ?',
+      'SELECT Id, PriorityName, IsDefault, SortOrder FROM TaskPriorityValues WHERE OrganizationId = ? ORDER BY SortOrder ASC, Id ASC',
       [project.OrganizationId]
     );
+
+    const taskTypes = await ensureTaskTypesForOrg(project.OrganizationId);
+
+    const defaultStatusId = taskStatuses.find((s: any) => Number(s.IsDefault) === 1)?.Id || taskStatuses[0]?.Id || null;
+    const defaultPriorityId = taskPriorities.find((p: any) => Number(p.IsDefault) === 1)?.Id || taskPriorities[0]?.Id || null;
+    const defaultTaskTypeId = taskTypes.find((t: any) => Number(t.IsDefault) === 1)?.Id || taskTypes[0]?.Id || null;
+
+    if (!defaultStatusId || !defaultPriorityId || !defaultTaskTypeId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot import from Jira because task status/priority/type values are not configured for this organization'
+      });
+    }
 
     // Get existing tasks with external issue IDs to avoid duplicates
     const [existingTasks] = await pool.execute<RowDataPacket[]>(
@@ -2296,49 +2400,91 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
     const jiraKeyToTaskId: Record<string, number> = {};
     const createdTasks: any[] = [];
 
+    const resolveMappedStatusId = (jiraStatus: string | undefined) => {
+      if (!jiraStatus) return null;
+
+      const mappedValue = statusMapping?.[jiraStatus];
+      if (mappedValue !== undefined && mappedValue !== null && mappedValue !== '') {
+        const mappedId = Number(mappedValue);
+        if (!Number.isNaN(mappedId)) {
+          const byId = taskStatuses.find((s: any) => Number(s.Id) === mappedId);
+          if (byId) return byId.Id;
+        }
+
+        const byName = taskStatuses.find(
+          (s: any) => String(s.StatusName).toLowerCase().trim() === String(mappedValue).toLowerCase().trim()
+        );
+        if (byName) return byName.Id;
+      }
+
+      const directMatch = taskStatuses.find(
+        (s: any) => String(s.StatusName).toLowerCase().trim() === String(jiraStatus).toLowerCase().trim()
+      );
+      return directMatch?.Id || null;
+    };
+
+    const resolveMappedPriorityId = (jiraPriority: string | undefined) => {
+      if (!jiraPriority) return null;
+
+      const mappedValue = priorityMapping?.[jiraPriority];
+      if (mappedValue !== undefined && mappedValue !== null && mappedValue !== '') {
+        const mappedId = Number(mappedValue);
+        if (!Number.isNaN(mappedId)) {
+          const byId = taskPriorities.find((p: any) => Number(p.Id) === mappedId);
+          if (byId) return byId.Id;
+        }
+
+        const byName = taskPriorities.find(
+          (p: any) => String(p.PriorityName).toLowerCase().trim() === String(mappedValue).toLowerCase().trim()
+        );
+        if (byName) return byName.Id;
+      }
+
+      const directMatch = taskPriorities.find(
+        (p: any) => String(p.PriorityName).toLowerCase().trim() === String(jiraPriority).toLowerCase().trim()
+      );
+      return directMatch?.Id || null;
+    };
+
+    const resolveMappedTaskTypeId = (jiraIssueType: string | undefined) => {
+      if (!jiraIssueType) return null;
+
+      const mappedValue = taskTypeMapping?.[jiraIssueType];
+      if (mappedValue !== undefined && mappedValue !== null && mappedValue !== '') {
+        const mappedId = Number(mappedValue);
+        if (!Number.isNaN(mappedId)) {
+          const byId = taskTypes.find((t: any) => Number(t.Id) === mappedId);
+          if (byId) return byId.Id;
+        }
+
+        const byName = taskTypes.find(
+          (t: any) => String(t.TypeName).toLowerCase().trim() === String(mappedValue).toLowerCase().trim()
+        );
+        if (byName) return byName.Id;
+      }
+
+      const directMatch = taskTypes.find(
+        (t: any) => String(t.TypeName).toLowerCase().trim() === String(jiraIssueType).toLowerCase().trim()
+      );
+      return directMatch?.Id || null;
+    };
+
     // First pass: Create all tasks without parent relationships
     for (const issue of newIssues) {
-      // Map status
-      let statusId = null;
-      if (issue.status && statusMapping && statusMapping[issue.status]) {
-        // statusMapping contains the mapped status name, need to find its ID
-        const mappedStatusName = statusMapping[issue.status];
-        const matchingStatus = taskStatuses.find(
-          (s: any) => s.StatusName.toLowerCase() === mappedStatusName.toLowerCase()
-        );
-        if (matchingStatus) {
-          statusId = matchingStatus.Id;
-        }
-      } else if (issue.status) {
-        // Try to find matching status by name (case insensitive)
-        const matchingStatus = taskStatuses.find(
-          (s: any) => s.StatusName.toLowerCase() === issue.status.toLowerCase()
-        );
-        if (matchingStatus) {
-          statusId = matchingStatus.Id;
-        }
-      }
-
-      // Map priority
-      let priorityId = null;
-      if (issue.priority) {
-        const matchingPriority = taskPriorities.find(
-          (p: any) => p.PriorityName.toLowerCase() === issue.priority.toLowerCase()
-        );
-        if (matchingPriority) {
-          priorityId = matchingPriority.Id;
-        }
-      }
+      const statusId = resolveMappedStatusId(issue.status);
+      const priorityId = resolveMappedPriorityId(issue.priority);
+      const taskTypeId = resolveMappedTaskTypeId(issue.issueType);
 
       const [result] = await pool.execute<ResultSetHeader>(
-        `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, CreatedBy, ExternalIssueId)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, CreatedBy, ExternalIssueId)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           projectId,
           issue.summary || issue.key,
           issue.description || '',
-          statusId || taskStatuses[0]?.Id || null,
-          priorityId || taskPriorities[0]?.Id || null,
+          statusId || defaultStatusId,
+          priorityId || defaultPriorityId,
+          taskTypeId || defaultTaskTypeId,
           userId,
           issue.key
         ]

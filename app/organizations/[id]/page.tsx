@@ -1585,11 +1585,12 @@ function StatusesTab({
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
+  const [taskTypes, setTaskTypes] = useState<StatusValue[]>([]);
   const [ticketStatuses, setTicketStatuses] = useState<any[]>([]);
   const [ticketPriorities, setTicketPriorities] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeType, setActiveType] = useState<'project' | 'task' | 'priority' | 'ticket' | 'ticket-priority'>('project');
+  const [activeType, setActiveType] = useState<'project' | 'task' | 'priority' | 'type' | 'ticket' | 'ticket-priority'>('project');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingStatus, setEditingStatus] = useState<StatusValue | null>(null);
 
@@ -1600,16 +1601,18 @@ function StatusesTab({
   const loadStatuses = async () => {
     try {
       setIsLoading(true);
-      const [projectRes, taskRes, priorityRes, ticketRes, ticketPriRes] = await Promise.all([
+      const [projectRes, taskRes, priorityRes, typeRes, ticketRes, ticketPriRes] = await Promise.all([
         statusValuesApi.getProjectStatuses(orgId, token),
         statusValuesApi.getTaskStatuses(orgId, token),
         statusValuesApi.getTaskPriorities(orgId, token),
+        statusValuesApi.getTaskTypes(orgId, token),
         fetch(`${getApiUrl()}/api/status-values/ticket/${orgId}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
         fetch(`${getApiUrl()}/api/status-values/ticket-priority/${orgId}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
       ]);
       setProjectStatuses(projectRes.statuses);
       setTaskStatuses(taskRes.statuses);
       setTaskPriorities(priorityRes.priorities);
+      setTaskTypes(typeRes.types);
       setTicketStatuses(ticketRes.statuses || []);
       setTicketPriorities(ticketPriRes.priorities || []);
       setError('');
@@ -1620,7 +1623,7 @@ function StatusesTab({
     }
   };
 
-  const handleDelete = async (id: number, type: 'project' | 'task' | 'priority' | 'ticket' | 'ticket-priority') => {
+  const handleDelete = async (id: number, type: 'project' | 'task' | 'priority' | 'type' | 'ticket' | 'ticket-priority') => {
     const itemType = (type === 'priority' || type === 'ticket-priority') ? 'priority' : 'status value';
     showConfirm(
       `Delete ${itemType.charAt(0).toUpperCase() + itemType.slice(1)}`,
@@ -1633,6 +1636,8 @@ function StatusesTab({
             await statusValuesApi.deleteTaskStatus(id, token);
           } else if (type === 'priority') {
             await statusValuesApi.deleteTaskPriority(id, token);
+          } else if (type === 'type') {
+            await statusValuesApi.deleteTaskType(id, token);
           } else {
             const endpoint = type === 'ticket' ? 'ticket' : 'ticket-priority';
             await fetch(`${getApiUrl()}/api/status-values/${endpoint}/${id}`, {
@@ -1653,9 +1658,10 @@ function StatusesTab({
   const currentStatuses = activeType === 'project' ? projectStatuses
     : activeType === 'task' ? taskStatuses
     : activeType === 'priority' ? taskPriorities
+    : activeType === 'type' ? taskTypes
     : activeType === 'ticket' ? ticketStatuses
     : ticketPriorities;
-  const buttonLabel = (activeType === 'priority' || activeType === 'ticket-priority') ? 'Add Priority' : 'Add Status';
+  const buttonLabel = (activeType === 'priority' || activeType === 'ticket-priority') ? 'Add Priority' : activeType === 'type' ? 'Add Type' : 'Add Status';
 
   return (
     <div>
@@ -1690,6 +1696,16 @@ function StatusesTab({
             }`}
           >
             Task Priorities
+          </button>
+          <button
+            onClick={() => setActiveType('type')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeType === 'type'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+            }`}
+          >
+            Task Types
           </button>
           <button
             onClick={() => setActiveType('ticket')}
@@ -1741,7 +1757,7 @@ function StatusesTab({
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-gray-900 dark:text-white">
-                    {(activeType === 'priority' || activeType === 'ticket-priority') ? status.PriorityName : status.StatusName}
+                    {(activeType === 'priority' || activeType === 'ticket-priority') ? status.PriorityName : activeType === 'type' ? status.TypeName : status.StatusName}
                   </span>
                   {status.IsDefault ? <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 rounded-full">Default</span> : ''}
                   {status.IsClosed ? <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400 rounded-full">Closed</span> : ''}
@@ -1805,13 +1821,14 @@ function StatusesTab({
 
 function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
   orgId: number;
-  type: 'project' | 'task' | 'priority' | 'ticket' | 'ticket-priority';
+  type: 'project' | 'task' | 'priority' | 'type' | 'ticket' | 'ticket-priority';
   status?: any;
   onClose: () => void;
   onSaved: () => void;
   token: string;
 }) {
   const isPriority = type === 'priority' || type === 'ticket-priority';
+  const isTaskType = type === 'type';
   const isTicketStatus = type === 'ticket';
   const STATUS_TYPE_OPTIONS = [
     { value: 'open',        label: 'Open — new tickets awaiting action' },
@@ -1823,7 +1840,7 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
   ];
   const [formData, setFormData] = useState<CreateStatusValueData & { statusType: string }>({
     organizationId: orgId,
-    statusName: isPriority ? (status?.PriorityName || '') : (status?.StatusName || ''),
+    statusName: isPriority ? (status?.PriorityName || '') : isTaskType ? (status?.TypeName || '') : (status?.StatusName || ''),
     colorCode: status?.ColorCode || status?.Color || '#3b82f6',
     sortOrder: status?.SortOrder || 0,
     isDefault: !!status?.IsDefault,
@@ -1857,6 +1874,8 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
           await statusValuesApi.updateTaskStatus(status.Id, formData, token);
         } else if (type === 'priority') {
           await statusValuesApi.updateTaskPriority(status.Id, formData, token);
+        } else if (type === 'type') {
+          await statusValuesApi.updateTaskType(status.Id, { ...formData, typeName: formData.statusName }, token);
         } else {
           const endpoint = type === 'ticket' ? 'ticket' : 'ticket-priority';
           const res = await fetch(`${getApiUrl()}/api/status-values/${endpoint}/${status.Id}`, {
@@ -1873,6 +1892,8 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
           await statusValuesApi.createTaskStatus(formData, token);
         } else if (type === 'priority') {
           await statusValuesApi.createTaskPriority(formData, token);
+        } else if (type === 'type') {
+          await statusValuesApi.createTaskType({ ...formData, typeName: formData.statusName }, token);
         } else {
           const endpoint = type === 'ticket' ? 'ticket' : 'ticket-priority';
           const res = await fetch(`${getApiUrl()}/api/status-values/${endpoint}`, {
@@ -1885,7 +1906,7 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
       }
       onSaved();
     } catch (err: any) {
-      setError(err.message || 'Failed to save ' + (isPriority ? 'priority' : 'status value'));
+      setError(err.message || 'Failed to save ' + (isPriority ? 'priority' : isTaskType ? 'type value' : 'status value'));
     } finally {
       setIsLoading(false);
     }
@@ -1897,7 +1918,7 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {status ? 'Edit' : 'Create'} {type === 'ticket-priority' ? 'Ticket Priority' : type === 'ticket' ? 'Ticket Status' : type === 'priority' ? 'Task Priority' : type === 'project' ? 'Project Status' : 'Task Status'}
+              {status ? 'Edit' : 'Create'} {type === 'ticket-priority' ? 'Ticket Priority' : type === 'ticket' ? 'Ticket Status' : type === 'priority' ? 'Task Priority' : type === 'type' ? 'Task Type' : type === 'project' ? 'Project Status' : 'Task Status'}
             </h2>
             <button
               onClick={onClose}
@@ -1916,14 +1937,14 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {isPriority ? 'Priority' : 'Status'} Name *
+                {isPriority ? 'Priority' : isTaskType ? 'Type' : 'Status'} Name *
               </label>
               <input
                 type="text"
                 value={formData.statusName}
                 onChange={(e) => setFormData({ ...formData, statusName: e.target.value })}
                 required
-                placeholder={type === 'priority' ? 'e.g., Critical, High, Medium, Low' : ''}
+                placeholder={isPriority ? 'e.g., Critical, High, Medium, Low' : isTaskType ? 'e.g., Feature, Bug, Improvement, Chore' : ''}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
             </div>
@@ -1959,10 +1980,10 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
                 onChange={(e) => setFormData({ ...formData, isDefault: e.target.checked })}
                 className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
               />
-              <span className="text-sm text-gray-700 dark:text-gray-300">Set as default status</span>
+              <span className="text-sm text-gray-700 dark:text-gray-300">Set as default {isPriority ? 'priority' : isTaskType ? 'type' : 'status'}</span>
             </label>
 
-            {!isPriority && (
+            {!isPriority && !isTaskType && (
               <>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input

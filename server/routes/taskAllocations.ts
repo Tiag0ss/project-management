@@ -907,35 +907,70 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       await allocateTask(taskData.TaskId, remainingHours, startDate, taskIsHobby);
     }
 
-    // Update the PlannedStartDate and PlannedEndDate of the new task
+
+    // Update PlannedStartDate and PlannedEndDate for new task
     const [newTaskAllocations] = await pool.execute<RowDataPacket[]>(
       `SELECT MIN(AllocationDate) as StartDate, MAX(AllocationDate) as EndDate
        FROM TaskAllocations WHERE TaskId = ?`,
       [newTaskId]
     );
-    
     if (newTaskAllocations.length > 0 && newTaskAllocations[0].StartDate) {
       await pool.execute(
         `UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ? WHERE Id = ?`,
         [newTaskAllocations[0].StartDate, newTaskAllocations[0].EndDate, newTaskId]
       );
-      // Note: Don't call replanDependentTasks here - push-forward already handles all affected tasks
     }
 
-    // Update the PlannedStartDate and PlannedEndDate of affected tasks
+    // Update PlannedStartDate and PlannedEndDate for affected tasks
     for (const taskData of affectedTasksData) {
       const [taskAllocations] = await pool.execute<RowDataPacket[]>(
         `SELECT MIN(AllocationDate) as StartDate, MAX(AllocationDate) as EndDate
          FROM TaskAllocations WHERE TaskId = ?`,
         [taskData.TaskId]
       );
-      
       if (taskAllocations.length > 0 && taskAllocations[0].StartDate) {
         await pool.execute(
           `UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ? WHERE Id = ?`,
           [taskAllocations[0].StartDate, taskAllocations[0].EndDate, taskData.TaskId]
         );
-        // Note: Don't call replanDependentTasks here - push-forward already handles all affected tasks
+      }
+    }
+
+    // Update assignees for subtasks and affected tasks (multi-assignee logic)
+    // Find all subtasks for newTaskId and affected tasks
+    const allTaskIds = [newTaskId, ...affectedTasksData.map(t => t.TaskId)];
+    for (const taskId of allTaskIds) {
+      // Find direct child tasks (subtasks)
+      const [subtasks] = await pool.execute<RowDataPacket[]>(
+        `SELECT Id FROM Tasks WHERE ParentTaskId = ?`,
+        [taskId]
+      );
+      // For each task (main + subtasks), update allocations for all assignees
+      const taskIdsToUpdate = [taskId, ...subtasks.map(st => st.Id)];
+      for (const tid of taskIdsToUpdate) {
+        // Remove AssignedTo update, use TaskAllocations for assignees
+        // Optionally, clear old allocations if needed (already handled above)
+        // Insert allocations for all assignees
+        // If multi-assignee info is in req.body.assignees, use that
+        const assignees = Array.isArray(req.body.assignees) ? req.body.assignees : [userId];
+        // Remove duplicates
+        const uniqueAssignees = [...new Set(assignees.filter((a: number) => !!a))];
+        // For each assignee, ensure allocation exists
+        for (const assigneeId of uniqueAssignees) {
+          // Check if allocation exists
+          const [existingAlloc] = await pool.execute<RowDataPacket[]>(
+            `SELECT COUNT(*) as cnt FROM TaskAllocations WHERE TaskId = ? AND UserId = ?`,
+            [tid, assigneeId]
+          );
+          if (existingAlloc[0].cnt === 0) {
+            // Insert allocation (minimal, actual allocation logic handled elsewhere)
+            await pool.execute(
+              `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+               VALUES (?, ?, CURDATE(), 0, '09:00', '18:00', 0)`,
+              [tid, assigneeId]
+            );
+          }
+        }
       }
     }
 

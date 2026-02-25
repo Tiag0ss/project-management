@@ -78,6 +78,24 @@
       "Comment": "Jira board ID for integration"
     },
     {
+      "FieldName": "JiraTaskStatusMappingJson",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Persisted Jira status to task status mapping JSON for this project"
+    },
+    {
+      "FieldName": "JiraTaskPriorityMappingJson",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Persisted Jira priority to task priority mapping JSON for this project"
+    },
+    {
+      "FieldName": "JiraTaskTypeMappingJson",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Persisted Jira issue type to task type mapping JSON for this project"
+    },
+    {
       "FieldName": "GitHubOwner",
       "DataType": "varchar(100)",
       "NotNullable": false,

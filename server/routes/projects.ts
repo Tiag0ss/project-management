@@ -417,6 +417,13 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       });
     }
 
+    if (status === undefined || status === null || status === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'Project status is required'
+      });
+    }
+
     // Verify user is member of organization
     const [members] = await pool.execute<RowDataPacket[]>(
       'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
@@ -663,6 +670,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     }
     
     const oldProject = existing[0];
+
+    const finalStatus = status !== undefined ? status : oldProject.Status;
+    if (finalStatus === undefined || finalStatus === null || finalStatus === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'Project status is required'
+      });
+    }
 
     // Normalize empty values for comparison
     const normalizeValue = (value: any): string => {

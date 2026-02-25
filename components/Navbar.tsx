@@ -93,6 +93,7 @@ export default function Navbar() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [taskPriorities, setTaskPriorities] = useState<PriorityValue[]>([]);
+  const [taskTypes, setTaskTypes] = useState<StatusValue[]>([]);
   const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -106,6 +107,7 @@ export default function Navbar() {
     description: '',
     status: '',
     priority: '',
+    taskType: '',
     assignedTo: '',
     dueDate: '',
     estimatedHours: '',
@@ -724,6 +726,7 @@ export default function Navbar() {
     setTasks([]);
     setTaskStatuses([]);
     setTaskPriorities([]);
+    setTaskTypes([]);
     setOrgMembers([]);
     setTaskForm({
       projectId: '',
@@ -731,6 +734,7 @@ export default function Navbar() {
       description: '',
       status: '',
       priority: '',
+      taskType: '',
       assignedTo: '',
       dueDate: '',
       estimatedHours: '',
@@ -767,18 +771,19 @@ export default function Navbar() {
   // Load projects and settings when organization changes
   const handleOrgChange = async (orgId: number) => {
     setSelectedOrgId(orgId);
-    setTaskForm(prev => ({ ...prev, projectId: '', assignedTo: '', status: '', priority: '' }));
+    setTaskForm(prev => ({ ...prev, projectId: '', assignedTo: '', status: '', priority: '', taskType: '' }));
     setProjects([]);
     setTaskStatuses([]);
     setTaskPriorities([]);
+    setTaskTypes([]);
     setOrgMembers([]);
     
     if (!orgId) return;
     
     setIsLoadingData(true);
     try {
-      // Load projects, statuses, priorities, and members in parallel
-      const [projectsRes, statusesRes, prioritiesRes, membersRes] = await Promise.all([
+      // Load projects, statuses, priorities, task types, and members in parallel
+      const [projectsRes, statusesRes, prioritiesRes, taskTypesRes, membersRes] = await Promise.all([
         fetch(`${getApiUrl()}/api/projects?organizationId=${orgId}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }),
@@ -786,6 +791,9 @@ export default function Navbar() {
           headers: { 'Authorization': `Bearer ${token}` }
         }),
         fetch(`${getApiUrl()}/api/status-values/priority/${orgId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch(`${getApiUrl()}/api/status-values/type/${orgId}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }),
         fetch(`${getApiUrl()}/api/organizations/${orgId}/users`, {
@@ -819,6 +827,16 @@ export default function Navbar() {
           setTaskForm(prev => ({ ...prev, priority: String(defaultPriority.Id) }));
         }
       }
+
+      if (taskTypesRes.ok) {
+        const data = await taskTypesRes.json();
+        const types = data.types || [];
+        setTaskTypes(types);
+        const defaultType = types.find((t: StatusValue) => t.IsDefault);
+        if (defaultType) {
+          setTaskForm(prev => ({ ...prev, taskType: String(defaultType.Id) }));
+        }
+      }
       
       if (membersRes.ok) {
         const data = await membersRes.json();
@@ -833,8 +851,8 @@ export default function Navbar() {
   };
 
   const handleSaveTask = async () => {
-    if (!taskForm.projectId || !taskForm.taskName.trim()) {
-      setError('Project and Task Name are required');
+    if (!taskForm.projectId || !taskForm.taskName.trim() || !taskForm.taskType) {
+      setError('Project, Task Name, and Task Type are required');
       return;
     }
 
@@ -854,6 +872,7 @@ export default function Navbar() {
           description: taskForm.description || null,
           status: taskForm.status ? parseInt(taskForm.status) : null,
           priority: taskForm.priority ? parseInt(taskForm.priority) : null,
+          taskType: taskForm.taskType ? parseInt(taskForm.taskType) : null,
           assignedTo: taskForm.assignedTo ? parseInt(taskForm.assignedTo) : null,
           dueDate: taskForm.dueDate || null,
           estimatedHours: taskForm.estimatedHours ? parseFloat(taskForm.estimatedHours) : null,
@@ -872,6 +891,7 @@ export default function Navbar() {
         description: '',
         status: '',
         priority: '',
+        taskType: '',
         assignedTo: '',
         dueDate: '',
         estimatedHours: '',
@@ -1597,8 +1617,8 @@ export default function Navbar() {
                   />
                 </div>
 
-                {/* Status and Priority Row */}
-                <div className="grid grid-cols-2 gap-4">
+                {/* Status, Priority and Task Type Row */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Status
@@ -1628,6 +1648,24 @@ export default function Navbar() {
                       <option value="">Select Priority</option>
                       {taskPriorities.map(priority => (
                         <option key={priority.Id} value={priority.Id}>{priority.PriorityName}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Task Type <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={taskForm.taskType}
+                      onChange={(e) => setTaskForm(prev => ({ ...prev, taskType: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      disabled={!selectedOrgId}
+                      required
+                    >
+                      <option value="">Select Task Type</option>
+                      {taskTypes.map(type => (
+                        <option key={type.Id} value={type.Id}>{type.TypeName || type.StatusName}</option>
                       ))}
                     </select>
                   </div>
@@ -1695,7 +1733,7 @@ export default function Navbar() {
                 </button>
                 <button
                   onClick={handleSaveTask}
-                  disabled={isSaving || !taskForm.projectId || !taskForm.taskName.trim()}
+                  disabled={isSaving || !taskForm.projectId || !taskForm.taskName.trim() || !taskForm.taskType}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors flex items-center space-x-2"
                 >
                   {isSaving ? (

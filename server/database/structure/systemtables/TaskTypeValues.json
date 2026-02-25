@@ -1,0 +1,70 @@
+{
+  "TableName": "TaskTypeValues",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique task type identifier"
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id for organization-specific task types"
+    },
+    {
+      "FieldName": "TypeName",
+      "DataType": "varchar(100)",
+      "NotNullable": true,
+      "Comment": "Display name of the task type"
+    },
+    {
+      "FieldName": "ColorCode",
+      "DataType": "varchar(7)",
+      "NotNullable": false,
+      "Comment": "Color code in hex format (e.g., #FF5733) for UI display"
+    },
+    {
+      "FieldName": "SortOrder",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Order for displaying task types in lists"
+    },
+    {
+      "FieldName": "IsDefault",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Whether this is the default type for new tasks"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when task type was created"
+    }
+  ],
+  "Relationships": [
+    {
+      "Name": "TaskTypeOrganization",
+      "Description": "Task Type belongs to an Organization",
+      "FromField": "OrganizationId",
+      "ToTable": "Organizations",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TaskTypeUsedByTasks",
+      "Description": "Task Type can be used by many Tasks",
+      "FromField": "Id",
+      "ToTable": "Tasks",
+      "ToField": "TaskType",
+      "Type": "OneToMany"
+    }
+  ]
+}

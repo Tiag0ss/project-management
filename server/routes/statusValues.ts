@@ -1026,6 +1026,179 @@ const DEFAULT_TICKET_PRIORITIES = [
   { name: 'Urgent', color: '#ef4444', order: 4, isDefault: 0 },
 ];
 
+const DEFAULT_TASK_TYPES = [
+  { name: 'Feature', color: '#3b82f6', order: 1, isDefault: 1 },
+  { name: 'Bug', color: '#ef4444', order: 2, isDefault: 0 },
+  { name: 'Improvement', color: '#f59e0b', order: 3, isDefault: 0 },
+  { name: 'Chore', color: '#6b7280', order: 4, isDefault: 0 },
+];
+
+async function ensureTaskTypes(orgId: number): Promise<RowDataPacket[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM TaskTypeValues WHERE OrganizationId = ? ORDER BY SortOrder, TypeName',
+    [orgId]
+  );
+
+  if (rows.length > 0) return rows;
+
+  for (const t of DEFAULT_TASK_TYPES) {
+    await pool.execute(
+      'INSERT INTO TaskTypeValues (OrganizationId, TypeName, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?)',
+      [orgId, t.name, t.color, t.order, t.isDefault]
+    );
+  }
+
+  const [newRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM TaskTypeValues WHERE OrganizationId = ? ORDER BY SortOrder, TypeName',
+    [orgId]
+  );
+  return newRows;
+}
+
+// GET task types (auto-creates defaults)
+router.get('/type/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = parseInt(req.params.orgId as string);
+
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+
+    if (access.length === 0) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const types = await ensureTaskTypes(orgId);
+    res.json({ success: true, types });
+  } catch (error) {
+    console.error('Get task type values error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch task type values' });
+  }
+});
+
+// POST task type
+router.post('/type', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, typeName, colorCode, sortOrder, isDefault } = req.body;
+
+    if (!organizationId || !typeName) {
+      return res.status(400).json({ success: false, message: 'Organization ID and type name are required' });
+    }
+
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [organizationId, userId]
+    );
+
+    if (member.length === 0 || (member[0].Role !== 'Owner' && member[0].Role !== 'Admin' && !member[0].CanManageSettings)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    if (isDefault) {
+      await pool.execute('UPDATE TaskTypeValues SET IsDefault = 0 WHERE OrganizationId = ?', [organizationId]);
+    }
+
+    const [result] = await pool.execute<ResultSetHeader>(
+      'INSERT INTO TaskTypeValues (OrganizationId, TypeName, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?)',
+      [organizationId, typeName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
+    );
+
+    res.status(201).json({ success: true, typeId: result.insertId });
+  } catch (error) {
+    console.error('Create task type error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create task type value' });
+  }
+});
+
+// PUT task type
+router.put('/type/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const typeId = req.params.id;
+    const { typeName, colorCode, sortOrder, isDefault } = req.body;
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM TaskTypeValues WHERE Id = ?',
+      [typeId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Task type value not found' });
+    }
+
+    const orgId = rows[0].OrganizationId;
+
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+
+    if (member.length === 0 || (member[0].Role !== 'Owner' && member[0].Role !== 'Admin' && !member[0].CanManageSettings)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    if (isDefault) {
+      await pool.execute('UPDATE TaskTypeValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, typeId]);
+    }
+
+    await pool.execute(
+      'UPDATE TaskTypeValues SET TypeName = ?, ColorCode = ?, SortOrder = ?, IsDefault = ? WHERE Id = ?',
+      [typeName, colorCode, sortOrder, isDefault ? 1 : 0, typeId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update task type error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update task type value' });
+  }
+});
+
+// DELETE task type
+router.delete('/type/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const typeId = req.params.id;
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM TaskTypeValues WHERE Id = ?',
+      [typeId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Task type value not found' });
+    }
+
+    const orgId = rows[0].OrganizationId;
+
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+
+    if (member.length === 0 || (member[0].Role !== 'Owner' && member[0].Role !== 'Admin' && !member[0].CanManageSettings)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    await pool.execute('DELETE FROM TaskTypeValues WHERE Id = ?', [typeId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete task type error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete task type value' });
+  }
+});
+
 async function ensureTicketStatuses(orgId: number): Promise<RowDataPacket[]> {
   const [rows] = await pool.execute<RowDataPacket[]>(
     'SELECT * FROM TicketStatusValues WHERE OrganizationId = ? ORDER BY SortOrder, StatusName',

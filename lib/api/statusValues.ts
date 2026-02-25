@@ -7,6 +7,7 @@ export interface StatusValue {
   OrganizationId: number;
   StatusName: string;
   PriorityName?: string; // For task priorities
+  TypeName?: string; // For task types
   ColorCode?: string;
   SortOrder: number;
   IsDefault: number;
@@ -18,6 +19,7 @@ export interface StatusValue {
 export interface CreateStatusValueData {
   organizationId: number;
   statusName: string;
+  typeName?: string;
   colorCode?: string;
   sortOrder?: number;
   isDefault?: boolean;
@@ -246,6 +248,81 @@ export const statusValuesApi = {
     
     if (!response.ok) {
       throw new Error(data.message || 'Failed to delete task priority');
+    }
+
+    return data;
+  },
+
+  // Task Type Values
+  async getTaskTypes(orgId: number, token: string): Promise<{ success: boolean; types: StatusValue[] }> {
+    const response = await fetch(`${API_BASE_URL}/api/status-values/type/${orgId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch task types');
+    }
+
+    return data;
+  },
+
+  async createTaskType(typeData: CreateStatusValueData, token: string): Promise<{ success: boolean; typeId: number }> {
+    const response = await fetch(`${API_BASE_URL}/api/status-values/type`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(typeData),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to create task type');
+    }
+
+    return data;
+  },
+
+  async updateTaskType(id: number, typeData: Partial<CreateStatusValueData>, token: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/status-values/type/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(typeData),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to update task type');
+    }
+
+    return data;
+  },
+
+  async deleteTaskType(id: number, token: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/status-values/type/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to delete task type');
     }
 
     return data;

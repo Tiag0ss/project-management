@@ -20,6 +20,9 @@ export interface Project {
   CustomerId?: number;
   CustomerName?: string;
   JiraBoardId?: string | null;
+  JiraTaskStatusMappingJson?: string | null;
+  JiraTaskPriorityMappingJson?: string | null;
+  JiraTaskTypeMappingJson?: string | null;
   GitHubOwner?: string | null;
   GitHubRepo?: string | null;
   GiteaOwner?: string | null;

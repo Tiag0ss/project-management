@@ -50,9 +50,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [jiraIssues, setJiraIssues] = useState<any[]>([]);
   const [selectedIssues, setSelectedIssues] = useState<Set<string>>(new Set());
   const [statusMapping, setStatusMapping] = useState<{[key: string]: string}>({});
+  const [priorityMapping, setPriorityMapping] = useState<{[key: string]: string}>({});
+  const [taskTypeMapping, setTaskTypeMapping] = useState<{[key: string]: string}>({});
   const [jiraLoading, setJiraLoading] = useState(false);
   const [jiraError, setJiraError] = useState('');
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
+  const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
+  const [taskTypes, setTaskTypes] = useState<StatusValue[]>([]);
   const [jiraFilters, setJiraFilters] = useState({
     search: '',
     status: '',
@@ -690,10 +694,27 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
       const data = await response.json();
       setJiraIssues(data.data || []);
+
+      const parseMappingJson = (value: any): Record<string, string> => {
+        if (!value || typeof value !== 'string') return {};
+        try {
+          const parsed = JSON.parse(value);
+          if (parsed && typeof parsed === 'object') {
+            return parsed as Record<string, string>;
+          }
+        } catch {
+          // ignore invalid JSON persisted previously
+        }
+        return {};
+      };
+
+      const savedStatusMapping = parseMappingJson(project.JiraTaskStatusMappingJson);
+      const savedPriorityMapping = parseMappingJson(project.JiraTaskPriorityMappingJson);
+      const savedTaskTypeMapping = parseMappingJson(project.JiraTaskTypeMappingJson);
       
       // Auto-create status mapping based on matching names
       if (taskStatuses.length > 0 && data.data) {
-        const mapping: {[key: string]: string} = {};
+        const mapping: {[key: string]: string} = { ...savedStatusMapping };
         const jiraStatuses = new Set<string>();
         
         data.data.forEach((issue: any) => {
@@ -703,6 +724,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         });
         
         jiraStatuses.forEach(jiraStatus => {
+          if (mapping[jiraStatus]) return;
           const match = taskStatuses.find(
             ts => ts.StatusName.toLowerCase() === jiraStatus.toLowerCase()
           );
@@ -715,6 +737,60 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         });
         
         setStatusMapping(mapping);
+      }
+
+      // Auto-create priority mapping based on matching names
+      if (taskPriorities.length > 0 && data.data) {
+        const mapping: { [key: string]: string } = { ...savedPriorityMapping };
+        const jiraPriorities = new Set<string>();
+
+        data.data.forEach((issue: any) => {
+          if (issue.priority) {
+            jiraPriorities.add(issue.priority);
+          }
+        });
+
+        jiraPriorities.forEach((jiraPriority) => {
+          if (mapping[jiraPriority]) return;
+          const match = taskPriorities.find(
+            tp => String(tp.PriorityName || tp.StatusName || '').toLowerCase() === jiraPriority.toLowerCase()
+          );
+          if (match) {
+            mapping[jiraPriority] = String(match.PriorityName || match.StatusName || '');
+          } else {
+            const defaultPriority = taskPriorities.find(p => p.IsDefault);
+            mapping[jiraPriority] = String(defaultPriority?.PriorityName || defaultPriority?.StatusName || taskPriorities[0]?.PriorityName || taskPriorities[0]?.StatusName || '');
+          }
+        });
+
+        setPriorityMapping(mapping);
+      }
+
+      // Auto-create task type mapping based on Jira issue type names
+      if (taskTypes.length > 0 && data.data) {
+        const mapping: { [key: string]: string } = { ...savedTaskTypeMapping };
+        const jiraIssueTypes = new Set<string>();
+
+        data.data.forEach((issue: any) => {
+          if (issue.issueType) {
+            jiraIssueTypes.add(issue.issueType);
+          }
+        });
+
+        jiraIssueTypes.forEach((jiraIssueType) => {
+          if (mapping[jiraIssueType]) return;
+          const match = taskTypes.find(
+            tt => String(tt.TypeName || tt.StatusName || '').toLowerCase() === jiraIssueType.toLowerCase()
+          );
+          if (match) {
+            mapping[jiraIssueType] = String(match.TypeName || match.StatusName || '');
+          } else {
+            const defaultType = taskTypes.find(t => t.IsDefault);
+            mapping[jiraIssueType] = String(defaultType?.TypeName || defaultType?.StatusName || taskTypes[0]?.TypeName || taskTypes[0]?.StatusName || '');
+          }
+        });
+
+        setTaskTypeMapping(mapping);
       }
     } catch (err: any) {
       setJiraError(err.message || 'Failed to load Jira issues');
@@ -731,6 +807,28 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setTaskStatuses(statuses.statuses);
     } catch (err: any) {
       console.error('Failed to load task statuses:', err);
+    }
+  };
+
+  const loadTaskTypes = async () => {
+    if (!token || !project) return;
+
+    try {
+      const types = await statusValuesApi.getTaskTypes(project.OrganizationId, token);
+      setTaskTypes(types.types || []);
+    } catch (err: any) {
+      console.error('Failed to load task types:', err);
+    }
+  };
+
+  const loadTaskPriorities = async () => {
+    if (!token || !project) return;
+
+    try {
+      const priorities = await statusValuesApi.getTaskPriorities(project.OrganizationId, token);
+      setTaskPriorities(priorities.priorities || []);
+    } catch (err: any) {
+      console.error('Failed to load task priorities:', err);
     }
   };
 
@@ -836,6 +934,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             projectId: parseInt(projectId),
             issues: issuesToImport,
             statusMapping: statusMapping,
+            priorityMapping: priorityMapping,
+            taskTypeMapping: taskTypeMapping,
           }),
         }
       );
@@ -862,6 +962,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       
       setShowJiraImportModal(false);
       setSelectedIssues(new Set());
+      setPriorityMapping({});
+      setTaskTypeMapping({});
       await loadTasks();
       await loadExistingJiraIssues(); // Reload the imported issues list
     } catch (err: any) {
@@ -1421,9 +1523,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // Load task statuses and Jira issues when modal opens
   useEffect(() => {
     if (showJiraImportModal && project) {
-      loadTaskStatuses();
-      loadExistingJiraIssues();
-      loadJiraIssues();
+      const initializeJiraImport = async () => {
+        await Promise.all([
+          loadTaskStatuses(),
+          loadTaskPriorities(),
+          loadTaskTypes(),
+          loadExistingJiraIssues(),
+        ]);
+        await loadJiraIssues();
+      };
+
+      initializeJiraImport();
     } else if (!showJiraImportModal) {
       // Reset filters when modal closes
       setJiraFilters({
@@ -1436,6 +1546,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       });
       setShowAlreadyImported(false);
       setExistingIssueIds(new Set());
+      setPriorityMapping({});
+      setTaskTypeMapping({});
     }
   }, [showJiraImportModal, project]);
 
@@ -1914,6 +2026,72 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                               {taskStatuses.map(status => (
                                 <option key={status.StatusName} value={status.StatusName}>
                                   {status.StatusName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Task Type Mapping Section */}
+                  {jiraIssues.length > 0 && taskTypes.length > 0 && (
+                    <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4">
+                      <h3 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-3">🧩 Task Type Mapping</h3>
+                      <p className="text-sm text-indigo-800 dark:text-indigo-400 mb-3">
+                        Map Jira issue types to your project's task types:
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {Array.from(new Set(jiraIssues.map(i => i.issueType).filter(Boolean))).map(jiraIssueType => (
+                          <div key={jiraIssueType} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700">
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              {jiraIssueType}
+                            </label>
+                            <select
+                              value={taskTypeMapping[jiraIssueType] || ''}
+                              onChange={(e) => setTaskTypeMapping({
+                                ...taskTypeMapping,
+                                [jiraIssueType]: e.target.value
+                              })}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            >
+                              {taskTypes.map(type => (
+                                <option key={type.Id} value={type.TypeName || type.StatusName || ''}>
+                                  {type.TypeName || type.StatusName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Priority Mapping Section */}
+                  {jiraIssues.length > 0 && taskPriorities.length > 0 && (
+                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                      <h3 className="font-semibold text-amber-900 dark:text-amber-300 mb-3">⚡ Priority Mapping</h3>
+                      <p className="text-sm text-amber-800 dark:text-amber-400 mb-3">
+                        Map Jira priorities to your project's task priorities:
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {Array.from(new Set(jiraIssues.map(i => i.priority).filter(Boolean))).map(jiraPriority => (
+                          <div key={jiraPriority} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700">
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              {jiraPriority}
+                            </label>
+                            <select
+                              value={priorityMapping[jiraPriority] || ''}
+                              onChange={(e) => setPriorityMapping({
+                                ...priorityMapping,
+                                [jiraPriority]: e.target.value
+                              })}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            >
+                              {taskPriorities.map(priority => (
+                                <option key={priority.Id} value={priority.PriorityName || priority.StatusName || ''}>
+                                  {priority.PriorityName || priority.StatusName}
                                 </option>
                               ))}
                             </select>
@@ -3853,6 +4031,13 @@ function TasksTab({
   const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
   const [showTemplateSaveModal, setShowTemplateSaveModal] = useState(false);
   const [showTemplateApplyModal, setShowTemplateApplyModal] = useState(false);
+  const [filterText, setFilterText] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterPriority, setFilterPriority] = useState('');
+  const [filterAssignee, setFilterAssignee] = useState('');
+  const [hideClosed, setHideClosed] = useState(false);
+  const [sortField, setSortField] = useState<'task' | 'assignee' | 'status' | 'priority' | 'dueDate'>('task');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Check which integrations are configured
   const hasJiraIntegration = jiraIntegration?.IsEnabled && jiraIntegration?.JiraUrl;
@@ -3895,10 +4080,132 @@ function TasksTab({
   const parentTasks = tasks.filter(task => !task.ParentTaskId);
   const getSubtasks = (parentId: number) => tasks.filter(task => task.ParentTaskId === parentId);
 
+  const taskStatuses = Array.from(new Set(tasks.map(t => t.StatusName || '').filter(Boolean))).sort();
+  const taskPriorities = Array.from(new Set(tasks.map(t => t.PriorityName || '').filter(Boolean))).sort();
+  const taskAssignees = Array.from(new Set(tasks.map(t => t.AssigneeName || '').filter(Boolean))).sort();
+
+  const isFilterActive = !!(
+    filterText.trim() ||
+    filterStatus ||
+    filterPriority ||
+    filterAssignee ||
+    hideClosed
+  );
+
+  const shouldAutoExpandForFilters = !!(
+    filterText.trim() ||
+    filterStatus ||
+    filterPriority ||
+    filterAssignee
+  );
+
+  const taskMatchesFilters = (task: Task): boolean => {
+    if (hideClosed && Number(task.StatusIsClosed || 0) === 1) return false;
+
+    if (filterStatus && (task.StatusName || '') !== filterStatus) return false;
+    if (filterPriority && (task.PriorityName || '') !== filterPriority) return false;
+    if (filterAssignee && (task.AssigneeName || '') !== filterAssignee) return false;
+
+    if (filterText.trim()) {
+      const search = filterText.toLowerCase();
+      const descriptionText = (task.Description || '').replace(/<[^>]*>/g, ' ').toLowerCase();
+      const matches =
+        (task.TaskName || '').toLowerCase().includes(search) ||
+        (task.AssigneeName || '').toLowerCase().includes(search) ||
+        (task.StatusName || '').toLowerCase().includes(search) ||
+        (task.PriorityName || '').toLowerCase().includes(search) ||
+        descriptionText.includes(search);
+      if (!matches) return false;
+    }
+
+    return true;
+  };
+
+  const compareTasks = (a: Task, b: Task): number => {
+    let comparison = 0;
+    switch (sortField) {
+      case 'task':
+        comparison = (a.TaskName || '').localeCompare(b.TaskName || '');
+        break;
+      case 'assignee':
+        comparison = (a.AssigneeName || '').localeCompare(b.AssigneeName || '');
+        break;
+      case 'status':
+        comparison = (a.StatusName || '').localeCompare(b.StatusName || '');
+        break;
+      case 'priority':
+        comparison = (a.PriorityName || '').localeCompare(b.PriorityName || '');
+        break;
+      case 'dueDate': {
+        const aTime = a.DueDate ? new Date(a.DueDate).getTime() : null;
+        const bTime = b.DueDate ? new Date(b.DueDate).getTime() : null;
+        if (aTime === null && bTime === null) comparison = 0;
+        else if (aTime === null) comparison = 1;
+        else if (bTime === null) comparison = -1;
+        else comparison = aTime - bTime;
+        break;
+      }
+    }
+    return sortDirection === 'asc' ? comparison : -comparison;
+  };
+
+  const getSortedTasks = (taskList: Task[]) => [...taskList].sort(compareTasks);
+
+  const hasMatchingDescendant = (task: Task): boolean => {
+    const subtasks = getSubtasks(task.Id);
+    for (const subtask of subtasks) {
+      if (taskMatchesFilters(subtask) || hasMatchingDescendant(subtask)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const handleSort = (field: 'task' | 'assignee' | 'status' | 'priority' | 'dueDate') => {
+    if (sortField === field) {
+      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const SortIcon = ({ field }: { field: 'task' | 'assignee' | 'status' | 'priority' | 'dueDate' }) => {
+    if (sortField !== field) {
+      return (
+        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+        </svg>
+      );
+    }
+    return sortDirection === 'asc' ? (
+      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+      </svg>
+    ) : (
+      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    );
+  };
+
+  const visibleParentTasks = getSortedTasks(
+    parentTasks.filter(parent => {
+      if (!isFilterActive) return true;
+      return taskMatchesFilters(parent) || hasMatchingDescendant(parent);
+    })
+  );
+
   // Recursive function to render task and all its descendants
   const renderTaskRow = (task: Task, level: number = 0): React.JSX.Element[] => {
-    const subtasks = getSubtasks(task.Id);
-    const isExpanded = expandedTasks.has(task.Id);
+    const subtasks = getSortedTasks(getSubtasks(task.Id));
+    const hasAnyMatchingDescendant = hasMatchingDescendant(task);
+
+    if (isFilterActive && !taskMatchesFilters(task) && !hasAnyMatchingDescendant) {
+      return [];
+    }
+
+    const isExpanded = shouldAutoExpandForFilters ? true : expandedTasks.has(task.Id);
     const hasSubtasks = subtasks.length > 0;
     const indentPixels = level * 24; // 24px per level
 
@@ -4204,24 +4511,111 @@ function TasksTab({
           )}
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="lg:col-span-2">
+                <input
+                  type="text"
+                  value={filterText}
+                  onChange={(e) => setFilterText(e.target.value)}
+                  placeholder="Search task, description, assignee..."
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="">All statuses</option>
+                  {taskStatuses.map(status => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <select
+                  value={filterPriority}
+                  onChange={(e) => setFilterPriority(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="">All priorities</option>
+                  {taskPriorities.map(priority => (
+                    <option key={priority} value={priority}>{priority}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <select
+                  value={filterAssignee}
+                  onChange={(e) => setFilterAssignee(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="">All assignees</option>
+                  {taskAssignees.map(assignee => (
+                    <option key={assignee} value={assignee}>{assignee}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between">
+              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={hideClosed}
+                  onChange={(e) => setHideClosed(e.target.checked)}
+                  className="rounded"
+                />
+                Hide closed tasks
+              </label>
+              {isFilterActive && (
+                <button
+                  onClick={() => {
+                    setFilterText('');
+                    setFilterStatus('');
+                    setFilterPriority('');
+                    setFilterAssignee('');
+                    setHideClosed(false);
+                  }}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Task
+                  <button onClick={() => handleSort('task')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
+                    Task <SortIcon field="task" />
+                  </button>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Assigned To
+                  <button onClick={() => handleSort('assignee')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
+                    Assigned To <SortIcon field="assignee" />
+                  </button>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Status
+                  <button onClick={() => handleSort('status')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
+                    Status <SortIcon field="status" />
+                  </button>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Priority
+                  <button onClick={() => handleSort('priority')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
+                    Priority <SortIcon field="priority" />
+                  </button>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Due Date
+                  <button onClick={() => handleSort('dueDate')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
+                    Due Date <SortIcon field="dueDate" />
+                  </button>
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Actions
@@ -4229,9 +4623,18 @@ function TasksTab({
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {parentTasks.map((task) => renderTaskRow(task))}
+              {visibleParentTasks.length > 0 ? (
+                visibleParentTasks.map((task) => renderTaskRow(task))
+              ) : (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                    No tasks match the current filters.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -9058,6 +9461,7 @@ function TaskModal({
     description: task?.Description || '',
     status: task?.Status ?? null,
     priority: task?.Priority ?? null,
+    taskType: task?.TaskType ?? null,
     assignedTo: task?.AssignedTo || undefined,
     dueDate: task?.DueDate ? task.DueDate.split('T')[0] : '',
     estimatedHours: task?.EstimatedHours || undefined,
@@ -9066,6 +9470,7 @@ function TaskModal({
   });
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
+  const [taskTypes, setTaskTypes] = useState<StatusValue[]>([]);
   const [organizationUsers, setOrganizationUsers] = useState<User[]>([]);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -9087,12 +9492,13 @@ function TaskModal({
   useEffect(() => {
     loadTaskStatuses();
     loadTaskPriorities();
+    loadTaskTypes();
     loadOrganizationUsers();
   }, []);
 
   // Set default values when creating a new task
   useEffect(() => {
-    if (!task && taskStatuses.length > 0 && taskPriorities.length > 0) {
+    if (!task && taskStatuses.length > 0 && taskPriorities.length > 0 && taskTypes.length > 0) {
       setFormData(prev => {
         const updates: Partial<CreateTaskData> = {};
         
@@ -9111,11 +9517,18 @@ function TaskModal({
             updates.priority = defaultPriority.Id;
           }
         }
+
+        if (prev.taskType === null || prev.taskType === undefined) {
+          const defaultType = taskTypes.find(t => t.IsDefault);
+          if (defaultType) {
+            updates.taskType = defaultType.Id;
+          }
+        }
         
         return Object.keys(updates).length > 0 ? { ...prev, ...updates } : prev;
       });
     }
-  }, [task, taskStatuses, taskPriorities]);
+  }, [task, taskStatuses, taskPriorities, taskTypes]);
 
   const loadTaskStatuses = async () => {
     try {
@@ -9132,6 +9545,15 @@ function TaskModal({
       setTaskPriorities(response.priorities);
     } catch (err: any) {
       console.error('Failed to load task priorities:', err);
+    }
+  };
+
+  const loadTaskTypes = async () => {
+    try {
+      const response = await statusValuesApi.getTaskTypes(project.OrganizationId, token);
+      setTaskTypes(response.types);
+    } catch (err: any) {
+      console.error('Failed to load task types:', err);
     }
   };
 
@@ -9201,6 +9623,12 @@ function TaskModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!formData.taskType) {
+      setError('Task type is required');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -9276,7 +9704,7 @@ function TaskModal({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Status
@@ -9321,6 +9749,31 @@ function TaskModal({
                     </>
                   ) : (
                     <option value="">No priorities available</option>
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Task Type *
+                </label>
+                <select
+                  value={formData.taskType ?? ''}
+                  onChange={(e) => setFormData({ ...formData, taskType: e.target.value ? parseInt(e.target.value) : null })}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  {taskTypes.length > 0 ? (
+                    <>
+                      <option value="">Select a task type</option>
+                      {taskTypes.sort((a, b) => a.SortOrder - b.SortOrder).map((type) => (
+                        <option key={type.Id} value={type.Id}>
+                          {type.TypeName || type.StatusName}
+                        </option>
+                      ))}
+                    </>
+                  ) : (
+                    <option value="">No task types available</option>
                   )}
                 </select>
               </div>

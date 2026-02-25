@@ -40,6 +40,12 @@
       "Comment": "Foreign key - reference to TaskPriorityValues.Id"
     },
     {
+      "FieldName": "TaskType",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to TaskTypeValues.Id"
+    },
+    {
       "FieldName": "AssignedTo",
       "DataType": "int",
       "NotNullable": false,
@@ -204,6 +210,14 @@
       "Description": "Task has a Priority Level",
       "FromField": "Priority",
       "ToTable": "TaskPriorityValues",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TaskTypeRef",
+      "Description": "Task has a Type",
+      "FromField": "TaskType",
+      "ToTable": "TaskTypeValues",
       "ToField": "Id",
       "Type": "ManyToOne"
     },
