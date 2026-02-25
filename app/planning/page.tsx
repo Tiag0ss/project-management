@@ -3174,7 +3174,7 @@ export default function PlanningPage() {
                         Click to plan subtasks
                       </div>
                     </div>
-                    <div className="flex-1 relative" style={{ minHeight: `${Math.max(60, unassignedTasks.length * 44 + 16)}px` }}>
+                    <div className="flex-1 relative" style={{ minHeight: `${Math.max(40, unassignedTasks.length * 24 + 8)}px` }}>
                       <div className="flex h-full">
                         {days.map((day, idx) => (
                           <div
@@ -3203,11 +3203,11 @@ export default function PlanningPage() {
                             draggable={permissions?.canPlanTasks}
                             onDragStart={(e) => handleDragStart(e, parentTask)}
                             onClick={() => hasSubtasks ? openSubtasksModal(parentTask) : handleTaskClick(parentTask)}
-                            className={`absolute h-10 rounded ${!statusColor ? getPriorityColor(parentTask) : ''} opacity-75 hover:opacity-100 ${permissions?.canPlanTasks ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white text-xs px-2 transition-all`}
+                            className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(parentTask) : ''} opacity-75 hover:opacity-100 ${permissions?.canPlanTasks ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white text-xs px-2 transition-all`}
                             style={{
                               left: position ? position.left : '8px',
                               width: position ? position.width : 'calc(100% - 16px)',
-                              top: `${8 + row * 44}px`,
+                              top: `${4 + row * 24}px`,
                               ...(statusColor ? { backgroundColor: statusColor } : {}),
                               borderLeft: `4px solid ${priorityBorderHex}`,
                             }}
@@ -3385,7 +3385,7 @@ export default function PlanningPage() {
                       onDrop={(e) => handleDropOnUser(e, userRow.Id)}
                       style={{ minHeight: `${rowHeight}px` }}
                     >
-                      <div className="w-48 flex-shrink-0 p-3 border-r border-gray-200 dark:border-gray-700">
+                      <div className="w-48 flex-shrink-0 p-1 border-r border-gray-200 dark:border-gray-700">
                         <div className="text-sm font-medium text-gray-900 dark:text-white">
                           👤 {userRow.Username}
                         </div>
@@ -3460,7 +3460,7 @@ export default function PlanningPage() {
                           const hoursDisplay = `${workedHours}/${plannedHours}/${estimatedHours}h`;
                           
                           // Subtask styling based on level
-                          const subtaskHeight = isSubtask ? 'h-6' : 'h-10';
+                          const subtaskHeight = isSubtask ? 'h-6' : 'h-6';
                           const subtaskTextSize = isSubtask ? 'text-[10px]' : 'text-xs';
                           const subtaskPadding = isSubtask ? 'px-1' : 'px-2';
                           const indentPrefix = isSubtask && level ? '└' + '─'.repeat(level) + ' ' : '';
@@ -3485,7 +3485,7 @@ export default function PlanningPage() {
                                 style={{
                                   left: baselinePosition.left,
                                   width: baselinePosition.width,
-                                  top: `${8 + row * 44 + (isSubtask ? 18 : 22)}px`,
+                                  top: `${4 + row * 24 + (isSubtask ? 10 : 12)}px`,
                                   height: '4px',
                                   backgroundColor: driftDays === 0 ? '#10b981' : driftDays > 0 ? '#f59e0b' : '#a855f7',
                                   opacity: 0.7,
@@ -3504,7 +3504,7 @@ export default function PlanningPage() {
                               style={{
                                 left: subtaskLeft,
                                 width: subtaskWidth,
-                                top: `${8 + row * 44}px`,
+                                top: `${4 + row * 24}px`,
                                 ...(statusColor ? { backgroundColor: statusColor } : {}),
                                 borderLeft: `${isSubtask ? '3' : '4'}px solid ${priorityBorderHex}`,
                               }}
@@ -3554,7 +3554,7 @@ export default function PlanningPage() {
                               <div
                                 key={`recurring-${recurring.Id}-${occurrenceDateStr}`}
                                 onClick={() => setRecurringDetailModal({ show: true, recurring })}
-                                className="absolute h-8 rounded bg-pink-500 dark:bg-pink-600 opacity-70 hover:opacity-100 cursor-pointer flex items-center text-white text-[10px] px-1 border-l-3 border-pink-700 dark:border-pink-800 z-10"
+                                className="absolute h-6 rounded bg-pink-500 dark:bg-pink-600 opacity-70 hover:opacity-100 cursor-pointer flex items-center text-white text-[10px] px-1 border-l-3 border-pink-700 dark:border-pink-800 z-10"
                                 style={{
                                   left: left,
                                   width: width,
@@ -3573,7 +3573,7 @@ export default function PlanningPage() {
                     </div>
                     {/* User Daily Totals Row */}
                     <div className="flex border-b border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-750">
-                      <div className="w-48 flex-shrink-0 px-3 py-1 border-r border-gray-200 dark:border-gray-700">
+                      <div className="w-48 flex-shrink-0 px-3 py-0.5 border-r border-gray-200 dark:border-gray-700">
                         <div className="text-[10px] text-gray-500 dark:text-gray-400 italic">
                           └ Totals
                         </div>
@@ -3597,7 +3597,7 @@ export default function PlanningPage() {
                           return (
                             <div
                               key={idx}
-                              className={`flex-1 py-1 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
+                              className={`flex-1 py-0.5 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
                                 day.getDay() === 0 || day.getDay() === 6
                                   ? 'bg-gray-100 dark:bg-gray-700'
                                   : ''
