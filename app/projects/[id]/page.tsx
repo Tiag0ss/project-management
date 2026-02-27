@@ -4035,8 +4035,9 @@ function TasksTab({
   const [filterStatus, setFilterStatus] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
   const [filterAssignee, setFilterAssignee] = useState('');
+  const [filterTaskType, setFilterTaskType] = useState('');
   const [hideClosed, setHideClosed] = useState(false);
-  const [sortField, setSortField] = useState<'task' | 'assignee' | 'status' | 'priority' | 'dueDate'>('task');
+  const [sortField, setSortField] = useState<'task' | 'assignee' | 'status' | 'priority' | 'dueDate' | 'TaskTypeName'>('task');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Check which integrations are configured
@@ -4083,12 +4084,14 @@ function TasksTab({
   const taskStatuses = Array.from(new Set(tasks.map(t => t.StatusName || '').filter(Boolean))).sort();
   const taskPriorities = Array.from(new Set(tasks.map(t => t.PriorityName || '').filter(Boolean))).sort();
   const taskAssignees = Array.from(new Set(tasks.map(t => t.AssigneeName || '').filter(Boolean))).sort();
+  const taskTypes = Array.from(new Set(tasks.map(t => t.TaskTypeName || '').filter(Boolean))).sort();
 
   const isFilterActive = !!(
     filterText.trim() ||
     filterStatus ||
     filterPriority ||
     filterAssignee ||
+    filterTaskType ||
     hideClosed
   );
 
@@ -4096,16 +4099,16 @@ function TasksTab({
     filterText.trim() ||
     filterStatus ||
     filterPriority ||
-    filterAssignee
+    filterAssignee ||
+    filterTaskType
   );
 
   const taskMatchesFilters = (task: Task): boolean => {
     if (hideClosed && Number(task.StatusIsClosed || 0) === 1) return false;
-
     if (filterStatus && (task.StatusName || '') !== filterStatus) return false;
     if (filterPriority && (task.PriorityName || '') !== filterPriority) return false;
     if (filterAssignee && (task.AssigneeName || '') !== filterAssignee) return false;
-
+    if (filterTaskType && (task.TaskTypeName || '') !== filterTaskType) return false;
     if (filterText.trim()) {
       const search = filterText.toLowerCase();
       const descriptionText = (task.Description || '').replace(/<[^>]*>/g, ' ').toLowerCase();
@@ -4114,10 +4117,10 @@ function TasksTab({
         (task.AssigneeName || '').toLowerCase().includes(search) ||
         (task.StatusName || '').toLowerCase().includes(search) ||
         (task.PriorityName || '').toLowerCase().includes(search) ||
+        (task.TaskTypeName || '').toLowerCase().includes(search) ||
         descriptionText.includes(search);
       if (!matches) return false;
     }
-
     return true;
   };
 
@@ -4135,6 +4138,9 @@ function TasksTab({
         break;
       case 'priority':
         comparison = (a.PriorityName || '').localeCompare(b.PriorityName || '');
+        break;
+      case 'TaskTypeName':
+        comparison = (a.TaskTypeName || '').localeCompare(b.TaskTypeName || '');
         break;
       case 'dueDate': {
         const aTime = a.DueDate ? new Date(a.DueDate).getTime() : null;
@@ -4161,7 +4167,7 @@ function TasksTab({
     return false;
   };
 
-  const handleSort = (field: 'task' | 'assignee' | 'status' | 'priority' | 'dueDate') => {
+  const handleSort = (field: 'task' | 'assignee' | 'status' | 'priority' | 'dueDate' | 'TaskTypeName') => {
     if (sortField === field) {
       setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -4170,7 +4176,7 @@ function TasksTab({
     }
   };
 
-  const SortIcon = ({ field }: { field: 'task' | 'assignee' | 'status' | 'priority' | 'dueDate' }) => {
+  const SortIcon = ({ field }: { field: 'task' | 'assignee' | 'status' | 'priority' | 'dueDate' | 'TaskTypeName' }) => {
     if (sortField !== field) {
       return (
         <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4273,6 +4279,13 @@ function TasksTab({
           ) : (
             <span className="text-gray-400 dark:text-gray-500 italic">Unassigned</span>
           )}
+        </td>
+        <td className="px-4 py-3">
+          {task.TaskTypeName ? (
+            <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={task.TaskTypeColor ? { backgroundColor: task.TaskTypeColor + '20', color: task.TaskTypeColor } : undefined}>
+              {task.TaskTypeName}
+            </span>
+          ) : <span className="text-xs text-gray-400">-</span>}
         </td>
         <td className="px-6 py-4 whitespace-nowrap">
           <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full" style={getStatusStyle(task)}>
@@ -4513,7 +4526,7 @@ function TasksTab({
       ) : (
         <div className="space-y-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
               <div className="lg:col-span-2">
                 <input
                   type="text"
@@ -4559,6 +4572,18 @@ function TasksTab({
                   ))}
                 </select>
               </div>
+              <div>
+                <select
+                  value={filterTaskType}
+                  onChange={(e) => setFilterTaskType(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="">All task types</option>
+                  {taskTypes.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="mt-3 flex items-center justify-between">
@@ -4578,6 +4603,7 @@ function TasksTab({
                     setFilterStatus('');
                     setFilterPriority('');
                     setFilterAssignee('');
+                    setFilterTaskType('');
                     setHideClosed(false);
                   }}
                   className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
@@ -4600,6 +4626,11 @@ function TasksTab({
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <button onClick={() => handleSort('assignee')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
                     Assigned To <SortIcon field="assignee" />
+                  </button>
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <button onClick={() => handleSort('TaskTypeName')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
+                    Task Type <SortIcon field="TaskTypeName" />
                   </button>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">

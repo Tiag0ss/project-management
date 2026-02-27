@@ -82,7 +82,7 @@ export default function ProjectsPage() {
   const [filterOrg, setFilterOrg] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterRAG, setFilterRAG] = useState<RAGStatus | ''>('');
-  const [hideCompleted, setHideCompleted] = useState(false);
+  const [hideCompleted, setHideCompleted] = useState(true);
   const [sortField, setSortField] = useState<ProjectSortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [showCreateModal, setShowCreateModal] = useState(false);
