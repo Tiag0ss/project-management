@@ -2981,23 +2981,29 @@ export default function PlanningPage() {
                 >
                   📏 Baseline
                 </button>
-                {permissions?.canPlanTasks && allocationFilters.projectId && (
+                {permissions?.canPlanTasks && projects.length > 0 && (
                   <button
                     onClick={() => {
-                      const project = projects.find(p => String(p.Id) === allocationFilters.projectId);
-                      if (!project) return;
                       showConfirm(
                         'Set Baseline',
-                        `Snapshot all current planned dates for "${project.ProjectName}" as the baseline? This will overwrite any existing baseline.`,
+                        `Snapshot all current planned dates for ALL visible projects as baseline? This will overwrite any existing baseline for each project.`,
                         async () => {
                           try {
-                            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/tasks/project/${allocationFilters.projectId}/baseline`, {
-                              method: 'PUT',
-                              headers: { Authorization: `Bearer ${token!}` },
-                            });
-                            const d = await res.json();
-                            if (!res.ok) throw new Error(d.message);
-                            showAlert('Baseline Set', d.message);
+                            let successCount = 0;
+                            let failCount = 0;
+                            for (const project of projects) {
+                              const res = await fetch(`${getApiUrl()}/api/tasks/project/${project.Id}/baseline`, {
+                                method: 'PUT',
+                                headers: { Authorization: `Bearer ${token!}` },
+                              });
+                              const d = await res.json();
+                              if (res.ok) {
+                                successCount++;
+                              } else {
+                                failCount++;
+                              }
+                            }
+                            showAlert('Baseline Set', `Baseline snapshot completed. Success: ${successCount}, Failed: ${failCount}`);
                             await loadData();
                             setShowBaseline(true);
                           } catch (err: any) {
@@ -3007,9 +3013,9 @@ export default function PlanningPage() {
                       );
                     }}
                     className="px-4 py-2 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-purple-100 dark:hover:bg-purple-900 transition-colors"
-                    title="Snapshot current planned dates as baseline for selected project"
+                    title="Snapshot current planned dates as baseline for all visible projects"
                   >
-                    📐 Set Baseline
+                    📐 Set Baseline (All Projects)
                   </button>
                 )}
               </div>
