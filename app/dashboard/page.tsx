@@ -906,7 +906,7 @@ function DashboardContent() {
         </main>
       ) : (
         /* Regular User View with Sidebar */
-        <div className="flex max-w-[1920px] mx-auto min-h-[calc(100vh-64px)]">
+        <div className="flex w-full  mx-auto min-h-[calc(100vh-64px)]">
           {/* Sidebar */}
           <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">

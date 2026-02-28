@@ -1273,7 +1273,7 @@ export default function WebReportsPage() {
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
         <Navbar />
 
-        <main className="max-w-[1920px] mx-auto py-6 sm:px-6 lg:px-8">
+        <main className="w-full  mx-auto py-6 sm:px-6 lg:px-8">
           <div className="px-4 py-6 sm:px-0">
             {/* Page Header */}
             <div className="bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg shadow p-6 text-white mb-6">

@@ -494,7 +494,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Navbar />
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="w-full mx-auto px-4 py-8">
 
         {/* Back + Header */}
         <div className="mb-6">

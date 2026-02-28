@@ -633,7 +633,7 @@ export default function TicketsPage() {
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
       <Navbar />
 
-      <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+      <main className="w-full mx-auto py-6 px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>

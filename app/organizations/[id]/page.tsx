@@ -258,7 +258,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
       <Navbar />
 
-      <div className="flex max-w-[1920px] mx-auto">
+      <div className="flex w-full  mx-auto">
         {/* Sidebar */}
         <aside className="w-64 bg-white dark:bg-gray-800 min-h-[calc(100vh-64px)] border-r border-gray-200 dark:border-gray-700">
           <div className="p-4">

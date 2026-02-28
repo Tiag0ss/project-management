@@ -299,7 +299,7 @@ export default function CustomersPage() {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Navbar />
-        <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="w-full mx-auto px-4 py-8">
           <div className="flex items-center justify-center">
             <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
             <span className="ml-3 text-gray-600 dark:text-gray-400">Loading...</span>
@@ -330,7 +330,7 @@ export default function CustomersPage() {
     <CustomerUserGuard>
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Navbar />
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="w-full mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Customers</h1>
           {permissions?.canCreateCustomers && (

@@ -926,8 +926,10 @@ export default function Navbar() {
 
   return (
     <>
-      <nav className="bg-white dark:bg-gray-800 shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* outer nav stretches across entire header so background fills 100% */}
+      <nav className="w-full bg-white dark:bg-gray-800 shadow">
+        {/* content not limited to max width so nav items span entire header */}
+        <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center space-x-8">
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">
