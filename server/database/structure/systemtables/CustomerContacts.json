@@ -1,0 +1,55 @@
+{
+  "TableName": "CustomerContacts",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "CustomerId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Name",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Email",
+      "DataType": "varchar(255)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Phone",
+      "DataType": "varchar(50)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "IsDefault",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

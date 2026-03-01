@@ -6,6 +6,84 @@ import { logCustomerHistory } from '../utils/changeLog';
 
 const router = Router();
 
+type CustomerContactInput = {
+  Name: string;
+  Email: string | null;
+  Phone: string | null;
+  IsDefault: boolean;
+};
+
+const normalizeCustomerContacts = (contacts: any[]): { contacts: CustomerContactInput[]; error?: string } => {
+  const normalized = contacts
+    .map((contact) => ({
+      Name: String(contact?.Name || '').trim(),
+      Email: String(contact?.Email || '').trim() || null,
+      Phone: String(contact?.Phone || '').trim() || null,
+      IsDefault: contact?.IsDefault === true || contact?.IsDefault === 1,
+    }))
+    .filter((contact) => contact.Name || contact.Email || contact.Phone);
+
+  for (const contact of normalized) {
+    if (!contact.Name) {
+      return { contacts: [], error: 'Each contact must have a name' };
+    }
+  }
+
+  const defaultCount = normalized.filter((contact) => contact.IsDefault).length;
+  if (defaultCount > 1) {
+    return { contacts: [], error: 'Only one default contact is allowed' };
+  }
+
+  if (normalized.length > 0 && defaultCount === 0) {
+    normalized[0].IsDefault = true;
+  }
+
+  return { contacts: normalized };
+};
+
+const replaceCustomerContacts = async (customerId: number, contacts: CustomerContactInput[], userId: number | undefined) => {
+  await pool.execute('DELETE FROM CustomerContacts WHERE CustomerId = ?', [customerId]);
+
+  for (const contact of contacts) {
+    await pool.execute(
+      `INSERT INTO CustomerContacts (CustomerId, Name, Email, Phone, IsDefault, CreatedBy)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [customerId, contact.Name, contact.Email, contact.Phone, contact.IsDefault ? 1 : 0, userId || null]
+    );
+  }
+};
+
+const syncDefaultContactToCustomer = async (customerId: number) => {
+  const [contacts] = await pool.execute<RowDataPacket[]>(
+    `SELECT Name, Email, Phone
+     FROM CustomerContacts
+     WHERE CustomerId = ?
+     ORDER BY IsDefault DESC, Id ASC
+     LIMIT 1`,
+    [customerId]
+  );
+
+  const defaultContact = contacts[0];
+  await pool.execute(
+    `UPDATE Customers
+     SET ContactPerson = ?, ContactEmail = ?, ContactPhone = ?
+     WHERE Id = ?`,
+    [defaultContact?.Name || null, defaultContact?.Email || null, defaultContact?.Phone || null, customerId]
+  );
+};
+
+const getCustomerContacts = async (customerId: number) => {
+  const [contacts] = await pool.execute<RowDataPacket[]>(
+    `SELECT Id, CustomerId, Name, Email, Phone, IsDefault
+     FROM CustomerContacts
+     WHERE CustomerId = ?
+     ORDER BY IsDefault DESC, Name ASC, Id ASC`,
+    [customerId]
+  );
+
+  return contacts;
+};
+
 /**
  * @swagger
  * tags:
@@ -78,6 +156,16 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         [customer.Id]
       );
       customer.Organizations = orgs;
+
+      const contacts = await getCustomerContacts(customer.Id);
+      customer.Contacts = contacts;
+
+      if (contacts.length > 0) {
+        const defaultContact = contacts.find((c: any) => c.IsDefault === 1) || contacts[0];
+        customer.ContactPerson = defaultContact.Name || customer.ContactPerson || null;
+        customer.ContactEmail = defaultContact.Email || customer.ContactEmail || null;
+        customer.ContactPhone = defaultContact.Phone || customer.ContactPhone || null;
+      }
 
       // Get open ticket count (excluding closed statuses)
       const [ticketCount] = await pool.execute<RowDataPacket[]>(
@@ -161,6 +249,15 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     );
     customer.Organizations = orgs;
 
+    const contacts = await getCustomerContacts(customerId);
+    customer.Contacts = contacts;
+    if (contacts.length > 0) {
+      const defaultContact = contacts.find((c: any) => c.IsDefault === 1) || contacts[0];
+      customer.ContactPerson = defaultContact.Name || customer.ContactPerson || null;
+      customer.ContactEmail = defaultContact.Email || customer.ContactEmail || null;
+      customer.ContactPhone = defaultContact.Phone || customer.ContactPhone || null;
+    }
+
     res.json({
       success: true,
       data: customer
@@ -212,7 +309,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { Name, Email, Phone, Address, Notes, DefaultSupportUserId, OrganizationIds, CreateDefaultProject, DefaultProjectName } = req.body;
+    const { Name, Email, Phone, Address, Notes, DefaultSupportUserId, OrganizationIds, CreateDefaultProject, DefaultProjectName, Contacts } = req.body;
 
     if (!Name || !Name.trim()) {
       return res.status(400).json({
@@ -226,6 +323,10 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         success: false,
         message: 'At least one organization must be selected'
       });
+    }
+
+    if (Contacts !== undefined && !Array.isArray(Contacts)) {
+      return res.status(400).json({ success: false, message: 'Contacts must be an array' });
     }
 
     // Verify user has access to all specified organizations
@@ -283,6 +384,16 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       }
     }
 
+    if (Array.isArray(Contacts)) {
+      const { contacts, error } = normalizeCustomerContacts(Contacts);
+      if (error) {
+        return res.status(400).json({ success: false, message: error });
+      }
+
+      await replaceCustomerContacts(customerId, contacts, userId);
+      await syncDefaultContactToCustomer(customerId);
+    }
+
     // Fetch the created customer
     const [customers] = await pool.execute<RowDataPacket[]>(
       `SELECT * FROM Customers WHERE Id = ?`,
@@ -300,6 +411,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       [customerId]
     );
     customer.Organizations = orgs;
+
+    customer.Contacts = await getCustomerContacts(customerId);
 
     res.status(201).json({
       success: true,
@@ -360,7 +473,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const customerId = parseInt(req.params.id as string);
-    const { Name, Email, Phone, Address, Notes, DefaultSupportUserId, IsActive, OrganizationIds, Website, ContactPerson, ContactEmail, ContactPhone, ProjectManagerId } = req.body;
+    const { Name, Email, Phone, Address, Notes, DefaultSupportUserId, IsActive, OrganizationIds, Website, ContactPerson, ContactEmail, ContactPhone, ProjectManagerId, Contacts } = req.body;
 
     // Check if user has access to this customer
     const [existingCustomers] = await pool.execute<RowDataPacket[]>(
@@ -514,6 +627,20 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       }
     }
 
+    if (Contacts !== undefined) {
+      if (!Array.isArray(Contacts)) {
+        return res.status(400).json({ success: false, message: 'Contacts must be an array' });
+      }
+
+      const { contacts, error } = normalizeCustomerContacts(Contacts);
+      if (error) {
+        return res.status(400).json({ success: false, message: error });
+      }
+
+      await replaceCustomerContacts(customerId, contacts, userId);
+      await syncDefaultContactToCustomer(customerId);
+    }
+
     // Update organization associations if provided
     if (OrganizationIds !== undefined && Array.isArray(OrganizationIds)) {
       if (OrganizationIds.length === 0) {
@@ -571,6 +698,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       [customerId]
     );
     customer.Organizations = orgs;
+    customer.Contacts = await getCustomerContacts(customerId);
 
     res.json({
       success: true,

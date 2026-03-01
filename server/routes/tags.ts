@@ -56,6 +56,107 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
 
 /**
  * @swagger
+ * /api/tags/organization/{organizationId}/usage:
+ *   get:
+ *     summary: Get usage statistics for organization tags
+ *     tags: [Tags]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Organization ID
+ *     responses:
+ *       200:
+ *         description: List of tags with usage metrics
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/organization/:organizationId/usage', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const organizationId = parseInt(req.params.organizationId as string);
+
+    const [tags] = await pool.execute<RowDataPacket[]>(
+      `SELECT
+         t.Id,
+         t.OrganizationId,
+         t.Name,
+         t.Color,
+         t.Description,
+         t.CreatedBy,
+         t.CreatedAt,
+         COUNT(DISTINCT tt.TaskId) as TaskCount,
+         COUNT(DISTINCT CASE WHEN COALESCE(tsv.IsClosed, 0) = 0 THEN tt.TaskId END) as OpenTaskCount,
+         MAX(tt.AddedAt) as LastUsedAt
+       FROM Tags t
+       LEFT JOIN TaskTags tt ON tt.TagId = t.Id
+       LEFT JOIN Tasks tk ON tk.Id = tt.TaskId
+       LEFT JOIN TaskStatusValues tsv ON tsv.Id = tk.Status
+       WHERE t.OrganizationId = ?
+       GROUP BY t.Id, t.OrganizationId, t.Name, t.Color, t.Description, t.CreatedBy, t.CreatedAt
+       ORDER BY TaskCount DESC, t.Name ASC`,
+      [organizationId]
+    );
+
+    res.json({ success: true, tags });
+  } catch (error) {
+    console.error('Error fetching tag usage:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch tag usage' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/tags/project/{projectId}/tasks:
+ *   get:
+ *     summary: Get all task-tag relations for a project
+ *     tags: [Tags]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Project ID
+ *     responses:
+ *       200:
+ *         description: Task/tag mapping for the project
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/project/:projectId/tasks', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const projectId = parseInt(req.params.projectId as string);
+
+    const [taskTags] = await pool.execute<RowDataPacket[]>(
+      `SELECT
+         tt.TaskId,
+         t.Id as TagId,
+         t.Name as TagName,
+         t.Color as TagColor,
+         tt.AddedAt
+       FROM TaskTags tt
+       JOIN Tags t ON t.Id = tt.TagId
+       JOIN Tasks tk ON tk.Id = tt.TaskId
+       WHERE tk.ProjectId = ?
+       ORDER BY tt.TaskId ASC, t.Name ASC`,
+      [projectId]
+    );
+
+    res.json({ success: true, taskTags });
+  } catch (error) {
+    console.error('Error fetching project task tags:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch project task tags' });
+  }
+});
+
+/**
+ * @swagger
  * /api/tags/task/{taskId}:
  *   get:
  *     summary: Get tags for a specific task

@@ -383,7 +383,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       });
       
       // Add task allocations with their specific start and end times
-      dayAllocations.forEach(allocation => {
+      dayAllocations.forEach((allocation, allocationIndex) => {
         if (allocation.StartTime && allocation.EndTime) {
           const [startHour, startMin] = allocation.StartTime.split(':').map(Number);
           const [endHour, endMin] = allocation.EndTime.split(':').map(Number);
@@ -393,9 +393,14 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
           
           const end = new Date(date);
           end.setHours(endHour, endMin, 0);
+
+          const allocationDatePart = typeof allocation.AllocationDate === 'string'
+            ? allocation.AllocationDate.split('T')[0]
+            : new Date(allocation.AllocationDate).toISOString().split('T')[0];
+          const allocationIdPart = String(allocation.Id ?? `${allocation.TaskId}-${allocationDatePart}`);
           
           calendarEvents.push({
-            id: `allocation-${allocation.Id}`,
+            id: `allocation-${allocationIdPart}-${allocationDatePart}-${allocation.StartTime}-${allocation.EndTime}-${allocationIndex}`,
             title: `📋 ${allocation.TaskName} (${allocation.AllocatedHours}h)`,
             start,
             end,
@@ -499,7 +504,21 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       });
     });
 
-    return calendarEvents;
+    const seenEventIds = new Map<string, number>();
+    return calendarEvents.map((event) => {
+      const baseId = String(event.id);
+      const count = seenEventIds.get(baseId) || 0;
+      seenEventIds.set(baseId, count + 1);
+
+      if (count === 0) {
+        return event;
+      }
+
+      return {
+        ...event,
+        id: `${baseId}__${count}`,
+      };
+    });
   }, [taskAllocations, timeEntries, callRecords, recurringAllocations, workStartTimes, lunchTime, lunchDuration]);
 
   const handleSelectEvent = useCallback((event: CalendarEvent) => {

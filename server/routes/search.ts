@@ -63,13 +63,53 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const searchTerm = `%${query.trim()}%`;
+    const trimmedQuery = query.trim();
+    const queryTokens = trimmedQuery.split(/\s+/).filter(Boolean);
+    const tagTokens = queryTokens
+      .filter(token => token.toLowerCase().startsWith('tag:'))
+      .map(token => token.slice(4).trim().toLowerCase())
+      .filter(Boolean);
+    const normalizedTags = Array.from(new Set(tagTokens));
+    const textTerms = queryTokens.filter(token => !token.toLowerCase().startsWith('tag:')).join(' ').trim();
+
+    if (!textTerms && normalizedTags.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provide text or tag filters (example: tag:backend auth)'
+      });
+    }
+
+    const searchTerm = textTerms ? `%${textTerms}%` : null;
+    const tagPlaceholders = normalizedTags.map(() => '?').join(',');
+    const hasTagFilter = normalizedTags.length > 0;
 
     const [ticketSetting] = await pool.execute<RowDataPacket[]>(
       'SELECT SettingValue FROM SystemSettings WHERE SettingKey = ?',
       ['internalTicketsEnabled']
     );
     const internalTicketsEnabled = ticketSetting.length === 0 || ticketSetting[0].SettingValue !== 'false';
+
+    const taskParams: any[] = [userId];
+    const taskConditions: string[] = [];
+
+    if (searchTerm) {
+      taskConditions.push('(t.TaskName LIKE ? OR t.Description LIKE ?)');
+      taskParams.push(searchTerm, searchTerm);
+    }
+
+    if (hasTagFilter) {
+      taskConditions.push(`t.Id IN (
+        SELECT tt2.TaskId
+        FROM TaskTags tt2
+        JOIN Tags tg2 ON tg2.Id = tt2.TagId
+        WHERE LOWER(tg2.Name) IN (${tagPlaceholders})
+        GROUP BY tt2.TaskId
+        HAVING COUNT(DISTINCT LOWER(tg2.Name)) = ?
+      )`);
+      taskParams.push(...normalizedTags, normalizedTags.length);
+    }
+
+    const taskWhereSql = taskConditions.length > 0 ? `AND ${taskConditions.join(' AND ')}` : '';
 
     // Search tasks - user must be member of the organization
     const [tasks] = await pool.query<RowDataPacket[]>(
@@ -86,13 +126,37 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        JOIN OrganizationMembers om ON o.Id = om.OrganizationId AND om.UserId = ?
        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
-       WHERE (t.TaskName LIKE ? OR t.Description LIKE ?)
+       WHERE 1 = 1
+       ${taskWhereSql}
        ORDER BY t.TaskName ASC
        LIMIT ${limit} OFFSET ${offset}`,
-      [userId, searchTerm, searchTerm]
+      taskParams
     );
 
     // Search tickets - user must be member of the organization
+    const ticketParams: any[] = [userId];
+    const ticketConditions: string[] = [];
+
+    if (searchTerm) {
+      ticketConditions.push('(t.Title LIKE ? OR t.TicketNumber LIKE ? OR t.Description LIKE ?)');
+      ticketParams.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    if (hasTagFilter) {
+      ticketConditions.push(`t.ProjectId IN (
+        SELECT t2.ProjectId
+        FROM Tasks t2
+        JOIN TaskTags tt2 ON tt2.TaskId = t2.Id
+        JOIN Tags tg2 ON tg2.Id = tt2.TagId
+        WHERE LOWER(tg2.Name) IN (${tagPlaceholders})
+        GROUP BY t2.ProjectId
+        HAVING COUNT(DISTINCT LOWER(tg2.Name)) = ?
+      )`);
+      ticketParams.push(...normalizedTags, normalizedTags.length);
+    }
+
+    const ticketWhereSql = ticketConditions.length > 0 ? `AND ${ticketConditions.join(' AND ')}` : '';
+
     const tickets: RowDataPacket[] = internalTicketsEnabled
       ? (await pool.query<RowDataPacket[]>(
           `SELECT
@@ -113,12 +177,36 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
            LEFT JOIN Projects p ON t.ProjectId = p.Id
            LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
            LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
-           WHERE (t.Title LIKE ? OR t.TicketNumber LIKE ? OR t.Description LIKE ?)
+           WHERE 1 = 1
+           ${ticketWhereSql}
            ORDER BY t.CreatedAt DESC
            LIMIT ${limit} OFFSET ${offset}`,
-          [userId, searchTerm, searchTerm, searchTerm]
+          ticketParams
         ))[0]
       : [];
+
+    const projectParams: any[] = [userId];
+    const projectConditions: string[] = [];
+
+    if (searchTerm) {
+      projectConditions.push('(p.ProjectName LIKE ? OR p.Description LIKE ?)');
+      projectParams.push(searchTerm, searchTerm);
+    }
+
+    if (hasTagFilter) {
+      projectConditions.push(`p.Id IN (
+        SELECT t2.ProjectId
+        FROM Tasks t2
+        JOIN TaskTags tt2 ON tt2.TaskId = t2.Id
+        JOIN Tags tg2 ON tg2.Id = tt2.TagId
+        WHERE LOWER(tg2.Name) IN (${tagPlaceholders})
+        GROUP BY t2.ProjectId
+        HAVING COUNT(DISTINCT LOWER(tg2.Name)) = ?
+      )`);
+      projectParams.push(...normalizedTags, normalizedTags.length);
+    }
+
+    const projectWhereSql = projectConditions.length > 0 ? `AND ${projectConditions.join(' AND ')}` : '';
 
     // Search projects
     const [projects] = await pool.query<RowDataPacket[]>(
@@ -131,11 +219,31 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        JOIN Organizations o ON p.OrganizationId = o.Id
        JOIN OrganizationMembers om ON o.Id = om.OrganizationId AND om.UserId = ?
        LEFT JOIN ProjectStatusValues psv ON p.Status = psv.Id
-       WHERE (p.ProjectName LIKE ? OR p.Description LIKE ?)
+       WHERE 1 = 1
+       ${projectWhereSql}
        ORDER BY p.ProjectName ASC
        LIMIT ${limit} OFFSET ${offset}`,
-      [userId, searchTerm, searchTerm]
+      projectParams
     );
+
+    const organizationParams: any[] = [userId];
+    const organizationConditions: string[] = [];
+
+    if (searchTerm) {
+      organizationConditions.push('(o.Name LIKE ? OR o.Description LIKE ?)');
+      organizationParams.push(searchTerm, searchTerm);
+    }
+
+    if (hasTagFilter) {
+      organizationConditions.push(`o.Id IN (
+        SELECT DISTINCT tgs.OrganizationId
+        FROM Tags tgs
+        WHERE LOWER(tgs.Name) IN (${tagPlaceholders})
+      )`);
+      organizationParams.push(...normalizedTags);
+    }
+
+    const organizationWhereSql = organizationConditions.length > 0 ? `AND ${organizationConditions.join(' AND ')}` : '';
 
     // Search organizations
     const [organizations] = await pool.query<RowDataPacket[]>(
@@ -144,11 +252,31 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         'organization' as ResultType
        FROM Organizations o
        JOIN OrganizationMembers om ON o.Id = om.OrganizationId AND om.UserId = ?
-       WHERE (o.Name LIKE ? OR o.Description LIKE ?)
+       WHERE 1 = 1
+       ${organizationWhereSql}
        ORDER BY o.Name ASC
        LIMIT ${limit} OFFSET ${offset}`,
-      [userId, searchTerm, searchTerm]
+      organizationParams
     );
+
+    const userParams: any[] = [userId];
+    const userConditions: string[] = [];
+
+    if (searchTerm) {
+      userConditions.push('(u.Username LIKE ? OR u.FirstName LIKE ? OR u.LastName LIKE ? OR u.Email LIKE ?)');
+      userParams.push(searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    if (hasTagFilter) {
+      userConditions.push(`om.OrganizationId IN (
+        SELECT DISTINCT tgs.OrganizationId
+        FROM Tags tgs
+        WHERE LOWER(tgs.Name) IN (${tagPlaceholders})
+      )`);
+      userParams.push(...normalizedTags);
+    }
+
+    const userWhereSql = userConditions.length > 0 ? `AND ${userConditions.join(' AND ')}` : '';
 
     // Search users (only users in same organizations)
     const [users] = await pool.query<RowDataPacket[]>(
@@ -160,10 +288,10 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        WHERE om.OrganizationId IN (
          SELECT OrganizationId FROM OrganizationMembers WHERE UserId = ?
        )
-       AND (u.Username LIKE ? OR u.FirstName LIKE ? OR u.LastName LIKE ? OR u.Email LIKE ?)
+       ${userWhereSql}
        ORDER BY u.FirstName, u.LastName ASC
        LIMIT ${limit} OFFSET ${offset}`,
-      [userId, searchTerm, searchTerm, searchTerm, searchTerm]
+      userParams
     );
 
     const hasMore = tasks.length === limit || tickets.length === limit || projects.length === limit || organizations.length === limit || users.length === limit;
@@ -178,7 +306,16 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       total: tasks.length + tickets.length + projects.length + organizations.length + users.length
     };
 
-    res.json({ success: true, query: query.trim(), page, limit, hasMore, results });
+    res.json({
+      success: true,
+      query: trimmedQuery,
+      queryText: textTerms,
+      queryTags: normalizedTags,
+      page,
+      limit,
+      hasMore,
+      results
+    });
   } catch (error) {
     console.error('Error performing search:', error);
     res.status(500).json({ success: false, message: 'Failed to perform search' });

@@ -1144,7 +1144,17 @@ export default function TaskDetailModal({
     }
   }, [timeEntriesPage, timeEntriesTotalPages]);
 
+  useEffect(() => {
+    if (!task?.Id && (activeTab === 'checklist' || activeTab === 'attachments' || activeTab === 'comments' || activeTab === 'history')) {
+      setActiveTab('details');
+    }
+  }, [task?.Id, activeTab]);
+
   const canSaveTask = !!(task?.Id ? permissions?.canManageTasks : permissions?.canCreateTasks);
+  const visibleTabs = (task?.Id
+    ? (['details', 'checklist', 'hours', 'comments', 'attachments', 'history'] as const)
+    : (['details', 'hours'] as const)
+  );
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -1274,36 +1284,34 @@ export default function TaskDetailModal({
           </div>
 
           {/* Tabs */}
-          {task?.Id && (
-            <div className="grid grid-cols-6 gap-1 mt-4 border-b border-gray-200 dark:border-gray-700 -mb-6 pb-0">
-              {(['details', 'checklist', 'hours', 'comments', 'attachments', 'history'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-3 py-2 text-sm font-medium rounded-t-lg transition-colors min-w-0 truncate text-center ${
-                    activeTab === tab
-                      ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-t border-l border-r border-gray-200 dark:border-gray-700'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                  }`}
-                  title={
-                    tab === 'details' ? 'Details' :
-                    tab === 'checklist' ? `Checklist (${checklists.length})` :
-                    tab === 'hours' ? `Plan & Deps (${totalWorked.toFixed(1)}h)` :
-                    tab === 'comments' ? `Comments (${taskComments.length})` :
-                    tab === 'attachments' ? `Files (${taskAttachments.length})` :
-                    `History (${taskHistory.length})`
-                  }
-                >
-                  {tab === 'details' && '📝 Details'}
-                  {tab === 'checklist' && `✅ Checklist (${checklists.length})`}
-                  {tab === 'hours' && `📅 Plan & Deps (${totalWorked.toFixed(1)}h)`}
-                  {tab === 'comments' && `💬 Comments (${taskComments.length})`}
-                  {tab === 'attachments' && `📎 Files (${taskAttachments.length})`}
-                  {tab === 'history' && `📜 History (${taskHistory.length})`}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className={`grid ${task?.Id ? 'grid-cols-6' : 'grid-cols-2'} gap-1 mt-4 border-b border-gray-200 dark:border-gray-700 -mb-6 pb-0`}>
+            {visibleTabs.map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-3 py-2 text-sm font-medium rounded-t-lg transition-colors min-w-0 truncate text-center ${
+                  activeTab === tab
+                    ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-t border-l border-r border-gray-200 dark:border-gray-700'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+                title={
+                  tab === 'details' ? 'Details' :
+                  tab === 'checklist' ? `Checklist (${checklists.length})` :
+                  tab === 'hours' ? `Plan & Deps (${totalWorked.toFixed(1)}h)` :
+                  tab === 'comments' ? `Comments (${taskComments.length})` :
+                  tab === 'attachments' ? `Files (${taskAttachments.length})` :
+                  `History (${taskHistory.length})`
+                }
+              >
+                {tab === 'details' && '📝 Details'}
+                {tab === 'checklist' && `✅ Checklist (${checklists.length})`}
+                {tab === 'hours' && `📅 Plan & Deps (${totalWorked.toFixed(1)}h)`}
+                {tab === 'comments' && `💬 Comments (${taskComments.length})`}
+                {tab === 'attachments' && `📎 Files (${taskAttachments.length})`}
+                {tab === 'history' && `📜 History (${taskHistory.length})`}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Content */}
@@ -1315,7 +1323,7 @@ export default function TaskDetailModal({
           )}
 
           {/* Details Tab (Edit Form) */}
-          {(activeTab === 'details' || !task?.Id) && (
+          {activeTab === 'details' && (
             <form onSubmit={handleSubmit} className="space-y-4">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">
                 Basic Information
@@ -1694,7 +1702,14 @@ export default function TaskDetailModal({
           )}
 
           {/* Checklist Tab */}
-          {activeTab === 'checklist' && task && (
+          {activeTab === 'checklist' && (
+            !task?.Id ? (
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 p-6 text-center">
+                <div className="text-3xl mb-2">✅</div>
+                <p className="text-gray-700 dark:text-gray-300 font-medium">Checklist will be available after creating the task.</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Create the task first, then add checklist items in this tab.</p>
+              </div>
+            ) : (
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -1830,10 +1845,44 @@ export default function TaskDetailModal({
                 </div>
               )}
             </div>
+            )
           )}
 
           {/* Hours Tab */}
-          {activeTab === 'hours' && task && (
+          {activeTab === 'hours' && (
+            !task?.Id ? (
+              <div className="space-y-6"> 
+
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
+                  Plan & Dependencies
+                </h3>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Parent Task (Optional)
+                  </label>
+                  <SearchableSelect
+                    value={formData.parentTaskId}
+                    onChange={(value) => setFormData({ ...formData, parentTaskId: value })}
+                    options={getAvailableParentTasks()}
+                    placeholder="No Parent (Top-level task)"
+                    emptyMessage="No tasks available"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Depends On (Optional)
+                  </label>
+                  <SearchableSelect
+                    value={formData.dependsOnTaskId}
+                    onChange={(value) => setFormData({ ...formData, dependsOnTaskId: value })}
+                    options={getAvailableDependencyTasks()}
+                    placeholder="No dependency"
+                    emptyMessage="No tasks available"
+                  />
+                </div>
+              </div>
+            ) : (
             <div className="space-y-6">
               {/* Summary Cards */}
               <div className="grid grid-cols-3 gap-4">
@@ -2165,6 +2214,7 @@ export default function TaskDetailModal({
                 )}
               </div>
             </div>
+            )
           )}
 
           {/* Comments Tab */}
@@ -2226,7 +2276,14 @@ export default function TaskDetailModal({
           )}
 
           {/* Attachments Tab */}
-          {activeTab === 'attachments' && task && (
+          {activeTab === 'attachments' && (
+            !task?.Id ? (
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 p-6 text-center">
+                <div className="text-3xl mb-2">📎</div>
+                <p className="text-gray-700 dark:text-gray-300 font-medium">Files tab is ready.</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Create the task first to upload attachments.</p>
+              </div>
+            ) : (
             <div className="space-y-4">
               {/* Upload Button */}
               <div className="flex items-center gap-4">
@@ -2303,6 +2360,7 @@ export default function TaskDetailModal({
                 </div>
               )}
             </div>
+            )
           )}
 
           {/* History Tab */}

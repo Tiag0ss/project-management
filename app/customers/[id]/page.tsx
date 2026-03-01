@@ -50,6 +50,14 @@ interface ProjectManager {
   LastName: string;
 }
 
+interface CustomerContact {
+  Id?: number;
+  Name: string;
+  Email: string;
+  Phone: string;
+  IsDefault: number;
+}
+
 type TabType = 'overview' | 'users' | 'settings' | 'attachments' | 'history';
 
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -81,12 +89,10 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     Phone: '',
     Address: '',
     Website: '',
-    ContactPerson: '',
-    ContactEmail: '',
-    ContactPhone: '',
     ProjectManagerId: '',
     Notes: ''
   });
+  const [customerContacts, setCustomerContacts] = useState<CustomerContact[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   
   // Add user modal
@@ -157,12 +163,35 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         Phone: customerData.Phone || '',
         Address: customerData.Address || '',
         Website: (customerData as any).Website || '',
-        ContactPerson: (customerData as any).ContactPerson || '',
-        ContactEmail: (customerData as any).ContactEmail || '',
-        ContactPhone: (customerData as any).ContactPhone || '',
         ProjectManagerId: (customerData as any).ProjectManagerId?.toString() || '',
         Notes: customerData.Notes || ''
       });
+
+      const apiContacts = Array.isArray((customerData as any).Contacts)
+        ? (customerData as any).Contacts
+        : [];
+      if (apiContacts.length > 0) {
+        setCustomerContacts(
+          apiContacts.map((contact: any) => ({
+            Id: contact.Id,
+            Name: contact.Name || '',
+            Email: contact.Email || '',
+            Phone: contact.Phone || '',
+            IsDefault: contact.IsDefault === 1 ? 1 : 0,
+          }))
+        );
+      } else if ((customerData as any).ContactPerson || (customerData as any).ContactEmail || (customerData as any).ContactPhone) {
+        setCustomerContacts([
+          {
+            Name: (customerData as any).ContactPerson || '',
+            Email: (customerData as any).ContactEmail || '',
+            Phone: (customerData as any).ContactPhone || '',
+            IsDefault: 1,
+          },
+        ]);
+      } else {
+        setCustomerContacts([]);
+      }
       
       // Load customer projects
       const projectsRes = await fetch(`${getApiUrl()}/api/customers/${customerId}/projects`, {
@@ -433,12 +462,78 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     });
   };
 
+  const addContact = () => {
+    setCustomerContacts((prev) => {
+      const next = [
+        ...prev,
+        {
+          Name: '',
+          Email: '',
+          Phone: '',
+          IsDefault: prev.length === 0 ? 1 : 0,
+        },
+      ];
+      return next;
+    });
+  };
+
+  const updateContact = (index: number, field: 'Name' | 'Email' | 'Phone', value: string) => {
+    setCustomerContacts((prev) => prev.map((contact, contactIndex) => (
+      contactIndex === index
+        ? { ...contact, [field]: value }
+        : contact
+    )));
+  };
+
+  const setDefaultContact = (index: number) => {
+    setCustomerContacts((prev) => prev.map((contact, contactIndex) => ({
+      ...contact,
+      IsDefault: contactIndex === index ? 1 : 0,
+    })));
+  };
+
+  const removeContact = (index: number) => {
+    setCustomerContacts((prev) => {
+      const target = prev[index];
+      const filtered = prev.filter((_, contactIndex) => contactIndex !== index);
+      if (filtered.length === 0) return [];
+      if (target?.IsDefault === 1 && !filtered.some((contact) => contact.IsDefault === 1)) {
+        filtered[0] = { ...filtered[0], IsDefault: 1 };
+      }
+      return filtered;
+    });
+  };
+
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     setError('');
     
     try {
+      const preparedContacts = customerContacts
+        .map((contact) => ({
+          Id: contact.Id,
+          Name: contact.Name.trim(),
+          Email: contact.Email.trim() || null,
+          Phone: contact.Phone.trim() || null,
+          IsDefault: contact.IsDefault === 1 ? 1 : 0,
+        }))
+        .filter((contact) => contact.Name || contact.Email || contact.Phone);
+
+      for (const contact of preparedContacts) {
+        if (!contact.Name) {
+          throw new Error('Each contact must have a name');
+        }
+      }
+
+      if (preparedContacts.length > 1 && preparedContacts.filter((contact) => contact.IsDefault === 1).length !== 1) {
+        throw new Error('Select exactly one default contact');
+      }
+
+      if (preparedContacts.length === 1) {
+        preparedContacts[0].IsDefault = 1;
+      }
+
       const res = await fetch(`${getApiUrl()}/api/customers/${customerId}`, {
         method: 'PUT',
         headers: {
@@ -451,9 +546,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           Phone: settingsForm.Phone || null,
           Address: settingsForm.Address || null,
           Website: settingsForm.Website || null,
-          ContactPerson: settingsForm.ContactPerson || null,
-          ContactEmail: settingsForm.ContactEmail || null,
-          ContactPhone: settingsForm.ContactPhone || null,
+          Contacts: preparedContacts,
           ProjectManagerId: settingsForm.ProjectManagerId ? parseInt(settingsForm.ProjectManagerId) : null,
           Notes: settingsForm.Notes || null
         })
@@ -490,6 +583,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
   // Get project manager name
   const projectManager = projectManagers.find(pm => pm.Id === parseInt(settingsForm.ProjectManagerId));
+  const defaultContact = customerContacts.find((contact) => contact.IsDefault === 1) || customerContacts[0] || null;
 
   if (authLoading || isLoading) {
     return (
@@ -687,15 +781,19 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">Contact Person</div>
-                  <div className="text-gray-900 dark:text-white">{(customer as any).ContactPerson || '-'}</div>
+                  <div className="text-gray-900 dark:text-white">{defaultContact?.Name || '-'}</div>
                 </div>
                 <div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">Email</div>
-                  <div className="text-gray-900 dark:text-white">{(customer as any).ContactEmail || customer.Email || '-'}</div>
+                  <div className="text-gray-900 dark:text-white">{defaultContact?.Email || customer.Email || '-'}</div>
                 </div>
                 <div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">Phone</div>
-                  <div className="text-gray-900 dark:text-white">{(customer as any).ContactPhone || customer.Phone || '-'}</div>
+                  <div className="text-gray-900 dark:text-white">{defaultContact?.Phone || customer.Phone || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Total Contacts</div>
+                  <div className="text-gray-900 dark:text-white">{customerContacts.length}</div>
                 </div>
                 <div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">Website</div>
@@ -908,44 +1006,82 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 </div>
               </div>
 
-              {/* Contact Person */}
+              {/* Contacts */}
               <div>
-                <h4 className="text-md font-semibold text-gray-900 dark:text-white mb-4">Contact Person</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Name
-                    </label>
-                    <input
-                      type="text"
-                      value={settingsForm.ContactPerson}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, ContactPerson: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      value={settingsForm.ContactEmail}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, ContactEmail: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Phone
-                    </label>
-                    <input
-                      type="text"
-                      value={settingsForm.ContactPhone}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, ContactPhone: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-md font-semibold text-gray-900 dark:text-white">Contacts</h4>
+                  <button
+                    type="button"
+                    onClick={addContact}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
+                  >
+                    + Add Contact
+                  </button>
                 </div>
+
+                {customerContacts.length === 0 ? (
+                  <div className="text-sm text-gray-500 dark:text-gray-400 p-4 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
+                    No contacts added yet.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {customerContacts.map((contact, index) => (
+                      <div key={`${contact.Id || 'new'}-${index}`} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                          <div className="md:col-span-3">
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Name</label>
+                            <input
+                              type="text"
+                              value={contact.Name}
+                              onChange={(e) => updateContact(index, 'Name', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            />
+                          </div>
+                          <div className="md:col-span-3">
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Email</label>
+                            <input
+                              type="email"
+                              value={contact.Email}
+                              onChange={(e) => updateContact(index, 'Email', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            />
+                          </div>
+                          <div className="md:col-span-3">
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Phone</label>
+                            <input
+                              type="text"
+                              value={contact.Phone}
+                              onChange={(e) => updateContact(index, 'Phone', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            />
+                          </div>
+                          <div className="md:col-span-2 flex items-center gap-2">
+                            <input
+                              id={`default-contact-${index}`}
+                              type="radio"
+                              name="default-contact"
+                              checked={contact.IsDefault === 1}
+                              onChange={() => setDefaultContact(index)}
+                              className="w-4 h-4 text-blue-600"
+                            />
+                            <label htmlFor={`default-contact-${index}`} className="text-sm text-gray-700 dark:text-gray-300">
+                              Default
+                            </label>
+                          </div>
+                          <div className="md:col-span-1">
+                            <button
+                              type="button"
+                              onClick={() => removeContact(index)}
+                              className="w-full px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition-colors"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Notes */}

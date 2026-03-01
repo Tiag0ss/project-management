@@ -4345,6 +4345,9 @@ function TasksTab({
   const [hideClosed, setHideClosed] = useState(false);
   const [sortField, setSortField] = useState<'task' | 'assignee' | 'status' | 'priority' | 'dueDate' | 'TaskTypeName'>('task');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [filterTagIds, setFilterTagIds] = useState<number[]>([]);
+  const [taskTagMap, setTaskTagMap] = useState<Map<number, Array<{ id: number; name: string; color: string }>>>(new Map());
+  const [tagFilterOptions, setTagFilterOptions] = useState<Array<{ value: number; label: string; subtitle?: string }>>([]);
 
   // Check which integrations are configured
   const hasJiraIntegration = jiraIntegration?.IsEnabled && jiraIntegration?.JiraUrl;
@@ -4392,12 +4395,88 @@ function TasksTab({
   const taskAssignees = Array.from(new Set(tasks.map(t => t.AssigneeName || '').filter(Boolean))).sort();
   const taskTypes = Array.from(new Set(tasks.map(t => t.TaskTypeName || '').filter(Boolean))).sort();
 
+  useEffect(() => {
+    if (!token || !project?.OrganizationId || !project?.Id) return;
+
+    const loadTaskTagsData = async () => {
+      try {
+        const [usageRes, projectTaskTagsRes] = await Promise.all([
+          fetch(`${getApiUrl()}/api/tags/organization/${project.OrganizationId}/usage`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          }),
+          fetch(`${getApiUrl()}/api/tags/project/${project.Id}/tasks`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          })
+        ]);
+
+        if (usageRes.ok) {
+          const usageData = await usageRes.json();
+          const options = (usageData.tags || []).map((tag: any) => ({
+            value: Number(tag.Id),
+            label: String(tag.Name || ''),
+            subtitle: `${Number(tag.TaskCount || 0)} task${Number(tag.TaskCount || 0) !== 1 ? 's' : ''}`,
+          }));
+          setTagFilterOptions(options);
+        } else {
+          setTagFilterOptions([]);
+        }
+
+        if (projectTaskTagsRes.ok) {
+          const taskTagsData = await projectTaskTagsRes.json();
+          const mapped = new Map<number, Array<{ id: number; name: string; color: string }>>();
+          for (const relation of taskTagsData.taskTags || []) {
+            const taskId = Number(relation.TaskId);
+            const existing = mapped.get(taskId) || [];
+            existing.push({
+              id: Number(relation.TagId),
+              name: String(relation.TagName || ''),
+              color: String(relation.TagColor || '#6B7280'),
+            });
+            mapped.set(taskId, existing);
+          }
+          setTaskTagMap(mapped);
+        } else {
+          setTaskTagMap(new Map());
+        }
+      } catch (err) {
+        console.error('Failed to load task tags data:', err);
+        setTagFilterOptions([]);
+        setTaskTagMap(new Map());
+      }
+    };
+
+    loadTaskTagsData();
+  }, [token, project?.OrganizationId, project?.Id]);
+
+  useEffect(() => {
+    if (tagFilterOptions.length === 0) {
+      setFilterTagIds(prev => (prev.length === 0 ? prev : []));
+      return;
+    }
+
+    const validTagIds = new Set(tagFilterOptions.map(option => Number(option.value)));
+    setFilterTagIds(prev => {
+      const next = prev.filter(tagId => validTagIds.has(tagId));
+      if (next.length === prev.length && next.every((tagId, index) => tagId === prev[index])) {
+        return prev;
+      }
+      return next;
+    });
+  }, [tagFilterOptions]);
+
   const isFilterActive = !!(
     filterText.trim() ||
     filterStatus ||
     filterPriority ||
     filterAssignee ||
     filterTaskType ||
+    filterTagIds.length > 0 ||
     hideClosed
   );
 
@@ -4406,7 +4485,8 @@ function TasksTab({
     filterStatus ||
     filterPriority ||
     filterAssignee ||
-    filterTaskType
+    filterTaskType ||
+    filterTagIds.length > 0
   );
 
   const taskMatchesFilters = (task: Task): boolean => {
@@ -4415,16 +4495,24 @@ function TasksTab({
     if (filterPriority && (task.PriorityName || '') !== filterPriority) return false;
     if (filterAssignee && (task.AssigneeName || '') !== filterAssignee) return false;
     if (filterTaskType && (task.TaskTypeName || '') !== filterTaskType) return false;
+    if (filterTagIds.length > 0) {
+      const taskTags = taskTagMap.get(task.Id) || [];
+      const taskTagIds = taskTags.map(taskTag => taskTag.id);
+      const matchesAllTags = filterTagIds.every(filterTagId => taskTagIds.includes(filterTagId));
+      if (!matchesAllTags) return false;
+    }
     if (filterText.trim()) {
       const search = filterText.toLowerCase();
       const descriptionText = (task.Description || '').replace(/<[^>]*>/g, ' ').toLowerCase();
+      const taskTagsText = (taskTagMap.get(task.Id) || []).map(taskTag => taskTag.name.toLowerCase()).join(' ');
       const matches =
         (task.TaskName || '').toLowerCase().includes(search) ||
         (task.AssigneeName || '').toLowerCase().includes(search) ||
         (task.StatusName || '').toLowerCase().includes(search) ||
         (task.PriorityName || '').toLowerCase().includes(search) ||
         (task.TaskTypeName || '').toLowerCase().includes(search) ||
-        descriptionText.includes(search);
+        descriptionText.includes(search) ||
+        taskTagsText.includes(search);
       if (!matches) return false;
     }
     return true;
@@ -4571,6 +4659,23 @@ function TasksTab({
               {task.CreatorName && level === 0 && (
                 <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                   Created by: {task.CreatorName}
+                </div>
+              )}
+              {(taskTagMap.get(task.Id) || []).length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {(taskTagMap.get(task.Id) || []).map(tag => (
+                    <span
+                      key={`${task.Id}-${tag.id}`}
+                      className="px-2 py-0.5 rounded-full text-xs font-medium"
+                      style={{
+                        backgroundColor: `${tag.color}20`,
+                        color: tag.color,
+                        border: `1px solid ${tag.color}`,
+                      }}
+                    >
+                      #{tag.name}
+                    </span>
+                  ))}
                 </div>
               )}
             </div>
@@ -4832,7 +4937,7 @@ function TasksTab({
       ) : (
         <div className="space-y-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-3">
               <div className="lg:col-span-2">
                 <input
                   type="text"
@@ -4890,6 +4995,14 @@ function TasksTab({
                   ))}
                 </select>
               </div>
+              <div>
+                <SearchableMultiSelect
+                  values={filterTagIds}
+                  onChange={(values) => setFilterTagIds(values.map(value => Number(value)))}
+                  options={tagFilterOptions}
+                  placeholder="All tags"
+                />
+              </div>
             </div>
 
             <div className="mt-3 flex items-center justify-between">
@@ -4910,6 +5023,7 @@ function TasksTab({
                     setFilterPriority('');
                     setFilterAssignee('');
                     setFilterTaskType('');
+                    setFilterTagIds([]);
                     setHideClosed(false);
                   }}
                   className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
@@ -4964,7 +5078,7 @@ function TasksTab({
                 visibleParentTasks.map((task) => renderTaskRow(task))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                  <td colSpan={7} className="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                     No tasks match the current filters.
                   </td>
                 </tr>

@@ -16,6 +16,16 @@ export interface Customer {
   UpdatedAt: string;
   OpenTickets?: number;
   Organizations?: CustomerOrganization[];
+  Contacts?: CustomerContact[];
+}
+
+export interface CustomerContact {
+  Id: number;
+  CustomerId: number;
+  Name: string;
+  Email: string | null;
+  Phone: string | null;
+  IsDefault: number;
 }
 
 export interface CustomerOrganization {
@@ -46,6 +56,13 @@ export interface UpdateCustomerData {
   DefaultSupportUserId?: number;
   IsActive?: number;
   OrganizationIds?: number[];
+  Contacts?: {
+    Id?: number;
+    Name: string;
+    Email?: string | null;
+    Phone?: string | null;
+    IsDefault?: number | boolean;
+  }[];
 }
 
 export async function getCustomers(token: string): Promise<Customer[]> {

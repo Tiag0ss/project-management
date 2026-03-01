@@ -1315,14 +1315,13 @@ export default function PlanningPage() {
       if (hoursAlreadyWorked > 0 || remainingHoursToWork > maxDailyHours * 0.5) {
         console.log('Showing hours per day modal');
         const taskEstimatedHours = parseFloat(String(draggedTask.EstimatedHours || 0));
-        const suggestedHours = Math.min(Math.max(1, Math.ceil(remainingHoursToWork / 5)), maxDailyHours);
         setHoursPerDayModal({
           show: true,
           task: draggedTask,
           userId,
           startDate,
           maxDailyHours,
-          hoursPerDay: suggestedHours.toString(),
+          hoursPerDay: maxDailyHours.toString(),
           totalHours: remainingHoursToWork,
           hoursAlreadyWorked: hoursAlreadyWorked,
           totalEstimatedHours: taskEstimatedHours,
@@ -1430,14 +1429,13 @@ export default function PlanningPage() {
 
       // Show modal to ask for hours per day if task requires more than 50% of daily capacity
       if (totalHours > maxDailyHours * 0.5) {
-        const suggestedHours = Math.min(Math.max(1, Math.ceil(totalHours / 5)), maxDailyHours);
         setHoursPerDayModal({
           show: true,
           task: parentTask,
           userId,
           startDate,
           maxDailyHours,
-          hoursPerDay: suggestedHours.toString(),
+          hoursPerDay: maxDailyHours.toString(),
           totalHours: totalHours,
           hoursAlreadyWorked: totalAlreadyWorked || 0,
           totalEstimatedHours: totalEstimatedHours || totalHours,
@@ -1602,6 +1600,15 @@ export default function PlanningPage() {
 
       const allocations: any[] = [];
       let remainingHours = totalHours;
+      const lunchTimeValue = (typeof user.LunchTime === 'string' && user.LunchTime.includes(':'))
+        ? user.LunchTime
+        : '12:00';
+      const lunchDurationMinutes = isHobbyTask
+        ? 0
+        : ((typeof user.LunchDuration === 'number' && user.LunchDuration >= 0) ? user.LunchDuration : 60);
+      const [lunchHour, lunchMin] = lunchTimeValue.split(':').map(Number);
+      const lunchStartMinutes = (lunchHour * 60) + lunchMin;
+      const lunchEndMinutes = lunchStartMinutes + lunchDurationMinutes;
 
       for (const dayAvailability of availability) {
         if (remainingHours <= 0) break;
@@ -1611,23 +1618,64 @@ export default function PlanningPage() {
         if (dayAvail <= 0) continue;
 
         // Get effective start time for time-slot tracking
-        const effectiveStartTime = (dayAvailability.latestEndTime || dayAvailability.workStartTime || '09:00') as string;
+        let effectiveStartTime = (dayAvailability.latestEndTime || dayAvailability.workStartTime || '09:00') as string;
 
         // hoursToAllocate = min of: remaining total, day's available hours, user's daily cap
         const hoursToAllocate = Math.min(remainingHours, dayAvail, effectiveHoursPerDay);
         if (hoursToAllocate <= 0) continue;
 
-        // Calculate end time
-        const [startHour, startMin] = effectiveStartTime.split(':').map(Number);
-        const totalMinutes = (startHour * 60 + startMin) + hoursToAllocate * 60;
-        const endTime = `${String(Math.floor(totalMinutes / 60)).padStart(2, '0')}:${String(Math.round(totalMinutes % 60)).padStart(2, '0')}`;
+        let [startHour, startMin] = effectiveStartTime.split(':').map(Number);
+        let startMinutes = (startHour * 60) + startMin;
 
-        allocations.push({
-          date: dayAvailability.date,
-          hours: hoursToAllocate,
-          startTime: effectiveStartTime,
-          endTime: endTime
-        });
+        if (lunchDurationMinutes > 0 && startMinutes >= lunchStartMinutes && startMinutes < lunchEndMinutes) {
+          startMinutes = lunchEndMinutes;
+          effectiveStartTime = `${String(Math.floor(startMinutes / 60)).padStart(2, '0')}:${String(startMinutes % 60).padStart(2, '0')}`;
+        }
+
+        const endWithoutLunch = startMinutes + (hoursToAllocate * 60);
+
+        if (lunchDurationMinutes > 0 && startMinutes < lunchStartMinutes && endWithoutLunch > lunchStartMinutes) {
+          const hoursBeforeLunch = Math.max(0, (lunchStartMinutes - startMinutes) / 60);
+
+          if (hoursBeforeLunch > 0 && hoursBeforeLunch < hoursToAllocate) {
+            const endBeforeLunchTime = `${String(Math.floor(lunchStartMinutes / 60)).padStart(2, '0')}:${String(lunchStartMinutes % 60).padStart(2, '0')}`;
+            allocations.push({
+              date: dayAvailability.date,
+              hours: Number(hoursBeforeLunch.toFixed(2)),
+              startTime: effectiveStartTime,
+              endTime: endBeforeLunchTime
+            });
+
+            const hoursAfterLunch = hoursToAllocate - hoursBeforeLunch;
+            const startAfterLunchTime = `${String(Math.floor(lunchEndMinutes / 60)).padStart(2, '0')}:${String(lunchEndMinutes % 60).padStart(2, '0')}`;
+            const endAfterLunchMinutes = lunchEndMinutes + (hoursAfterLunch * 60);
+            const endAfterLunchTime = `${String(Math.floor(endAfterLunchMinutes / 60)).padStart(2, '0')}:${String(Math.round(endAfterLunchMinutes % 60)).padStart(2, '0')}`;
+            allocations.push({
+              date: dayAvailability.date,
+              hours: Number(hoursAfterLunch.toFixed(2)),
+              startTime: startAfterLunchTime,
+              endTime: endAfterLunchTime
+            });
+          } else {
+            const adjustedEndMinutes = endWithoutLunch + lunchDurationMinutes;
+            const adjustedEndTime = `${String(Math.floor(adjustedEndMinutes / 60)).padStart(2, '0')}:${String(Math.round(adjustedEndMinutes % 60)).padStart(2, '0')}`;
+            allocations.push({
+              date: dayAvailability.date,
+              hours: Number(hoursToAllocate.toFixed(2)),
+              startTime: effectiveStartTime,
+              endTime: adjustedEndTime
+            });
+          }
+        } else {
+          const endTime = `${String(Math.floor(endWithoutLunch / 60)).padStart(2, '0')}:${String(Math.round(endWithoutLunch % 60)).padStart(2, '0')}`;
+          allocations.push({
+            date: dayAvailability.date,
+            hours: Number(hoursToAllocate.toFixed(2)),
+            startTime: effectiveStartTime,
+            endTime: endTime
+          });
+        }
+
         remainingHours -= hoursToAllocate;
       }
 
@@ -1727,7 +1775,9 @@ export default function PlanningPage() {
       await distributeToDirectChildren(
         parentTask.Id,
         allocations,
-        1 // level 1 (direct children of parent)
+        1, // level 1 (direct children of parent)
+        userId,
+        isHobbyTask
       );
 
       setPlanningProgress(prev => ({
@@ -1764,10 +1814,23 @@ export default function PlanningPage() {
   const distributeToDirectChildren = async (
     parentTaskId: number,
     parentAllocations: any[], // array of {date, hours, startTime, endTime}
-    level: number
+    level: number,
+    plannedUserId: number,
+    isHobbyTask: boolean
   ) => {
+    const getTaskOrder = (task: Task): number => {
+      const order = Number(task.DisplayOrder);
+      return Number.isFinite(order) ? order : 0;
+    };
+
     // Get DIRECT children of this parent (not all descendants)
-    const directChildren = tasks.filter(t => t.ParentTaskId === parentTaskId);
+    const directChildren = tasks
+      .filter(t => t.ParentTaskId === parentTaskId)
+      .sort((a, b) => {
+        const orderDiff = getTaskOrder(a) - getTaskOrder(b);
+        if (orderDiff !== 0) return orderDiff;
+        return a.Id - b.Id;
+      });
     
     if (directChildren.length === 0) {
       console.log(`Parent task ${parentTaskId} has no children`);
@@ -1786,35 +1849,101 @@ export default function PlanningPage() {
       console.warn(`WARNING: Children need more hours (${totalChildrenHours.toFixed(2)}h) than parent has (${totalParentHours.toFixed(2)}h). Some tasks may not be fully allocated.`);
     }
 
-    // Group allocations by date with time tracking
-    const allocationsByDate = parentAllocations.reduce((acc: any, alloc: any) => {
-      const date = alloc.date;
-      if (!acc[date]) {
-        acc[date] = {
-          remainingHours: 0,
-          startTime: alloc.startTime || '09:00',
-          currentTime: alloc.startTime || '09:00' // Track current position in the day
-        };
-      }
-      acc[date].remainingHours += parseFloat(alloc.hours);
-      return acc;
-    }, {});
+    const parseTimeToMinutes = (time: string): number => {
+      const [hours, minutes] = String(time || '09:00').split(':').map(Number);
+      return (hours || 0) * 60 + (minutes || 0);
+    };
 
-    const dates = Object.keys(allocationsByDate).sort();
+    const formatMinutesToTime = (minutes: number): string => {
+      const safeMinutes = Math.max(0, Math.round(minutes));
+      const hours = Math.floor(safeMinutes / 60);
+      const mins = safeMinutes % 60;
+      return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+    };
+
+    const plannedUser = users.find(u => u.Id === plannedUserId);
+    const lunchTime = (!isHobbyTask && plannedUser?.LunchTime && String(plannedUser.LunchTime).includes(':'))
+      ? String(plannedUser.LunchTime)
+      : '12:00';
+    const lunchDuration = !isHobbyTask
+      ? Math.max(0, Number(plannedUser?.LunchDuration ?? 60))
+      : 0;
+    const [lunchHour, lunchMinute] = lunchTime.split(':').map(Number);
+    const lunchStartMinutes = lunchHour * 60 + lunchMinute;
+    const lunchEndMinutes = lunchStartMinutes + lunchDuration;
+
+    const splitSlotByLunch = (slot: { date: string; startTime: string; hours: number }) => {
+      const segments: { date: string; startMinutes: number; endMinutes: number; remainingHours: number; cursorMinutes: number }[] = [];
+      let remainingMinutes = Math.round((parseFloat(String(slot.hours)) || 0) * 60);
+      let currentMinutes = parseTimeToMinutes(slot.startTime || '09:00');
+
+      if (remainingMinutes <= 0) return segments;
+
+      if (lunchDuration > 0 && currentMinutes >= lunchStartMinutes && currentMinutes < lunchEndMinutes) {
+        currentMinutes = lunchEndMinutes;
+      }
+
+      while (remainingMinutes > 0) {
+        if (lunchDuration > 0 && currentMinutes < lunchStartMinutes) {
+          const minutesUntilLunch = lunchStartMinutes - currentMinutes;
+          const chunkMinutes = Math.min(remainingMinutes, minutesUntilLunch);
+          if (chunkMinutes > 0) {
+            segments.push({
+              date: slot.date,
+              startMinutes: currentMinutes,
+              endMinutes: currentMinutes + chunkMinutes,
+              remainingHours: chunkMinutes / 60,
+              cursorMinutes: currentMinutes,
+            });
+            currentMinutes += chunkMinutes;
+            remainingMinutes -= chunkMinutes;
+          }
+
+          if (remainingMinutes > 0 && currentMinutes >= lunchStartMinutes && currentMinutes < lunchEndMinutes) {
+            currentMinutes = lunchEndMinutes;
+          }
+          continue;
+        }
+
+        if (lunchDuration > 0 && currentMinutes >= lunchStartMinutes && currentMinutes < lunchEndMinutes) {
+          currentMinutes = lunchEndMinutes;
+          continue;
+        }
+
+        segments.push({
+          date: slot.date,
+          startMinutes: currentMinutes,
+          endMinutes: currentMinutes + remainingMinutes,
+          remainingHours: remainingMinutes / 60,
+          cursorMinutes: currentMinutes,
+        });
+        remainingMinutes = 0;
+      }
+
+      return segments;
+    };
+
+    const parentTimeSlots = parentAllocations
+      .flatMap((alloc: any) => splitSlotByLunch({
+        date: alloc.date,
+        startTime: alloc.startTime || '09:00',
+        hours: parseFloat(String(alloc.hours || 0)),
+      }))
+      .filter(slot => slot.remainingHours > 0.0001)
+      .sort((a, b) => {
+        const dateCompare = a.date.localeCompare(b.date);
+        if (dateCompare !== 0) return dateCompare;
+        return a.startMinutes - b.startMinutes;
+      });
+
+    if (parentTimeSlots.length === 0) {
+      console.warn(`No parent time slots available for parent ${parentTaskId}`);
+      return;
+    }
 
     // Create child allocations SEQUENTIALLY
     const childAllocations: any[] = [];
-    let currentDateIndex = 0;
-    
-    // Helper function to calculate end time from start time and hours
-    const calculateEndTime = (startTime: string, hours: number): string => {
-      const [startHour, startMin] = startTime.split(':').map(Number);
-      const startMinutes = startHour * 60 + startMin;
-      const endMinutes = startMinutes + (hours * 60);
-      const endHour = Math.floor(endMinutes / 60);
-      const endMin = Math.round(endMinutes % 60);
-      return `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
-    };
+    let currentSlotIndex = 0;
     
     for (const child of directChildren) {
       const childHours = parseFloat(String(child.EstimatedHours || 0));
@@ -1829,23 +1958,25 @@ export default function PlanningPage() {
       
       console.log(`Allocating ${childHours}h for child "${child.TaskName}" at level ${level}`);
       
-      // Allocate days sequentially until this child's hours are complete
-      while (remainingChildHours > 0 && currentDateIndex < dates.length) {
-        const date = dates[currentDateIndex];
-        const dayInfo = allocationsByDate[date];
-        const availableHoursThisDay = dayInfo.remainingHours;
-        const hoursToAllocate = Math.min(remainingChildHours, availableHoursThisDay);
+      // Allocate sequentially across parent time slots
+      while (remainingChildHours > 0.0001 && currentSlotIndex < parentTimeSlots.length) {
+        const slot = parentTimeSlots[currentSlotIndex];
+        const availableHoursInSlot = slot.remainingHours;
+        const hoursToAllocate = Math.min(remainingChildHours, availableHoursInSlot);
         
-        if (hoursToAllocate > 0) {
-          // Calculate time slots for this child allocation
-          const childStartTime = dayInfo.currentTime;
-          const childEndTime = calculateEndTime(childStartTime, hoursToAllocate);
+        if (hoursToAllocate > 0.0001) {
+          const minutesToAllocate = Math.round(hoursToAllocate * 60);
+          const childStartMinutes = slot.cursorMinutes;
+          const childEndMinutes = childStartMinutes + minutesToAllocate;
+          const childStartTime = formatMinutesToTime(childStartMinutes);
+          const childEndTime = formatMinutesToTime(childEndMinutes);
+          const roundedHours = Number((minutesToAllocate / 60).toFixed(2));
           
           const allocation = {
             ParentTaskId: parentTaskId,
             ChildTaskId: child.Id,
-            AllocationDate: date,
-            AllocatedHours: Number(hoursToAllocate.toFixed(2)),
+            AllocationDate: slot.date,
+            AllocatedHours: roundedHours,
             Level: level,
             StartTime: childStartTime,
             EndTime: childEndTime
@@ -1853,24 +1984,24 @@ export default function PlanningPage() {
           
           childAllocations.push(allocation);
           childAllocs.push({ 
-            date, 
-            hours: hoursToAllocate,
+            date: slot.date,
+            hours: roundedHours,
             startTime: childStartTime,
             endTime: childEndTime
           });
           
-          remainingChildHours -= hoursToAllocate;
+          remainingChildHours -= roundedHours;
           
-          // Update day info for next child
-          dayInfo.remainingHours -= hoursToAllocate;
-          dayInfo.currentTime = childEndTime; // Next child starts where this one ended
+          // Update slot for next child
+          slot.remainingHours = Math.max(0, slot.remainingHours - roundedHours);
+          slot.cursorMinutes = childEndMinutes;
           
-          // If we used all hours for this day, move to next day
-          if (dayInfo.remainingHours <= 0.01) {
-            currentDateIndex++;
+          // If we used all hours in this slot, move to next slot
+          if (slot.remainingHours <= 0.0001) {
+            currentSlotIndex++;
           }
         } else {
-          currentDateIndex++;
+          currentSlotIndex++;
         }
       }
       
@@ -1885,7 +2016,7 @@ export default function PlanningPage() {
       const hasChildren = tasks.some(t => t.ParentTaskId === child.Id);
       if (hasChildren && childAllocs.length > 0) {
         console.log(`Child "${child.TaskName}" has children, distributing recursively...`);
-        await distributeToDirectChildren(child.Id, childAllocs, level + 1);
+        await distributeToDirectChildren(child.Id, childAllocs, level + 1, plannedUserId, isHobbyTask);
       }
     }
 
@@ -2015,7 +2146,6 @@ export default function PlanningPage() {
     const taskEstimatedHours = isParentTask && leafTasks 
       ? leafTasks.reduce((sum, t) => sum + parseFloat(String(t.EstimatedHours || 0)), 0)
       : parseFloat(String(task.EstimatedHours || 0));
-    const suggestedHours = Math.min(Math.max(1, Math.ceil(totalHoursToAllocate / 5)), maxDailyHours);
     
     setHoursPerDayModal({
       show: true,
@@ -2023,7 +2153,7 @@ export default function PlanningPage() {
       userId,
       startDate,
       maxDailyHours,
-      hoursPerDay: suggestedHours.toString(),
+      hoursPerDay: maxDailyHours.toString(),
       totalHours: totalHoursToAllocate,
       hoursAlreadyWorked,
       totalEstimatedHours: taskEstimatedHours,
@@ -2048,14 +2178,13 @@ export default function PlanningPage() {
       const taskEstimatedHours = isParentTask && leafTasks 
         ? leafTasks.reduce((sum, t) => sum + parseFloat(String(t.EstimatedHours || 0)), 0)
         : parseFloat(String(task.EstimatedHours || 0));
-      const suggestedHours = Math.min(Math.max(1, Math.ceil(totalHoursToAllocate / 5)), maxDailyHours);
       setHoursPerDayModal({
         show: true,
         task,
         userId,
         startDate,
         maxDailyHours,
-        hoursPerDay: suggestedHours.toString(),
+        hoursPerDay: maxDailyHours.toString(),
         totalHours: totalHoursToAllocate,
         hoursAlreadyWorked,
         totalEstimatedHours: taskEstimatedHours,
@@ -3020,7 +3149,7 @@ export default function PlanningPage() {
                     className="px-4 py-2 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-purple-100 dark:hover:bg-purple-900 transition-colors"
                     title="Snapshot current planned dates as baseline for all visible projects"
                   >
-                    📐 Set Baseline (All Projects)
+                    📐 Set Baseline
                   </button>
                 )}
               </div>
