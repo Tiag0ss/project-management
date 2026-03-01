@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import { prepareAuthEncryptionSession } from '@/lib/api/auth';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -20,6 +21,9 @@ export default function LoginPage() {
   useEffect(() => {
     checkInstallStatus();
     checkRegistrationSettings();
+    prepareAuthEncryptionSession().catch((err) => {
+      console.error('Failed to prepare auth encryption session:', err);
+    });
   }, []);
 
   const checkInstallStatus = async () => {

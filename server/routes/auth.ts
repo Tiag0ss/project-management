@@ -1,6 +1,13 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import {
+  constants,
+  createDecipheriv,
+  generateKeyPairSync,
+  privateDecrypt,
+  randomUUID,
+} from 'crypto';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 import { logActivity } from './activityLogs';
@@ -8,6 +15,119 @@ import { logActivity } from './activityLogs';
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 const SALT_ROUNDS = 10;
+const ENCRYPTION_SESSION_TTL_MS = 10 * 60 * 1000;
+
+interface EncryptionSession {
+  privateKey: string;
+  expiresAt: number;
+}
+
+interface EncryptedAuthPayload {
+  sessionToken: string;
+  encryptedKey: string;
+  iv: string;
+  encryptedData: string;
+}
+
+const authEncryptionSessions = new Map<string, EncryptionSession>();
+
+const cleanupExpiredEncryptionSessions = () => {
+  const now = Date.now();
+  for (const [token, session] of authEncryptionSessions.entries()) {
+    if (session.expiresAt <= now) {
+      authEncryptionSessions.delete(token);
+    }
+  }
+};
+
+const decodeBase64 = (value: string): Buffer => Buffer.from(value, 'base64');
+
+const decryptAuthPayload = (payload: EncryptedAuthPayload): any => {
+  cleanupExpiredEncryptionSessions();
+
+  const session = authEncryptionSessions.get(payload.sessionToken);
+  if (!session || session.expiresAt <= Date.now()) {
+    throw new Error('Encryption session is missing or expired');
+  }
+
+  const encryptedKeyBuffer = decodeBase64(payload.encryptedKey);
+  const aesKey = privateDecrypt(
+    {
+      key: session.privateKey,
+      padding: constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: 'sha256',
+    },
+    encryptedKeyBuffer
+  );
+
+  const ivBuffer = decodeBase64(payload.iv);
+  const encryptedPayloadBuffer = decodeBase64(payload.encryptedData);
+
+  if (encryptedPayloadBuffer.length < 17) {
+    throw new Error('Invalid encrypted payload');
+  }
+
+  const authTag = encryptedPayloadBuffer.subarray(encryptedPayloadBuffer.length - 16);
+  const cipherText = encryptedPayloadBuffer.subarray(0, encryptedPayloadBuffer.length - 16);
+
+  const decipher = createDecipheriv('aes-256-gcm', aesKey, ivBuffer);
+  decipher.setAuthTag(authTag);
+
+  const decrypted = Buffer.concat([decipher.update(cipherText), decipher.final()]).toString('utf8');
+  authEncryptionSessions.delete(payload.sessionToken);
+
+  return JSON.parse(decrypted);
+};
+
+const getAuthRequestBody = (body: any): any => {
+  const encryptedPayload = body?.encryptedPayload as EncryptedAuthPayload | undefined;
+  if (!encryptedPayload) {
+    return body;
+  }
+
+  if (!encryptedPayload.sessionToken || !encryptedPayload.encryptedKey || !encryptedPayload.iv || !encryptedPayload.encryptedData) {
+    throw new Error('Invalid encrypted payload format');
+  }
+
+  return decryptAuthPayload(encryptedPayload);
+};
+
+router.get('/encryption-session', async (_req: Request, res: Response) => {
+  try {
+    cleanupExpiredEncryptionSessions();
+
+    const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: {
+        type: 'spki',
+        format: 'pem',
+      },
+      privateKeyEncoding: {
+        type: 'pkcs8',
+        format: 'pem',
+      },
+    });
+
+    const sessionToken = randomUUID();
+    authEncryptionSessions.set(sessionToken, {
+      privateKey,
+      expiresAt: Date.now() + ENCRYPTION_SESSION_TTL_MS,
+    });
+
+    res.json({
+      success: true,
+      sessionToken,
+      publicKey,
+      expiresInSeconds: Math.floor(ENCRYPTION_SESSION_TTL_MS / 1000),
+    });
+  } catch (error) {
+    console.error('Encryption session error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create encryption session',
+    });
+  }
+});
 
 /**
  * @swagger
@@ -60,7 +180,17 @@ const SALT_ROUNDS = 10;
  */
 router.post('/register', async (req: Request, res: Response) => {
   try {
-    const { username, email, password, firstName, lastName } = req.body;
+    let payload: any;
+    try {
+      payload = getAuthRequestBody(req.body);
+    } catch (decryptError: any) {
+      return res.status(400).json({
+        success: false,
+        message: decryptError?.message || 'Invalid encrypted registration payload',
+      });
+    }
+
+    const { username, email, password, firstName, lastName } = payload;
 
     // Validate input
     if (!username || !email || !password) {
@@ -195,7 +325,17 @@ router.post('/register', async (req: Request, res: Response) => {
 // Login endpoint
 router.post('/login', async (req: Request, res: Response) => {
   try {
-    const { username, password } = req.body;
+    let payload: any;
+    try {
+      payload = getAuthRequestBody(req.body);
+    } catch (decryptError: any) {
+      return res.status(400).json({
+        success: false,
+        message: decryptError?.message || 'Invalid encrypted login payload',
+      });
+    }
+
+    const { username, password } = payload;
 
     // Validate input
     if (!username || !password) {
