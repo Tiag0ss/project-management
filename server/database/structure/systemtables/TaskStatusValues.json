@@ -56,6 +56,13 @@
       "Comment": "Whether this status indicates task was cancelled"
     },
     {
+      "FieldName": "HideFromPlanningAndStatistics",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Whether tasks with this status should be hidden from planning views and statistics"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

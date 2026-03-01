@@ -675,9 +675,14 @@ export default function PlanningPage() {
     return statuses.find(s => s.Id === task.Status);
   };
 
-  // Helper to check if a task's status is closed or cancelled (uses pre-resolved flags)
+  // Helper to check if a task should be excluded from planning (closed, cancelled, or hidden-by-status)
   const isTaskClosedOrCancelled = (task: Task): boolean => {
-    return !!(task.StatusIsClosed || task.StatusIsCancelled);
+    const statusValue = getTaskStatusValue(task);
+    return !!(
+      task.StatusIsClosed ||
+      task.StatusIsCancelled ||
+      (statusValue && Number(statusValue.HideFromPlanningAndStatistics || 0) === 1)
+    );
   };
 
   // Helper to get the status color for a task (bar fill color)

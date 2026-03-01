@@ -697,9 +697,9 @@ router.get('/:id/projects', authenticateToken, async (req: AuthRequest, res: Res
     const [projects] = await pool.execute<RowDataPacket[]>(
       `SELECT p.Id, p.ProjectName, p.Status, p.StartDate, p.EndDate,
               psv.StatusName, psv.ColorCode as StatusColor, psv.IsClosed as StatusIsClosed, psv.IsCancelled as StatusIsCancelled,
-              COUNT(t.Id) as TotalTasks,
-              SUM(CASE WHEN tsv.IsClosed = 1 THEN 1 ELSE 0 END) as CompletedTasks,
-              COALESCE(SUM(t.EstimatedHours), 0) as TotalEstimatedHours,
+              COUNT(CASE WHEN COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 THEN t.Id END) as TotalTasks,
+              SUM(CASE WHEN COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 AND tsv.IsClosed = 1 THEN 1 ELSE 0 END) as CompletedTasks,
+              COALESCE(SUM(CASE WHEN COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 THEN t.EstimatedHours ELSE 0 END), 0) as TotalEstimatedHours,
               COALESCE(SUM(te.Hours), 0) as TotalWorkedHours
        FROM Projects p
        LEFT JOIN ProjectStatusValues psv ON p.Status = psv.Id

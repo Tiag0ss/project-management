@@ -238,17 +238,19 @@ router.post('/setup', async (req: Request, res: Response) => {
 
       // 6. Create default task status values
       const defaultTaskStatuses = [
-        { name: 'To Do', color: '#6b7280', order: 1, isDefault: 1, isClosed: 0, isCancelled: 0 },
-        { name: 'In Progress', color: '#3b82f6', order: 2, isDefault: 0, isClosed: 0, isCancelled: 0 },
-        { name: 'Done', color: '#10b981', order: 3, isDefault: 0, isClosed: 1, isCancelled: 0 },
+        { name: 'To Do', color: '#6b7280', order: 1, isDefault: 1, isClosed: 0, isCancelled: 0, hideFromPlanningAndStatistics: 0 },
+        { name: 'Backlog', color: '#94a3b8', order: 2, isDefault: 0, isClosed: 0, isCancelled: 0, hideFromPlanningAndStatistics: 1 },
+        { name: 'In Progress', color: '#3b82f6', order: 3, isDefault: 0, isClosed: 0, isCancelled: 0, hideFromPlanningAndStatistics: 0 },
+        { name: 'Done', color: '#10b981', order: 4, isDefault: 0, isClosed: 1, isCancelled: 0, hideFromPlanningAndStatistics: 0 },
+        { name: 'Cancelled', color: '#ef4444', order: 5, isDefault: 0, isClosed: 0, isCancelled: 1, hideFromPlanningAndStatistics: 0 },
       ];
 
       for (const status of defaultTaskStatuses) {
         await connection.execute(
           `INSERT INTO TaskStatusValues 
-           (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled) 
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [organizationId, status.name, status.color, status.order, status.isDefault, status.isClosed, status.isCancelled]
+           (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled, HideFromPlanningAndStatistics) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [organizationId, status.name, status.color, status.order, status.isDefault, status.isClosed, status.isCancelled, status.hideFromPlanningAndStatistics]
         );
       }
 

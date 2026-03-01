@@ -108,6 +108,40 @@ router.get('/task/:orgId', authenticateToken, async (req: AuthRequest, res: Resp
       });
     }
 
+    const [statusCountResult] = await pool.execute<RowDataPacket[]>(
+      'SELECT COUNT(*) as Count FROM TaskStatusValues WHERE OrganizationId = ?',
+      [orgId]
+    );
+
+    const statusCount = Number(statusCountResult[0]?.Count || 0);
+    if (statusCount === 0) {
+      const defaultTaskStatuses = [
+        { name: 'To Do', color: '#6b7280', order: 1, isDefault: 1, isClosed: 0, isCancelled: 0, hideFromPlanningAndStatistics: 0 },
+        { name: 'Backlog', color: '#94a3b8', order: 2, isDefault: 0, isClosed: 0, isCancelled: 0, hideFromPlanningAndStatistics: 1 },
+        { name: 'In Progress', color: '#3b82f6', order: 3, isDefault: 0, isClosed: 0, isCancelled: 0, hideFromPlanningAndStatistics: 0 },
+        { name: 'Done', color: '#10b981', order: 4, isDefault: 0, isClosed: 1, isCancelled: 0, hideFromPlanningAndStatistics: 0 },
+        { name: 'Cancelled', color: '#ef4444', order: 5, isDefault: 0, isClosed: 0, isCancelled: 1, hideFromPlanningAndStatistics: 0 },
+      ];
+
+      for (const status of defaultTaskStatuses) {
+        await pool.execute(
+          `INSERT INTO TaskStatusValues 
+           (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled, HideFromPlanningAndStatistics)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            orgId,
+            status.name,
+            status.color,
+            status.order,
+            status.isDefault,
+            status.isClosed,
+            status.isCancelled,
+            status.hideFromPlanningAndStatistics,
+          ]
+        );
+      }
+    }
+
     const [statuses] = await pool.execute<RowDataPacket[]>(
       'SELECT * FROM TaskStatusValues WHERE OrganizationId = ? ORDER BY SortOrder, StatusName',
       [orgId]
@@ -256,7 +290,7 @@ router.post('/project', authenticateToken, async (req: AuthRequest, res: Respons
 router.post('/task', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { organizationId, statusName, colorCode, sortOrder, isDefault, isClosed, isCancelled } = req.body;
+    const { organizationId, statusName, colorCode, sortOrder, isDefault, isClosed, isCancelled, hideFromPlanningAndStatistics } = req.body;
 
     if (!statusName || !organizationId) {
       return res.status(400).json({ 
@@ -291,9 +325,9 @@ router.post('/task', authenticateToken, async (req: AuthRequest, res: Response) 
 
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO TaskStatusValues 
-       (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [organizationId, statusName, colorCode || null, sortOrder || 0, isDefault ? 1 : 0, isClosed ? 1 : 0, isCancelled ? 1 : 0]
+       (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled, HideFromPlanningAndStatistics) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [organizationId, statusName, colorCode || null, sortOrder || 0, isDefault ? 1 : 0, isClosed ? 1 : 0, isCancelled ? 1 : 0, hideFromPlanningAndStatistics ? 1 : 0]
     );
 
     res.status(201).json({
@@ -453,7 +487,7 @@ router.put('/task/:id', authenticateToken, async (req: AuthRequest, res: Respons
   try {
     const userId = req.user?.userId;
     const statusId = req.params.id;
-    const { statusName, colorCode, sortOrder, isDefault, isClosed, isCancelled } = req.body;
+    const { statusName, colorCode, sortOrder, isDefault, isClosed, isCancelled, hideFromPlanningAndStatistics } = req.body;
 
     // Get organization ID
     const [statuses] = await pool.execute<RowDataPacket[]>(
@@ -495,8 +529,8 @@ router.put('/task/:id', authenticateToken, async (req: AuthRequest, res: Respons
     }
 
     await pool.execute(
-      'UPDATE TaskStatusValues SET StatusName = ?, ColorCode = ?, SortOrder = ?, IsDefault = ?, IsClosed = ?, IsCancelled = ? WHERE Id = ?',
-      [statusName, colorCode, sortOrder, isDefault ? 1 : 0, isClosed ? 1 : 0, isCancelled ? 1 : 0, statusId]
+      'UPDATE TaskStatusValues SET StatusName = ?, ColorCode = ?, SortOrder = ?, IsDefault = ?, IsClosed = ?, IsCancelled = ?, HideFromPlanningAndStatistics = ? WHERE Id = ?',
+      [statusName, colorCode, sortOrder, isDefault ? 1 : 0, isClosed ? 1 : 0, isCancelled ? 1 : 0, hideFromPlanningAndStatistics ? 1 : 0, statusId]
     );
 
     res.json({

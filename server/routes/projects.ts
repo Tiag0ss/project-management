@@ -59,11 +59,11 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        LEFT JOIN (
          SELECT 
            t.ProjectId,
-           COUNT(*) as TotalTasks,
-           COUNT(CASE WHEN COALESCE(tsv2.IsClosed, 0) = 1 THEN 1 END) as CompletedTasks,
-           SUM(CASE WHEN t.ParentTaskId IS NULL THEN t.EstimatedHours ELSE 0 END) as TotalEstimatedHours,
+           COUNT(CASE WHEN COALESCE(tsv2.HideFromPlanningAndStatistics, 0) = 0 THEN 1 END) as TotalTasks,
+           COUNT(CASE WHEN COALESCE(tsv2.HideFromPlanningAndStatistics, 0) = 0 AND COALESCE(tsv2.IsClosed, 0) = 1 THEN 1 END) as CompletedTasks,
+           SUM(CASE WHEN t.ParentTaskId IS NULL AND COALESCE(tsv2.HideFromPlanningAndStatistics, 0) = 0 THEN t.EstimatedHours ELSE 0 END) as TotalEstimatedHours,
            COALESCE((SELECT SUM(te.Hours) FROM TimeEntries te WHERE te.TaskId IN (SELECT Id FROM Tasks WHERE ProjectId = t.ProjectId)), 0) as TotalWorkedHours,
-           COUNT(CASE WHEN t.DueDate IS NOT NULL AND t.DueDate < CURDATE() AND COALESCE(tsv2.IsClosed, 0) = 0 AND COALESCE(tsv2.IsCancelled, 0) = 0 THEN 1 END) as OverdueTasks
+           COUNT(CASE WHEN COALESCE(tsv2.HideFromPlanningAndStatistics, 0) = 0 AND t.DueDate IS NOT NULL AND t.DueDate < CURDATE() AND COALESCE(tsv2.IsClosed, 0) = 0 AND COALESCE(tsv2.IsCancelled, 0) = 0 THEN 1 END) as OverdueTasks
          FROM Tasks t
          LEFT JOIN TaskStatusValues tsv2 ON t.Status = tsv2.Id
          GROUP BY t.ProjectId
@@ -79,6 +79,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
            AND ta.TaskId IS NULL
            AND COALESCE(tsv.IsClosed, 0) = 0
            AND COALESCE(tsv.IsCancelled, 0) = 0
+           AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
          GROUP BY t.ProjectId
        ) unplannedStats ON p.Id = unplannedStats.ProjectId
        LEFT JOIN (

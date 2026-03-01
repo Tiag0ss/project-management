@@ -13,6 +13,7 @@ export interface StatusValue {
   IsDefault: number;
   IsClosed?: number;
   IsCancelled?: number;
+  HideFromPlanningAndStatistics?: number;
   CreatedAt: string;
 }
 
@@ -25,6 +26,7 @@ export interface CreateStatusValueData {
   isDefault?: boolean;
   isClosed?: boolean;
   isCancelled?: boolean;
+  hideFromPlanningAndStatistics?: boolean;
 }
 
 export const statusValuesApi = {

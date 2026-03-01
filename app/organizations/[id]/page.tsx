@@ -1795,6 +1795,7 @@ function StatusesTab({
                   {status.IsDefault ? <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 rounded-full">Default</span> : ''}
                   {status.IsClosed ? <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400 rounded-full">Closed</span> : ''}
                   {status.IsCancelled ? <span className="text-xs px-2 py-0.5 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full">Cancelled</span> : ''}
+                  {status.HideFromPlanningAndStatistics ? <span className="text-xs px-2 py-0.5 bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 rounded-full">Hidden in Planning/Stats</span> : ''}
                 </div>
                 <div className="text-sm text-gray-500 dark:text-gray-400">
                   Order: {status.SortOrder}
@@ -1879,6 +1880,7 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
     isDefault: !!status?.IsDefault,
     isClosed: !!status?.IsClosed,
     isCancelled: !!status?.IsCancelled,
+    hideFromPlanningAndStatistics: !!status?.HideFromPlanningAndStatistics,
     statusType: status?.StatusType || 'other',
   });
   const [error, setError] = useState('');
@@ -2037,6 +2039,18 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
                       className="w-4 h-4 text-red-600 rounded focus:ring-2 focus:ring-red-500"
                     />
                     <span className="text-sm text-gray-700 dark:text-gray-300">Mark as cancelled status</span>
+                  </label>
+                )}
+
+                {type === 'task' && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!formData.hideFromPlanningAndStatistics}
+                      onChange={(e) => setFormData({ ...formData, hideFromPlanningAndStatistics: e.target.checked })}
+                      className="w-4 h-4 text-slate-600 rounded focus:ring-2 focus:ring-slate-500"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Hide from planning and statistics</span>
                   </label>
                 )}
 

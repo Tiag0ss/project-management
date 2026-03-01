@@ -123,10 +123,10 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
     // Get task statistics (using TaskStatusValues flags instead of hardcoded status names)
     const [taskStats] = await pool.execute<RowDataPacket[]>(`
       SELECT 
-        COUNT(*) as totalTasks,
-        SUM(CASE WHEN COALESCE(tsv.IsClosed, 0) = 1 THEN 1 ELSE 0 END) as completedTasks,
-        SUM(CASE WHEN COALESCE(tsv.IsClosed, 0) = 0 AND COALESCE(tsv.IsCancelled, 0) = 0 AND t.PlannedStartDate IS NOT NULL THEN 1 ELSE 0 END) as inProgressTasks,
-        SUM(CASE WHEN t.PlannedEndDate < CURDATE() AND COALESCE(tsv.IsClosed, 0) = 0 AND COALESCE(tsv.IsCancelled, 0) = 0 THEN 1 ELSE 0 END) as overdueTasks
+        SUM(CASE WHEN COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 THEN 1 ELSE 0 END) as totalTasks,
+        SUM(CASE WHEN COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 AND COALESCE(tsv.IsClosed, 0) = 1 THEN 1 ELSE 0 END) as completedTasks,
+        SUM(CASE WHEN COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 AND COALESCE(tsv.IsClosed, 0) = 0 AND COALESCE(tsv.IsCancelled, 0) = 0 AND t.PlannedStartDate IS NOT NULL THEN 1 ELSE 0 END) as inProgressTasks,
+        SUM(CASE WHEN COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 AND t.PlannedEndDate < CURDATE() AND COALESCE(tsv.IsClosed, 0) = 0 AND COALESCE(tsv.IsCancelled, 0) = 0 THEN 1 ELSE 0 END) as overdueTasks
       FROM Tasks t
       LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
       WHERE t.ParentTaskId IS NULL
@@ -142,6 +142,7 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
         AND ta.TaskId IS NULL
         AND COALESCE(tsv.IsClosed, 0) = 0
         AND COALESCE(tsv.IsCancelled, 0) = 0
+        AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
     `);
 
     // Get hours statistics (separated by hobby/normal)
