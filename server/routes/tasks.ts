@@ -42,6 +42,15 @@ const normalizeDateForDB = (dateValue: any): string | null => {
   return dateValue;
 };
 
+const toBooleanFlag = (value: any): number => {
+  if (value === true || value === 1 || value === '1') return 1;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === 'yes' || normalized === 'on') return 1;
+  }
+  return 0;
+};
+
 // Convert Jira description payloads (plain text, JSON string, or Atlassian Document Format) to HTML for RichTextEditor
 const normalizeJiraDescription = (value: any): string => {
   const escapeHtml = (text: string): string => {
@@ -706,7 +715,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, jiraIssueKey, applicationId, releaseVersionId } = req.body;
+    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, jiraIssueKey, applicationId, releaseVersionId } = req.body;
 
     if (!taskName || !projectId) {
       return res.status(400).json({ 
@@ -719,6 +728,14 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({
         success: false,
         message: 'Task status and priority are required'
+      });
+    }
+
+    const mandatoryDueFlag = toBooleanFlag(dueDateMandatory);
+    if (mandatoryDueFlag === 1 && !toDateOnly(dueDate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Due date is required when due date is marked as mandatory'
       });
     }
 
@@ -762,8 +779,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, EstimatedHours, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, JiraIssueKey, ApplicationId, CreatedBy) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, EstimatedHours, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, JiraIssueKey, ApplicationId, CreatedBy) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         projectId,
         taskName,
@@ -773,6 +790,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         resolvedTaskTypeId,
         assignedTo || null,
         toDateOnly(dueDate),
+        mandatoryDueFlag,
         estimatedHours || null,
         parentTaskId || null,
         order,
@@ -919,7 +937,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const taskId = req.params.id;
-    const { taskName, description, status, priority, taskType, assignedTo, dueDate, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, applicationId, releaseVersionId } = req.body;
+    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, applicationId, releaseVersionId } = req.body;
 
     // Verify user has access to this task's project through organization membership and has CanManageTasks permission
     const [access] = await pool.execute<RowDataPacket[]>(
@@ -957,6 +975,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const finalStatus = status !== undefined ? status : oldTask.Status;
     const finalPriority = priority !== undefined ? priority : oldTask.Priority;
     const finalTaskType = taskType !== undefined ? taskType : oldTask.TaskType;
+    const finalDueDateMandatory = dueDateMandatory !== undefined
+      ? toBooleanFlag(dueDateMandatory)
+      : toBooleanFlag(oldTask.DueDateMandatory);
 
     if (
       finalStatus === undefined || finalStatus === null || finalStatus === '' ||
@@ -969,6 +990,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       });
     }
 
+    const effectiveDueDate = dueDate !== undefined ? toDateOnly(dueDate) : toDateOnly(oldTask.DueDate);
+    if (finalDueDateMandatory === 1 && !effectiveDueDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Due date is required when due date is marked as mandatory'
+      });
+    }
+
     // Check if user has permission to manage or plan tasks
     const canManage = access[0].Role === 'Owner' || access[0].Role === 'Admin' || access[0].CanManageTasks === 1;
     const canPlan = canManage || access[0].CanPlanTasks === 1;
@@ -977,7 +1006,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     if (!canManage && canPlan) {
       // Can only update: AssignedTo, PlannedStartDate, PlannedEndDate, Status
       if (taskName !== undefined || description !== undefined || priority !== undefined || 
-          dueDate !== undefined || estimatedHours !== undefined || parentTaskId !== undefined || displayOrder !== undefined) {
+          dueDate !== undefined || dueDateMandatory !== undefined || estimatedHours !== undefined || parentTaskId !== undefined || displayOrder !== undefined) {
         return res.status(403).json({ 
           success: false, 
           message: 'You can only update assignment, planning dates, and status' 
@@ -995,7 +1024,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Tasks 
-       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, EstimatedHours = ?, ParentTaskId = ?, DisplayOrder = COALESCE(?, DisplayOrder), PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, ApplicationId = ?, ReleaseVersionId = ?
+       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, EstimatedHours = ?, ParentTaskId = ?, DisplayOrder = COALESCE(?, DisplayOrder), PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, ApplicationId = ?, ReleaseVersionId = ?
        WHERE Id = ?`,
       [
         taskName,
@@ -1004,7 +1033,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         finalPriority,
         finalTaskType,
         assignedTo || null,
-        toDateOnly(dueDate),
+        effectiveDueDate,
+        finalDueDateMandatory,
         estimatedHours || null,
         parentTaskId || null,
         displayOrder || null,
@@ -1073,6 +1103,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const newDueDate = normalizeDateForComparison(dueDate);
     if (dueDate !== undefined && oldDueDate !== newDueDate) {
       changes.push({ field: 'DueDate', oldVal: oldDueDate, newVal: newDueDate });
+    }
+
+    if (dueDateMandatory !== undefined && hasChanged(toBooleanFlag(oldTask.DueDateMandatory), finalDueDateMandatory)) {
+      changes.push({
+        field: 'DueDateMandatory',
+        oldVal: toBooleanFlag(oldTask.DueDateMandatory) === 1 ? 'Yes' : 'No',
+        newVal: finalDueDateMandatory === 1 ? 'Yes' : 'No'
+      });
     }
     
     const oldPlannedStart = normalizeDateForComparison(oldTask.PlannedStartDate);
@@ -2144,11 +2182,13 @@ router.post('/utilities/update-due-dates/:projectId', authenticateToken, async (
     }
 
     // Find tasks with PlannedEndDate that differs from DueDate or has no DueDate
+    // Skip tasks with mandatory due dates.
     const [tasks] = await pool.execute<RowDataPacket[]>(
       `SELECT Id, TaskName, DueDate, PlannedEndDate 
        FROM Tasks 
        WHERE ProjectId = ? 
        AND PlannedEndDate IS NOT NULL
+       AND COALESCE(DueDateMandatory, 0) = 0
        AND (DueDate IS NULL OR DATE(DueDate) != DATE(PlannedEndDate))`,
       [projectId]
     );

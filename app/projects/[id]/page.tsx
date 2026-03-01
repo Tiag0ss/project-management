@@ -7217,7 +7217,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
                 : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
             }`}
           >
-            Summary
+            📋 Summary
           </button>
           <button
             onClick={() => setReportTab('byUser')}
@@ -7227,7 +7227,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
                 : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
             }`}
           >
-            By User
+            👥 By User
           </button>
           <button
             onClick={() => setReportTab('allocations')}
@@ -7237,7 +7237,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
                 : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
             }`}
           >
-            Allocated Hours
+            🕒 Allocated Hours
           </button>
           <button
             onClick={() => setReportTab('timeEntries')}
@@ -7247,7 +7247,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
                 : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
             }`}
           >
-            Time Entries
+            ⏱️ Time Entries
           </button>
           <button
             onClick={() => setReportTab('schedules')}

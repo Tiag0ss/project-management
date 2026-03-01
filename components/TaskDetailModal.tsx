@@ -223,6 +223,7 @@ export default function TaskDetailModal({
     taskType: task?.TaskType ?? null,
     assignedTo: task?.AssignedTo || undefined,
     dueDate: task?.DueDate ? task.DueDate.split('T')[0] : '',
+    dueDateMandatory: task?.DueDateMandatory === 1,
     estimatedHours: task?.EstimatedHours || undefined,
     parentTaskId: task?.ParentTaskId || undefined,
     plannedStartDate: task?.PlannedStartDate ? task.PlannedStartDate.split('T')[0] : '',
@@ -656,6 +657,11 @@ export default function TaskDetailModal({
       return;
     }
 
+    if (formData.dueDateMandatory && !formData.dueDate) {
+      setError('Due date is required when due date is mandatory');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -1077,6 +1083,7 @@ export default function TaskDetailModal({
       'Priority': 'Priority',
       'AssignedTo': 'Assignee',
       'DueDate': 'Due Date',
+      'DueDateMandatory': 'Due Date Mandatory',
       'PlannedStartDate': 'Planned Start',
       'PlannedEndDate': 'Planned End',
       'EstimatedHours': 'Estimated Hours',
@@ -1626,6 +1633,15 @@ export default function TaskDetailModal({
                     onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
+                  <label className="mt-2 inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(formData.dueDateMandatory)}
+                      onChange={(e) => setFormData({ ...formData, dueDateMandatory: e.target.checked })}
+                      className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                    />
+                    Due date is mandatory for planning
+                  </label>
                 </div>
 
                 <div>

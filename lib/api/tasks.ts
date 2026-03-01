@@ -31,6 +31,7 @@ export interface Task {
   AssigneeName?: string;
   Assignees?: TaskAssignee[];
   DueDate?: string;
+  DueDateMandatory?: number;
   EstimatedHours?: number;
   PlannedHours?: number;
   WorkedHours?: number;
@@ -70,6 +71,7 @@ export interface CreateTaskData {
   taskType?: number | null;
   assignedTo?: number;
   dueDate?: string;
+  dueDateMandatory?: boolean;
   estimatedHours?: number;
   parentTaskId?: number;
   displayOrder?: number;

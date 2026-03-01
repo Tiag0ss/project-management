@@ -27,6 +27,7 @@ interface TaskRow extends RowDataPacket {
   TaskName: string;
   Status: string;
   Priority: string;
+  DisplayOrder: number | null;
   EstimatedHours: number;
   AllocatedHours: number;
   WorkedHours: number;
@@ -51,11 +52,67 @@ interface ProjectStats extends RowDataPacket {
   StartDate: string | null;
   EndDate: string | null;
   Budget: number | null;
+  BudgetType: 'monetary' | 'hours' | string;
+  BudgetSpent: number;
   TotalTasks: number;
   CompletedTasks: number;
   InProgressTasks: number;
   TotalEstimatedHours: number;
   TotalWorkedHours: number;
+}
+
+function orderTasksHierarchically(tasks: TaskRow[]): TaskRow[] {
+  const byId = new Map<number, TaskRow>();
+  const childrenByParent = new Map<number | null, TaskRow[]>();
+
+  for (const task of tasks) {
+    byId.set(task.Id, task);
+  }
+
+  for (const task of tasks) {
+    const parentId = (task.ParentTaskId && byId.has(task.ParentTaskId)) ? task.ParentTaskId : null;
+    const bucket = childrenByParent.get(parentId) || [];
+    bucket.push(task);
+    childrenByParent.set(parentId, bucket);
+  }
+
+  const getTaskOrder = (task: TaskRow): number => {
+    const raw = Number(task.DisplayOrder);
+    return Number.isFinite(raw) ? raw : 0;
+  };
+
+  const sortSiblings = (list: TaskRow[]): TaskRow[] => {
+    return [...list].sort((a, b) => {
+      const orderDiff = getTaskOrder(a) - getTaskOrder(b);
+      if (orderDiff !== 0) return orderDiff;
+      return a.Id - b.Id;
+    });
+  };
+
+  const ordered: TaskRow[] = [];
+  const visited = new Set<number>();
+
+  const walk = (parentId: number | null) => {
+    const children = sortSiblings(childrenByParent.get(parentId) || []);
+    for (const child of children) {
+      if (visited.has(child.Id)) continue;
+      visited.add(child.Id);
+      ordered.push(child);
+      walk(child.Id);
+    }
+  };
+
+  walk(null);
+
+  // Safety fallback for orphan/cyclic data
+  if (ordered.length !== tasks.length) {
+    const remaining = tasks.filter((task) => !visited.has(task.Id));
+    for (const task of sortSiblings(remaining)) {
+      ordered.push(task);
+    }
+  }
+
+  return ordered;
 }
 
 // ─── PDF Generation ───────────────────────────────────────────────────────────
@@ -133,12 +190,21 @@ function generatePDFBuffer(
       doc.fontSize(9).font('Helvetica').fillColor(midGray);
 
       const budgetBar = (pageWidth * 0.6);
-      const spentPct = Math.min(stats.TotalWorkedHours / Math.max(stats.TotalEstimatedHours, 1), 1);
+      const budgetType = stats.BudgetType === 'hours' ? 'hours' : 'monetary';
+      const budgetSpent = Number(stats.BudgetSpent || 0);
+      const budgetTotal = Number(stats.Budget || 0);
+      const spentPct = budgetTotal > 0 ? Math.min(budgetSpent / budgetTotal, 1) : 0;
       const barY = doc.y + 4;
       doc.rect(40, barY, budgetBar, 12).fill('#e5e7eb');
       doc.rect(40, barY, budgetBar * spentPct, 12).fill(spentPct > 0.9 ? red : blue);
+      const spentLabel = budgetType === 'hours'
+        ? `${budgetSpent.toFixed(1)}h`
+        : `$${budgetSpent.toFixed(2)}`;
+      const totalLabel = budgetType === 'hours'
+        ? `${budgetTotal.toFixed(1)}h`
+        : `$${budgetTotal.toFixed(2)}`;
       doc.fillColor(darkGray).fontSize(9)
-        .text(`Budget: $${stats.Budget.toFixed(2)}   |   Hours consumed: ${(spentPct * 100).toFixed(0)}%`, 40, barY + 16);
+        .text(`Budget (${budgetType === 'hours' ? 'hours' : 'monetary'}): ${totalLabel}   |   Spent: ${spentLabel} (${(spentPct * 100).toFixed(0)}%)`, 40, barY + 16);
       doc.y = barY + 32;
     }
 
@@ -161,6 +227,26 @@ function generatePDFBuffer(
 
       // Identify leaf tasks for accurate totals (skip parent-only tasks in count but show all)
       const taskIdsWithChildren = new Set(tasks.filter(t => t.ParentTaskId).map(t => t.ParentTaskId));
+      const depthByTaskId = new Map<number, number>();
+      const taskById = new Map(tasks.map((task) => [task.Id, task]));
+      const resolveDepth = (task: TaskRow): number => {
+        if (depthByTaskId.has(task.Id)) return depthByTaskId.get(task.Id)!;
+
+        let depth = 0;
+        let currentParentId = task.ParentTaskId;
+        const seen = new Set<number>();
+
+        while (currentParentId && !seen.has(currentParentId)) {
+          const parent = taskById.get(currentParentId);
+          if (!parent) break;
+          seen.add(currentParentId);
+          depth++;
+          currentParentId = parent.ParentTaskId;
+        }
+
+        depthByTaskId.set(task.Id, depth);
+        return depth;
+      };
 
       let rowIdx = 0;
       for (const task of tasks) {
@@ -172,7 +258,8 @@ function generatePDFBuffer(
         const bgColor = rowIdx % 2 === 0 ? '#ffffff' : lightGray;
         doc.rect(40, rowY, pageWidth, 14).fill(bgColor);
 
-        const indent = task.ParentTaskId ? 6 : 0;
+        const depth = resolveDepth(task);
+        const indent = Math.min(depth * 6, 24);
         const cols = [
           task.TaskName.substring(0, 30) + (task.TaskName.length > 30 ? '…' : ''),
           task.Status?.substring(0, 14) ?? '',
@@ -183,8 +270,9 @@ function generatePDFBuffer(
           isLeaf ? `${Math.round(Math.min(((task.WorkedHours ?? 0) / Math.max(task.EstimatedHours ?? 1, 0.1)) * 100, 100))}%` : '',
         ];
         cols.forEach((val, i) => {
-          doc.fillColor(darkGray).fontSize(7).font(i === 0 && task.ParentTaskId ? 'Helvetica-Oblique' : 'Helvetica')
-            .text(val, colX[i] + indent + 2, rowY + 3, {
+          const cellIndent = i === 0 ? indent : 0;
+          doc.fillColor(darkGray).fontSize(7).font(i === 0 && depth > 0 ? 'Helvetica-Oblique' : 'Helvetica')
+            .text(val, colX[i] + cellIndent + 2, rowY + 3, {
               width: (colX[i + 1] ?? colX[i] + 60) - colX[i] - 4,
               align: 'left',
             });
@@ -262,7 +350,11 @@ async function fetchProjectStats(projectId: number, since: Date): Promise<{
 
   const [projectRows] = await pool.execute<ProjectStats[]>(
     `SELECT p.ProjectName, o.Name AS OrganizationName, p.Status, p.StartDate, p.EndDate,
-            p.Budget, p.OrganizationId,
+            p.Budget, COALESCE(p.BudgetType, 'monetary') as BudgetType, p.OrganizationId,
+            CASE
+              WHEN COALESCE(p.BudgetType, 'monetary') = 'hours' THEN COALESCE(budgetStats.HoursSpent, 0)
+              ELSE COALESCE(budgetStats.CostSpent, 0)
+            END as BudgetSpent,
             COUNT(DISTINCT t.Id) AS TotalTasks,
             SUM(CASE WHEN tsv.IsClosed = 1 THEN 1 ELSE 0 END) AS CompletedTasks,
             SUM(CASE WHEN tsv.IsClosed = 0 AND tsv.IsDefault = 0 THEN 1 ELSE 0 END) AS InProgressTasks,
@@ -275,6 +367,15 @@ async function fetchProjectStats(projectId: number, since: Date): Promise<{
      LEFT JOIN Tasks t ON t.ProjectId = p.Id
      LEFT JOIN Tasks t2 ON t2.ParentTaskId = t.Id
      LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+     LEFT JOIN (
+       SELECT t2.ProjectId,
+              SUM(te2.Hours * COALESCE(u2.HourlyRate, 0)) as CostSpent,
+              SUM(te2.Hours) as HoursSpent
+       FROM TimeEntries te2
+       INNER JOIN Tasks t2 ON te2.TaskId = t2.Id
+       LEFT JOIN Users u2 ON te2.UserId = u2.Id
+       GROUP BY t2.ProjectId
+     ) budgetStats ON p.Id = budgetStats.ProjectId
      WHERE p.Id = ?
      GROUP BY p.Id`,
     [projectId]
@@ -288,12 +389,15 @@ async function fetchProjectStats(projectId: number, since: Date): Promise<{
   stats.InProgressTasks = Number(stats.InProgressTasks);
   stats.TotalEstimatedHours = parseFloat(String(stats.TotalEstimatedHours)) || 0;
   stats.TotalWorkedHours = parseFloat(String(stats.TotalWorkedHours)) || 0;
+  stats.BudgetSpent = parseFloat(String(stats.BudgetSpent)) || 0;
+  stats.BudgetType = stats.BudgetType === 'hours' ? 'hours' : 'monetary';
   if (stats.Budget !== null && stats.Budget !== undefined) stats.Budget = parseFloat(String(stats.Budget));
 
   const [tasks] = await pool.execute<TaskRow[]>(
     `SELECT t.Id, t.TaskName, t.ParentTaskId,
             COALESCE(tsv.StatusName, t.Status) AS Status,
             COALESCE(tpv.PriorityName, t.Priority) AS Priority,
+            t.DisplayOrder,
             COALESCE(t.EstimatedHours, 0) AS EstimatedHours,
             COALESCE((SELECT SUM(ta.AllocatedHours) FROM TaskAllocations ta WHERE ta.TaskId = t.Id), 0) AS AllocatedHours,
             COALESCE((SELECT SUM(te.Hours) FROM TimeEntries te WHERE te.TaskId = t.Id), 0) AS WorkedHours,
@@ -304,9 +408,11 @@ async function fetchProjectStats(projectId: number, since: Date): Promise<{
      LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
      LEFT JOIN Users u ON t.AssignedTo = u.Id
      WHERE t.ProjectId = ?
-     ORDER BY t.ParentTaskId IS NULL DESC, t.ParentTaskId, t.Id`,
+     ORDER BY t.Id`,
     [projectId]
   );
+
+  const orderedTasks = orderTasksHierarchically(tasks);
 
   const [timeEntries] = await pool.execute<TimeEntryRow[]>(
     `SELECT te.WorkDate, te.Hours, te.Description,
@@ -322,17 +428,18 @@ async function fetchProjectStats(projectId: number, since: Date): Promise<{
   );
 
   // Coerce task numeric fields returned as strings by MySQL
-  for (const t of tasks as any[]) {
+  for (const t of orderedTasks as any[]) {
     t.EstimatedHours = parseFloat(String(t.EstimatedHours)) || 0;
     t.AllocatedHours = parseFloat(String(t.AllocatedHours)) || 0;
     t.WorkedHours = parseFloat(String(t.WorkedHours)) || 0;
+    t.DisplayOrder = Number.isFinite(Number(t.DisplayOrder)) ? Number(t.DisplayOrder) : null;
   }
   // Coerce time entry hours
   for (const e of timeEntries as any[]) {
     e.Hours = parseFloat(String(e.Hours)) || 0;
   }
 
-  return { stats, tasks, timeEntries };
+  return { stats, tasks: orderedTasks, timeEntries };
 }
 
 // ─── Schedule Checking ────────────────────────────────────────────────────────

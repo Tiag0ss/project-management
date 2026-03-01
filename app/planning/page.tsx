@@ -191,6 +191,45 @@ export default function PlanningPage() {
     setModalMessage(null);
   };
 
+  const normalizeDateOnly = (dateValue?: string | null): string | null => {
+    if (!dateValue) return null;
+    const asString = String(dateValue);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(asString)) return asString;
+    const datePart = asString.split('T')[0];
+    return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : null;
+  };
+
+  const getLatestAllocationDate = (allocations: { date: string }[]): string | null => {
+    if (!allocations || allocations.length === 0) return null;
+    return allocations.reduce((latest, current) => current.date > latest ? current.date : latest, allocations[0].date);
+  };
+
+  const validateMandatoryDueDateForPlan = (task: Task, plannedEndDate: string | null): boolean => {
+    const isMandatory = Number(task.DueDateMandatory || 0) === 1;
+    if (!isMandatory) return true;
+
+    const dueDate = normalizeDateOnly(task.DueDate);
+    if (!dueDate) {
+      showAlert('Planning Blocked', `Task "${task.TaskName}" has mandatory due date enabled but no due date set.`);
+      return false;
+    }
+
+    if (!plannedEndDate) {
+      showAlert('Planning Blocked', `Unable to determine planned end date for task "${task.TaskName}".`);
+      return false;
+    }
+
+    if (plannedEndDate > dueDate) {
+      showAlert(
+        'Planning Blocked',
+        `Task "${task.TaskName}" has a mandatory due date (${new Date(dueDate + 'T12:00:00').toLocaleDateString()}) but the plan ends on ${new Date(plannedEndDate + 'T12:00:00').toLocaleDateString()}.\n\nPlease choose an earlier start date, increase daily hours, or reduce total hours.`
+      );
+      return false;
+    }
+
+    return true;
+  };
+
   const handleModalConfirm = () => {
     if (modalMessage?.onConfirm) {
       modalMessage.onConfirm();
@@ -516,6 +555,7 @@ export default function PlanningPage() {
         priority: task.Priority,
         assignedTo: updates.AssignedTo !== undefined ? updates.AssignedTo : task.AssignedTo,
         dueDate: task.DueDate,
+        dueDateMandatory: Number(task.DueDateMandatory || 0) === 1,
         estimatedHours: task.EstimatedHours,
         parentTaskId: task.ParentTaskId,
         plannedStartDate: updates.PlannedStartDate !== undefined ? updates.PlannedStartDate : task.PlannedStartDate,
@@ -1716,6 +1756,12 @@ export default function PlanningPage() {
         return;
       }
 
+      const parentPlannedEndDate = getLatestAllocationDate(allocations);
+      if (!validateMandatoryDueDateForPlan(parentTask, parentPlannedEndDate)) {
+        setPlanningProgress(prev => ({ ...prev, show: false }));
+        return;
+      }
+
       console.log(`Created ${allocations.length} allocation days for parent task`);
 
       setPlanningProgress(prev => ({
@@ -2511,6 +2557,12 @@ export default function PlanningPage() {
       if (remainingHours > 0) {
         setPlanningProgress(prev => ({ ...prev, show: false }));
         showAlert('Partial Allocation', `Unable to fully allocate task - ${remainingHours.toFixed(2)}h remaining. User doesn't have enough availability in the next year.`);
+        return;
+      }
+
+      const plannedEndDate = getLatestAllocationDate(allocations);
+      if (!validateMandatoryDueDateForPlan(task, plannedEndDate)) {
+        setPlanningProgress(prev => ({ ...prev, show: false }));
         return;
       }
 
