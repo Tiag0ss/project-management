@@ -22,6 +22,8 @@ Any known logs/errors:
 4. Preserve existing UX unless change is explicitly requested.
 5. Validate with targeted checks first, then broader checks if needed.
 6. If bug touches timesheet/reporting totals, verify grouping and aggregation logic carefully.
+7. If bug touches tabs, verify content is rendered only in the intended tab (no cross-tab duplication).
+8. If bug touches project Gantt, validate hierarchical ordering and expand/collapse behavior (not flat rendering).
 
 ## Output Contract
 

@@ -214,10 +214,11 @@ ProjectStatuses, TaskStatuses, TaskPriorities (Custom status values per organiza
 
 ```
 app/                          # Next.js pages (App Router)
-  ├── dashboard/              # User dashboard with timesheet (daily & weekly views)
+  ├── dashboard/              # User dashboard (overview, calendar, analytics)
   ├── planning/               # Gantt chart with drag-drop resource allocation
   ├── projects/               # Project list and details
   │   └── [id]/               # Project detail with Kanban, Gantt, Overview, Reporting
+  ├── timesheet/              # Daily, weekly, all entries, and resume views
   ├── organizations/          # Organization management
   │   └── [id]/               # Org settings: members, permissions, statuses
   ├── users/                  # User management (admin only)
@@ -283,7 +284,7 @@ export default function ComponentName({ title, onSave }: ComponentProps) {
   // Effects, handlers, etc.
   
   return (
-    <div className="container">
+    <div className="w-full">
       {/* JSX */}
     </div>
   );
@@ -360,6 +361,11 @@ className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transit
 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700"
 ```
 
+**Screen Layout Standard (CRITICAL):**
+- Use full-width page wrappers (`w-full`) across screens.
+- Do not introduce `container` or fixed-width outer wrappers unless explicitly requested for a specific screen.
+- Keep existing spacing/grid utilities, but preserve full-width behavior as the default layout baseline.
+
 **Modal Pattern:**
 ```typescript
 {showModal && (
@@ -397,6 +403,7 @@ className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-
 ### Resource Planning (Gantt Chart)
 - **Project Gantt** shows all project tasks (not filtered by user)
 - **Planning Gantt** shows user-specific allocations
+- **Project Gantt rendering must be hierarchical** (parent/child tree), not a flat list
 - **View Modes**: Week (28 days), Month (90 days), Year (365 days)
 - Dynamic navigation adjusts by view mode: ±28/±90/±365 days
 - Timeline headers adapt to mode: week numbers, dates, or months
@@ -408,15 +415,31 @@ className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-
 - Calculate PlannedEndDate based on allocations
 - Support drag-and-drop to assign tasks to users
 - Show visual timeline with color-coded task bars
+- Support reliable parent expand/collapse behavior with deterministic sibling ordering
 
 ### Time Tracking
 - TimeEntries record actual hours worked
-- Two views: Daily Entry (form) and Weekly Grid (spreadsheet-style)
+- Views: Daily Entry (form), Weekly Grid (spreadsheet-style), All Entries, and Resume
 - Weekly grid shows tasks as rows, days as columns
 - Manual save button (no auto-save)
 - Week navigation: Previous/Current/Next Week buttons
 - Load existing entries on grid mount
 - Delete entries by setting hours to 0
+- Resume supports period-based aggregation, including an explicit `allTime` mode
+- In All Entries, keep detailed table + totals footer; avoid reintroducing removed top summary cards unless requested
+
+### Dashboard Analytics
+- Analytics supports selectable periods with default current month behavior
+- Include `allTime` period option for aggregate metrics where applicable
+
+### Applications & Versions
+- `Applications.IsCustomerSpecific` and `ApplicationVersions.IsCustomerSpecific` are supported flags
+- Default for both fields is `0` (false)
+- Frontend forms and backend payload handling must preserve and persist these fields consistently
+
+### Customer Tabs
+- Customer change history must render only in the History tab
+- Do not render history components inside Attachments or other tabs
 
 ### Intelligent Replanning
 - When replanning a task, fetch existing TimeEntries
@@ -879,10 +902,12 @@ When generating code, ensure:
 12. **NEVER create SQL migration scripts** for adding/modifying columns - only update the JSON files, the system auto-syncs
 13. **DefaultValue in JSON** - never add extra quotes for strings (use `"09:00"` not `"'09:00'"`)
 14. **New table JSON files** - ALWAYS use `PrimaryKeyFields` (NOT `PrimaryKey`), place it after `TableName`, use comma-separated string for composite keys (NOT array)
+15. **Use full-width page wrappers** - default to `w-full` for screen layouts; avoid introducing `container` wrappers unless explicitly requested
+16. **Keep history scoped to History tab** - never duplicate ChangeHistory content into non-history tabs
 
 ## Example Files for Reference
 
-- **Good component example**: `app/dashboard/page.tsx` (timesheet with weekly grid)
+- **Good component example**: `app/timesheet/page.tsx` (daily/weekly/all entries/resume patterns)
 - **Good API route**: `server/routes/taskAllocations.ts` (availability checking)
 - **Good modal pattern**: `app/planning/page.tsx` (custom confirm dialogs)
 - **Good form handling**: `app/users/page.tsx` (user management modals)

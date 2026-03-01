@@ -23,6 +23,8 @@ Fallback behavior when denied:
 5. Preserve loading states while permissions are still resolving.
 6. Avoid exposing unauthorized actions via optimistic rendering.
 7. For mutations, ensure corresponding server route enforces permission checks.
+8. Keep screen-level layout full-width (`w-full`) unless the request explicitly asks for constrained-width wrappers.
+9. Ensure tab-gated content stays in the correct tab scope (e.g., history-only components remain in History tab).
 
 ## Output Contract
 

@@ -1,7 +1,7 @@
 # Skill: Timesheet History Summary
 
 ## Goal
-Implement or adjust grouping/summarization in Timesheet "All Entries" view without breaking normal detailed view.
+Implement or adjust grouping/summarization in Timesheet "All Entries"/"Resume" flows without breaking normal detailed view.
 
 ## Task Input
 
@@ -23,6 +23,8 @@ Sorting rules:
 5. Keep daily header with day total when requested.
 6. Ensure `colSpan` values match visible grouped columns.
 7. Verify TypeScript types used in grouping key exist on `TimeEntry`.
+8. Keep All Entries detailed table and totals footer intact; do not reintroduce removed top summary cards unless requested.
+9. For Resume period logic, support `allTime` when lifetime aggregation is requested.
 
 ## Output Contract
 

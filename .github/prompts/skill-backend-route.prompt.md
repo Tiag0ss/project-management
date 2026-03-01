@@ -27,6 +27,8 @@ Edge cases:
    - error: `{ success: false, message }`
 6. Normalize/format dates consistently for MySQL `DATE` fields.
 7. Add only required joins; avoid N+1 style loops.
+8. For period-based summaries/analytics, support explicit `allTime` mode when requested (skip date-range constraints only for that mode).
+9. Keep frontend/backend field parity for supported flags (e.g., `IsCustomerSpecific`) and preserve default false behavior unless explicitly changed.
 
 ## Output Contract
 

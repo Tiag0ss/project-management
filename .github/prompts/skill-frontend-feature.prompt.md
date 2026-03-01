@@ -20,15 +20,18 @@ Out of scope:
 ## Execution Rules
 
 1. Use existing Tailwind tokens and dark-mode classes only.
-2. Keep changes minimal and localized to requested files.
-3. For API calls, always:
+2. Use full-width page wrappers (`w-full`) for screens; do not introduce `container` wrappers unless explicitly requested.
+3. Keep changes minimal and localized to requested files.
+4. For API calls, always:
    - check token,
    - handle non-OK responses,
    - use `try/catch` with user-facing error state.
-4. Never use browser `alert()` or `confirm()`; use modal pattern already in codebase.
-5. Respect permissions via `usePermissions()` checks before rendering actions.
-6. For date handling, normalize MySQL date values before comparisons.
-7. If hours are aggregated at project/report level, use leaf-task rule to avoid double counting.
+5. Never use browser `alert()` or `confirm()`; use modal pattern already in codebase.
+6. Respect permissions via `usePermissions()` checks before rendering actions.
+7. For date handling, normalize MySQL date values before comparisons.
+8. If hours are aggregated at project/report level, use leaf-task rule to avoid double counting.
+9. Keep feature placement consistent with current UX (e.g., Resume belongs to Timesheet; ChangeHistory only in History tab).
+10. For period selectors in analytics/resume contexts, include `allTime` when the requirement asks for aggregate lifetime metrics.
 
 ## Output Contract
 

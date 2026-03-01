@@ -30,3 +30,7 @@ Use them when asking Copilot for implementation work, so output stays consistent
   - No `alert()` / `confirm()`
   - Dark mode classes preserved
   - Leaf-task hours rule where required
+  - Full-width screen wrappers (`w-full`) by default (avoid `container` unless explicitly requested)
+  - Timesheet Resume lives in `app/timesheet/page.tsx` (not Dashboard)
+  - Period-based analytics/resume flows should support `allTime` when requested
+  - Customer change history remains scoped to History tab only
