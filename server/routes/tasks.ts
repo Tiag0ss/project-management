@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { createNotification } from './notifications';
 import { logActivity } from './activityLogs';
 import { sanitizeRichText } from '../utils/sanitize';
@@ -234,6 +234,51 @@ function parseAssigneesJson(tasks: any[]): any[] {
   });
 }
 
+async function populateAssigneesJson(tasks: any[]): Promise<void> {
+  const taskIds = tasks
+    .map((task) => task?.Id)
+    .filter((taskId) => taskId !== null && taskId !== undefined);
+
+  for (const task of tasks) {
+    if (task.AssigneesJson === undefined || task.AssigneesJson === null) {
+      task.AssigneesJson = '[]';
+    }
+  }
+
+  if (taskIds.length === 0) {
+    return;
+  }
+
+  const placeholders = taskIds.map(() => '?').join(',');
+  const [assigneeRows] = await pool.execute<RowDataPacket[]>(
+    `SELECT ua.TaskId, ua.UserId, uu.Username, uu.FirstName, uu.LastName
+     FROM TaskAssignees ua
+     INNER JOIN Users uu ON ua.UserId = uu.Id
+     WHERE ua.TaskId IN (${placeholders})
+     ORDER BY ua.TaskId, ua.AssignedAt ASC`,
+    taskIds
+  );
+
+  const assigneesByTask = new Map<number, any[]>();
+  for (const row of assigneeRows) {
+    const taskId = Number(row.TaskId);
+    if (!assigneesByTask.has(taskId)) {
+      assigneesByTask.set(taskId, []);
+    }
+    assigneesByTask.get(taskId)?.push({
+      UserId: row.UserId,
+      Username: row.Username,
+      FirstName: row.FirstName,
+      LastName: row.LastName,
+    });
+  }
+
+  for (const task of tasks) {
+    const assignees = assigneesByTask.get(Number(task.Id)) || [];
+    task.AssigneesJson = JSON.stringify(assignees);
+  }
+}
+
 // Helper to get project info for a task
 const getTaskProjectInfo = async (taskId: number): Promise<{ projectId: number; projectName: string } | null> => {
   try {
@@ -317,11 +362,7 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
               tk.Title as TicketTitle,
               tk.ExternalTicketId,
               oji.JiraUrl,
-              (
-                SELECT JSON_ARRAYAGG(JSON_OBJECT('UserId', ua.UserId, 'Username', uu.Username, 'FirstName', uu.FirstName, 'LastName', uu.LastName))
-                FROM TaskAssignees ua JOIN Users uu ON ua.UserId = uu.Id
-                WHERE ua.TaskId = t.Id
-              ) as AssigneesJson
+              '[]' as AssigneesJson
        FROM Tasks t
        JOIN Projects p ON t.ProjectId = p.Id
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
@@ -342,6 +383,8 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
        ORDER BY p.IsHobby ASC, t.PlannedStartDate DESC, t.CreatedAt DESC`,
       [userId, userId, userId, userId]
     );
+
+    await populateAssigneesJson(tasks);
 
     res.json({
       success: true,
@@ -408,12 +451,8 @@ router.get('/project/:projectId/summary', authenticateToken, async (req: AuthReq
         tpv.PriorityName, tpv.ColorCode as PriorityColor,
         ttv.TypeName as TaskTypeName, ttv.ColorCode as TaskTypeColor,
         COALESCE(alloc.TotalAllocated, 0) as TotalAllocated,
-        COALESCE(worked.TotalWorked, 0) as TotalWorked,
-        (
-          SELECT JSON_ARRAYAGG(JSON_OBJECT('UserId', ua.UserId, 'Username', uu.Username, 'FirstName', uu.FirstName, 'LastName', uu.LastName))
-          FROM TaskAssignees ua JOIN Users uu ON ua.UserId = uu.Id
-          WHERE ua.TaskId = t.Id
-        ) as AssigneesJson
+        COALESCE(workedAgg.TotalWorked, 0) as TotalWorked,
+        '[]' as AssigneesJson
        FROM Tasks t
        LEFT JOIN Users u1 ON t.CreatedBy = u1.Id
        LEFT JOIN Users u2 ON t.AssignedTo = u2.Id
@@ -424,16 +463,18 @@ router.get('/project/:projectId/summary', authenticateToken, async (req: AuthReq
          SELECT TaskId, SUM(AllocatedHours) as TotalAllocated
          FROM TaskAllocations
          GROUP BY TaskId
-       ) alloc ON t.Id = alloc.TaskId
+       ) AS alloc ON t.Id = alloc.TaskId
        LEFT JOIN (
          SELECT TaskId, SUM(Hours) as TotalWorked
          FROM TimeEntries
          GROUP BY TaskId
-       ) worked ON t.Id = worked.TaskId
+       ) AS workedAgg ON t.Id = workedAgg.TaskId
        WHERE t.ProjectId = ?
        ORDER BY t.DisplayOrder, t.CreatedAt DESC`,
       [projectId]
     );
+
+    await populateAssigneesJson(tasks);
 
     res.json({
       success: true,
@@ -508,18 +549,14 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 tpv.PriorityName, tpv.ColorCode as PriorityColor,
                 ttv.TypeName as TaskTypeName, ttv.ColorCode as TaskTypeColor,
                 COALESCE(alloc.TotalAllocated, 0) as PlannedHours,
-                COALESCE(worked.TotalWorked, 0) as WorkedHours,
+                COALESCE(workedAgg.TotalWorked, 0) as WorkedHours,
                 tk.Id as TicketIdRef,
                 tk.TicketNumber,
                 tk.Title as TicketTitle,
                 tk.ExternalTicketId,
                 oji.JiraUrl,
                 t.JiraIssueKey,
-                (
-                  SELECT JSON_ARRAYAGG(JSON_OBJECT('UserId', ua.UserId, 'Username', uu.Username, 'FirstName', uu.FirstName, 'LastName', uu.LastName))
-                  FROM TaskAssignees ua JOIN Users uu ON ua.UserId = uu.Id
-                  WHERE ua.TaskId = t.Id
-                ) as AssigneesJson
+                '[]' as AssigneesJson
          FROM Tasks t
          INNER JOIN Projects p ON t.ProjectId = p.Id
          LEFT JOIN Users u1 ON t.CreatedBy = u1.Id
@@ -534,12 +571,12 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
            SELECT TaskId, SUM(AllocatedHours) as TotalAllocated
            FROM TaskAllocations
            GROUP BY TaskId
-         ) alloc ON t.Id = alloc.TaskId
+         ) AS alloc ON t.Id = alloc.TaskId
          LEFT JOIN (
            SELECT TaskId, SUM(Hours) as TotalWorked
            FROM TimeEntries
            GROUP BY TaskId
-         ) worked ON t.Id = worked.TaskId
+         ) AS workedAgg ON t.Id = workedAgg.TaskId
          WHERE t.ProjectId = ?
          ORDER BY t.CreatedAt DESC`,
         [projectId]
@@ -558,18 +595,14 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 tpv.PriorityName, tpv.ColorCode as PriorityColor,
                 ttv.TypeName as TaskTypeName, ttv.ColorCode as TaskTypeColor,
                 COALESCE(alloc.TotalAllocated, 0) as PlannedHours,
-                COALESCE(worked.TotalWorked, 0) as WorkedHours,
+                COALESCE(workedAgg.TotalWorked, 0) as WorkedHours,
                 tk.Id as TicketIdRef,
                 tk.TicketNumber,
                 tk.Title as TicketTitle,
                 tk.ExternalTicketId,
                 oji.JiraUrl,
                 t.JiraIssueKey,
-                (
-                  SELECT JSON_ARRAYAGG(JSON_OBJECT('UserId', ua.UserId, 'Username', uu.Username, 'FirstName', uu.FirstName, 'LastName', uu.LastName))
-                  FROM TaskAssignees ua JOIN Users uu ON ua.UserId = uu.Id
-                  WHERE ua.TaskId = t.Id
-                ) as AssigneesJson
+                '[]' as AssigneesJson
          FROM Tasks t
          INNER JOIN Projects p ON t.ProjectId = p.Id
          LEFT JOIN Users u1 ON t.CreatedBy = u1.Id
@@ -584,18 +617,20 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
            SELECT TaskId, SUM(AllocatedHours) as TotalAllocated
            FROM TaskAllocations
            GROUP BY TaskId
-         ) alloc ON t.Id = alloc.TaskId
+         ) AS alloc ON t.Id = alloc.TaskId
          LEFT JOIN (
            SELECT TaskId, SUM(Hours) as TotalWorked
            FROM TimeEntries
            GROUP BY TaskId
-         ) worked ON t.Id = worked.TaskId
+         ) AS workedAgg ON t.Id = workedAgg.TaskId
          WHERE t.ProjectId = ? AND (t.AssignedTo = ? OR EXISTS (SELECT 1 FROM TaskAssignees WHERE TaskId = t.Id AND UserId = ?))
          ORDER BY t.CreatedAt DESC`,
         [projectId, userId, userId]
       );
       tasks = myTasks;
     }
+
+    await populateAssigneesJson(tasks);
 
     res.json({
       success: true,

@@ -21,7 +21,7 @@ If a request is close to one of these templates, follow that template structure 
 
 ## Project Context
 
-This is a full-stack project management application built with **Next.js 16** (App Router) and **Express.js** backend with **MySQL** database. The application supports multi-tenant organizations with comprehensive task management, resource planning, and time tracking features.
+This is a full-stack project management application built with **Next.js 16** (App Router) and **Express.js** backend with **MySQL/MSSQL** database support. The application supports multi-tenant organizations with comprehensive task management, resource planning, and time tracking features.
 
 ## Technology Stack
 
@@ -35,7 +35,7 @@ This is a full-stack project management application built with **Next.js 16** (A
 ### Backend
 - **Runtime**: Node.js with Express.js
 - **Language**: TypeScript
-- **Database**: MySQL 8.0+ (using mysql2 package)
+- **Database**: MySQL 8.0+ and MSSQL (SQL Server) via provider-aware wrapper in `server/config/database.ts`
 - **Authentication**: JWT tokens with HTTP-only cookies
 - **Password Security**: bcrypt for hashing
 
@@ -46,6 +46,7 @@ This is a full-stack project management application built with **Next.js 16** (A
   "react": "19.2.3",
   "express": "^4.21.2",
   "mysql2": "^3.11.5",
+  "mssql": "^11.0.1",
   "jsonwebtoken": "^9.0.2",
   "bcrypt": "^5.1.1"
 }
@@ -240,7 +241,7 @@ lib/api/                      # Frontend API client functions
 
 server/                       # Express backend
   ├── index.ts                # Server entry point
-  ├── config/database.ts      # MySQL connection pool
+  ├── config/database.ts      # Provider-aware DB wrapper (MySQL + MSSQL)
   ├── middleware/auth.ts      # JWT authentication middleware
   └── routes/                 # API route handlers
       ├── auth.ts             # POST /api/auth/login, /register
@@ -341,8 +342,22 @@ router.get('/endpoint', authenticateToken, async (req: AuthRequest, res: Respons
 - Use parameterized queries (ALWAYS - prevent SQL injection)
 - Use `pool.execute()` for query execution
 - Type cast results: `pool.execute<RowDataPacket[]>()` or `<ResultSetHeader>`
+- Keep route SQL provider-agnostic whenever possible; rely on `server/config/database.ts` for provider differences
 - Join tables when needed to avoid N+1 queries
 - Use transactions for multi-table operations
+
+### Database Provider Abstraction (CRITICAL)
+
+- Use the shared wrapper from `server/config/database.ts` (`pool`, `dbProvider`, exported DB types) in server routes.
+- Do not import `mysql2` directly in route files; keep driver-specific concerns inside the wrapper.
+- Prefer portable SQL patterns first; only branch on `dbProvider` when SQL semantics differ and cannot be safely translated.
+- For MSSQL compatibility, avoid MySQL-only constructs in new route SQL:
+  - `FIELD(...)` ordering → use `CASE WHEN ... THEN ... END`
+  - `GROUP_CONCAT(...)` → assemble values in TypeScript (or use MSSQL-specific aggregate only when required)
+  - `JSON_ARRAYAGG/JSON_OBJECT` → build JSON in TypeScript when cross-db compatibility is needed
+  - `LIMIT/OFFSET` in custom SQL should either be portable or explicitly handled for MSSQL
+  - Non-aggregated selected columns must be included in `GROUP BY` (MSSQL strictness)
+  - Recursive CTE placement differs (`WITH RECURSIVE` vs `;WITH`), so do not embed recursive CTEs in fragile `IN (...)` forms for MSSQL
 
 ### Styling Guidelines
 
@@ -907,6 +922,7 @@ When generating code, ensure:
 14. **New table JSON files** - ALWAYS use `PrimaryKeyFields` (NOT `PrimaryKey`), place it after `TableName`, use comma-separated string for composite keys (NOT array)
 15. **Use full-width page wrappers** - default to `w-full` for screen layouts; avoid introducing `container` wrappers unless explicitly requested
 16. **Keep history scoped to History tab** - never duplicate ChangeHistory content into non-history tabs
+17. **Avoid MySQL-only SQL in new backend routes** - keep queries portable for MySQL and MSSQL, or isolate provider-specific SQL with `dbProvider`
 
 ## Example Files for Reference
 

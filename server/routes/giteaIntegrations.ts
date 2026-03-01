@@ -1,5 +1,5 @@
 import express, { Response } from 'express';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { pool } from '../config/database';
 import { encrypt, decrypt } from '../utils/encryption';

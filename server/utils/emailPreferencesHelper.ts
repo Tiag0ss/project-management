@@ -1,5 +1,5 @@
 import { pool } from '../config/database';
-import { RowDataPacket } from 'mysql2';
+import { RowDataPacket } from '../config/database';
 
 // Helper function to check if user wants email for this notification type
 export const shouldSendEmail = async (userId: number, notificationType: string): Promise<boolean> => {

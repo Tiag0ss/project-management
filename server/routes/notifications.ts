@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { pool } from '../config/database';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { sendNotificationEmail } from '../utils/emailService';
 import { emitToUser } from '../utils/socketHub';

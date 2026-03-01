@@ -7,7 +7,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
-import { testConnection } from './config/database';
+import { dbProvider, testConnection } from './config/database';
 import { buildAllTables } from './utils/schemaBuilder';
 import { seedRolePermissions } from './utils/seedRolePermissions';
 import { runMigrations } from './utils/migrations';
@@ -84,11 +84,8 @@ async function initializeDatabase() {
     process.exit(1);
   }
 
-  // Build tables from JSON schemas
   const structureDir = path.join(__dirname, 'database', 'structure');
   await buildAllTables(structureDir);
-  
-  // Run data migrations (idempotent)
   await runMigrations();
   
   // Seed default role permissions if needed

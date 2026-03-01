@@ -1,5 +1,5 @@
 import express, { Response } from 'express';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { pool } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 
@@ -512,9 +512,6 @@ router.get('/summary-by-user', authenticateToken, async (req: AuthRequest, res: 
          COUNT(DISTINCT te.TaskId) AS TaskCount,
          COUNT(DISTINCT p.Id) AS ProjectCount,
          COUNT(DISTINCT c.Id) AS CustomerCount,
-         GROUP_CONCAT(DISTINCT t.TaskName ORDER BY t.TaskName SEPARATOR ' || ') AS TaskNames,
-         GROUP_CONCAT(DISTINCT p.ProjectName ORDER BY p.ProjectName SEPARATOR ' || ') AS ProjectNames,
-         GROUP_CONCAT(DISTINCT c.Name ORDER BY c.Name SEPARATOR ' || ') AS CustomerNames,
           SUM(CASE WHEN te.ApprovalStatus = 'approved' THEN 1 ELSE 0 END) AS ApprovedCount,
           SUM(CASE WHEN te.ApprovalStatus = 'pending' THEN 1 ELSE 0 END) AS PendingCount,
           SUM(CASE WHEN te.ApprovalStatus = 'rejected' THEN 1 ELSE 0 END) AS RejectedCount
@@ -529,7 +526,56 @@ router.get('/summary-by-user', authenticateToken, async (req: AuthRequest, res: 
       params
     );
 
-    res.json({ success: true, summary });
+    const [nameRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT DISTINCT
+          u.Id AS UserId,
+          t.TaskName,
+          p.ProjectName,
+          c.Name AS CustomerName
+       FROM TimeEntries te
+       INNER JOIN Users u ON te.UserId = u.Id
+       INNER JOIN Tasks t ON te.TaskId = t.Id
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       LEFT JOIN Customers c ON p.CustomerId = c.Id
+       ${whereClause}`,
+      params
+    );
+
+    const namesByUser = new Map<number, {
+      taskNames: Set<string>;
+      projectNames: Set<string>;
+      customerNames: Set<string>;
+    }>();
+
+    for (const row of nameRows) {
+      const userIdNum = Number(row.UserId);
+      if (!namesByUser.has(userIdNum)) {
+        namesByUser.set(userIdNum, {
+          taskNames: new Set<string>(),
+          projectNames: new Set<string>(),
+          customerNames: new Set<string>(),
+        });
+      }
+
+      const bucket = namesByUser.get(userIdNum)!;
+      if (row.TaskName) bucket.taskNames.add(String(row.TaskName));
+      if (row.ProjectName) bucket.projectNames.add(String(row.ProjectName));
+      if (row.CustomerName) bucket.customerNames.add(String(row.CustomerName));
+    }
+
+    const enrichedSummary = summary.map((item) => {
+      const userIdNum = Number(item.UserId);
+      const bucket = namesByUser.get(userIdNum);
+
+      return {
+        ...item,
+        TaskNames: bucket ? Array.from(bucket.taskNames).sort().join(' || ') : '',
+        ProjectNames: bucket ? Array.from(bucket.projectNames).sort().join(' || ') : '',
+        CustomerNames: bucket ? Array.from(bucket.customerNames).sort().join(' || ') : '',
+      };
+    });
+
+    res.json({ success: true, summary: enrichedSummary });
   } catch (error) {
     console.error('Error fetching summary by user:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch summary by user' });

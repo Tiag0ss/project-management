@@ -24,6 +24,8 @@ Any known logs/errors:
 6. If bug touches timesheet/reporting totals, verify grouping and aggregation logic carefully.
 7. If bug touches tabs, verify content is rendered only in the intended tab (no cross-tab duplication).
 8. If bug touches project Gantt, validate hierarchical ordering and expand/collapse behavior (not flat rendering).
+9. If bug touches backend SQL, verify MySQL and MSSQL compatibility and keep the API response contract unchanged.
+10. Prefer wrapper-level compatibility fixes (`server/config/database.ts`) when they are safe and reusable; use route-level branching only when semantics differ.
 
 ## Output Contract
 

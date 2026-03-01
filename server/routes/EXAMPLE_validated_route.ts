@@ -8,7 +8,7 @@ import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { validateRequest, createTaskSchema, updateTaskSchema } from '../utils/validation';
 import { pool } from '../config/database';
-import { ResultSetHeader } from 'mysql2';
+import { ResultSetHeader } from '../config/database';
 import logger from '../utils/logger';
 
 const router = Router();

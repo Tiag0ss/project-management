@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
-import { RowDataPacket } from 'mysql2';
+import { RowDataPacket } from '../config/database';
 
 const router = Router();
 

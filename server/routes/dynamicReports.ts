@@ -1,7 +1,7 @@
 import express, { Response } from 'express';
 import { pool } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
-import { RowDataPacket } from 'mysql2';
+import { RowDataPacket } from '../config/database';
 import fs from 'fs';
 import path from 'path';
 

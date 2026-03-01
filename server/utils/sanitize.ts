@@ -46,6 +46,10 @@ export function sanitizeRichText(html: string | null | undefined): string | null
       'ul': ['style'], 'ol': ['style'],
       'li': ['style'],
     },
+    allowedSchemes: ['http', 'https', 'mailto', 'tel', 'data'],
+    allowedSchemesByTag: {
+      img: ['http', 'https', 'data'],
+    },
     allowedStyles: {
       '*': {
         // Allow common inline styles

@@ -1,7 +1,7 @@
 import express, { Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
-import { pool } from '../config/database';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { dbProvider, pool } from '../config/database';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 
 const router = express.Router();
 
@@ -145,8 +145,10 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     const total = countResult[0].total;
 
-    // Get logs with LIMIT and OFFSET as integers (not bound parameters for better MySQL compatibility)
-    const query = `SELECT * FROM ActivityLogs ${whereClause} ORDER BY CreatedAt DESC LIMIT ${limitNum} OFFSET ${offset}`;
+    // Get logs with provider-specific pagination syntax
+    const query = dbProvider === 'mssql'
+      ? `SELECT * FROM ActivityLogs ${whereClause} ORDER BY CreatedAt DESC OFFSET ${offset} ROWS FETCH NEXT ${limitNum} ROWS ONLY`
+      : `SELECT * FROM ActivityLogs ${whereClause} ORDER BY CreatedAt DESC LIMIT ${limitNum} OFFSET ${offset}`;
     const [logs] = await pool.execute<RowDataPacket[]>(query, params);
 
     res.json({

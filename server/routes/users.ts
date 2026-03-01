@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken, requireAdmin } from '../middleware/auth';
 import { pool } from '../config/database';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 import bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { logActivity } from './activityLogs';

@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { logCustomerHistory } from '../utils/changeLog';
 
 const router = Router();
@@ -870,7 +870,8 @@ router.get('/:id/projects', authenticateToken, async (req: AuthRequest, res: Res
        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        LEFT JOIN TimeEntries te ON t.Id = te.TaskId
        WHERE p.CustomerId = ?
-       GROUP BY p.Id, psv.StatusName, psv.ColorCode, psv.IsClosed, psv.IsCancelled
+       GROUP BY p.Id, p.ProjectName, p.Status, p.StartDate, p.EndDate,
+                psv.StatusName, psv.ColorCode, psv.IsClosed, psv.IsCancelled
        ORDER BY p.ProjectName`,
       [customerId]
     );

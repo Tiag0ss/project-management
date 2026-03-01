@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 
 const router = Router();
 
@@ -35,16 +35,23 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
     const [sprints] = await pool.execute<RowDataPacket[]>(
       `SELECT s.*,
               u.Username as CreatedByUsername,
-              COUNT(t.Id) as TotalTasks,
-              SUM(CASE WHEN tsv.IsClosed = 1 THEN 1 ELSE 0 END) as CompletedTasks,
-              SUM(COALESCE(t.EstimatedHours, 0)) as TotalEstimatedHours,
-              SUM(CASE WHEN tsv.IsClosed = 1 THEN COALESCE(t.EstimatedHours, 0) ELSE 0 END) as CompletedHours
+              COALESCE((SELECT COUNT(*) FROM Tasks t WHERE t.SprintId = s.Id), 0) as TotalTasks,
+              COALESCE((
+                SELECT SUM(CASE WHEN tsv.IsClosed = 1 THEN 1 ELSE 0 END)
+                FROM Tasks t
+                LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+                WHERE t.SprintId = s.Id
+              ), 0) as CompletedTasks,
+              COALESCE((SELECT SUM(COALESCE(t.EstimatedHours, 0)) FROM Tasks t WHERE t.SprintId = s.Id), 0) as TotalEstimatedHours,
+              COALESCE((
+                SELECT SUM(CASE WHEN tsv.IsClosed = 1 THEN COALESCE(t.EstimatedHours, 0) ELSE 0 END)
+                FROM Tasks t
+                LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+                WHERE t.SprintId = s.Id
+              ), 0) as CompletedHours
        FROM Sprints s
        LEFT JOIN Users u ON s.CreatedBy = u.Id
-       LEFT JOIN Tasks t ON t.SprintId = s.Id
-       LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        WHERE s.ProjectId = ?
-       GROUP BY s.Id
        ORDER BY s.StartDate ASC, s.Id ASC`,
       [projectId]
     );

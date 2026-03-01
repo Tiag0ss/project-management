@@ -1363,10 +1363,9 @@ export default function PlanningPage() {
           dependencyEndDate.setHours(12, 0, 0, 0);
           const planningDate = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12, 0, 0);
           
-          // Task can only start after the dependency ends
-          if (planningDate <= dependencyEndDate) {
+          // Task can start on the same day the dependency ends
+          if (planningDate < dependencyEndDate) {
             const minStartDate = new Date(dependencyEndDate);
-            minStartDate.setDate(minStartDate.getDate() + 1);
             showAlert(
               'Dependency Constraint',
               `This task depends on "${dependsOnTask.TaskName}" which ends on ${dependencyEndDate.toLocaleDateString()}.\n\nPlease plan this task for ${minStartDate.toLocaleDateString()} or later.`

@@ -118,6 +118,7 @@ export default function TicketsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showMyTicketsOnly, setShowMyTicketsOnly] = useState(true);
   const [showClosed, setShowClosed] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   
   // Create Modal
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -175,6 +176,17 @@ export default function TicketsPage() {
       setLoading(false);
     }
   }, [token, featureFlagsLoaded, internalTicketsEnabled, filterOrg, filterStatus, filterPriority, filterCategory, filterAssignee, filterDeveloper, filterCustomer, filterCreatedFrom, filterCreatedTo, filterScheduledFrom, filterScheduledTo, searchQuery, showClosed]);
+
+  useEffect(() => {
+    if (!showCreateModal) return;
+    if (createForm.priority) return;
+    if (ticketPriorities.length === 0) return;
+
+    const defaultPriority = ticketPriorities.find((priority) => priority.IsDefault)?.PriorityName || ticketPriorities[0]?.PriorityName || '';
+    if (defaultPriority) {
+      setCreateForm((prev) => ({ ...prev, priority: defaultPriority }));
+    }
+  }, [showCreateModal, createForm.priority, ticketPriorities]);
 
   const loadData = async () => {
     setLoading(true);
@@ -404,6 +416,7 @@ export default function TicketsPage() {
     }
 
     loadProjects(targetOrgId);
+    loadTicketStatusColors(targetOrgId);
     loadJiraIntegration(targetOrgId);
   };
 
@@ -743,8 +756,28 @@ export default function TicketsPage() {
         )}
 
         {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6 mb-6">
-          <div className="space-y-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 mb-6">
+          <button
+            type="button"
+            onClick={() => setShowFilters(prev => !prev)}
+            className="w-full flex items-center justify-between px-6 py-4 text-left"
+          >
+            <span className="text-sm font-semibold text-gray-900 dark:text-white">Ticket Filters</span>
+            <span className="inline-flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 font-medium">
+              {showFilters ? 'Hide Filters' : 'Show Filters'}
+              <svg
+                className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </span>
+          </button>
+
+          {showFilters && (
+          <div className="space-y-4 p-6 border-t border-gray-200 dark:border-gray-700">
             {/* Search Row */}
             <div className="w-full">
               <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Search</label>
@@ -970,6 +1003,7 @@ export default function TicketsPage() {
               )}
             </div>
           </div>
+          )}
         </div>
 
         {/* Error Message */}
@@ -1180,8 +1214,9 @@ export default function TicketsPage() {
                       <SearchableSelect
                         value={createForm.organizationId}
                         onChange={(value) => {
-                          setCreateForm(prev => ({ ...prev, organizationId: value, projectId: '', externalTicketId: '' }));
+                          setCreateForm(prev => ({ ...prev, organizationId: value, projectId: '', externalTicketId: '', priority: '' }));
                           loadProjects(value);
+                          loadTicketStatusColors(value);
                           loadJiraIntegration(value);
                         }}
                         options={organizations.map(org => ({ value: org.Id, label: org.Name }))}

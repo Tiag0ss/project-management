@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import { pool } from '../config/database';
-import { RowDataPacket } from 'mysql2';
+import { RowDataPacket } from '../config/database';
 import { logActivity } from '../routes/activityLogs';
 import { shouldSendEmail } from './emailPreferencesHelper';
 import { decrypt } from './encryption';

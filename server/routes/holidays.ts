@@ -1,30 +1,61 @@
 import { Router, Response } from 'express';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
-import { pool } from '../config/database';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
+import { dbProvider, pool } from '../config/database';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
 const isValidCountryCode = (value: unknown): boolean => /^[A-Z]{2}$/.test(String(value || '').toUpperCase());
 const normalizeCountryCode = (value: unknown): string => String(value || '').trim().toUpperCase();
+const isValidIsoDate = (value: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [yearText, monthText, dayText] = value.split('-');
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return false;
+
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+};
+
 const normalizeDate = (value: unknown): string => {
   if (value instanceof Date) {
-    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+    const formatted = `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+    return isValidIsoDate(formatted) ? formatted : '';
   }
 
   const raw = String(value || '').trim();
   if (!raw) return '';
   const datePart = raw.split('T')[0];
-  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+  if (isValidIsoDate(datePart)) {
     return datePart;
   }
 
   const parsed = new Date(raw);
   if (!Number.isNaN(parsed.getTime())) {
-    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+    const formatted = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+    return isValidIsoDate(formatted) ? formatted : '';
   }
 
   return '';
+};
+
+const toHolidayDateParam = (dateText: string): string | Date => {
+  if (dbProvider !== 'mssql') {
+    return dateText;
+  }
+
+  const [yearText, monthText, dayText] = dateText.split('-');
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+
+  return new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
 };
 
 const checkAdmin = async (userId?: number): Promise<boolean> => {
@@ -111,9 +142,15 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Holidays (Year, CountryCode, HolidayDate, HolidayName, Source, IsActive)
-       VALUES (?, ?, ?, ?, 'manual', ?)`,
-      [Number(year), normalizedCountryCode, normalizeDate(holidayDate), String(holidayName).trim(), isActive === false ? 0 : 1]
+      `INSERT INTO Holidays (Year, CountryCode, HolidayDate, HolidayName, Source, IsActive, CreatedAt, UpdatedAt)
+       VALUES (?, ?, ?, ?, 'manual', ?, NOW(), NOW())`,
+      [
+        Number(year),
+        normalizedCountryCode,
+        toHolidayDateParam(normalizeDate(holidayDate)),
+        String(holidayName).trim(),
+        isActive === false ? 0 : 1,
+      ]
     );
 
     res.status(201).json({ success: true, holidayId: result.insertId });
@@ -137,9 +174,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Holidays
-       SET HolidayDate = ?, HolidayName = ?, IsActive = ?
+       SET HolidayDate = ?, HolidayName = ?, IsActive = ?, UpdatedAt = NOW()
        WHERE Id = ?`,
-      [normalizeDate(holidayDate), String(holidayName || '').trim(), isActive === false ? 0 : 1, holidayId]
+      [
+        toHolidayDateParam(normalizeDate(holidayDate)),
+        String(holidayName || '').trim(),
+        isActive === false ? 0 : 1,
+        holidayId,
+      ]
     );
 
     res.json({ success: true, message: 'Holiday updated successfully' });
@@ -236,9 +278,9 @@ router.post('/import/nager-date', authenticateToken, async (req: AuthRequest, re
         if (!holidayDate || !holidayName) continue;
 
         await connection.execute(
-          `INSERT INTO Holidays (Year, CountryCode, HolidayDate, HolidayName, Source, IsActive)
-           VALUES (?, ?, ?, ?, 'nager', 1)`,
-          [numericYear, normalizedCountryCode, holidayDate, holidayName]
+          `INSERT INTO Holidays (Year, CountryCode, HolidayDate, HolidayName, Source, IsActive, CreatedAt, UpdatedAt)
+           VALUES (?, ?, ?, ?, 'nager', 1, NOW(), NOW())`,
+          [numericYear, normalizedCountryCode, toHolidayDateParam(holidayDate), holidayName]
         );
         inserted += 1;
       }
@@ -348,9 +390,14 @@ router.post('/import/openholidays', authenticateToken, async (req: AuthRequest, 
       let inserted = 0;
       for (const holiday of uniqueHolidays) {
         await connection.execute(
-          `INSERT INTO Holidays (Year, CountryCode, HolidayDate, HolidayName, Source, IsActive)
-           VALUES (?, ?, ?, ?, 'openholidays', 1)`,
-          [numericYear, normalizedCountryCode, holiday.holidayDate, holiday.holidayName]
+          `INSERT INTO Holidays (Year, CountryCode, HolidayDate, HolidayName, Source, IsActive, CreatedAt, UpdatedAt)
+           VALUES (?, ?, ?, ?, 'openholidays', 1, NOW(), NOW())`,
+          [
+            numericYear,
+            normalizedCountryCode,
+            toHolidayDateParam(holiday.holidayDate),
+            holiday.holidayName,
+          ]
         );
         inserted += 1;
       }

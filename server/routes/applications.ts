@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 import PDFDocument from 'pdfkit';
 
 const router = Router();
@@ -58,15 +58,24 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       SELECT a.*,
              u.FirstName, u.LastName, u.Username as CreatorUsername,
              o.Name as OrganizationName,
-             COUNT(DISTINCT ap.ProjectId) as ProjectCount,
-             COUNT(DISTINCT ac.CustomerId) as CustomerCount,
-             COUNT(DISTINCT av.Id) as VersionCount
+             (
+               SELECT COUNT(DISTINCT ap.ProjectId)
+               FROM ApplicationProjects ap
+               WHERE ap.ApplicationId = a.Id
+             ) as ProjectCount,
+             (
+               SELECT COUNT(DISTINCT ac.CustomerId)
+               FROM ApplicationCustomers ac
+               WHERE ac.ApplicationId = a.Id
+             ) as CustomerCount,
+             (
+               SELECT COUNT(DISTINCT av.Id)
+               FROM ApplicationVersions av
+               WHERE av.ApplicationId = a.Id
+             ) as VersionCount
       FROM Applications a
       LEFT JOIN Users u ON a.CreatedBy = u.Id
       LEFT JOIN Organizations o ON a.OrganizationId = o.Id
-      LEFT JOIN ApplicationProjects ap ON a.Id = ap.ApplicationId
-      LEFT JOIN ApplicationCustomers ac ON a.Id = ac.ApplicationId
-      LEFT JOIN ApplicationVersions av ON a.Id = av.ApplicationId
       INNER JOIN OrganizationMembers om ON a.OrganizationId = om.OrganizationId AND om.UserId = ?
       WHERE a.IsActive = 1
     `;
@@ -77,7 +86,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       params.push(parseInt(organizationId as string));
     }
 
-    query += ' GROUP BY a.Id ORDER BY a.Name ASC';
+    query += ' ORDER BY a.Name ASC';
 
     const [apps] = await pool.execute<RowDataPacket[]>(query, params);
 
@@ -144,12 +153,14 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     // Load versions
     const [versions] = await pool.execute<RowDataPacket[]>(
       `SELECT av.*, u.FirstName, u.LastName,
-              COUNT(DISTINCT avt.TaskId) as TaskCount
+              (
+                SELECT COUNT(DISTINCT avt.TaskId)
+                FROM ApplicationVersionTasks avt
+                WHERE avt.VersionId = av.Id
+              ) as TaskCount
        FROM ApplicationVersions av
        LEFT JOIN Users u ON av.CreatedBy = u.Id
-       LEFT JOIN ApplicationVersionTasks avt ON av.Id = avt.VersionId
        WHERE av.ApplicationId = ?
-       GROUP BY av.Id
        ORDER BY av.CreatedAt DESC`,
       [id]
     );
@@ -487,12 +498,14 @@ router.get('/:id/versions', authenticateToken, async (req: AuthRequest, res: Res
 
     const [versions] = await pool.execute<RowDataPacket[]>(
       `SELECT av.*, u.FirstName, u.LastName,
-              COUNT(DISTINCT avt.TaskId) as TaskCount
+              (
+                SELECT COUNT(DISTINCT avt.TaskId)
+                FROM ApplicationVersionTasks avt
+                WHERE avt.VersionId = av.Id
+              ) as TaskCount
        FROM ApplicationVersions av
        LEFT JOIN Users u ON av.CreatedBy = u.Id
-       LEFT JOIN ApplicationVersionTasks avt ON av.Id = avt.VersionId
        WHERE av.ApplicationId = ?
-       GROUP BY av.Id
        ORDER BY av.CreatedAt DESC`,
       [id]
     );

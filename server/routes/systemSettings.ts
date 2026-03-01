@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { encrypt, isEncrypted } from '../utils/encryption';
 
 // Keys that should be encrypted in the database
@@ -341,12 +341,18 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         finalValue = encrypt(finalValue);
       }
 
-      await pool.execute(
-        `INSERT INTO SystemSettings (SettingKey, SettingValue) 
-         VALUES (?, ?) 
-         ON DUPLICATE KEY UPDATE SettingValue = ?`,
-        [key, finalValue, finalValue]
+      const [, updateMeta] = await pool.execute(
+        `UPDATE SystemSettings SET SettingValue = ? WHERE SettingKey = ?`,
+        [finalValue, key]
       );
+
+      const affectedRows = Number((updateMeta as any)?.affectedRows || 0);
+      if (affectedRows === 0) {
+        await pool.execute(
+          `INSERT INTO SystemSettings (SettingKey, SettingValue) VALUES (?, ?)`,
+          [key, finalValue]
+        );
+      }
     }
 
     res.json({

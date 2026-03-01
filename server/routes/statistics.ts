@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
-import { RowDataPacket } from 'mysql2';
+import { RowDataPacket } from '../config/database';
 
 const router = Router();
 
@@ -273,7 +273,7 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
         LEFT JOIN TimeEntries te ON te.UserId = u.Id
         WHERE u.CustomerId IS NULL
         GROUP BY u.Id, u.FirstName, u.LastName, u.Username
-        HAVING hoursThisMonth > 0
+        HAVING COALESCE(SUM(te.Hours), 0) > 0
         ORDER BY hoursThisMonth DESC
         LIMIT 5
       `);
@@ -290,7 +290,7 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
           AND te.WorkDate BETWEEN ? AND ?
         WHERE u.CustomerId IS NULL
         GROUP BY u.Id, u.FirstName, u.LastName, u.Username
-        HAVING hoursThisMonth > 0
+        HAVING COALESCE(SUM(te.Hours), 0) > 0
         ORDER BY hoursThisMonth DESC
         LIMIT 5
       `, [dateFrom, dateTo]);

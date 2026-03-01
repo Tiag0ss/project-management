@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { logActivity } from './activityLogs';
 
 const router = Router();
@@ -193,7 +193,14 @@ router.post('/setup', async (req: Request, res: Response) => {
 
       // 4. Create permission groups from global role permissions (same behavior as normal org creation)
       const [rolePerms] = await connection.execute<RowDataPacket[]>(
-        `SELECT * FROM RolePermissions WHERE RoleName IN ('Developer', 'Support', 'Manager') ORDER BY FIELD(RoleName, 'Developer', 'Support', 'Manager')`
+        `SELECT * FROM RolePermissions
+         WHERE RoleName IN ('Developer', 'Support', 'Manager')
+         ORDER BY CASE RoleName
+           WHEN 'Developer' THEN 1
+           WHEN 'Support' THEN 2
+           WHEN 'Manager' THEN 3
+           ELSE 999
+         END`
       );
 
       for (const rp of rolePerms) {
@@ -305,12 +312,18 @@ router.post('/setup', async (req: Request, res: Response) => {
       ];
 
       for (const [key, value] of defaultSettings) {
-        await connection.execute(
-          `INSERT INTO SystemSettings (SettingKey, SettingValue) 
-           VALUES (?, ?) 
-           ON DUPLICATE KEY UPDATE SettingValue = SettingValue`,
-          [key, value]
+        const [, updateMeta] = await connection.execute(
+          `UPDATE SystemSettings SET SettingValue = SettingValue WHERE SettingKey = ?`,
+          [key]
         );
+
+        const affectedRows = Number((updateMeta as any)?.affectedRows || 0);
+        if (affectedRows === 0) {
+          await connection.execute(
+            `INSERT INTO SystemSettings (SettingKey, SettingValue) VALUES (?, ?)`,
+            [key, value]
+          );
+        }
       }
 
       await connection.commit();

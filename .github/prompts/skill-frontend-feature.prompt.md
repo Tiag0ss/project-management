@@ -28,7 +28,7 @@ Out of scope:
    - use `try/catch` with user-facing error state.
 5. Never use browser `alert()` or `confirm()`; use modal pattern already in codebase.
 6. Respect permissions via `usePermissions()` checks before rendering actions.
-7. For date handling, normalize MySQL date values before comparisons.
+7. For date handling, normalize database date values (MySQL string/Date or MSSQL datetime) before comparisons.
 8. If hours are aggregated at project/report level, use leaf-task rule to avoid double counting.
 9. Keep feature placement consistent with current UX (e.g., Resume belongs to Timesheet; ChangeHistory only in History tab).
 10. For period selectors in analytics/resume contexts, include `allTime` when the requirement asks for aggregate lifetime metrics.

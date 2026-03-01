@@ -1,5 +1,5 @@
 import { pool } from '../config/database';
-import { RowDataPacket } from 'mysql2';
+import { RowDataPacket } from '../config/database';
 import { sendEmail } from './emailService';
 import { shouldSendEmail } from './emailPreferencesHelper';
 import logger from './logger';

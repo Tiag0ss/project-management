@@ -9,7 +9,7 @@ import {
   randomUUID,
 } from 'crypto';
 import { pool } from '../config/database';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { logActivity } from './activityLogs';
 
 const router = Router();

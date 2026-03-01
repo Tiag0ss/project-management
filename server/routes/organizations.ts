@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { logActivity } from './activityLogs';
 import { logOrganizationHistory } from '../utils/changeLog';
 
@@ -181,7 +181,14 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     // Create default permission groups based on global role permissions
     const [rolePerms] = await pool.execute<RowDataPacket[]>(
-      `SELECT * FROM RolePermissions WHERE RoleName IN ('Developer', 'Support', 'Manager') ORDER BY FIELD(RoleName, 'Developer', 'Support', 'Manager')`
+      `SELECT * FROM RolePermissions
+       WHERE RoleName IN ('Developer', 'Support', 'Manager')
+       ORDER BY CASE RoleName
+         WHEN 'Developer' THEN 1
+         WHEN 'Support' THEN 2
+         WHEN 'Manager' THEN 3
+         ELSE 999
+       END`
     );
 
     for (const rp of rolePerms) {

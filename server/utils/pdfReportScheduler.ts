@@ -1,5 +1,5 @@
 import { pool } from '../config/database';
-import { RowDataPacket } from 'mysql2';
+import { RowDataPacket } from '../config/database';
 import { sendEmail } from './emailService';
 import logger from './logger';
 import PDFDocument from 'pdfkit';
@@ -366,7 +366,7 @@ async function fetchProjectStats(projectId: number, since: Date): Promise<{
      INNER JOIN Organizations o ON p.OrganizationId = o.Id
      LEFT JOIN Tasks t ON t.ProjectId = p.Id
      LEFT JOIN Tasks t2 ON t2.ParentTaskId = t.Id
-     LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+    LEFT JOIN TaskStatusValues tsv ON CONCAT(t.Status, '') = CONCAT(tsv.Id, '')
      LEFT JOIN (
        SELECT t2.ProjectId,
               SUM(te2.Hours * COALESCE(u2.HourlyRate, 0)) as CostSpent,
@@ -377,7 +377,9 @@ async function fetchProjectStats(projectId: number, since: Date): Promise<{
        GROUP BY t2.ProjectId
      ) budgetStats ON p.Id = budgetStats.ProjectId
      WHERE p.Id = ?
-     GROUP BY p.Id`,
+     GROUP BY p.Id, p.ProjectName, o.Name, p.Status, p.StartDate, p.EndDate,
+              p.Budget, p.BudgetType, p.OrganizationId,
+              budgetStats.HoursSpent, budgetStats.CostSpent`,
     [projectId]
   );
 
@@ -395,8 +397,8 @@ async function fetchProjectStats(projectId: number, since: Date): Promise<{
 
   const [tasks] = await pool.execute<TaskRow[]>(
     `SELECT t.Id, t.TaskName, t.ParentTaskId,
-            COALESCE(tsv.StatusName, t.Status) AS Status,
-            COALESCE(tpv.PriorityName, t.Priority) AS Priority,
+          COALESCE(tsv.StatusName, CONCAT(t.Status, '')) AS Status,
+          COALESCE(tpv.PriorityName, CONCAT(t.Priority, '')) AS Priority,
             t.DisplayOrder,
             COALESCE(t.EstimatedHours, 0) AS EstimatedHours,
             COALESCE((SELECT SUM(ta.AllocatedHours) FROM TaskAllocations ta WHERE ta.TaskId = t.Id), 0) AS AllocatedHours,
@@ -404,8 +406,8 @@ async function fetchProjectStats(projectId: number, since: Date): Promise<{
             CONCAT(u.FirstName, ' ', u.LastName) AS AssigneeName,
             t.PlannedStartDate, t.PlannedEndDate
      FROM Tasks t
-     LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
-     LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
+    LEFT JOIN TaskStatusValues tsv ON CONCAT(t.Status, '') = CONCAT(tsv.Id, '')
+    LEFT JOIN TaskPriorityValues tpv ON CONCAT(t.Priority, '') = CONCAT(tpv.Id, '')
      LEFT JOIN Users u ON t.AssignedTo = u.Id
      WHERE t.ProjectId = ?
      ORDER BY t.Id`,

@@ -1,7 +1,7 @@
 import express, { Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { pool } from '../config/database';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { sanitizeRichText } from '../utils/sanitize';
 
 const router = express.Router();
@@ -66,8 +66,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     // - Public: all public memos
     let query = `
       SELECT DISTINCT m.*, 
-        u.Username, u.FirstName, u.LastName,
-        (SELECT GROUP_CONCAT(TagName SEPARATOR ',') FROM MemoTags WHERE MemoId = m.Id) as Tags
+        u.Username, u.FirstName, u.LastName
       FROM Memos m
       LEFT JOIN Users u ON m.UserId = u.Id
       WHERE 
@@ -93,6 +92,28 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const [memos] = await pool.execute<RowDataPacket[]>(query, params);
     console.log('[Memos] Found memos:', memos.length);
 
+    const memoIds = memos.map((memo) => memo.Id).filter((memoId) => memoId !== null && memoId !== undefined);
+    const tagsByMemoId = new Map<number, string[]>();
+
+    if (memoIds.length > 0) {
+      const placeholders = memoIds.map(() => '?').join(',');
+      const [tagRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT MemoId, TagName
+         FROM MemoTags
+         WHERE MemoId IN (${placeholders})
+         ORDER BY MemoId, TagName`,
+        memoIds
+      );
+
+      for (const row of tagRows) {
+        const memoId = Number(row.MemoId);
+        if (!tagsByMemoId.has(memoId)) {
+          tagsByMemoId.set(memoId, []);
+        }
+        tagsByMemoId.get(memoId)?.push(String(row.TagName));
+      }
+    }
+
     // Get attachments for each memo
     for (const memo of memos) {
       const [attachments] = await pool.execute<RowDataPacket[]>(
@@ -100,6 +121,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         [memo.Id]
       );
       memo.Attachments = attachments;
+      memo.Tags = (tagsByMemoId.get(Number(memo.Id)) || []).join(',');
     }
 
     res.json({ success: true, memos });
@@ -140,8 +162,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     const [memos] = await pool.execute<RowDataPacket[]>(
       `SELECT m.*, 
-        u.Username, u.FirstName, u.LastName,
-        (SELECT GROUP_CONCAT(TagName SEPARATOR ',') FROM MemoTags WHERE MemoId = m.Id) as Tags
+        u.Username, u.FirstName, u.LastName
       FROM Memos m
       LEFT JOIN Users u ON m.UserId = u.Id
       WHERE m.Id = ?`,
@@ -184,7 +205,12 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       'SELECT * FROM MemoAttachments WHERE MemoId = ?',
       [id]
     );
+    const [memoTags] = await pool.execute<RowDataPacket[]>(
+      'SELECT TagName FROM MemoTags WHERE MemoId = ? ORDER BY TagName',
+      [id]
+    );
     memo.Attachments = attachments;
+    memo.Tags = memoTags.map((tag) => String(tag.TagName)).join(',');
 
     res.json({ success: true, memo });
   } catch (error) {

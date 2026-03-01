@@ -1,6 +1,6 @@
 import express, { Response } from 'express';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
-import { pool } from '../config/database';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
+import { dbProvider, pool } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { createNotification } from './notifications';
 
@@ -686,17 +686,23 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       `DELETE FROM TaskChildAllocations WHERE ChildTaskId = ?`,
       [newTaskId]
     );
-    await pool.execute(
-      `DELETE FROM TaskChildAllocations WHERE ParentTaskId IN (
-        WITH RECURSIVE Descendants AS (
-          SELECT Id FROM Tasks WHERE Id = ?
-          UNION ALL
-          SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-        )
-        SELECT Id FROM Descendants
-      )`,
-      [newTaskId]
-    );
+    const deleteNewTaskChildAllocationsQuery = dbProvider === 'mssql'
+      ? `;WITH Descendants AS (
+           SELECT Id FROM Tasks WHERE Id = ?
+           UNION ALL
+           SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+         )
+         DELETE FROM TaskChildAllocations
+         WHERE ParentTaskId IN (SELECT Id FROM Descendants)`
+      : `DELETE FROM TaskChildAllocations WHERE ParentTaskId IN (
+           WITH RECURSIVE Descendants AS (
+             SELECT Id FROM Tasks WHERE Id = ?
+             UNION ALL
+             SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+           )
+           SELECT Id FROM Descendants
+         )`;
+    await pool.execute(deleteNewTaskChildAllocationsQuery, [newTaskId]);
 
     // Get lunch settings (only for work tasks, not hobby)
     const lunchTimeRaw = user.LunchTime;
@@ -1112,17 +1118,28 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
         `DELETE FROM TaskChildAllocations WHERE ChildTaskId = ? AND AllocationDate >= ?`,
         [taskData.TaskId, fromDate]
       );
-      await pool.execute(
-        `DELETE FROM TaskChildAllocations WHERE AllocationDate >= ? AND ParentTaskId IN (
-          WITH RECURSIVE Descendants AS (
-            SELECT Id FROM Tasks WHERE Id = ?
-            UNION ALL
-            SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-          )
-          SELECT Id FROM Descendants
-        )`,
-        [fromDate, taskData.TaskId]
-      );
+      const deleteReplanChildAllocationsQuery = dbProvider === 'mssql'
+        ? `;WITH Descendants AS (
+             SELECT Id FROM Tasks WHERE Id = ?
+             UNION ALL
+             SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+           )
+           DELETE FROM TaskChildAllocations
+           WHERE AllocationDate >= ?
+             AND ParentTaskId IN (SELECT Id FROM Descendants)`
+        : `DELETE FROM TaskChildAllocations WHERE AllocationDate >= ? AND ParentTaskId IN (
+             WITH RECURSIVE Descendants AS (
+               SELECT Id FROM Tasks WHERE Id = ?
+               UNION ALL
+               SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+             )
+             SELECT Id FROM Descendants
+           )`;
+      if (dbProvider === 'mssql') {
+        await pool.execute(deleteReplanChildAllocationsQuery, [taskData.TaskId, fromDate]);
+      } else {
+        await pool.execute(deleteReplanChildAllocationsQuery, [fromDate, taskData.TaskId]);
+      }
       
       const taskIsHobby = taskData.IsHobby === 1;
       console.log(`Re-allocating Task ${taskData.TaskId}: ${remainingHours}h (hobby=${taskIsHobby})`);
@@ -1471,6 +1488,31 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ success: false, message: 'No permission to plan tasks' });
     }
 
+    const descendantsQuery = dbProvider === 'mssql'
+      ? `;WITH Descendants AS (
+           SELECT Id FROM Tasks WHERE Id = ?
+           UNION ALL
+           SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+         )
+         SELECT Id FROM Descendants`
+      : `WITH RECURSIVE Descendants AS (
+           SELECT Id FROM Tasks WHERE Id = ?
+           UNION ALL
+           SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+         )
+         SELECT Id FROM Descendants`;
+
+    const [descendantRows] = await pool.execute<RowDataPacket[]>(descendantsQuery, [taskId]);
+    const descendantTaskIds = descendantRows
+      .map((row) => Number(row.Id))
+      .filter((id) => Number.isFinite(id));
+
+    if (descendantTaskIds.length === 0) {
+      descendantTaskIds.push(Number(taskId));
+    }
+
+    const descendantPlaceholders = descendantTaskIds.map(() => '?').join(',');
+
     const normalizedDates = Array.from(
       new Set(
         allocations
@@ -1498,33 +1540,56 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     // Delete child allocations at ALL levels (multi-level hierarchy)
     await pool.execute('DELETE FROM TaskChildAllocations WHERE ChildTaskId = ?', [taskId]);
-    await pool.execute(
-      `DELETE FROM TaskChildAllocations WHERE ParentTaskId IN (
-        WITH RECURSIVE Descendants AS (
-          SELECT Id FROM Tasks WHERE Id = ?
-          UNION ALL
-          SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-        )
-        SELECT Id FROM Descendants
-      )`,
-      [taskId]
-    );
+    const deleteDescendantChildAllocationsQuery = dbProvider === 'mssql'
+      ? `;WITH Descendants AS (
+           SELECT Id FROM Tasks WHERE Id = ?
+           UNION ALL
+           SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+         )
+         DELETE FROM TaskChildAllocations
+         WHERE ParentTaskId IN (SELECT Id FROM Descendants)`
+      : `DELETE FROM TaskChildAllocations WHERE ParentTaskId IN (
+           WITH RECURSIVE Descendants AS (
+             SELECT Id FROM Tasks WHERE Id = ?
+             UNION ALL
+             SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+           )
+           SELECT Id FROM Descendants
+         )`;
+    await pool.execute(deleteDescendantChildAllocationsQuery, [taskId]);
 
     // Insert new allocations with start and end times
     if (allocations.length > 0) {
-      const values = allocations.map((a: any) => [
-        taskId, 
-        userId, 
-        a.date, 
-        a.hours,
-        a.startTime || '09:00',
-        a.endTime || '17:00',
-        0
-      ]);
-      await pool.query(
-        'INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual) VALUES ?',
-        [values]
-      );
+      if (dbProvider === 'mssql') {
+        for (const allocation of allocations) {
+          await pool.execute(
+            `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+             VALUES (?, ?, ?, ?, ?, ?, 0)`,
+            [
+              taskId,
+              userId,
+              allocation.date,
+              allocation.hours,
+              allocation.startTime || '09:00',
+              allocation.endTime || '17:00',
+            ]
+          );
+        }
+      } else {
+        const values = allocations.map((a: any) => [
+          taskId,
+          userId,
+          a.date,
+          a.hours,
+          a.startTime || '09:00',
+          a.endTime || '17:00',
+          0
+        ]);
+        await pool.query(
+          'INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual) VALUES ?',
+          [values]
+        );
+      }
     }
 
     // Update task's PlannedStartDate and PlannedEndDate
@@ -1737,6 +1802,31 @@ router.delete('/task/:taskId', authenticateToken, async (req: AuthRequest, res: 
       return res.status(403).json({ success: false, message: 'No permission to plan tasks' });
     }
 
+    const descendantsQuery = dbProvider === 'mssql'
+      ? `;WITH Descendants AS (
+           SELECT Id FROM Tasks WHERE Id = ?
+           UNION ALL
+           SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+         )
+         SELECT Id FROM Descendants`
+      : `WITH RECURSIVE Descendants AS (
+           SELECT Id FROM Tasks WHERE Id = ?
+           UNION ALL
+           SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+         )
+         SELECT Id FROM Descendants`;
+
+    const [descendantRows] = await pool.execute<RowDataPacket[]>(descendantsQuery, [taskId]);
+    const descendantTaskIds = descendantRows
+      .map((row) => Number(row.Id))
+      .filter((id) => Number.isFinite(id));
+
+    if (descendantTaskIds.length === 0) {
+      descendantTaskIds.push(Number(taskId));
+    }
+
+    const descendantPlaceholders = descendantTaskIds.map(() => '?').join(',');
+
     // Get task info and current allocations for notification before deleting
     const [taskInfo] = await pool.execute<RowDataPacket[]>(
       `SELECT t.TaskName, p.Id as ProjectId, p.ProjectName
@@ -1750,49 +1840,21 @@ router.delete('/task/:taskId', authenticateToken, async (req: AuthRequest, res: 
       `SELECT DISTINCT UserId FROM (
          SELECT ta.UserId
          FROM TaskAllocations ta
-         WHERE ta.TaskId IN (
-           WITH RECURSIVE Descendants AS (
-             SELECT Id FROM Tasks WHERE Id = ?
-             UNION ALL
-             SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-           )
-           SELECT Id FROM Descendants
-         )
+         WHERE ta.TaskId IN (${descendantPlaceholders})
          UNION
          SELECT ta2.UserId
          FROM TaskChildAllocations tca
          INNER JOIN TaskAllocations ta2 ON ta2.TaskId = tca.ParentTaskId
-         WHERE tca.ParentTaskId IN (
-           WITH RECURSIVE Descendants AS (
-             SELECT Id FROM Tasks WHERE Id = ?
-             UNION ALL
-             SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-           )
-           SELECT Id FROM Descendants
-         )
-            OR tca.ChildTaskId IN (
-           WITH RECURSIVE Descendants AS (
-             SELECT Id FROM Tasks WHERE Id = ?
-             UNION ALL
-             SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-           )
-           SELECT Id FROM Descendants
-         )
+         WHERE tca.ParentTaskId IN (${descendantPlaceholders})
+            OR tca.ChildTaskId IN (${descendantPlaceholders})
        ) users`,
-      [taskId, taskId, taskId]
+      [...descendantTaskIds, ...descendantTaskIds, ...descendantTaskIds]
     );
 
     // Delete direct allocations for this task and all descendants
     await pool.execute(
-      `DELETE FROM TaskAllocations WHERE TaskId IN (
-        WITH RECURSIVE Descendants AS (
-          SELECT Id FROM Tasks WHERE Id = ?
-          UNION ALL
-          SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-        )
-        SELECT Id FROM Descendants
-      )`,
-      [taskId]
+      `DELETE FROM TaskAllocations WHERE TaskId IN (${descendantPlaceholders})`,
+      descendantTaskIds
     );
 
     // Delete child allocations at ALL levels (multi-level hierarchy)
@@ -1800,36 +1862,15 @@ router.delete('/task/:taskId', authenticateToken, async (req: AuthRequest, res: 
     // - rows where descendant tasks are children
     await pool.execute(
       `DELETE FROM TaskChildAllocations
-       WHERE ParentTaskId IN (
-         WITH RECURSIVE Descendants AS (
-           SELECT Id FROM Tasks WHERE Id = ?
-           UNION ALL
-           SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-         )
-         SELECT Id FROM Descendants
-       )
-          OR ChildTaskId IN (
-         WITH RECURSIVE Descendants AS (
-           SELECT Id FROM Tasks WHERE Id = ?
-           UNION ALL
-           SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-         )
-         SELECT Id FROM Descendants
-       )`,
-      [taskId, taskId]
+       WHERE ParentTaskId IN (${descendantPlaceholders})
+          OR ChildTaskId IN (${descendantPlaceholders})`,
+      [...descendantTaskIds, ...descendantTaskIds]
     );
 
     // Clear planned dates for this task and all descendants
     await pool.execute(
-      `UPDATE Tasks SET PlannedStartDate = NULL, PlannedEndDate = NULL WHERE Id IN (
-        WITH RECURSIVE Descendants AS (
-          SELECT Id FROM Tasks WHERE Id = ?
-          UNION ALL
-          SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-        )
-        SELECT Id FROM Descendants
-      )`,
-      [taskId]
+      `UPDATE Tasks SET PlannedStartDate = NULL, PlannedEndDate = NULL WHERE Id IN (${descendantPlaceholders})`,
+      descendantTaskIds
     );
     
     // Notify all users who had allocations (if different from current user)
@@ -1889,7 +1930,22 @@ router.get('/my-allocations', authenticateToken, async (req: AuthRequest, res: R
     const userId = req.user?.userId;
     const { startDate, endDate } = req.query;
 
+    const castText = (expression: string) => dbProvider === 'mssql'
+      ? `CAST(${expression} AS NVARCHAR(1000))`
+      : `CAST(${expression} AS CHAR(1000))`;
+
     // Get allocations from leaf tasks and child allocations (only leaf children - no intermediate levels)
+    let directDateFilter = '';
+    let childDateFilter = '';
+    const hasDateFilter = Boolean(startDate && endDate);
+
+    const params: any[] = [userId, userId, userId];
+    if (hasDateFilter) {
+      directDateFilter = ' AND ta.AllocationDate BETWEEN ? AND ?';
+      childDateFilter = ' AND th.AllocationDate BETWEEN ? AND ?';
+      params.push(startDate, endDate, startDate, endDate);
+    }
+
     let query = `
       WITH RECURSIVE TaskHierarchy AS (
         -- Base: get all direct child allocations
@@ -1901,8 +1957,8 @@ router.get('/my-allocations', authenticateToken, async (req: AuthRequest, res: R
           tca.AllocatedHours,
           tca.StartTime,
           tca.EndTime,
-          child.TaskName as ChildName,
-          parent.TaskName as ParentName,
+          ${castText('child.TaskName')} as ChildName,
+          ${castText('parent.TaskName')} as ParentName,
           child.ProjectId,
           1 as Level
         FROM TaskChildAllocations tca
@@ -1925,8 +1981,8 @@ router.get('/my-allocations', authenticateToken, async (req: AuthRequest, res: R
           tca2.AllocatedHours,
           tca2.StartTime,
           tca2.EndTime,
-          child2.TaskName as ChildName,
-          CONCAT(th.ParentName, ' > ', parent2.TaskName) as ParentName,
+          ${castText('child2.TaskName')} as ChildName,
+          ${castText("CONCAT(th.ParentName, ' > ', parent2.TaskName)")} as ParentName,
           child2.ProjectId,
           th.Level + 1
         FROM TaskHierarchy th
@@ -1935,7 +1991,7 @@ router.get('/my-allocations', authenticateToken, async (req: AuthRequest, res: R
         INNER JOIN Tasks parent2 ON tca2.ParentTaskId = parent2.Id
       )
       SELECT 
-        ta.Id,
+        ${castText('ta.Id')} as Id,
         ta.TaskId,
         t.TaskName,
         p.Id as ProjectId,
@@ -1953,6 +2009,7 @@ router.get('/my-allocations', authenticateToken, async (req: AuthRequest, res: R
       AND NOT EXISTS (
         SELECT 1 FROM Tasks child WHERE child.ParentTaskId = t.Id
       )
+      ${directDateFilter}
       
       UNION ALL
       
@@ -1974,19 +2031,10 @@ router.get('/my-allocations', authenticateToken, async (req: AuthRequest, res: R
         SELECT 1 FROM TaskChildAllocations tca_child 
         WHERE tca_child.ParentTaskId = th.ChildTaskId
       )
+      ${childDateFilter}
     `;
-    const params: any[] = [userId, userId, userId];
 
-    if (startDate && endDate) {
-      query = `
-        SELECT * FROM (${query}) AS combined
-        WHERE AllocationDate BETWEEN ? AND ?
-        ORDER BY AllocationDate, StartTime
-      `;
-      params.push(startDate, endDate);
-    } else {
-      query += ` ORDER BY AllocationDate, StartTime`;
-    }
+    query += ` ORDER BY AllocationDate, StartTime`;
 
     const [allocations] = await pool.execute<RowDataPacket[]>(query, params);
 

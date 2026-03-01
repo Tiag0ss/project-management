@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { pool } from '../config/database';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { createNotification } from './notifications';
 import { logActivity } from './activityLogs';
@@ -1170,20 +1170,32 @@ router.get('/stats/summary', authenticateToken, async (req: AuthRequest, res: Re
     const [stats] = await pool.execute<RowDataPacket[]>(`
       SELECT 
         COUNT(*) as total,
-        SUM(CASE WHEN tsv.StatusType = 'open' THEN 1 ELSE 0 END) as open,
-        SUM(CASE WHEN tsv.StatusType = 'in_progress' THEN 1 ELSE 0 END) as inProgress,
-        SUM(CASE WHEN tsv.StatusType = 'waiting' THEN 1 ELSE 0 END) as waiting,
-        SUM(CASE WHEN tsv.StatusType = 'resolved' THEN 1 ELSE 0 END) as resolved,
-        SUM(CASE WHEN tsv.StatusType = 'closed' THEN 1 ELSE 0 END) as closed,
-        SUM(CASE WHEN tpv.PriorityName = 'Urgent' THEN 1 ELSE 0 END) as urgent,
-        SUM(CASE WHEN tpv.PriorityName = 'High' THEN 1 ELSE 0 END) as high
+        SUM(CASE WHEN tsv.StatusType = 'open' THEN 1 ELSE 0 END) as openCount,
+        SUM(CASE WHEN tsv.StatusType = 'in_progress' THEN 1 ELSE 0 END) as inProgressCount,
+        SUM(CASE WHEN tsv.StatusType = 'waiting' THEN 1 ELSE 0 END) as waitingCount,
+        SUM(CASE WHEN tsv.StatusType = 'resolved' THEN 1 ELSE 0 END) as resolvedCount,
+        SUM(CASE WHEN tsv.StatusType = 'closed' THEN 1 ELSE 0 END) as closedCount,
+        SUM(CASE WHEN tpv.PriorityName = 'Urgent' THEN 1 ELSE 0 END) as urgentCount,
+        SUM(CASE WHEN tpv.PriorityName = 'High' THEN 1 ELSE 0 END) as highCount
       FROM Tickets t
       LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
       LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
       ${baseCondition}
     `, params);
 
-    res.json({ success: true, stats: stats[0] });
+    const rawStats = stats[0] || {};
+    const formattedStats = {
+      total: Number(rawStats.total || 0),
+      open: Number(rawStats.openCount || 0),
+      inProgress: Number(rawStats.inProgressCount || 0),
+      waiting: Number(rawStats.waitingCount || 0),
+      resolved: Number(rawStats.resolvedCount || 0),
+      closed: Number(rawStats.closedCount || 0),
+      urgent: Number(rawStats.urgentCount || 0),
+      high: Number(rawStats.highCount || 0),
+    };
+
+    res.json({ success: true, stats: formattedStats });
   } catch (error) {
     console.error('Error fetching ticket stats:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch statistics' });

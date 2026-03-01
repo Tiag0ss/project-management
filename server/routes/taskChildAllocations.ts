@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
-import { pool } from '../config/database';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { dbProvider, pool } from '../config/database';
+import { RowDataPacket, ResultSetHeader } from '../config/database';
 
 const router = express.Router();
 
@@ -353,25 +353,35 @@ router.delete('/parent/:parentTaskId', authenticateToken, async (req: AuthReques
     );
 
     // Use recursive CTE to find ALL child allocations at all levels
-    const deleteQuery = `
-      DELETE FROM TaskChildAllocations 
-      WHERE Id IN (
-        WITH RECURSIVE ChildHierarchy AS (
-          -- Base: Direct children
-          SELECT Id, ChildTaskId 
-          FROM TaskChildAllocations 
-          WHERE ParentTaskId = ?
-          
-          UNION ALL
-          
-          -- Recursive: Grandchildren and deeper
-          SELECT tca.Id, tca.ChildTaskId
-          FROM TaskChildAllocations tca
-          INNER JOIN ChildHierarchy ch ON tca.ParentTaskId = ch.ChildTaskId
-        )
-        SELECT Id FROM ChildHierarchy
-      )
-    `;
+    const deleteQuery = dbProvider === 'mssql'
+      ? `;WITH ChildHierarchy AS (
+           SELECT Id, ChildTaskId
+           FROM TaskChildAllocations
+           WHERE ParentTaskId = ?
+
+           UNION ALL
+
+           SELECT tca.Id, tca.ChildTaskId
+           FROM TaskChildAllocations tca
+           INNER JOIN ChildHierarchy ch ON tca.ParentTaskId = ch.ChildTaskId
+         )
+         DELETE FROM TaskChildAllocations
+         WHERE Id IN (SELECT Id FROM ChildHierarchy)`
+      : `DELETE FROM TaskChildAllocations
+         WHERE Id IN (
+           WITH RECURSIVE ChildHierarchy AS (
+             SELECT Id, ChildTaskId
+             FROM TaskChildAllocations
+             WHERE ParentTaskId = ?
+
+             UNION ALL
+
+             SELECT tca.Id, tca.ChildTaskId
+             FROM TaskChildAllocations tca
+             INNER JOIN ChildHierarchy ch ON tca.ParentTaskId = ch.ChildTaskId
+           )
+           SELECT Id FROM ChildHierarchy
+         )`;
 
     const [result] = await pool.execute<ResultSetHeader>(deleteQuery, [parentTaskId]);
 

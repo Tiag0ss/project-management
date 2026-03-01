@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { pool } from '../config/database';
-import { RowDataPacket } from 'mysql2';
+import { RowDataPacket } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { resolveHistoryValues } from '../utils/changeLog';
 
