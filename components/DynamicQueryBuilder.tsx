@@ -47,16 +47,25 @@ interface JoinDefinition {
   rightField: string;
 }
 
+interface DynamicQueryConfig {
+  tables: string[];
+  joins: JoinDefinition[];
+  rowFields: SelectedField[];
+  columnFields: SelectedField[];
+  valueFields: SelectedField[];
+}
+
 interface DynamicQueryBuilderProps {
   token: string;
   onDataLoaded: (data: any[], fields: any[], pivotConfig: {
     rows: string[];
     columns: string[];
     values: { field: string; aggregation: string; }[];
-  }) => void;
+  }, dynamicQueryConfig: DynamicQueryConfig) => void;
+  initialConfig?: DynamicQueryConfig | null;
 }
 
-export default function DynamicQueryBuilder({ token, onDataLoaded }: DynamicQueryBuilderProps) {
+export default function DynamicQueryBuilder({ token, onDataLoaded, initialConfig }: DynamicQueryBuilderProps) {
   const [schema, setSchema] = useState<DatabaseSchema | null>(null);
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
   const [joins, setJoins] = useState<JoinDefinition[]>([]);
@@ -88,6 +97,16 @@ export default function DynamicQueryBuilder({ token, onDataLoaded }: DynamicQuer
   useEffect(() => {
     loadSchema();
   }, [token]);
+
+  useEffect(() => {
+    if (!initialConfig) return;
+
+    setSelectedTables(Array.isArray(initialConfig.tables) ? initialConfig.tables : []);
+    setJoins(Array.isArray(initialConfig.joins) ? initialConfig.joins : []);
+    setRowFields(Array.isArray(initialConfig.rowFields) ? initialConfig.rowFields : []);
+    setColumnFields(Array.isArray(initialConfig.columnFields) ? initialConfig.columnFields : []);
+    setValueFields(Array.isArray(initialConfig.valueFields) ? initialConfig.valueFields : []);
+  }, [initialConfig]);
 
   // Helper function to generate meaningful relationship descriptions
   const generateRelationshipDescription = (rel: TableRelation) => {
@@ -500,6 +519,12 @@ export default function DynamicQueryBuilder({ token, onDataLoaded }: DynamicQuer
             field: f.alias || f.field,
             aggregation: (f.aggregation || 'sum').toLowerCase() as 'sum' | 'count' | 'avg' | 'min' | 'max' | 'distinctCount'
           }))
+        }, {
+          tables: selectedTables,
+          joins,
+          rowFields,
+          columnFields,
+          valueFields
         });
       } else {
         try {

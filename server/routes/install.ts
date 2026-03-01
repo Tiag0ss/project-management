@@ -290,6 +290,8 @@ router.post('/setup', async (req: Request, res: Response) => {
       const defaultSettings = [
         ['allowPublicRegistration', 'false'],
         ['publicRegistrationType', 'internal'],
+        ['internalTicketsEnabled', 'true'],
+        ['memosEnabled', 'true'],
       ];
 
       for (const [key, value] of defaultSettings) {

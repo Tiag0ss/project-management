@@ -1,5 +1,7 @@
 'use client';
 
+import { getApiUrl } from '@/lib/api/config';
+
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -30,6 +32,8 @@ export default function OrganizationsPage() {
     message: string;
     onConfirm?: () => void;
   } | null>(null);
+  const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
+  const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
 
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setModalMessage({ type: 'confirm', title, message, onConfirm });
@@ -47,14 +51,46 @@ export default function OrganizationsPage() {
   };
 
   useEffect(() => {
+    if (!token) {
+      setFeatureFlagsLoaded(true);
+      return;
+    }
+
+    const loadFeatureFlags = async () => {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        if (res.ok) {
+          const data = await res.json();
+          setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
+        } else {
+          setInternalTicketsEnabled(true);
+        }
+      } catch {
+        setInternalTicketsEnabled(true);
+      } finally {
+        setFeatureFlagsLoaded(true);
+      }
+    };
+
+    loadFeatureFlags();
+  }, [token]);
+
+  useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login');
       return;
     }
-    if (user && token) {
+    if (user && token && featureFlagsLoaded) {
       loadOrganizations();
     }
-  }, [user, token, authLoading, router]);
+  }, [user, token, authLoading, router, featureFlagsLoaded]);
+
+  useEffect(() => {
+    if (!internalTicketsEnabled && sortField === 'tickets') {
+      setSortField('name');
+      setSortDirection('asc');
+    }
+  }, [internalTicketsEnabled, sortField]);
 
   const loadOrganizations = async () => {
     if (!token) return;
@@ -124,7 +160,9 @@ export default function OrganizationsPage() {
           comparison = (Number(a.ProjectCount) || 0) - (Number(b.ProjectCount) || 0);
           break;
         case 'tickets':
-          comparison = (Number(a.OpenTickets) || 0) - (Number(b.OpenTickets) || 0);
+          comparison = internalTicketsEnabled
+            ? (Number(a.OpenTickets) || 0) - (Number(b.OpenTickets) || 0)
+            : 0;
           break;
         case 'tasks':
           comparison = (Number(a.TotalTasks) || 0) - (Number(b.TotalTasks) || 0);
@@ -355,15 +393,17 @@ export default function OrganizationsPage() {
                         <SortIcon field="projects" />
                       </div>
                     </th>
-                    <th 
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
-                      onClick={() => handleSort('tickets')}
-                    >
-                      <div className="flex items-center justify-center gap-1">
-                        Open Tickets
-                        <SortIcon field="tickets" />
-                      </div>
-                    </th>
+                    {internalTicketsEnabled && (
+                      <th 
+                        className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
+                        onClick={() => handleSort('tickets')}
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          Open Tickets
+                          <SortIcon field="tickets" />
+                        </div>
+                      </th>
+                    )}
                     <th 
                       className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
                       onClick={() => handleSort('tasks')}
@@ -415,7 +455,9 @@ export default function OrganizationsPage() {
                       </td>
                       <td className="px-6 py-4 text-center text-sm text-gray-900 dark:text-white">{memberCount}</td>
                       <td className="px-6 py-4 text-center text-sm text-gray-900 dark:text-white">{projectCount}</td>
-                      <td className="px-6 py-4 text-center text-sm text-gray-900 dark:text-white">{Number(org.OpenTickets) || 0}</td>
+                      {internalTicketsEnabled && (
+                        <td className="px-6 py-4 text-center text-sm text-gray-900 dark:text-white">{Number(org.OpenTickets) || 0}</td>
+                      )}
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-center gap-2">
                           <span className="text-sm text-gray-900 dark:text-white">{completedTasks}/{totalTasks}</span>

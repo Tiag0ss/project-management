@@ -139,6 +139,8 @@ export default function TicketsPage() {
   const [jiraSearchQuery, setJiraSearchQuery] = useState('');
   const [jiraIntegrations, setJiraIntegrations] = useState<Map<number, string>>(new Map());
   const [slaRulesMap, setSlaRulesMap] = useState<Map<number, any[]>>(new Map());
+  const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
+  const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -147,10 +149,32 @@ export default function TicketsPage() {
   }, [user, isLoading, router]);
 
   useEffect(() => {
-    if (token) {
+    const loadFeatureFlags = async () => {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        if (res.ok) {
+          const data = await res.json();
+          setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
+        } else {
+          setInternalTicketsEnabled(true);
+        }
+      } catch {
+        setInternalTicketsEnabled(true);
+      } finally {
+        setFeatureFlagsLoaded(true);
+      }
+    };
+
+    loadFeatureFlags();
+  }, []);
+
+  useEffect(() => {
+    if (token && featureFlagsLoaded && internalTicketsEnabled) {
       loadData();
+    } else if (featureFlagsLoaded && !internalTicketsEnabled) {
+      setLoading(false);
     }
-  }, [token, filterOrg, filterStatus, filterPriority, filterCategory, filterAssignee, filterDeveloper, filterCustomer, filterCreatedFrom, filterCreatedTo, filterScheduledFrom, filterScheduledTo, searchQuery, showClosed]);
+  }, [token, featureFlagsLoaded, internalTicketsEnabled, filterOrg, filterStatus, filterPriority, filterCategory, filterAssignee, filterDeveloper, filterCustomer, filterCreatedFrom, filterCreatedTo, filterScheduledFrom, filterScheduledTo, searchQuery, showClosed]);
 
   const loadData = async () => {
     setLoading(true);
@@ -634,6 +658,29 @@ export default function TicketsPage() {
   }
 
   if (!user) return null;
+
+  if (!featureFlagsLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
+        <div className="text-gray-600 dark:text-gray-400">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!internalTicketsEnabled) {
+    return (
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+        <Navbar />
+        <main className="w-full mx-auto py-12 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-3xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center border border-gray-200 dark:border-gray-700">
+            <div className="text-4xl mb-3">🎫</div>
+            <h1 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Internal Ticket System Disabled</h1>
+            <p className="text-gray-600 dark:text-gray-400">This module is currently disabled by system settings.</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">

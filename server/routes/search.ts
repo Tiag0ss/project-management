@@ -65,6 +65,12 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     const searchTerm = `%${query.trim()}%`;
 
+    const [ticketSetting] = await pool.execute<RowDataPacket[]>(
+      'SELECT SettingValue FROM SystemSettings WHERE SettingKey = ?',
+      ['internalTicketsEnabled']
+    );
+    const internalTicketsEnabled = ticketSetting.length === 0 || ticketSetting[0].SettingValue !== 'false';
+
     // Search tasks - user must be member of the organization
     const [tasks] = await pool.query<RowDataPacket[]>(
       `SELECT 
@@ -87,30 +93,32 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     );
 
     // Search tickets - user must be member of the organization
-    const [tickets] = await pool.query<RowDataPacket[]>(
-      `SELECT
-        t.Id,
-        t.TicketNumber,
-        t.Title,
-        t.Description,
-        t.ProjectId,
-        p.ProjectName,
-        o.Id as OrganizationId,
-        o.Name as OrganizationName,
-        tsv.StatusName,
-        tpv.PriorityName,
-        'ticket' as ResultType
-       FROM Tickets t
-       JOIN Organizations o ON t.OrganizationId = o.Id
-       JOIN OrganizationMembers om ON o.Id = om.OrganizationId AND om.UserId = ?
-       LEFT JOIN Projects p ON t.ProjectId = p.Id
-       LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
-       LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
-       WHERE (t.Title LIKE ? OR t.TicketNumber LIKE ? OR t.Description LIKE ?)
-       ORDER BY t.CreatedAt DESC
-       LIMIT ${limit} OFFSET ${offset}`,
-      [userId, searchTerm, searchTerm, searchTerm]
-    );
+    const tickets: RowDataPacket[] = internalTicketsEnabled
+      ? (await pool.query<RowDataPacket[]>(
+          `SELECT
+            t.Id,
+            t.TicketNumber,
+            t.Title,
+            t.Description,
+            t.ProjectId,
+            p.ProjectName,
+            o.Id as OrganizationId,
+            o.Name as OrganizationName,
+            tsv.StatusName,
+            tpv.PriorityName,
+            'ticket' as ResultType
+           FROM Tickets t
+           JOIN Organizations o ON t.OrganizationId = o.Id
+           JOIN OrganizationMembers om ON o.Id = om.OrganizationId AND om.UserId = ?
+           LEFT JOIN Projects p ON t.ProjectId = p.Id
+           LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
+           LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
+           WHERE (t.Title LIKE ? OR t.TicketNumber LIKE ? OR t.Description LIKE ?)
+           ORDER BY t.CreatedAt DESC
+           LIMIT ${limit} OFFSET ${offset}`,
+          [userId, searchTerm, searchTerm, searchTerm]
+        ))[0]
+      : [];
 
     // Search projects
     const [projects] = await pool.query<RowDataPacket[]>(

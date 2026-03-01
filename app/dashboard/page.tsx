@@ -232,6 +232,8 @@ function DashboardContent() {
 
   // Recurring Allocations state (for calendar display)
   const [recurringAllocations, setRecurringAllocations] = useState<any[]>([]);
+  const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
+  const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
 
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setModalMessage({ type: 'confirm', title, message, onConfirm });
@@ -249,9 +251,34 @@ function DashboardContent() {
   };
 
   useEffect(() => {
+    if (!token) {
+      setFeatureFlagsLoaded(true);
+      return;
+    }
+
+    const loadFeatureFlags = async () => {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        if (res.ok) {
+          const data = await res.json();
+          setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
+        } else {
+          setInternalTicketsEnabled(true);
+        }
+      } catch {
+        setInternalTicketsEnabled(true);
+      } finally {
+        setFeatureFlagsLoaded(true);
+      }
+    };
+
+    loadFeatureFlags();
+  }, [token]);
+
+  useEffect(() => {
     if (!isLoading && !user) {
       router.push('/login');
-    } else if (user && token) {
+    } else if (user && token && featureFlagsLoaded) {
       if (isCustomerUser) {
         loadPortalData();
       } else {
@@ -271,7 +298,7 @@ function DashboardContent() {
         }
       }
     }
-  }, [user, isLoading, router, token, activeTab, resumePeriod]);
+  }, [user, isLoading, router, token, activeTab, resumePeriod, featureFlagsLoaded]);
 
   // Update active tab when URL param changes
   useEffect(() => {
@@ -693,34 +720,35 @@ function DashboardContent() {
         hobbyHoursThisWeek,
       });
 
-      // Load my tickets statistics
-      const ticketsResponse = await fetch(
-        `${getApiUrl()}/api/tickets/my-tickets`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
+      if (internalTicketsEnabled) {
+        const ticketsResponse = await fetch(
+          `${getApiUrl()}/api/tickets/my-tickets`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        
+        if (ticketsResponse.ok) {
+          const ticketsData = await ticketsResponse.json();
+          const tickets = ticketsData.tickets || [];
+          
+          const openTickets = tickets.filter((t: any) => t.Status === 'Open').length;
+          const activeTickets = tickets.filter((t: any) => 
+            t.Status !== 'Resolved' && 
+            t.Status !== 'Closed' && 
+            t.Status !== 'Waiting Response'
+          ).length;
+          
+          setSummaryStats(prev => ({
+            ...prev,
+            myTickets: tickets.length,
+            openTickets,
+            unresolvedTickets: activeTickets,
+          }));
         }
-      );
-      
-      if (ticketsResponse.ok) {
-        const ticketsData = await ticketsResponse.json();
-        const tickets = ticketsData.tickets || [];
-        
-        const openTickets = tickets.filter((t: any) => t.Status === 'Open').length;
-        const activeTickets = tickets.filter((t: any) => 
-          t.Status !== 'Resolved' && 
-          t.Status !== 'Closed' && 
-          t.Status !== 'Waiting Response'
-        ).length;
-        
-        setSummaryStats(prev => ({
-          ...prev,
-          myTickets: tickets.length,
-          openTickets,
-          unresolvedTickets: activeTickets,
-        }));
       }
     } catch (err) {
       console.error('Failed to load summary stats:', err);
@@ -953,21 +981,22 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  {[
-                    { label: 'Total Tickets', value: portalData.stats.total, color: 'text-gray-900 dark:text-white', bg: 'bg-white dark:bg-gray-800' },
-                    { label: 'Open', value: portalData.stats.open, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/30' },
-                    { label: 'In Progress', value: portalData.stats.inProgress, color: 'text-yellow-600 dark:text-yellow-400', bg: 'bg-yellow-50 dark:bg-yellow-900/30' },
-                    { label: 'Resolved', value: portalData.stats.closed, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-900/30' },
-                    { label: 'Urgent', value: portalData.stats.urgent, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/30' },
-                  ].map(s => (
-                    <div key={s.label} className={`${s.bg} rounded-lg p-4 shadow-sm border border-gray-100 dark:border-gray-700`}>
-                      <div className={`text-2xl font-bold ${s.color}`}>{Number(s.value)}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{s.label}</div>
-                    </div>
-                  ))}
-                </div>
+                {internalTicketsEnabled && (
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    {[
+                      { label: 'Total Tickets', value: portalData.stats.total, color: 'text-gray-900 dark:text-white', bg: 'bg-white dark:bg-gray-800' },
+                      { label: 'Open', value: portalData.stats.open, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/30' },
+                      { label: 'In Progress', value: portalData.stats.inProgress, color: 'text-yellow-600 dark:text-yellow-400', bg: 'bg-yellow-50 dark:bg-yellow-900/30' },
+                      { label: 'Resolved', value: portalData.stats.closed, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-900/30' },
+                      { label: 'Urgent', value: portalData.stats.urgent, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/30' },
+                    ].map(s => (
+                      <div key={s.label} className={`${s.bg} rounded-lg p-4 shadow-sm border border-gray-100 dark:border-gray-700`}>
+                        <div className={`text-2xl font-bold ${s.color}`}>{Number(s.value)}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{s.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Projects */}
                 {portalData.projects.length > 0 && (
@@ -1007,48 +1036,49 @@ function DashboardContent() {
                   </div>
                 )}
 
-                {/* Tickets */}
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">🎫 Your Tickets</h2>
-                  {portalData.tickets.length === 0 ? (
-                    <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
-                      <p className="text-gray-500 dark:text-gray-400">No tickets yet.</p>
-                    </div>
-                  ) : (
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50 dark:bg-gray-700/50">
-                          <tr>
-                            <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">#</th>
-                            <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">Title</th>
-                            <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Category</th>
-                            <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">Status</th>
-                            <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium hidden lg:table-cell">Priority</th>
-                            <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Project</th>
-                            <th className="text-right px-4 py-3 text-gray-600 dark:text-gray-400 font-medium hidden sm:table-cell">Updated</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                          {portalData.tickets.map(ticket => (
-                            <tr key={ticket.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer" onClick={() => router.push(`/tickets/${ticket.Id}`)}>
-                              <td className="px-4 py-3 text-gray-400 dark:text-gray-500 font-mono text-xs">#{ticket.Id}</td>
-                              <td className="px-4 py-3 font-medium text-gray-900 dark:text-white max-w-xs"><span className="line-clamp-1">{ticket.Title}</span></td>
-                              <td className="px-4 py-3 text-gray-500 dark:text-gray-400 hidden md:table-cell">{ticket.Category}</td>
-                              <td className="px-4 py-3">
-                                <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: `${ticket.StatusColor || '#888'}22`, color: ticket.StatusColor || '#888' }}>{ticket.StatusName}</span>
-                              </td>
-                              <td className="px-4 py-3 hidden lg:table-cell">
-                                <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: `${ticket.PriorityColor || '#888'}22`, color: ticket.PriorityColor || '#888' }}>{ticket.PriorityName}</span>
-                              </td>
-                              <td className="px-4 py-3 text-gray-500 dark:text-gray-400 hidden md:table-cell">{ticket.ProjectName || '—'}</td>
-                              <td className="px-4 py-3 text-right text-xs text-gray-400 hidden sm:table-cell">{new Date(ticket.UpdatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                {internalTicketsEnabled && (
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">🎫 Your Tickets</h2>
+                    {portalData.tickets.length === 0 ? (
+                      <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+                        <p className="text-gray-500 dark:text-gray-400">No tickets yet.</p>
+                      </div>
+                    ) : (
+                      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50 dark:bg-gray-700/50">
+                            <tr>
+                              <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">#</th>
+                              <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">Title</th>
+                              <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Category</th>
+                              <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">Status</th>
+                              <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium hidden lg:table-cell">Priority</th>
+                              <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Project</th>
+                              <th className="text-right px-4 py-3 text-gray-600 dark:text-gray-400 font-medium hidden sm:table-cell">Updated</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                            {portalData.tickets.map(ticket => (
+                              <tr key={ticket.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer" onClick={() => router.push(`/tickets/${ticket.Id}`)}>
+                                <td className="px-4 py-3 text-gray-400 dark:text-gray-500 font-mono text-xs">#{ticket.Id}</td>
+                                <td className="px-4 py-3 font-medium text-gray-900 dark:text-white max-w-xs"><span className="line-clamp-1">{ticket.Title}</span></td>
+                                <td className="px-4 py-3 text-gray-500 dark:text-gray-400 hidden md:table-cell">{ticket.Category}</td>
+                                <td className="px-4 py-3">
+                                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: `${ticket.StatusColor || '#888'}22`, color: ticket.StatusColor || '#888' }}>{ticket.StatusName}</span>
+                                </td>
+                                <td className="px-4 py-3 hidden lg:table-cell">
+                                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: `${ticket.PriorityColor || '#888'}22`, color: ticket.PriorityColor || '#888' }}>{ticket.PriorityName}</span>
+                                </td>
+                                <td className="px-4 py-3 text-gray-500 dark:text-gray-400 hidden md:table-cell">{ticket.ProjectName || '—'}</td>
+                                <td className="px-4 py-3 text-right text-xs text-gray-400 hidden sm:table-cell">{new Date(ticket.UpdatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
@@ -1199,7 +1229,7 @@ function DashboardContent() {
               </div>
 
               {/* Summary Stats Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className={`grid grid-cols-1 md:grid-cols-2 ${internalTicketsEnabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 border-blue-500">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1223,18 +1253,20 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 border-indigo-500">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">My Tickets</p>
-                      <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{Number(summaryStats.myTickets) || 0}</p>
-                      {summaryStats.unresolvedTickets > 0 && (
-                        <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">{Number(summaryStats.unresolvedTickets) || 0} active</p>
-                      )}
+                {internalTicketsEnabled && (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 border-indigo-500">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">My Tickets</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{Number(summaryStats.myTickets) || 0}</p>
+                        {summaryStats.unresolvedTickets > 0 && (
+                          <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">{Number(summaryStats.unresolvedTickets) || 0} active</p>
+                        )}
+                      </div>
+                      <div className="text-3xl text-indigo-500 opacity-60">🎫</div>
                     </div>
-                    <div className="text-3xl text-indigo-500 opacity-60">🎫</div>
                   </div>
-                </div>
+                )}
 
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 border-purple-500">
                   <div className="flex items-center justify-between">
@@ -1728,7 +1760,7 @@ function DashboardContent() {
               ) : (
                 <>
                   {/* Main KPIs Grid */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+                  <div className={`grid grid-cols-2 md:grid-cols-4 ${internalTicketsEnabled ? 'lg:grid-cols-8' : 'lg:grid-cols-7'} gap-4`}>
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border-l-4 border-indigo-500">
                       <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Organizations</p>
                       <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{globalStats.organizations.total}</p>
@@ -1764,15 +1796,17 @@ function DashboardContent() {
                         <span className="text-blue-500">{globalStats.tasks.inProgress} active</span>
                       </div>
                     </div>
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border-l-4 border-indigo-500">
-                      <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Tickets</p>
-                      <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{globalStats.tickets?.total || 0}</p>
-                      <div className="flex gap-2 mt-1 text-xs">
-                        <span className="text-green-500">{globalStats.tickets?.resolved || 0} resolved</span>
-                        <span className="text-gray-400">•</span>
-                        <span className="text-indigo-500">{globalStats.tickets?.unresolvedCount || 0} unresolved</span>
+                    {internalTicketsEnabled && (
+                      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border-l-4 border-indigo-500">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Tickets</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{globalStats.tickets?.total || 0}</p>
+                        <div className="flex gap-2 mt-1 text-xs">
+                          <span className="text-green-500">{globalStats.tickets?.resolved || 0} resolved</span>
+                          <span className="text-gray-400">•</span>
+                          <span className="text-indigo-500">{globalStats.tickets?.unresolvedCount || 0} unresolved</span>
+                        </div>
                       </div>
-                    </div>
+                    )}
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border-l-4 border-red-500">
                       <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Overdue</p>
                       <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">{globalStats.tasks.overdue}</p>
@@ -1785,32 +1819,33 @@ function DashboardContent() {
                     </div>
                   </div>
 
-                  {/* Tickets Overview */}
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">🎫 Tickets Overview</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
-                        <p className="text-xs text-blue-600 dark:text-blue-400 font-medium uppercase tracking-wide">Open</p>
-                        <p className="text-2xl font-bold text-blue-900 dark:text-blue-100 mt-1">{globalStats.tickets?.open || 0}</p>
-                      </div>
-                      <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20 rounded-lg p-3 border border-yellow-200 dark:border-yellow-800">
-                        <p className="text-xs text-yellow-600 dark:text-yellow-400 font-medium uppercase tracking-wide">In Progress</p>
-                        <p className="text-2xl font-bold text-yellow-900 dark:text-yellow-100 mt-1">{globalStats.tickets?.inProgress || 0}</p>
-                      </div>
-                      <div className="bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 rounded-lg p-3 border border-orange-200 dark:border-orange-800">
-                        <p className="text-xs text-orange-600 dark:text-orange-400 font-medium uppercase tracking-wide">Waiting Response</p>
-                        <p className="text-2xl font-bold text-orange-900 dark:text-orange-100 mt-1">{globalStats.tickets?.waitingResponse || 0}</p>
-                      </div>
-                      <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg p-3 border border-green-200 dark:border-green-800">
-                        <p className="text-xs text-green-600 dark:text-green-400 font-medium uppercase tracking-wide">Resolved</p>
-                        <p className="text-2xl font-bold text-green-900 dark:text-green-100 mt-1">{globalStats.tickets?.resolved || 0}</p>
-                      </div>
-                      <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900/20 dark:to-gray-800/20 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
-                        <p className="text-xs text-gray-600 dark:text-gray-400 font-medium uppercase tracking-wide">Closed</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{globalStats.tickets?.closed || 0}</p>
+                  {internalTicketsEnabled && (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">🎫 Tickets Overview</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                        <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
+                          <p className="text-xs text-blue-600 dark:text-blue-400 font-medium uppercase tracking-wide">Open</p>
+                          <p className="text-2xl font-bold text-blue-900 dark:text-blue-100 mt-1">{globalStats.tickets?.open || 0}</p>
+                        </div>
+                        <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20 rounded-lg p-3 border border-yellow-200 dark:border-yellow-800">
+                          <p className="text-xs text-yellow-600 dark:text-yellow-400 font-medium uppercase tracking-wide">In Progress</p>
+                          <p className="text-2xl font-bold text-yellow-900 dark:text-yellow-100 mt-1">{globalStats.tickets?.inProgress || 0}</p>
+                        </div>
+                        <div className="bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 rounded-lg p-3 border border-orange-200 dark:border-orange-800">
+                          <p className="text-xs text-orange-600 dark:text-orange-400 font-medium uppercase tracking-wide">Waiting Response</p>
+                          <p className="text-2xl font-bold text-orange-900 dark:text-orange-100 mt-1">{globalStats.tickets?.waitingResponse || 0}</p>
+                        </div>
+                        <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg p-3 border border-green-200 dark:border-green-800">
+                          <p className="text-xs text-green-600 dark:text-green-400 font-medium uppercase tracking-wide">Resolved</p>
+                          <p className="text-2xl font-bold text-green-900 dark:text-green-100 mt-1">{globalStats.tickets?.resolved || 0}</p>
+                        </div>
+                        <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900/20 dark:to-gray-800/20 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+                          <p className="text-xs text-gray-600 dark:text-gray-400 font-medium uppercase tracking-wide">Closed</p>
+                          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{globalStats.tickets?.closed || 0}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Hours Overview */}
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">

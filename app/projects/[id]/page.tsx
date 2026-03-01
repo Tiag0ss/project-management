@@ -113,6 +113,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [isJiraTaskTypeMappingOpen, setIsJiraTaskTypeMappingOpen] = useState(false);
   const [isJiraPriorityMappingOpen, setIsJiraPriorityMappingOpen] = useState(false);
   const [isJiraTicketMappingOpen, setIsJiraTicketMappingOpen] = useState(false);
+  const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
+  const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
   const { user, token, isLoading: authLoading } = useAuth();
   const { permissions } = usePermissions();
   const router = useRouter();
@@ -156,16 +158,45 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   };
 
   useEffect(() => {
+    if (!token) {
+      setFeatureFlagsLoaded(true);
+      return;
+    }
+
+    const loadFeatureFlags = async () => {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        if (res.ok) {
+          const data = await res.json();
+          setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
+        } else {
+          setInternalTicketsEnabled(true);
+        }
+      } catch {
+        setInternalTicketsEnabled(true);
+      } finally {
+        setFeatureFlagsLoaded(true);
+      }
+    };
+
+    loadFeatureFlags();
+  }, [token]);
+
+  useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login');
       return;
     }
-    if (user && token) {
+    if (user && token && featureFlagsLoaded) {
       loadProject();
       loadTasks();
-      loadTickets();
+      if (internalTicketsEnabled) {
+        loadTickets();
+      } else {
+        setTickets([]);
+      }
     }
-  }, [user, token, authLoading, projectId, router]);
+  }, [user, token, authLoading, projectId, router, featureFlagsLoaded, internalTicketsEnabled]);
 
   const loadProject = async () => {
     if (!token) return;
@@ -1878,7 +1909,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           )}
 
           {activeTab === 'overview' && (
-            <OverviewTab project={project} tasks={tasks} tickets={tickets} />
+            <OverviewTab project={project} tasks={tasks} tickets={tickets} internalTicketsEnabled={internalTicketsEnabled} />
           )}
 
           {activeTab === 'tasks' && (
@@ -1896,6 +1927,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               }}
               onImportFromGitHub={() => setShowGitHubImportModal(true)}
               onImportFromGitea={() => setShowGiteaImportModal(true)}
+              internalTicketsEnabled={internalTicketsEnabled}
               canCreate={permissions?.canCreateTasks || false}
               canManage={permissions?.canManageTasks || false}
               canDelete={permissions?.canDeleteTasks || false}
@@ -3711,7 +3743,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 }
 
 // Overview Tab Component
-function OverviewTab({ project, tasks, tickets }: { project: Project; tasks: Task[]; tickets: any[] }) {
+function OverviewTab({ project, tasks, tickets, internalTicketsEnabled }: { project: Project; tasks: Task[]; tickets: any[]; internalTicketsEnabled: boolean }) {
   // Calculate task statistics (all tasks including subtasks)
   const parentTasks = tasks.filter(t => !t.ParentTaskId);
   const totalTasks = tasks.length;
@@ -3858,7 +3890,7 @@ function OverviewTab({ project, tasks, tickets }: { project: Project; tasks: Tas
       </div>
 
       {/* Quick Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className={`grid grid-cols-2 ${internalTicketsEnabled ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
         {/* Dates */}
         {project.StartDate && (
           <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
@@ -3886,16 +3918,17 @@ function OverviewTab({ project, tasks, tickets }: { project: Project; tasks: Tas
           </div>
         </div>
         
-        {/* Tickets */}
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border-l-4 border-indigo-500">
-          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">🎫 Tickets</div>
-          <div className="text-lg font-bold text-gray-900 dark:text-white">
-            {totalTickets}
+        {internalTicketsEnabled && (
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border-l-4 border-indigo-500">
+            <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">🎫 Tickets</div>
+            <div className="text-lg font-bold text-gray-900 dark:text-white">
+              {totalTickets}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              {unresolvedTickets} pending
+            </div>
           </div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {unresolvedTickets} pending
-          </div>
-        </div>
+        )}
         
         <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
           <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">👥 Team Members</div>
@@ -4270,6 +4303,7 @@ function TasksTab({
   onImportFromJiraTicket,
   onImportFromGitHub,
   onImportFromGitea,
+  internalTicketsEnabled,
   canCreate,
   canManage,
   canDelete,
@@ -4286,6 +4320,7 @@ function TasksTab({
   onImportFromJiraTicket: () => void;
   onImportFromGitHub: () => void;
   onImportFromGitea: () => void;
+  internalTicketsEnabled: boolean;
   canCreate: boolean;
   canManage: boolean;
   canDelete: boolean;
@@ -4659,7 +4694,7 @@ function TasksTab({
                         )}
                         
                         {/* Jira Ticket Import - only if configured */}
-                        {hasJiraIntegration && (
+                        {hasJiraIntegration && internalTicketsEnabled && (
                           <button
                             onClick={() => {
                               onImportFromJiraTicket();

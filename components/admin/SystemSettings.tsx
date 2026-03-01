@@ -107,6 +107,8 @@ interface SystemSettings {
   publicRegistrationType?: string;
   defaultCustomerId?: string;
   defaultTimezone?: string;
+  internalTicketsEnabled?: string;
+  memosEnabled?: string;
 }
 
 interface Organization {
@@ -133,6 +135,8 @@ export default function SystemSettings() {
     publicRegistrationType: 'internal',
     defaultCustomerId: '',
     defaultTimezone: '',
+    internalTicketsEnabled: 'true',
+    memosEnabled: 'true',
   });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -181,6 +185,8 @@ export default function SystemSettings() {
           publicRegistrationType: data.settings.publicRegistrationType || 'internal',
           defaultCustomerId: data.settings.defaultCustomerId || '',
           defaultTimezone: data.settings.defaultTimezone || '',
+          internalTicketsEnabled: data.settings.internalTicketsEnabled || 'true',
+          memosEnabled: data.settings.memosEnabled || 'true',
         });
       }
     } catch (err) {
@@ -536,6 +542,52 @@ export default function SystemSettings() {
               <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                 This timezone will be used as the default for all users who have not set their own timezone preference.
               </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Maintenance / Migration */}
+        <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            🧩 Feature Toggles
+          </h3>
+          <div className="space-y-4">
+            <div>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.internalTicketsEnabled === 'true'}
+                  onChange={(e) => handleChange('internalTicketsEnabled', e.target.checked ? 'true' : 'false')}
+                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <div>
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    Enable Internal Ticket System
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Shows/hides internal tickets module globally. Does not disable ticket integration used in tasks.
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <div>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.memosEnabled === 'true'}
+                  onChange={(e) => handleChange('memosEnabled', e.target.checked ? 'true' : 'false')}
+                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <div>
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    Enable Memos Menu
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Only controls visibility of Memos in the navbar.
+                  </div>
+                </div>
+              </label>
             </div>
           </div>
         </div>

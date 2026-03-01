@@ -69,6 +69,8 @@ export default function CustomersPage() {
     message: string;
     onConfirm: () => void;
   } | null>(null);
+  const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
+  const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -77,10 +79,42 @@ export default function CustomersPage() {
   }, [user, authLoading, router]);
 
   useEffect(() => {
-    if (token) {
+    if (!token) {
+      setFeatureFlagsLoaded(true);
+      return;
+    }
+
+    const loadFeatureFlags = async () => {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        if (res.ok) {
+          const data = await res.json();
+          setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
+        } else {
+          setInternalTicketsEnabled(true);
+        }
+      } catch {
+        setInternalTicketsEnabled(true);
+      } finally {
+        setFeatureFlagsLoaded(true);
+      }
+    };
+
+    loadFeatureFlags();
+  }, [token]);
+
+  useEffect(() => {
+    if (token && featureFlagsLoaded) {
       loadData();
     }
-  }, [token]);
+  }, [token, featureFlagsLoaded]);
+
+  useEffect(() => {
+    if (!internalTicketsEnabled && sortBy === 'tickets') {
+      setSortBy('name');
+      setSortOrder('asc');
+    }
+  }, [internalTicketsEnabled, sortBy]);
 
   // Filter and sort customers when data or filters change
   useEffect(() => {
@@ -106,7 +140,7 @@ export default function CustomersPage() {
       } else if (sortBy === 'phone') {
         result = (a.Phone || '').localeCompare(b.Phone || '');
       } else if (sortBy === 'tickets') {
-        result = (Number(a.OpenTickets) || 0) - (Number(b.OpenTickets) || 0);
+        result = internalTicketsEnabled ? (Number(a.OpenTickets) || 0) - (Number(b.OpenTickets) || 0) : 0;
       }
       
       return sortOrder === 'asc' ? result : -result;
@@ -418,15 +452,17 @@ export default function CustomersPage() {
                       <SortIcon field="phone" />
                     </div>
                   </th>
-                  <th 
-                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
-                    onClick={() => handleSort('tickets')}
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      Open Tickets
-                      <SortIcon field="tickets" />
-                    </div>
-                  </th>
+                  {internalTicketsEnabled && (
+                    <th 
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
+                      onClick={() => handleSort('tickets')}
+                    >
+                      <div className="flex items-center justify-center gap-1">
+                        Open Tickets
+                        <SortIcon field="tickets" />
+                      </div>
+                    </th>
+                  )}
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Organizations
                   </th>
@@ -451,9 +487,11 @@ export default function CustomersPage() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-gray-500 dark:text-gray-400">{customer.Phone || '-'}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-gray-900 dark:text-white font-medium">{customer.OpenTickets || 0}</div>
-                    </td>
+                    {internalTicketsEnabled && (
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-gray-900 dark:text-white font-medium">{customer.OpenTickets || 0}</div>
+                      </td>
+                    )}
                     <td className="px-6 py-4">
                       <div className="flex flex-wrap gap-1">
                         {customer.Organizations?.map((org) => (
@@ -578,24 +616,26 @@ export default function CustomersPage() {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Default Support User
-                    </label>
-                    <SearchableSelect
-                      value={formData.DefaultSupportUserId?.toString() || ''}
-                      onChange={(value) => setFormData({ ...formData, DefaultSupportUserId: value ? parseInt(value) : null })}
-                      options={supportUsers.map(user => ({
-                        value: user.Id,
-                        label: user.FirstName && user.LastName ? `${user.FirstName} ${user.LastName}` : user.Username
-                      }))}
-                      placeholder="Select Support User"
-                      emptyText="No default support user"
-                    />
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      This user will be automatically assigned to tickets created by this customer
-                    </p>
-                  </div>
+                  {internalTicketsEnabled && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Default Support User
+                      </label>
+                      <SearchableSelect
+                        value={formData.DefaultSupportUserId?.toString() || ''}
+                        onChange={(value) => setFormData({ ...formData, DefaultSupportUserId: value ? parseInt(value) : null })}
+                        options={supportUsers.map(user => ({
+                          value: user.Id,
+                          label: user.FirstName && user.LastName ? `${user.FirstName} ${user.LastName}` : user.Username
+                        }))}
+                        placeholder="Select Support User"
+                        emptyText="No default support user"
+                      />
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        This user will be automatically assigned to tickets created by this customer
+                      </p>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

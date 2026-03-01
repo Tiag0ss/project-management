@@ -96,6 +96,8 @@ export default function ProjectsPage() {
     message: string;
     onConfirm?: () => void;
   } | null>(null);
+  const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
+  const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
 
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setModalMessage({ type: 'confirm', title, message, onConfirm });
@@ -113,14 +115,46 @@ export default function ProjectsPage() {
   };
 
   useEffect(() => {
+    if (!token) {
+      setFeatureFlagsLoaded(true);
+      return;
+    }
+
+    const loadFeatureFlags = async () => {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        if (res.ok) {
+          const data = await res.json();
+          setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
+        } else {
+          setInternalTicketsEnabled(true);
+        }
+      } catch {
+        setInternalTicketsEnabled(true);
+      } finally {
+        setFeatureFlagsLoaded(true);
+      }
+    };
+
+    loadFeatureFlags();
+  }, [token]);
+
+  useEffect(() => {
     if (!isLoading && !user) {
       router.push('/login');
       return;
     }
-    if (user && token) {
+    if (user && token && featureFlagsLoaded) {
       loadProjects();
     }
-  }, [user, token, isLoading, router]);
+  }, [user, token, isLoading, router, featureFlagsLoaded]);
+
+  useEffect(() => {
+    if (!internalTicketsEnabled && sortField === 'tickets') {
+      setSortField('name');
+      setSortDirection('asc');
+    }
+  }, [internalTicketsEnabled, sortField]);
 
   const loadProjects = async () => {
     if (!token) return;
@@ -242,7 +276,9 @@ export default function ProjectsPage() {
           break;
         }
         case 'tickets':
-          comparison = (Number(a.OpenTickets) || 0) - (Number(b.OpenTickets) || 0);
+          comparison = internalTicketsEnabled
+            ? (Number(a.OpenTickets) || 0) - (Number(b.OpenTickets) || 0)
+            : 0;
           break;
         case 'startDate':
           comparison = (a.StartDate ? new Date(a.StartDate).getTime() : 0) - (b.StartDate ? new Date(b.StartDate).getTime() : 0);
@@ -474,7 +510,7 @@ export default function ProjectsPage() {
                     <option value="progress-asc">Progress (least first)</option>
                     <option value="budget-desc">Budget burn (highest)</option>
                     <option value="hours-desc">Hours worked (most)</option>
-                    <option value="tickets-desc">Open tickets (most)</option>
+                    {internalTicketsEnabled && <option value="tickets-desc">Open tickets (most)</option>}
                     <option value="endDate-asc">End date (soonest)</option>
                     <option value="endDate-desc">End date (latest)</option>
                   </select>
@@ -501,6 +537,7 @@ export default function ProjectsPage() {
                       key={project.Id}
                       project={project}
                       rag={ragMap.get(project.Id)!}
+                      internalTicketsEnabled={internalTicketsEnabled}
                       onEdit={handleEditProject}
                       onDelete={handleDeleteProject}
                       canEdit={permissions?.canManageProjects || false}
@@ -531,9 +568,11 @@ export default function ProjectsPage() {
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('budget')}>
                           <div className="flex items-center justify-center gap-1">Budget <SortIcon field="budget" /></div>
                         </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('tickets')}>
-                          <div className="flex items-center justify-center gap-1">Tickets <SortIcon field="tickets" /></div>
-                        </th>
+                        {internalTicketsEnabled && (
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('tickets')}>
+                            <div className="flex items-center justify-center gap-1">Tickets <SortIcon field="tickets" /></div>
+                          </th>
+                        )}
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('endDate')}>
                           <div className="flex items-center justify-center gap-1">Dates <SortIcon field="endDate" /></div>
                         </th>
@@ -594,9 +633,11 @@ export default function ProjectsPage() {
                                 </div>
                               ) : <span className="text-xs text-gray-400 text-center block">—</span>}
                             </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className={`text-sm font-medium ${(Number(project.OpenTickets) || 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>{Number(project.OpenTickets) || 0}</span>
-                            </td>
+                            {internalTicketsEnabled && (
+                              <td className="px-6 py-4 text-center">
+                                <span className={`text-sm font-medium ${(Number(project.OpenTickets) || 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>{Number(project.OpenTickets) || 0}</span>
+                              </td>
+                            )}
                             <td className="px-6 py-4 text-center text-xs text-gray-500 dark:text-gray-400">
                               {project.StartDate ? new Date(project.StartDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '-'}
                               {' → '}
@@ -685,6 +726,7 @@ const RAG_BORDER: Record<RAGStatus, string> = {
 function ProjectCard({ 
   project,
   rag,
+  internalTicketsEnabled,
   onEdit, 
   onDelete,
   canEdit,
@@ -692,6 +734,7 @@ function ProjectCard({
 }: { 
   project: Project;
   rag: { status: RAGStatus; reasons: string[] };
+  internalTicketsEnabled: boolean;
   onEdit: (project: Project) => void; 
   onDelete: (id: number) => void;
   canEdit: boolean;
@@ -783,19 +826,21 @@ function ProjectCard({
         )}
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-2 pt-3 border-t border-gray-100 dark:border-gray-700 text-center">
+        <div className={`grid ${internalTicketsEnabled ? 'grid-cols-3' : 'grid-cols-2'} gap-2 pt-3 border-t border-gray-100 dark:border-gray-700 text-center`}>
           <div>
             <div className="text-xs text-gray-500 dark:text-gray-400">Hours</div>
             <div className="text-sm font-semibold text-gray-900 dark:text-white">
               {workedHours.toFixed(0)}h{estimatedHours > 0 ? ` / ${estimatedHours.toFixed(0)}h` : ''}
             </div>
           </div>
-          <div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">Tickets</div>
-            <div className={`text-sm font-semibold ${(project.OpenTickets || 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>
-              {project.OpenTickets || 0}
+          {internalTicketsEnabled && (
+            <div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Tickets</div>
+              <div className={`text-sm font-semibold ${(project.OpenTickets || 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>
+                {project.OpenTickets || 0}
+              </div>
             </div>
-          </div>
+          )}
           <div>
             <div className="text-xs text-gray-500 dark:text-gray-400">End</div>
             <div className={`text-sm font-semibold ${isOverdue ? 'text-red-500 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>

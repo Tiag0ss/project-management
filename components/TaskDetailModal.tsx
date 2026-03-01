@@ -275,6 +275,8 @@ export default function TaskDetailModal({
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [allocationsPage, setAllocationsPage] = useState(1);
+  const [timeEntriesPage, setTimeEntriesPage] = useState(1);
   const [showTagSelector, setShowTagSelector] = useState(false);
   const [modalMessage, setModalMessage] = useState<
     | { type: 'alert'; title: string; message: string }
@@ -1084,7 +1086,34 @@ export default function TaskDetailModal({
 
   // Calculate totals for hours tab
   const totalAllocated = taskAllocations.reduce((sum, a) => sum + parseFloat(a.AllocatedHours as any), 0);
-  const totalWorked = timeEntries.reduce((sum, e) => sum + parseFloat(e.Hours as any), 0);
+  const currentTaskWorked = timeEntries.reduce((sum, e) => sum + parseFloat(e.Hours as any), 0);
+  const descendantTaskIds = task?.Id ? getDescendants(task.Id) : [];
+  const descendantsWorked = descendantTaskIds.reduce((sum, descendantId) => {
+    const descendantTask = tasks.find((taskItem) => taskItem.Id === descendantId);
+    return sum + parseFloat(String(descendantTask?.WorkedHours || 0));
+  }, 0);
+  const totalWorked = currentTaskWorked + descendantsWorked;
+  const estimatedForCompletion = parseFloat(String(task?.EstimatedHours || 0));
+  const completionPercentage = estimatedForCompletion > 0
+    ? Math.min(100, Math.round((totalWorked / estimatedForCompletion) * 100))
+    : 0;
+  const itemsPerPage = 10;
+
+  const allocationsTotalPages = Math.max(1, Math.ceil(taskAllocations.length / itemsPerPage));
+  const timeEntriesTotalPages = Math.max(1, Math.ceil(timeEntries.length / itemsPerPage));
+
+  const safeAllocationsPage = Math.min(allocationsPage, allocationsTotalPages);
+  const safeTimeEntriesPage = Math.min(timeEntriesPage, timeEntriesTotalPages);
+
+  const paginatedTaskAllocations = taskAllocations.slice(
+    (safeAllocationsPage - 1) * itemsPerPage,
+    safeAllocationsPage * itemsPerPage
+  );
+
+  const paginatedTimeEntries = timeEntries.slice(
+    (safeTimeEntriesPage - 1) * itemsPerPage,
+    safeTimeEntriesPage * itemsPerPage
+  );
 
   // Calculate allocation period (min/max dates)
   const allocationPeriod = taskAllocations.length > 0 ? {
@@ -1097,6 +1126,23 @@ export default function TaskDetailModal({
       return d > max ? d : max;
     }, taskAllocations[0].AllocationDate.split('T')[0]),
   } : null;
+
+  useEffect(() => {
+    setAllocationsPage(1);
+    setTimeEntriesPage(1);
+  }, [task?.Id]);
+
+  useEffect(() => {
+    if (allocationsPage > allocationsTotalPages) {
+      setAllocationsPage(allocationsTotalPages);
+    }
+  }, [allocationsPage, allocationsTotalPages]);
+
+  useEffect(() => {
+    if (timeEntriesPage > timeEntriesTotalPages) {
+      setTimeEntriesPage(timeEntriesTotalPages);
+    }
+  }, [timeEntriesPage, timeEntriesTotalPages]);
 
   const canSaveTask = !!(task?.Id ? permissions?.canManageTasks : permissions?.canCreateTasks);
 
@@ -1229,20 +1275,28 @@ export default function TaskDetailModal({
 
           {/* Tabs */}
           {task?.Id && (
-            <div className="flex gap-1 mt-4 border-b border-gray-200 dark:border-gray-700 -mb-6 pb-0">
+            <div className="grid grid-cols-6 gap-1 mt-4 border-b border-gray-200 dark:border-gray-700 -mb-6 pb-0">
               {(['details', 'checklist', 'hours', 'comments', 'attachments', 'history'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                  className={`px-3 py-2 text-sm font-medium rounded-t-lg transition-colors min-w-0 truncate text-center ${
                     activeTab === tab
                       ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-t border-l border-r border-gray-200 dark:border-gray-700'
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   }`}
+                  title={
+                    tab === 'details' ? 'Details' :
+                    tab === 'checklist' ? `Checklist (${checklists.length})` :
+                    tab === 'hours' ? `Plan & Deps (${totalWorked.toFixed(1)}h)` :
+                    tab === 'comments' ? `Comments (${taskComments.length})` :
+                    tab === 'attachments' ? `Files (${taskAttachments.length})` :
+                    `History (${taskHistory.length})`
+                  }
                 >
                   {tab === 'details' && '📝 Details'}
                   {tab === 'checklist' && `✅ Checklist (${checklists.length})`}
-                  {tab === 'hours' && `⏱️ Hours (${totalWorked.toFixed(1)}h)`}
+                  {tab === 'hours' && `📅 Plan & Deps (${totalWorked.toFixed(1)}h)`}
                   {tab === 'comments' && `💬 Comments (${taskComments.length})`}
                   {tab === 'attachments' && `📎 Files (${taskAttachments.length})`}
                   {tab === 'history' && `📜 History (${taskHistory.length})`}
@@ -1263,16 +1317,9 @@ export default function TaskDetailModal({
           {/* Details Tab (Edit Form) */}
           {(activeTab === 'details' || !task?.Id) && (
             <form onSubmit={handleSubmit} className="space-y-4">
-              {task?.CreatorName && (
-                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
-                  <div className="text-sm text-gray-700 dark:text-gray-300">
-                    <span className="font-medium">Created by:</span> {task.CreatorName}
-                    <span className="text-gray-500 dark:text-gray-400 ml-2">
-                      on {new Date(task.CreatedAt).toLocaleDateString()}
-                    </span>
-                  </div>
-                </div>
-              )}
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">
+                Basic Information
+              </h3>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -1300,6 +1347,11 @@ export default function TaskDetailModal({
               </div>
 
               {/* Ticket Reference */}
+              {(task?.TicketNumber || (task?.ExternalTicketId && task?.JiraUrl) || (task?.JiraIssueKey && jiraIntegration?.JiraUrl)) && (
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
+                  Linked Tickets & Jira
+                </h3>
+              )}
               {task?.TicketNumber && (
                 <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                   <div className="flex items-center gap-2">
@@ -1392,6 +1444,9 @@ export default function TaskDetailModal({
                 </div>
               )}
 
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
+                Task Setup
+              </h3>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -1467,6 +1522,9 @@ export default function TaskDetailModal({
                 </select>
               </div>
 
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
+                Assignment
+              </h3>
               <div>
                 {/* Principal Assignee field (searchable) */}
                 <div className="mb-4">
@@ -1546,6 +1604,9 @@ export default function TaskDetailModal({
                 )}
               </div>
 
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
+                Effort & Completion
+              </h3>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -1581,83 +1642,12 @@ export default function TaskDetailModal({
                 </div>
               </div>
 
-              {/* Completion Percentage (computed from time entries vs estimated hours) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Completion
-                  <span className="ml-2 text-blue-600 dark:text-blue-400 font-semibold">{task?.CompletionPercentage ?? 0}%</span>
-                  <span className="ml-2 text-xs text-gray-400 dark:text-gray-500 font-normal">(auto-calculated from time entries)</span>
-                </label>
-                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{ 
-                      width: `${task?.CompletionPercentage ?? 0}%`,
-                      backgroundColor: (task?.CompletionPercentage ?? 0) >= 100 ? '#22c55e' : (task?.CompletionPercentage ?? 0) >= 50 ? '#3b82f6' : '#f59e0b'
-                    }}
-                  />
-                </div>
-                <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 mt-1">
-                  <span>0%</span>
-                  <span>50%</span>
-                  <span>100%</span>
-                </div>
-              </div>
-
-              {/* Planning Dates (read-only - managed via resource planning) */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Planned Start Date
-                  </label>
-                  <div className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm">
-                    {formData.plannedStartDate ? new Date(formData.plannedStartDate + 'T12:00:00').toLocaleDateString('en-GB') : <span className="text-gray-400 dark:text-gray-500 italic">Not set</span>}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Planned End Date
-                  </label>
-                  <div className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm">
-                    {formData.plannedEndDate ? new Date(formData.plannedEndDate + 'T12:00:00').toLocaleDateString('en-GB') : <span className="text-gray-400 dark:text-gray-500 italic">Not set</span>}
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Parent Task (Optional)
-                </label>
-                <SearchableSelect
-                  value={formData.parentTaskId}
-                  onChange={(value) => setFormData({ ...formData, parentTaskId: value })}
-                  options={getAvailableParentTasks()}
-                  placeholder="No Parent (Top-level task)"
-                  emptyMessage="No tasks available"
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  Select a parent task to create a subtask (supports multi-level hierarchy)
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Depends On (Optional)
-                </label>
-                <SearchableSelect
-                  value={formData.dependsOnTaskId}
-                  onChange={(value) => setFormData({ ...formData, dependsOnTaskId: value })}
-                  options={getAvailableDependencyTasks()}
-                  placeholder="No dependency"
-                  emptyMessage="No tasks available"
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  This task cannot start until the selected task is completed
-                </p>
-              </div>
-
               {/* Application */}
+              {(applications.length > 0 || (formData.applicationId && applicationVersions.length > 0)) && (
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
+                  Release Tracking
+                </h3>
+              )}
               {applications.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -1867,26 +1857,110 @@ export default function TaskDetailModal({
                 </div>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Completion
+                  <span className="ml-2 text-blue-600 dark:text-blue-400 font-semibold">{completionPercentage}%</span>
+                  <span className="ml-2 text-xs text-gray-400 dark:text-gray-500 font-normal">(auto-calculated from time entries)</span>
+                </label>
+                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${completionPercentage}%`,
+                      backgroundColor: completionPercentage >= 100 ? '#22c55e' : completionPercentage >= 50 ? '#3b82f6' : '#f59e0b'
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  <span>0%</span>
+                  <span>50%</span>
+                  <span>100%</span>
+                </div>
+              </div>
+
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
+                Plan & Dependencies
+              </h3>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Parent Task (Optional)
+                </label>
+                <SearchableSelect
+                  value={formData.parentTaskId}
+                  onChange={(value) => setFormData({ ...formData, parentTaskId: value })}
+                  options={getAvailableParentTasks()}
+                  placeholder="No Parent (Top-level task)"
+                  emptyMessage="No tasks available"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Select a parent task to create a subtask (supports multi-level hierarchy)
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Depends On (Optional)
+                </label>
+                <SearchableSelect
+                  value={formData.dependsOnTaskId}
+                  onChange={(value) => setFormData({ ...formData, dependsOnTaskId: value })}
+                  options={getAvailableDependencyTasks()}
+                  placeholder="No dependency"
+                  emptyMessage="No tasks available"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  This task cannot start until the selected task is completed
+                </p>
+              </div>
+
               {/* Allocation Period */}
               {allocationPeriod && (
-                <div className="flex items-center gap-4 px-4 py-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Allocation Period:</span>
+                <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg space-y-3">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Allocation Period:</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded font-medium">
+                        {new Date(allocationPeriod.start + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                      <span className="text-gray-400">→</span>
+                      <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded font-medium">
+                        {new Date(allocationPeriod.end + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                      <span className="text-gray-500 dark:text-gray-400 text-xs ml-1">
+                        ({Math.round((new Date(allocationPeriod.end).getTime() - new Date(allocationPeriod.start).getTime()) / 86400000) + 1} days)
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded font-medium">
-                      {new Date(allocationPeriod.start + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-                    </span>
-                    <span className="text-gray-400">→</span>
-                    <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded font-medium">
-                      {new Date(allocationPeriod.end + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-                    </span>
-                    <span className="text-gray-500 dark:text-gray-400 text-xs ml-1">
-                      ({Math.round((new Date(allocationPeriod.end).getTime() - new Date(allocationPeriod.start).getTime()) / 86400000) + 1} days)
-                    </span>
+
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Baseline:</span>
+                    </div>
+                    {task?.BaselineStartDate && task?.BaselineEndDate ? (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 rounded font-medium">
+                          {new Date(String(task.BaselineStartDate).includes('T') ? String(task.BaselineStartDate) : `${task.BaselineStartDate}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                        <span className="text-gray-400">→</span>
+                        <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 rounded font-medium">
+                          {new Date(String(task.BaselineEndDate).includes('T') ? String(task.BaselineEndDate) : `${task.BaselineEndDate}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                        <span className="text-gray-500 dark:text-gray-400 text-xs ml-1">
+                          ({Math.round((new Date(task.BaselineEndDate).getTime() - new Date(task.BaselineStartDate).getTime()) / 86400000) + 1} days)
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-400 dark:text-gray-500 italic">Not set</span>
+                    )}
                   </div>
                 </div>
               )}
@@ -1895,94 +1969,132 @@ export default function TaskDetailModal({
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Planned Allocations</h3>
-                  {!hasChildren && (
-                    <button
-                      onClick={() => setManualAllocationModal({ 
-                        show: true, 
-                        allocationId: null, 
-                        userId: null, 
-                        allocationDate: '', 
-                        allocatedHours: '', 
-                        mode: 'add' 
-                      })}
-                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors flex items-center gap-1"
-                    >
-                      <span>+</span>
-                      <span>Add Manual Allocation</span>
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {!hasChildren && (
+                      <button
+                        onClick={() => setManualAllocationModal({ 
+                          show: true, 
+                          allocationId: null, 
+                          userId: null, 
+                          allocationDate: '', 
+                          allocatedHours: '', 
+                          mode: 'add' 
+                        })}
+                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors flex items-center gap-1"
+                      >
+                        <span>+</span>
+                        <span>Add Manual Allocation</span>
+                      </button>
+                    )}
+                    {showRemovePlanning && taskAllocations.length > 0 && onRemovePlanning && (
+                      <button
+                        onClick={onRemovePlanning}
+                        className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors flex items-center gap-1"
+                        title="Remove all planned allocations for this task"
+                      >
+                        <span>🗑️</span>
+                        <span>Remove Planning</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {loadingData ? (
                   <p className="text-gray-500 dark:text-gray-400">Loading...</p>
                 ) : taskAllocations.length === 0 ? (
                   <p className="text-gray-500 dark:text-gray-400">No allocations found.</p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                      <thead className="bg-gray-50 dark:bg-gray-700">
-                        <tr>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Date</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">User</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Start</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">End</th>
-                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Hours</th>
-                          {!hasChildren && <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>}
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                        {taskAllocations.map((allocation) => (
-                          <tr key={allocation.Id}>
-                            <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">
-                              {new Date(allocation.AllocationDate).toLocaleDateString()}
-                            </td>
-                            <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400">
-                              {allocation.Username || `User ${allocation.UserId}`}
-                            </td>
-                            <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400">
-                              {allocation.StartTime || '-'}
-                            </td>
-                            <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400">
-                              {allocation.EndTime || '-'}
-                            </td>
-                            <td className="px-4 py-2 text-sm text-right font-medium text-gray-900 dark:text-white">
-                              {parseFloat(allocation.AllocatedHours as any).toFixed(1)}h
-                            </td>
-                            {!hasChildren && (
-                              <td className="px-4 py-2 text-sm text-center">
-                                {allocation.IsManual === 1 ? (
-                                  <div className="flex items-center justify-center gap-2">
-                                    <button
-                                      onClick={() => setManualAllocationModal({
-                                        show: true,
-                                        allocationId: allocation.Id || null,
-                                        userId: allocation.UserId,
-                                        allocationDate: new Date(allocation.AllocationDate).toISOString().split('T')[0],
-                                        allocatedHours: String(allocation.AllocatedHours),
-                                        mode: 'edit'
-                                      })}
-                                      className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                                      title="Edit"
-                                    >
-                                      ✏️
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteManualAllocation(allocation.Id!)}
-                                      className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                                      title="Delete"
-                                    >
-                                      🗑️
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-400 dark:text-gray-600 text-xs">Auto</span>
-                                )}
-                              </td>
-                            )}
+                  <>
+                    <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+                      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-700">
+                          <tr>
+                            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Date</th>
+                            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">User</th>
+                            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Start</th>
+                            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">End</th>
+                            <th className="px-5 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Hours</th>
+                            {!hasChildren && <th className="px-5 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>}
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                          {paginatedTaskAllocations.map((allocation) => (
+                            <tr key={allocation.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                              <td className="px-5 py-3 text-sm text-gray-900 dark:text-white whitespace-nowrap">
+                                {new Date(allocation.AllocationDate).toLocaleDateString()}
+                              </td>
+                              <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                {allocation.Username || `User ${allocation.UserId}`}
+                              </td>
+                              <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                                {allocation.StartTime || '-'}
+                              </td>
+                              <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                                {allocation.EndTime || '-'}
+                              </td>
+                              <td className="px-5 py-3 text-sm text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">
+                                {parseFloat(allocation.AllocatedHours as any).toFixed(1)}h
+                              </td>
+                              {!hasChildren && (
+                                <td className="px-5 py-3 text-sm text-center whitespace-nowrap">
+                                  {allocation.IsManual === 1 ? (
+                                    <div className="flex items-center justify-center gap-2">
+                                      <button
+                                        onClick={() => setManualAllocationModal({
+                                          show: true,
+                                          allocationId: allocation.Id || null,
+                                          userId: allocation.UserId,
+                                          allocationDate: new Date(allocation.AllocationDate).toISOString().split('T')[0],
+                                          allocatedHours: String(allocation.AllocatedHours),
+                                          mode: 'edit'
+                                        })}
+                                        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                        title="Edit"
+                                      >
+                                        ✏️
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteManualAllocation(allocation.Id!)}
+                                        className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                        title="Delete"
+                                      >
+                                        🗑️
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-400 dark:text-gray-600 text-xs">Auto</span>
+                                  )}
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex items-center justify-between mt-3">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Showing {(safeAllocationsPage - 1) * itemsPerPage + 1}-{Math.min(safeAllocationsPage * itemsPerPage, taskAllocations.length)} of {taskAllocations.length}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setAllocationsPage((p) => Math.max(1, p - 1))}
+                          disabled={safeAllocationsPage === 1}
+                          className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >
+                          Previous
+                        </button>
+                        <span className="text-sm text-gray-600 dark:text-gray-400 min-w-[5rem] text-center">
+                          {safeAllocationsPage} / {allocationsTotalPages}
+                        </span>
+                        <button
+                          onClick={() => setAllocationsPage((p) => Math.min(allocationsTotalPages, p + 1))}
+                          disabled={safeAllocationsPage >= allocationsTotalPages}
+                          className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
 
@@ -1994,53 +2106,64 @@ export default function TaskDetailModal({
                 ) : timeEntries.length === 0 ? (
                   <p className="text-gray-500 dark:text-gray-400">No time entries found.</p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                      <thead className="bg-gray-50 dark:bg-gray-700">
-                        <tr>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Date</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">User</th>
-                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Hours</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Description</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                        {timeEntries.map((entry) => (
-                          <tr key={entry.Id}>
-                            <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">
-                              {new Date(entry.WorkDate).toLocaleDateString()}
-                            </td>
-                            <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400">
-                              {entry.Username || `User ${entry.UserId}`}
-                            </td>
-                            <td className="px-4 py-2 text-sm text-right font-medium text-gray-900 dark:text-white">
-                              {parseFloat(entry.Hours as any).toFixed(1)}h
-                            </td>
-                            <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400">
-                              {entry.Description || '-'}
-                            </td>
+                  <>
+                    <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+                      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-700">
+                          <tr>
+                            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Date</th>
+                            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">User</th>
+                            <th className="px-5 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Hours</th>
+                            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Description</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                          {paginatedTimeEntries.map((entry) => (
+                            <tr key={entry.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                              <td className="px-5 py-3 text-sm text-gray-900 dark:text-white whitespace-nowrap">
+                                {new Date(entry.WorkDate).toLocaleDateString()}
+                              </td>
+                              <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                {entry.Username || `User ${entry.UserId}`}
+                              </td>
+                              <td className="px-5 py-3 text-sm text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">
+                                {parseFloat(entry.Hours as any).toFixed(1)}h
+                              </td>
+                              <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                {entry.Description || '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex items-center justify-between mt-3">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Showing {(safeTimeEntriesPage - 1) * itemsPerPage + 1}-{Math.min(safeTimeEntriesPage * itemsPerPage, timeEntries.length)} of {timeEntries.length}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setTimeEntriesPage((p) => Math.max(1, p - 1))}
+                          disabled={safeTimeEntriesPage === 1}
+                          className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >
+                          Previous
+                        </button>
+                        <span className="text-sm text-gray-600 dark:text-gray-400 min-w-[5rem] text-center">
+                          {safeTimeEntriesPage} / {timeEntriesTotalPages}
+                        </span>
+                        <button
+                          onClick={() => setTimeEntriesPage((p) => Math.min(timeEntriesTotalPages, p + 1))}
+                          disabled={safeTimeEntriesPage >= timeEntriesTotalPages}
+                          className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
-
-              {/* Remove Planning Button */}
-              {showRemovePlanning && taskAllocations.length > 0 && onRemovePlanning && (
-                <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <button
-                    onClick={onRemovePlanning}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-2"
-                  >
-                    🗑️ Remove Planning
-                  </button>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                    This will remove all planned allocations for this task.
-                  </p>
-                </div>
-              )}
             </div>
           )}
 
@@ -2185,6 +2308,16 @@ export default function TaskDetailModal({
           {/* History Tab */}
           {activeTab === 'history' && task && (
             <div className="space-y-4">
+              {task?.CreatorName && (
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
+                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                    <span className="font-medium">Created by:</span> {task.CreatorName}
+                    <span className="text-gray-500 dark:text-gray-400 ml-2">
+                      on {new Date(task.CreatedAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+              )}
               {loadingData ? (
                 <p className="text-gray-500 dark:text-gray-400">Loading history...</p>
               ) : taskHistory.length === 0 ? (

@@ -103,6 +103,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     message: string;
     onConfirm: () => void;
   } | null>(null);
+  const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
+  const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -111,10 +113,35 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   }, [user, authLoading, router]);
 
   useEffect(() => {
-    if (token && customerId) {
+    if (!token) {
+      setFeatureFlagsLoaded(true);
+      return;
+    }
+
+    const loadFeatureFlags = async () => {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        if (res.ok) {
+          const data = await res.json();
+          setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
+        } else {
+          setInternalTicketsEnabled(true);
+        }
+      } catch {
+        setInternalTicketsEnabled(true);
+      } finally {
+        setFeatureFlagsLoaded(true);
+      }
+    };
+
+    loadFeatureFlags();
+  }, [token]);
+
+  useEffect(() => {
+    if (token && customerId && featureFlagsLoaded) {
       loadData();
     }
-  }, [token, customerId]);
+  }, [token, customerId, featureFlagsLoaded]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -155,8 +182,11 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       // Load project managers
       await loadProjectManagers();
       
-      // Load customer tickets
-      await loadTickets();
+      if (internalTicketsEnabled) {
+        await loadTickets();
+      } else {
+        setTickets([]);
+      }
       
     } catch (err: any) {
       setError(err.message || 'Failed to load customer');
@@ -589,7 +619,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           {activeTab === 'overview' && (
           <div className="space-y-6">
             {/* Statistics Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className={`grid grid-cols-2 ${internalTicketsEnabled ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
               <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
                 <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Projects</div>
                 <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalProjects}</div>
@@ -602,13 +632,15 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Tasks Completed</div>
                 <div className="text-3xl font-bold text-gray-900 dark:text-white">{completedTasks}/{totalTasks}</div>
               </div>
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-indigo-500">
-                <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Tickets</div>
-                <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalTickets}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {unresolvedTickets} pending
+              {internalTicketsEnabled && (
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-indigo-500">
+                  <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Tickets</div>
+                  <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalTickets}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {unresolvedTickets} pending
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-orange-500">
                 <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Hours Worked</div>
                 <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalWorkedHours.toFixed(0)}h</div>

@@ -68,6 +68,8 @@ export default function Navbar() {
   const [searchPage, setSearchPage] = useState(1);
   const [searchHasMore, setSearchHasMore] = useState(false);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
+  const [memosEnabled, setMemosEnabled] = useState(true);
 
   // Notifications state
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -186,6 +188,23 @@ export default function Navbar() {
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const loadFeatureFlags = async () => {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
+        setMemosEnabled(data.memosEnabled !== false);
+      } catch {
+        setInternalTicketsEnabled(true);
+        setMemosEnabled(true);
+      }
+    };
+
+    loadFeatureFlags();
   }, []);
 
   // Load notification count on mount and periodically (fallback polling at 5 min)
@@ -420,7 +439,9 @@ export default function Navbar() {
         window.location.href = `/organizations/${id}`;
         break;
       case 'ticket':
-        window.location.href = `/tickets/${id}`;
+        if (internalTicketsEnabled) {
+          window.location.href = `/tickets/${id}`;
+        }
         break;
       case 'user':
         // For now, just close the search - users don't have a dedicated page
@@ -987,7 +1008,7 @@ export default function Navbar() {
                 )}
 
                 {/* Tickets */}
-                {(user?.isSupport || isCustomerUser || permissions?.canManageTickets || permissions?.canCreateTickets) && (
+                {internalTicketsEnabled && (user?.isSupport || isCustomerUser || permissions?.canManageTickets || permissions?.canCreateTickets) && (
                     <a 
                       href="/tickets" 
                       className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
@@ -997,7 +1018,7 @@ export default function Navbar() {
                 )}
 
                 {/* Memos */}
-                {!isCustomerUser && (
+                {!isCustomerUser && memosEnabled && (
                   <a 
                     href="/memos" 
                     className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
@@ -1169,7 +1190,7 @@ export default function Navbar() {
                         )}
 
                         {/* Tickets */}
-                        {searchResults.tickets && searchResults.tickets.length > 0 && (
+                        {internalTicketsEnabled && searchResults.tickets && searchResults.tickets.length > 0 && (
                           <div className="mb-3">
                             <div className="px-3 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
                               Tickets ({searchResults.tickets.length})

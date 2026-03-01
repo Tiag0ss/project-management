@@ -166,6 +166,8 @@ export default function TicketDetailPage() {
   // Applications state
   const [applications, setApplications] = useState<{Id: number, Name: string, OrganizationName: string}[]>([]);
   const [ticketApplications, setTicketApplications] = useState<{Id: number, Name: string}[]>([]);
+  const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
+  const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -174,10 +176,32 @@ export default function TicketDetailPage() {
   }, [user, isLoading, router]);
 
   useEffect(() => {
-    if (token && ticketId) {
+    const loadFeatureFlags = async () => {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        if (res.ok) {
+          const data = await res.json();
+          setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
+        } else {
+          setInternalTicketsEnabled(true);
+        }
+      } catch {
+        setInternalTicketsEnabled(true);
+      } finally {
+        setFeatureFlagsLoaded(true);
+      }
+    };
+
+    loadFeatureFlags();
+  }, []);
+
+  useEffect(() => {
+    if (token && ticketId && featureFlagsLoaded && internalTicketsEnabled) {
       loadTicket();
+    } else if (featureFlagsLoaded && !internalTicketsEnabled) {
+      setLoading(false);
     }
-  }, [token, ticketId]);
+  }, [token, ticketId, featureFlagsLoaded, internalTicketsEnabled]);
 
   // Load comment attachments whenever comments change
   useEffect(() => {
@@ -898,6 +922,34 @@ export default function TicketDetailPage() {
   }
 
   if (!user) return null;
+
+  if (!featureFlagsLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
+        <div className="text-gray-600 dark:text-gray-400">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!internalTicketsEnabled) {
+    return (
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+        <Navbar />
+        <div className="max-w-4xl mx-auto py-12 px-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center border border-gray-200 dark:border-gray-700">
+            <div className="text-4xl mb-3">🎫</div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Internal Ticket System Disabled</h2>
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

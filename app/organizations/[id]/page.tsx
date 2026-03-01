@@ -30,6 +30,8 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', description: '' });
   const [isSaving, setIsSaving] = useState(false);
+  const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
+  const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
   
   // Attachments state
   const [attachments, setAttachments] = useState<any[]>([]);
@@ -58,14 +60,39 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
   };
 
   useEffect(() => {
+    if (!token) {
+      setFeatureFlagsLoaded(true);
+      return;
+    }
+
+    const loadFeatureFlags = async () => {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        if (res.ok) {
+          const data = await res.json();
+          setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
+        } else {
+          setInternalTicketsEnabled(true);
+        }
+      } catch {
+        setInternalTicketsEnabled(true);
+      } finally {
+        setFeatureFlagsLoaded(true);
+      }
+    };
+
+    loadFeatureFlags();
+  }, [token]);
+
+  useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login');
       return;
     }
-    if (user && token) {
+    if (user && token && featureFlagsLoaded) {
       loadOrganization();
     }
-  }, [user, token, authLoading, orgId, router]);
+  }, [user, token, authLoading, orgId, router, featureFlagsLoaded]);
 
   const loadOrganization = async () => {
     if (!token) return;
@@ -409,7 +436,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
           )}
 
           <div>
-            {activeTab === 'overview' && <OverviewTab organization={organization} orgId={orgId} token={token!} />}
+            {activeTab === 'overview' && <OverviewTab organization={organization} orgId={orgId} token={token!} internalTicketsEnabled={internalTicketsEnabled} />}
             {activeTab === 'members' && <MembersTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}
             {activeTab === 'projects' && <ProjectsTab orgId={orgId} canManage={canManageSettings} token={token!} />}
             {activeTab === 'permissions' && <PermissionsTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}
@@ -534,7 +561,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
   );
 }
 
-function OverviewTab({ organization, orgId, token }: { organization: Organization; orgId: number; token: string }) {
+function OverviewTab({ organization, orgId, token, internalTicketsEnabled }: { organization: Organization; orgId: number; token: string; internalTicketsEnabled: boolean }) {
   const [projects, setProjects] = useState<any[]>([]);
   const [tickets, setTickets] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -542,8 +569,12 @@ function OverviewTab({ organization, orgId, token }: { organization: Organizatio
 
   useEffect(() => {
     loadProjects();
-    loadTickets();
-  }, [orgId]);
+    if (internalTicketsEnabled) {
+      loadTickets();
+    } else {
+      setTickets([]);
+    }
+  }, [orgId, internalTicketsEnabled]);
 
   const loadProjects = async () => {
     setIsLoading(true);
@@ -636,7 +667,7 @@ function OverviewTab({ organization, orgId, token }: { organization: Organizatio
       ) : (
         <>
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+          <div className={`grid grid-cols-1 md:grid-cols-2 ${internalTicketsEnabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-6`}>
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-blue-500">
               <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Projects</div>
               <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalProjects}</div>
@@ -651,13 +682,15 @@ function OverviewTab({ organization, orgId, token }: { organization: Organizatio
                 {completedTasks} completed ({overallProgress}%)
               </div>
             </div>
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-indigo-500">
-              <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Tickets</div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalTickets}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                {resolvedTickets} resolved, {unresolvedTickets} pending
+            {internalTicketsEnabled && (
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-indigo-500">
+                <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Tickets</div>
+                <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalTickets}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {resolvedTickets} resolved, {unresolvedTickets} pending
+                </div>
               </div>
-            </div>
+            )}
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-orange-500">
               <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Estimated Hours</div>
               <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalEstimated.toFixed(0)}h</div>

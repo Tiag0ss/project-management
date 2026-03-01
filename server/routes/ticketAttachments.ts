@@ -5,6 +5,29 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+const isInternalTicketsEnabled = async (): Promise<boolean> => {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT SettingValue FROM SystemSettings WHERE SettingKey = ?',
+    ['internalTicketsEnabled']
+  );
+
+  if (rows.length === 0) return true;
+  return rows[0].SettingValue !== 'false';
+};
+
+router.use(authenticateToken, async (_req: AuthRequest, res: Response, next) => {
+  try {
+    const enabled = await isInternalTicketsEnabled();
+    if (!enabled) {
+      return res.status(403).json({ success: false, message: 'Internal ticket system is disabled' });
+    }
+    next();
+  } catch (error) {
+    console.error('Ticket attachments feature flag check error:', error);
+    res.status(500).json({ success: false, message: 'Failed to validate ticket system setting' });
+  }
+});
+
 /**
  * @swagger
  * tags:

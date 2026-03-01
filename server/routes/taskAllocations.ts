@@ -1538,18 +1538,44 @@ router.delete('/task/:taskId', authenticateToken, async (req: AuthRequest, res: 
     );
     
     const [currentAllocations] = await pool.execute<RowDataPacket[]>(
-      `SELECT DISTINCT UserId FROM TaskAllocations WHERE TaskId = ?`,
-      [taskId]
+      `SELECT DISTINCT UserId FROM (
+         SELECT ta.UserId
+         FROM TaskAllocations ta
+         WHERE ta.TaskId IN (
+           WITH RECURSIVE Descendants AS (
+             SELECT Id FROM Tasks WHERE Id = ?
+             UNION ALL
+             SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+           )
+           SELECT Id FROM Descendants
+         )
+         UNION
+         SELECT ta2.UserId
+         FROM TaskChildAllocations tca
+         INNER JOIN TaskAllocations ta2 ON ta2.TaskId = tca.ParentTaskId
+         WHERE tca.ParentTaskId IN (
+           WITH RECURSIVE Descendants AS (
+             SELECT Id FROM Tasks WHERE Id = ?
+             UNION ALL
+             SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+           )
+           SELECT Id FROM Descendants
+         )
+            OR tca.ChildTaskId IN (
+           WITH RECURSIVE Descendants AS (
+             SELECT Id FROM Tasks WHERE Id = ?
+             UNION ALL
+             SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+           )
+           SELECT Id FROM Descendants
+         )
+       ) users`,
+      [taskId, taskId, taskId]
     );
 
-    await pool.execute('DELETE FROM TaskAllocations WHERE TaskId = ?', [taskId]);
-
-    // Delete child allocations at ALL levels (multi-level hierarchy)
-    // 1. Delete where this task is a child in another parent's allocations
-    await pool.execute('DELETE FROM TaskChildAllocations WHERE ChildTaskId = ?', [taskId]);
-    // 2. Recursively find all descendant tasks and delete their child allocations
+    // Delete direct allocations for this task and all descendants
     await pool.execute(
-      `DELETE FROM TaskChildAllocations WHERE ParentTaskId IN (
+      `DELETE FROM TaskAllocations WHERE TaskId IN (
         WITH RECURSIVE Descendants AS (
           SELECT Id FROM Tasks WHERE Id = ?
           UNION ALL
@@ -1558,6 +1584,30 @@ router.delete('/task/:taskId', authenticateToken, async (req: AuthRequest, res: 
         SELECT Id FROM Descendants
       )`,
       [taskId]
+    );
+
+    // Delete child allocations at ALL levels (multi-level hierarchy)
+    // - rows where descendant tasks are parents
+    // - rows where descendant tasks are children
+    await pool.execute(
+      `DELETE FROM TaskChildAllocations
+       WHERE ParentTaskId IN (
+         WITH RECURSIVE Descendants AS (
+           SELECT Id FROM Tasks WHERE Id = ?
+           UNION ALL
+           SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+         )
+         SELECT Id FROM Descendants
+       )
+          OR ChildTaskId IN (
+         WITH RECURSIVE Descendants AS (
+           SELECT Id FROM Tasks WHERE Id = ?
+           UNION ALL
+           SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
+         )
+         SELECT Id FROM Descendants
+       )`,
+      [taskId, taskId]
     );
 
     // Clear planned dates for this task and all descendants

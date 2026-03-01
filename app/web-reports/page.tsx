@@ -19,11 +19,36 @@ interface PivotConfig {
   rows: string[];
   columns: string[];
   values: ValueConfig[];
+  dynamicQueryConfig?: DynamicQueryConfig;
 }
 
 interface ValueConfig {
   field: string;
   aggregation: 'sum' | 'count' | 'avg' | 'min' | 'max' | 'distinctCount';
+}
+
+interface DynamicSelectedField {
+  table: string;
+  field: string;
+  alias?: string;
+  aggregation?: string;
+}
+
+interface DynamicJoinDefinition {
+  type: 'LEFT' | 'INNER' | 'RIGHT';
+  table: string;
+  leftTable: string;
+  leftField: string;
+  rightTable: string;
+  rightField: string;
+}
+
+interface DynamicQueryConfig {
+  tables: string[];
+  joins: DynamicJoinDefinition[];
+  rowFields: DynamicSelectedField[];
+  columnFields: DynamicSelectedField[];
+  valueFields: DynamicSelectedField[];
 }
 
 interface DataSource {
@@ -109,6 +134,7 @@ export default function WebReportsPage() {
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [dynamicFields, setDynamicFields] = useState<ReportField[]>([]); // For dynamic data source
+  const [dynamicQueryConfigToLoad, setDynamicQueryConfigToLoad] = useState<DynamicQueryConfig | null>(null);
   const [printLayout, setPrintLayout] = useState<'horizontal' | 'vertical' | null>(null);
 
   const dataSources: DataSource[] = [
@@ -808,6 +834,7 @@ export default function WebReportsPage() {
       columns: [],
       values: []
     });
+    setDynamicQueryConfigToLoad(null);
     setPivotData(null);
   };
 
@@ -1125,6 +1152,11 @@ export default function WebReportsPage() {
 
   const handleLoadReport = (report: SavedReport) => {
     setPivotConfig(report.PivotConfig);
+    if (dataSource === 'dynamic') {
+      setDynamicQueryConfigToLoad(report.PivotConfig.dynamicQueryConfig || null);
+    } else {
+      setDynamicQueryConfigToLoad(null);
+    }
     setFilters(report.Filters || []);
     setExpandedRows(new Set());
   };
@@ -1332,7 +1364,8 @@ export default function WebReportsPage() {
                 {dataSource === 'dynamic' && token && (
                   <DynamicQueryBuilder 
                     token={token}
-                    onDataLoaded={(data, fields, dynamicPivotConfig) => {
+                    initialConfig={dynamicQueryConfigToLoad}
+                    onDataLoaded={(data, fields, dynamicPivotConfig, dynamicQueryConfig) => {
                       // Normalize date fields in dynamic query data
                       const dateFields = fields.filter(f => f.type === 'date').map(f => f.key);
                       const normalizedData = data.map((record: any) => {
@@ -1365,7 +1398,8 @@ export default function WebReportsPage() {
                       setPivotConfig({
                         rows: dynamicPivotConfig.rows,
                         columns: dynamicPivotConfig.columns,
-                        values: dynamicPivotConfig.values as ValueConfig[]
+                        values: dynamicPivotConfig.values as ValueConfig[],
+                        dynamicQueryConfig
                       });
                       
                       // Update currentSource to use dynamic fields
