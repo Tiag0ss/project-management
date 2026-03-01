@@ -251,7 +251,7 @@ This project is a work in progress, can be still found bugs, report the bugs in 
 | Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS |
 | Rich Text | Tiptap (StarterKit, Image, Placeholder extensions) |
 | Backend | Node.js 20, Express.js, TypeScript |
-| Database | MySQL 8.0 |
+| Database | MySQL 8.0 or MSSQL (SQL Server) |
 | Auth | JWT with HTTP-only cookies |
 | Integrations | Jira REST API, AES-256-CBC encryption |
 | Container | Alpine-based Node.js image |
@@ -265,11 +265,15 @@ This project is a work in progress, can be still found bugs, report the bugs in 
 curl -o .env.docker https://raw.githubusercontent.com/tiag0ss/project-management/main/.env.docker.example
 ```
 
-Or create `.env.docker` manually:
+Or create `.env.docker` manually.
+
+MySQL example (default):
 
 ```env
-# Database
+# Database (MySQL)
+DB_PROVIDER=mysql
 DB_HOST=mysql
+DB_PORT=3306
 DB_USER=appuser
 DB_PASSWORD=your-strong-password-here
 DB_NAME=projectmanagement
@@ -277,6 +281,36 @@ DB_CONNECTION_LIMIT=50
 
 # JWT Secret (REQUIRED - generate a strong random key)
 # Generate with: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+JWT_SECRET=your-super-secret-jwt-key-minimum-64-characters
+
+# CORS
+ALLOWED_ORIGINS=http://localhost:3000,https://yourdomain.com
+
+# Frontend URL
+NEXT_PUBLIC_API_URL=http://localhost:3000
+
+# Logging (debug, info, warn, error)
+LOG_LEVEL=warn
+
+# API URL (internal)
+API_URL=http://localhost:3000
+```
+
+MSSQL example:
+
+```env
+# Database (MSSQL)
+DB_PROVIDER=mssql
+DB_HOST=sqlserver
+DB_PORT=1433
+DB_USER=sa
+DB_PASSWORD=your-strong-password-here
+DB_NAME=projectmanagement
+DB_CONNECTION_LIMIT=50
+DB_ENCRYPT=false
+DB_TRUST_SERVER_CERT=true
+
+# JWT Secret (REQUIRED)
 JWT_SECRET=your-super-secret-jwt-key-minimum-64-characters
 
 # CORS
@@ -360,7 +394,20 @@ Then start everything:
 docker-compose up -d
 ```
 
-### 3. Run standalone (with external MySQL)
+For MSSQL with Docker Compose, point the app to an external SQL Server (or a SQL Server service in your own compose file) by setting:
+
+```env
+DB_PROVIDER=mssql
+DB_HOST=your-sqlserver-host
+DB_PORT=1433
+DB_USER=your-user
+DB_PASSWORD=your-password
+DB_NAME=projectmanagement
+DB_ENCRYPT=false
+DB_TRUST_SERVER_CERT=true
+```
+
+### 3. Run standalone (with external DB)
 
 ```bash
 docker run -d \
@@ -383,11 +430,15 @@ docker run -d \
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DB_HOST` | Yes | `mysql` | MySQL host |
-| `DB_USER` | Yes | `appuser` | MySQL user |
-| `DB_PASSWORD` | **Yes** | — | MySQL password |
+| `DB_PROVIDER` | No | `mysql` | Database provider (`mysql` or `mssql`) |
+| `DB_HOST` | Yes | `mysql` (Docker MySQL) | Database host |
+| `DB_USER` | Yes | `appuser` | Database user |
+| `DB_PASSWORD` | **Yes** | — | Database password |
 | `DB_NAME` | No | `projectmanagement` | Database name |
 | `DB_CONNECTION_LIMIT` | No | `50` | Connection pool size |
+| `DB_PORT` | No | `3306` (mysql), `1433` (mssql) | Database port |
+| `DB_ENCRYPT` | No | `false` | MSSQL TLS encrypt flag |
+| `DB_TRUST_SERVER_CERT` | No | `true` | MSSQL trust server certificate |
 | `JWT_SECRET` | **Yes** | — | Secret key for JWT tokens |
 | `ALLOWED_ORIGINS` | No | — | CORS allowed origins (comma-separated) |
 | `NEXT_PUBLIC_API_URL` | No | `http://localhost:3000` | Public API URL |
@@ -436,8 +487,8 @@ This is a **single container** that serves both the Next.js frontend and Express
                |
                |
       +--------+--------+
-      |   MySQL 8       |
-      |   Port 3306     |
+      | MySQL 8 / MSSQL |
+      | Port 3306/1433  |
       +-----------------+
 ```
 
