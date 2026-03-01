@@ -60,6 +60,7 @@ import sprintsRoutes from './routes/sprints';
 import portalRoutes from './routes/portal';
 import applicationsRoutes from './routes/applications';
 import projectReportSchedulesRoutes from './routes/projectReportSchedules';
+import holidaysRoutes from './routes/holidays';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
 import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler';
 import { startPdfReportScheduler } from './utils/pdfReportScheduler';
@@ -233,6 +234,7 @@ app.prepare().then(async () => {
   server.use('/api/sprints', sprintsRoutes);
   server.use('/api/portal', portalRoutes);
   server.use('/api/project-report-schedules', projectReportSchedulesRoutes);
+  server.use('/api/holidays', holidaysRoutes);
 
   // Error handling middleware
   server.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

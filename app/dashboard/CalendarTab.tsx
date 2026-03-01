@@ -6,7 +6,7 @@ import { RecurringAllocationOccurrence } from '@/lib/api/recurringAllocations';
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Calendar, dateFnsLocalizer, Views } from 'react-big-calendar';
-import { format, parse, startOfWeek, getDay } from 'date-fns';
+import { format, parse, startOfWeek, endOfWeek, startOfMonth, endOfMonth, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
 import SearchableSelect from '@/components/SearchableSelect';
 import RichTextEditor from '@/components/RichTextEditor';
@@ -85,13 +85,24 @@ interface TaskAllocation {
   EndTime: string;
 }
 
+interface HolidayItem {
+  Id: number;
+  Year: number;
+  CountryCode: string;
+  HolidayDate: string;
+  HolidayName: string;
+  Source: string;
+  IsActive: number;
+}
+
 interface CalendarEvent {
   id: string;
   title: string;
   start: Date;
   end: Date;
+  allDay?: boolean;
   resource: {
-    type: 'task' | 'timeEntry' | 'call' | 'lunch' | 'recurring';
+    type: 'task' | 'timeEntry' | 'call' | 'lunch' | 'recurring' | 'holiday';
     projectId?: number;
     taskId?: number;
     entryId?: number;
@@ -100,6 +111,8 @@ interface CalendarEvent {
     description?: string;
     workDate?: string;
     recurringAllocationId?: number;
+    holidayId?: number;
+    source?: string;
   };
 }
 
@@ -133,6 +146,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   const router = useRouter();
   const [currentView, setCurrentView] = useState<'week' | 'month'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [holidays, setHolidays] = useState<HolidayItem[]>([]);
   
   // Slot selection modal state
   const [showSlotModal, setShowSlotModal] = useState(false);
@@ -159,6 +173,54 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   const [projects, setProjects] = useState<Project[]>([]);
   const [availableTasks, setAvailableTasks] = useState<Task[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!token) {
+      setHolidays([]);
+      return;
+    }
+
+    const loadHolidays = async () => {
+      try {
+        const visibleStart = currentView === 'month'
+          ? startOfMonth(currentDate)
+          : startOfWeek(currentDate);
+        const visibleEnd = currentView === 'month'
+          ? endOfMonth(currentDate)
+          : endOfWeek(currentDate);
+
+        const years = Array.from(new Set([visibleStart.getFullYear(), visibleEnd.getFullYear()]));
+
+        const responses = await Promise.all(
+          years.map((year) =>
+            fetch(`${getApiUrl()}/api/holidays/my?year=${year}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+          )
+        );
+
+        const holidayLists = await Promise.all(
+          responses.map(async (response) => {
+            if (!response.ok) {
+              return [] as HolidayItem[];
+            }
+            const data = await response.json();
+            return (data.holidays || []) as HolidayItem[];
+          })
+        );
+
+        const merged = holidayLists.flat();
+        const uniqueById = new Map<number, HolidayItem>();
+        merged.forEach((holiday) => uniqueById.set(holiday.Id, holiday));
+        setHolidays(Array.from(uniqueById.values()));
+      } catch (error) {
+        console.error('Error loading holidays for calendar:', error);
+        setHolidays([]);
+      }
+    };
+
+    loadHolidays();
+  }, [token, currentDate, currentView]);
   
   // Load organizations on mount
   useEffect(() => {
@@ -504,6 +566,31 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       });
     });
 
+    holidays.forEach((holiday) => {
+      const datePart = String(holiday.HolidayDate).split('T')[0];
+      const [year, month, day] = datePart.split('-').map(Number);
+
+      if (!year || !month || !day) {
+        return;
+      }
+
+      const start = new Date(year, month - 1, day, 0, 0, 0);
+      const end = new Date(year, month - 1, day + 1, 0, 0, 0);
+
+      calendarEvents.push({
+        id: `holiday-${holiday.Id}`,
+        title: `🎉 ${holiday.HolidayName}`,
+        start,
+        end,
+        allDay: true,
+        resource: {
+          type: 'holiday',
+          holidayId: holiday.Id,
+          source: holiday.Source,
+        },
+      });
+    });
+
     const seenEventIds = new Map<string, number>();
     return calendarEvents.map((event) => {
       const baseId = String(event.id);
@@ -519,9 +606,13 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
         id: `${baseId}__${count}`,
       };
     });
-  }, [taskAllocations, timeEntries, callRecords, recurringAllocations, workStartTimes, lunchTime, lunchDuration]);
+  }, [taskAllocations, timeEntries, callRecords, recurringAllocations, holidays, workStartTimes, lunchTime, lunchDuration]);
 
   const handleSelectEvent = useCallback((event: CalendarEvent) => {
+    if (event.resource.type === 'holiday') {
+      return;
+    }
+
     if (event.resource.type === 'task' && event.resource.projectId) {
       router.push(`/projects/${event.resource.projectId}`);
     } else if (event.resource.type === 'timeEntry' && event.resource.entryId) {
@@ -553,6 +644,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     const isCall = event.resource.type === 'call';
     const isLunch = event.resource.type === 'lunch';
     const isRecurring = event.resource.type === 'recurring';
+    const isHoliday = event.resource.type === 'holiday';
     
     let bgColor = '#10b981'; // green for time entries
     let borderColor = '#059669';
@@ -569,6 +661,9 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     } else if (isRecurring) {
       bgColor = '#ec4899'; // pink for recurring tasks
       borderColor = '#db2777';
+    } else if (isHoliday) {
+      bgColor = '#ef4444'; // red for holidays
+      borderColor = '#dc2626';
     }
     
     return {
@@ -959,6 +1054,10 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-purple-500 rounded"></div>
             <span className="text-gray-700 dark:text-gray-300">Calls</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-red-500 rounded"></div>
+            <span className="text-gray-700 dark:text-gray-300">Holidays</span>
           </div>
         </div>
       </div>

@@ -6,6 +6,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { usersApi, User } from '@/lib/api/users';
 import { getCustomers } from '@/lib/api/customers';
+import { COUNTRY_OPTIONS, getCountryName } from '@/lib/constants/countries';
+import SearchableSelect from '@/components/SearchableSelect';
 
 interface CustomerOption {
   Id: number;
@@ -21,6 +23,9 @@ export default function UsersManagement() {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const { user, token } = useAuth();
   const { permissions } = usePermissions();
   const router = useRouter();
@@ -122,6 +127,40 @@ export default function UsersManagement() {
     router.push(`/users/${userId}`);
   };
 
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredUsers = users.filter((u) => {
+    if (!normalizedSearch) return true;
+
+    const fullName = `${u.FirstName || ''} ${u.LastName || ''}`.trim().toLowerCase();
+    const customerName = (u.CustomerName || '').toLowerCase();
+    const countryName = getCountryName(u.CountryCode).toLowerCase();
+    const countryCode = (u.CountryCode || '').toLowerCase();
+
+    return (
+      u.Username.toLowerCase().includes(normalizedSearch) ||
+      (u.Email || '').toLowerCase().includes(normalizedSearch) ||
+      fullName.includes(normalizedSearch) ||
+      customerName.includes(normalizedSearch) ||
+      countryName.includes(normalizedSearch) ||
+      countryCode.includes(normalizedSearch)
+    );
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * pageSize;
+  const pagedUsers = filteredUsers.slice(startIndex, startIndex + pageSize);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -141,6 +180,30 @@ export default function UsersManagement() {
         )}
       </div>
 
+      <div className="mb-4 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+        <div className="w-full md:max-w-md">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search by username, email, name, customer, or country"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          />
+        </div>
+        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+          <span>Rows per page</span>
+          <select
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          >
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+          </select>
+        </div>
+      </div>
+
       {error && (
         <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
           {error}
@@ -152,7 +215,7 @@ export default function UsersManagement() {
           <div className="text-xl text-gray-600 dark:text-gray-400">Loading users...</div>
         </div>
       ) : (
-        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg shadow overflow-hidden">
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg shadow overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-100 dark:bg-gray-700">
               <tr>
@@ -172,6 +235,9 @@ export default function UsersManagement() {
                   Team Leader
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Country
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -183,7 +249,7 @@ export default function UsersManagement() {
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {users.map((u) => (
+              {pagedUsers.map((u) => (
                 <tr key={u.Id} className={(u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'customer' ? 'bg-orange-50/30 dark:bg-orange-900/10' : ''}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
@@ -272,6 +338,13 @@ export default function UsersManagement() {
                       <span className="text-gray-400 dark:text-gray-500">—</span>
                     )}
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                    {u.CountryCode ? (
+                      <span>{getCountryName(u.CountryCode)} ({u.CountryCode})</span>
+                    ) : (
+                      <span className="text-gray-400 dark:text-gray-500">—</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                       u.IsActive 
@@ -284,38 +357,67 @@ export default function UsersManagement() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                     {new Date(u.CreatedAt).toLocaleDateString()}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <button
-                      onClick={() => handleViewDetails(u.Id)}
-                      className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-300 mr-4"
-                    >
-                      View
-                    </button>
-                    <button
-                      onClick={() => handleEditUser(u)}
-                      className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleResetPassword(u)}
-                      className="text-yellow-600 hover:text-yellow-900 dark:text-yellow-400 dark:hover:text-yellow-300 mr-4"
-                    >
-                      Reset Password
-                    </button>
-                    {u.Id !== user?.id && (
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex items-center justify-end gap-4 min-w-[320px]">
                       <button
-                        onClick={() => handleDeleteUser(u.Id)}
-                        className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                        onClick={() => handleViewDetails(u.Id)}
+                        className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-300"
                       >
-                        Delete
+                        View
                       </button>
-                    )}
+                      <button
+                        onClick={() => handleEditUser(u)}
+                        className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleResetPassword(u)}
+                        className="text-yellow-600 hover:text-yellow-900 dark:text-yellow-400 dark:hover:text-yellow-300"
+                      >
+                        Reset Password
+                      </button>
+                      {u.Id !== user?.id && (
+                        <button
+                          onClick={() => handleDeleteUser(u.Id)}
+                          className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!isLoadingUsers && (
+        <div className="mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 text-sm text-gray-600 dark:text-gray-400">
+          <div>
+            Showing {filteredUsers.length === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + pageSize, filteredUsers.length)} of {filteredUsers.length} users
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              disabled={safeCurrentPage <= 1}
+              className="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span>Page {safeCurrentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={safeCurrentPage >= totalPages}
+              className="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       )}
 
@@ -408,6 +510,10 @@ function CreateUserModal({
   customers: CustomerOption[];
   allUsers: User[];
 }) {
+  const countryOptions = COUNTRY_OPTIONS.map((country) => ({
+    value: country.code,
+    label: `${country.name} (${country.code})`
+  }));
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -422,6 +528,7 @@ function CreateUserModal({
     isActive: true,
     customerId: '',
     teamLeaderId: '',
+    countryCode: '',
     workHoursMonday: '8',
     workHoursTuesday: '8',
     workHoursWednesday: '8',
@@ -460,6 +567,7 @@ function CreateUserModal({
         isActive: formData.isActive,
         customerId: formData.customerId ? parseInt(formData.customerId) : undefined,
         teamLeaderId: formData.teamLeaderId ? parseInt(formData.teamLeaderId) : null,
+        countryCode: formData.countryCode || null,
         workHoursMonday: parseFloat(formData.workHoursMonday),
         workHoursTuesday: parseFloat(formData.workHoursTuesday),
         workHoursWednesday: parseFloat(formData.workHoursWednesday),
@@ -704,6 +812,21 @@ function CreateUserModal({
               </select>
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Country
+                <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">(used for holiday calendar)</span>
+              </label>
+              <SearchableSelect
+                value={formData.countryCode}
+                onChange={(value) => setFormData({ ...formData, countryCode: value })}
+                options={countryOptions}
+                placeholder="Country"
+                emptyText="No country selected"
+                className="w-full"
+              />
+            </div>
+
             <div className="flex gap-3 mt-6">
               <button
                 type="button"
@@ -743,6 +866,10 @@ function EditUserModal({
   customers: CustomerOption[];
   allUsers: User[];
 }) {
+  const countryOptions = COUNTRY_OPTIONS.map((country) => ({
+    value: country.code,
+    label: `${country.name} (${country.code})`
+  }));
   const [formData, setFormData] = useState({
     username: user.Username,
     email: user.Email,
@@ -756,6 +883,7 @@ function EditUserModal({
     isActive: !!user.IsActive,
     customerId: user.CustomerId?.toString() || '',
     teamLeaderId: user.TeamLeaderId?.toString() || '',
+    countryCode: user.CountryCode || '',
     workHoursMonday: user.WorkHoursMonday?.toString() || '8',
     workHoursTuesday: user.WorkHoursTuesday?.toString() || '8',
     workHoursWednesday: user.WorkHoursWednesday?.toString() || '8',
@@ -793,6 +921,7 @@ function EditUserModal({
         isActive: formData.isActive,
         customerId: formData.customerId ? parseInt(formData.customerId) : undefined,
         teamLeaderId: formData.teamLeaderId ? parseInt(formData.teamLeaderId) : null,
+        countryCode: formData.countryCode || null,
         workHoursMonday: parseFloat(formData.workHoursMonday),
         workHoursTuesday: parseFloat(formData.workHoursTuesday),
         workHoursWednesday: parseFloat(formData.workHoursWednesday),
@@ -957,6 +1086,21 @@ function EditUserModal({
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Country
+                <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">(used for holiday calendar)</span>
+              </label>
+              <SearchableSelect
+                value={formData.countryCode}
+                onChange={(value) => setFormData({ ...formData, countryCode: value })}
+                options={countryOptions}
+                placeholder="Country"
+                emptyText="No country selected"
+                className="w-full"
+              />
             </div>
 
             <div className="space-y-2">

@@ -1,0 +1,56 @@
+{
+  "TableName": "Holidays",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "Year",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CountryCode",
+      "DataType": "varchar(2)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "HolidayDate",
+      "DataType": "date",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "HolidayName",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Source",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "manual"
+    },
+    {
+      "FieldName": "IsActive",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    }
+  ]
+}

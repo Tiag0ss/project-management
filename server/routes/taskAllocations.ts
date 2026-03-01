@@ -6,6 +6,26 @@ import { createNotification } from './notifications';
 
 const router = express.Router();
 
+const normalizeDateKey = (value: unknown): string => String(value || '').split('T')[0];
+
+const getHolidayDateSetForUser = async (userId: number, startDate: string, endDate: string): Promise<Set<string>> => {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT h.HolidayDate
+     FROM Users u
+     INNER JOIN Holidays h ON h.CountryCode = COALESCE(NULLIF(UPPER(TRIM(u.CountryCode)), ''), 'PT')
+     WHERE u.Id = ?
+       AND h.IsActive = 1
+       AND h.HolidayDate BETWEEN ? AND ?`,
+    [userId, startDate, endDate]
+  );
+
+  const result = new Set<string>();
+  for (const row of rows) {
+    result.add(normalizeDateKey(row.HolidayDate));
+  }
+  return result;
+};
+
 const syncTaskPrimaryAssignee = async (
   taskId: number,
   assigneeId: any,
@@ -469,7 +489,8 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
               HobbyStartMonday, HobbyStartTuesday, HobbyStartWednesday, HobbyStartThursday,
               HobbyStartFriday, HobbyStartSaturday, HobbyStartSunday,
               HobbyHoursMonday, HobbyHoursTuesday, HobbyHoursWednesday, HobbyHoursThursday,
-              HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday
+              HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
+              CountryCode
        FROM Users WHERE Id = ?`,
       [userId]
     );
@@ -480,9 +501,20 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
 
     const user = users[0];
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const holidayWindowEnd = new Date(fromDate + 'T12:00:00');
+    holidayWindowEnd.setDate(holidayWindowEnd.getDate() + 5475);
+    const holidayWindowEndStr = normalizeDateKey(holidayWindowEnd.toISOString());
+    const holidayDates = await getHolidayDateSetForUser(Number(userId), normalizeDateKey(fromDate), holidayWindowEndStr);
+
+    const getDateKey = (date: Date): string => {
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    };
     
     // Helper function to check if a date is a work day and get max hours
     const getWorkHoursForDay = (date: Date): number => {
+      if (holidayDates.has(getDateKey(date))) {
+        return 0;
+      }
       const dayOfWeek = date.getDay();
       const dayName = dayNames[dayOfWeek];
       const workHoursKey = `WorkHours${dayName}`;
@@ -498,6 +530,9 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
 
     // Hobby helper functions
     const getHobbyHoursForDay = (date: Date): number => {
+      if (holidayDates.has(getDateKey(date))) {
+        return 0;
+      }
       const dayOfWeek = date.getDay();
       const dayName = dayNames[dayOfWeek];
       const hobbyHoursKey = `HobbyHours${dayName}`;
@@ -1209,6 +1244,7 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
     }
 
     const user = users[0];
+    const holidayDates = await getHolidayDateSetForUser(Number(userId), String(startDate), String(endDate));
 
     // Get existing direct allocations for the date range, optionally excluding a specific task
     // Filter by hobby/work projects
@@ -1318,6 +1354,7 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
 
       // Use local date components to stay consistent with getDay()
       const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      const isHoliday = holidayDates.has(dateStr);
       
       // Find allocation from merged map (direct + child allocations)
       const allocated = allocationMap.get(dateStr);
@@ -1325,11 +1362,11 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
       const latestEndTime = allocated?.latestEndTime || null;
 
       // Calculate available hours based on remaining time window, not just capacity minus allocated
-      let availableHours = Math.max(0, maxHours - allocatedHours);
+      let availableHours = isHoliday ? 0 : Math.max(0, maxHours - allocatedHours);
       
       // If there are existing allocations with an end time, cap available hours
       // by the remaining time in the configured window
-      if (latestEndTime && maxHours > 0) {
+      if (!isHoliday && latestEndTime && maxHours > 0) {
         const [slotStartH, slotStartM] = slotStartTime.split(':').map(Number);
         const slotStartMinutes = slotStartH * 60 + slotStartM;
         const slotEndMinutes = slotStartMinutes + maxHours * 60;
@@ -1348,12 +1385,13 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
       availability.push({
         date: dateStr,
         dayOfWeek: dayName,
-        maxHours,
+        maxHours: isHoliday ? 0 : maxHours,
         allocatedHours,
         availableHours,
         workStartTime: slotStartTime,
         latestEndTime,
-        isHobby: forHobby
+        isHobby: forHobby,
+        isHoliday
       });
     }
 
@@ -1431,6 +1469,25 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     if (!canPlan) {
       return res.status(403).json({ success: false, message: 'No permission to plan tasks' });
+    }
+
+    const normalizedDates = Array.from(
+      new Set(
+        allocations
+          .map((a: any) => normalizeDateKey(a.date))
+          .filter((date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+      )
+    ).sort();
+
+    if (normalizedDates.length > 0) {
+      const holidayDates = await getHolidayDateSetForUser(Number(userId), normalizedDates[0], normalizedDates[normalizedDates.length - 1]);
+      const blockedDates = normalizedDates.filter((date) => holidayDates.has(date));
+      if (blockedDates.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot allocate on holidays for this user: ${blockedDates.join(', ')}`
+        });
+      }
     }
 
     // Delete existing allocations for this task
@@ -2007,6 +2064,15 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
     const task = tasks[0];
     const isHobby = task.IsHobby === 1;
 
+    const normalizedAllocationDate = normalizeDateKey(allocationDate);
+    const holidayDates = await getHolidayDateSetForUser(Number(userId), normalizedAllocationDate, normalizedAllocationDate);
+    if (holidayDates.has(normalizedAllocationDate)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot allocate on holiday date ${normalizedAllocationDate}`
+      });
+    }
+
     // Get user's work configuration
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT WorkHoursMonday, WorkHoursTuesday, WorkHoursWednesday, WorkHoursThursday,
@@ -2055,7 +2121,7 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
        INNER JOIN Tasks t ON ta.TaskId = t.Id
        INNER JOIN Projects p ON t.ProjectId = p.Id
        WHERE ta.UserId = ? AND ta.AllocationDate = ?`,
-      [userId, allocationDate]
+      [userId, normalizedAllocationDate]
     );
 
     // Calculate already allocated hours for the same task type
@@ -2095,7 +2161,7 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
        INNER JOIN Tasks t ON ta.TaskId = t.Id
        INNER JOIN Projects p ON t.ProjectId = p.Id
        WHERE ta.UserId = ? AND ta.AllocationDate = ? AND COALESCE(p.IsHobby, 0) = ?`,
-      [userId, allocationDate, isHobby ? 1 : 0]
+      [userId, normalizedAllocationDate, isHobby ? 1 : 0]
     );
 
     let slotStart = workStartMinutes;
@@ -2129,7 +2195,7 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
         await pool.execute<ResultSetHeader>(
           `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
            VALUES (?, ?, ?, ?, ?, ?, 1)`,
-          [taskId, userId, allocationDate, morningHours, formatTime(morningStart), formatTime(morningEnd)]
+          [taskId, userId, normalizedAllocationDate, morningHours, formatTime(morningStart), formatTime(morningEnd)]
         );
 
         // Create afternoon allocation
@@ -2141,7 +2207,7 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
         await pool.execute<ResultSetHeader>(
           `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
            VALUES (?, ?, ?, ?, ?, ?, 1)`,
-          [taskId, userId, allocationDate, afternoonHours, formatTime(afternoonStart), formatTime(afternoonEnd)]
+          [taskId, userId, normalizedAllocationDate, afternoonHours, formatTime(afternoonStart), formatTime(afternoonEnd)]
         );
 
         // Update task's PlannedStartDate and PlannedEndDate
@@ -2170,7 +2236,7 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
     await pool.execute<ResultSetHeader>(
       `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
        VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      [taskId, userId, allocationDate, allocatedHours, startTime, endTime]
+      [taskId, userId, normalizedAllocationDate, allocatedHours, startTime, endTime]
     );
 
     // Update task's PlannedStartDate and PlannedEndDate
@@ -2272,6 +2338,14 @@ router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Respo
 
     const allocation = allocations[0];
     const { TaskId, UserId, AllocationDate } = allocation;
+    const allocationDateKey = normalizeDateKey(AllocationDate);
+    const holidayDates = await getHolidayDateSetForUser(Number(UserId), allocationDateKey, allocationDateKey);
+    if (holidayDates.has(allocationDateKey)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot allocate on holiday date ${allocationDateKey}`
+      });
+    }
 
     // Delete all manual allocations for this task/user/date
     // (there might be 2 if it was split across lunch)

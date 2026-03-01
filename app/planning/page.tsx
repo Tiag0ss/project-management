@@ -18,6 +18,16 @@ import SearchableSelect from '@/components/SearchableSelect';
 // Week days constant - reused throughout the component
 const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+interface PlannerHoliday {
+  Id: number;
+  Year: number;
+  CountryCode: string;
+  HolidayDate: string;
+  HolidayName: string;
+  Source: string;
+  IsActive: number;
+}
+
 export default function PlanningPage() {
   const { user, isLoading, token } = useAuth();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
@@ -45,6 +55,7 @@ export default function PlanningPage() {
   const [childAllocations, setChildAllocations] = useState<{ParentTaskId: number; ChildTaskId: number; AllocationDate: string; AllocatedHours: number; Level: number}[]>([]);
   const [taskTimeEntries, setTaskTimeEntries] = useState<any[]>([]);
   const [recurringAllocations, setRecurringAllocations] = useState<any[]>([]);
+  const [holidayNamesByUserDate, setHolidayNamesByUserDate] = useState<Record<number, Record<string, string[]>>>({});
   const [loadingAllocations, setLoadingAllocations] = useState(false);
   const [showDependencyLines, setShowDependencyLines] = useState(true);
   const [showCriticalPath, setShowCriticalPath] = useState(false);
@@ -197,6 +208,40 @@ export default function PlanningPage() {
     if (/^\d{4}-\d{2}-\d{2}$/.test(asString)) return asString;
     const datePart = asString.split('T')[0];
     return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : null;
+  };
+
+  const getDateKeyFromDate = (date: Date): string => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+
+  const normalizeDateKey = (value: unknown): string => {
+    if (value instanceof Date) {
+      return getDateKeyFromDate(value);
+    }
+
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    const dateOnlyMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (dateOnlyMatch) {
+      return dateOnlyMatch[1];
+    }
+
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return getDateKeyFromDate(parsed);
+    }
+
+    const datePart = raw.split('T')[0];
+    return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : raw;
+  };
+
+  const getUserHolidayNames = (userId: number, dateStr: string): string[] => {
+    return holidayNamesByUserDate[userId]?.[dateStr] || [];
+  };
+
+  const isUserHoliday = (userId: number, dateStr: string): boolean => {
+    return getUserHolidayNames(userId, dateStr).length > 0;
   };
 
   const getLatestAllocationDate = (allocations: { date: string }[]): string | null => {
@@ -465,8 +510,10 @@ export default function PlanningPage() {
     try {
       // Calculate date range based on viewStartDate and viewMode
       const daysToShow = viewMode === 'day' ? 1 : viewMode === 'week' ? 28 : viewMode === 'month' ? 90 : 365;
-      const startDate = viewStartDate.toISOString().split('T')[0];
-      const endDate = new Date(viewStartDate.getTime() + daysToShow * 86400000).toISOString().split('T')[0];
+      const startDate = getDateKeyFromDate(viewStartDate);
+      const rangeEnd = new Date(viewStartDate);
+      rangeEnd.setDate(rangeEnd.getDate() + daysToShow - 1);
+      const endDate = getDateKeyFromDate(rangeEnd);
       
       // Fetch recurring allocation occurrences for all visible users
       const allRecurringOccurrences: any[] = [];
@@ -494,6 +541,101 @@ export default function PlanningPage() {
       console.log(`Loaded ${allRecurringOccurrences.length} recurring allocation occurrences for ${users.length} users in date range ${startDate} to ${endDate}`);
     } catch (err) {
       console.error('Failed to load recurring allocations:', err);
+    }
+  };
+
+  const loadPlannerHolidays = async () => {
+    if (!token || users.length === 0) {
+      setHolidayNamesByUserDate({});
+      return;
+    }
+
+    try {
+      const days = getDaysInView();
+      if (days.length === 0) {
+        setHolidayNamesByUserDate({});
+        return;
+      }
+
+      const startDateKey = getDateKeyFromDate(days[0]);
+      const endDateKey = getDateKeyFromDate(days[days.length - 1]);
+
+      const years: number[] = [];
+      for (let year = days[0].getFullYear(); year <= days[days.length - 1].getFullYear(); year++) {
+        years.push(year);
+      }
+
+      const countryCodes = Array.from(
+        new Set(
+          users
+            .map((u) => String(u.CountryCode || 'PT').trim().toUpperCase())
+            .filter((code) => /^[A-Z]{2}$/.test(code))
+        )
+      );
+
+      if (countryCodes.length === 0 || years.length === 0) {
+        setHolidayNamesByUserDate({});
+        return;
+      }
+
+      const countryYearResults = await Promise.all(
+        countryCodes.flatMap((countryCode) =>
+          years.map(async (year) => {
+            const response = await fetch(`${getApiUrl()}/api/holidays?year=${year}&countryCode=${countryCode}`, {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (!response.ok) {
+              return { countryCode, year, holidays: [] as PlannerHoliday[] };
+            }
+
+            const data = await response.json();
+            return {
+              countryCode,
+              year,
+              holidays: (data.holidays || []) as PlannerHoliday[]
+            };
+          })
+        )
+      );
+
+      const byCountryYear = new Map<string, PlannerHoliday[]>();
+      for (const entry of countryYearResults) {
+        byCountryYear.set(`${entry.countryCode}-${entry.year}`, entry.holidays);
+      }
+
+      const result: Record<number, Record<string, string[]>> = {};
+
+      users.forEach((planningUser) => {
+        const countryCode = String(planningUser.CountryCode || 'PT').trim().toUpperCase();
+        const holidayMapForUser: Record<string, string[]> = {};
+
+        years.forEach((year) => {
+          const holidays = byCountryYear.get(`${countryCode}-${year}`) || [];
+          holidays
+            .filter((holiday) => Number(holiday.IsActive) === 1)
+            .forEach((holiday) => {
+              const dateKey = normalizeDateKey(holiday.HolidayDate);
+              if (dateKey < startDateKey || dateKey > endDateKey) {
+                return;
+              }
+              if (!holidayMapForUser[dateKey]) {
+                holidayMapForUser[dateKey] = [];
+              }
+              holidayMapForUser[dateKey].push(holiday.HolidayName);
+            });
+        });
+
+        result[planningUser.Id] = holidayMapForUser;
+      });
+
+      setHolidayNamesByUserDate(result);
+    } catch (err) {
+      console.error('Failed to load planner holidays:', err);
+      setHolidayNamesByUserDate({});
     }
   };
 
@@ -894,6 +1036,14 @@ export default function PlanningPage() {
     }
   }, [viewStartDate, viewMode, users.length]);
 
+  useEffect(() => {
+    if (users.length > 0 && token) {
+      loadPlannerHolidays();
+    } else {
+      setHolidayNamesByUserDate({});
+    }
+  }, [viewStartDate, viewMode, users, token]);
+
   const getTasksForUser = (userId: number | null) => {
     let result: Task[];
     
@@ -1102,6 +1252,17 @@ export default function PlanningPage() {
     e.preventDefault();
     e.stopPropagation();
     if (!draggedTask || !permissions?.canPlanTasks || !userId) return;
+
+    const droppedDateStr = getDateKeyFromDate(day);
+    const droppedDateHolidayNames = getUserHolidayNames(userId, droppedDateStr);
+    if (droppedDateHolidayNames.length > 0) {
+      showAlert(
+        'Holiday',
+        `Cannot plan on holiday for this user (${droppedDateStr}): ${droppedDateHolidayNames.join(', ')}`
+      );
+      setDraggedTask(null);
+      return;
+    }
 
     // If dragged from subtasks modal, close it
     if (subtasksModal.show) {
@@ -1673,6 +1834,10 @@ export default function PlanningPage() {
 
       for (const dayAvailability of availability) {
         if (remainingHours <= 0) break;
+
+        if (isUserHoliday(userId, String(dayAvailability.date))) {
+          continue;
+        }
 
         // Trust the backend's availableHours — it already accounts for capacity and the time window.
         const dayAvail = parseFloat(String(dayAvailability.availableHours)) || 0;
@@ -2438,6 +2603,12 @@ export default function PlanningPage() {
       
       while (remainingHours > 0 && daysProcessed < maxDaysToProcess) {
         const dateStr = currentDate.toISOString().split('T')[0];
+
+        if (isUserHoliday(userId, dateStr)) {
+          currentDate.setDate(currentDate.getDate() + 1);
+          continue;
+        }
+
         const dayAvailability = availability.find((a: any) => a.date === dateStr);
         
         if (dayAvailability && dayAvailability.availableHours > 0) {
@@ -2661,7 +2832,7 @@ export default function PlanningPage() {
     const totals: { [dateStr: string]: { work: number; hobby: number; recurring: number } } = {};
     
     days.forEach(day => {
-      const dateStr = day.toISOString().split('T')[0];
+      const dateStr = getDateKeyFromDate(day);
       totals[dateStr] = { work: 0, hobby: 0, recurring: 0 };
     });
     
@@ -2670,9 +2841,7 @@ export default function PlanningPage() {
     
     userAllocations.forEach(allocation => {
       // Normalize date string
-      const allocDate = typeof allocation.AllocationDate === 'string' 
-        ? allocation.AllocationDate.split('T')[0]
-        : new Date(allocation.AllocationDate).toISOString().split('T')[0];
+      const allocDate = normalizeDateKey(allocation.AllocationDate);
       
       if (totals[allocDate] !== undefined) {
         const hours = Number(allocation.AllocatedHours) || 0;
@@ -2687,13 +2856,7 @@ export default function PlanningPage() {
     // Add recurring allocations
     const userRecurring = recurringAllocations.filter(a => a.UserId === userId);
     userRecurring.forEach(recurring => {
-      let dateStr: string;
-      if (recurring.OccurrenceDate instanceof Date) {
-        const d = recurring.OccurrenceDate;
-        dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      } else {
-        dateStr = String(recurring.OccurrenceDate).split('T')[0];
-      }
+      const dateStr = normalizeDateKey(recurring.OccurrenceDate);
       
       if (totals[dateStr] !== undefined) {
         const hours = Number(recurring.AllocatedHours) || 0;
@@ -2831,6 +2994,15 @@ export default function PlanningPage() {
     const hours = parseFloat(manualAllocationModal.allocatedHours);
     if (isNaN(hours) || hours <= 0) {
       showAlert('Error', 'Hours must be greater than 0');
+      return;
+    }
+
+    if (manualAllocationModal.mode === 'add' && isUserHoliday(manualAllocationModal.userId, manualAllocationModal.allocationDate)) {
+      const holidayNames = getUserHolidayNames(manualAllocationModal.userId, manualAllocationModal.allocationDate);
+      showAlert(
+        'Holiday',
+        `Cannot create manual allocation on holiday (${manualAllocationModal.allocationDate}): ${holidayNames.join(', ')}`
+      );
       return;
     }
 
@@ -3505,7 +3677,7 @@ export default function PlanningPage() {
                   };
 
                   const isDayOverAllocated = (day: Date) => {
-                    const dateStr = day.toISOString().split('T')[0];
+                    const dateStr = getDateKeyFromDate(day);
                     const totals = userDailyTotals[dateStr] || { work: 0, hobby: 0, recurring: 0 };
                     const { workCapacity, hobbyCapacity } = getDayCapacities(day);
 
@@ -3643,16 +3815,22 @@ export default function PlanningPage() {
                         <div className="flex h-full">
                           {days.map((day, idx) => {
                             const isOverAllocated = isDayOverAllocated(day);
+                            const dateKey = getDateKeyFromDate(day);
+                            const holidayNames = getUserHolidayNames(userRow.Id, dateKey);
+                            const isHoliday = holidayNames.length > 0;
                             return (
                               <div
                                 key={idx}
                                 className={`flex-1 border-r border-gray-200 dark:border-gray-700 relative ${
                                   isOverAllocated
                                     ? 'bg-red-50 dark:bg-red-900/20'
+                                    : isHoliday
+                                    ? 'bg-amber-50 dark:bg-amber-900/20'
                                     : ''
                                 }`}
                                 onDragOver={handleDragOver}
                                 onDrop={(e) => handleDropOnDay(e, day, userRow.Id)}
+                                title={isHoliday ? `Holiday: ${holidayNames.join(', ')}` : undefined}
                               />
                             );
                           })}
@@ -3780,18 +3958,9 @@ export default function PlanningPage() {
                           .filter(recurring => recurring.UserId === userRow.Id)
                           .map(recurring => {
                             // Normalize the occurrence date for comparison
-                            let occurrenceDateStr: string;
-                            if (recurring.OccurrenceDate instanceof Date) {
-                              const d = recurring.OccurrenceDate;
-                              occurrenceDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                            } else {
-                              occurrenceDateStr = String(recurring.OccurrenceDate).split('T')[0];
-                            }
+                            const occurrenceDateStr = normalizeDateKey(recurring.OccurrenceDate);
                             
-                            const dayIndex = days.findIndex(d => {
-                              const dayDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                              return dayDateStr === occurrenceDateStr;
-                            });
+                            const dayIndex = days.findIndex(d => getDateKeyFromDate(d) === occurrenceDateStr);
                             
                             if (dayIndex === -1) return null;
                             
@@ -3830,12 +3999,14 @@ export default function PlanningPage() {
                       </div>
                       <div className="flex-1 flex">
                         {days.map((day, idx) => {
-                          const dateStr = day.toISOString().split('T')[0];
+                          const dateStr = getDateKeyFromDate(day);
                           const totals = userDailyTotals[dateStr] || { work: 0, hobby: 0, recurring: 0 };
                           const hasWork = totals.work > 0;
                           const hasHobby = totals.hobby > 0;
                           const hasRecurring = totals.recurring > 0;
                           const isOverAllocated = isDayOverAllocated(day);
+                          const holidayNames = getUserHolidayNames(userRow.Id, dateStr);
+                          const isHoliday = holidayNames.length > 0;
                           
                           // Get capacity for this day
                           const { workCapacity, hobbyCapacity } = getDayCapacities(day);
@@ -3846,12 +4017,17 @@ export default function PlanningPage() {
                               className={`flex-1 py-0.5 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
                                 isOverAllocated
                                   ? 'bg-red-100/70 dark:bg-red-900/35'
+                                  : isHoliday
+                                  ? 'bg-amber-100/70 dark:bg-amber-900/35'
                                   : day.getDay() === 0 || day.getDay() === 6
                                   ? 'bg-gray-100 dark:bg-gray-700'
                                   : ''
                               }`}
-                              title={isOverAllocated ? 'Over allocated day: planned hours exceed configured capacity' : undefined}
+                              title={isOverAllocated ? 'Over allocated day: planned hours exceed configured capacity' : isHoliday ? `Holiday: ${holidayNames.join(', ')}` : undefined}
                             >
+                              {isHoliday && (
+                                <div className="text-amber-700 dark:text-amber-300 font-medium">🎉</div>
+                              )}
                               {hasRecurring && (
                                 <div className="text-pink-600 dark:text-pink-400 font-medium">
                                   🔄 {totals.recurring.toFixed(1)}h

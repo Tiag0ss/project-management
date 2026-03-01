@@ -158,6 +158,7 @@ export interface User {
   isDeveloper?: boolean;
   isManager?: boolean;
   customerId?: number | null;
+  countryCode?: string | null;
 }
 
 export interface AuthResponse {

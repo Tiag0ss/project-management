@@ -24,6 +24,11 @@ const normalizeEmailInput = (value: unknown): string => {
   return typeof value === 'string' ? value.trim() : '';
 };
 
+const isValidCountryCode = (value: string | null): boolean => {
+  if (!value) return true;
+  return /^[A-Z]{2}$/.test(value);
+};
+
 const buildFictitiousEmail = async (username: string): Promise<string> => {
   const base = String(username || 'fictitious')
     .toLowerCase()
@@ -82,7 +87,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
               HobbyStartFriday, HobbyStartSaturday, HobbyStartSunday,
               HobbyHoursMonday, HobbyHoursTuesday, HobbyHoursWednesday, HobbyHoursThursday,
               HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
-              Timezone, HourlyRate, CreatedAt, UpdatedAt 
+              Timezone, HourlyRate, CountryCode, CreatedAt, UpdatedAt 
        FROM Users 
        WHERE Id = ?`,
       [userId]
@@ -137,7 +142,12 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
 router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { firstName, lastName, email, timezone } = req.body;
+    const { firstName, lastName, email, timezone, countryCode } = req.body;
+    const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
+
+    if (!isValidCountryCode(normalizedCountryCode)) {
+      return res.status(400).json({ success: false, message: 'Country code must be a valid ISO 2-letter code' });
+    }
 
     // Validate email
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -164,16 +174,16 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
 
     // Get old profile data for logging
     const [oldProfile] = await pool.execute<RowDataPacket[]>(
-      'SELECT FirstName, LastName, Email, Timezone FROM Users WHERE Id = ?',
+      'SELECT FirstName, LastName, Email, Timezone, CountryCode FROM Users WHERE Id = ?',
       [userId]
     );
     const oldData = oldProfile[0];
 
     await pool.execute(
       `UPDATE Users 
-       SET FirstName = ?, LastName = ?, Email = ?, Timezone = ?
+       SET FirstName = ?, LastName = ?, Email = ?, Timezone = ?, CountryCode = ?
        WHERE Id = ?`,
-      [firstName || null, lastName || null, email, timezone || null, userId]
+      [firstName || null, lastName || null, email, timezone || null, normalizedCountryCode, userId]
     );
 
     // Log profile changes
@@ -188,6 +198,9 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
     }
     if (timezone !== oldData.Timezone) {
       await logUserHistory(userId!, userId!, 'updated', 'Timezone', oldData.Timezone || '', timezone || '');
+    }
+    if (String(normalizedCountryCode || '') !== String(oldData.CountryCode || '')) {
+      await logUserHistory(userId!, userId!, 'updated', 'CountryCode', oldData.CountryCode || '', normalizedCountryCode || '');
     }
 
     // Log activity
@@ -473,7 +486,7 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName, u.IsActive, u.IsAdmin, 
               u.UserType, u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager,
-              u.HourlyRate, u.TeamLeaderId, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
+              u.HourlyRate, u.TeamLeaderId, u.CountryCode, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
               u.CreatedAt, u.UpdatedAt 
        FROM Users u
        LEFT JOIN Customers c ON u.CustomerId = c.Id
@@ -533,7 +546,12 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
 router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.params.id;
-    const { username, email, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId } = req.body;
+    const { username, email, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId, countryCode } = req.body;
+    const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
+
+    if (!isValidCountryCode(normalizedCountryCode)) {
+      return res.status(400).json({ success: false, message: 'Country code must be a valid ISO 2-letter code' });
+    }
 
     // Check if user exists
     const [existing] = await pool.execute<RowDataPacket[]>(
@@ -646,6 +664,9 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
     if (teamLeaderId !== undefined && String(teamLeaderId || '') !== String(oldUser.TeamLeaderId || '')) {
       changes.push({ field: 'TeamLeaderId', oldVal: String(oldUser.TeamLeaderId || ''), newVal: String(teamLeaderId || '') });
     }
+    if (countryCode !== undefined && String(normalizedCountryCode || '') !== String(oldUser.CountryCode || '')) {
+      changes.push({ field: 'CountryCode', oldVal: String(oldUser.CountryCode || ''), newVal: String(normalizedCountryCode || '') });
+    }
 
     // Parse hourlyRate correctly (handle 0 values)
     const parsedHourlyRate = (hourlyRate != null && hourlyRate !== '') ? parseFloat(hourlyRate) : null;
@@ -653,9 +674,9 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
 
     await pool.execute(
       `UPDATE Users 
-       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, UserType = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, TeamLeaderId = ? 
+       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, UserType = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, TeamLeaderId = ?, CountryCode = ? 
        WHERE Id = ?`,
-      [username, finalEmail, firstName || null, lastName || null, isActive, isAdmin, finalUserType, finalCustomerId, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null, userId]
+      [username, finalEmail, firstName || null, lastName || null, isActive, isAdmin, finalUserType, finalCustomerId, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null, normalizedCountryCode, userId]
     );
     
     // Log changes to history
@@ -914,7 +935,12 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, 
  */
 router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId } = req.body;
+    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId, countryCode } = req.body;
+    const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
+
+    if (!isValidCountryCode(normalizedCountryCode)) {
+      return res.status(400).json({ success: false, message: 'Country code must be a valid ISO 2-letter code' });
+    }
 
     const incomingCustomerId = customerId !== undefined && customerId !== null && customerId !== ''
       ? Number(customerId)
@@ -984,9 +1010,9 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
     const sanitizedHourlyRate = (parsedHourlyRate !== null && !isNaN(parsedHourlyRate)) ? parsedHourlyRate : null;
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, TeamLeaderId) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null]
+      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, TeamLeaderId, CountryCode) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null, normalizedCountryCode]
     );
 
     // Log user creation

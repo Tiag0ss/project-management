@@ -50,6 +50,7 @@ export interface User {
   HourlyRate?: number | null;
   TeamLeaderId?: number | null;
   TeamLeaderName?: string | null;
+  CountryCode?: string | null;
   CreatedAt: string;
   UpdatedAt: string;
 }
@@ -75,6 +76,7 @@ export interface UpdateUserData {
   workHoursSunday?: number;
   hourlyRate?: number | null;
   teamLeaderId?: number | null;
+  countryCode?: string | null;
 }
 
 export interface CreateUserData extends UpdateUserData {

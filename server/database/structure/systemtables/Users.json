@@ -322,6 +322,13 @@
       "Comment": "ID of the user's team leader, used for time entry approval workflow"
     },
     {
+      "FieldName": "CountryCode",
+      "DataType": "varchar(2)",
+      "NotNullable": false,
+      "DefaultValue": null,
+      "Comment": "ISO 3166-1 alpha-2 country code used for user holiday calendars"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

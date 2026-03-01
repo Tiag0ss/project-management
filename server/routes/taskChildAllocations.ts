@@ -5,6 +5,26 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 const router = express.Router();
 
+const normalizeDateKey = (value: unknown): string => String(value || '').split('T')[0];
+
+const getHolidayDateSetForUser = async (userId: number, startDate: string, endDate: string): Promise<Set<string>> => {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT h.HolidayDate
+     FROM Users u
+     INNER JOIN Holidays h ON h.CountryCode = COALESCE(NULLIF(UPPER(TRIM(u.CountryCode)), ''), 'PT')
+     WHERE u.Id = ?
+       AND h.IsActive = 1
+       AND h.HolidayDate BETWEEN ? AND ?`,
+    [userId, startDate, endDate]
+  );
+
+  const result = new Set<string>();
+  for (const row of rows) {
+    result.add(normalizeDateKey(row.HolidayDate));
+  }
+  return result;
+};
+
 /**
  * @swagger
  * tags:
@@ -48,6 +68,35 @@ router.post('/batch', authenticateToken, async (req: AuthRequest, res: Response)
 
     // Delete existing child allocations for the parent task
     const parentTaskId = allocations[0].ParentTaskId;
+
+    const normalizedDates = Array.from(
+      new Set(
+        allocations
+          .map((alloc: any) => normalizeDateKey(alloc.AllocationDate))
+          .filter((date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+      )
+    ).sort();
+
+    if (normalizedDates.length > 0) {
+      const [parentTaskRows] = await pool.execute<RowDataPacket[]>(
+        'SELECT AssignedTo FROM Tasks WHERE Id = ?',
+        [parentTaskId]
+      );
+      const assignedUserId = Number(parentTaskRows[0]?.AssignedTo || 0);
+
+      if (assignedUserId > 0) {
+        const holidayDates = await getHolidayDateSetForUser(assignedUserId, normalizedDates[0], normalizedDates[normalizedDates.length - 1]);
+        const blockedDates = normalizedDates.filter((date) => holidayDates.has(date));
+
+        if (blockedDates.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot create child allocations on holidays for assigned user: ${blockedDates.join(', ')}`
+          });
+        }
+      }
+    }
+
     await pool.execute(
       'DELETE FROM TaskChildAllocations WHERE ParentTaskId = ?',
       [parentTaskId]
