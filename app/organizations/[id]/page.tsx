@@ -13,6 +13,7 @@ import { projectsApi, Project } from '@/lib/api/projects';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
+import SearchableSelect from '@/components/SearchableSelect';
 
 export default function OrganizationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -957,15 +958,43 @@ function AddMemberModal({ orgId, groups, onClose, onAdded, token }: {
   token: string;
 }) {
   const [formData, setFormData] = useState<AddMemberData>({
-    userEmail: '',
+    userId: undefined,
     role: 'Member',
     permissionGroupId: undefined,
   });
+  const [availableUsers, setAvailableUsers] = useState<Array<{
+    Id: number;
+    Username: string;
+    Email: string;
+    FirstName?: string;
+    LastName?: string;
+  }>>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  useEffect(() => {
+    const loadAvailableUsers = async () => {
+      try {
+        setLoadingUsers(true);
+        const response = await organizationsApi.getAvailableUsers(orgId, token);
+        setAvailableUsers(response.users || []);
+      } catch (err: any) {
+        setError(err.message || 'Failed to load users');
+      } finally {
+        setLoadingUsers(false);
+      }
+    };
+
+    loadAvailableUsers();
+  }, [orgId, token]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.userId) {
+      setError('Please select a user');
+      return;
+    }
     setError('');
     setIsLoading(true);
 
@@ -1002,15 +1031,18 @@ function AddMemberModal({ orgId, groups, onClose, onAdded, token }: {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                User Email *
+                User *
               </label>
-              <input
-                type="email"
-                value={formData.userEmail}
-                onChange={(e) => setFormData({ ...formData, userEmail: e.target.value })}
-                required
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                placeholder="user@example.com"
+              <SearchableSelect
+                value={formData.userId || ''}
+                onChange={(value) => setFormData({ ...formData, userId: value ? parseInt(value, 10) : undefined })}
+                options={availableUsers.map((userItem) => ({
+                  value: userItem.Id,
+                  label: `${userItem.Username} (${userItem.Email})`
+                }))}
+                placeholder="User"
+                emptyText={loadingUsers ? 'Loading users...' : (availableUsers.length === 0 ? 'No available users' : 'Select user')}
+                disabled={loadingUsers || availableUsers.length === 0}
               />
             </div>
 
@@ -2695,6 +2727,7 @@ function GitHubIntegrationCard({
 }) {
   const [showForm, setShowForm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [formData, setFormData] = useState({
     isEnabled: true,
     gitHubUrl: '',
@@ -2747,8 +2780,6 @@ function GitHubIntegrationCard({
   };
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to remove the GitHub integration?')) return;
-
     try {
       const response = await fetch(
         `${getApiUrl()}/api/github-integrations/organization/${orgId}`,
@@ -2768,10 +2799,13 @@ function GitHubIntegrationCard({
       }
     } catch (err: any) {
       setError(err.message || 'Failed to delete GitHub integration');
+    } finally {
+      setShowDeleteConfirm(false);
     }
   };
 
   return (
+    <>
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
       <div className="p-6">
         <div className="flex items-start justify-between mb-4">
@@ -2837,7 +2871,7 @@ function GitHubIntegrationCard({
                 ✏️ Edit Configuration
               </button>
               <button
-                onClick={handleDelete}
+                onClick={() => setShowDeleteConfirm(true)}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
               >
                 🗑️ Remove Integration
@@ -2928,6 +2962,35 @@ function GitHubIntegrationCard({
         )}
       </div>
     </div>
+    {showDeleteConfirm && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+          <div className="p-6">
+            <h3 className="text-xl font-semibold mb-3 text-gray-900 dark:text-white">Remove GitHub Integration</h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-6">
+              Are you sure you want to remove the GitHub integration?
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
@@ -2949,6 +3012,7 @@ function GiteaIntegrationCard({
 }) {
   const [showForm, setShowForm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [formData, setFormData] = useState({
     isEnabled: true,
     giteaUrl: '',
@@ -3001,8 +3065,6 @@ function GiteaIntegrationCard({
   };
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to remove the Gitea integration?')) return;
-
     try {
       const response = await fetch(
         `${getApiUrl()}/api/gitea-integrations/organization/${orgId}`,
@@ -3022,10 +3084,13 @@ function GiteaIntegrationCard({
       }
     } catch (err: any) {
       setError(err.message || 'Failed to delete Gitea integration');
+    } finally {
+      setShowDeleteConfirm(false);
     }
   };
 
   return (
+    <>
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
       <div className="p-6">
         <div className="flex items-start justify-between mb-4">
@@ -3091,7 +3156,7 @@ function GiteaIntegrationCard({
                 ✏️ Edit Configuration
               </button>
               <button
-                onClick={handleDelete}
+                onClick={() => setShowDeleteConfirm(true)}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
               >
                 🗑️ Remove Integration
@@ -3182,6 +3247,35 @@ function GiteaIntegrationCard({
         )}
       </div>
     </div>
+    {showDeleteConfirm && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+          <div className="p-6">
+            <h3 className="text-xl font-semibold mb-3 text-gray-900 dark:text-white">Remove Gitea Integration</h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-6">
+              Are you sure you want to remove the Gitea integration?
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
@@ -3196,6 +3290,7 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [formData, setFormData] = useState({
     isEnabled: true,
     jiraUrl: '',
@@ -3378,8 +3473,8 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.jiraUrl || !formData.jiraEmail || !formData.jiraApiToken) {
+
+    if (!formData.jiraUrl || !formData.jiraEmail) {
       setError('Please fill in all required fields');
       return;
     }
@@ -3418,8 +3513,6 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
   };
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to remove this integration?')) return;
-
     try {
       const response = await fetch(
         `${getApiUrl()}/api/jira-integrations/organization/${orgId}`,
@@ -3449,6 +3542,8 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
       }
     } catch (err: any) {
       setError(err.message || 'Failed to delete integration');
+    } finally {
+      setShowDeleteConfirm(false);
     }
   };
 
@@ -3563,7 +3658,7 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
                   ✏️ Edit Configuration
                 </button>
                 <button
-                  onClick={handleDelete}
+                      onClick={() => setShowDeleteConfirm(true)}
                   className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
                 >
                   🗑️ Remove Integration
@@ -3611,15 +3706,15 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    API Token <span className="text-red-500">*</span>
+                    API Token {!integration && <span className="text-red-500">*</span>}
                   </label>
                   <input
                     type="password"
                     value={formData.jiraApiToken}
                     onChange={(e) => setFormData({ ...formData, jiraApiToken: e.target.value })}
-                    placeholder="Your Jira API Token"
+                    placeholder={integration ? 'Leave empty to keep current token' : 'Your Jira API Token'}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    required
+                    required={!integration}
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Create an API token at: <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Atlassian Account</a>
@@ -3810,6 +3905,34 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
         setSuccess={setSuccess}
       />
     </div>
+    {showDeleteConfirm && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+          <div className="p-6">
+            <h3 className="text-xl font-semibold mb-3 text-gray-900 dark:text-white">Remove Jira Integration</h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-6">
+              Are you sure you want to remove this integration?
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
     </div>
   );
 }

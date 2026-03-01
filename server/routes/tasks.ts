@@ -7,6 +7,7 @@ import { logActivity } from './activityLogs';
 import { sanitizeRichText } from '../utils/sanitize';
 import { computeCompletionPercentages } from '../utils/taskCompletion';
 import { sendNotificationEmail } from '../utils/emailService';
+import { resolveHistoryValues } from '../utils/changeLog';
 
 const router = Router();
 
@@ -193,10 +194,11 @@ const createTaskHistory = async (
   newValue: string | null
 ) => {
   try {
+    const resolved = await resolveHistoryValues('task', fieldName, oldValue, newValue);
     await pool.execute(
       `INSERT INTO TaskHistory (TaskId, UserId, Action, FieldName, OldValue, NewValue) 
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [taskId, userId, action, fieldName, oldValue, newValue]
+      [taskId, userId, action, fieldName, resolved.oldValue, resolved.newValue]
     );
   } catch (error) {
     console.error('Error creating task history:', error);
@@ -1088,6 +1090,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     if (priority !== undefined && hasChanged(oldTask.Priority, priority)) {
       changes.push({ field: 'Priority', oldVal: oldTask.Priority, newVal: priority });
     }
+    if (taskType !== undefined && hasChanged(oldTask.TaskType, finalTaskType)) {
+      changes.push({ field: 'TaskType', oldVal: String(oldTask.TaskType || ''), newVal: String(finalTaskType || '') });
+    }
     if (assignedTo !== undefined && hasChanged(oldTask.AssignedTo, assignedTo)) {
       changes.push({ field: 'AssignedTo', oldVal: String(oldTask.AssignedTo || ''), newVal: String(assignedTo || '') });
     }
@@ -1127,6 +1132,18 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     
     if (dependsOnTaskId !== undefined && hasChanged(oldTask.DependsOnTaskId, dependsOnTaskId)) {
       changes.push({ field: 'DependsOnTaskId', oldVal: String(oldTask.DependsOnTaskId || ''), newVal: String(dependsOnTaskId || '') });
+    }
+    if (parentTaskId !== undefined && hasChanged(oldTask.ParentTaskId, parentTaskId)) {
+      changes.push({ field: 'ParentTaskId', oldVal: String(oldTask.ParentTaskId || ''), newVal: String(parentTaskId || '') });
+    }
+    if (displayOrder !== undefined && hasChanged(oldTask.DisplayOrder, displayOrder)) {
+      changes.push({ field: 'DisplayOrder', oldVal: String(oldTask.DisplayOrder || ''), newVal: String(displayOrder || '') });
+    }
+    if (applicationId !== undefined && hasChanged(oldTask.ApplicationId, applicationId)) {
+      changes.push({ field: 'ApplicationId', oldVal: String(oldTask.ApplicationId || ''), newVal: String(applicationId || '') });
+    }
+    if (releaseVersionId !== undefined && hasChanged(oldTask.ReleaseVersionId, releaseVersionId)) {
+      changes.push({ field: 'ReleaseVersionId', oldVal: String(oldTask.ReleaseVersionId || ''), newVal: String(releaseVersionId || '') });
     }
 
     // Create history entries for each change

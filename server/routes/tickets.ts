@@ -5,6 +5,7 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { createNotification } from './notifications';
 import { logActivity } from './activityLogs';
 import { sanitizeRichText } from '../utils/sanitize';
+import { resolveHistoryValues } from '../utils/changeLog';
 
 const router = Router();
 
@@ -54,14 +55,12 @@ async function logTicketHistory(
   newValue: any = null
 ) {
   try {
-    // Convert values to string or null
-    const oldStr = oldValue !== null && oldValue !== undefined ? String(oldValue) : null;
-    const newStr = newValue !== null && newValue !== undefined ? String(newValue) : null;
+    const resolved = await resolveHistoryValues('ticket', fieldName, oldValue, newValue);
     
     await pool.execute(
       `INSERT INTO TicketHistory (TicketId, UserId, Action, FieldName, OldValue, NewValue) 
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [ticketId, userId, action, fieldName, oldStr, newStr]
+      [ticketId, userId, action, fieldName, resolved.oldValue, resolved.newValue]
     );
   } catch (error) {
     console.error('Error logging ticket history:', error);

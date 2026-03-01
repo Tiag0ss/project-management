@@ -664,6 +664,71 @@ router.get('/:id/users', authenticateToken, async (req: AuthRequest, res: Respon
   }
 });
 
+/**
+ * @swagger
+ * /api/organizations/{id}/available-users:
+ *   get:
+ *     summary: Get active users not yet in organization (for member add modal)
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of available users
+ *       403:
+ *         description: Forbidden
+ */
+router.get('/:id/available-users', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const requesterId = req.user?.userId;
+    const orgId = req.params.id;
+
+    const [requester] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageMembers
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, requesterId]
+    );
+
+    if (requester.length === 0 || (requester[0].Role !== 'Owner' && !requester[0].CanManageMembers)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Permission denied'
+      });
+    }
+
+    const [users] = await pool.execute<RowDataPacket[]>(
+      `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName
+       FROM Users u
+       WHERE u.IsActive = 1
+         AND NOT EXISTS (
+           SELECT 1
+           FROM OrganizationMembers om
+           WHERE om.OrganizationId = ? AND om.UserId = u.Id
+         )
+       ORDER BY u.Username ASC`,
+      [orgId]
+    );
+
+    res.json({
+      success: true,
+      users
+    });
+  } catch (error) {
+    console.error('Get available users error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch available users'
+    });
+  }
+});
+
 // Add member to organization
 /**
  * @swagger
@@ -697,9 +762,9 @@ router.get('/:id/users', authenticateToken, async (req: AuthRequest, res: Respon
  */
 router.post('/:id/members', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.userId;
+    const requesterId = req.user?.userId;
     const orgId = req.params.id;
-    const { userEmail, role, permissionGroupId } = req.body;
+    const { userId, userEmail, role, permissionGroupId } = req.body;
 
     // Check if requester has permission
     const [requester] = await pool.execute<RowDataPacket[]>(
@@ -707,7 +772,7 @@ router.post('/:id/members', authenticateToken, async (req: AuthRequest, res: Res
        FROM OrganizationMembers om
        LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
        WHERE om.OrganizationId = ? AND om.UserId = ?`,
-      [orgId, userId]
+      [orgId, requesterId]
     );
 
     if (requester.length === 0 || (requester[0].Role !== 'Owner' && !requester[0].CanManageMembers)) {
@@ -717,20 +782,50 @@ router.post('/:id/members', authenticateToken, async (req: AuthRequest, res: Res
       });
     }
 
-    // Find user by email
-    const [users] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id FROM Users WHERE Email = ?',
-      [userEmail]
-    );
+    let newUserId: number | null = null;
 
-    if (users.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
+    if (userId !== undefined && userId !== null && userId !== '') {
+      const numericUserId = Number(userId);
+      if (!Number.isFinite(numericUserId) || numericUserId <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid userId'
+        });
+      }
+
+      const [usersById] = await pool.execute<RowDataPacket[]>(
+        'SELECT Id FROM Users WHERE Id = ? AND IsActive = 1',
+        [numericUserId]
+      );
+
+      if (usersById.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      newUserId = Number(usersById[0].Id);
+    } else if (userEmail) {
+      const [usersByEmail] = await pool.execute<RowDataPacket[]>(
+        'SELECT Id FROM Users WHERE Email = ? AND IsActive = 1',
+        [userEmail]
+      );
+
+      if (usersByEmail.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      newUserId = Number(usersByEmail[0].Id);
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'userId is required'
       });
     }
-
-    const newUserId = users[0].Id;
 
     // Check if already a member
     const [existing] = await pool.execute<RowDataPacket[]>(
@@ -759,7 +854,7 @@ router.post('/:id/members', authenticateToken, async (req: AuthRequest, res: Res
 
     // Log member addition
     await logActivity(
-      userId ?? null,
+      requesterId ?? null,
       req.user?.username || null,
       'ORGANIZATION_MEMBER_ADD',
       'OrganizationMember',

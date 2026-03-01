@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { pool } from '../config/database';
 import { RowDataPacket } from 'mysql2';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { resolveHistoryValues } from '../utils/changeLog';
 
 const router = Router();
 
@@ -61,10 +62,11 @@ export const recordTaskHistory = async (
   newValue?: string
 ) => {
   try {
+    const resolved = await resolveHistoryValues('task', fieldName || null, oldValue || null, newValue || null);
     await pool.execute(
       `INSERT INTO TaskHistory (TaskId, UserId, Action, FieldName, OldValue, NewValue) 
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [taskId, userId, action, fieldName || null, oldValue || null, newValue || null]
+      [taskId, userId, action, fieldName || null, resolved.oldValue, resolved.newValue]
     );
   } catch (error) {
     console.error('Error recording task history:', error);

@@ -666,6 +666,41 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         }
       }
 
+      const [oldOrgRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT o.Name
+         FROM CustomerOrganizations co
+         INNER JOIN Organizations o ON co.OrganizationId = o.Id
+         WHERE co.CustomerId = ?
+         ORDER BY o.Name ASC`,
+        [customerId]
+      );
+
+      let newOrgNames: string[] = [];
+      if (OrganizationIds.length > 0) {
+        const uniqueOrgIds = Array.from(new Set(OrganizationIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)));
+        if (uniqueOrgIds.length > 0) {
+          const placeholders = uniqueOrgIds.map(() => '?').join(',');
+          const [newOrgRows] = await pool.execute<RowDataPacket[]>(
+            `SELECT Name FROM Organizations WHERE Id IN (${placeholders}) ORDER BY Name ASC`,
+            uniqueOrgIds
+          );
+          newOrgNames = newOrgRows.map((row) => String(row.Name));
+        }
+      }
+
+      const oldOrgNamesJoined = oldOrgRows.map((row) => String(row.Name)).join(', ');
+      const newOrgNamesJoined = newOrgNames.join(', ');
+      if (oldOrgNamesJoined !== newOrgNamesJoined) {
+        await logCustomerHistory(
+          customerId,
+          userId!,
+          'updated',
+          'OrganizationIds',
+          oldOrgNamesJoined,
+          newOrgNamesJoined
+        );
+      }
+
       // Delete existing associations
       await pool.execute(
         `DELETE FROM CustomerOrganizations WHERE CustomerId = ?`,

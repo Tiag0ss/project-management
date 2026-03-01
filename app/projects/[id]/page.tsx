@@ -4804,8 +4804,8 @@ function TasksTab({
                           </button>
                         )}
                         
-                        {/* Jira Ticket Import - only if configured */}
-                        {hasJiraIntegration && internalTicketsEnabled && (
+                        {/* Jira Ticket Import - only if Jira integration is configured */}
+                        {hasJiraIntegration && (
                           <button
                             onClick={() => {
                               onImportFromJiraTicket();

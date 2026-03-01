@@ -40,9 +40,18 @@ export interface CreateOrganizationData {
 }
 
 export interface AddMemberData {
-  userEmail: string;
+  userId?: number;
+  userEmail?: string;
   role?: string;
   permissionGroupId?: number;
+}
+
+export interface AvailableOrganizationUser {
+  Id: number;
+  Username: string;
+  Email: string;
+  FirstName?: string;
+  LastName?: string;
 }
 
 export const organizationsApi = {
@@ -151,6 +160,24 @@ export const organizationsApi = {
     
     if (!response.ok) {
       throw new Error(data.message || 'Failed to fetch members');
+    }
+
+    return data;
+  },
+
+  async getAvailableUsers(id: number, token: string): Promise<{ success: boolean; users: AvailableOrganizationUser[] }> {
+    const response = await fetch(`${API_BASE_URL}/api/organizations/${id}/available-users`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch available users');
     }
 
     return data;

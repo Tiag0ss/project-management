@@ -675,8 +675,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     // Check if project exists and get current data
     const [existing] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM Projects WHERE Id = ? AND CreatedBy = ?',
-      [projectId, userId]
+      'SELECT * FROM Projects WHERE Id = ?',
+      [projectId]
     );
 
     if (existing.length === 0) {
@@ -687,6 +687,36 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     }
     
     const oldProject = existing[0];
+
+    // Authorize: project creator, global admin/manager, or org owner/admin/manage-projects permission
+    const [accessRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT
+         COALESCE(u.isAdmin, 0) as IsAdmin,
+         COALESCE(u.IsManager, 0) as IsManager,
+         om.Role,
+         COALESCE(pg.CanManageProjects, 0) as CanManageProjects
+       FROM Users u
+       LEFT JOIN OrganizationMembers om ON om.UserId = u.Id AND om.OrganizationId = ?
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE u.Id = ?`,
+      [oldProject.OrganizationId, userId]
+    );
+
+    const access = accessRows[0];
+    const canUpdateProject =
+      Number(oldProject.CreatedBy) === Number(userId) ||
+      Number(access?.IsAdmin || 0) === 1 ||
+      Number(access?.IsManager || 0) === 1 ||
+      access?.Role === 'Owner' ||
+      access?.Role === 'Admin' ||
+      Number(access?.CanManageProjects || 0) === 1;
+
+    if (!canUpdateProject) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to update this project'
+      });
+    }
 
     const finalStatus = status !== undefined ? status : oldProject.Status;
     const finalBudgetType = budgetType !== undefined
@@ -752,6 +782,36 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     }
     if (budgetType !== undefined && finalBudgetType !== normalizeBudgetType(oldProject.BudgetType)) {
       changes.push({ field: 'BudgetType', oldVal: normalizeBudgetType(oldProject.BudgetType), newVal: finalBudgetType });
+    }
+
+    if (applicationIds !== undefined && Array.isArray(applicationIds)) {
+      const [oldAppRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT a.Name
+         FROM ApplicationProjects ap
+         INNER JOIN Applications a ON ap.ApplicationId = a.Id
+         WHERE ap.ProjectId = ?
+         ORDER BY a.Name ASC`,
+        [projectId]
+      );
+
+      let newAppNames: string[] = [];
+      if (applicationIds.length > 0) {
+        const uniqueNewIds = Array.from(new Set(applicationIds.map((id: any) => Number(id)).filter((id: number) => Number.isInteger(id) && id > 0)));
+        if (uniqueNewIds.length > 0) {
+          const placeholders = uniqueNewIds.map(() => '?').join(',');
+          const [newAppRows] = await pool.execute<RowDataPacket[]>(
+            `SELECT Name FROM Applications WHERE Id IN (${placeholders}) ORDER BY Name ASC`,
+            uniqueNewIds
+          );
+          newAppNames = newAppRows.map((row) => String(row.Name));
+        }
+      }
+
+      const oldNamesJoined = oldAppRows.map((row) => String(row.Name)).join(', ');
+      const newNamesJoined = newAppNames.join(', ');
+      if (oldNamesJoined !== newNamesJoined) {
+        changes.push({ field: 'Applications', oldVal: oldNamesJoined, newVal: newNamesJoined });
+      }
     }
 
     if (isVisibleToCustomer !== undefined && Boolean(isVisibleToCustomer) !== Boolean(oldProject.IsVisibleToCustomer)) {

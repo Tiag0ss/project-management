@@ -130,6 +130,13 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
       jiraProjectsApiToken
     } = req.body;
 
+    const normalizedJiraUrl = typeof jiraUrl === 'string' ? jiraUrl.trim() : '';
+    const normalizedJiraEmail = typeof jiraEmail === 'string' ? jiraEmail.trim() : '';
+    const normalizedMainToken = typeof jiraApiToken === 'string' ? jiraApiToken.trim() : '';
+    const normalizedProjectsUrl = typeof jiraProjectsUrl === 'string' ? jiraProjectsUrl.trim() : '';
+    const normalizedProjectsEmail = typeof jiraProjectsEmail === 'string' ? jiraProjectsEmail.trim() : '';
+    const normalizedProjectsToken = typeof jiraProjectsApiToken === 'string' ? jiraProjectsApiToken.trim() : '';
+
     // Check if user is admin or manager of the organization
     const [memberCheck] = await pool.execute<RowDataPacket[]>(
       `SELECT om.*, u.IsAdmin 
@@ -143,19 +150,43 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
       return res.status(403).json({ success: false, message: 'Only admins and managers can configure integrations' });
     }
 
-    if (!jiraUrl || !jiraEmail || !jiraApiToken) {
-      return res.status(400).json({ success: false, message: 'Jira URL, email, and API token are required' });
+    if (!normalizedJiraUrl || !normalizedJiraEmail) {
+      return res.status(400).json({ success: false, message: 'Jira URL and email are required' });
     }
 
     // Check if integration exists
     const [existing] = await pool.execute<RowDataPacket[]>(
-      'SELECT OrganizationId FROM OrganizationJiraIntegrations WHERE OrganizationId = ?',
+      'SELECT OrganizationId, JiraApiToken, JiraProjectsApiToken FROM OrganizationJiraIntegrations WHERE OrganizationId = ?',
       [organizationId]
     );
 
+    const existingIntegration = existing.length > 0 ? existing[0] : null;
+
+    const resolvedMainToken = normalizedMainToken || existingIntegration?.JiraApiToken || null;
+    if (!resolvedMainToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Jira API token is required when no token is currently configured'
+      });
+    }
+
+    const hasProjectsCredentials = !!normalizedProjectsUrl || !!normalizedProjectsEmail || !!normalizedProjectsToken;
+    const resolvedProjectsToken = hasProjectsCredentials
+      ? (normalizedProjectsToken || existingIntegration?.JiraProjectsApiToken || null)
+      : null;
+
+    if (hasProjectsCredentials && normalizedProjectsUrl && normalizedProjectsEmail && !resolvedProjectsToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Jira Projects API token is required when configuring Jira Projects credentials'
+      });
+    }
+
     // Encrypt the API tokens before storing
-    const encryptedToken = encrypt(jiraApiToken);
-    const encryptedProjectsToken = jiraProjectsApiToken ? encrypt(jiraProjectsApiToken) : null;
+    const encryptedToken = normalizedMainToken ? encrypt(normalizedMainToken) : resolvedMainToken;
+    const encryptedProjectsToken = normalizedProjectsToken
+      ? encrypt(normalizedProjectsToken)
+      : resolvedProjectsToken;
 
     if (existing.length > 0) {
       // Update existing
@@ -167,14 +198,14 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
          WHERE OrganizationId = ?`,
         [
           isEnabled ? 1 : 0,
-          jiraUrl,
-          jiraEmail,
+          normalizedJiraUrl,
+          normalizedJiraEmail,
           encryptedToken,
           jiraProjectKey || null,
           jiraTicketsJqlFilter || null,
           hideIntegratedJiraTicketsByDefault ? 1 : 0,
-          jiraProjectsUrl || null,
-          jiraProjectsEmail || null,
+          normalizedProjectsUrl || null,
+          normalizedProjectsEmail || null,
           encryptedProjectsToken,
           organizationId
         ]
@@ -191,14 +222,14 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
         [
           organizationId,
           isEnabled ? 1 : 0,
-          jiraUrl,
-          jiraEmail,
+          normalizedJiraUrl,
+          normalizedJiraEmail,
           encryptedToken,
           jiraProjectKey || null,
           jiraTicketsJqlFilter || null,
           hideIntegratedJiraTicketsByDefault ? 1 : 0,
-          jiraProjectsUrl || null,
-          jiraProjectsEmail || null,
+          normalizedProjectsUrl || null,
+          normalizedProjectsEmail || null,
           encryptedProjectsToken
         ]
       );
