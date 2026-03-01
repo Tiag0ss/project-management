@@ -107,6 +107,13 @@
       "Comment": "Permission to view reports"
     },
     {
+      "FieldName": "CanViewBudgetInfo",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to view project budget information"
+    },
+    {
       "FieldName": "CanManageOrganizations",
       "DataType": "tinyint(1)",
       "NotNullable": true,

@@ -17,6 +17,7 @@ const DEFAULT_ROLE_PERMISSIONS = [
       CanAssignTasks: 0,
       CanManageTimeEntries: 1,
       CanViewReports: 0,  // Developers podem ver relatórios
+      CanViewBudgetInfo: 0,
       CanManageOrganizations: 0,
       CanManageUsers: 0,
       CanManageTickets: 0,  // Developers NÃO gerem tickets (só support)
@@ -54,6 +55,7 @@ const DEFAULT_ROLE_PERMISSIONS = [
       CanAssignTasks: 0,
       CanManageTimeEntries: 1,
       CanViewReports: 0,
+      CanViewBudgetInfo: 0,
       CanManageOrganizations: 0,
       CanViewCustomers: 1,
       CanManageCustomers: 1,
@@ -90,6 +92,7 @@ const DEFAULT_ROLE_PERMISSIONS = [
       CanAssignTasks: 1,
       CanManageTimeEntries: 1,
       CanViewReports: 1,
+      CanViewBudgetInfo: 1,
       CanManageOrganizations: 0,
       CanViewCustomers: 1,
       CanManageCustomers: 1,
@@ -145,6 +148,7 @@ export async function seedRolePermissions(): Promise<void> {
           CanAssignTasks,
           CanManageTimeEntries,
           CanViewReports,
+          CanViewBudgetInfo,
           CanManageOrganizations,
           CanViewCustomers,
           CanManageCustomers,
@@ -165,7 +169,7 @@ export async function seedRolePermissions(): Promise<void> {
           CanManageReleases,
           CreatedAt,
           UpdatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [
           roleName,
           permissions.CanViewDashboard,
@@ -181,6 +185,7 @@ export async function seedRolePermissions(): Promise<void> {
           permissions.CanAssignTasks,
           permissions.CanManageTimeEntries,
           permissions.CanViewReports,
+          permissions.CanViewBudgetInfo,
           permissions.CanManageOrganizations,
           permissions.CanViewCustomers,
           permissions.CanManageCustomers,

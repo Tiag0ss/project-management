@@ -171,7 +171,7 @@ When creating a new table JSON file, follow this exact structure:
 **Core Tables:**
 ```sql
 Users (Id, Username, Email, PasswordHash, FirstName, LastName, isAdmin, IsDeveloper, IsSupport, IsManager, WorkHoursMonday-Sunday)
-RolePermissions (Id, RoleName, CanViewDashboard, CanViewPlanning, CanManageProjects, CanCreateProjects, CanDeleteProjects, CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks, CanManageTimeEntries, CanViewReports, CanManageOrganizations, CanManageUsers, CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets)
+RolePermissions (Id, RoleName, CanViewDashboard, CanViewPlanning, CanManageProjects, CanCreateProjects, CanDeleteProjects, CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks, CanManageTimeEntries, CanViewReports, CanViewBudgetInfo, CanManageOrganizations, CanManageUsers, CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets)
 Organizations (Id, Name, Description, CreatedBy)
 OrganizationMembers (OrganizationId, UserId, Role, PermissionGroupId)
 PermissionGroups (Id, OrganizationId, GroupName, CanManageProjects, CanManageTasks, CanManageMembers, CanManageSettings)
@@ -484,7 +484,7 @@ className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-
 ### Permissions System
 - **Role-Based Permissions**: Users can have multiple roles (Developer, Support, Manager)
 - **RolePermissions table**: Defines capabilities for each role
-  - View permissions: CanViewDashboard, CanViewPlanning, CanViewReports
+  - View permissions: CanViewDashboard, CanViewPlanning, CanViewReports, CanViewBudgetInfo
   - Project permissions: CanManageProjects, CanCreateProjects, CanDeleteProjects
   - Task permissions: CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks
   - Ticket permissions: CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets
@@ -504,7 +504,10 @@ className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-
   ```
 - **Backend Validation**: API endpoints check permissions via `getUserPermissions()`
 - **Organization Permissions**: PermissionGroups define org-specific capabilities
-  - CanManageProjects, CanManageTasks, CanManageMembers, CanManageSettings
+  - CanManageProjects, CanManageTasks, CanManageMembers, CanManageSettings, CanViewBudgetInfo
+- **Budget Visibility Rule**:
+  - Budget data in Projects list/detail and budget-derived indicators must be hidden when `canViewBudgetInfo` is false.
+  - Role-level `CanViewBudgetInfo` and org-group `CanViewBudgetInfo` are combined with OR logic in `getUserPermissions()`.
 - Check permissions before showing UI elements
 - Backend validates permissions on all mutations
 

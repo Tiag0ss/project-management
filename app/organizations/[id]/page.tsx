@@ -1378,6 +1378,12 @@ function PermissionsTab({
                 <span className="text-gray-700 dark:text-gray-300">View Reports</span>
               </div>
               <div className="flex items-center gap-2">
+                <span className={group.CanViewBudgetInfo ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
+                  {group.CanViewBudgetInfo ? '✓' : '✗'}
+                </span>
+                <span className="text-gray-700 dark:text-gray-300">View Budget Info</span>
+              </div>
+              <div className="flex items-center gap-2">
                 <span className={group.CanManageTickets ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
                   {group.CanManageTickets ? '✓' : '✗'}
                 </span>
@@ -1418,6 +1424,30 @@ function PermissionsTab({
                   {group.CanManageSettings ? '✓' : '✗'}
                 </span>
                 <span className="text-gray-700 dark:text-gray-300">Manage Settings</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={group.CanManageApplications ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
+                  {group.CanManageApplications ? '✓' : '✗'}
+                </span>
+                <span className="text-gray-700 dark:text-gray-300">Manage Applications</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={group.CanCreateApplications ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
+                  {group.CanCreateApplications ? '✓' : '✗'}
+                </span>
+                <span className="text-gray-700 dark:text-gray-300">Create Applications</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={group.CanDeleteApplications ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
+                  {group.CanDeleteApplications ? '✓' : '✗'}
+                </span>
+                <span className="text-gray-700 dark:text-gray-300">Delete Applications</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={group.CanManageReleases ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
+                  {group.CanManageReleases ? '✓' : '✗'}
+                </span>
+                <span className="text-gray-700 dark:text-gray-300">Manage Releases</span>
               </div>
             </div>
 
@@ -1500,6 +1530,7 @@ function PermissionGroupModal({ orgId, group, onClose, onSaved, token }: {
     canPlanTasks: !!group?.CanPlanTasks,
     canManageTimeEntries: !!group?.CanManageTimeEntries,
     canViewReports: !!group?.CanViewReports,
+    canViewBudgetInfo: !!group?.CanViewBudgetInfo,
     canManageTickets: !!group?.CanManageTickets,
     canCreateTickets: !!group?.CanCreateTickets,
     canDeleteTickets: !!group?.CanDeleteTickets,
@@ -1507,6 +1538,10 @@ function PermissionGroupModal({ orgId, group, onClose, onSaved, token }: {
     canCreateTaskFromTicket: !!group?.CanCreateTaskFromTicket,
     canManageMembers: !!group?.CanManageMembers,
     canManageSettings: !!group?.CanManageSettings,
+    canManageApplications: !!group?.CanManageApplications,
+    canCreateApplications: !!group?.CanCreateApplications,
+    canDeleteApplications: !!group?.CanDeleteApplications,
+    canManageReleases: !!group?.CanManageReleases,
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -1601,6 +1636,7 @@ function PermissionGroupModal({ orgId, group, onClose, onSaved, token }: {
                 { key: 'canPlanTasks', label: 'Plan Tasks' },
                 { key: 'canManageTimeEntries', label: 'Manage Time Entries' },
                 { key: 'canViewReports', label: 'View Reports' },
+                { key: 'canViewBudgetInfo', label: 'View Budget Info' },
                 { key: 'canManageTickets', label: 'Manage Tickets' },
                 { key: 'canCreateTickets', label: 'Create Tickets' },
                 { key: 'canDeleteTickets', label: 'Delete Tickets' },
@@ -1608,6 +1644,10 @@ function PermissionGroupModal({ orgId, group, onClose, onSaved, token }: {
                 { key: 'canCreateTaskFromTicket', label: 'Create Task from Ticket' },
                 { key: 'canManageMembers', label: 'Manage Members' },
                 { key: 'canManageSettings', label: 'Manage Settings' },
+                { key: 'canManageApplications', label: 'Manage Applications' },
+                { key: 'canCreateApplications', label: 'Create Applications' },
+                { key: 'canDeleteApplications', label: 'Delete Applications' },
+                { key: 'canManageReleases', label: 'Manage Releases' },
               ].map(({ key, label }) => (
                 <label key={key} className="flex items-center gap-2 cursor-pointer">
                   <input

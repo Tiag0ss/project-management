@@ -18,6 +18,7 @@ export interface RolePermission {
   CanAssignTasks: boolean;
   CanManageTimeEntries: boolean;
   CanViewReports: boolean;
+  CanViewBudgetInfo: boolean;
   CanManageOrganizations: boolean;
   CanViewCustomers: boolean;
   CanManageCustomers: boolean;
@@ -44,6 +45,7 @@ export interface UserPermissions {
   canViewDashboard: boolean;
   canViewPlanning: boolean;
   canViewProjects: boolean;
+  canViewBudgetInfo: boolean;
   canManageProjects: boolean;
   canCreateProjects: boolean;
   canDeleteProjects: boolean;

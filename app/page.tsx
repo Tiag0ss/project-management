@@ -18,6 +18,8 @@ export default function Home() {
   const [isCheckingInstall, setIsCheckingInstall] = useState(true);
   const [customFrontpage, setCustomFrontpage] = useState<string | null>(null);
   const [isLoadingFrontpage, setIsLoadingFrontpage] = useState(true);
+  const [companyName, setCompanyName] = useState('Project Management');
+  const [companyLogoUrl, setCompanyLogoUrl] = useState('');
 
   const loadStats = async () => {
     try {
@@ -48,6 +50,8 @@ export default function Home() {
         const data = await response.json();
         setAllowPublicRegistration(data.allowPublicRegistration === true);
         setRegistrationType(data.publicRegistrationType || 'internal');
+        setCompanyName(data.companyName || 'Project Management');
+        setCompanyLogoUrl(data.companyLogoUrl || '');
       }
     } catch (err) {
       console.error('Failed to load registration settings:', err);
@@ -122,10 +126,18 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-lg">PM</span>
-              </div>
-              <span className="text-xl font-bold text-gray-900 dark:text-white">Project Management</span>
+              {companyLogoUrl ? (
+                <img
+                  src={companyLogoUrl}
+                  alt={companyName || 'Company logo'}
+                  className="w-8 h-8 rounded object-contain bg-white"
+                />
+              ) : (
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-lg">{(companyName || 'PM').trim().charAt(0).toUpperCase() || 'P'}</span>
+                </div>
+              )}
+              <span className="text-xl font-bold text-gray-900 dark:text-white">{companyName || 'Project Management'}</span>
             </div>
             <div className="flex gap-4">
               <Link

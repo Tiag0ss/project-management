@@ -17,6 +17,7 @@ export interface PermissionGroup {
   CanPlanTasks: number;
   CanManageTimeEntries: number;
   CanViewReports: number;
+  CanViewBudgetInfo: number;
   CanManageTickets: number;
   CanCreateTickets: number;
   CanDeleteTickets: number;
@@ -24,6 +25,10 @@ export interface PermissionGroup {
   CanCreateTaskFromTicket: number;
   CanManageMembers: number;
   CanManageSettings: number;
+  CanManageApplications: number;
+  CanCreateApplications: number;
+  CanDeleteApplications: number;
+  CanManageReleases: number;
   LinkedRole?: string | null;
   IsSystemGroup?: number;
   MemberCount?: number;
@@ -44,6 +49,7 @@ export interface CreatePermissionGroupData {
   canPlanTasks: boolean;
   canManageTimeEntries: boolean;
   canViewReports: boolean;
+  canViewBudgetInfo: boolean;
   canManageTickets: boolean;
   canCreateTickets: boolean;
   canDeleteTickets: boolean;
@@ -51,6 +57,10 @@ export interface CreatePermissionGroupData {
   canCreateTaskFromTicket: boolean;
   canManageMembers: boolean;
   canManageSettings: boolean;
+  canManageApplications: boolean;
+  canCreateApplications: boolean;
+  canDeleteApplications: boolean;
+  canManageReleases: boolean;
 }
 
 export const permissionGroupsApi = {

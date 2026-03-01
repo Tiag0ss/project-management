@@ -199,6 +199,7 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
     const canAssignTasks = getValue('CanAssignTasks', 'canAssignTasks');
     const canManageTimeEntries = getValue('CanManageTimeEntries', 'canManageTimeEntries');
     const canViewReports = getValue('CanViewReports', 'canViewReports');
+    const canViewBudgetInfo = getValue('CanViewBudgetInfo', 'canViewBudgetInfo');
     const canManageOrganizations = getValue('CanManageOrganizations', 'canManageOrganizations');
     const canManageUsers = getValue('CanManageUsers', 'canManageUsers');
     const canManageTickets = getValue('CanManageTickets', 'canManageTickets');
@@ -241,6 +242,7 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
           CanAssignTasks = ?,
           CanManageTimeEntries = ?,
           CanViewReports = ?,
+          CanViewBudgetInfo = ?,
           CanManageOrganizations = ?,
           CanManageUsers = ?,
           CanViewCustomers = ?,
@@ -274,6 +276,7 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
           canAssignTasks ? 1 : 0,
           canManageTimeEntries ? 1 : 0,
           canViewReports ? 1 : 0,
+          canViewBudgetInfo ? 1 : 0,
           canManageOrganizations ? 1 : 0,
           canManageUsers ? 1 : 0,
           canViewCustomers ? 1 : 0,
@@ -313,6 +316,7 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
           CanAssignTasks,
           CanManageTimeEntries,
           CanViewReports,
+          CanViewBudgetInfo,
           CanManageOrganizations,
           CanManageUsers,
           CanViewCustomers,
@@ -331,7 +335,7 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
           CanCreateApplications,
           CanDeleteApplications,
           CanManageReleases
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           roleName,
           canViewDashboard ? 1 : 0,
@@ -347,6 +351,7 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
           canAssignTasks ? 1 : 0,
           canManageTimeEntries ? 1 : 0,
           canViewReports ? 1 : 0,
+          canViewBudgetInfo ? 1 : 0,
           canManageOrganizations ? 1 : 0,
           canManageUsers ? 1 : 0,
           canViewCustomers ? 1 : 0,
@@ -437,6 +442,7 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
           canViewDashboard: true,
           canViewPlanning: true,
           canViewProjects: true,
+          canViewBudgetInfo: true,
           canManageProjects: true,
           canCreateProjects: true,
           canDeleteProjects: true,
@@ -484,6 +490,8 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
         data: {
           canViewDashboard: false,
           canViewPlanning: false,
+          canViewProjects: false,
+          canViewBudgetInfo: false,
           canManageProjects: false,
           canCreateProjects: false,
           canDeleteProjects: false,
@@ -529,6 +537,7 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
       canViewDashboard: false,
       canViewPlanning: false,
       canViewProjects: false,
+      canViewBudgetInfo: false,
       canManageProjects: false,
       canCreateProjects: false,
       canDeleteProjects: false,
@@ -573,6 +582,7 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
       if (perm.CanAssignTasks) combined.canAssignTasks = true;
       if (perm.CanManageTimeEntries) combined.canManageTimeEntries = true;
       if (perm.CanViewReports) combined.canViewReports = true;
+      if (perm.CanViewBudgetInfo) combined.canViewBudgetInfo = true;
       if (perm.CanManageOrganizations) combined.canManageOrganizations = true;
       if (perm.CanViewCustomers) combined.canViewCustomers = true;
       if (perm.CanManageCustomers) combined.canManageCustomers = true;
@@ -603,6 +613,7 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
     );
 
     orgGroupPerms.forEach((perm: any) => {
+      if (perm.CanViewBudgetInfo) combined.canViewBudgetInfo = true;
       if (perm.CanManageProjects) combined.canManageProjects = true;
       if (perm.CanCreateProjects) combined.canCreateProjects = true;
       if (perm.CanDeleteProjects) combined.canDeleteProjects = true;

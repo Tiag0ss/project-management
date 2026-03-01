@@ -21,6 +21,7 @@ Related API/UI impacts:
 4. For string `DefaultValue`, do not add extra quotes inside string value.
 5. Keep field names/types aligned with existing naming and conventions.
 6. Include required API/interface updates if schema changes are consumed by app logic.
+7. For permission flags, update both global (`RolePermissions`) and org-level (`PermissionGroups`) models when feature requirements indicate dual-scope control.
 
 ## Output Contract
 

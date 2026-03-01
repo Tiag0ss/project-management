@@ -190,19 +190,24 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
          (OrganizationId, GroupName, LinkedRole, IsSystemGroup,
           CanManageProjects, CanCreateProjects, CanDeleteProjects,
           CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks, CanPlanTasks,
-          CanManageTimeEntries, CanViewReports,
+            CanManageTimeEntries, CanViewReports, CanViewBudgetInfo,
           CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets, CanCreateTaskFromTicket,
-          CanManageMembers, CanManageSettings)
-         VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
+          CanManageMembers, CanManageSettings,
+          CanManageApplications, CanCreateApplications, CanDeleteApplications, CanManageReleases)
+           VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)`,
         [
           orgId, rp.RoleName, rp.RoleName,
           rp.CanManageProjects ? 1 : 0, rp.CanCreateProjects ? 1 : 0, rp.CanDeleteProjects ? 1 : 0,
           rp.CanManageTasks ? 1 : 0, rp.CanCreateTasks ? 1 : 0, rp.CanDeleteTasks ? 1 : 0,
           rp.CanAssignTasks ? 1 : 0, rp.CanPlanTasks ? 1 : 0,
-          rp.CanManageTimeEntries ? 1 : 0, rp.CanViewReports ? 1 : 0,
+            rp.CanManageTimeEntries ? 1 : 0, rp.CanViewReports ? 1 : 0, rp.CanViewBudgetInfo ? 1 : 0,
           rp.CanManageTickets ? 1 : 0, rp.CanCreateTickets ? 1 : 0,
           rp.CanDeleteTickets ? 1 : 0, rp.CanAssignTickets ? 1 : 0,
           rp.CanCreateTaskFromTicket ? 1 : 0,
+          rp.CanManageApplications ? 1 : 0,
+          rp.CanCreateApplications ? 1 : 0,
+          rp.CanDeleteApplications ? 1 : 0,
+          rp.CanManageReleases ? 1 : 0,
         ]
       );
     }
@@ -1145,10 +1150,10 @@ router.post('/admin/create-system-groups', authenticateToken, async (req: AuthRe
             OrganizationId, GroupName, Description, LinkedRole, IsSystemGroup,
             CanManageProjects, CanCreateProjects, CanDeleteProjects,
             CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks,
-            CanPlanTasks, CanManageTimeEntries, CanViewReports,
+            CanPlanTasks, CanManageTimeEntries, CanViewReports, CanViewBudgetInfo,
             CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets,
             CanCreateTaskFromTicket, CanManageMembers, CanManageSettings
-          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
+          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
           [
             org.Id,
             roleName,
@@ -1156,7 +1161,7 @@ router.post('/admin/create-system-groups', authenticateToken, async (req: AuthRe
             roleName,
             rp.CanManageProjects ? 1 : 0, rp.CanCreateProjects ? 1 : 0, rp.CanDeleteProjects ? 1 : 0,
             rp.CanManageTasks ? 1 : 0, rp.CanCreateTasks ? 1 : 0, rp.CanDeleteTasks ? 1 : 0, rp.CanAssignTasks ? 1 : 0,
-            rp.CanPlanTasks ? 1 : 0, rp.CanManageTimeEntries ? 1 : 0, rp.CanViewReports ? 1 : 0,
+            rp.CanPlanTasks ? 1 : 0, rp.CanManageTimeEntries ? 1 : 0, rp.CanViewReports ? 1 : 0, rp.CanViewBudgetInfo ? 1 : 0,
             rp.CanManageTickets ? 1 : 0, rp.CanCreateTickets ? 1 : 0, rp.CanDeleteTickets ? 1 : 0, rp.CanAssignTickets ? 1 : 0,
             rp.CanCreateTaskFromTicket ? 1 : 0
           ]

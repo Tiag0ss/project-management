@@ -18,7 +18,7 @@ type ProjectSortField = 'name' | 'status' | 'tasks' | 'hours' | 'tickets' | 'sta
 type SortDirection = 'asc' | 'desc';
 type RAGStatus = 'red' | 'amber' | 'green';
 
-function computeRAG(project: Project): { status: RAGStatus; reasons: string[] } {
+function computeRAG(project: Project, canViewBudgetInfo: boolean): { status: RAGStatus; reasons: string[] } {
   // Closed or cancelled projects are always green — work is done
   if (project.StatusIsClosed || project.StatusIsCancelled) {
     return { status: 'green', reasons: [] };
@@ -36,7 +36,7 @@ function computeRAG(project: Project): { status: RAGStatus; reasons: string[] } 
   let status: RAGStatus = 'green';
 
   // --- RED conditions ---
-  if (budgetPct >= 100) { status = 'red'; reasons.push(`Budget exceeded (${budgetPct}%)`); }
+  if (canViewBudgetInfo && budgetPct >= 100) { status = 'red'; reasons.push(`Budget exceeded (${budgetPct}%)`); }
   if (isOverdue) { status = 'red'; reasons.push('Past end date'); }
 
   const overdueTasks = Number(project.OverdueTasks) || 0;
@@ -47,7 +47,7 @@ function computeRAG(project: Project): { status: RAGStatus; reasons: string[] } 
 
   if (status !== 'red') {
     // --- AMBER conditions ---
-    if (budgetPct >= 80) { status = 'amber'; reasons.push(`Budget at ${budgetPct}%`); }
+    if (canViewBudgetInfo && budgetPct >= 80) { status = 'amber'; reasons.push(`Budget at ${budgetPct}%`); }
 
     if (overdueTasks > 0) {
       status = 'amber';
@@ -89,6 +89,7 @@ export default function ProjectsPage() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const { user, token, isLoading } = useAuth();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
+  const canViewBudgetInfo = permissions?.canViewBudgetInfo || false;
   const router = useRouter();
   const [modalMessage, setModalMessage] = useState<{
     type: 'confirm';
@@ -156,6 +157,13 @@ export default function ProjectsPage() {
     }
   }, [internalTicketsEnabled, sortField]);
 
+  useEffect(() => {
+    if (!canViewBudgetInfo && sortField === 'budget') {
+      setSortField('name');
+      setSortDirection('asc');
+    }
+  }, [canViewBudgetInfo, sortField]);
+
   const loadProjects = async () => {
     if (!token) return;
     
@@ -211,9 +219,9 @@ export default function ProjectsPage() {
   // Filter and sort projects
   const ragMap = useMemo(() => {
     const map = new Map<number, { status: RAGStatus; reasons: string[] }>();
-    projects.forEach(p => map.set(p.Id, computeRAG(p)));
+    projects.forEach(p => map.set(p.Id, computeRAG(p, canViewBudgetInfo)));
     return map;
-  }, [projects]);
+  }, [projects, canViewBudgetInfo]);
 
   const orgs = useMemo(() => Array.from(new Set(projects.map(p => p.OrganizationName || '').filter(Boolean))).sort(), [projects]);
   const statuses = useMemo(() => Array.from(new Set(projects.map(p => p.StatusName || '').filter(Boolean))).sort(), [projects]);
@@ -270,6 +278,10 @@ export default function ProjectsPage() {
           comparison = (Number(a.TotalWorkedHours) || 0) - (Number(b.TotalWorkedHours) || 0);
           break;
         case 'budget': {
+          if (!canViewBudgetInfo) {
+            comparison = 0;
+            break;
+          }
           const bA = a.Budget ? (Number(a.BudgetSpent) || 0) / Number(a.Budget) : 0;
           const bB = b.Budget ? (Number(b.BudgetSpent) || 0) / Number(b.Budget) : 0;
           comparison = bA - bB;
@@ -296,7 +308,7 @@ export default function ProjectsPage() {
     });
 
     return result;
-  }, [projects, filterText, filterOrg, filterStatus, filterRAG, hideCompleted, sortField, sortDirection, ragMap]);
+  }, [projects, filterText, filterOrg, filterStatus, filterRAG, hideCompleted, sortField, sortDirection, ragMap, canViewBudgetInfo]);
 
   const handleSort = (field: ProjectSortField) => {
     if (sortField === field) {
@@ -508,7 +520,7 @@ export default function ProjectsPage() {
                     <option value="rag-asc">Health (worst first)</option>
                     <option value="progress-desc">Progress (most first)</option>
                     <option value="progress-asc">Progress (least first)</option>
-                    <option value="budget-desc">Budget burn (highest)</option>
+                    {canViewBudgetInfo && <option value="budget-desc">Budget burn (highest)</option>}
                     <option value="hours-desc">Hours worked (most)</option>
                     {internalTicketsEnabled && <option value="tickets-desc">Open tickets (most)</option>}
                     <option value="endDate-asc">End date (soonest)</option>
@@ -538,6 +550,7 @@ export default function ProjectsPage() {
                       project={project}
                       rag={ragMap.get(project.Id)!}
                       internalTicketsEnabled={internalTicketsEnabled}
+                      canViewBudgetInfo={canViewBudgetInfo}
                       onEdit={handleEditProject}
                       onDelete={handleDeleteProject}
                       canEdit={permissions?.canManageProjects || false}
@@ -565,9 +578,11 @@ export default function ProjectsPage() {
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('hours')}>
                           <div className="flex items-center justify-center gap-1">Hours <SortIcon field="hours" /></div>
                         </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('budget')}>
-                          <div className="flex items-center justify-center gap-1">Budget <SortIcon field="budget" /></div>
-                        </th>
+                        {canViewBudgetInfo && (
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('budget')}>
+                            <div className="flex items-center justify-center gap-1">Budget <SortIcon field="budget" /></div>
+                          </th>
+                        )}
                         {internalTicketsEnabled && (
                           <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none" onClick={() => handleSort('tickets')}>
                             <div className="flex items-center justify-center gap-1">Tickets <SortIcon field="tickets" /></div>
@@ -627,18 +642,20 @@ export default function ProjectsPage() {
                                 {estimatedHours > 0 && <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5"><div className={`h-1.5 rounded-full ${hoursPercent > 100 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${Math.min(100, hoursPercent)}%` }} /></div>}
                               </div>
                             </td>
-                            <td className="px-6 py-4">
-                              {budgetTotal > 0 ? (
-                                <div className="flex flex-col items-center gap-1 min-w-[80px]">
-                                  <span className={`text-xs font-medium ${budgetPct >= 100 ? 'text-red-600 dark:text-red-400' : budgetPct >= 80 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>
-                                    {budgetType === 'hours'
-                                      ? `${budgetSpent.toFixed(1)}${budgetLabel} / ${budgetTotal.toFixed(1)}${budgetLabel} (${budgetPct}%)`
-                                      : `${budgetLabel}${budgetSpent.toFixed(0)} / ${budgetLabel}${budgetTotal.toFixed(0)} (${budgetPct}%)`}
-                                  </span>
-                                  <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5"><div className={`h-1.5 rounded-full ${budgetPct >= 100 ? 'bg-red-500' : budgetPct >= 80 ? 'bg-amber-500' : 'bg-green-500'}`} style={{ width: `${budgetPct}%` }} /></div>
-                                </div>
-                              ) : <span className="text-xs text-gray-400 text-center block">—</span>}
-                            </td>
+                            {canViewBudgetInfo && (
+                              <td className="px-6 py-4">
+                                {budgetTotal > 0 ? (
+                                  <div className="flex flex-col items-center gap-1 min-w-[80px]">
+                                    <span className={`text-xs font-medium ${budgetPct >= 100 ? 'text-red-600 dark:text-red-400' : budgetPct >= 80 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>
+                                      {budgetType === 'hours'
+                                        ? `${budgetSpent.toFixed(1)}${budgetLabel} / ${budgetTotal.toFixed(1)}${budgetLabel} (${budgetPct}%)`
+                                        : `${budgetLabel}${budgetSpent.toFixed(0)} / ${budgetLabel}${budgetTotal.toFixed(0)} (${budgetPct}%)`}
+                                    </span>
+                                    <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5"><div className={`h-1.5 rounded-full ${budgetPct >= 100 ? 'bg-red-500' : budgetPct >= 80 ? 'bg-amber-500' : 'bg-green-500'}`} style={{ width: `${budgetPct}%` }} /></div>
+                                  </div>
+                                ) : <span className="text-xs text-gray-400 text-center block">—</span>}
+                              </td>
+                            )}
                             {internalTicketsEnabled && (
                               <td className="px-6 py-4 text-center">
                                 <span className={`text-sm font-medium ${(Number(project.OpenTickets) || 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>{Number(project.OpenTickets) || 0}</span>
@@ -675,6 +692,7 @@ export default function ProjectsPage() {
           onClose={handleModalClose}
           onSaved={handleProjectSaved}
           token={token!}
+          canViewBudgetInfo={canViewBudgetInfo}
         />
       )}
 
@@ -733,6 +751,7 @@ function ProjectCard({
   project,
   rag,
   internalTicketsEnabled,
+  canViewBudgetInfo,
   onEdit, 
   onDelete,
   canEdit,
@@ -741,6 +760,7 @@ function ProjectCard({
   project: Project;
   rag: { status: RAGStatus; reasons: string[] };
   internalTicketsEnabled: boolean;
+  canViewBudgetInfo: boolean;
   onEdit: (project: Project) => void; 
   onDelete: (id: number) => void;
   canEdit: boolean;
@@ -818,7 +838,7 @@ function ProjectCard({
         </div>
 
         {/* Budget bar (only when budget is set) */}
-        {budgetTotal > 0 && (
+        {canViewBudgetInfo && budgetTotal > 0 && (
           <div className="mb-3">
             <div className="flex justify-between text-xs mb-1">
               <span className="text-gray-500 dark:text-gray-400">Budget {budgetType === 'hours' ? '(hours)' : '(monetary)'}</span>
@@ -898,12 +918,14 @@ function ProjectModal({
   project, 
   onClose, 
   onSaved, 
-  token 
+  token,
+  canViewBudgetInfo,
 }: { 
   project: Project | null; 
   onClose: () => void; 
   onSaved: () => void; 
   token: string;
+  canViewBudgetInfo: boolean;
 }) {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [customers, setCustomers] = useState<{ Id: number; Name: string }[]>([]);
@@ -1070,10 +1092,14 @@ function ProjectModal({
     setIsLoading(true);
 
     try {
+      const requestData: CreateProjectData = canViewBudgetInfo
+        ? formData
+        : { ...formData, budget: undefined, budgetType: undefined };
+
       if (project) {
-        await projectsApi.update(project.Id, formData, token);
+        await projectsApi.update(project.Id, requestData, token);
       } else {
-        await projectsApi.create(formData, token);
+        await projectsApi.create(requestData, token);
       }
       onSaved();
     } catch (err: any) {
@@ -1293,44 +1319,48 @@ function ProjectModal({
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Budget Type
-              </label>
-              <select
-                value={formData.budgetType || 'monetary'}
-                onChange={(e) => setFormData({ ...formData, budgetType: e.target.value === 'hours' ? 'hours' : 'monetary' })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              >
-                <option value="monetary">Monetary</option>
-                <option value="hours">Total Hours</option>
-              </select>
-            </div>
+            {canViewBudgetInfo && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Budget Type
+                  </label>
+                  <select
+                    value={formData.budgetType || 'monetary'}
+                    onChange={(e) => setFormData({ ...formData, budgetType: e.target.value === 'hours' ? 'hours' : 'monetary' })}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  >
+                    <option value="monetary">Monetary</option>
+                    <option value="hours">Total Hours</option>
+                  </select>
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Budget
-              </label>
-              <div className="relative">
-                {formData.budgetType !== 'hours' && (
-                  <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
-                )}
-                <input
-                  type="number"
-                  min="0"
-                  step={formData.budgetType === 'hours' ? '0.5' : '0.01'}
-                  value={formData.budget ?? ''}
-                  onChange={(e) => setFormData({ ...formData, budget: e.target.value !== '' ? parseFloat(e.target.value) : undefined })}
-                  className={`w-full ${formData.budgetType === 'hours' ? 'pl-4' : 'pl-7'} pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white`}
-                  placeholder={formData.budgetType === 'hours' ? '0.0' : '0.00'}
-                />
-              </div>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {formData.budgetType === 'hours'
-                  ? 'Optional project budget in total planned hours'
-                  : 'Optional project budget in currency units'}
-              </p>
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Budget
+                  </label>
+                  <div className="relative">
+                    {formData.budgetType !== 'hours' && (
+                      <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
+                    )}
+                    <input
+                      type="number"
+                      min="0"
+                      step={formData.budgetType === 'hours' ? '0.5' : '0.01'}
+                      value={formData.budget ?? ''}
+                      onChange={(e) => setFormData({ ...formData, budget: e.target.value !== '' ? parseFloat(e.target.value) : undefined })}
+                      className={`w-full ${formData.budgetType === 'hours' ? 'pl-4' : 'pl-7'} pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white`}
+                      placeholder={formData.budgetType === 'hours' ? '0.0' : '0.00'}
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {formData.budgetType === 'hours'
+                      ? 'Optional project budget in total planned hours'
+                      : 'Optional project budget in currency units'}
+                  </p>
+                </div>
+              </>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

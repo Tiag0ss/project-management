@@ -113,7 +113,7 @@ export default function ApprovalsPage() {
       );
       if (!response.ok) {
         if (response.status === 403) {
-          setError('Access denied. You must be an admin or manager to view approvals.');
+          setError('Access denied. You must be an admin or a team leader to view approvals.');
           setIsLoading(false);
           return;
         }

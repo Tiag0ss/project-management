@@ -1909,7 +1909,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           )}
 
           {activeTab === 'overview' && (
-            <OverviewTab project={project} tasks={tasks} tickets={tickets} internalTicketsEnabled={internalTicketsEnabled} />
+            <OverviewTab project={project} tasks={tasks} tickets={tickets} internalTicketsEnabled={internalTicketsEnabled} canViewBudgetInfo={permissions?.canViewBudgetInfo || false} />
           )}
 
           {activeTab === 'tasks' && (
@@ -2045,7 +2045,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           )}
 
           {activeTab === 'settings' && (
-            <SettingsTab project={project} token={token!} onSaved={handleProjectSaved} />
+            <SettingsTab project={project} token={token!} onSaved={handleProjectSaved} canViewBudgetInfo={permissions?.canViewBudgetInfo || false} />
           )}
 
           {activeTab === 'history' && (
@@ -3743,7 +3743,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 }
 
 // Overview Tab Component
-function OverviewTab({ project, tasks, tickets, internalTicketsEnabled }: { project: Project; tasks: Task[]; tickets: any[]; internalTicketsEnabled: boolean }) {
+function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewBudgetInfo }: { project: Project; tasks: Task[]; tickets: any[]; internalTicketsEnabled: boolean; canViewBudgetInfo: boolean }) {
   // Calculate task statistics (all tasks including subtasks)
   const parentTasks = tasks.filter(t => !t.ParentTaskId);
   const totalTasks = tasks.length;
@@ -3939,7 +3939,7 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled }: { proj
       </div>
 
       {/* Budget Tracking */}
-      {project.Budget !== null && project.Budget !== undefined && project.Budget > 0 && (() => {
+      {canViewBudgetInfo && project.Budget !== null && project.Budget !== undefined && project.Budget > 0 && (() => {
         const budgetSpent = Number(project.BudgetSpent || 0);
         const budgetTotal = Number(project.Budget);
         const budgetType = project.BudgetType === 'hours' ? 'hours' : 'monetary';
@@ -3999,13 +3999,13 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled }: { proj
         if (!project.StatusIsClosed && !project.StatusIsCancelled) {
           // RED
           if (overdueTasks.length > 2) { ragStatus = 'red'; ragReasons.push(`${overdueTasks.length} overdue tasks`); }
-          if (budgetTotal > 0 && budgetPct >= 100) { ragStatus = 'red'; ragReasons.push('Budget exceeded'); }
+          if (canViewBudgetInfo && budgetTotal > 0 && budgetPct >= 100) { ragStatus = 'red'; ragReasons.push('Budget exceeded'); }
           if (projectEndDate && projectEndDate < today2) { ragStatus = 'red'; ragReasons.push('Past end date'); }
 
           if (ragStatus !== 'red') {
             // AMBER
             if (overdueTasks.length > 0) { ragStatus = 'amber'; ragReasons.push(`${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''}`); }
-            if (budgetTotal > 0 && budgetPct >= 80) { ragStatus = 'amber'; ragReasons.push(`Budget at ${budgetPct}%`); }
+            if (canViewBudgetInfo && budgetTotal > 0 && budgetPct >= 80) { ragStatus = 'amber'; ragReasons.push(`Budget at ${budgetPct}%`); }
             if (totalTasks > 0 && unassignedTasks.length > totalTasks * 0.3) { ragStatus = 'amber'; ragReasons.push(`${unassignedTasks.length} unassigned tasks`); }
             if (projectEndDate) {
               const daysLeft = Math.ceil((projectEndDate.getTime() - today2.getTime()) / 86400000);
@@ -8522,7 +8522,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
 }
 
 // Settings Tab Component
-function SettingsTab({ project, token, onSaved }: { project: Project; token: string; onSaved: () => void }) {
+function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: Project; token: string; onSaved: () => void; canViewBudgetInfo: boolean }) {
   const [formData, setFormData] = useState({
     organizationId: project.OrganizationId,
     projectName: project.ProjectName,
@@ -8708,11 +8708,15 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
         gitHubRepo: formData.gitHubRepo || null,
         giteaOwner: formData.giteaOwner || null,
         giteaRepo: formData.giteaRepo || null,
-        budget: formData.budget !== '' ? parseFloat(formData.budget) : null,
-        budgetType: formData.budgetType === 'hours' ? 'hours' : 'monetary',
         customerId: formData.customerId || null,
         applicationIds: formData.applicationIds || [],
       };
+
+      if (canViewBudgetInfo) {
+        updateData.budget = formData.budget !== '' ? parseFloat(formData.budget) : null;
+        updateData.budgetType = formData.budgetType === 'hours' ? 'hours' : 'monetary';
+      }
+
       await projectsApi.update(project.Id, updateData, token);
       setSuccess(true);
       setTimeout(() => {
@@ -8836,44 +8840,48 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Budget Type
-            </label>
-            <select
-              value={formData.budgetType}
-              onChange={(e) => setFormData({ ...formData, budgetType: e.target.value === 'hours' ? 'hours' : 'monetary' })}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            >
-              <option value="monetary">Monetary</option>
-              <option value="hours">Total Hours</option>
-            </select>
-          </div>
+          {canViewBudgetInfo && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Budget Type
+                </label>
+                <select
+                  value={formData.budgetType}
+                  onChange={(e) => setFormData({ ...formData, budgetType: e.target.value === 'hours' ? 'hours' : 'monetary' })}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="monetary">Monetary</option>
+                  <option value="hours">Total Hours</option>
+                </select>
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Budget
-            </label>
-            <div className="relative">
-              {formData.budgetType !== 'hours' && (
-                <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
-              )}
-              <input
-                type="number"
-                min="0"
-                step={formData.budgetType === 'hours' ? '0.5' : '0.01'}
-                value={formData.budget}
-                onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
-                className={`w-full ${formData.budgetType === 'hours' ? 'pl-4' : 'pl-7'} pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white`}
-                placeholder={formData.budgetType === 'hours' ? '0.0' : '0.00'}
-              />
-            </div>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {formData.budgetType === 'hours'
-                ? 'Optional project budget in total planned hours'
-                : 'Optional project budget in currency units'}
-            </p>
-          </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Budget
+                </label>
+                <div className="relative">
+                  {formData.budgetType !== 'hours' && (
+                    <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
+                  )}
+                  <input
+                    type="number"
+                    min="0"
+                    step={formData.budgetType === 'hours' ? '0.5' : '0.01'}
+                    value={formData.budget}
+                    onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
+                    className={`w-full ${formData.budgetType === 'hours' ? 'pl-4' : 'pl-7'} pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white`}
+                    placeholder={formData.budgetType === 'hours' ? '0.0' : '0.00'}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {formData.budgetType === 'hours'
+                    ? 'Optional project budget in total planned hours'
+                    : 'Optional project budget in currency units'}
+                </p>
+              </div>
+            </>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

@@ -25,6 +25,8 @@ Fallback behavior when denied:
 7. For mutations, ensure corresponding server route enforces permission checks.
 8. Keep screen-level layout full-width (`w-full`) unless the request explicitly asks for constrained-width wrappers.
 9. Ensure tab-gated content stays in the correct tab scope (e.g., history-only components remain in History tab).
+10. When a permission exists in both global roles and org PermissionGroups, implement OR-merge behavior consistently with `getUserPermissions()`.
+11. For sensitive financial fields (e.g., project budget), hide values, columns/cards, sort options, and budget-derived status hints when permission is denied.
 
 ## Output Contract
 

@@ -96,6 +96,9 @@ const TIMEZONES = [
 ];
 
 interface SystemSettings {
+  companyName?: string;
+  companyLogoUrl?: string;
+  faviconUrl?: string;
   smtpHost?: string;
   smtpPort?: string;
   smtpUser?: string;
@@ -124,6 +127,9 @@ interface Customer {
 export default function SystemSettings() {
   const { token } = useAuth();
   const [settings, setSettings] = useState<SystemSettings>({
+    companyName: 'Project Management',
+    companyLogoUrl: '',
+    faviconUrl: '',
     smtpHost: '',
     smtpPort: '587',
     smtpUser: '',
@@ -174,6 +180,9 @@ export default function SystemSettings() {
       if (response.ok) {
         const data = await response.json();
         setSettings({
+          companyName: data.settings.companyName || 'Project Management',
+          companyLogoUrl: data.settings.companyLogoUrl || '',
+          faviconUrl: data.settings.faviconUrl || '',
           smtpHost: data.settings.smtpHost || '',
           smtpPort: data.settings.smtpPort || '587',
           smtpUser: data.settings.smtpUser || '',
@@ -336,6 +345,52 @@ export default function SystemSettings() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-8">
+        <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            🏷️ Branding
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Company Name
+              </label>
+              <input
+                type="text"
+                value={settings.companyName || ''}
+                onChange={(e) => handleChange('companyName', e.target.value)}
+                placeholder="Project Management"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Company Logo URL
+              </label>
+              <input
+                type="url"
+                value={settings.companyLogoUrl || ''}
+                onChange={(e) => handleChange('companyLogoUrl', e.target.value)}
+                placeholder="https://example.com/logo.png"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Favicon URL
+              </label>
+              <input
+                type="url"
+                value={settings.faviconUrl || ''}
+                onChange={(e) => handleChange('faviconUrl', e.target.value)}
+                placeholder="https://example.com/favicon.ico"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
+          </div>
+        </div>
+
         {/* SMTP Configuration */}
         <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">

@@ -70,12 +70,15 @@ export default function Navbar() {
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
   const [memosEnabled, setMemosEnabled] = useState(true);
+  const [companyName, setCompanyName] = useState('Project Management');
+  const [companyLogoUrl, setCompanyLogoUrl] = useState('');
 
   // Notifications state
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [canAccessApprovals, setCanAccessApprovals] = useState(false);
 
   // Active timer state
   const [navTimer, setNavTimer] = useState<{ Id: number; TaskId: number; TaskName: string; ProjectId: number; ProjectName: string; StartedAt: string } | null>(null);
@@ -198,9 +201,13 @@ export default function Navbar() {
         const data = await res.json();
         setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
         setMemosEnabled(data.memosEnabled !== false);
+        setCompanyName(data.companyName || 'Project Management');
+        setCompanyLogoUrl(data.companyLogoUrl || '');
       } catch {
         setInternalTicketsEnabled(true);
         setMemosEnabled(true);
+        setCompanyName('Project Management');
+        setCompanyLogoUrl('');
       }
     };
 
@@ -284,6 +291,38 @@ export default function Navbar() {
     }
     return () => { if (navTimerTickRef.current) clearInterval(navTimerTickRef.current); };
   }, [navTimer]);
+
+  useEffect(() => {
+    const loadApprovalScope = async () => {
+      if (!token || !user || isCustomerUser) {
+        setCanAccessApprovals(false);
+        return;
+      }
+
+      if (user.isAdmin) {
+        setCanAccessApprovals(true);
+        return;
+      }
+
+      try {
+        const res = await fetch(`${getApiUrl()}/api/time-entries/approval-scope`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!res.ok) {
+          setCanAccessApprovals(false);
+          return;
+        }
+
+        const data = await res.json();
+        setCanAccessApprovals(!!data?.canApprove);
+      } catch {
+        setCanAccessApprovals(false);
+      }
+    };
+
+    loadApprovalScope();
+  }, [token, user, isCustomerUser]);
 
   const navFormatElapsed = (secs: number) => {
     const h = Math.floor(secs / 3600);
@@ -948,17 +987,53 @@ export default function Navbar() {
 
   if (!user) return null;
 
+  const canShowCustomersOption =
+    permissionsLoading ||
+    !!permissions?.canViewCustomers ||
+    !!permissions?.canManageOrganizations;
+
+  const canShowApplicationsOption =
+    permissionsLoading ||
+    !!permissions?.canViewApplications ||
+    !!permissions?.canManageApplications ||
+    !!permissions?.canCreateApplications ||
+    !!permissions?.canDeleteApplications ||
+    !!permissions?.canManageReleases;
+
+  const canShowOrganizationsOption = !!permissions?.canManageOrganizations;
+  const canShowApprovalsOption = canAccessApprovals;
+
+  const canShowManagementMenu =
+    !isCustomerUser &&
+    (canShowCustomersOption ||
+      canShowApplicationsOption ||
+      canShowOrganizationsOption ||
+      canShowApprovalsOption);
+
   return (
     <>
       {/* outer nav stretches across entire header so background fills 100% */}
-      <nav className="w-full bg-white dark:bg-gray-800 shadow">
+      <nav className="sticky top-0 z-[60] w-full bg-white dark:bg-gray-800 shadow">
         {/* content not limited to max width so nav items span entire header */}
         <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center space-x-8">
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                Project Management
-              </h1>
+              <div className="flex items-center gap-3">
+                {companyLogoUrl ? (
+                  <img
+                    src={companyLogoUrl}
+                    alt={companyName || 'Company logo'}
+                    className="w-8 h-8 rounded object-contain bg-white"
+                  />
+                ) : (
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                    {(companyName || 'PM').trim().charAt(0).toUpperCase() || 'P'}
+                  </div>
+                )}
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+                  {companyName || 'Project Management'}
+                </h1>
+              </div>
               <div className="hidden md:flex space-x-4">
                 {/* Dashboard */}
                 {(isCustomerUser || (!isCustomerUser && (permissionsLoading || permissions?.canViewDashboard))) && (
@@ -1028,7 +1103,7 @@ export default function Navbar() {
                 )}
 
                 {/* Management Dropdown (Customers & Organizations) */}
-                {!isCustomerUser && (permissionsLoading || permissions?.canViewCustomers || permissions?.canManageOrganizations || user?.isAdmin || user?.isManager) && (
+                {canShowManagementMenu && (
                   <div className="relative" ref={managementMenuRef}>
                     <button
                       onClick={() => setManagementMenuOpen(!managementMenuOpen)}
@@ -1041,7 +1116,7 @@ export default function Navbar() {
                     </button>
                     {managementMenuOpen && (
                       <div className="absolute left-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg py-1 z-50 border border-gray-200 dark:border-gray-700">
-                        {(permissionsLoading || permissions?.canViewCustomers || permissions?.canManageOrganizations) && (
+                        {canShowCustomersOption && (
                           <a
                             href="/customers"
                             className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -1050,14 +1125,16 @@ export default function Navbar() {
                             Customers
                           </a>
                         )}
-                        <a
-                          href="/applications"
-                          className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          onClick={() => setManagementMenuOpen(false)}
-                        >
-                          Applications
-                        </a>
-                        {!!permissions?.canManageOrganizations && (
+                        {canShowApplicationsOption && (
+                          <a
+                            href="/applications"
+                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            onClick={() => setManagementMenuOpen(false)}
+                          >
+                            Applications
+                          </a>
+                        )}
+                        {canShowOrganizationsOption && (
                           <a
                             href="/organizations"
                             className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -1066,7 +1143,7 @@ export default function Navbar() {
                             Organizations
                           </a>
                         )}
-                        {(!!user?.isAdmin || !!user?.isManager) && (
+                        {canShowApprovalsOption && (
                           <a
                             href="/approvals"
                             className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -1081,7 +1158,9 @@ export default function Navbar() {
                 )}
 
                 {/* Reports */}
-                {!isCustomerUser && (
+
+                {!isCustomerUser && (permissionsLoading || permissions?.canViewReports || permissions?.canManageOrganizations || !!user?.isAdmin) && (                 
+                //{!isCustomerUser && (
                   <a 
                     href="/web-reports" 
                     className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"

@@ -21,15 +21,14 @@ const canManageTeamEntry = async (entryId: string, currentUserId: number | undef
   const entry = entries[0];
 
   const [callerRows] = await pool.execute<RowDataPacket[]>(
-    `SELECT IsAdmin, IsManager FROM Users WHERE Id = ?`,
+    `SELECT IsAdmin FROM Users WHERE Id = ?`,
     [currentUserId]
   );
 
   const isAdmin = callerRows.length > 0 && !!callerRows[0].IsAdmin;
-  const isManager = callerRows.length > 0 && !!callerRows[0].IsManager;
   const isTeamLeader = entry.TeamLeaderId === currentUserId;
 
-  if (!isAdmin && !isManager && !isTeamLeader) {
+  if (!isAdmin && !isTeamLeader) {
     return { ok: false as const, status: 403 as const, message: 'Access denied - not authorized to manage this entry' };
   }
 
@@ -591,17 +590,24 @@ router.get('/pending-approval/team', authenticateToken, async (req: AuthRequest,
 
     // Check if caller is admin
     const [callerRows] = await pool.execute<RowDataPacket[]>(
-      `SELECT IsAdmin, IsManager FROM Users WHERE Id = ?`,
+      `SELECT IsAdmin FROM Users WHERE Id = ?`,
       [currentUserId]
     );
     if (callerRows.length === 0) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
     const isAdmin = !!callerRows[0].IsAdmin;
-    const isManager = !!callerRows[0].IsManager;
 
-    if (!isAdmin && !isManager) {
-      return res.status(403).json({ success: false, message: 'Access denied - must be admin or manager' });
+    let subordinateCount = 0;
+    if (!isAdmin) {
+      const [subCountRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT COUNT(*) AS Count FROM Users WHERE TeamLeaderId = ? AND IsActive = 1`,
+        [currentUserId]
+      );
+      subordinateCount = Number(subCountRows[0]?.Count || 0);
+      if (subordinateCount <= 0) {
+        return res.status(403).json({ success: false, message: 'Access denied - must be admin or team leader' });
+      }
     }
 
     const approvalStatus = status || 'pending';
@@ -668,6 +674,52 @@ router.get('/pending-approval/team', authenticateToken, async (req: AuthRequest,
   } catch (error) {
     console.error('Error fetching pending time entries:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch pending time entries' });
+  }
+});
+
+router.get('/approval-scope', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const currentUserId = req.user?.userId;
+
+    const [callerRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT IsAdmin FROM Users WHERE Id = ?`,
+      [currentUserId]
+    );
+
+    if (callerRows.length === 0) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const isAdmin = !!callerRows[0].IsAdmin;
+
+    if (isAdmin) {
+      return res.json({
+        success: true,
+        canApprove: true,
+        isAdmin: true,
+        isTeamLeader: true,
+        subordinateCount: -1
+      });
+    }
+
+    const [subCountRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT COUNT(*) AS Count FROM Users WHERE TeamLeaderId = ? AND IsActive = 1`,
+      [currentUserId]
+    );
+
+    const subordinateCount = Number(subCountRows[0]?.Count || 0);
+    const isTeamLeader = subordinateCount > 0;
+
+    return res.json({
+      success: true,
+      canApprove: isTeamLeader,
+      isAdmin: false,
+      isTeamLeader,
+      subordinateCount
+    });
+  } catch (error) {
+    console.error('Error fetching approval scope:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch approval scope' });
   }
 });
 

@@ -138,13 +138,18 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       canPlanTasks,
       canManageTimeEntries,
       canViewReports,
+      canViewBudgetInfo,
       canManageTickets,
       canCreateTickets,
       canDeleteTickets,
       canAssignTickets,
       canCreateTaskFromTicket,
       canManageMembers,
-      canManageSettings
+      canManageSettings,
+      canManageApplications,
+      canCreateApplications,
+      canDeleteApplications,
+      canManageReleases
     } = req.body;
 
     if (!groupName || !organizationId) {
@@ -172,8 +177,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO PermissionGroups 
-       (OrganizationId, GroupName, Description, CanManageProjects, CanCreateProjects, CanDeleteProjects, CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks, CanPlanTasks, CanManageTimeEntries, CanViewReports, CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets, CanCreateTaskFromTicket, CanManageMembers, CanManageSettings) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (OrganizationId, GroupName, Description, CanManageProjects, CanCreateProjects, CanDeleteProjects, CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks, CanPlanTasks, CanManageTimeEntries, CanViewReports, CanViewBudgetInfo, CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets, CanCreateTaskFromTicket, CanManageMembers, CanManageSettings, CanManageApplications, CanCreateApplications, CanDeleteApplications, CanManageReleases) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         organizationId,
         groupName,
@@ -188,13 +193,18 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         canPlanTasks ? 1 : 0,
         canManageTimeEntries ? 1 : 0,
         canViewReports ? 1 : 0,
+        canViewBudgetInfo ? 1 : 0,
         canManageTickets ? 1 : 0,
         canCreateTickets ? 1 : 0,
         canDeleteTickets ? 1 : 0,
         canAssignTickets ? 1 : 0,
         canCreateTaskFromTicket ? 1 : 0,
         canManageMembers ? 1 : 0,
-        canManageSettings ? 1 : 0
+        canManageSettings ? 1 : 0,
+        canManageApplications ? 1 : 0,
+        canCreateApplications ? 1 : 0,
+        canDeleteApplications ? 1 : 0,
+        canManageReleases ? 1 : 0
       ]
     );
 
@@ -276,13 +286,18 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       canPlanTasks,
       canManageTimeEntries,
       canViewReports,
+      canViewBudgetInfo,
       canManageTickets,
       canCreateTickets,
       canDeleteTickets,
       canAssignTickets,
       canCreateTaskFromTicket,
       canManageMembers,
-      canManageSettings
+      canManageSettings,
+      canManageApplications,
+      canCreateApplications,
+      canDeleteApplications,
+      canManageReleases
     } = req.body;
 
     // Get organization ID from group
@@ -322,8 +337,10 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
            CanManageProjects = ?, CanCreateProjects = ?, CanDeleteProjects = ?,
            CanManageTasks = ?, CanCreateTasks = ?, CanDeleteTasks = ?, CanAssignTasks = ?,
            CanPlanTasks = ?, CanManageTimeEntries = ?, CanViewReports = ?,
+           CanViewBudgetInfo = ?,
            CanManageTickets = ?, CanCreateTickets = ?, CanDeleteTickets = ?, CanAssignTickets = ?,
-           CanCreateTaskFromTicket = ?, CanManageMembers = ?, CanManageSettings = ?
+             CanCreateTaskFromTicket = ?, CanManageMembers = ?, CanManageSettings = ?,
+             CanManageApplications = ?, CanCreateApplications = ?, CanDeleteApplications = ?, CanManageReleases = ?
        WHERE Id = ?`,
       [
         groupName,
@@ -338,6 +355,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         canPlanTasks ? 1 : 0,
         canManageTimeEntries ? 1 : 0,
         canViewReports ? 1 : 0,
+        canViewBudgetInfo ? 1 : 0,
         canManageTickets ? 1 : 0,
         canCreateTickets ? 1 : 0,
         canDeleteTickets ? 1 : 0,
@@ -345,6 +363,10 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         canCreateTaskFromTicket ? 1 : 0,
         canManageMembers ? 1 : 0,
         canManageSettings ? 1 : 0,
+        canManageApplications ? 1 : 0,
+        canCreateApplications ? 1 : 0,
+        canDeleteApplications ? 1 : 0,
+        canManageReleases ? 1 : 0,
         groupId
       ]
     );
@@ -416,15 +438,19 @@ router.post('/:id/sync-from-global', authenticateToken, async (req: AuthRequest,
        SET CanManageProjects = ?, CanCreateProjects = ?, CanDeleteProjects = ?,
            CanManageTasks = ?, CanCreateTasks = ?, CanDeleteTasks = ?, CanAssignTasks = ?,
            CanPlanTasks = ?, CanManageTimeEntries = ?, CanViewReports = ?,
+           CanViewBudgetInfo = ?,
            CanManageTickets = ?, CanCreateTickets = ?, CanDeleteTickets = ?, CanAssignTickets = ?,
-           CanCreateTaskFromTicket = ?
+             CanCreateTaskFromTicket = ?,
+             CanManageApplications = ?, CanCreateApplications = ?, CanDeleteApplications = ?, CanManageReleases = ?
        WHERE Id = ?`,
       [
         rp.CanManageProjects ? 1 : 0, rp.CanCreateProjects ? 1 : 0, rp.CanDeleteProjects ? 1 : 0,
         rp.CanManageTasks ? 1 : 0, rp.CanCreateTasks ? 1 : 0, rp.CanDeleteTasks ? 1 : 0, rp.CanAssignTasks ? 1 : 0,
         rp.CanPlanTasks ? 1 : 0, rp.CanManageTimeEntries ? 1 : 0, rp.CanViewReports ? 1 : 0,
+        rp.CanViewBudgetInfo ? 1 : 0,
         rp.CanManageTickets ? 1 : 0, rp.CanCreateTickets ? 1 : 0, rp.CanDeleteTickets ? 1 : 0, rp.CanAssignTickets ? 1 : 0,
         rp.CanCreateTaskFromTicket ? 1 : 0,
+        rp.CanManageApplications ? 1 : 0, rp.CanCreateApplications ? 1 : 0, rp.CanDeleteApplications ? 1 : 0, rp.CanManageReleases ? 1 : 0,
         groupId
       ]
     );

@@ -15,6 +15,7 @@ const PERMISSION_CATEGORIES = [
       'CanViewProjects',
       'CanViewTasks',
       'CanViewReports',
+      'CanViewBudgetInfo',
     ]
   },
   {
@@ -84,6 +85,7 @@ const PERMISSION_LABELS: { [key: string]: string } = {
   CanAssignTasks: 'Assign Tasks',
   CanManageTimeEntries: 'Manage Time Entries',
   CanViewReports: 'View Reports',
+  CanViewBudgetInfo: 'View Budget Info',
   CanManageOrganizations: 'Manage Organizations',
   CanViewCustomers: 'View Customers',
   CanManageCustomers: 'Manage Customers',
@@ -164,6 +166,7 @@ export default function RolePermissionsManagement() {
           CanAssignTasks: false,
           CanManageTimeEntries: false,
           CanViewReports: false,
+          CanViewBudgetInfo: false,
           CanManageOrganizations: false,
           CanViewCustomers: false,
           CanManageCustomers: false,
@@ -205,6 +208,7 @@ export default function RolePermissionsManagement() {
         CanAssignTasks: currentPerms.CanAssignTasks,
         CanManageTimeEntries: currentPerms.CanManageTimeEntries,
         CanViewReports: currentPerms.CanViewReports,
+        CanViewBudgetInfo: currentPerms.CanViewBudgetInfo,
         CanManageOrganizations: currentPerms.CanManageOrganizations,
         CanManageUsers: currentPerms.CanManageUsers,
         CanViewCustomers: currentPerms.CanViewCustomers,
