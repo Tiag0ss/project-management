@@ -221,18 +221,18 @@ router.post('/setup', async (req: Request, res: Response) => {
 
       // 5. Create default project status values
       const defaultProjectStatuses = [
-        { name: 'Active', color: '#10b981', order: 1, isDefault: 1 },
-        { name: 'On Hold', color: '#f59e0b', order: 2, isDefault: 0 },
-        { name: 'Completed', color: '#3b82f6', order: 3, isDefault: 0 },
-        { name: 'Cancelled', color: '#ef4444', order: 4, isDefault: 0 },
+        { name: 'Active', color: '#10b981', order: 1, isDefault: 1, isClosed: 0, isCancelled: 0 },
+        { name: 'On Hold', color: '#f59e0b', order: 2, isDefault: 0, isClosed: 0, isCancelled: 0 },
+        { name: 'Completed', color: '#3b82f6', order: 3, isDefault: 0, isClosed: 1, isCancelled: 0 },
+        { name: 'Cancelled', color: '#ef4444', order: 4, isDefault: 0, isClosed: 0, isCancelled: 1 },
       ];
 
       for (const status of defaultProjectStatuses) {
         await connection.execute(
           `INSERT INTO ProjectStatusValues 
-           (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault) 
-           VALUES (?, ?, ?, ?, ?)`,
-          [organizationId, status.name, status.color, status.order, status.isDefault]
+           (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled) 
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [organizationId, status.name, status.color, status.order, status.isDefault, status.isClosed, status.isCancelled]
         );
       }
 

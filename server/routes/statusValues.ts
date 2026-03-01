@@ -51,6 +51,38 @@ router.get('/project/:orgId', authenticateToken, async (req: AuthRequest, res: R
       });
     }
 
+    const [statusCountResult] = await pool.execute<RowDataPacket[]>(
+      'SELECT COUNT(*) as Count FROM ProjectStatusValues WHERE OrganizationId = ?',
+      [orgId]
+    );
+
+    const statusCount = Number(statusCountResult[0]?.Count || 0);
+    if (statusCount === 0) {
+      const defaultProjectStatuses = [
+        { name: 'Active', color: '#10b981', order: 1, isDefault: 1, isClosed: 0, isCancelled: 0 },
+        { name: 'On Hold', color: '#f59e0b', order: 2, isDefault: 0, isClosed: 0, isCancelled: 0 },
+        { name: 'Completed', color: '#3b82f6', order: 3, isDefault: 0, isClosed: 1, isCancelled: 0 },
+        { name: 'Cancelled', color: '#ef4444', order: 4, isDefault: 0, isClosed: 0, isCancelled: 1 },
+      ];
+
+      for (const status of defaultProjectStatuses) {
+        await pool.execute(
+          `INSERT INTO ProjectStatusValues 
+           (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            orgId,
+            status.name,
+            status.color,
+            status.order,
+            status.isDefault,
+            status.isClosed,
+            status.isCancelled,
+          ]
+        );
+      }
+    }
+
     const [statuses] = await pool.execute<RowDataPacket[]>(
       'SELECT * FROM ProjectStatusValues WHERE OrganizationId = ? ORDER BY SortOrder, StatusName',
       [orgId]
@@ -818,9 +850,10 @@ router.get('/priority/:orgId', authenticateToken, async (req: AuthRequest, res: 
 router.post('/priority', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { organizationId, priorityName, colorCode, sortOrder, isDefault } = req.body;
+    const { organizationId, priorityName, statusName, colorCode, sortOrder, isDefault } = req.body;
+    const resolvedPriorityName = priorityName || statusName;
 
-    if (!organizationId || !priorityName) {
+    if (!organizationId || !resolvedPriorityName) {
       return res.status(400).json({ 
         success: false, 
         message: 'Organization ID and priority name are required' 
@@ -852,7 +885,7 @@ router.post('/priority', authenticateToken, async (req: AuthRequest, res: Respon
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO TaskPriorityValues (OrganizationId, PriorityName, ColorCode, SortOrder, IsDefault)
        VALUES (?, ?, ?, ?, ?)`,
-      [organizationId, priorityName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
+      [organizationId, resolvedPriorityName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
     );
 
     res.json({
@@ -911,10 +944,10 @@ router.put('/priority/:id', authenticateToken, async (req: AuthRequest, res: Res
   try {
     const userId = req.user?.userId;
     const priorityId = req.params.id;
-    const { organizationId, priorityName, colorCode, sortOrder, isDefault } = req.body;
+    const { priorityName, statusName, colorCode, sortOrder, isDefault } = req.body;
 
     const [priority] = await pool.execute<RowDataPacket[]>(
-      'SELECT OrganizationId FROM TaskPriorityValues WHERE Id = ?',
+      'SELECT OrganizationId, PriorityName, ColorCode, SortOrder, IsDefault FROM TaskPriorityValues WHERE Id = ?',
       [priorityId]
     );
 
@@ -926,6 +959,14 @@ router.put('/priority/:id', authenticateToken, async (req: AuthRequest, res: Res
     }
 
     const orgId = priority[0].OrganizationId;
+    const currentPriority = priority[0];
+
+    const nextPriorityName = priorityName ?? statusName ?? currentPriority.PriorityName;
+    const nextColorCode = colorCode ?? currentPriority.ColorCode ?? '#3b82f6';
+    const nextSortOrder = sortOrder ?? currentPriority.SortOrder ?? 0;
+    const nextIsDefault = typeof isDefault === 'boolean'
+      ? isDefault
+      : currentPriority.IsDefault === 1;
 
     const [member] = await pool.execute<RowDataPacket[]>(
       `SELECT om.Role, pg.CanManageSettings
@@ -942,10 +983,10 @@ router.put('/priority/:id', authenticateToken, async (req: AuthRequest, res: Res
       });
     }
 
-    if (isDefault) {
+    if (nextIsDefault) {
       await pool.execute(
-        'UPDATE TaskPriorityValues SET IsDefault = 0 WHERE OrganizationId = ?',
-        [orgId]
+        'UPDATE TaskPriorityValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?',
+        [orgId, priorityId]
       );
     }
 
@@ -953,7 +994,7 @@ router.put('/priority/:id', authenticateToken, async (req: AuthRequest, res: Res
       `UPDATE TaskPriorityValues 
        SET PriorityName = ?, ColorCode = ?, SortOrder = ?, IsDefault = ?
        WHERE Id = ?`,
-      [priorityName, colorCode, sortOrder, isDefault ? 1 : 0, priorityId]
+      [nextPriorityName, nextColorCode, nextSortOrder, nextIsDefault ? 1 : 0, priorityId]
     );
 
     res.json({
@@ -1116,9 +1157,10 @@ router.get('/type/:orgId', authenticateToken, async (req: AuthRequest, res: Resp
 router.post('/type', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { organizationId, typeName, colorCode, sortOrder, isDefault } = req.body;
+    const { organizationId, typeName, statusName, colorCode, sortOrder, isDefault } = req.body;
+    const resolvedTypeName = typeName || statusName;
 
-    if (!organizationId || !typeName) {
+    if (!organizationId || !resolvedTypeName) {
       return res.status(400).json({ success: false, message: 'Organization ID and type name are required' });
     }
 
@@ -1140,7 +1182,7 @@ router.post('/type', authenticateToken, async (req: AuthRequest, res: Response) 
 
     const [result] = await pool.execute<ResultSetHeader>(
       'INSERT INTO TaskTypeValues (OrganizationId, TypeName, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?)',
-      [organizationId, typeName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
+      [organizationId, resolvedTypeName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
     );
 
     res.status(201).json({ success: true, typeId: result.insertId });
@@ -1155,10 +1197,10 @@ router.put('/type/:id', authenticateToken, async (req: AuthRequest, res: Respons
   try {
     const userId = req.user?.userId;
     const typeId = req.params.id;
-    const { typeName, colorCode, sortOrder, isDefault } = req.body;
+    const { typeName, statusName, colorCode, sortOrder, isDefault } = req.body;
 
     const [rows] = await pool.execute<RowDataPacket[]>(
-      'SELECT OrganizationId FROM TaskTypeValues WHERE Id = ?',
+      'SELECT OrganizationId, TypeName, ColorCode, SortOrder, IsDefault FROM TaskTypeValues WHERE Id = ?',
       [typeId]
     );
 
@@ -1167,6 +1209,14 @@ router.put('/type/:id', authenticateToken, async (req: AuthRequest, res: Respons
     }
 
     const orgId = rows[0].OrganizationId;
+    const currentType = rows[0];
+
+    const nextTypeName = typeName ?? statusName ?? currentType.TypeName;
+    const nextColorCode = colorCode ?? currentType.ColorCode ?? '#3b82f6';
+    const nextSortOrder = sortOrder ?? currentType.SortOrder ?? 0;
+    const nextIsDefault = typeof isDefault === 'boolean'
+      ? isDefault
+      : currentType.IsDefault === 1;
 
     const [member] = await pool.execute<RowDataPacket[]>(
       `SELECT om.Role, pg.CanManageSettings
@@ -1180,13 +1230,13 @@ router.put('/type/:id', authenticateToken, async (req: AuthRequest, res: Respons
       return res.status(403).json({ success: false, message: 'Permission denied' });
     }
 
-    if (isDefault) {
+    if (nextIsDefault) {
       await pool.execute('UPDATE TaskTypeValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, typeId]);
     }
 
     await pool.execute(
       'UPDATE TaskTypeValues SET TypeName = ?, ColorCode = ?, SortOrder = ?, IsDefault = ? WHERE Id = ?',
-      [typeName, colorCode, sortOrder, isDefault ? 1 : 0, typeId]
+      [nextTypeName, nextColorCode, nextSortOrder, nextIsDefault ? 1 : 0, typeId]
     );
 
     res.json({ success: true });
@@ -1550,8 +1600,9 @@ router.get('/ticket-priority/:orgId', authenticateToken, async (req: AuthRequest
 router.post('/ticket-priority', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { organizationId, priorityName, color, sortOrder, isDefault } = req.body;
-    if (!priorityName || !organizationId) return res.status(400).json({ success: false, message: 'Priority name and organization ID are required' });
+    const { organizationId, priorityName, statusName, color, sortOrder, isDefault } = req.body;
+    const resolvedPriorityName = priorityName || statusName;
+    if (!resolvedPriorityName || !organizationId) return res.status(400).json({ success: false, message: 'Priority name and organization ID are required' });
     const [member] = await pool.execute<RowDataPacket[]>(
       `SELECT om.Role, pg.CanManageSettings FROM OrganizationMembers om LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id WHERE om.OrganizationId = ? AND om.UserId = ?`,
       [organizationId, userId]
@@ -1560,7 +1611,7 @@ router.post('/ticket-priority', authenticateToken, async (req: AuthRequest, res:
     if (isDefault) await pool.execute('UPDATE TicketPriorityValues SET IsDefault = 0 WHERE OrganizationId = ?', [organizationId]);
     const [result] = await pool.execute<ResultSetHeader>(
       'INSERT INTO TicketPriorityValues (OrganizationId, PriorityName, Color, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?)',
-      [organizationId, priorityName, color || '#6b7280', sortOrder || 0, isDefault ? 1 : 0]
+      [organizationId, resolvedPriorityName, color || '#6b7280', sortOrder || 0, isDefault ? 1 : 0]
     );
     res.status(201).json({ success: true, priorityId: result.insertId });
   } catch (error) {
@@ -1611,19 +1662,24 @@ router.put('/ticket-priority/:id', authenticateToken, async (req: AuthRequest, r
   try {
     const userId = req.user?.userId;
     const priorityId = req.params.id;
-    const { priorityName, color, sortOrder, isDefault } = req.body;
-    const [rows] = await pool.execute<RowDataPacket[]>('SELECT OrganizationId FROM TicketPriorityValues WHERE Id = ?', [priorityId]);
+    const { priorityName, statusName, color, sortOrder, isDefault } = req.body;
+    const [rows] = await pool.execute<RowDataPacket[]>('SELECT OrganizationId, PriorityName, Color, SortOrder, IsDefault FROM TicketPriorityValues WHERE Id = ?', [priorityId]);
     if (rows.length === 0) return res.status(404).json({ success: false, message: 'Priority not found' });
     const orgId = rows[0].OrganizationId;
+    const currentPriority = rows[0];
+    const nextPriorityName = priorityName ?? statusName ?? currentPriority.PriorityName;
+    const nextColor = color ?? currentPriority.Color ?? '#6b7280';
+    const nextSortOrder = sortOrder ?? currentPriority.SortOrder ?? 0;
+    const nextIsDefault = typeof isDefault === 'boolean' ? isDefault : currentPriority.IsDefault === 1;
     const [member] = await pool.execute<RowDataPacket[]>(
       `SELECT om.Role, pg.CanManageSettings FROM OrganizationMembers om LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id WHERE om.OrganizationId = ? AND om.UserId = ?`,
       [orgId, userId]
     );
     if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
-    if (isDefault) await pool.execute('UPDATE TicketPriorityValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, priorityId]);
+    if (nextIsDefault) await pool.execute('UPDATE TicketPriorityValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, priorityId]);
     await pool.execute(
       'UPDATE TicketPriorityValues SET PriorityName = ?, Color = ?, SortOrder = ?, IsDefault = ? WHERE Id = ?',
-      [priorityName, color, sortOrder, isDefault ? 1 : 0, priorityId]
+      [nextPriorityName, nextColor, nextSortOrder, nextIsDefault ? 1 : 0, priorityId]
     );
     res.json({ success: true });
   } catch (error) {

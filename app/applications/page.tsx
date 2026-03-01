@@ -13,6 +13,7 @@ interface Application {
   Name: string;
   Description: string | null;
   RepositoryUrl: string | null;
+  IsCustomerSpecific: number | boolean;
   OrganizationId: number;
   OrganizationName: string;
   ProjectCount: number;
@@ -62,6 +63,7 @@ export default function ApplicationsPage() {
     Name: '',
     Description: '',
     RepositoryUrl: '',
+    IsCustomerSpecific: false,
     OrganizationId: 0,
     CustomerIds: [] as number[],
   });
@@ -205,6 +207,7 @@ export default function ApplicationsPage() {
       Name: '',
       Description: '',
       RepositoryUrl: '',
+      IsCustomerSpecific: false,
       OrganizationId: organizations.length === 1 ? organizations[0].Id : 0,
       CustomerIds: [],
     });
@@ -217,6 +220,7 @@ export default function ApplicationsPage() {
       Name: app.Name,
       Description: app.Description || '',
       RepositoryUrl: app.RepositoryUrl || '',
+      IsCustomerSpecific: !!app.IsCustomerSpecific,
       OrganizationId: app.OrganizationId,
       CustomerIds: app.Customers?.map((c) => c.Id) || [],
     });
@@ -245,8 +249,8 @@ export default function ApplicationsPage() {
       const method = editingApp ? 'PUT' : 'POST';
 
       const body = editingApp
-        ? { Name: formData.Name, Description: formData.Description, RepositoryUrl: formData.RepositoryUrl, CustomerIds: formData.CustomerIds }
-        : { Name: formData.Name, Description: formData.Description, RepositoryUrl: formData.RepositoryUrl, OrganizationId: formData.OrganizationId, CustomerIds: formData.CustomerIds };
+        ? { Name: formData.Name, Description: formData.Description, RepositoryUrl: formData.RepositoryUrl, IsCustomerSpecific: formData.IsCustomerSpecific, CustomerIds: formData.CustomerIds }
+        : { Name: formData.Name, Description: formData.Description, RepositoryUrl: formData.RepositoryUrl, IsCustomerSpecific: formData.IsCustomerSpecific, OrganizationId: formData.OrganizationId, CustomerIds: formData.CustomerIds };
 
       const res = await fetch(url, {
         method,
@@ -720,6 +724,18 @@ export default function ApplicationsPage() {
                     placeholder="https://github.com/org/repo"
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
+                </div>
+
+                <div>
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.IsCustomerSpecific}
+                      onChange={(e) => setFormData({ ...formData, IsCustomerSpecific: e.target.checked })}
+                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                    />
+                    <span>Customer-specific product version</span>
+                  </label>
                 </div>
 
                 {!editingApp && (

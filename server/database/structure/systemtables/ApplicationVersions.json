@@ -47,6 +47,13 @@
       "Comment": "Release notes and patch notes (rich text)"
     },
     {
+      "FieldName": "IsCustomerSpecific",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Whether this version is customer-specific"
+    },
+    {
       "FieldName": "CreatedBy",
       "DataType": "int",
       "NotNullable": true,

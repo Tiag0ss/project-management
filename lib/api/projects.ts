@@ -28,6 +28,7 @@ export interface Project {
   GiteaOwner?: string | null;
   GiteaRepo?: string | null;
   Budget?: number | null;
+  BudgetType?: 'monetary' | 'hours';
   BudgetSpent?: number;
   ApplicationIds?: number[];
   ApplicationNames?: string[];
@@ -60,6 +61,7 @@ export interface CreateProjectData {
   giteaOwner?: string;
   giteaRepo?: string;
   budget?: number | null;
+  budgetType?: 'monetary' | 'hours';
   applicationIds?: number[];
 }
 
@@ -78,6 +80,7 @@ export interface UpdateProjectData {
   giteaOwner?: string | null;
   giteaRepo?: string | null;
   budget?: number | null;
+  budgetType?: 'monetary' | 'hours';
   applicationIds?: number[];
 }
 

@@ -8,6 +8,10 @@ import { logProjectHistory } from '../utils/changeLog';
 
 const router = Router();
 
+const normalizeBudgetType = (value: unknown): 'monetary' | 'hours' => {
+  return value === 'hours' ? 'hours' : 'monetary';
+};
+
 /**
  * @swagger
  * tags:
@@ -49,7 +53,10 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        COALESCE(taskStats.OverdueTasks, 0) as OverdueTasks,
        (SELECT COUNT(*) FROM Tickets tk LEFT JOIN TicketStatusValues tsv2 ON tk.StatusId = tsv2.Id WHERE tk.ProjectId = p.Id AND COALESCE(tsv2.IsClosed, 0) = 0) as OpenTickets,
        COALESCE(unplannedStats.UnplannedTasks, 0) as UnplannedTasks,
-       COALESCE(budgetStats.BudgetSpent, 0) as BudgetSpent
+       CASE
+         WHEN COALESCE(p.BudgetType, 'monetary') = 'hours' THEN COALESCE(budgetStats.HoursSpent, 0)
+         ELSE COALESCE(budgetStats.CostSpent, 0)
+       END as BudgetSpent
        FROM Projects p 
        LEFT JOIN Users u ON p.CreatedBy = u.Id
        LEFT JOIN Organizations o ON p.OrganizationId = o.Id
@@ -83,7 +90,9 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
          GROUP BY t.ProjectId
        ) unplannedStats ON p.Id = unplannedStats.ProjectId
        LEFT JOIN (
-         SELECT t2.ProjectId, SUM(te2.Hours * COALESCE(u2.HourlyRate, 0)) as BudgetSpent
+         SELECT t2.ProjectId,
+                SUM(te2.Hours * COALESCE(u2.HourlyRate, 0)) as CostSpent,
+                SUM(te2.Hours) as HoursSpent
          FROM TimeEntries te2
          INNER JOIN Tasks t2 ON te2.TaskId = t2.Id
          LEFT JOIN Users u2 ON te2.UserId = u2.Id
@@ -143,14 +152,19 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       `SELECT p.*, u.Username as CreatorName, o.Name as OrganizationName, c.Name as CustomerName,
               psv.StatusName, psv.ColorCode as StatusColor,
               COALESCE(psv.IsClosed, 0) as StatusIsClosed, COALESCE(psv.IsCancelled, 0) as StatusIsCancelled,
-              COALESCE(budgetStats.BudgetSpent, 0) as BudgetSpent
+              CASE
+                WHEN COALESCE(p.BudgetType, 'monetary') = 'hours' THEN COALESCE(budgetStats.HoursSpent, 0)
+                ELSE COALESCE(budgetStats.CostSpent, 0)
+              END as BudgetSpent
        FROM Projects p 
        LEFT JOIN Users u ON p.CreatedBy = u.Id
        LEFT JOIN Organizations o ON p.OrganizationId = o.Id
        LEFT JOIN Customers c ON p.CustomerId = c.Id
        LEFT JOIN ProjectStatusValues psv ON p.Status = psv.Id
        LEFT JOIN (
-         SELECT t2.ProjectId, SUM(te2.Hours * COALESCE(u2.HourlyRate, 0)) as BudgetSpent
+         SELECT t2.ProjectId,
+                SUM(te2.Hours * COALESCE(u2.HourlyRate, 0)) as CostSpent,
+                SUM(te2.Hours) as HoursSpent
          FROM TimeEntries te2
          INNER JOIN Tasks t2 ON te2.TaskId = t2.Id
          LEFT JOIN Users u2 ON te2.UserId = u2.Id
@@ -409,7 +423,8 @@ router.get('/:id/permissions', authenticateToken, async (req: AuthRequest, res: 
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { organizationId, projectName, description, status, startDate, endDate, isHobby, isVisibleToCustomer, customerId, jiraBoardId, budget, applicationIds } = req.body;
+    const { organizationId, projectName, description, status, startDate, endDate, isHobby, isVisibleToCustomer, customerId, jiraBoardId, budget, budgetType, applicationIds } = req.body;
+    const finalBudgetType = normalizeBudgetType(budgetType);
 
     if (!projectName || !organizationId) {
       return res.status(400).json({ 
@@ -439,8 +454,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, IsVisibleToCustomer, CustomerId, JiraBoardId, Budget) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, IsVisibleToCustomer, CustomerId, JiraBoardId, Budget, BudgetType) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         organizationId,
         projectName, 
@@ -453,7 +468,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         isVisibleToCustomer ? 1 : 0,
         customerId || null,
         jiraBoardId || null,
-        budget !== undefined && budget !== '' ? parseFloat(budget) : null
+        budget !== undefined && budget !== '' ? parseFloat(budget) : null,
+        finalBudgetType
       ]
     );
 
@@ -655,7 +671,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const projectId = req.params.id;
-    const { projectName, description, status, startDate, endDate, isHobby, isVisibleToCustomer, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo, budget, applicationIds } = req.body;
+    const { projectName, description, status, startDate, endDate, isHobby, isVisibleToCustomer, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo, budget, budgetType, applicationIds } = req.body;
 
     // Check if project exists and get current data
     const [existing] = await pool.execute<RowDataPacket[]>(
@@ -673,6 +689,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const oldProject = existing[0];
 
     const finalStatus = status !== undefined ? status : oldProject.Status;
+    const finalBudgetType = budgetType !== undefined
+      ? normalizeBudgetType(budgetType)
+      : normalizeBudgetType(oldProject.BudgetType);
     if (finalStatus === undefined || finalStatus === null || finalStatus === '') {
       return res.status(400).json({
         success: false,
@@ -731,6 +750,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     if (budget !== undefined && parseFloat(budget) !== parseFloat(oldProject.Budget)) {
       changes.push({ field: 'Budget', oldVal: String(oldProject.Budget || ''), newVal: String(budget || '') });
     }
+    if (budgetType !== undefined && finalBudgetType !== normalizeBudgetType(oldProject.BudgetType)) {
+      changes.push({ field: 'BudgetType', oldVal: normalizeBudgetType(oldProject.BudgetType), newVal: finalBudgetType });
+    }
 
     if (isVisibleToCustomer !== undefined && Boolean(isVisibleToCustomer) !== Boolean(oldProject.IsVisibleToCustomer)) {
       changes.push({ field: 'IsVisibleToCustomer', oldVal: String(oldProject.IsVisibleToCustomer), newVal: String(isVisibleToCustomer) });
@@ -742,9 +764,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Projects 
-       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, IsVisibleToCustomer = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ?, GiteaOwner = ?, GiteaRepo = ?, Budget = ?
+       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, IsVisibleToCustomer = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ?, GiteaOwner = ?, GiteaRepo = ?, Budget = ?, BudgetType = ?
        WHERE Id = ?`,
-      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, isVisibleToCustomer ? 1 : 0, customerId || null, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, giteaOwner || null, giteaRepo || null, budget !== undefined && budget !== '' ? parseFloat(budget) : null, projectId]
+      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, isVisibleToCustomer ? 1 : 0, customerId || null, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, giteaOwner || null, giteaRepo || null, budget !== undefined && budget !== '' ? parseFloat(budget) : null, finalBudgetType, projectId]
     );
     
     // Log changes to history

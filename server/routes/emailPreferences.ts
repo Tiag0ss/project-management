@@ -38,6 +38,22 @@ export const NOTIFICATION_TYPES = [
   { type: 'weekly_work_summary', label: 'Weekly Work Summary', category: 'Summaries', description: 'Receive a weekly summary on the first work day of the week' },
 ];
 
+const CUSTOMER_NOTIFICATION_TYPES = new Set([
+  'ticket_created',
+  'ticket_status',
+  'ticket_comment',
+]);
+
+const getAllowedNotificationTypes = (customerId?: number | null) => {
+  if (customerId) {
+    return NOTIFICATION_TYPES.filter((notificationType) =>
+      CUSTOMER_NOTIFICATION_TYPES.has(notificationType.type)
+    );
+  }
+
+  return NOTIFICATION_TYPES;
+};
+
 /**
  * @swagger
  * /api/email-preferences:
@@ -54,6 +70,7 @@ export const NOTIFICATION_TYPES = [
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
 
     // Get existing preferences
     const [preferences] = await pool.execute<RowDataPacket[]>(
@@ -67,11 +84,14 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       prefsMap.set(pref.NotificationType, pref.EmailEnabled === 1);
     });
 
-    // Return all notification types with their current settings
-    const result = NOTIFICATION_TYPES.map(notif => ({
+    const allowedNotificationTypes = getAllowedNotificationTypes(customerId);
+
+    // Return allowed notification types with their current settings
+    const result = allowedNotificationTypes.map(notif => ({
       type: notif.type,
       label: notif.label,
       category: notif.category,
+      description: notif.description,
       emailEnabled: prefsMap.has(notif.type) ? prefsMap.get(notif.type) : true, // Default to enabled
     }));
 
@@ -115,21 +135,37 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
     const { preferences } = req.body;
 
     if (!Array.isArray(preferences)) {
       return res.status(400).json({ success: false, message: 'Invalid preferences format' });
     }
 
+    const allowedNotificationTypes = getAllowedNotificationTypes(customerId);
+    const allowedTypeSet = new Set(allowedNotificationTypes.map((notificationType) => notificationType.type));
+
+    const sanitizedPreferences = new Map<string, boolean>();
+    for (const preference of preferences) {
+      if (
+        preference &&
+        typeof preference.type === 'string' &&
+        typeof preference.emailEnabled === 'boolean' &&
+        allowedTypeSet.has(preference.type)
+      ) {
+        sanitizedPreferences.set(preference.type, preference.emailEnabled);
+      }
+    }
+
     // Delete existing preferences and insert new ones
     await pool.execute('DELETE FROM UserEmailPreferences WHERE UserId = ?', [userId]);
 
     // Insert new preferences
-    for (const pref of preferences) {
+    for (const [type, emailEnabled] of sanitizedPreferences.entries()) {
       await pool.execute(
         `INSERT INTO UserEmailPreferences (UserId, NotificationType, EmailEnabled) 
          VALUES (?, ?, ?)`,
-        [userId, pref.type, pref.emailEnabled ? 1 : 0]
+        [userId, type, emailEnabled ? 1 : 0]
       );
     }
 

@@ -166,7 +166,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { Name, Description, RepositoryUrl, OrganizationId, CustomerIds } = req.body;
+    const { Name, Description, RepositoryUrl, OrganizationId, CustomerIds, IsCustomerSpecific } = req.body;
 
     if (!Name || !OrganizationId) {
       return res.status(400).json({ success: false, message: 'Name and OrganizationId are required' });
@@ -217,9 +217,9 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Applications (Name, Description, RepositoryUrl, OrganizationId, CreatedBy)
-       VALUES (?, ?, ?, ?, ?)`,
-      [Name, Description || null, RepositoryUrl || null, OrganizationId, userId]
+      `INSERT INTO Applications (Name, Description, RepositoryUrl, IsCustomerSpecific, OrganizationId, CreatedBy)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [Name, Description || null, RepositoryUrl || null, IsCustomerSpecific ? 1 : 0, OrganizationId, userId]
     );
 
     const appId = result.insertId;
@@ -246,7 +246,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const { id } = req.params;
-    const { Name, Description, RepositoryUrl, CustomerIds } = req.body;
+    const { Name, Description, RepositoryUrl, CustomerIds, IsCustomerSpecific } = req.body;
 
     if (!Name) {
       return res.status(400).json({ success: false, message: 'Name is required' });
@@ -308,9 +308,13 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       }
     }
 
+    const isCustomerSpecificValue = IsCustomerSpecific === undefined ? null : (IsCustomerSpecific ? 1 : 0);
+
     await pool.execute(
-      `UPDATE Applications SET Name = ?, Description = ?, RepositoryUrl = ? WHERE Id = ?`,
-      [Name, Description || null, RepositoryUrl || null, id]
+      `UPDATE Applications
+       SET Name = ?, Description = ?, RepositoryUrl = ?, IsCustomerSpecific = COALESCE(?, IsCustomerSpecific)
+       WHERE Id = ?`,
+      [Name, Description || null, RepositoryUrl || null, isCustomerSpecificValue, id]
     );
 
     // Sync customers
@@ -553,7 +557,7 @@ router.post('/:id/versions', authenticateToken, async (req: AuthRequest, res: Re
     const userId = req.user?.userId;
     const { id } = req.params;
     const applicationId = Array.isArray(id) ? id[0] : id;
-    const { VersionNumber, VersionName, Status, ReleaseDate, PatchNotes } = req.body;
+    const { VersionNumber, VersionName, Status, ReleaseDate, PatchNotes, IsCustomerSpecific } = req.body;
 
     if (!VersionNumber) {
       return res.status(400).json({ success: false, message: 'VersionNumber is required' });
@@ -616,9 +620,9 @@ router.post('/:id/versions', authenticateToken, async (req: AuthRequest, res: Re
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO ApplicationVersions (ApplicationId, VersionNumber, VersionName, Status, ReleaseDate, PatchNotes, CreatedBy)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [applicationId, VersionNumber, VersionName || null, Status || 'Planning', ReleaseDate || null, PatchNotes || null, userId]
+      `INSERT INTO ApplicationVersions (ApplicationId, VersionNumber, VersionName, Status, ReleaseDate, PatchNotes, IsCustomerSpecific, CreatedBy)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [applicationId, VersionNumber, VersionName || null, Status || 'Planning', ReleaseDate || null, PatchNotes || null, IsCustomerSpecific ? 1 : 0, userId]
     );
 
     if ((Status || 'Planning') === 'Released') {
@@ -639,7 +643,7 @@ router.put('/:id/versions/:versionId', authenticateToken, async (req: AuthReques
     const { id, versionId } = req.params;
     const applicationId = Array.isArray(id) ? id[0] : id;
     const normalizedVersionId = Array.isArray(versionId) ? versionId[0] : versionId;
-    const { VersionNumber, VersionName, Status, ReleaseDate, PatchNotes } = req.body;
+    const { VersionNumber, VersionName, Status, ReleaseDate, PatchNotes, IsCustomerSpecific } = req.body;
 
     // Get application organization ID
     const [apps] = await pool.execute<RowDataPacket[]>(
@@ -706,10 +710,13 @@ router.put('/:id/versions/:versionId', authenticateToken, async (req: AuthReques
     const wasReleased = currentVersion.length > 0 && currentVersion[0].Status === 'Released';
     const isNowReleased = Status === 'Released';
 
+    const versionIsCustomerSpecificValue = IsCustomerSpecific === undefined ? null : (IsCustomerSpecific ? 1 : 0);
+
     await pool.execute(
-      `UPDATE ApplicationVersions SET VersionNumber = ?, VersionName = ?, Status = ?, ReleaseDate = ?, PatchNotes = ?
+      `UPDATE ApplicationVersions
+       SET VersionNumber = ?, VersionName = ?, Status = ?, ReleaseDate = ?, PatchNotes = ?, IsCustomerSpecific = COALESCE(?, IsCustomerSpecific)
        WHERE Id = ?`,
-      [VersionNumber, VersionName || null, Status || 'Planning', ReleaseDate || null, PatchNotes || null, normalizedVersionId]
+      [VersionNumber, VersionName || null, Status || 'Planning', ReleaseDate || null, PatchNotes || null, versionIsCustomerSpecificValue, normalizedVersionId]
     );
 
     // If version is being released (status changed to Released), update associated tasks

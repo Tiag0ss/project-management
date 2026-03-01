@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import { projectsApi, Project, CreateProjectData } from '@/lib/api/projects';
+import { projectsApi, Project, CreateProjectData, UpdateProjectData } from '@/lib/api/projects';
 import { tasksApi, Task, CreateTaskData } from '@/lib/api/tasks';
 import { organizationsApi, Organization } from '@/lib/api/organizations';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
@@ -3942,18 +3942,24 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled }: { proj
       {project.Budget !== null && project.Budget !== undefined && project.Budget > 0 && (() => {
         const budgetSpent = Number(project.BudgetSpent || 0);
         const budgetTotal = Number(project.Budget);
+        const budgetType = project.BudgetType === 'hours' ? 'hours' : 'monetary';
+        const budgetUnit = budgetType === 'hours' ? 'h' : '$';
         const budgetRemaining = budgetTotal - budgetSpent;
         const budgetPct = Math.min(100, Math.round((budgetSpent / budgetTotal) * 100));
         const barColor = budgetPct >= 100 ? 'bg-red-500' : budgetPct >= 80 ? 'bg-amber-500' : 'bg-green-500';
         const textColor = budgetPct >= 100 ? 'text-red-600 dark:text-red-400' : budgetPct >= 80 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400';
         return (
           <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">💰 Budget</h2>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">{budgetType === 'hours' ? '⏱️ Budget (Hours)' : '💰 Budget'}</h2>
             <div className="mb-4">
               <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-1">
-                <span>Spent: <span className={`font-semibold ${textColor}`}>${budgetSpent.toFixed(2)}</span></span>
+                <span>
+                  Spent: <span className={`font-semibold ${textColor}`}>{budgetType === 'hours' ? `${budgetSpent.toFixed(1)}${budgetUnit}` : `${budgetUnit}${budgetSpent.toFixed(2)}`}</span>
+                </span>
                 <span className="font-semibold">{budgetPct}%</span>
-                <span>Total: <span className="font-semibold text-gray-900 dark:text-white">${budgetTotal.toFixed(2)}</span></span>
+                <span>
+                  Total: <span className="font-semibold text-gray-900 dark:text-white">{budgetType === 'hours' ? `${budgetTotal.toFixed(1)}${budgetUnit}` : `${budgetUnit}${budgetTotal.toFixed(2)}`}</span>
+                </span>
               </div>
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
                 <div className={`${barColor} h-3 rounded-full transition-all`} style={{ width: `${budgetPct}%` }}></div>
@@ -3962,15 +3968,15 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled }: { proj
             <div className="grid grid-cols-3 gap-4 text-center">
               <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Total Budget</div>
-                <div className="text-lg font-bold text-gray-900 dark:text-white">${budgetTotal.toFixed(2)}</div>
+                <div className="text-lg font-bold text-gray-900 dark:text-white">{budgetType === 'hours' ? `${budgetTotal.toFixed(1)}${budgetUnit}` : `${budgetUnit}${budgetTotal.toFixed(2)}`}</div>
               </div>
               <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Spent</div>
-                <div className={`text-lg font-bold ${textColor}`}>${budgetSpent.toFixed(2)}</div>
+                <div className={`text-lg font-bold ${textColor}`}>{budgetType === 'hours' ? `${budgetSpent.toFixed(1)}${budgetUnit}` : `${budgetUnit}${budgetSpent.toFixed(2)}`}</div>
               </div>
               <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Remaining</div>
-                <div className={`text-lg font-bold ${budgetRemaining < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>${budgetRemaining.toFixed(2)}</div>
+                <div className={`text-lg font-bold ${budgetRemaining < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{budgetType === 'hours' ? `${budgetRemaining.toFixed(1)}${budgetUnit}` : `${budgetUnit}${budgetRemaining.toFixed(2)}`}</div>
               </div>
             </div>
           </div>
@@ -5434,6 +5440,9 @@ function GanttViewTab({ tasks }: { tasks: Task[] }) {
   const tasksWithoutPlanning = tasks.filter(t => {
     // Exclude if already in planned list
     if (tasksWithPlanning.includes(t)) return false;
+
+    // Exclude closed/completed and cancelled tasks from unplanned list
+    if (Number(t.StatusIsClosed || 0) === 1 || Number(t.StatusIsCancelled || 0) === 1) return false;
     
     // Don't show parent tasks in unplanned if they have children
     // (their planning status is determined by their children)
@@ -8319,6 +8328,7 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
     giteaOwner: project.GiteaOwner || '',
     giteaRepo: project.GiteaRepo || '',
     budget: project.Budget !== null && project.Budget !== undefined ? String(project.Budget) : '',
+    budgetType: project.BudgetType === 'hours' ? 'hours' : 'monetary',
     customerId: project.CustomerId || undefined,
     applicationIds: project.ApplicationIds || [] as number[],
   });
@@ -8475,7 +8485,7 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
         await projectsApi.transfer(project.Id, formData.organizationId, token);
       }
 
-      const updateData = {
+      const updateData: UpdateProjectData = {
         projectName: formData.projectName,
         description: formData.description,
         status: formData.status,
@@ -8489,6 +8499,7 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
         giteaOwner: formData.giteaOwner || null,
         giteaRepo: formData.giteaRepo || null,
         budget: formData.budget !== '' ? parseFloat(formData.budget) : null,
+        budgetType: formData.budgetType === 'hours' ? 'hours' : 'monetary',
         customerId: formData.customerId || null,
         applicationIds: formData.applicationIds || [],
       };
@@ -8617,21 +8628,41 @@ function SettingsTab({ project, token, onSaved }: { project: Project; token: str
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Budget Type
+            </label>
+            <select
+              value={formData.budgetType}
+              onChange={(e) => setFormData({ ...formData, budgetType: e.target.value === 'hours' ? 'hours' : 'monetary' })}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              <option value="monetary">Monetary</option>
+              <option value="hours">Total Hours</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Budget
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
+              {formData.budgetType !== 'hours' && (
+                <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
+              )}
               <input
                 type="number"
                 min="0"
-                step="0.01"
+                step={formData.budgetType === 'hours' ? '0.5' : '0.01'}
                 value={formData.budget}
                 onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
-                className="w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                placeholder="0.00"
+                className={`w-full ${formData.budgetType === 'hours' ? 'pl-4' : 'pl-7'} pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white`}
+                placeholder={formData.budgetType === 'hours' ? '0.0' : '0.00'}
               />
             </div>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Optional project budget in currency units</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {formData.budgetType === 'hours'
+                ? 'Optional project budget in total planned hours'
+                : 'Optional project budget in currency units'}
+            </p>
           </div>
 
           <div>
@@ -8910,6 +8941,7 @@ function EditProjectModal({
     giteaOwner: project.GiteaOwner || undefined,
     giteaRepo: project.GiteaRepo || undefined,
     budget: project.Budget ?? undefined,
+    budgetType: project.BudgetType === 'hours' ? 'hours' : 'monetary',
     customerId: project.CustomerId || undefined,
     isHobby: project.IsHobby || false,
     isVisibleToCustomer: !!project.IsVisibleToCustomer,
@@ -9070,7 +9102,7 @@ function EditProjectModal({
       
       // Always exclude organizationId from update call - build new object explicitly
       // Convert empty strings to null for date fields (MySQL requires null, not undefined)
-      const updateData = {
+      const updateData: UpdateProjectData = {
         projectName: formData.projectName,
         description: formData.description,
         status: formData.status,
@@ -9082,6 +9114,7 @@ function EditProjectModal({
         giteaOwner: formData.giteaOwner || null,
         giteaRepo: formData.giteaRepo || null,
         budget: formData.budget != null ? formData.budget : null,
+        budgetType: formData.budgetType || 'monetary',
         customerId: formData.customerId || null,
         isHobby: formData.isHobby || false,
         isVisibleToCustomer: formData.isVisibleToCustomer || false,
@@ -9194,21 +9227,41 @@ function EditProjectModal({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Budget Type
+              </label>
+              <select
+                value={formData.budgetType || 'monetary'}
+                onChange={(e) => setFormData({ ...formData, budgetType: e.target.value === 'hours' ? 'hours' : 'monetary' })}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="monetary">Monetary</option>
+                <option value="hours">Total Hours</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Budget
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
+                {formData.budgetType !== 'hours' && (
+                  <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
+                )}
                 <input
                   type="number"
                   min="0"
-                  step="0.01"
+                  step={formData.budgetType === 'hours' ? '0.5' : '0.01'}
                   value={formData.budget ?? ''}
                   onChange={(e) => setFormData({ ...formData, budget: e.target.value !== '' ? parseFloat(e.target.value) : undefined })}
-                  className="w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  placeholder="0.00"
+                  className={`w-full ${formData.budgetType === 'hours' ? 'pl-4' : 'pl-7'} pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white`}
+                  placeholder={formData.budgetType === 'hours' ? '0.0' : '0.00'}
                 />
               </div>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Optional project budget in currency units</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {formData.budgetType === 'hours'
+                  ? 'Optional project budget in total planned hours'
+                  : 'Optional project budget in currency units'}
+              </p>
             </div>
 
             <div>

@@ -461,13 +461,16 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 router.get('/summary-by-user', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const currentUserId = req.user?.userId;
+    const rawPeriod = req.query.period;
     const rawDateFrom = req.query.dateFrom;
     const rawDateTo = req.query.dateTo;
+    const period = Array.isArray(rawPeriod) ? rawPeriod[0] : rawPeriod;
+    const isAllTime = period === 'allTime';
 
     const dateFrom = Array.isArray(rawDateFrom) ? rawDateFrom[0] : rawDateFrom;
     const dateTo = Array.isArray(rawDateTo) ? rawDateTo[0] : rawDateTo;
 
-    if (!dateFrom || !dateTo) {
+    if (!isAllTime && (!dateFrom || !dateTo)) {
       return res.status(400).json({ success: false, message: 'dateFrom and dateTo are required' });
     }
 
@@ -483,10 +486,14 @@ router.get('/summary-by-user', authenticateToken, async (req: AuthRequest, res: 
     const isAdmin = !!callerRows[0].IsAdmin;
 
     const conditions: string[] = [
-      `te.WorkDate BETWEEN ? AND ?`,
       `u.CustomerId IS NULL`
     ];
-    const params: any[] = [dateFrom, dateTo];
+    const params: any[] = [];
+
+    if (!isAllTime) {
+      conditions.push(`te.WorkDate BETWEEN ? AND ?`);
+      params.push(dateFrom, dateTo);
+    }
 
     if (!isAdmin) {
       conditions.push(`(te.UserId = ? OR u.TeamLeaderId = ?)`);

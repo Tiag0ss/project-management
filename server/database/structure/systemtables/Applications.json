@@ -28,6 +28,13 @@
       "Comment": "URL of the source code repository"
     },
     {
+      "FieldName": "IsCustomerSpecific",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Whether this application is a customer-specific product"
+    },
+    {
       "FieldName": "OrganizationId",
       "DataType": "int",
       "NotNullable": true,

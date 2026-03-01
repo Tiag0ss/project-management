@@ -26,6 +26,7 @@ interface Application {
   Name: string;
   Description: string | null;
   RepositoryUrl: string | null;
+  IsCustomerSpecific: number | boolean;
   OrganizationId: number;
   OrganizationName: string;
   Customers: { Id: number; Name: string; Email?: string }[];
@@ -38,6 +39,7 @@ interface AppVersion {
   ApplicationId: number;
   VersionNumber: string;
   VersionName: string | null;
+  IsCustomerSpecific: number | boolean;
   Status: string;
   ReleaseDate: string | null;
   PatchNotes: string | null;
@@ -91,6 +93,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
   const [versionForm, setVersionForm] = useState({
     VersionNumber: '',
     VersionName: '',
+    IsCustomerSpecific: false,
     Status: 'Planning',
     ReleaseDate: '',
     PatchNotes: '',
@@ -188,6 +191,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
           Name: application?.Name,
           Description: application?.Description,
           RepositoryUrl: application?.RepositoryUrl,
+          IsCustomerSpecific: !!application?.IsCustomerSpecific,
           CustomerIds: selectedCustomerIds,
         }),
       });
@@ -244,7 +248,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
 
   const openCreateVersionModal = () => {
     setEditingVersion(null);
-    setVersionForm({ VersionNumber: '', VersionName: '', Status: 'Planning', ReleaseDate: '', PatchNotes: '', TaskIds: [] });
+    setVersionForm({ VersionNumber: '', VersionName: '', IsCustomerSpecific: false, Status: 'Planning', ReleaseDate: '', PatchNotes: '', TaskIds: [] });
     loadAvailableTasks();
     setTaskSearch('');
     setShowVersionModal(true);
@@ -257,6 +261,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
     setVersionForm({
       VersionNumber: v.VersionNumber,
       VersionName: v.VersionName || '',
+      IsCustomerSpecific: !!v.IsCustomerSpecific,
       Status: v.Status,
       ReleaseDate: v.ReleaseDate ? v.ReleaseDate.split('T')[0] : '',
       PatchNotes: v.PatchNotes || '',
@@ -292,6 +297,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
         body: JSON.stringify({
           VersionNumber: versionForm.VersionNumber,
           VersionName: versionForm.VersionName || null,
+          IsCustomerSpecific: versionForm.IsCustomerSpecific,
           Status: versionForm.Status,
           ReleaseDate: versionForm.ReleaseDate || null,
           PatchNotes: versionForm.PatchNotes || null,
@@ -973,6 +979,18 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={versionForm.IsCustomerSpecific}
+                      onChange={(e) => setVersionForm({ ...versionForm, IsCustomerSpecific: e.target.checked })}
+                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                    />
+                    <span>Customer-specific version</span>
+                  </label>
                 </div>
 
                 {/* Tasks selection */}

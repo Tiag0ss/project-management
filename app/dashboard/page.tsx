@@ -77,26 +77,8 @@ interface CalendarTabProps {
   onDataChanged: () => void;
 }
 
-type DashboardTab = 'overview' | 'calendar' | 'resume' | 'analytics';
-type ResumePeriod = 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth';
-
-interface ResumeByUserRow {
-  UserId: number;
-  Username: string;
-  FirstName?: string;
-  LastName?: string;
-  EntryCount: number;
-  TotalHours: number;
-  TaskCount: number;
-  ProjectCount: number;
-  CustomerCount: number;
-  TaskNames?: string;
-  ProjectNames?: string;
-  CustomerNames?: string;
-  ApprovedCount: number;
-  PendingCount: number;
-  RejectedCount: number;
-}
+type DashboardTab = 'overview' | 'calendar' | 'analytics';
+type AnalyticsPeriod = 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth' | 'allTime';
 
 // Use CalendarTab with dynamic import wrapper
 const CalendarTab = dynamic(
@@ -118,12 +100,11 @@ function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState<DashboardTab>(
-    (tabParam as DashboardTab) || 'overview'
-  );
-  const [resumePeriod, setResumePeriod] = useState<ResumePeriod>('thisWeek');
-  const [resumeSummary, setResumeSummary] = useState<ResumeByUserRow[]>([]);
-  const [resumeLoading, setResumeLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<DashboardTab>(() => {
+    if (tabParam === 'calendar' || tabParam === 'analytics') return tabParam;
+    return 'overview';
+  });
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>('thisMonth');
   const [userProfile, setUserProfile] = useState<User | null>(null);
   const [workHours, setWorkHours] = useState({
     monday: 8,
@@ -200,6 +181,8 @@ function DashboardContent() {
     unresolvedTickets: 0,
   });
   const [pendingTasks, setPendingTasks] = useState<TaskWithProject[]>([]);
+  const [isPrintMode, setIsPrintMode] = useState(false);
+  const [showAllPendingTasks, setShowAllPendingTasks] = useState(false);
   const [globalStats, setGlobalStats] = useState<{
     organizations: { total: number };
     customers: { total: number };
@@ -285,7 +268,9 @@ function DashboardContent() {
         loadUserProfile();
         loadSummaryStats();
         loadPendingTasks();
-        loadGlobalStats();
+        if (user?.isAdmin) {
+          loadGlobalStats(analyticsPeriod);
+        }
         if (activeTab === 'calendar') {
           loadMyTasks();
           loadTimeEntries();
@@ -293,23 +278,54 @@ function DashboardContent() {
           loadTaskAllocations();
           loadRecurringAllocations();
         }
-        if (activeTab === 'resume') {
-          loadResumeSummary(resumePeriod);
-        }
       }
     }
-  }, [user, isLoading, router, token, activeTab, resumePeriod, featureFlagsLoaded]);
+  }, [user, isLoading, router, token, activeTab, analyticsPeriod, featureFlagsLoaded]);
 
   // Update active tab when URL param changes
   useEffect(() => {
     if (tabParam) {
-      setActiveTab(tabParam as DashboardTab);
+      if (tabParam === 'calendar' || tabParam === 'analytics') {
+        setActiveTab(tabParam);
+      } else {
+        setActiveTab('overview');
+      }
     }
   }, [tabParam]);
 
+  const isTaskOverdue = (dueDate?: string | null): boolean => {
+    if (!dueDate) return false;
+    const due = new Date(dueDate);
+    due.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return due.getTime() < today.getTime();
+  };
+
+  useEffect(() => {
+    const handleBeforePrint = () => setIsPrintMode(true);
+    const handleAfterPrint = () => setIsPrintMode(false);
+
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, []);
+
   const toDateString = (date: Date): string => date.toISOString().split('T')[0];
 
-  const getResumePeriodRange = (period: ResumePeriod) => {
+  const getPeriodLabel = (period: AnalyticsPeriod): string => {
+    if (period === 'thisWeek') return 'This Week';
+    if (period === 'lastWeek') return 'Last Week';
+    if (period === 'thisMonth') return 'This Month';
+    if (period === 'allTime') return 'All Time';
+    return 'Last Month';
+  };
+
+  const getPeriodRange = (period: AnalyticsPeriod) => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -330,104 +346,17 @@ function DashboardContent() {
     const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
     const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
 
+    if (period === 'allTime') return null;
     if (period === 'thisWeek') return { from: toDateString(thisWeekStart), to: toDateString(thisWeekEnd) };
     if (period === 'lastWeek') return { from: toDateString(lastWeekStart), to: toDateString(lastWeekEnd) };
     if (period === 'thisMonth') return { from: toDateString(thisMonthStart), to: toDateString(thisMonthEnd) };
     return { from: toDateString(lastMonthStart), to: toDateString(lastMonthEnd) };
   };
 
-  const loadResumeSummary = async (period: ResumePeriod) => {
-    if (!token) return;
-    setResumeLoading(true);
-    try {
-      const range = getResumePeriodRange(period);
-      const params = new URLSearchParams({
-        dateFrom: range.from,
-        dateTo: range.to,
-      });
-
-      const response = await fetch(`${getApiUrl()}/api/time-entries/summary-by-user?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to load resume summary');
-      }
-
-      const data = await response.json();
-      const rows = (data.summary || []).map((row: any) => ({
-        UserId: Number(row.UserId),
-        Username: row.Username,
-        FirstName: row.FirstName || undefined,
-        LastName: row.LastName || undefined,
-        EntryCount: Number(row.EntryCount || 0),
-        TotalHours: Number(row.TotalHours || 0),
-        TaskCount: Number(row.TaskCount || 0),
-        ProjectCount: Number(row.ProjectCount || 0),
-        CustomerCount: Number(row.CustomerCount || 0),
-        TaskNames: row.TaskNames || undefined,
-        ProjectNames: row.ProjectNames || undefined,
-        CustomerNames: row.CustomerNames || undefined,
-        ApprovedCount: Number(row.ApprovedCount || 0),
-        PendingCount: Number(row.PendingCount || 0),
-        RejectedCount: Number(row.RejectedCount || 0),
-      }));
-      setResumeSummary(rows);
-    } catch (err) {
-      console.error('Failed to load resume summary:', err);
-      setResumeSummary([]);
-    } finally {
-      setResumeLoading(false);
-    }
-  };
-
-  const selectedResumeRange = useMemo(() => getResumePeriodRange(resumePeriod), [resumePeriod]);
-
-  const resumeTotals = useMemo(() => {
-    const totalUsers = resumeSummary.length;
-    const totalEntries = resumeSummary.reduce((sum, row) => sum + row.EntryCount, 0);
-    const totalHours = resumeSummary.reduce((sum, row) => sum + row.TotalHours, 0);
-    const approved = resumeSummary.reduce((sum, row) => sum + row.ApprovedCount, 0);
-    const pending = resumeSummary.reduce((sum, row) => sum + row.PendingCount, 0);
-    const rejected = resumeSummary.reduce((sum, row) => sum + row.RejectedCount, 0);
-    const approvalRate = totalEntries > 0 ? (approved / totalEntries) * 100 : 0;
-    const pendingRate = totalEntries > 0 ? (pending / totalEntries) * 100 : 0;
-    const rejectedRate = totalEntries > 0 ? (rejected / totalEntries) * 100 : 0;
-    const avgHoursPerEntry = totalEntries > 0 ? totalHours / totalEntries : 0;
-    const avgHoursPerUser = totalUsers > 0 ? totalHours / totalUsers : 0;
-
-    return {
-      totalUsers,
-      totalEntries,
-      totalHours,
-      approved,
-      pending,
-      rejected,
-      approvalRate,
-      pendingRate,
-      rejectedRate,
-      avgHoursPerEntry,
-      avgHoursPerUser,
-    };
-  }, [resumeSummary]);
-
-  const resumeTopUsers = useMemo(() => {
-    return [...resumeSummary].sort((a, b) => b.TotalHours - a.TotalHours).slice(0, 5);
-  }, [resumeSummary]);
-
-  const resumeAttentionUsers = useMemo(() => {
-    return [...resumeSummary]
-      .filter(row => row.PendingCount > 0 || row.RejectedCount > 0)
-      .sort((a, b) => (b.PendingCount + b.RejectedCount) - (a.PendingCount + a.RejectedCount));
-  }, [resumeSummary]);
-
-  const parseResumeList = (value?: string): string[] => {
-    if (!value) return [];
-    return value.split(' || ').map(v => v.trim()).filter(Boolean);
-  };
+  const selectedAnalyticsRange = useMemo(() => {
+    if (analyticsPeriod === 'allTime') return null;
+    return getPeriodRange(analyticsPeriod);
+  }, [analyticsPeriod]);
 
   // Helper function to normalize date for comparison
   const normalizeDateString = (dateValue: any): string => {
@@ -678,6 +607,7 @@ function DashboardContent() {
             tasksToday.push({
               taskName: alloc.TaskName,
               projectName: alloc.ProjectName,
+              isHobby,
               hours: hours,
               startTime: alloc.StartTime,
               endTime: alloc.EndTime,
@@ -755,12 +685,20 @@ function DashboardContent() {
     }
   };
 
-  const loadGlobalStats = async () => {
+  const loadGlobalStats = async (period: AnalyticsPeriod = 'thisMonth') => {
     if (!user?.isAdmin) return;
     
     try {
+      const params = new URLSearchParams();
+      const range = getPeriodRange(period);
+      if (!range) {
+        params.set('period', 'allTime');
+      } else {
+        params.set('dateFrom', range.from);
+        params.set('dateTo', range.to);
+      }
       const response = await fetch(
-        `${getApiUrl()}/api/statistics/global`,
+        `${getApiUrl()}/api/statistics/global?${params.toString()}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -838,15 +776,39 @@ function DashboardContent() {
       if (response.ok) {
         const data = await response.json();
         const tasks = data.tasks || [];
-        // Filter for pending tasks (not closed or cancelled) and sort by planned start date
+        // Filter for pending tasks (not closed or cancelled)
+        // Order: overdue first, then by planned start date
         const pending = tasks
           .filter((task: TaskWithProject) => 
             !task.StatusIsClosed && !task.StatusIsCancelled
           )
           .sort((a: TaskWithProject, b: TaskWithProject) => {
-            const dateA = a.PlannedStartDate ? new Date(a.PlannedStartDate).getTime() : Infinity;
-            const dateB = b.PlannedStartDate ? new Date(b.PlannedStartDate).getTime() : Infinity;
-            return dateA - dateB;
+            const dueA = a.DueDate ? new Date(a.DueDate) : null;
+            const dueB = b.DueDate ? new Date(b.DueDate) : null;
+            const overdueA = isTaskOverdue(a.DueDate ? String(a.DueDate) : null);
+            const overdueB = isTaskOverdue(b.DueDate ? String(b.DueDate) : null);
+
+            if (overdueA !== overdueB) {
+              return overdueA ? -1 : 1;
+            }
+
+            if (overdueA && overdueB) {
+              const dueATime = dueA ? dueA.getTime() : Infinity;
+              const dueBTime = dueB ? dueB.getTime() : Infinity;
+              if (dueATime !== dueBTime) {
+                return dueATime - dueBTime;
+              }
+            }
+
+            const plannedA = a.PlannedStartDate ? new Date(a.PlannedStartDate).getTime() : Infinity;
+            const plannedB = b.PlannedStartDate ? new Date(b.PlannedStartDate).getTime() : Infinity;
+            if (plannedA !== plannedB) {
+              return plannedA - plannedB;
+            }
+
+            const dueATime = dueA ? dueA.getTime() : Infinity;
+            const dueBTime = dueB ? dueB.getTime() : Infinity;
+            return dueATime - dueBTime;
           });
         setPendingTasks(pending);
       }
@@ -1126,21 +1088,6 @@ function DashboardContent() {
                 <span className="font-medium">Calendar</span>
               </button>
 
-              <button
-                onClick={() => {
-                  setActiveTab('resume');
-                  window.history.pushState({}, '', '/dashboard?tab=resume');
-                }}
-                className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                  activeTab === 'resume'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <span className="text-xl">📋</span>
-                <span className="font-medium">Resume</span>
-              </button>
-
               {!!user?.isAdmin && (
                 <button
                   onClick={() => {
@@ -1213,7 +1160,14 @@ function DashboardContent() {
                             <span className="font-medium">{task.endTime || '—'}</span>
                           </div>
                           <div>
-                            <h4 className="font-medium text-gray-900 dark:text-white">{task.taskName}</h4>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-medium text-gray-900 dark:text-white">{task.taskName}</h4>
+                              {task.isHobby && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                  Hobby
+                                </span>
+                              )}
+                            </div>
                             <p className="text-sm text-gray-500 dark:text-gray-400">{task.projectName}</p>
                           </div>
                         </div>
@@ -1452,8 +1406,8 @@ function DashboardContent() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {pendingTasks.slice(0, 5).map(task => {
-                      const isOverdue = task.DueDate && new Date(task.DueDate) < new Date();
+                    {pendingTasks.slice(0, (isPrintMode || showAllPendingTasks) ? pendingTasks.length : 5).map(task => {
+                      const isOverdue = isTaskOverdue(task.DueDate ? String(task.DueDate) : null);
                       return (
                         <div 
                           key={task.Id}
@@ -1513,13 +1467,15 @@ function DashboardContent() {
                         </div>
                       );
                     })}
-                    {pendingTasks.length > 5 && (
+                    {!isPrintMode && pendingTasks.length > 5 && (
                       <div className="text-center pt-2">
                         <button
-                          onClick={() => router.push('/projects')}
+                          onClick={() => setShowAllPendingTasks((previous) => !previous)}
                           className="text-blue-600 dark:text-blue-400 hover:underline text-sm"
                         >
-                          View all {pendingTasks.length} tasks →
+                          {showAllPendingTasks
+                            ? 'Show less tasks'
+                            : `View all ${pendingTasks.length} tasks →`}
                         </button>
                       </div>
                     )}
@@ -1551,205 +1507,48 @@ function DashboardContent() {
           )}
 
           {/* Resume Tab */}
-          {activeTab === 'resume' && (
-            <div className="space-y-6">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">📋 User Time Resume</h3>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {([
-                      { key: 'thisWeek', label: 'This Week' },
-                      { key: 'lastWeek', label: 'Last Week' },
-                      { key: 'thisMonth', label: 'This Month' },
-                      { key: 'lastMonth', label: 'Last Month' },
-                    ] as { key: ResumePeriod; label: string }[]).map(period => (
-                      <button
-                        key={period.key}
-                        onClick={() => setResumePeriod(period.key)}
-                        className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                          resumePeriod === period.key
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        }`}
-                      >
-                        {period.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {resumeLoading ? (
-                  <div className="text-center py-10 text-gray-500 dark:text-gray-400">Loading resume…</div>
-                ) : resumeSummary.length === 0 ? (
-                  <div className="text-center py-10 text-gray-500 dark:text-gray-400">No entries found for selected period.</div>
-                ) : (
-                  <>
-                    <div className="mb-4 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600">
-                      <div className="text-sm text-gray-600 dark:text-gray-300">
-                        Period: <span className="font-semibold text-gray-900 dark:text-white">{selectedResumeRange.from}</span> to <span className="font-semibold text-gray-900 dark:text-white">{selectedResumeRange.to}</span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4 mb-4">
-                      <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-100 dark:border-blue-800">
-                        <p className="text-sm text-blue-700 dark:text-blue-300">Users</p>
-                        <p className="text-2xl font-bold text-blue-900 dark:text-blue-100">{resumeTotals.totalUsers}</p>
-                      </div>
-                      <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 border border-green-100 dark:border-green-800">
-                        <p className="text-sm text-green-700 dark:text-green-300">Total Entries</p>
-                        <p className="text-2xl font-bold text-green-900 dark:text-green-100">{resumeTotals.totalEntries}</p>
-                      </div>
-                      <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 border border-purple-100 dark:border-purple-800">
-                        <p className="text-sm text-purple-700 dark:text-purple-300">Total Hours</p>
-                        <p className="text-2xl font-bold text-purple-900 dark:text-purple-100">{resumeTotals.totalHours.toFixed(1)}h</p>
-                      </div>
-                      <div className="bg-cyan-50 dark:bg-cyan-900/20 rounded-lg p-4 border border-cyan-100 dark:border-cyan-800">
-                        <p className="text-sm text-cyan-700 dark:text-cyan-300">Avg / Entry</p>
-                        <p className="text-2xl font-bold text-cyan-900 dark:text-cyan-100">{resumeTotals.avgHoursPerEntry.toFixed(2)}h</p>
-                      </div>
-                      <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 border border-indigo-100 dark:border-indigo-800">
-                        <p className="text-sm text-indigo-700 dark:text-indigo-300">Avg / User</p>
-                        <p className="text-2xl font-bold text-indigo-900 dark:text-indigo-100">{resumeTotals.avgHoursPerUser.toFixed(1)}h</p>
-                      </div>
-                      <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 border border-emerald-100 dark:border-emerald-800">
-                        <p className="text-sm text-emerald-700 dark:text-emerald-300">Approval Rate</p>
-                        <p className="text-2xl font-bold text-emerald-900 dark:text-emerald-100">{resumeTotals.approvalRate.toFixed(1)}%</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-                      <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Approval Distribution</h4>
-                        <div className="w-full h-3 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700 mb-3 flex">
-                          <div className="bg-green-500" style={{ width: `${resumeTotals.approvalRate}%` }} />
-                          <div className="bg-yellow-500" style={{ width: `${resumeTotals.pendingRate}%` }} />
-                          <div className="bg-red-500" style={{ width: `${resumeTotals.rejectedRate}%` }} />
-                        </div>
-                        <div className="grid grid-cols-3 gap-3 text-xs">
-                          <div className="text-green-700 dark:text-green-400">Approved: {resumeTotals.approved} ({resumeTotals.approvalRate.toFixed(1)}%)</div>
-                          <div className="text-yellow-700 dark:text-yellow-400">Pending: {resumeTotals.pending} ({resumeTotals.pendingRate.toFixed(1)}%)</div>
-                          <div className="text-red-700 dark:text-red-400">Rejected: {resumeTotals.rejected} ({resumeTotals.rejectedRate.toFixed(1)}%)</div>
-                        </div>
-                      </div>
-
-                      <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Top Contributors by Hours</h4>
-                        <div className="space-y-3">
-                          {resumeTopUsers.map((row, idx) => {
-                            const maxHours = resumeTopUsers[0]?.TotalHours || 1;
-                            const width = maxHours > 0 ? (row.TotalHours / maxHours) * 100 : 0;
-                            const displayName = row.FirstName && row.LastName ? `${row.FirstName} ${row.LastName}` : row.Username;
-                            return (
-                              <div key={row.UserId}>
-                                <div className="flex justify-between text-xs text-gray-700 dark:text-gray-300 mb-1">
-                                  <span>{idx + 1}. {displayName}</span>
-                                  <span>{row.TotalHours.toFixed(2)}h</span>
-                                </div>
-                                <div className="w-full h-2 rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                                  <div className="h-2 bg-blue-500 rounded" style={{ width: `${width}%` }} />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-
-                    {resumeAttentionUsers.length > 0 && (
-                      <div className="mb-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
-                        <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-2">Needs Attention</h4>
-                        <div className="space-y-1 text-sm">
-                          {resumeAttentionUsers.slice(0, 5).map(row => {
-                            const displayName = row.FirstName && row.LastName ? `${row.FirstName} ${row.LastName}` : row.Username;
-                            return (
-                              <div key={row.UserId} className="flex justify-between text-amber-800 dark:text-amber-300">
-                                <span>{displayName}</span>
-                                <span>{row.PendingCount} pending · {row.RejectedCount} rejected</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead className="bg-gray-50 dark:bg-gray-700">
-                          <tr>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">User</th>
-                            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Entries</th>
-                            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Hours</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Tasks</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Projects</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Customers</th>
-                            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Approved</th>
-                            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Pending</th>
-                            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Rejected</th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                          {resumeSummary.map(row => {
-                            const taskNames = parseResumeList(row.TaskNames);
-                            const projectNames = parseResumeList(row.ProjectNames);
-                            const customerNames = parseResumeList(row.CustomerNames);
-
-                            return (
-                              <tr key={row.UserId} className="hover:bg-gray-50 dark:hover:bg-gray-700/40">
-                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                                  {row.FirstName && row.LastName ? `${row.FirstName} ${row.LastName}` : row.Username}
-                                  <div className="text-xs text-gray-500 dark:text-gray-400">@{row.Username}</div>
-                                </td>
-                                <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-white">{row.EntryCount}</td>
-                                <td className="px-4 py-3 text-sm text-right font-semibold text-blue-600 dark:text-blue-400">{row.TotalHours.toFixed(2)}h</td>
-                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-white min-w-[220px]">
-                                  <div className="font-semibold text-xs text-indigo-600 dark:text-indigo-400 mb-1">{row.TaskCount} task{row.TaskCount === 1 ? '' : 's'}</div>
-                                  <div className="text-xs text-gray-600 dark:text-gray-400">
-                                    {taskNames.length > 0 ? `${taskNames.slice(0, 2).join(', ')}${taskNames.length > 2 ? ` +${taskNames.length - 2} more` : ''}` : '—'}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-white min-w-[220px]">
-                                  <div className="font-semibold text-xs text-purple-600 dark:text-purple-400 mb-1">{row.ProjectCount} project{row.ProjectCount === 1 ? '' : 's'}</div>
-                                  <div className="text-xs text-gray-600 dark:text-gray-400">
-                                    {projectNames.length > 0 ? `${projectNames.slice(0, 2).join(', ')}${projectNames.length > 2 ? ` +${projectNames.length - 2} more` : ''}` : '—'}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-white min-w-[220px]">
-                                  <div className="font-semibold text-xs text-emerald-600 dark:text-emerald-400 mb-1">{row.CustomerCount} customer{row.CustomerCount === 1 ? '' : 's'}</div>
-                                  <div className="text-xs text-gray-600 dark:text-gray-400">
-                                    {customerNames.length > 0 ? `${customerNames.slice(0, 2).join(', ')}${customerNames.length > 2 ? ` +${customerNames.length - 2} more` : ''}` : '—'}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3 text-sm text-right text-green-600 dark:text-green-400">{row.ApprovedCount}</td>
-                                <td className="px-4 py-3 text-sm text-right text-yellow-600 dark:text-yellow-400">{row.PendingCount}</td>
-                                <td className="px-4 py-3 text-sm text-right text-red-600 dark:text-red-400">{row.RejectedCount}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
               {/* Analytics Tab - Admin Only */}
               {activeTab === 'analytics' && user?.isAdmin && (
             <div className="space-y-6">
               {/* Analytics Header */}
               <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg shadow p-6 text-white">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div>
                     <h2 className="text-2xl font-bold">📊 Analytics Dashboard</h2>
                     <p className="text-indigo-100 mt-1">Global statistics and KPIs across all organizations</p>
+                    <p className="text-indigo-100/90 text-sm mt-1">
+                      Period: {selectedAnalyticsRange
+                        ? `${selectedAnalyticsRange.from} to ${selectedAnalyticsRange.to}`
+                        : 'All Time'}
+                    </p>
                   </div>
-                  <button 
-                    onClick={() => loadGlobalStats()}
-                    className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    🔄 Refresh
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {([
+                      { key: 'thisWeek', label: 'This Week' },
+                      { key: 'lastWeek', label: 'Last Week' },
+                      { key: 'thisMonth', label: 'This Month' },
+                      { key: 'lastMonth', label: 'Last Month' },
+                      { key: 'allTime', label: 'All Time' },
+                    ] as { key: AnalyticsPeriod; label: string }[]).map(period => (
+                      <button
+                        key={period.key}
+                        onClick={() => setAnalyticsPeriod(period.key)}
+                        className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                          analyticsPeriod === period.key
+                            ? 'bg-white text-indigo-700 font-semibold'
+                            : 'bg-white/20 hover:bg-white/30 text-white'
+                        }`}
+                      >
+                        {period.label}
+                      </button>
+                    ))}
+                    <button 
+                      onClick={() => loadGlobalStats(analyticsPeriod)}
+                      className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      🔄 Refresh
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1873,7 +1672,7 @@ function DashboardContent() {
                         </div>
                       </div>
                       <div className="bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
-                        <p className="text-xs text-orange-600 dark:text-orange-400 font-medium uppercase tracking-wide">This Month</p>
+                        <p className="text-xs text-orange-600 dark:text-orange-400 font-medium uppercase tracking-wide">{getPeriodLabel(analyticsPeriod)}</p>
                         <div className="flex items-baseline gap-2 mt-2">
                           <p className="text-3xl font-bold text-orange-900 dark:text-orange-100">{globalStats.hours.thisMonth.toFixed(1)}h</p>
                           <p className="text-sm text-orange-700 dark:text-orange-300">+ {globalStats.hours.thisMonthHobby.toFixed(1)}h hobby</p>
@@ -1943,10 +1742,10 @@ function DashboardContent() {
                     {/* Top Projects */}
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                        <span>🏆</span> Top Projects This Month
+                        <span>🏆</span> Top Projects {getPeriodLabel(analyticsPeriod)}
                       </h3>
                       {globalStats.topProjects.length === 0 ? (
-                        <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">No hours logged this month</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">No hours logged in selected period</p>
                       ) : (
                         <div className="space-y-4">
                           {globalStats.topProjects.map((project, idx) => (
@@ -1975,10 +1774,10 @@ function DashboardContent() {
                     {/* Top Contributors */}
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                        <span>👥</span> Top Contributors This Month
+                        <span>👥</span> Top Contributors {getPeriodLabel(analyticsPeriod)}
                       </h3>
                       {globalStats.topUsers.length === 0 ? (
-                        <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">No hours logged this month</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">No hours logged in selected period</p>
                       ) : (
                         <div className="space-y-4">
                           {globalStats.topUsers.map((u, idx) => (

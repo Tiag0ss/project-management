@@ -440,7 +440,15 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
             {activeTab === 'members' && <MembersTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}
             {activeTab === 'projects' && <ProjectsTab orgId={orgId} canManage={canManageSettings} token={token!} />}
             {activeTab === 'permissions' && <PermissionsTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}
-            {activeTab === 'statuses' && <StatusesTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}
+            {activeTab === 'statuses' && (
+              <StatusesTab
+                orgId={orgId}
+                canManage={canManageSettings}
+                token={token!}
+                showConfirm={showConfirm}
+                internalTicketsEnabled={internalTicketsEnabled}
+              />
+            )}
             {activeTab === 'tags' && <TagsTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}
             {activeTab === 'attachments' && (
               <AttachmentsTab 
@@ -1608,12 +1616,14 @@ function StatusesTab({
   orgId, 
   canManage, 
   token,
-  showConfirm 
+  showConfirm,
+  internalTicketsEnabled,
 }: { 
   orgId: number; 
   canManage: boolean; 
   token: string;
   showConfirm: (title: string, message: string, onConfirm: () => void) => void;
+  internalTicketsEnabled: boolean;
 }) {
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
@@ -1631,17 +1641,32 @@ function StatusesTab({
     loadStatuses();
   }, [orgId]);
 
+  useEffect(() => {
+    if (!internalTicketsEnabled && (activeType === 'ticket' || activeType === 'ticket-priority')) {
+      setActiveType('project');
+    }
+  }, [internalTicketsEnabled, activeType]);
+
   const loadStatuses = async () => {
     try {
       setIsLoading(true);
-      const [projectRes, taskRes, priorityRes, typeRes, ticketRes, ticketPriRes] = await Promise.all([
+      const [projectRes, taskRes, priorityRes, typeRes] = await Promise.all([
         statusValuesApi.getProjectStatuses(orgId, token),
         statusValuesApi.getTaskStatuses(orgId, token),
         statusValuesApi.getTaskPriorities(orgId, token),
         statusValuesApi.getTaskTypes(orgId, token),
-        fetch(`${getApiUrl()}/api/status-values/ticket/${orgId}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-        fetch(`${getApiUrl()}/api/status-values/ticket-priority/${orgId}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
       ]);
+
+      let ticketRes: any = { statuses: [] };
+      let ticketPriRes: any = { priorities: [] };
+
+      if (internalTicketsEnabled) {
+        [ticketRes, ticketPriRes] = await Promise.all([
+          fetch(`${getApiUrl()}/api/status-values/ticket/${orgId}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+          fetch(`${getApiUrl()}/api/status-values/ticket-priority/${orgId}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+        ]);
+      }
+
       setProjectStatuses(projectRes.statuses);
       setTaskStatuses(taskRes.statuses);
       setTaskPriorities(priorityRes.priorities);
@@ -1740,26 +1765,30 @@ function StatusesTab({
           >
             Task Types
           </button>
-          <button
-            onClick={() => setActiveType('ticket')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeType === 'ticket'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-            }`}
-          >
-            Ticket Statuses
-          </button>
-          <button
-            onClick={() => setActiveType('ticket-priority')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeType === 'ticket-priority'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-            }`}
-          >
-            Ticket Priorities
-          </button>
+          {internalTicketsEnabled && (
+            <>
+              <button
+                onClick={() => setActiveType('ticket')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  activeType === 'ticket'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                }`}
+              >
+                Ticket Statuses
+              </button>
+              <button
+                onClick={() => setActiveType('ticket-priority')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  activeType === 'ticket-priority'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                }`}
+              >
+                Ticket Priorities
+              </button>
+            </>
+          )}
         </div>
         {canManage && (
           <button

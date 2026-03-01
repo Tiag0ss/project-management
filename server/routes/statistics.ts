@@ -5,6 +5,18 @@ import { RowDataPacket } from 'mysql2';
 
 const router = Router();
 
+const formatDateOnly = (date: Date): string => date.toISOString().split('T')[0];
+
+const getCurrentMonthRange = () => {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return {
+    dateFrom: formatDateOnly(start),
+    dateTo: formatDateOnly(end),
+  };
+};
+
 /**
  * @swagger
  * tags:
@@ -76,6 +88,19 @@ router.get('/public', async (req, res: Response) => {
 router.get('/global', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
+    const rawPeriod = Array.isArray(req.query.period) ? req.query.period[0] : req.query.period;
+    const rawDateFrom = Array.isArray(req.query.dateFrom) ? req.query.dateFrom[0] : req.query.dateFrom;
+    const rawDateTo = Array.isArray(req.query.dateTo) ? req.query.dateTo[0] : req.query.dateTo;
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    const isAllTime = rawPeriod === 'allTime';
+
+    const defaultRange = getCurrentMonthRange();
+    const dateFrom = typeof rawDateFrom === 'string' && datePattern.test(rawDateFrom)
+      ? rawDateFrom
+      : defaultRange.dateFrom;
+    const dateTo = typeof rawDateTo === 'string' && datePattern.test(rawDateTo)
+      ? rawDateTo
+      : defaultRange.dateTo;
 
     // Check if user is admin
     const [userCheck] = await pool.execute<RowDataPacket[]>(
@@ -176,53 +201,100 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
       WHERE te.WorkDate >= DATE_SUB(CURDATE(), INTERVAL DAYOFWEEK(CURDATE())-1 DAY)
     `);
 
-    // Get this month's hours across all users (separated by hobby/normal)
-    const [monthHoursStats] = await pool.execute<RowDataPacket[]>(`
-      SELECT 
-        COALESCE(SUM(CASE WHEN p.IsHobby = 1 THEN te.Hours ELSE 0 END), 0) as hobbyHoursThisMonth,
-        COALESCE(SUM(CASE WHEN p.IsHobby = 0 THEN te.Hours ELSE 0 END), 0) as normalHoursThisMonth
-      FROM TimeEntries te
-      INNER JOIN Tasks t ON te.TaskId = t.Id
-      INNER JOIN Projects p ON t.ProjectId = p.Id
-      WHERE YEAR(te.WorkDate) = YEAR(CURDATE()) AND MONTH(te.WorkDate) = MONTH(CURDATE())
-    `);
+    // Get selected period's hours across all users (separated by hobby/normal)
+    let monthHoursStats: RowDataPacket[] = [];
+    if (isAllTime) {
+      [monthHoursStats] = await pool.execute<RowDataPacket[]>(`
+        SELECT 
+          COALESCE(SUM(CASE WHEN p.IsHobby = 1 THEN te.Hours ELSE 0 END), 0) as hobbyHoursThisMonth,
+          COALESCE(SUM(CASE WHEN p.IsHobby = 0 THEN te.Hours ELSE 0 END), 0) as normalHoursThisMonth
+        FROM TimeEntries te
+        INNER JOIN Tasks t ON te.TaskId = t.Id
+        INNER JOIN Projects p ON t.ProjectId = p.Id
+      `);
+    } else {
+      [monthHoursStats] = await pool.execute<RowDataPacket[]>(`
+        SELECT 
+          COALESCE(SUM(CASE WHEN p.IsHobby = 1 THEN te.Hours ELSE 0 END), 0) as hobbyHoursThisMonth,
+          COALESCE(SUM(CASE WHEN p.IsHobby = 0 THEN te.Hours ELSE 0 END), 0) as normalHoursThisMonth
+        FROM TimeEntries te
+        INNER JOIN Tasks t ON te.TaskId = t.Id
+        INNER JOIN Projects p ON t.ProjectId = p.Id
+        WHERE te.WorkDate BETWEEN ? AND ?
+      `, [dateFrom, dateTo]);
+    }
 
-    // Get top 5 projects by hours this month
-    const [topProjects] = await pool.execute<RowDataPacket[]>(`
-      SELECT 
-        p.Id,
-        p.ProjectName,
-        o.Name as OrganizationName,
-        COALESCE(SUM(te.Hours), 0) as hoursThisMonth
-      FROM Projects p
-      LEFT JOIN Organizations o ON p.OrganizationId = o.Id
-      LEFT JOIN Tasks t ON t.ProjectId = p.Id
-      LEFT JOIN TimeEntries te ON te.TaskId = t.Id 
-        AND YEAR(te.WorkDate) = YEAR(CURDATE()) 
-        AND MONTH(te.WorkDate) = MONTH(CURDATE())
-      GROUP BY p.Id, p.ProjectName, o.Name
-      ORDER BY hoursThisMonth DESC
-      LIMIT 5
-    `);
+    // Get top 5 projects by hours in selected period
+    let topProjects: RowDataPacket[] = [];
+    if (isAllTime) {
+      [topProjects] = await pool.execute<RowDataPacket[]>(`
+        SELECT 
+          p.Id,
+          p.ProjectName,
+          o.Name as OrganizationName,
+          COALESCE(SUM(te.Hours), 0) as hoursThisMonth
+        FROM Projects p
+        LEFT JOIN Organizations o ON p.OrganizationId = o.Id
+        LEFT JOIN Tasks t ON t.ProjectId = p.Id
+        LEFT JOIN TimeEntries te ON te.TaskId = t.Id
+        GROUP BY p.Id, p.ProjectName, o.Name
+        ORDER BY hoursThisMonth DESC
+        LIMIT 5
+      `);
+    } else {
+      [topProjects] = await pool.execute<RowDataPacket[]>(`
+        SELECT 
+          p.Id,
+          p.ProjectName,
+          o.Name as OrganizationName,
+          COALESCE(SUM(te.Hours), 0) as hoursThisMonth
+        FROM Projects p
+        LEFT JOIN Organizations o ON p.OrganizationId = o.Id
+        LEFT JOIN Tasks t ON t.ProjectId = p.Id
+        LEFT JOIN TimeEntries te ON te.TaskId = t.Id 
+          AND te.WorkDate BETWEEN ? AND ?
+        GROUP BY p.Id, p.ProjectName, o.Name
+        ORDER BY hoursThisMonth DESC
+        LIMIT 5
+      `, [dateFrom, dateTo]);
+    }
 
-    // Get top 5 users by hours this month
-    const [topUsers] = await pool.execute<RowDataPacket[]>(`
-      SELECT 
-        u.Id,
-        u.FirstName,
-        u.LastName,
-        u.Username,
-        COALESCE(SUM(te.Hours), 0) as hoursThisMonth
-      FROM Users u
-      LEFT JOIN TimeEntries te ON te.UserId = u.Id 
-        AND YEAR(te.WorkDate) = YEAR(CURDATE()) 
-        AND MONTH(te.WorkDate) = MONTH(CURDATE())
-      WHERE u.CustomerId IS NULL
-      GROUP BY u.Id, u.FirstName, u.LastName, u.Username
-      HAVING hoursThisMonth > 0
-      ORDER BY hoursThisMonth DESC
-      LIMIT 5
-    `);
+    // Get top 5 users by hours in selected period
+    let topUsers: RowDataPacket[] = [];
+    if (isAllTime) {
+      [topUsers] = await pool.execute<RowDataPacket[]>(`
+        SELECT 
+          u.Id,
+          u.FirstName,
+          u.LastName,
+          u.Username,
+          COALESCE(SUM(te.Hours), 0) as hoursThisMonth
+        FROM Users u
+        LEFT JOIN TimeEntries te ON te.UserId = u.Id
+        WHERE u.CustomerId IS NULL
+        GROUP BY u.Id, u.FirstName, u.LastName, u.Username
+        HAVING hoursThisMonth > 0
+        ORDER BY hoursThisMonth DESC
+        LIMIT 5
+      `);
+    } else {
+      [topUsers] = await pool.execute<RowDataPacket[]>(`
+        SELECT 
+          u.Id,
+          u.FirstName,
+          u.LastName,
+          u.Username,
+          COALESCE(SUM(te.Hours), 0) as hoursThisMonth
+        FROM Users u
+        LEFT JOIN TimeEntries te ON te.UserId = u.Id 
+          AND te.WorkDate BETWEEN ? AND ?
+        WHERE u.CustomerId IS NULL
+        GROUP BY u.Id, u.FirstName, u.LastName, u.Username
+        HAVING hoursThisMonth > 0
+        ORDER BY hoursThisMonth DESC
+        LIMIT 5
+      `, [dateFrom, dateTo]);
+    }
 
     // Get ticket statistics
     const [ticketStats] = await pool.execute<RowDataPacket[]>(`

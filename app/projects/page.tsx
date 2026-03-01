@@ -589,6 +589,8 @@ export default function ProjectsPage() {
                         const hoursPercent = estimatedHours > 0 ? Math.min(100, Math.round((workedHours / estimatedHours) * 100)) : 0;
                         const budgetTotal = Number(project.Budget) || 0;
                         const budgetSpent = Number(project.BudgetSpent) || 0;
+                        const budgetType = project.BudgetType === 'hours' ? 'hours' : 'monetary';
+                        const budgetLabel = budgetType === 'hours' ? 'h' : '$';
                         const budgetPct = budgetTotal > 0 ? Math.min(100, Math.round((budgetSpent / budgetTotal) * 100)) : 0;
                         const rag = ragMap.get(project.Id) || { status: 'green' as RAGStatus, reasons: [] };
                         const ragDot = rag.status === 'red' ? '🔴' : rag.status === 'amber' ? '🟡' : '🟢';
@@ -628,7 +630,11 @@ export default function ProjectsPage() {
                             <td className="px-6 py-4">
                               {budgetTotal > 0 ? (
                                 <div className="flex flex-col items-center gap-1 min-w-[80px]">
-                                  <span className={`text-xs font-medium ${budgetPct >= 100 ? 'text-red-600 dark:text-red-400' : budgetPct >= 80 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>${budgetSpent.toFixed(0)} / ${budgetTotal.toFixed(0)} ({budgetPct}%)</span>
+                                  <span className={`text-xs font-medium ${budgetPct >= 100 ? 'text-red-600 dark:text-red-400' : budgetPct >= 80 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>
+                                    {budgetType === 'hours'
+                                      ? `${budgetSpent.toFixed(1)}${budgetLabel} / ${budgetTotal.toFixed(1)}${budgetLabel} (${budgetPct}%)`
+                                      : `${budgetLabel}${budgetSpent.toFixed(0)} / ${budgetLabel}${budgetTotal.toFixed(0)} (${budgetPct}%)`}
+                                  </span>
                                   <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5"><div className={`h-1.5 rounded-full ${budgetPct >= 100 ? 'bg-red-500' : budgetPct >= 80 ? 'bg-amber-500' : 'bg-green-500'}`} style={{ width: `${budgetPct}%` }} /></div>
                                 </div>
                               ) : <span className="text-xs text-gray-400 text-center block">—</span>}
@@ -750,6 +756,8 @@ function ProjectCard({
   const workedHours     = Number(project.TotalWorkedHours) || 0;
   const budgetTotal     = Number(project.Budget) || 0;
   const budgetSpent     = Number(project.BudgetSpent) || 0;
+  const budgetType      = project.BudgetType === 'hours' ? 'hours' : 'monetary';
+  const budgetLabel     = budgetType === 'hours' ? 'h' : '$';
   const budgetPct       = budgetTotal > 0 ? Math.min(100, Math.round((budgetSpent / budgetTotal) * 100)) : 0;
   const budgetBarColor  = budgetPct >= 100 ? 'bg-red-500' : budgetPct >= 80 ? 'bg-amber-500' : 'bg-green-500';
   const isOverdue       = project.EndDate && new Date(project.EndDate) < new Date() && !project.StatusIsClosed;
@@ -813,9 +821,11 @@ function ProjectCard({
         {budgetTotal > 0 && (
           <div className="mb-3">
             <div className="flex justify-between text-xs mb-1">
-              <span className="text-gray-500 dark:text-gray-400">Budget</span>
+              <span className="text-gray-500 dark:text-gray-400">Budget {budgetType === 'hours' ? '(hours)' : '(monetary)'}</span>
               <span className="font-semibold text-gray-900 dark:text-white">
-                ${budgetSpent.toFixed(0)} / ${budgetTotal.toFixed(0)}
+                {budgetType === 'hours'
+                  ? `${budgetSpent.toFixed(1)}${budgetLabel} / ${budgetTotal.toFixed(1)}${budgetLabel}`
+                  : `${budgetLabel}${budgetSpent.toFixed(0)} / ${budgetLabel}${budgetTotal.toFixed(0)}`}
                 <span className="ml-1 text-gray-400">({budgetPct}%)</span>
               </span>
             </div>
@@ -917,6 +927,7 @@ function ProjectModal({
     giteaOwner: project?.GiteaOwner || undefined,
     giteaRepo: project?.GiteaRepo || undefined,
     budget: project?.Budget ?? undefined,
+    budgetType: project?.BudgetType === 'hours' ? 'hours' : 'monetary',
     applicationIds: project?.ApplicationIds || [],
   });
   const [error, setError] = useState('');
@@ -1284,21 +1295,41 @@ function ProjectModal({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Budget Type
+              </label>
+              <select
+                value={formData.budgetType || 'monetary'}
+                onChange={(e) => setFormData({ ...formData, budgetType: e.target.value === 'hours' ? 'hours' : 'monetary' })}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="monetary">Monetary</option>
+                <option value="hours">Total Hours</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Budget
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
+                {formData.budgetType !== 'hours' && (
+                  <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
+                )}
                 <input
                   type="number"
                   min="0"
-                  step="0.01"
+                  step={formData.budgetType === 'hours' ? '0.5' : '0.01'}
                   value={formData.budget ?? ''}
                   onChange={(e) => setFormData({ ...formData, budget: e.target.value !== '' ? parseFloat(e.target.value) : undefined })}
-                  className="w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  placeholder="0.00"
+                  className={`w-full ${formData.budgetType === 'hours' ? 'pl-4' : 'pl-7'} pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white`}
+                  placeholder={formData.budgetType === 'hours' ? '0.0' : '0.00'}
                 />
               </div>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Optional project budget in currency units</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {formData.budgetType === 'hours'
+                  ? 'Optional project budget in total planned hours'
+                  : 'Optional project budget in currency units'}
+              </p>
             </div>
 
             <div>

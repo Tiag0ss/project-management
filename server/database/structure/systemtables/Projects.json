@@ -127,6 +127,13 @@
       "Comment": "Project budget in currency units"
     },
     {
+      "FieldName": "BudgetType",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "monetary",
+      "Comment": "Budget mode: monetary or hours"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
