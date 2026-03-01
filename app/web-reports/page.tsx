@@ -1411,73 +1411,80 @@ export default function WebReportsPage() {
                   />
                 )}
 
+                {/* Saved Reports Section - always visible when a data source is selected */}
+                {dataSource && (
+                  <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <h3 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                      <span className="mr-2">💾</span>
+                      Saved Reports ({savedReports.length})
+                    </h3>
+
+                    {savedReports.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {savedReports.map(report => (
+                          <div 
+                            key={report.Id}
+                            className="bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-600 hover:shadow-md transition-shadow"
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1 min-w-0">
+                                <button
+                                  onClick={() => handleLoadReport(report)}
+                                  className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline text-left truncate block w-full"
+                                  title={report.ReportName}
+                                >
+                                  {report.ReportName}
+                                </button>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                  Updated: {new Date(report.UpdatedAt).toLocaleDateString()}
+                                </p>
+                              </div>
+                              <div className="flex gap-1 ml-2">
+                                <button
+                                  onClick={() => handleOpenEditModal(report)}
+                                  className="p-1 text-gray-600 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400"
+                                  title="Edit report"
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  onClick={() => handleOpenShareModal(report)}
+                                  className="p-1 text-gray-600 hover:text-green-600 dark:text-gray-400 dark:hover:text-green-400"
+                                  title="Share report"
+                                >
+                                  🔗
+                                </button>
+                                <button
+                                  onClick={() => handleTogglePublic(report.Id, report.IsPublic || 0)}
+                                  className={`p-1 ${report.IsPublic === 1 ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-400 dark:text-gray-600'} hover:text-yellow-600 dark:hover:text-yellow-400`}
+                                  title={report.IsPublic === 1 ? 'Make private' : 'Make public'}
+                                >
+                                  {report.IsPublic === 1 ? '🌐' : '🔒'}
+                                </button>
+                                <button
+                                  onClick={() => handleOpenDeleteModal(report)}
+                                  className="p-1 text-gray-600 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
+                                  title="Delete report"
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+                        No saved reports for this data source yet.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Show filters and pivot configuration for regular datasources OR dynamic after query execution */}
                 {((currentSource && rawData.length > 0 && dataSource !== 'dynamic') || 
                   (dataSource === 'dynamic' && rawData.length > 0 && dynamicFields.length > 0)) && (
                   <>
-                    {/* Saved Reports Section */}
-                    {savedReports.length > 0 && (
-                      <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                        <h3 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
-                          <span className="mr-2">💾</span>
-                          Saved Reports ({savedReports.length})
-                        </h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {savedReports.map(report => (
-                            <div 
-                              key={report.Id}
-                              className="bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-600 hover:shadow-md transition-shadow"
-                            >
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1 min-w-0">
-                                  <button
-                                    onClick={() => handleLoadReport(report)}
-                                    className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline text-left truncate block w-full"
-                                    title={report.ReportName}
-                                  >
-                                    {report.ReportName}
-                                  </button>
-                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                    Updated: {new Date(report.UpdatedAt).toLocaleDateString()}
-                                  </p>
-                                </div>
-                                <div className="flex gap-1 ml-2">
-                                  <button
-                                    onClick={() => handleOpenEditModal(report)}
-                                    className="p-1 text-gray-600 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400"
-                                    title="Edit report"
-                                  >
-                                    ✏️
-                                  </button>
-                                  <button
-                                    onClick={() => handleOpenShareModal(report)}
-                                    className="p-1 text-gray-600 hover:text-green-600 dark:text-gray-400 dark:hover:text-green-400"
-                                    title="Share report"
-                                  >
-                                    🔗
-                                  </button>
-                                  <button
-                                    onClick={() => handleTogglePublic(report.Id, report.IsPublic || 0)}
-                                    className={`p-1 ${report.IsPublic === 1 ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-400 dark:text-gray-600'} hover:text-yellow-600 dark:hover:text-yellow-400`}
-                                    title={report.IsPublic === 1 ? 'Make private' : 'Make public'}
-                                  >
-                                    {report.IsPublic === 1 ? '🌐' : '🔒'}
-                                  </button>
-                                  <button
-                                    onClick={() => handleOpenDeleteModal(report)}
-                                    className="p-1 text-gray-600 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
-                                    title="Delete report"
-                                  >
-                                    🗑️
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
                     {/* Filters Section */}
                     <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
                       <div className="flex items-center justify-between mb-3">

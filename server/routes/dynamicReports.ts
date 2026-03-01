@@ -2,6 +2,7 @@ import express, { Response } from 'express';
 import { pool } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { RowDataPacket } from '../config/database';
+import { dbProvider } from '../config/database';
 import fs from 'fs';
 import path from 'path';
 
@@ -38,8 +39,29 @@ interface TableRelation {
 }
 
 function sanitizeSqlAlias(alias: string): string {
-  const normalizedAlias = String(alias || '').trim().replace(/[^a-zA-Z0-9_]/g, '_');
+  const normalizedAlias = String(alias || '').trim();
   return normalizedAlias || 'Field';
+}
+
+function quoteResultAlias(alias: string): string {
+  if (dbProvider === 'mssql') {
+    return `[${alias.replace(/\]/g, ']]')}]`;
+  }
+  return `\`${alias.replace(/`/g, '``')}\``;
+}
+
+function getFieldKey(field: { table: string; field: string; alias?: string }): string {
+  return sanitizeSqlAlias(field.alias || `${field.table}.${field.field}`);
+}
+
+function getAggregationFunction(inputAggregation: any): 'SUM' | 'COUNT' | 'AVG' | 'MIN' | 'MAX' | 'DISTINCTCOUNT' {
+  const normalized = String(inputAggregation || 'SUM').toUpperCase();
+  if (normalized === 'DISTINCTCOUNT') return 'DISTINCTCOUNT';
+  if (normalized === 'COUNT') return 'COUNT';
+  if (normalized === 'AVG') return 'AVG';
+  if (normalized === 'MIN') return 'MIN';
+  if (normalized === 'MAX') return 'MAX';
+  return 'SUM';
 }
 
 // Helper function to format filter values based on field data type
@@ -279,22 +301,22 @@ router.post('/query', authenticateToken, async (req: AuthRequest, res: Response)
     
     // Add row and column fields
     [...(rowFields || []), ...(columnFields || [])].forEach((field: any) => {
-      const alias = sanitizeSqlAlias(field.alias || `${field.table}_${field.field}`);
-      selectFields.push(`${field.table}.${field.field} AS ${alias}`);
+      const alias = getFieldKey(field);
+      selectFields.push(`${field.table}.${field.field} AS ${quoteResultAlias(alias)}`);
     });
     
     // Add value fields with aggregations
     (valueFields || []).forEach((field: any) => {
-      const aggFunc = field.aggregation.toUpperCase();
+      const aggFunc = getAggregationFunction(field.aggregation);
       let fieldExpr = `${field.table}.${field.field}`;
-      const alias = sanitizeSqlAlias(field.alias || field.field);
+      const alias = getFieldKey(field);
       
       if (aggFunc === 'DISTINCTCOUNT') {
-        selectFields.push(`COUNT(DISTINCT ${fieldExpr}) AS ${alias}`);
+        selectFields.push(`COUNT(DISTINCT ${fieldExpr}) AS ${quoteResultAlias(alias)}`);
       } else if (aggFunc === 'COUNT') {
-        selectFields.push(`COUNT(${fieldExpr}) AS ${alias}`);
+        selectFields.push(`COUNT(${fieldExpr}) AS ${quoteResultAlias(alias)}`);
       } else {
-        selectFields.push(`${aggFunc}(${fieldExpr}) AS ${alias}`);
+        selectFields.push(`${aggFunc}(${fieldExpr}) AS ${quoteResultAlias(alias)}`);
       }
     });
     
@@ -333,6 +355,7 @@ router.post('/query', authenticateToken, async (req: AuthRequest, res: Response)
     
     // Build WHERE clause
     let whereClause = '';
+    const whereParams: any[] = [];
     if (filters && filters.length > 0) {
       const conditions: string[] = [];
       filters.forEach((filter: any) => {
@@ -342,33 +365,41 @@ router.post('/query', authenticateToken, async (req: AuthRequest, res: Response)
         switch (filter.operator) {
           case 'equals':
             const formattedValue = formatFilterValue(filter.value, fieldDataType);
-            conditions.push(`${field} = ${pool.escape(formattedValue)}`);
+            conditions.push(`${field} = ?`);
+            whereParams.push(formattedValue);
             break;
           case 'notEquals':
             const formattedValueNE = formatFilterValue(filter.value, fieldDataType);
-            conditions.push(`${field} != ${pool.escape(formattedValueNE)}`);
+            conditions.push(`${field} != ?`);
+            whereParams.push(formattedValueNE);
             break;
           case 'contains':
-            conditions.push(`${field} LIKE ${pool.escape('%' + filter.value + '%')}`);
+            conditions.push(`${field} LIKE ?`);
+            whereParams.push(`%${filter.value}%`);
             break;
           case 'startsWith':
-            conditions.push(`${field} LIKE ${pool.escape(filter.value + '%')}`);
+            conditions.push(`${field} LIKE ?`);
+            whereParams.push(`${filter.value}%`);
             break;
           case 'endsWith':
-            conditions.push(`${field} LIKE ${pool.escape('%' + filter.value)}`);
+            conditions.push(`${field} LIKE ?`);
+            whereParams.push(`%${filter.value}`);
             break;
           case 'greaterThan':
             const formattedValueGT = formatFilterValue(filter.value, fieldDataType);
-            conditions.push(`${field} > ${pool.escape(formattedValueGT)}`);
+            conditions.push(`${field} > ?`);
+            whereParams.push(formattedValueGT);
             break;
           case 'lessThan':
             const formattedValueLT = formatFilterValue(filter.value, fieldDataType);
-            conditions.push(`${field} < ${pool.escape(formattedValueLT)}`);
+            conditions.push(`${field} < ?`);
+            whereParams.push(formattedValueLT);
             break;
           case 'between':
             const formattedValue1 = formatFilterValue(filter.value, fieldDataType);
             const formattedValue2 = formatFilterValue(filter.value2, fieldDataType);
-            conditions.push(`${field} BETWEEN ${pool.escape(formattedValue1)} AND ${pool.escape(formattedValue2)}`);
+            conditions.push(`${field} BETWEEN ? AND ?`);
+            whereParams.push(formattedValue1, formattedValue2);
             break;
           case 'isEmpty':
             conditions.push(`(${field} IS NULL OR ${field} = '')`);
@@ -378,17 +409,20 @@ router.post('/query', authenticateToken, async (req: AuthRequest, res: Response)
             break;
           case 'inList':
             if (filter.valueList && filter.valueList.length > 0) {
-              const escapedValues = filter.valueList.map((v: string) => {
+              const listValues = filter.valueList.map((v: string) => {
                 const formattedV = formatFilterValue(v, fieldDataType);
-                return pool.escape(formattedV);
-              }).join(', ');
-              conditions.push(`${field} IN (${escapedValues})`);
+                return formattedV;
+              });
+              const placeholders = listValues.map(() => '?').join(', ');
+              conditions.push(`${field} IN (${placeholders})`);
+              whereParams.push(...listValues);
             }
             break;
           case 'dateRange':
             const formattedDateValue1 = formatFilterValue(filter.value, fieldDataType);
             const formattedDateValue2 = formatFilterValue(filter.value2, fieldDataType);
-            conditions.push(`${field} BETWEEN ${pool.escape(formattedDateValue1)} AND ${pool.escape(formattedDateValue2)}`);
+            conditions.push(`${field} BETWEEN ? AND ?`);
+            whereParams.push(formattedDateValue1, formattedDateValue2);
             break;
         }
       });
@@ -431,7 +465,7 @@ router.post('/query', authenticateToken, async (req: AuthRequest, res: Response)
     console.log('Executing dynamic query:', query);
     
     // Execute the query
-    const [results] = await pool.execute<RowDataPacket[]>(query);
+    const [results] = await pool.execute<RowDataPacket[]>(query, whereParams);
     
     res.json({ 
       success: true, 

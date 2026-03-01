@@ -65,6 +65,11 @@ interface DynamicQueryBuilderProps {
   initialConfig?: DynamicQueryConfig | null;
 }
 
+const getDynamicFieldKey = (field: SelectedField): string => {
+  const baseKey = field.alias || `${field.table}.${field.field}`;
+  return String(baseKey || '').trim() || `${field.table}.${field.field}`;
+};
+
 export default function DynamicQueryBuilder({ token, onDataLoaded, initialConfig }: DynamicQueryBuilderProps) {
   const [schema, setSchema] = useState<DatabaseSchema | null>(null);
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
@@ -496,27 +501,27 @@ export default function DynamicQueryBuilder({ token, onDataLoaded, initialConfig
         // Build field definitions for the pivot table
         const fields = [
           ...rowFields.map(f => ({ 
-            key: `${f.table}.${f.field}`, 
+            key: getDynamicFieldKey(f), 
             label: f.alias || `${f.table}.${f.field}`, 
             type: getFieldType(f.table, f.field)
           })),
           ...columnFields.map(f => ({ 
-            key: `${f.table}.${f.field}`, 
+            key: getDynamicFieldKey(f), 
             label: f.alias || `${f.table}.${f.field}`, 
             type: getFieldType(f.table, f.field)
           })),
           ...valueFields.map(f => ({ 
-            key: f.alias || f.field, 
+            key: getDynamicFieldKey(f), 
             label: f.alias || `${f.aggregation}(${f.table}.${f.field})`, 
             type: 'number' as const 
           }))
         ];
         
         onDataLoaded(result.data, fields, {
-          rows: rowFields.map(f => `${f.table}.${f.field}`),
-          columns: columnFields.map(f => `${f.table}.${f.field}`),
+          rows: rowFields.map((f) => getDynamicFieldKey(f)),
+          columns: columnFields.map((f) => getDynamicFieldKey(f)),
           values: valueFields.map(f => ({
-            field: f.alias || f.field,
+            field: getDynamicFieldKey(f),
             aggregation: (f.aggregation || 'sum').toLowerCase() as 'sum' | 'count' | 'avg' | 'min' | 'max' | 'distinctCount'
           }))
         }, {
