@@ -42,6 +42,138 @@ const normalizeDateForDB = (dateValue: any): string | null => {
   return dateValue;
 };
 
+// Convert Jira description payloads (plain text, JSON string, or Atlassian Document Format) to HTML for RichTextEditor
+const normalizeJiraDescription = (value: any): string => {
+  const escapeHtml = (text: string): string => {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+
+  const wrapTextAsHtml = (text: string): string => {
+    const trimmed = text.trim();
+    if (!trimmed) return '';
+
+    const paragraphs = trimmed
+      .split(/\n\s*\n/)
+      .map(p => p.trim())
+      .filter(Boolean)
+      .map(p => `<p>${escapeHtml(p).replace(/\n/g, '<br/>')}</p>`);
+
+    return paragraphs.join('');
+  };
+
+  const applyMarks = (html: string, marks: any[] | undefined): string => {
+    if (!marks || !Array.isArray(marks)) return html;
+
+    return marks.reduce((acc, mark) => {
+      const type = mark?.type;
+      if (type === 'strong') return `<strong>${acc}</strong>`;
+      if (type === 'em') return `<em>${acc}</em>`;
+      if (type === 'underline') return `<u>${acc}</u>`;
+      if (type === 'code') return `<code>${acc}</code>`;
+      if (type === 'link' && mark?.attrs?.href) {
+        const href = escapeHtml(String(mark.attrs.href));
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${acc}</a>`;
+      }
+      return acc;
+    }, html);
+  };
+
+  const extractAdfHtml = (node: any): string => {
+    if (!node) return '';
+
+    if (Array.isArray(node)) {
+      return node.map(extractAdfHtml).join('');
+    }
+
+    if (typeof node === 'string') {
+      return escapeHtml(node);
+    }
+
+    if (typeof node !== 'object') {
+      return '';
+    }
+
+    if (node.type === 'text') {
+      return applyMarks(escapeHtml(String(node.text || '')), node.marks);
+    }
+
+    if (node.type === 'hardBreak') {
+      return '<br/>';
+    }
+
+    if (node.type === 'paragraph') {
+      const inner = extractAdfHtml(node.content || []);
+      return `<p>${inner || '<br/>'}</p>`;
+    }
+
+    if (node.type === 'heading') {
+      const level = Math.max(1, Math.min(6, Number(node?.attrs?.level || 1)));
+      const inner = extractAdfHtml(node.content || []);
+      return `<h${level}>${inner}</h${level}>`;
+    }
+
+    if (node.type === 'bulletList') {
+      return `<ul>${extractAdfHtml(node.content || [])}</ul>`;
+    }
+
+    if (node.type === 'orderedList') {
+      return `<ol>${extractAdfHtml(node.content || [])}</ol>`;
+    }
+
+    if (node.type === 'listItem') {
+      return `<li>${extractAdfHtml(node.content || [])}</li>`;
+    }
+
+    if (node.type === 'blockquote') {
+      return `<blockquote>${extractAdfHtml(node.content || [])}</blockquote>`;
+    }
+
+    if (node.type === 'codeBlock') {
+      const code = extractAdfHtml(node.content || []);
+      return `<pre><code>${code}</code></pre>`;
+    }
+
+    if (node.content) {
+      return extractAdfHtml(node.content);
+    }
+
+    return '';
+  };
+
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        const htmlFromJson = extractAdfHtml(parsed).trim();
+        return htmlFromJson || wrapTextAsHtml(trimmed);
+      } catch {
+        return wrapTextAsHtml(trimmed);
+      }
+    }
+
+    return wrapTextAsHtml(trimmed);
+  }
+
+  if (typeof value === 'object') {
+    const htmlFromObject = extractAdfHtml(value).trim();
+    return htmlFromObject || '';
+  }
+
+  return wrapTextAsHtml(String(value));
+};
+
 // Helper function to create task history entry
 const createTaskHistory = async (
   taskId: number,
@@ -2474,6 +2606,7 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
       const statusId = resolveMappedStatusId(issue.status);
       const priorityId = resolveMappedPriorityId(issue.priority);
       const taskTypeId = resolveMappedTaskTypeId(issue.issueType);
+      const normalizedDescription = normalizeJiraDescription(issue.description);
 
       const [result] = await pool.execute<ResultSetHeader>(
         `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, CreatedBy, ExternalIssueId)
@@ -2481,7 +2614,7 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
         [
           projectId,
           issue.summary || issue.key,
-          issue.description || '',
+          sanitizeRichText(normalizedDescription) || '',
           statusId || defaultStatusId,
           priorityId || defaultPriorityId,
           taskTypeId || defaultTaskTypeId,

@@ -449,16 +449,37 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     // Determine customer: from JWT (customer user), from body, or from project
     let ticketCustomerId = customerId || bodyCustomerId || null;
-    
-    // If not customer user and no bodyCustomerId but has projectId, get customer from project
-    if (!ticketCustomerId && projectId) {
-      console.log('[Ticket Creation] Getting customer from projectId:', projectId);
+
+    // Validate project ownership (organization + customer consistency)
+    if (projectId) {
       const [projectResult] = await pool.execute<RowDataPacket[]>(
-        'SELECT CustomerId FROM Projects WHERE Id = ?',
+        'SELECT Id, OrganizationId, CustomerId FROM Projects WHERE Id = ?',
         [projectId]
       );
-      if (projectResult.length > 0 && projectResult[0].CustomerId) {
-        ticketCustomerId = projectResult[0].CustomerId;
+
+      if (projectResult.length === 0) {
+        return res.status(400).json({ success: false, message: 'Selected project not found' });
+      }
+
+      const project = projectResult[0];
+      const projectOrgId = Number(project.OrganizationId);
+      const requestedOrgId = Number(organizationId);
+
+      if (projectOrgId !== requestedOrgId) {
+        return res.status(400).json({ success: false, message: 'Selected project does not belong to the selected organization' });
+      }
+
+      if (bodyCustomerId !== undefined && bodyCustomerId !== null) {
+        const requestedCustomerId = Number(bodyCustomerId);
+        const projectCustomerId = project.CustomerId !== null ? Number(project.CustomerId) : null;
+
+        if (projectCustomerId !== requestedCustomerId) {
+          return res.status(400).json({ success: false, message: 'Selected project does not belong to the selected customer' });
+        }
+      }
+
+      if (!ticketCustomerId && project.CustomerId) {
+        ticketCustomerId = project.CustomerId;
         console.log('[Ticket Creation] Found customer from project:', ticketCustomerId);
       }
     }

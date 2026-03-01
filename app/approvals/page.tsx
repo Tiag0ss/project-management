@@ -6,6 +6,7 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
 import { getApiUrl } from '@/lib/api/config';
 import { useRouter } from 'next/navigation';
+import RichTextEditor from '@/components/RichTextEditor';
 
 interface PendingEntry {
   Id: number;
@@ -14,6 +15,7 @@ interface PendingEntry {
   WorkDate: string;
   Hours: number;
   Description?: string;
+  AdminEditedDescription?: string;
   TaskName: string;
   ProjectId: number;
   ProjectName: string;
@@ -44,6 +46,11 @@ const getUserDisplayName = (entry: { FirstName?: string; LastName?: string; User
   if (entry.FirstName && entry.LastName) return `${entry.FirstName} ${entry.LastName}`;
   if (entry.FirstName) return entry.FirstName;
   return entry.Username;
+};
+
+const stripHtml = (value?: string) => {
+  if (!value) return '';
+  return value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 };
 
 const getApprovalBadge = (status?: string) => {
@@ -83,6 +90,10 @@ export default function ApprovalsPage() {
 
   // Batch selection
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showAdminDescriptionModal, setShowAdminDescriptionModal] = useState(false);
+  const [selectedEntryForDescription, setSelectedEntryForDescription] = useState<PendingEntry | null>(null);
+  const [adminDescriptionDraft, setAdminDescriptionDraft] = useState('');
+  const [isSavingDescription, setIsSavingDescription] = useState(false);
 
   const loadEntries = useCallback(async () => {
     if (!token) return;
@@ -149,6 +160,76 @@ export default function ApprovalsPage() {
     if (!token || selectedIds.size === 0) return;
     const ids = Array.from(selectedIds);
     await Promise.all(ids.map(id => handleApproval(id, status)));
+  };
+
+  const handleReopen = async (entryId: number) => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${getApiUrl()}/api/time-entries/${entryId}/reopen`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to reopen time entry');
+      }
+
+      if (filterStatus === 'pending') {
+        setEntries(prev => prev.map(e =>
+          e.Id === entryId
+            ? { ...e, ApprovalStatus: 'pending', ApprovedBy: undefined, ApprovedAt: undefined }
+            : e
+        ));
+      } else {
+        setEntries(prev => prev.filter(e => e.Id !== entryId));
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to reopen time entry');
+    }
+  };
+
+  const openAdminDescriptionModal = (entry: PendingEntry) => {
+    setSelectedEntryForDescription(entry);
+    setAdminDescriptionDraft(entry.AdminEditedDescription || entry.Description || '');
+    setShowAdminDescriptionModal(true);
+  };
+
+  const closeAdminDescriptionModal = () => {
+    setShowAdminDescriptionModal(false);
+    setSelectedEntryForDescription(null);
+    setAdminDescriptionDraft('');
+    setIsSavingDescription(false);
+  };
+
+  const handleSaveAdminDescription = async () => {
+    if (!token || !selectedEntryForDescription) return;
+    setIsSavingDescription(true);
+    try {
+      const response = await fetch(`${getApiUrl()}/api/time-entries/${selectedEntryForDescription.Id}/admin-description`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ adminEditedDescription: adminDescriptionDraft || null })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to save admin description');
+      }
+
+      setEntries(prev => prev.map(e =>
+        e.Id === selectedEntryForDescription.Id
+          ? { ...e, AdminEditedDescription: adminDescriptionDraft || undefined }
+          : e
+      ));
+      closeAdminDescriptionModal();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save admin description');
+      setIsSavingDescription(false);
+    }
   };
 
   const toggleSelect = (id: number) => {
@@ -455,7 +536,16 @@ export default function ApprovalsPage() {
                               )}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 max-w-xs truncate">
-                              {entry.Description || <span className="italic text-gray-400">—</span>}
+                              {entry.AdminEditedDescription ? (
+                                <div className="space-y-1">
+                                  <div className="text-xs font-medium text-purple-700 dark:text-purple-400">Admin edited</div>
+                                  <div className="truncate">{stripHtml(entry.AdminEditedDescription) || <span className="italic text-gray-400">—</span>}</div>
+                                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Original</div>
+                                  <div className="truncate text-gray-500 dark:text-gray-400">{stripHtml(entry.Description) || <span className="italic text-gray-400">—</span>}</div>
+                                </div>
+                              ) : (
+                                stripHtml(entry.Description) || <span className="italic text-gray-400">—</span>
+                              )}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">{getApprovalBadge(entry.ApprovalStatus)}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-center">
@@ -473,9 +563,28 @@ export default function ApprovalsPage() {
                                   >
                                     ✗ Reject
                                   </button>
+                                  <button
+                                    onClick={() => openAdminDescriptionModal(entry)}
+                                    className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded transition-colors"
+                                  >
+                                    ✎ Edit Desc
+                                  </button>
                                 </div>
                               ) : (
-                                <span className="text-xs text-gray-400">—</span>
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => handleReopen(entry.Id)}
+                                    className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium rounded transition-colors"
+                                  >
+                                    ↻ Reopen
+                                  </button>
+                                  <button
+                                    onClick={() => openAdminDescriptionModal(entry)}
+                                    className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded transition-colors"
+                                  >
+                                    ✎ Edit Desc
+                                  </button>
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -545,7 +654,16 @@ export default function ApprovalsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 max-w-xs truncate">
-                        {entry.Description || <span className="italic text-gray-400">—</span>}
+                        {entry.AdminEditedDescription ? (
+                          <div className="space-y-1">
+                            <div className="text-xs font-medium text-purple-700 dark:text-purple-400">Admin edited</div>
+                            <div className="truncate">{stripHtml(entry.AdminEditedDescription) || <span className="italic text-gray-400">—</span>}</div>
+                            <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Original</div>
+                            <div className="truncate text-gray-500 dark:text-gray-400">{stripHtml(entry.Description) || <span className="italic text-gray-400">—</span>}</div>
+                          </div>
+                        ) : (
+                          stripHtml(entry.Description) || <span className="italic text-gray-400">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">{getApprovalBadge(entry.ApprovalStatus)}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-center">
@@ -563,15 +681,69 @@ export default function ApprovalsPage() {
                             >
                               ✗ Reject
                             </button>
+                            <button
+                              onClick={() => openAdminDescriptionModal(entry)}
+                              className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded transition-colors"
+                            >
+                              ✎ Edit Desc
+                            </button>
                           </div>
                         ) : (
-                          <span className="text-xs text-gray-400">—</span>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => handleReopen(entry.Id)}
+                              className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium rounded transition-colors"
+                            >
+                              ↻ Reopen
+                            </button>
+                            <button
+                              onClick={() => openAdminDescriptionModal(entry)}
+                              className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded transition-colors"
+                            >
+                              ✎ Edit Desc
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {showAdminDescriptionModal && selectedEntryForDescription && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Edit Admin Description</h3>
+                <div className="mb-3 text-sm text-gray-600 dark:text-gray-400">
+                  {getUserDisplayName(selectedEntryForDescription)} · {selectedEntryForDescription.ProjectName} · {selectedEntryForDescription.TaskName}
+                </div>
+
+                <RichTextEditor
+                  content={adminDescriptionDraft}
+                  onChange={(html) => setAdminDescriptionDraft(html)}
+                  placeholder="Admin edited description..."
+                />
+
+                <div className="flex justify-end gap-3 mt-6">
+                  <button
+                    onClick={closeAdminDescriptionModal}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveAdminDescription}
+                    disabled={isSavingDescription}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white rounded-lg transition-colors"
+                  >
+                    {isSavingDescription ? 'Saving...' : 'Save Description'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

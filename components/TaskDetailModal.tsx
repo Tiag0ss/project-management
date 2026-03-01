@@ -645,8 +645,8 @@ export default function TaskDetailModal({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setError('');
 
     if (!formData.taskType) {
@@ -1098,9 +1098,11 @@ export default function TaskDetailModal({
     }, taskAllocations[0].AllocationDate.split('T')[0]),
   } : null;
 
+  const canSaveTask = !!(task?.Id ? permissions?.canManageTasks : permissions?.canCreateTasks);
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex justify-between items-start">
@@ -1698,23 +1700,6 @@ export default function TaskDetailModal({
                 </div>
               )}
 
-              <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-                  style={{ display: (task?.Id ? permissions?.canManageTasks : permissions?.canCreateTasks) ? undefined : 'none' }}
-                >
-                  {isLoading ? 'Saving...' : task?.Id ? 'Update Task' : 'Create Task'}
-                </button>
-              </div>
             </form>
           )}
 
@@ -2260,6 +2245,28 @@ export default function TaskDetailModal({
               )}
             </div>
           )}
+        </div>
+
+        <div className="shrink-0 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4">
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition-colors font-medium"
+            >
+              Cancel
+            </button>
+            {canSaveTask && (
+              <button
+                type="button"
+                onClick={() => handleSubmit()}
+                disabled={isLoading}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
+              >
+                {isLoading ? 'Saving...' : task?.Id ? 'Update Task' : 'Create Task'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

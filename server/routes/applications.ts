@@ -6,6 +6,46 @@ import PDFDocument from 'pdfkit';
 
 const router = Router();
 
+async function syncReleasedVersionTasks(versionId: string | number, applicationId: string | number): Promise<void> {
+  const [versionRows] = await pool.execute<RowDataPacket[]>(
+    `SELECT av.Status, a.OrganizationId
+     FROM ApplicationVersions av
+     INNER JOIN Applications a ON a.Id = av.ApplicationId
+     WHERE av.Id = ? AND av.ApplicationId = ?
+     LIMIT 1`,
+    [versionId, applicationId]
+  );
+
+  if (!versionRows.length || versionRows[0].Status !== 'Released') {
+    return;
+  }
+
+  const organizationId = versionRows[0].OrganizationId;
+
+  const [closedStatuses] = await pool.execute<RowDataPacket[]>(
+    `SELECT Id
+     FROM TaskStatusValues
+     WHERE OrganizationId = ? AND IsClosed = 1
+     ORDER BY SortOrder ASC
+     LIMIT 1`,
+    [organizationId]
+  );
+
+  if (!closedStatuses.length) {
+    return;
+  }
+
+  const closedStatusId = closedStatuses[0].Id;
+
+  await pool.execute(
+    `UPDATE Tasks t
+     INNER JOIN ApplicationVersionTasks avt ON avt.TaskId = t.Id
+     SET t.ReleaseVersionId = ?, t.Status = ?
+     WHERE avt.VersionId = ?`,
+    [versionId, closedStatusId, versionId]
+  );
+}
+
 // ─── Applications ─────────────────────────────────────────────────────────────
 
 // GET /api/applications - list all applications visible to the current user
@@ -512,6 +552,7 @@ router.post('/:id/versions', authenticateToken, async (req: AuthRequest, res: Re
   try {
     const userId = req.user?.userId;
     const { id } = req.params;
+    const applicationId = Array.isArray(id) ? id[0] : id;
     const { VersionNumber, VersionName, Status, ReleaseDate, PatchNotes } = req.body;
 
     if (!VersionNumber) {
@@ -577,8 +618,12 @@ router.post('/:id/versions', authenticateToken, async (req: AuthRequest, res: Re
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO ApplicationVersions (ApplicationId, VersionNumber, VersionName, Status, ReleaseDate, PatchNotes, CreatedBy)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, VersionNumber, VersionName || null, Status || 'Planning', ReleaseDate || null, PatchNotes || null, userId]
+      [applicationId, VersionNumber, VersionName || null, Status || 'Planning', ReleaseDate || null, PatchNotes || null, userId]
     );
+
+    if ((Status || 'Planning') === 'Released') {
+      await syncReleasedVersionTasks(result.insertId, applicationId);
+    }
 
     res.status(201).json({ success: true, id: result.insertId, message: 'Version created' });
   } catch (error) {
@@ -592,12 +637,14 @@ router.put('/:id/versions/:versionId', authenticateToken, async (req: AuthReques
   try {
     const userId = req.user?.userId;
     const { id, versionId } = req.params;
+    const applicationId = Array.isArray(id) ? id[0] : id;
+    const normalizedVersionId = Array.isArray(versionId) ? versionId[0] : versionId;
     const { VersionNumber, VersionName, Status, ReleaseDate, PatchNotes } = req.body;
 
     // Get application organization ID
     const [apps] = await pool.execute<RowDataPacket[]>(
       'SELECT OrganizationId FROM Applications WHERE Id = ? AND IsActive = 1',
-      [id]
+      [applicationId]
     );
 
     if (!apps.length) {
@@ -653,7 +700,7 @@ router.put('/:id/versions/:versionId', authenticateToken, async (req: AuthReques
     // Get current version status to detect status change
     const [currentVersion] = await pool.execute<RowDataPacket[]>(
       'SELECT Status FROM ApplicationVersions WHERE Id = ?',
-      [versionId]
+      [normalizedVersionId]
     );
 
     const wasReleased = currentVersion.length > 0 && currentVersion[0].Status === 'Released';
@@ -662,44 +709,12 @@ router.put('/:id/versions/:versionId', authenticateToken, async (req: AuthReques
     await pool.execute(
       `UPDATE ApplicationVersions SET VersionNumber = ?, VersionName = ?, Status = ?, ReleaseDate = ?, PatchNotes = ?
        WHERE Id = ?`,
-      [VersionNumber, VersionName || null, Status || 'Planning', ReleaseDate || null, PatchNotes || null, versionId]
+      [VersionNumber, VersionName || null, Status || 'Planning', ReleaseDate || null, PatchNotes || null, normalizedVersionId]
     );
 
     // If version is being released (status changed to Released), update associated tasks
     if (isNowReleased && !wasReleased) {
-      // Get organization ID from application
-      const [apps] = await pool.execute<RowDataPacket[]>(
-        'SELECT OrganizationId FROM Applications WHERE Id = ?',
-        [id]
-      );
-
-      if (apps.length > 0) {
-        const organizationId = apps[0].OrganizationId;
-
-        // Find the "closed/completed" status for this organization
-        const [closedStatuses] = await pool.execute<RowDataPacket[]>(
-          'SELECT Id FROM TaskStatusValues WHERE OrganizationId = ? AND IsClosed = 1 ORDER BY SortOrder ASC LIMIT 1',
-          [organizationId]
-        );
-
-        if (closedStatuses.length > 0) {
-          const closedStatusId = closedStatuses[0].Id;
-
-          // Get all tasks associated with this version
-          const [versionTasks] = await pool.execute<RowDataPacket[]>(
-            'SELECT TaskId FROM ApplicationVersionTasks WHERE VersionId = ?',
-            [versionId]
-          );
-
-          // Update each task: set ReleaseVersionId and mark as closed
-          for (const vt of versionTasks) {
-            await pool.execute(
-              'UPDATE Tasks SET ReleaseVersionId = ?, Status = ? WHERE Id = ?',
-              [versionId, closedStatusId, vt.TaskId]
-            );
-          }
-        }
-      }
+      await syncReleasedVersionTasks(normalizedVersionId, applicationId);
     }
 
     res.json({ success: true, message: 'Version updated' });
@@ -787,18 +802,22 @@ router.delete('/:id/versions/:versionId', authenticateToken, async (req: AuthReq
 // PUT /api/applications/:id/versions/:versionId/tasks - set tasks in a version
 router.put('/:id/versions/:versionId/tasks', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { versionId } = req.params;
+    const { id, versionId } = req.params;
+    const applicationId = Array.isArray(id) ? id[0] : id;
+    const normalizedVersionId = Array.isArray(versionId) ? versionId[0] : versionId;
     const { TaskIds } = req.body;
 
-    await pool.execute('DELETE FROM ApplicationVersionTasks WHERE VersionId = ?', [versionId]);
+    await pool.execute('DELETE FROM ApplicationVersionTasks WHERE VersionId = ?', [normalizedVersionId]);
     if (Array.isArray(TaskIds)) {
       for (const taskId of TaskIds) {
         await pool.execute(
           'INSERT IGNORE INTO ApplicationVersionTasks (VersionId, TaskId) VALUES (?, ?)',
-          [versionId, taskId]
+          [normalizedVersionId, taskId]
         );
       }
     }
+
+    await syncReleasedVersionTasks(normalizedVersionId, applicationId);
 
     res.json({ success: true, message: 'Version tasks updated' });
   } catch (error) {

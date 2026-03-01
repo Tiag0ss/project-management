@@ -53,6 +53,12 @@
       "Comment": "Description of work performed"
     },
     {
+      "FieldName": "AdminEditedDescription",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Description edited by admin/manager during approval"
+    },
+    {
       "FieldName": "ApprovalStatus",
       "DataType": "varchar(20)",
       "NotNullable": true,

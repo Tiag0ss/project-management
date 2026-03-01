@@ -9,6 +9,7 @@ import { Calendar, dateFnsLocalizer, Views } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
 import SearchableSelect from '@/components/SearchableSelect';
+import RichTextEditor from '@/components/RichTextEditor';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
 const locales = {
@@ -1087,11 +1088,9 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Description
                     </label>
-                    <textarea
-                      value={entryDescription}
-                      onChange={(e) => setEntryDescription(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    <RichTextEditor
+                      content={entryDescription}
+                      onChange={(html) => setEntryDescription(html)}
                       placeholder="What did you work on?"
                     />
                   </div>
@@ -1385,11 +1384,9 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Description
                   </label>
-                  <textarea
-                    value={editingEntry.description}
-                    onChange={(e) => setEditingEntry({...editingEntry, description: e.target.value})}
-                    rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  <RichTextEditor
+                    content={editingEntry.description}
+                    onChange={(html) => setEditingEntry({ ...editingEntry, description: html })}
                     placeholder="What did you work on?"
                   />
                 </div>

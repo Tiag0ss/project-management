@@ -5,6 +5,37 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = express.Router();
 
+const canManageTeamEntry = async (entryId: string, currentUserId: number | undefined) => {
+  const [entries] = await pool.execute<RowDataPacket[]>(
+    `SELECT te.Id, te.UserId, te.ApprovalStatus, u.TeamLeaderId
+     FROM TimeEntries te
+     INNER JOIN Users u ON te.UserId = u.Id
+     WHERE te.Id = ?`,
+    [entryId]
+  );
+
+  if (entries.length === 0) {
+    return { ok: false as const, status: 404 as const, message: 'Time entry not found' };
+  }
+
+  const entry = entries[0];
+
+  const [callerRows] = await pool.execute<RowDataPacket[]>(
+    `SELECT IsAdmin, IsManager FROM Users WHERE Id = ?`,
+    [currentUserId]
+  );
+
+  const isAdmin = callerRows.length > 0 && !!callerRows[0].IsAdmin;
+  const isManager = callerRows.length > 0 && !!callerRows[0].IsManager;
+  const isTeamLeader = entry.TeamLeaderId === currentUserId;
+
+  if (!isAdmin && !isManager && !isTeamLeader) {
+    return { ok: false as const, status: 403 as const, message: 'Access denied - not authorized to manage this entry' };
+  }
+
+  return { ok: true as const, entry };
+};
+
 /**
  * @swagger
  * /api/time-entries/project/{projectId}:
@@ -330,8 +361,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       return res.status(403).json({ success: false, message: 'Cannot edit an approved time entry' });
     }
 
-    // Hobby entries stay approved; rejected/pending entries reset to pending
-    const newApprovalStatus = isHobby ? 'approved' : 'pending';
+    // Any user edit must go back to pending for re-approval
+    const newApprovalStatus = 'pending';
 
     await pool.execute(
       `UPDATE TimeEntries 
@@ -342,7 +373,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
            EndTime = COALESCE(?, EndTime),
            ApprovalStatus = ?,
            ApprovedBy = NULL,
-           ApprovedAt = IF(? = 'approved', CURRENT_TIMESTAMP, NULL),
+           ApprovedAt = NULL,
            UpdatedAt = CURRENT_TIMESTAMP
        WHERE Id = ?`,
       [
@@ -351,7 +382,6 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         description ?? null, 
         startTime ?? null, 
         endTime ?? null,
-        newApprovalStatus,
         newApprovalStatus,
         id
       ]
@@ -421,6 +451,82 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
   } catch (error) {
     console.error('Error deleting time entry:', error);
     res.status(500).json({ success: false, message: 'Failed to delete time entry' });
+  }
+});
+
+// Get per-user time summary for a date range
+// Admin: sees all users
+// Team leader: sees own entries + users where TeamLeaderId = current user
+// Other users: sees only own entries
+router.get('/summary-by-user', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const currentUserId = req.user?.userId;
+    const rawDateFrom = req.query.dateFrom;
+    const rawDateTo = req.query.dateTo;
+
+    const dateFrom = Array.isArray(rawDateFrom) ? rawDateFrom[0] : rawDateFrom;
+    const dateTo = Array.isArray(rawDateTo) ? rawDateTo[0] : rawDateTo;
+
+    if (!dateFrom || !dateTo) {
+      return res.status(400).json({ success: false, message: 'dateFrom and dateTo are required' });
+    }
+
+    const [callerRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT IsAdmin FROM Users WHERE Id = ?`,
+      [currentUserId]
+    );
+
+    if (callerRows.length === 0) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const isAdmin = !!callerRows[0].IsAdmin;
+
+    const conditions: string[] = [
+      `te.WorkDate BETWEEN ? AND ?`,
+      `u.CustomerId IS NULL`
+    ];
+    const params: any[] = [dateFrom, dateTo];
+
+    if (!isAdmin) {
+      conditions.push(`(te.UserId = ? OR u.TeamLeaderId = ?)`);
+      params.push(currentUserId, currentUserId);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const [summary] = await pool.execute<RowDataPacket[]>(
+      `SELECT
+          u.Id AS UserId,
+          u.Username,
+          u.FirstName,
+          u.LastName,
+          COUNT(te.Id) AS EntryCount,
+          COALESCE(SUM(te.Hours), 0) AS TotalHours,
+         COUNT(DISTINCT te.TaskId) AS TaskCount,
+         COUNT(DISTINCT p.Id) AS ProjectCount,
+         COUNT(DISTINCT c.Id) AS CustomerCount,
+         GROUP_CONCAT(DISTINCT t.TaskName ORDER BY t.TaskName SEPARATOR ' || ') AS TaskNames,
+         GROUP_CONCAT(DISTINCT p.ProjectName ORDER BY p.ProjectName SEPARATOR ' || ') AS ProjectNames,
+         GROUP_CONCAT(DISTINCT c.Name ORDER BY c.Name SEPARATOR ' || ') AS CustomerNames,
+          SUM(CASE WHEN te.ApprovalStatus = 'approved' THEN 1 ELSE 0 END) AS ApprovedCount,
+          SUM(CASE WHEN te.ApprovalStatus = 'pending' THEN 1 ELSE 0 END) AS PendingCount,
+          SUM(CASE WHEN te.ApprovalStatus = 'rejected' THEN 1 ELSE 0 END) AS RejectedCount
+       FROM TimeEntries te
+       INNER JOIN Users u ON te.UserId = u.Id
+       INNER JOIN Tasks t ON te.TaskId = t.Id
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       LEFT JOIN Customers c ON p.CustomerId = c.Id
+       ${whereClause}
+       GROUP BY u.Id, u.Username, u.FirstName, u.LastName
+       ORDER BY TotalHours DESC, EntryCount DESC, u.Username ASC`,
+      params
+    );
+
+    res.json({ success: true, summary });
+  } catch (error) {
+    console.error('Error fetching summary by user:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch summary by user' });
   }
 });
 
@@ -521,7 +627,7 @@ router.get('/pending-approval/team', authenticateToken, async (req: AuthRequest,
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const [entries] = await pool.execute<RowDataPacket[]>(
-      `SELECT te.Id, te.TaskId, te.UserId, te.WorkDate, te.Hours, te.Description,
+      `SELECT te.Id, te.TaskId, te.UserId, te.WorkDate, te.Hours, te.Description, te.AdminEditedDescription,
               te.StartTime, te.EndTime, te.ApprovalStatus, te.ApprovedBy, te.ApprovedAt,
               t.TaskName, t.ProjectId, p.ProjectName,
               u.Username, u.FirstName, u.LastName,
@@ -599,6 +705,7 @@ router.get('/pending-approval/team', authenticateToken, async (req: AuthRequest,
 router.put('/:id/approval', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const entryId = Array.isArray(id) ? id[0] : id;
     const currentUserId = req.user?.userId;
     const { status } = req.body; // 'approved' | 'rejected'
 
@@ -606,43 +713,81 @@ router.put('/:id/approval', authenticateToken, async (req: AuthRequest, res: Res
       return res.status(400).json({ success: false, message: 'Status must be approved or rejected' });
     }
 
-    // Get the time entry and the owner's team leader
-    const [entries] = await pool.execute<RowDataPacket[]>(
-      `SELECT te.Id, te.UserId, u.TeamLeaderId
-       FROM TimeEntries te
-       INNER JOIN Users u ON te.UserId = u.Id
-       WHERE te.Id = ?`,
-      [id]
-    );
-
-    if (entries.length === 0) {
-      return res.status(404).json({ success: false, message: 'Time entry not found' });
-    }
-
-    const entry = entries[0];
-
-    // Verify the approver is the team leader of this user or an admin/manager
-    const [callerRows] = await pool.execute<RowDataPacket[]>(
-      `SELECT IsAdmin, IsManager FROM Users WHERE Id = ?`,
-      [currentUserId]
-    );
-    const isAdmin = callerRows.length > 0 && !!callerRows[0].IsAdmin;
-    const isManager = callerRows.length > 0 && !!callerRows[0].IsManager;
-    const isTeamLeader = entry.TeamLeaderId === currentUserId;
-
-    if (!isAdmin && !isManager && !isTeamLeader) {
-      return res.status(403).json({ success: false, message: 'Access denied - not authorized to approve this entry' });
+    const access = await canManageTeamEntry(entryId, currentUserId);
+    if (!access.ok) {
+      return res.status(access.status).json({ success: false, message: access.message });
     }
 
     await pool.execute(
       `UPDATE TimeEntries SET ApprovalStatus = ?, ApprovedBy = ?, ApprovedAt = CURRENT_TIMESTAMP WHERE Id = ?`,
-      [status, currentUserId, id]
+      [status, currentUserId, entryId]
     );
 
     res.json({ success: true, message: `Time entry ${status}` });
   } catch (error) {
     console.error('Error approving time entry:', error);
     res.status(500).json({ success: false, message: 'Failed to update time entry approval' });
+  }
+});
+
+// Reopen a time entry for user edits (set back to pending)
+router.put('/:id/reopen', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const entryId = Array.isArray(id) ? id[0] : id;
+    const currentUserId = req.user?.userId;
+
+    const access = await canManageTeamEntry(entryId, currentUserId);
+    if (!access.ok) {
+      return res.status(access.status).json({ success: false, message: access.message });
+    }
+
+    await pool.execute(
+      `UPDATE TimeEntries
+       SET ApprovalStatus = 'pending',
+           ApprovedBy = NULL,
+           ApprovedAt = NULL,
+           UpdatedAt = CURRENT_TIMESTAMP
+       WHERE Id = ?`,
+      [entryId]
+    );
+
+    res.json({ success: true, message: 'Time entry reopened for user edits' });
+  } catch (error) {
+    console.error('Error reopening time entry:', error);
+    res.status(500).json({ success: false, message: 'Failed to reopen time entry' });
+  }
+});
+
+// Save admin/manager edited description in dedicated field
+router.put('/:id/admin-description', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const entryId = Array.isArray(id) ? id[0] : id;
+    const currentUserId = req.user?.userId;
+    const { adminEditedDescription } = req.body;
+
+    if (adminEditedDescription !== null && adminEditedDescription !== undefined && typeof adminEditedDescription !== 'string') {
+      return res.status(400).json({ success: false, message: 'adminEditedDescription must be a string or null' });
+    }
+
+    const access = await canManageTeamEntry(entryId, currentUserId);
+    if (!access.ok) {
+      return res.status(access.status).json({ success: false, message: access.message });
+    }
+
+    await pool.execute(
+      `UPDATE TimeEntries
+       SET AdminEditedDescription = ?,
+           UpdatedAt = CURRENT_TIMESTAMP
+       WHERE Id = ?`,
+      [adminEditedDescription ?? null, entryId]
+    );
+
+    res.json({ success: true, message: 'Admin edited description saved' });
+  } catch (error) {
+    console.error('Error saving admin edited description:', error);
+    res.status(500).json({ success: false, message: 'Failed to save admin edited description' });
   }
 });
 

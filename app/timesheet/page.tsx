@@ -10,6 +10,7 @@ import { tasksApi, Task } from '@/lib/api/tasks';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import SearchableSelect from '@/components/SearchableSelect';
+import RichTextEditor from '@/components/RichTextEditor';
 
 interface TaskWithProject extends Task {
   ProjectName?: string;
@@ -198,6 +199,15 @@ export default function TimesheetPage() {
       return dateValue.toISOString().split('T')[0];
     }
     return String(dateValue).split('T')[0];
+  };
+
+  const stripHtml = (value?: string): string => {
+    if (!value) return '';
+    return value
+      .replace(/<br\s*\/?>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   };
 
   const loadUserProfile = async () => {
@@ -846,11 +856,9 @@ export default function TimesheetPage() {
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Description
                           </label>
-                          <textarea
-                            value={newEntry.description}
-                            onChange={(e) => setNewEntry({ ...newEntry, description: e.target.value })}
-                            rows={3}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          <RichTextEditor
+                            content={newEntry.description}
+                            onChange={(html) => setNewEntry({ ...newEntry, description: html })}
                             placeholder="What did you work on?"
                           />
                         </div>
@@ -950,7 +958,7 @@ export default function TimesheetPage() {
                                       {parseFloat(entry.Hours as any).toFixed(2)}h
                                     </td>
                                     <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
-                                      {entry.Description || '-'}
+                                      {stripHtml(entry.Description) || '-'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                                       {getApprovalBadge(entry.ApprovalStatus)}
@@ -1481,7 +1489,7 @@ export default function TimesheetPage() {
                               e.StartTime || '',
                               e.EndTime || '',
                               parseFloat(e.Hours as any).toFixed(2),
-                              (e.Description || '').replace(/"/g, '""'),
+                              stripHtml(e.Description || '').replace(/"/g, '""'),
                               e.ApprovalStatus || ''
                             ].map(v => `"${v}"`).join(','));
                             const csv = [header.join(','), ...rows].join('\n');
@@ -1692,8 +1700,9 @@ export default function TimesheetPage() {
                                         };
                                       }
                                       grouped[key].totalHours += parseFloat(entry.Hours as any);
-                                      if (entry.Description && entry.Description.trim()) {
-                                        grouped[key].descriptions.push(entry.Description.trim());
+                                      const cleanedDescription = stripHtml(entry.Description);
+                                      if (cleanedDescription) {
+                                        grouped[key].descriptions.push(cleanedDescription);
                                       }
                                     });
 
@@ -1799,7 +1808,7 @@ export default function TimesheetPage() {
                                         {parseFloat(entry.Hours as any).toFixed(2)}h
                                       </td>
                                       <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
-                                        {entry.Description || '-'}
+                                        {stripHtml(entry.Description) || '-'}
                                       </td>
                                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                                         {getApprovalBadge(entry.ApprovalStatus)}
@@ -1908,11 +1917,10 @@ export default function TimesheetPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
-                    <input
-                      type="text"
-                      value={editEntry.description}
-                      onChange={(e) => setEditEntry({ ...editEntry, description: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    <RichTextEditor
+                      content={editEntry.description}
+                      onChange={(html) => setEditEntry({ ...editEntry, description: html })}
+                      placeholder="What did you work on?"
                     />
                   </div>
                 </div>

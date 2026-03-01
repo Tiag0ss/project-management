@@ -3126,6 +3126,8 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
     jiraEmail: '',
     jiraApiToken: '',
     jiraProjectKey: '',
+    jiraTicketsJqlFilter: '',
+    hideIntegratedJiraTicketsByDefault: false,
     jiraProjectsUrl: '',
     jiraProjectsEmail: '',
     jiraProjectsApiToken: ''
@@ -3159,6 +3161,8 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
             jiraEmail: data.integration.JiraEmail || '',
             jiraApiToken: '',
             jiraProjectKey: data.integration.JiraProjectKey || '',
+            jiraTicketsJqlFilter: data.integration.JiraTicketsJqlFilter || '',
+            hideIntegratedJiraTicketsByDefault: data.integration.HideIntegratedJiraTicketsByDefault === 1,
             jiraProjectsUrl: data.integration.JiraProjectsUrl || '',
             jiraProjectsEmail: data.integration.JiraProjectsEmail || '',
             jiraProjectsApiToken: ''
@@ -3360,6 +3364,8 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
           jiraEmail: '',
           jiraApiToken: '',
           jiraProjectKey: '',
+          jiraTicketsJqlFilter: '',
+          hideIntegratedJiraTicketsByDefault: false,
           jiraProjectsUrl: '',
           jiraProjectsEmail: '',
           jiraProjectsApiToken: ''
@@ -3439,6 +3445,14 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
                   <div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">Project Key</div>
                     <div className="font-medium text-gray-900 dark:text-white">{integration.JiraProjectKey || 'Not specified'}</div>
+                  </div>
+                  <div className="col-span-2">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">Base JQL Filter</div>
+                    <div className="font-medium text-gray-900 dark:text-white break-words">{integration.JiraTicketsJqlFilter || 'Not specified'}</div>
+                  </div>
+                  <div className="col-span-2">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">Hide integrated tickets by default</div>
+                    <div className="font-medium text-gray-900 dark:text-white">{integration.HideIntegratedJiraTicketsByDefault ? 'Yes' : 'No'}</div>
                   </div>
                 </div>
               </div>
@@ -3551,6 +3565,35 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
                     Limit search to specific project
                   </p>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Jira Tickets Base JQL (optional)
+                  </label>
+                  <textarea
+                    value={formData.jiraTicketsJqlFilter}
+                    onChange={(e) => setFormData({ ...formData, jiraTicketsJqlFilter: e.target.value })}
+                    placeholder='e.g. status NOT IN (Done, Cancelled) AND labels = "support"'
+                    rows={3}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Applied automatically when importing from Jira tickets in projects.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="hideIntegratedJiraTicketsByDefault"
+                    checked={formData.hideIntegratedJiraTicketsByDefault}
+                    onChange={(e) => setFormData({ ...formData, hideIntegratedJiraTicketsByDefault: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="hideIntegratedJiraTicketsByDefault" className="text-sm text-gray-700 dark:text-gray-300">
+                    Hide already integrated Jira tickets by default in "Import from Jira Ticket"
+                  </label>
+                </div>
               </div>
             </div>
 
@@ -3653,6 +3696,8 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
                         jiraEmail: integration.JiraEmail || '',
                         jiraApiToken: '',
                         jiraProjectKey: integration.JiraProjectKey || '',
+                        jiraTicketsJqlFilter: integration.JiraTicketsJqlFilter || '',
+                        hideIntegratedJiraTicketsByDefault: integration.HideIntegratedJiraTicketsByDefault === 1,
                         jiraProjectsUrl: integration.JiraProjectsUrl || '',
                         jiraProjectsEmail: integration.JiraProjectsEmail || '',
                         jiraProjectsApiToken: ''

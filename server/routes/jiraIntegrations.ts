@@ -50,7 +50,8 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
     }
 
     const [integration] = await pool.execute<RowDataPacket[]>(
-      `SELECT OrganizationId, IsEnabled, JiraUrl, JiraEmail, JiraProjectKey, 
+          `SELECT OrganizationId, IsEnabled, JiraUrl, JiraEmail, JiraProjectKey,
+            JiraTicketsJqlFilter, HideIntegratedJiraTicketsByDefault,
               JiraProjectsUrl, JiraProjectsEmail, CreatedAt, UpdatedAt
        FROM OrganizationJiraIntegrations 
        WHERE OrganizationId = ?`,
@@ -116,7 +117,18 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
   try {
     const { organizationId } = req.params;
     const userId = req.user?.userId;
-    const { isEnabled, jiraUrl, jiraEmail, jiraApiToken, jiraProjectKey, jiraProjectsUrl, jiraProjectsEmail, jiraProjectsApiToken } = req.body;
+    const {
+      isEnabled,
+      jiraUrl,
+      jiraEmail,
+      jiraApiToken,
+      jiraProjectKey,
+      jiraTicketsJqlFilter,
+      hideIntegratedJiraTicketsByDefault,
+      jiraProjectsUrl,
+      jiraProjectsEmail,
+      jiraProjectsApiToken
+    } = req.body;
 
     // Check if user is admin or manager of the organization
     const [memberCheck] = await pool.execute<RowDataPacket[]>(
@@ -149,19 +161,46 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
       // Update existing
       await pool.execute(
         `UPDATE OrganizationJiraIntegrations 
-         SET IsEnabled = ?, JiraUrl = ?, JiraEmail = ?, JiraApiToken = ?, JiraProjectKey = ?, 
+         SET IsEnabled = ?, JiraUrl = ?, JiraEmail = ?, JiraApiToken = ?, JiraProjectKey = ?,
+             JiraTicketsJqlFilter = ?, HideIntegratedJiraTicketsByDefault = ?,
              JiraProjectsUrl = ?, JiraProjectsEmail = ?, JiraProjectsApiToken = ?, UpdatedAt = CURRENT_TIMESTAMP
          WHERE OrganizationId = ?`,
-        [isEnabled ? 1 : 0, jiraUrl, jiraEmail, encryptedToken, jiraProjectKey || null, 
-         jiraProjectsUrl || null, jiraProjectsEmail || null, encryptedProjectsToken, organizationId]
+        [
+          isEnabled ? 1 : 0,
+          jiraUrl,
+          jiraEmail,
+          encryptedToken,
+          jiraProjectKey || null,
+          jiraTicketsJqlFilter || null,
+          hideIntegratedJiraTicketsByDefault ? 1 : 0,
+          jiraProjectsUrl || null,
+          jiraProjectsEmail || null,
+          encryptedProjectsToken,
+          organizationId
+        ]
       );
     } else {
       // Create new
       await pool.execute(
-        `INSERT INTO OrganizationJiraIntegrations (OrganizationId, IsEnabled, JiraUrl, JiraEmail, JiraApiToken, JiraProjectKey, JiraProjectsUrl, JiraProjectsEmail, JiraProjectsApiToken)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [organizationId, isEnabled ? 1 : 0, jiraUrl, jiraEmail, encryptedToken, jiraProjectKey || null, 
-         jiraProjectsUrl || null, jiraProjectsEmail || null, encryptedProjectsToken]
+        `INSERT INTO OrganizationJiraIntegrations (
+          OrganizationId, IsEnabled, JiraUrl, JiraEmail, JiraApiToken, JiraProjectKey,
+          JiraTicketsJqlFilter, HideIntegratedJiraTicketsByDefault,
+          JiraProjectsUrl, JiraProjectsEmail, JiraProjectsApiToken
+        )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          organizationId,
+          isEnabled ? 1 : 0,
+          jiraUrl,
+          jiraEmail,
+          encryptedToken,
+          jiraProjectKey || null,
+          jiraTicketsJqlFilter || null,
+          hideIntegratedJiraTicketsByDefault ? 1 : 0,
+          jiraProjectsUrl || null,
+          jiraProjectsEmail || null,
+          encryptedProjectsToken
+        ]
       );
     }
 
@@ -282,7 +321,14 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
 router.get('/organization/:organizationId/search', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { organizationId } = req.params;
-    const { query } = req.query;
+    const rawQuery = req.query.query;
+    const query = Array.isArray(rawQuery) ? rawQuery[0] : rawQuery;
+    const rawIgnoreConfiguredJql = req.query.ignoreConfiguredJql;
+    const ignoreConfiguredJqlParam = Array.isArray(rawIgnoreConfiguredJql)
+      ? rawIgnoreConfiguredJql[0]
+      : rawIgnoreConfiguredJql;
+    const hasSearchText = typeof query === 'string' && query.trim().length > 0;
+    const ignoreConfiguredJql = hasSearchText || ignoreConfiguredJqlParam === 'true' || ignoreConfiguredJqlParam === '1';
     const userId = req.user?.userId;
 
     // Check if user is member of the organization
@@ -297,7 +343,7 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
 
     // Get integration settings
     const [integration] = await pool.execute<RowDataPacket[]>(
-      `SELECT IsEnabled, JiraUrl, JiraEmail, JiraApiToken, JiraProjectKey
+      `SELECT IsEnabled, JiraUrl, JiraEmail, JiraApiToken, JiraProjectKey, JiraTicketsJqlFilter
        FROM OrganizationJiraIntegrations 
        WHERE OrganizationId = ? AND IsEnabled = 1`,
       [organizationId]
@@ -307,25 +353,44 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
       return res.status(404).json({ success: false, message: 'Jira integration not configured or disabled' });
     }
 
-    const { JiraUrl, JiraEmail, JiraApiToken: encryptedToken, JiraProjectKey } = integration[0];
+    const { JiraUrl, JiraEmail, JiraApiToken: encryptedToken, JiraProjectKey, JiraTicketsJqlFilter } = integration[0];
     const JiraApiToken = decrypt(encryptedToken);
 
     // Build JQL query
-    let jql = '';
-    if (JiraProjectKey) {
-      jql = `project = "${JiraProjectKey}"`;
-    }
-    
-    if (query) {
-      const searchTerm = String(query);
-      if (jql) jql += ' AND ';
-      jql += `(key = "${searchTerm}" OR summary ~ "${searchTerm}" OR description ~ "${searchTerm}")`;
+    const jqlParts: string[] = [];
+
+    if (!ignoreConfiguredJql && JiraProjectKey) {
+      jqlParts.push(`project = "${JiraProjectKey}"`);
     }
 
-    if (!jql) {
-      jql = 'ORDER BY created DESC';
+    const rawConfiguredJql = ignoreConfiguredJql ? '' : String(JiraTicketsJqlFilter || '').trim();
+    let configuredOrderBy = '';
+    let configuredFilter = rawConfiguredJql;
+
+    if (rawConfiguredJql) {
+      const orderByMatch = rawConfiguredJql.match(/\border\s+by\b[\s\S]*$/i);
+      if (orderByMatch) {
+        configuredOrderBy = orderByMatch[0].trim();
+        configuredFilter = rawConfiguredJql.slice(0, orderByMatch.index).trim();
+      }
+
+      if (configuredFilter) {
+        jqlParts.push(`(${configuredFilter})`);
+      }
+    }
+
+    if (query) {
+      const searchTerm = String(query).trim();
+      jqlParts.push(`(key = "${searchTerm}" OR summary ~ "${searchTerm}" OR description ~ "${searchTerm}")`);
+    }
+
+    const orderByClause = configuredOrderBy || 'ORDER BY created DESC';
+    let jql = '';
+
+    if (jqlParts.length > 0) {
+      jql = `${jqlParts.join(' AND ')} ${orderByClause}`;
     } else {
-      jql += ' ORDER BY created DESC';
+      jql = orderByClause;
     }
 
     // Search Jira

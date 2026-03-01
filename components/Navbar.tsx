@@ -419,6 +419,9 @@ export default function Navbar() {
       case 'organization':
         window.location.href = `/organizations/${id}`;
         break;
+      case 'ticket':
+        window.location.href = `/tickets/${id}`;
+        break;
       case 'user':
         // For now, just close the search - users don't have a dedicated page
         break;
@@ -1121,6 +1124,7 @@ export default function Navbar() {
                                     const data = await res.json();
                                     setSearchResults((prev: any) => ({
                                       tasks: [...(prev?.tasks || []), ...(data.results?.tasks || [])],
+                                      tickets: [...(prev?.tickets || []), ...(data.results?.tickets || [])],
                                       projects: [...(prev?.projects || []), ...(data.results?.projects || [])],
                                       organizations: [...(prev?.organizations || []), ...(data.results?.organizations || [])],
                                       users: [...(prev?.users || []), ...(data.results?.users || [])],
@@ -1157,6 +1161,32 @@ export default function Navbar() {
                                   </div>
                                   <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
                                     {task.ProjectName} • {task.StatusName || 'Unknown'}
+                                  </div>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Tickets */}
+                        {searchResults.tickets && searchResults.tickets.length > 0 && (
+                          <div className="mb-3">
+                            <div className="px-3 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+                              Tickets ({searchResults.tickets.length})
+                            </div>
+                            {searchResults.tickets.map((ticket: any) => (
+                              <button
+                                key={`ticket-${ticket.Id}`}
+                                onClick={() => handleSearchResultClick('ticket', ticket.Id)}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg flex items-center gap-3"
+                              >
+                                <span className="text-lg">🎫</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-gray-900 dark:text-white truncate">
+                                    {ticket.TicketNumber ? `${ticket.TicketNumber} • ` : ''}{ticket.Title}
+                                  </div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                    {ticket.ProjectName || ticket.OrganizationName} • {ticket.StatusName || 'Unknown'}
                                   </div>
                                 </div>
                               </button>

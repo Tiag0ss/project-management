@@ -86,6 +86,32 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       [userId, searchTerm, searchTerm]
     );
 
+    // Search tickets - user must be member of the organization
+    const [tickets] = await pool.query<RowDataPacket[]>(
+      `SELECT
+        t.Id,
+        t.TicketNumber,
+        t.Title,
+        t.Description,
+        t.ProjectId,
+        p.ProjectName,
+        o.Id as OrganizationId,
+        o.Name as OrganizationName,
+        tsv.StatusName,
+        tpv.PriorityName,
+        'ticket' as ResultType
+       FROM Tickets t
+       JOIN Organizations o ON t.OrganizationId = o.Id
+       JOIN OrganizationMembers om ON o.Id = om.OrganizationId AND om.UserId = ?
+       LEFT JOIN Projects p ON t.ProjectId = p.Id
+       LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
+       LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
+       WHERE (t.Title LIKE ? OR t.TicketNumber LIKE ? OR t.Description LIKE ?)
+       ORDER BY t.CreatedAt DESC
+       LIMIT ${limit} OFFSET ${offset}`,
+      [userId, searchTerm, searchTerm, searchTerm]
+    );
+
     // Search projects
     const [projects] = await pool.query<RowDataPacket[]>(
       `SELECT 
@@ -132,15 +158,16 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       [userId, searchTerm, searchTerm, searchTerm, searchTerm]
     );
 
-    const hasMore = tasks.length === limit || projects.length === limit || organizations.length === limit || users.length === limit;
+    const hasMore = tasks.length === limit || tickets.length === limit || projects.length === limit || organizations.length === limit || users.length === limit;
 
     // Combine and sort results
     const results = {
       tasks: tasks,
+      tickets: tickets,
       projects: projects,
       organizations: organizations,
       users: users,
-      total: tasks.length + projects.length + organizations.length + users.length
+      total: tasks.length + tickets.length + projects.length + organizations.length + users.length
     };
 
     res.json({ success: true, query: query.trim(), page, limit, hasMore, results });

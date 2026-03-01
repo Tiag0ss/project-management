@@ -40,6 +40,19 @@
       "Comment": "Default Jira project key for ticket searches"
     },
     {
+      "FieldName": "JiraTicketsJqlFilter",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Optional base JQL filter used for Jira ticket import/search"
+    },
+    {
+      "FieldName": "HideIntegratedJiraTicketsByDefault",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "When enabled, hide already integrated Jira tickets by default in import modal"
+    },
+    {
       "FieldName": "JiraProjectsUrl",
       "DataType": "varchar(255)",
       "NotNullable": false,

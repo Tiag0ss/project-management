@@ -59,6 +59,7 @@ interface Organization {
 interface Project {
   Id: number;
   ProjectName: string;
+  CustomerId: number | null;
 }
 
 interface Customer {
@@ -556,6 +557,11 @@ export default function TicketsPage() {
     if (status === 'warning') return <span title="SLA Warning" className="inline-flex items-center text-xs px-1.5 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 font-medium" onClick={e => e.stopPropagation()}>🟡 SLA</span>;
     return <span title="Within SLA" className="inline-flex items-center text-xs px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-medium" onClick={e => e.stopPropagation()}>🟢 SLA</span>;
   };
+
+  const createModalProjects = projects.filter((project) => {
+    if (!createForm.customerId) return true;
+    return String(project.CustomerId ?? '') === createForm.customerId;
+  });
 
   // Returns inline style for colored status badge using TicketStatusValues
   const getStatusStyle = (ticket: Ticket): React.CSSProperties => {
@@ -1146,7 +1152,7 @@ export default function TicketsPage() {
                       </label>
                       <SearchableSelect
                         value={createForm.customerId}
-                        onChange={(value) => setCreateForm(prev => ({ ...prev, customerId: value }))}
+                        onChange={(value) => setCreateForm(prev => ({ ...prev, customerId: value, projectId: '' }))}
                         options={customers.map(c => ({ value: c.Id.toString(), label: c.Name }))}
                         placeholder="Select Customer"
                         emptyText="Select Customer"
@@ -1289,9 +1295,9 @@ export default function TicketsPage() {
                       <SearchableSelect
                         value={createForm.projectId}
                         onChange={(value) => setCreateForm(prev => ({ ...prev, projectId: value }))}
-                        options={projects.map(project => ({ value: project.Id, label: project.ProjectName }))}
+                        options={createModalProjects.map(project => ({ value: project.Id.toString(), label: project.ProjectName }))}
                         placeholder="Select Project"
-                        emptyText="No Project"
+                        emptyText={createForm.customerId ? "No Project for selected customer" : "No Project"}
                       />
                     </div>
                   )}

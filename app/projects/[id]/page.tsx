@@ -101,10 +101,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // Jira Tickets Import State (for ticket system, not project board)
   const [showJiraTicketsModal, setShowJiraTicketsModal] = useState(false);
   const [jiraTickets, setJiraTickets] = useState<any[]>([]);
-  const [selectedJiraTicket, setSelectedJiraTicket] = useState<string | null>(null);
+  const [selectedJiraTickets, setSelectedJiraTickets] = useState<Set<string>>(new Set());
   const [jiraTicketsLoading, setJiraTicketsLoading] = useState(false);
+  const [jiraTicketsImporting, setJiraTicketsImporting] = useState(false);
   const [jiraTicketsError, setJiraTicketsError] = useState('');
   const [jiraSearchQuery, setJiraSearchQuery] = useState('');
+  const [hideIntegratedJiraTickets, setHideIntegratedJiraTickets] = useState(false);
+  const [jiraTicketPriorityMapping, setJiraTicketPriorityMapping] = useState<{ [key: string]: string }>({});
+  const [jiraTicketTypeMapping, setJiraTicketTypeMapping] = useState<{ [key: string]: string }>({});
   const { user, token, isLoading: authLoading } = useAuth();
   const { permissions } = usePermissions();
   const router = useRouter();
@@ -832,7 +836,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   };
 
-  const loadJiraTickets = async (searchQuery = '') => {
+  const loadJiraTickets = async (searchQuery = '', ignoreConfiguredJql = false) => {
     if (!token || !project) return;
     
     setJiraTicketsLoading(true);
@@ -840,8 +844,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     
     try {
       const params = new URLSearchParams();
-      if (searchQuery) {
-        params.append('query', searchQuery);
+      const trimmedQuery = searchQuery.trim();
+
+      if (trimmedQuery) {
+        params.append('query', trimmedQuery);
+      }
+
+      const shouldIgnoreConfiguredJql = ignoreConfiguredJql && trimmedQuery.length > 0;
+      if (shouldIgnoreConfiguredJql) {
+        params.append('ignoreConfiguredJql', 'true');
       }
       
       const response = await fetch(
@@ -868,44 +879,61 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   };
 
-  const handleSelectJiraTicket = (ticket: any) => {
-    // Create a partial task object with Jira ticket data to prefill the form
-    // Handle description - it might be an object (Atlassian Document Format)
-    let description = '';
-    if (typeof ticket.description === 'string') {
-      description = ticket.description;
-    } else if (ticket.description && typeof ticket.description === 'object') {
-      // Jira API returns description as Atlassian Document Format
-      // Try to extract text from content nodes
-      try {
-        if (ticket.description.content && Array.isArray(ticket.description.content)) {
-          description = ticket.description.content
-            .map((node: any) => {
-              if (node.type === 'paragraph' && node.content) {
-                return node.content.map((c: any) => c.text || '').join('');
-              }
-              return '';
-            })
-            .filter((text: string) => text)
-            .join('\n\n');
+  const handleImportJiraTickets = async () => {
+    if (!token || !project) return;
+
+    const validIssues = Array.from(selectedJiraTickets).filter(key => !existingIssueIds.has(key));
+    if (validIssues.length === 0) return;
+
+    setJiraTicketsImporting(true);
+    setJiraTicketsError('');
+
+    try {
+      const issuesToImport = jiraTickets.filter(issue => validIssues.includes(issue.key));
+
+      const response = await fetch(
+        `${getApiUrl()}/api/tasks/import-from-jira`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            projectId: parseInt(projectId),
+            issues: issuesToImport,
+            priorityMapping: jiraTicketPriorityMapping,
+            taskTypeMapping: jiraTicketTypeMapping,
+          }),
         }
-      } catch (e) {
-        console.error('Failed to parse Jira description:', e);
-        description = '';
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to import Jira tickets');
       }
+
+      const result = await response.json();
+      const imported = result.data?.imported || 0;
+      const skipped = result.data?.skipped || 0;
+
+      let message = `Successfully imported ${imported} task(s) from Jira tickets.`;
+      if (skipped > 0) {
+        message += ` ${skipped} issue(s) were already integrated.`;
+      }
+
+      showAlert('Import Successful', message);
+      setShowJiraTicketsModal(false);
+      setSelectedJiraTickets(new Set());
+      setJiraTicketPriorityMapping({});
+      setJiraTicketTypeMapping({});
+      await loadTasks();
+      await loadExistingJiraIssues();
+    } catch (err: any) {
+      setJiraTicketsError(err.message || 'Failed to import Jira tickets');
+    } finally {
+      setJiraTicketsImporting(false);
     }
-    
-    const prefillTask = {
-      TaskName: ticket.summary || '',
-      Description: description,
-      JiraIssueKey: ticket.key,
-    } as any;
-    
-    // Close modal and open task creation with prefilled data
-    setShowJiraTicketsModal(false);
-    setEditingTask(prefillTask);
-    setSelectedJiraTicket(null);
-    setShowTaskModal(true);
   };
 
   const handleJiraImport = async () => {
@@ -1569,6 +1597,37 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setExistingGitHubIssueIds(new Set());
     }
   }, [showGitHubImportModal, project]);
+
+  // Load Jira tickets for "Import from Jira Ticket" when modal opens
+  useEffect(() => {
+    if (showJiraTicketsModal && project) {
+      setHideIntegratedJiraTickets(jiraIntegration?.HideIntegratedJiraTicketsByDefault === 1);
+      setSelectedJiraTickets(new Set());
+      setJiraTicketsError('');
+      setJiraSearchQuery('');
+      setJiraTicketPriorityMapping({});
+      setJiraTicketTypeMapping({});
+
+      const initializeJiraTicketImport = async () => {
+        await Promise.all([
+          loadTaskPriorities(),
+          loadTaskTypes(),
+          loadExistingJiraIssues(),
+        ]);
+        await loadJiraTickets('', false);
+      };
+
+      initializeJiraTicketImport();
+    }
+  }, [showJiraTicketsModal, project, jiraIntegration]);
+
+  const visibleJiraTickets = jiraTickets.filter(ticket => {
+    if (!hideIntegratedJiraTickets) return true;
+    return !existingIssueIds.has(ticket.key);
+  });
+
+  const jiraTicketIssueTypes = Array.from(new Set(jiraTickets.map(t => t.issueType).filter(Boolean)));
+  const jiraTicketPriorities = Array.from(new Set(jiraTickets.map(t => t.priority).filter(Boolean)));
 
   // Load task statuses and Gitea issues when modal opens
   useEffect(() => {
@@ -3294,7 +3353,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 <button
                   onClick={() => {
                     setShowJiraTicketsModal(false);
-                    setSelectedJiraTicket(null);
+                    setSelectedJiraTickets(new Set());
                     setJiraTicketsError('');
                     setJiraSearchQuery('');
                   }}
@@ -3308,9 +3367,65 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
               <div className="mb-4 p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
                 <p className="text-sm text-purple-800 dark:text-purple-400">
-                  Select a single Jira ticket to import. The ticket information will pre-fill the task creation form.
+                  Select one or more Jira tickets and import directly as tasks.
                 </p>
               </div>
+
+              {!jiraTicketsLoading && jiraTickets.length > 0 && (
+                <div className="mb-4 p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg space-y-4">
+                  <h3 className="font-semibold text-indigo-900 dark:text-indigo-300">🧩 Mapping (Issue Type & Priority)</h3>
+
+                  {jiraTicketIssueTypes.length > 0 && (
+                    <div>
+                      <p className="text-xs text-indigo-800 dark:text-indigo-400 mb-2">Issue Type → Task Type</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {jiraTicketIssueTypes.map((issueType) => (
+                          <div key={issueType} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-2">
+                            <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{issueType}</label>
+                            <select
+                              value={jiraTicketTypeMapping[issueType] || ''}
+                              onChange={(e) => setJiraTicketTypeMapping(prev => ({ ...prev, [issueType]: e.target.value }))}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            >
+                              <option value="">Auto map</option>
+                              {taskTypes.map(type => (
+                                <option key={type.Id} value={type.TypeName || type.StatusName || ''}>
+                                  {type.TypeName || type.StatusName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {jiraTicketPriorities.length > 0 && (
+                    <div>
+                      <p className="text-xs text-indigo-800 dark:text-indigo-400 mb-2">Jira Priority → Task Priority</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {jiraTicketPriorities.map((priority) => (
+                          <div key={priority} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-2">
+                            <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{priority}</label>
+                            <select
+                              value={jiraTicketPriorityMapping[priority] || ''}
+                              onChange={(e) => setJiraTicketPriorityMapping(prev => ({ ...prev, [priority]: e.target.value }))}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            >
+                              <option value="">Auto map</option>
+                              {taskPriorities.map(taskPriority => (
+                                <option key={taskPriority.Id} value={taskPriority.PriorityName || taskPriority.StatusName || ''}>
+                                  {taskPriority.PriorityName || taskPriority.StatusName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Search */}
               <div className="mb-4">
@@ -3322,19 +3437,60 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     onChange={(e) => setJiraSearchQuery(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
-                        loadJiraTickets(jiraSearchQuery);
+                        loadJiraTickets(jiraSearchQuery, jiraSearchQuery.trim().length > 0);
                       }
                     }}
                     disabled={jiraTicketsLoading}
                     className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
                   />
                   <button
-                    onClick={() => loadJiraTickets(jiraSearchQuery)}
+                    onClick={() => loadJiraTickets(jiraSearchQuery, jiraSearchQuery.trim().length > 0)}
                     disabled={jiraTicketsLoading}
                     className="px-6 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white rounded-lg transition-colors font-medium"
                   >
                     {jiraTicketsLoading ? 'Searching...' : 'Search'}
                   </button>
+                </div>
+                <div className="mt-3 flex items-center gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={hideIntegratedJiraTickets}
+                      onChange={(e) => {
+                        setHideIntegratedJiraTickets(e.target.checked);
+                        setSelectedJiraTickets(new Set());
+                      }}
+                      className="rounded"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Hide already integrated tickets</span>
+                  </label>
+                  {!jiraTicketsLoading && visibleJiraTickets.length > 0 && (
+                    <button
+                      onClick={() => {
+                        const newIssueKeys = visibleJiraTickets
+                          .filter(ticket => !existingIssueIds.has(ticket.key))
+                          .map(ticket => ticket.key);
+
+                        if (newIssueKeys.every(key => selectedJiraTickets.has(key))) {
+                          const updated = new Set(selectedJiraTickets);
+                          newIssueKeys.forEach(key => updated.delete(key));
+                          setSelectedJiraTickets(updated);
+                        } else {
+                          setSelectedJiraTickets(new Set(newIssueKeys));
+                        }
+                      }}
+                      className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      {visibleJiraTickets.filter(ticket => !existingIssueIds.has(ticket.key)).every(ticket => selectedJiraTickets.has(ticket.key))
+                        ? 'Deselect All New'
+                        : 'Select All New'}
+                    </button>
+                  )}
+                  {existingIssueIds.size > 0 && (
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {jiraTickets.filter(ticket => existingIssueIds.has(ticket.key)).length} already integrated in this project
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -3353,30 +3509,44 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               )}
 
               {/* Tickets List */}
-              {!jiraTicketsLoading && !jiraTicketsError && jiraTickets.length > 0 && (
+              {!jiraTicketsLoading && !jiraTicketsError && visibleJiraTickets.length > 0 && (
                 <div className="space-y-2 mb-4 max-h-[400px] overflow-y-auto">
-                  {jiraTickets.map((ticket) => (
+                  {visibleJiraTickets.map((ticket) => (
                     <label
                       key={ticket.key}
                       className={`block p-4 border rounded-lg cursor-pointer transition-all ${
-                        selectedJiraTicket === ticket.key
+                        selectedJiraTickets.has(ticket.key)
                           ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
                           : 'border-gray-200 dark:border-gray-700 hover:border-purple-300 dark:hover:border-purple-700'
                       }`}
                     >
                       <div className="flex items-start gap-3">
                         <input
-                          type="radio"
-                          name="jiraTicket"
-                          checked={selectedJiraTicket === ticket.key}
-                          onChange={() => setSelectedJiraTicket(ticket.key)}
-                          className="mt-1 w-4 h-4 text-purple-600 focus:ring-purple-500"
+                          type="checkbox"
+                          checked={selectedJiraTickets.has(ticket.key)}
+                          disabled={existingIssueIds.has(ticket.key)}
+                          onChange={() => {
+                            if (existingIssueIds.has(ticket.key)) return;
+                            const updated = new Set(selectedJiraTickets);
+                            if (updated.has(ticket.key)) {
+                              updated.delete(ticket.key);
+                            } else {
+                              updated.add(ticket.key);
+                            }
+                            setSelectedJiraTickets(updated);
+                          }}
+                          className="mt-1 w-4 h-4 text-purple-600 focus:ring-purple-500 disabled:opacity-50"
                         />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-medium text-purple-600 dark:text-purple-400">
                               {ticket.key}
                             </span>
+                            {existingIssueIds.has(ticket.key) && (
+                              <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">
+                                Already integrated
+                              </span>
+                            )}
                             {ticket.status && (
                               <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">
                                 {ticket.status}
@@ -3404,9 +3574,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               )}
 
               {/* Empty State */}
-              {!jiraTicketsLoading && !jiraTicketsError && jiraTickets.length === 0 && (
+              {!jiraTicketsLoading && !jiraTicketsError && visibleJiraTickets.length === 0 && (
                 <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                  No Jira tickets found. Try adjusting your search.
+                  No Jira tickets found. Try adjusting your search or filters.
                 </div>
               )}
 
@@ -3415,7 +3585,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 <button
                   onClick={() => {
                     setShowJiraTicketsModal(false);
-                    setSelectedJiraTicket(null);
+                    setSelectedJiraTickets(new Set());
                     setJiraTicketsError('');
                     setJiraSearchQuery('');
                   }}
@@ -3424,16 +3594,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
-                    const selectedTicket = jiraTickets.find(t => t.key === selectedJiraTicket);
-                    if (selectedTicket) {
-                      handleSelectJiraTicket(selectedTicket);
-                    }
-                  }}
-                  disabled={!selectedJiraTicket}
+                  onClick={handleImportJiraTickets}
+                  disabled={jiraTicketsImporting || Array.from(selectedJiraTickets).filter(key => !existingIssueIds.has(key)).length === 0}
                   className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
                 >
-                  Import Ticket
+                  {jiraTicketsImporting
+                    ? 'Importing...'
+                    : `Import Selected (${Array.from(selectedJiraTickets).filter(key => !existingIssueIds.has(key)).length})`}
                 </button>
               </div>
             </div>
