@@ -37,6 +37,11 @@ interface TableRelation {
   type?: string;
 }
 
+function sanitizeSqlAlias(alias: string): string {
+  const normalizedAlias = String(alias || '').trim().replace(/[^a-zA-Z0-9_]/g, '_');
+  return normalizedAlias || 'Field';
+}
+
 // Helper function to format filter values based on field data type
 function formatFilterValue(value: string, dataType: string): string {
   const normalizedDataType = dataType.toLowerCase();
@@ -274,22 +279,22 @@ router.post('/query', authenticateToken, async (req: AuthRequest, res: Response)
     
     // Add row and column fields
     [...(rowFields || []), ...(columnFields || [])].forEach((field: any) => {
-      const alias = field.alias || `${field.table}.${field.field}`;
-      selectFields.push(`${field.table}.${field.field} AS \`${alias}\``);
+      const alias = sanitizeSqlAlias(field.alias || `${field.table}_${field.field}`);
+      selectFields.push(`${field.table}.${field.field} AS ${alias}`);
     });
     
     // Add value fields with aggregations
     (valueFields || []).forEach((field: any) => {
       const aggFunc = field.aggregation.toUpperCase();
       let fieldExpr = `${field.table}.${field.field}`;
-      const alias = field.alias || field.field;
+      const alias = sanitizeSqlAlias(field.alias || field.field);
       
       if (aggFunc === 'DISTINCTCOUNT') {
-        selectFields.push(`COUNT(DISTINCT ${fieldExpr}) AS \`${alias}\``);
+        selectFields.push(`COUNT(DISTINCT ${fieldExpr}) AS ${alias}`);
       } else if (aggFunc === 'COUNT') {
-        selectFields.push(`COUNT(${fieldExpr}) AS \`${alias}\``);
+        selectFields.push(`COUNT(${fieldExpr}) AS ${alias}`);
       } else {
-        selectFields.push(`${aggFunc}(${fieldExpr}) AS \`${alias}\``);
+        selectFields.push(`${aggFunc}(${fieldExpr}) AS ${alias}`);
       }
     });
     

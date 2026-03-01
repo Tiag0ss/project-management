@@ -2,6 +2,7 @@ import express, { Response } from 'express';
 import { pool } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import { dbProvider } from '../config/database';
 
 const router = express.Router();
 
@@ -29,10 +30,14 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
 
+    const sharedPredicate = dbProvider === 'mssql'
+      ? "CHARINDEX(',' + CAST(? AS varchar(20)) + ',', ',' + COALESCE(SharedWith, '') + ',') > 0"
+      : 'FIND_IN_SET(?, SharedWith) > 0';
+
     const [reports] = await pool.execute<RowDataPacket[]>(
       `SELECT Id, DataSource, ReportName, PivotConfig, Filters, CreatedAt, UpdatedAt, SharedWith, IsPublic
        FROM SavedReports
-       WHERE UserId = ? OR IsPublic = 1 OR FIND_IN_SET(?, SharedWith) > 0
+       WHERE UserId = ? OR IsPublic = 1 OR ${sharedPredicate}
        ORDER BY DataSource, ReportName`,
       [userId, userId]
     );
@@ -77,10 +82,14 @@ router.get('/datasource/:dataSource', authenticateToken, async (req: AuthRequest
     const userId = req.user?.userId;
     const { dataSource } = req.params;
 
+    const sharedPredicate = dbProvider === 'mssql'
+      ? "CHARINDEX(',' + CAST(? AS varchar(20)) + ',', ',' + COALESCE(SharedWith, '') + ',') > 0"
+      : 'FIND_IN_SET(?, SharedWith) > 0';
+
     const [reports] = await pool.execute<RowDataPacket[]>(
       `SELECT Id, DataSource, ReportName, PivotConfig, Filters, CreatedAt, UpdatedAt, SharedWith, IsPublic
        FROM SavedReports
-       WHERE (UserId = ? OR IsPublic = 1 OR FIND_IN_SET(?, SharedWith) > 0) AND DataSource = ?
+       WHERE (UserId = ? OR IsPublic = 1 OR ${sharedPredicate}) AND DataSource = ?
        ORDER BY ReportName`,
       [userId, userId, dataSource]
     );
