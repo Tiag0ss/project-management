@@ -147,6 +147,19 @@ export async function sendNotificationEmail(
   link?: string
 ): Promise<boolean> {
   try {
+    if (!userEmail || !String(userEmail).trim()) {
+      return false;
+    }
+
+    const [userRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT UserType FROM Users WHERE Id = ?',
+      [userId]
+    );
+
+    if (userRows.length > 0 && String(userRows[0].UserType || 'internal').toLowerCase() === 'fictitious') {
+      return false;
+    }
+
     // Check if user wants to receive emails for this notification type
     const wantsEmail = await shouldSendEmail(userId, notificationType);
     

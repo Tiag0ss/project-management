@@ -52,6 +52,20 @@ const toBooleanFlag = (value: any): number => {
   return 0;
 };
 
+const syncTaskPrimaryAssignee = async (
+  taskId: number,
+  assigneeId: any,
+  assignedBy: number | null | undefined
+): Promise<void> => {
+  const normalizedAssigneeId = assigneeId === null || assigneeId === undefined ? null : Number(assigneeId);
+  if (!normalizedAssigneeId) return;
+
+  await pool.execute(
+    `INSERT IGNORE INTO TaskAssignees (TaskId, UserId, AssignedBy) VALUES (?, ?, ?)`,
+    [taskId, normalizedAssigneeId, assignedBy || null]
+  );
+};
+
 // Convert Jira description payloads (plain text, JSON string, or Atlassian Document Format) to HTML for RichTextEditor
 const normalizeJiraDescription = (value: any): string => {
   const escapeHtml = (text: string): string => {
@@ -811,6 +825,10 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       await recalculateParentEstimatedHours(parentTaskId);
     }
 
+    if (assignedTo !== undefined && assignedTo !== null) {
+      await syncTaskPrimaryAssignee(result.insertId, assignedTo, userId);
+    }
+
     // Create task history entry for creation
     await createTaskHistory(result.insertId, userId!, 'created', null, null, null);
 
@@ -1000,6 +1018,15 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       });
     }
 
+    const normalizeComparable = (value: any): string | null => {
+      if (value === null || value === undefined || value === '') return null;
+      return String(value);
+    };
+
+    const hasEffectiveChange = (oldVal: any, newVal: any): boolean => {
+      return normalizeComparable(oldVal) !== normalizeComparable(newVal);
+    };
+
     // Check if user has permission to manage or plan tasks
     const canManage = access[0].Role === 'Owner' || access[0].Role === 'Admin' || access[0].CanManageTasks === 1;
     const canPlan = canManage || access[0].CanPlanTasks === 1;
@@ -1007,8 +1034,21 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     // If user can only plan, restrict what fields they can update
     if (!canManage && canPlan) {
       // Can only update: AssignedTo, PlannedStartDate, PlannedEndDate, Status
-      if (taskName !== undefined || description !== undefined || priority !== undefined || 
-          dueDate !== undefined || dueDateMandatory !== undefined || estimatedHours !== undefined || parentTaskId !== undefined || displayOrder !== undefined) {
+      const restrictedChanged =
+        (taskName !== undefined && hasEffectiveChange(oldTask.TaskName, taskName)) ||
+        (description !== undefined && hasEffectiveChange(oldTask.Description, description)) ||
+        (priority !== undefined && hasEffectiveChange(oldTask.Priority, priority)) ||
+        (taskType !== undefined && hasEffectiveChange(oldTask.TaskType, taskType)) ||
+        (dueDate !== undefined && hasEffectiveChange(toDateOnly(oldTask.DueDate), toDateOnly(dueDate))) ||
+        (dueDateMandatory !== undefined && hasEffectiveChange(toBooleanFlag(oldTask.DueDateMandatory), finalDueDateMandatory)) ||
+        (estimatedHours !== undefined && hasEffectiveChange(oldTask.EstimatedHours, estimatedHours)) ||
+        (parentTaskId !== undefined && hasEffectiveChange(oldTask.ParentTaskId, parentTaskId)) ||
+        (displayOrder !== undefined && hasEffectiveChange(oldTask.DisplayOrder, displayOrder)) ||
+        (dependsOnTaskId !== undefined && hasEffectiveChange(oldTask.DependsOnTaskId, dependsOnTaskId)) ||
+        (applicationId !== undefined && hasEffectiveChange(oldTask.ApplicationId, applicationId)) ||
+        (releaseVersionId !== undefined && hasEffectiveChange(oldTask.ReleaseVersionId, releaseVersionId));
+
+      if (restrictedChanged) {
         return res.status(403).json({ 
           success: false, 
           message: 'You can only update assignment, planning dates, and status' 
@@ -1048,6 +1088,10 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         taskId
       ]
     );
+
+    if (assignedTo !== undefined && assignedTo !== null) {
+      await syncTaskPrimaryAssignee(Number(taskId), assignedTo, userId);
+    }
 
     // If parent task changed or estimated hours changed, recalculate parent(s)
     if (oldParentTaskId) {
@@ -2135,6 +2179,7 @@ router.post('/utilities/reassign-from-planning/:projectId', authenticateToken, a
     for (const task of mismatches as RowDataPacket[]) {
       const oldAssignedTo = task.AssignedTo;
       await pool.execute('UPDATE Tasks SET AssignedTo = ? WHERE Id = ?', [task.PlannedUserId, task.Id]);
+      await syncTaskPrimaryAssignee(task.Id, task.PlannedUserId, userId);
       
       // Create task history entry for reassignment
       await createTaskHistory(

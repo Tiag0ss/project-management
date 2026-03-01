@@ -3,11 +3,45 @@ import { AuthRequest, authenticateToken, requireAdmin } from '../middleware/auth
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 import bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import { logActivity } from './activityLogs';
 import { logUserHistory } from '../utils/changeLog';
 
 const router = Router();
 const SALT_ROUNDS = 10;
+
+type UserType = 'internal' | 'customer' | 'fictitious';
+
+const normalizeUserType = (value: unknown, customerId?: unknown): UserType => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'customer') return 'customer';
+  if (normalized === 'fictitious') return 'fictitious';
+  if (normalized === 'internal') return 'internal';
+  return customerId ? 'customer' : 'internal';
+};
+
+const normalizeEmailInput = (value: unknown): string => {
+  return typeof value === 'string' ? value.trim() : '';
+};
+
+const buildFictitiousEmail = async (username: string): Promise<string> => {
+  const base = String(username || 'fictitious')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '') || 'fictitious';
+
+  for (let i = 0; i < 5; i++) {
+    const candidate = `${base}.${Date.now()}.${Math.floor(Math.random() * 100000)}@fictitious.local`;
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM Users WHERE Email = ?',
+      [candidate]
+    );
+    if (existing.length === 0) {
+      return candidate;
+    }
+  }
+
+  return `${base}.${Date.now()}.${Math.floor(Math.random() * 1000000)}@fictitious.local`;
+};
 
 /**
  * @swagger
@@ -438,7 +472,7 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
   try {
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName, u.IsActive, u.IsAdmin, 
-              u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager,
+              u.UserType, u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager,
               u.HourlyRate, u.TeamLeaderId, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
               u.CreatedAt, u.UpdatedAt 
        FROM Users u
@@ -499,7 +533,7 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
 router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.params.id;
-    const { username, email, firstName, lastName, isActive, isAdmin, customerId, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId } = req.body;
+    const { username, email, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId } = req.body;
 
     // Check if user exists
     const [existing] = await pool.execute<RowDataPacket[]>(
@@ -516,10 +550,39 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
     
     const oldUser = existing[0];
 
+    const incomingCustomerId = customerId !== undefined && customerId !== null && customerId !== ''
+      ? Number(customerId)
+      : null;
+    const finalUserType = userType !== undefined
+      ? normalizeUserType(userType, incomingCustomerId)
+      : normalizeUserType(oldUser.UserType, oldUser.CustomerId);
+
+    let finalCustomerId = customerId !== undefined ? incomingCustomerId : (oldUser.CustomerId || null);
+    if (finalUserType === 'customer' && !finalCustomerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Customer is required when user type is Customer User'
+      });
+    }
+    if (finalUserType !== 'customer') {
+      finalCustomerId = null;
+    }
+
+    let finalEmail = email !== undefined ? normalizeEmailInput(email) : normalizeEmailInput(oldUser.Email);
+    if (finalUserType !== 'fictitious' && !finalEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required for this user type'
+      });
+    }
+    if (finalUserType === 'fictitious' && !finalEmail) {
+      finalEmail = await buildFictitiousEmail(username || oldUser.Username);
+    }
+
     // Check if username or email already exists for another user
     const [duplicates] = await pool.execute<RowDataPacket[]>(
       'SELECT Id FROM Users WHERE (Username = ? OR Email = ?) AND Id != ?',
-      [username, email, userId]
+      [username, finalEmail, userId]
     );
 
     if (duplicates.length > 0) {
@@ -540,8 +603,8 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
     if (username !== undefined && username !== oldUser.Username) {
       changes.push({ field: 'Username', oldVal: oldUser.Username, newVal: username });
     }
-    if (email !== undefined && email !== oldUser.Email) {
-      changes.push({ field: 'Email', oldVal: oldUser.Email, newVal: email });
+    if (finalEmail !== oldUser.Email) {
+      changes.push({ field: 'Email', oldVal: oldUser.Email, newVal: finalEmail });
     }
     
     const oldFirstName = normalizeValue(oldUser.FirstName);
@@ -571,8 +634,11 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
     if (isManager !== undefined && isManager !== Boolean(oldUser.IsManager)) {
       changes.push({ field: 'IsManager', oldVal: String(oldUser.IsManager), newVal: String(isManager) });
     }
-    if (customerId !== undefined && customerId !== oldUser.CustomerId) {
-      changes.push({ field: 'CustomerId', oldVal: String(oldUser.CustomerId || ''), newVal: String(customerId || '') });
+    if (finalCustomerId !== (oldUser.CustomerId || null)) {
+      changes.push({ field: 'CustomerId', oldVal: String(oldUser.CustomerId || ''), newVal: String(finalCustomerId || '') });
+    }
+    if (finalUserType !== normalizeUserType(oldUser.UserType, oldUser.CustomerId)) {
+      changes.push({ field: 'UserType', oldVal: normalizeUserType(oldUser.UserType, oldUser.CustomerId), newVal: finalUserType });
     }
     if (hourlyRate !== undefined && String(hourlyRate || '') !== String(oldUser.HourlyRate || '')) {
       changes.push({ field: 'HourlyRate', oldVal: String(oldUser.HourlyRate || ''), newVal: String(hourlyRate || '') });
@@ -587,9 +653,9 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
 
     await pool.execute(
       `UPDATE Users 
-       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, TeamLeaderId = ? 
+       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, UserType = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, TeamLeaderId = ? 
        WHERE Id = ?`,
-      [username, email, firstName || null, lastName || null, isActive, isAdmin, customerId || null, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null, userId]
+      [username, finalEmail, firstName || null, lastName || null, isActive, isAdmin, finalUserType, finalCustomerId, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null, userId]
     );
     
     // Log changes to history
@@ -848,16 +914,47 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, 
  */
 router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId } = req.body;
+    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId } = req.body;
 
-    if (!username || !email || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Username, email and password are required' 
+    const incomingCustomerId = customerId !== undefined && customerId !== null && customerId !== ''
+      ? Number(customerId)
+      : null;
+    const finalUserType = normalizeUserType(userType, incomingCustomerId);
+    const finalCustomerId = finalUserType === 'customer' ? incomingCustomerId : null;
+
+    if (finalUserType === 'customer' && !finalCustomerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Customer is required when user type is Customer User'
       });
     }
 
-    if (password.length < 6) {
+    let finalEmail = normalizeEmailInput(email);
+    if (finalUserType !== 'fictitious' && !finalEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username, email and password are required'
+      });
+    }
+    if (finalUserType === 'fictitious' && !finalEmail) {
+      finalEmail = await buildFictitiousEmail(username);
+    }
+
+    if (!username) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Username is required' 
+      });
+    }
+
+    if (finalUserType !== 'fictitious' && !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password is required for this user type'
+      });
+    }
+
+    if (finalUserType !== 'fictitious' && password.length < 6) {
       return res.status(400).json({ 
         success: false, 
         message: 'Password must be at least 6 characters' 
@@ -867,7 +964,7 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
     // Check if username or email already exists
     const [existing] = await pool.execute<RowDataPacket[]>(
       'SELECT Id FROM Users WHERE Username = ? OR Email = ?',
-      [username, email]
+      [username, finalEmail]
     );
 
     if (existing.length > 0) {
@@ -877,16 +974,19 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
       });
     }
 
-    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    const passwordSource = finalUserType === 'fictitious'
+      ? randomBytes(24).toString('hex')
+      : password;
+    const passwordHash = await bcrypt.hash(passwordSource, SALT_ROUNDS);
 
     // Parse hourlyRate correctly (handle 0 values)
     const parsedHourlyRate = (hourlyRate != null && hourlyRate !== '') ? parseFloat(hourlyRate) : null;
     const sanitizedHourlyRate = (parsedHourlyRate !== null && !isNaN(parsedHourlyRate)) ? parsedHourlyRate : null;
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, TeamLeaderId) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [username, email, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, customerId || null, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null]
+      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, TeamLeaderId) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null]
     );
 
     // Log user creation
@@ -897,7 +997,7 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
       'User',
       result.insertId,
       username,
-      `Created user: ${username} (${email})`,
+      `Created user: ${username} (${finalUserType})`,
       req.ip,
       req.get('user-agent')
     );
@@ -955,7 +1055,7 @@ router.get('/:id/details', authenticateToken, requireAdmin, async (req: AuthRequ
     // Get user info
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName, u.IsActive, u.IsAdmin, 
-              u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager, u.HourlyRate, u.CreatedAt, u.UpdatedAt,
+              u.UserType, u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager, u.HourlyRate, u.CreatedAt, u.UpdatedAt,
               u.WorkHoursMonday, u.WorkHoursTuesday, u.WorkHoursWednesday, u.WorkHoursThursday,
               u.WorkHoursFriday, u.WorkHoursSaturday, u.WorkHoursSunday
        FROM Users u

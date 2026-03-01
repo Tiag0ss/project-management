@@ -238,11 +238,12 @@ router.post('/register', async (req: Request, res: Response) => {
     // Determine if user should be created as customer or internal
     const registrationType = settings.publicRegistrationType || 'internal';
     const customerId = registrationType === 'customer' ? (settings.defaultCustomerId || null) : null;
+    const userType = registrationType === 'customer' ? 'customer' : 'internal';
 
     // Insert user
     const [result] = await pool.execute<ResultSetHeader>(
-      'INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, CustomerId) VALUES (?, ?, ?, ?, ?, ?)',
-      [username, email, passwordHash, firstName || null, lastName || null, customerId]
+      'INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, UserType, CustomerId) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [username, email, passwordHash, firstName || null, lastName || null, userType, customerId]
     );
 
     // Log registration
@@ -347,7 +348,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
     // Find user
     const [users] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id, Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, IsSupport, IsDeveloper, IsManager, CustomerId FROM Users WHERE Username = ? OR Email = ?',
+      'SELECT Id, Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, IsSupport, IsDeveloper, IsManager, CustomerId, UserType FROM Users WHERE Username = ? OR Email = ?',
       [username, username]
     );
 
@@ -365,6 +366,13 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(403).json({ 
         success: false, 
         message: 'Account is disabled' 
+      });
+    }
+
+    if (String(user.UserType || 'internal').toLowerCase() === 'fictitious') {
+      return res.status(403).json({
+        success: false,
+        message: 'This user type cannot sign in'
       });
     }
 

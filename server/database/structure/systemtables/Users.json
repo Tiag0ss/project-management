@@ -63,6 +63,13 @@
       "Comment": "Optional customer ID if user belongs to a specific customer"
     },
     {
+      "FieldName": "UserType",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "internal",
+      "Comment": "User type: internal, customer, or fictitious"
+    },
+    {
       "FieldName": "IsDeveloper",
       "DataType": "tinyint(1)",
       "NotNullable": true,

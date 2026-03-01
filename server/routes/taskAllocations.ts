@@ -6,6 +6,20 @@ import { createNotification } from './notifications';
 
 const router = express.Router();
 
+const syncTaskPrimaryAssignee = async (
+  taskId: number,
+  assigneeId: any,
+  assignedBy: number | null | undefined
+): Promise<void> => {
+  const normalizedAssigneeId = assigneeId === null || assigneeId === undefined ? null : Number(assigneeId);
+  if (!normalizedAssigneeId) return;
+
+  await pool.execute(
+    `INSERT IGNORE INTO TaskAssignees (TaskId, UserId, AssignedBy) VALUES (?, ?, ?)`,
+    [taskId, normalizedAssigneeId, assignedBy || null]
+  );
+};
+
 /**
  * @swagger
  * tags:
@@ -535,20 +549,93 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
     // Calculate the ACTUAL hours allocated from that date, not estimated hours
     // Order by the FIRST allocation date from the conflict date AND the start time to preserve original order
     // Include IsHobby flag from Project
-    const [affectedTasksData] = await pool.execute<RowDataPacket[]>(
+    const [affectedTasksRows] = await pool.execute<RowDataPacket[]>(
       `SELECT ta.TaskId, 
               SUM(ta.AllocatedHours) as AllocatedHoursFromDate,
               MIN(ta.AllocationDate) as FirstAllocationDate,
               MIN(ta.StartTime) as FirstStartTime,
+              MIN(TIMESTAMP(ta.AllocationDate, ta.StartTime)) as FirstAllocationDateTime,
+              COALESCE(t.DueDateMandatory, 0) as DueDateMandatory,
               COALESCE(p.IsHobby, 0) as IsHobby
        FROM TaskAllocations ta
        INNER JOIN Tasks t ON ta.TaskId = t.Id
        INNER JOIN Projects p ON t.ProjectId = p.Id
        WHERE ta.UserId = ? AND ta.AllocationDate >= ?
-       GROUP BY ta.TaskId, p.IsHobby
+       GROUP BY ta.TaskId, t.DueDateMandatory, p.IsHobby
        ORDER BY FirstAllocationDate ASC, FirstStartTime ASC, ta.TaskId ASC`,
       [userId, fromDate]
     );
+
+    const affectedTasksData = [...affectedTasksRows] as RowDataPacket[];
+
+    // CRITICAL: Also detect parent tasks that have child allocations from this date onward.
+    // If omitted, push-forward can add new planning without replanning the related main task,
+    // causing apparent extra planned hours.
+    const [parentTasksFromChildRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT tca.ParentTaskId as TaskId,
+              MIN(tca.AllocationDate) as FirstChildAllocationDate
+       FROM TaskChildAllocations tca
+       INNER JOIN TaskAllocations ta
+         ON ta.TaskId = tca.ParentTaskId
+        AND ta.AllocationDate = tca.AllocationDate
+       WHERE ta.UserId = ?
+         AND tca.AllocationDate >= ?
+       GROUP BY tca.ParentTaskId`,
+      [userId, fromDate]
+    );
+
+    const parentTaskIdsFromChildAllocations = new Set<number>();
+    const parentTaskFirstChildAllocationDate = new Map<number, string>();
+    for (const row of parentTasksFromChildRows as RowDataPacket[]) {
+      const taskId = Number(row.TaskId);
+      if (!Number.isFinite(taskId) || taskId <= 0) continue;
+      parentTaskIdsFromChildAllocations.add(taskId);
+      if (row.FirstChildAllocationDate) {
+        const dateText = row.FirstChildAllocationDate instanceof Date
+          ? `${row.FirstChildAllocationDate.getFullYear()}-${String(row.FirstChildAllocationDate.getMonth() + 1).padStart(2, '0')}-${String(row.FirstChildAllocationDate.getDate()).padStart(2, '0')}`
+          : String(row.FirstChildAllocationDate).split('T')[0];
+        parentTaskFirstChildAllocationDate.set(taskId, dateText);
+      }
+    }
+
+    if (parentTaskIdsFromChildAllocations.size > 0) {
+      const affectedTaskIdSet = new Set<number>(
+        affectedTasksData.map((row) => Number(row.TaskId)).filter((taskId) => Number.isFinite(taskId) && taskId > 0)
+      );
+
+      const missingParentIds = Array.from(parentTaskIdsFromChildAllocations).filter((taskId) => !affectedTaskIdSet.has(taskId));
+
+      if (missingParentIds.length > 0) {
+        const placeholders = missingParentIds.map(() => '?').join(',');
+        const [missingParentTaskRows] = await pool.execute<RowDataPacket[]>(
+          `SELECT ta.TaskId,
+                  SUM(ta.AllocatedHours) as AllocatedHoursFromDate,
+                  MIN(ta.AllocationDate) as FirstAllocationDate,
+                  MIN(ta.StartTime) as FirstStartTime,
+                  MIN(TIMESTAMP(ta.AllocationDate, ta.StartTime)) as FirstAllocationDateTime,
+                  COALESCE(t.DueDateMandatory, 0) as DueDateMandatory,
+                  COALESCE(p.IsHobby, 0) as IsHobby
+           FROM TaskAllocations ta
+           INNER JOIN Tasks t ON ta.TaskId = t.Id
+           INNER JOIN Projects p ON t.ProjectId = p.Id
+           WHERE ta.UserId = ? AND ta.AllocationDate >= ? AND ta.TaskId IN (${placeholders})
+           GROUP BY ta.TaskId, t.DueDateMandatory, p.IsHobby`,
+          [userId, fromDate, ...missingParentIds]
+        );
+
+        affectedTasksData.push(...(missingParentTaskRows as RowDataPacket[]));
+      }
+    }
+
+    affectedTasksData.sort((a, b) => {
+      const dateA = String(a.FirstAllocationDate || '9999-12-31');
+      const dateB = String(b.FirstAllocationDate || '9999-12-31');
+      if (dateA !== dateB) return dateA.localeCompare(dateB);
+      const timeA = String(a.FirstStartTime || '23:59');
+      const timeB = String(b.FirstStartTime || '23:59');
+      if (timeA !== timeB) return timeA.localeCompare(timeB);
+      return Number(a.TaskId) - Number(b.TaskId);
+    });
 
     if (affectedTasksData.length === 0) {
       return res.json({ success: true, message: 'No allocations to push forward' });
@@ -648,6 +735,37 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       const h = Math.floor(mins / 60);
       const m = Math.round(mins % 60);
       return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    };
+
+    const parseTimeToMinutes = (timeValue: any): number => {
+      const timeText = String(timeValue || '00:00');
+      const [hours, minutes] = timeText.split(':').map(Number);
+      return ((Number.isFinite(hours) ? hours : 0) * 60) + (Number.isFinite(minutes) ? minutes : 0);
+    };
+
+    const reserveExistingTaskSlots = async (taskId: number, isHobby: boolean) => {
+      const [existingAllocations] = await pool.execute<RowDataPacket[]>(
+        `SELECT AllocationDate, StartTime, EndTime, AllocatedHours
+         FROM TaskAllocations
+         WHERE TaskId = ? AND UserId = ? AND AllocationDate >= ?
+         ORDER BY AllocationDate ASC, StartTime ASC`,
+        [taskId, userId, fromDate]
+      );
+
+      const daySlots = isHobby ? hobbyDaySlots : workDaySlots;
+
+      for (const allocation of existingAllocations as RowDataPacket[]) {
+        const dateStr = allocation.AllocationDate instanceof Date
+          ? `${allocation.AllocationDate.getFullYear()}-${String(allocation.AllocationDate.getMonth() + 1).padStart(2, '0')}-${String(allocation.AllocationDate.getDate()).padStart(2, '0')}`
+          : String(allocation.AllocationDate).split('T')[0];
+
+        const startMinutes = parseTimeToMinutes(allocation.StartTime || '09:00');
+        const endMinutes = allocation.EndTime
+          ? parseTimeToMinutes(allocation.EndTime)
+          : startMinutes + Math.round((parseFloat(String(allocation.AllocatedHours || 0)) || 0) * 60);
+
+        daySlots[dateStr] = Math.max(daySlots[dateStr] ?? 0, endMinutes);
+      }
     };
     
     // Allocate hours for a task using available slots - returns the last allocation date
@@ -862,24 +980,93 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
     const newTaskEndDateStr = newTaskEndDate.toISOString().split('T')[0];
     console.log(`New task ends on: ${newTaskEndDateStr}`);
 
-    // THEN: Only reallocate tasks that START on or before the new task's END date
-    // Tasks that start after the new task ends are not affected (allocations remain intact)
+    const [newTaskLastAllocationRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT AllocationDate, EndTime
+       FROM TaskAllocations
+       WHERE TaskId = ? AND UserId = ?
+       ORDER BY AllocationDate DESC, EndTime DESC
+       LIMIT 1`,
+      [newTaskId, userId]
+    );
+
+    let newTaskEndDateTime = new Date(`${newTaskEndDateStr}T23:59:59`);
+    if (newTaskLastAllocationRows.length > 0) {
+      const lastAlloc = newTaskLastAllocationRows[0];
+      const allocDate = lastAlloc.AllocationDate instanceof Date
+        ? `${lastAlloc.AllocationDate.getFullYear()}-${String(lastAlloc.AllocationDate.getMonth() + 1).padStart(2, '0')}-${String(lastAlloc.AllocationDate.getDate()).padStart(2, '0')}`
+        : String(lastAlloc.AllocationDate).split('T')[0];
+      const endTime = String(lastAlloc.EndTime || '23:59');
+      const parsedEnd = new Date(`${allocDate}T${endTime}:00`);
+      if (!Number.isNaN(parsedEnd.getTime())) {
+        newTaskEndDateTime = parsedEnd;
+      }
+    }
+
+    // Replanned conflicting tasks must start AFTER the pushed task is finished.
+    // Use next day at noon to avoid timezone edge cases.
+    const replanStartDate = new Date(newTaskEndDateStr + 'T12:00:00');
+    replanStartDate.setDate(replanStartDate.getDate() + 1);
+
+    // Decide which tasks to replan:
+    // - Replan only tasks that truly conflict with the pushed task window
+    // - Keep mandatory due date tasks fixed
+    // - Keep non-conflicting tasks fixed
+    // Fixed tasks reserve their occupied slots so replanned tasks continue after occupied periods.
+    const tasksToReplan: RowDataPacket[] = [];
+
     for (const taskData of affectedTasksData) {
-      // Skip the new task - it was already allocated above with the user-specified hours
-      if (taskData.TaskId === newTaskId) continue;
-      
-      const remainingHours = parseFloat(taskData.AllocatedHoursFromDate) || 0;
+      if (Number(taskData.TaskId) === Number(newTaskId)) continue;
+
+      const remainingHours = parseFloat(String(taskData.AllocatedHoursFromDate || 0)) || 0;
       if (remainingHours <= 0) continue;
-      
-      // Check if this task starts before or on the new task's end date
-      const taskFirstAllocation = new Date(taskData.FirstAllocationDate);
-      if (taskFirstAllocation > newTaskEndDate) {
-        console.log(`Task ${taskData.TaskId} starts on ${taskData.FirstAllocationDate} (after new task ends on ${newTaskEndDateStr}) - NOT replanning (allocations preserved)`);
+
+      const hasMandatoryDueDate = Number(taskData.DueDateMandatory || 0) === 1;
+      const taskIsHobby = Number(taskData.IsHobby || 0) === 1;
+
+      const firstAllocDateTime = taskData.FirstAllocationDateTime
+        ? (taskData.FirstAllocationDateTime instanceof Date
+            ? taskData.FirstAllocationDateTime
+            : new Date(String(taskData.FirstAllocationDateTime).replace(' ', 'T')))
+        : (taskData.FirstAllocationDate
+            ? new Date(`${String(taskData.FirstAllocationDate).split('T')[0]}T${String(taskData.FirstStartTime || '00:00')}:00`)
+            : null);
+
+      const childFirstDateText = parentTaskFirstChildAllocationDate.get(Number(taskData.TaskId));
+      const childFirstDateTime = childFirstDateText ? new Date(`${childFirstDateText}T00:00:00`) : null;
+      const hasChildChainConflict = !!(
+        childFirstDateTime &&
+        !Number.isNaN(childFirstDateTime.getTime()) &&
+        childFirstDateTime <= newTaskEndDateTime
+      );
+
+      const hasDirectConflict = !!(
+        firstAllocDateTime &&
+        !Number.isNaN(firstAllocDateTime.getTime()) &&
+        firstAllocDateTime <= newTaskEndDateTime
+      );
+
+      const shouldReplan = hasDirectConflict || hasChildChainConflict;
+
+      if (hasMandatoryDueDate) {
+        console.log(`Task ${taskData.TaskId} preserved: mandatory due date (allocation locked)`);
+        await reserveExistingTaskSlots(Number(taskData.TaskId), taskIsHobby);
         continue;
       }
-      
-      // This task IS affected - delete its existing allocations before re-allocating
-      console.log(`Task ${taskData.TaskId} starts on ${taskData.FirstAllocationDate} (overlaps with new task) - DELETING and replanning`);
+
+      if (!shouldReplan) {
+        console.log(`Task ${taskData.TaskId} preserved: no conflict with pushed task window`);
+        await reserveExistingTaskSlots(Number(taskData.TaskId), taskIsHobby);
+        continue;
+      }
+
+      tasksToReplan.push(taskData);
+    }
+
+    // Replan movable conflicting tasks in stable chronological order
+    for (const taskData of tasksToReplan) {
+      const remainingHours = parseFloat(taskData.AllocatedHoursFromDate) || 0;
+
+      console.log(`Task ${taskData.TaskId} starts on ${taskData.FirstAllocationDate} (conflict) - DELETING and replanning`);
       await pool.execute(
         `DELETE FROM TaskAllocations 
          WHERE TaskId = ? AND UserId = ? AND AllocationDate >= ?`,
@@ -904,7 +1091,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       
       const taskIsHobby = taskData.IsHobby === 1;
       console.log(`Re-allocating Task ${taskData.TaskId}: ${remainingHours}h (hobby=${taskIsHobby})`);
-      await allocateTask(taskData.TaskId, remainingHours, startDate, taskIsHobby);
+      await allocateTask(taskData.TaskId, remainingHours, replanStartDate, taskIsHobby);
     }
 
 
@@ -916,9 +1103,10 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
     );
     if (newTaskAllocations.length > 0 && newTaskAllocations[0].StartDate) {
       await pool.execute(
-        `UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ? WHERE Id = ?`,
-        [newTaskAllocations[0].StartDate, newTaskAllocations[0].EndDate, newTaskId]
+        `UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?`,
+        [newTaskAllocations[0].StartDate, newTaskAllocations[0].EndDate, userId, newTaskId]
       );
+      await syncTaskPrimaryAssignee(Number(newTaskId), userId, req.user?.userId);
     }
 
     // Update PlannedStartDate and PlannedEndDate for affected tasks
@@ -930,53 +1118,16 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       );
       if (taskAllocations.length > 0 && taskAllocations[0].StartDate) {
         await pool.execute(
-          `UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ? WHERE Id = ?`,
-          [taskAllocations[0].StartDate, taskAllocations[0].EndDate, taskData.TaskId]
+          `UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?`,
+          [taskAllocations[0].StartDate, taskAllocations[0].EndDate, userId, taskData.TaskId]
         );
-      }
-    }
-
-    // Update assignees for subtasks and affected tasks (multi-assignee logic)
-    // Find all subtasks for newTaskId and affected tasks
-    const allTaskIds = [newTaskId, ...affectedTasksData.map(t => t.TaskId)];
-    for (const taskId of allTaskIds) {
-      // Find direct child tasks (subtasks)
-      const [subtasks] = await pool.execute<RowDataPacket[]>(
-        `SELECT Id FROM Tasks WHERE ParentTaskId = ?`,
-        [taskId]
-      );
-      // For each task (main + subtasks), update allocations for all assignees
-      const taskIdsToUpdate = [taskId, ...subtasks.map(st => st.Id)];
-      for (const tid of taskIdsToUpdate) {
-        // Remove AssignedTo update, use TaskAllocations for assignees
-        // Optionally, clear old allocations if needed (already handled above)
-        // Insert allocations for all assignees
-        // If multi-assignee info is in req.body.assignees, use that
-        const assignees = Array.isArray(req.body.assignees) ? req.body.assignees : [userId];
-        // Remove duplicates
-        const uniqueAssignees = [...new Set(assignees.filter((a: number) => !!a))];
-        // For each assignee, ensure allocation exists
-        for (const assigneeId of uniqueAssignees) {
-          // Check if allocation exists
-          const [existingAlloc] = await pool.execute<RowDataPacket[]>(
-            `SELECT COUNT(*) as cnt FROM TaskAllocations WHERE TaskId = ? AND UserId = ?`,
-            [tid, assigneeId]
-          );
-          if (existingAlloc[0].cnt === 0) {
-            // Insert allocation (minimal, actual allocation logic handled elsewhere)
-            await pool.execute(
-              `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
-               VALUES (?, ?, CURDATE(), 0, '09:00', '18:00', 0)`,
-              [tid, assigneeId]
-            );
-          }
-        }
+        await syncTaskPrimaryAssignee(Number(taskData.TaskId), userId, req.user?.userId);
       }
     }
 
     res.json({ 
       success: true, 
-      message: `Allocated new task and replanned ${affectedTasksData.length} tasks` 
+      message: `Allocated new task and replanned ${tasksToReplan.length} tasks` 
     });
   } catch (error) {
     console.error('Error pushing forward allocations:', error);
@@ -1337,6 +1488,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
         [dates[0], newEndDate, userId, taskId]
       );
+      await syncTaskPrimaryAssignee(Number(taskId), userId, req.user?.userId);
 
       // Notify user about allocation (if different from current user making the allocation)
       if (taskInfo.length > 0 && userId !== req.user?.userId) {
@@ -2004,6 +2156,7 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
             'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
             [startDate, endDate, userId, taskId]
           );
+          await syncTaskPrimaryAssignee(Number(taskId), userId, req.user?.userId);
         }
 
         return res.json({ success: true, message: 'Manual allocation created (split across lunch break)' });
@@ -2032,6 +2185,7 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
         'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
         [startDate, endDate, userId, taskId]
       );
+      await syncTaskPrimaryAssignee(Number(taskId), userId, req.user?.userId);
     }
 
     res.json({ success: true, message: 'Manual allocation created successfully' });
@@ -2270,6 +2424,7 @@ router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Respo
             'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
             [startDate, endDate, UserId, TaskId]
           );
+          await syncTaskPrimaryAssignee(Number(TaskId), UserId, req.user?.userId);
         }
 
         return res.json({ success: true, message: 'Manual allocation updated (split across lunch break)' });
@@ -2297,6 +2452,7 @@ router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Respo
         'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
         [startDate, endDate, UserId, TaskId]
       );
+      await syncTaskPrimaryAssignee(Number(TaskId), UserId, req.user?.userId);
     }
 
     res.json({ success: true, message: 'Manual allocation updated successfully' });
@@ -2380,6 +2536,7 @@ router.delete('/manual/:id', authenticateToken, async (req: AuthRequest, res: Re
         'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
         [startDate, endDate, assignedUserId, taskId]
       );
+      await syncTaskPrimaryAssignee(Number(taskId), assignedUserId, req.user?.userId);
     } else {
       // No more allocations - clear planned dates and assignment
       await pool.execute(

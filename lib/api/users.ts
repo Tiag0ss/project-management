@@ -6,6 +6,7 @@ export interface User {
   Id: number;
   Username: string;
   Email: string;
+  UserType?: 'internal' | 'customer' | 'fictitious';
   FirstName?: string;
   LastName?: string;
   IsActive: boolean;
@@ -55,7 +56,8 @@ export interface User {
 
 export interface UpdateUserData {
   username: string;
-  email: string;
+  email?: string;
+  userType?: 'internal' | 'customer' | 'fictitious';
   firstName?: string;
   lastName?: string;
   isActive: boolean;
@@ -76,7 +78,7 @@ export interface UpdateUserData {
 }
 
 export interface CreateUserData extends UpdateUserData {
-  password: string;
+  password?: string;
 }
 
 export const usersApi = {

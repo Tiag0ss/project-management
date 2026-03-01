@@ -571,6 +571,27 @@ export default function PlanningPage() {
     }
   };
 
+  const persistPlannedTaskAssignment = async (
+    task: Task,
+    assignedUserId: number,
+    plannedStartDate: string | null,
+    plannedEndDate: string | null
+  ) => {
+    await tasksApi.update(task.Id, {
+      taskName: task.TaskName,
+      description: task.Description,
+      status: task.Status,
+      priority: task.Priority,
+      assignedTo: assignedUserId,
+      dueDate: task.DueDate,
+      dueDateMandatory: Number(task.DueDateMandatory || 0) === 1,
+      estimatedHours: task.EstimatedHours,
+      parentTaskId: task.ParentTaskId,
+      plannedStartDate: plannedStartDate || undefined,
+      plannedEndDate: plannedEndDate || undefined
+    }, token!);
+  };
+
   // Get all leaf tasks (tasks without children) recursively
   const getAllLeafTasks = (parentTaskId: number): Task[] => {
     const children = tasks.filter(t => t.ParentTaskId === parentTaskId);
@@ -1797,6 +1818,9 @@ export default function PlanningPage() {
         return;
       }
 
+      const parentPlannedStartDate = allocations.length > 0 ? allocations[0].date : null;
+      await persistPlannedTaskAssignment(parentTask, userId, parentPlannedStartDate, parentPlannedEndDate);
+
       setPlanningProgress(prev => ({
         ...prev,
         progress: 50,
@@ -2594,6 +2618,9 @@ export default function PlanningPage() {
         showAlert('Error', 'Failed to save task allocation');
         return;
       }
+
+      const plannedStartDate = allocations.length > 0 ? allocations[0].date : null;
+      await persistPlannedTaskAssignment(task, userId, plannedStartDate, plannedEndDate);
 
       setPlanningProgress(prev => ({
         ...prev,
@@ -3466,6 +3493,29 @@ export default function PlanningPage() {
                   });
                   
                   const userDailyTotals = getUserDailyTotals(userRow.Id, days);
+
+                  const getDayCapacities = (day: Date) => {
+                    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                    const dayName = dayNames[day.getDay()];
+                    const workHoursKey = `WorkHours${dayName}` as keyof User;
+                    const hobbyHoursKey = `HobbyHours${dayName}` as keyof User;
+                    const workCapacity = parseFloat(userRow[workHoursKey] as any) || 0;
+                    const hobbyCapacity = parseFloat(userRow[hobbyHoursKey] as any) || 0;
+                    return { workCapacity, hobbyCapacity };
+                  };
+
+                  const isDayOverAllocated = (day: Date) => {
+                    const dateStr = day.toISOString().split('T')[0];
+                    const totals = userDailyTotals[dateStr] || { work: 0, hobby: 0, recurring: 0 };
+                    const { workCapacity, hobbyCapacity } = getDayCapacities(day);
+
+                    // Recurring allocations consume regular work capacity.
+                    const totalWorkUsed = totals.work + totals.recurring;
+
+                    const isWorkOver = workCapacity > 0 && totalWorkUsed > workCapacity + 0.001;
+                    const isHobbyOver = hobbyCapacity > 0 && totals.hobby > hobbyCapacity + 0.001;
+                    return isWorkOver || isHobbyOver;
+                  };
                   
                   // Separate parent tasks
                   const parentTasks = parentTasksWithDates;
@@ -3567,7 +3617,8 @@ export default function PlanningPage() {
                   });
                   
                   // Calculate row height based on max rows (parent tasks + subtasks)
-                  const rowHeight = Math.max(maxRows * 44, 60); // 44px per row, minimum 60px
+                  // Keep compact spacing to avoid large empty areas.
+                  const rowHeight = Math.max(maxRows * 24 + 8, 44);
                   
                   return (
                     <React.Fragment key={userRow.Id}>
@@ -3591,10 +3642,15 @@ export default function PlanningPage() {
                       <div className="flex-1 relative" style={{ minHeight: `${rowHeight}px` }}>
                         <div className="flex h-full">
                           {days.map((day, idx) => {
+                            const isOverAllocated = isDayOverAllocated(day);
                             return (
                               <div
                                 key={idx}
-                                className="flex-1 border-r border-gray-200 dark:border-gray-700 relative"
+                                className={`flex-1 border-r border-gray-200 dark:border-gray-700 relative ${
+                                  isOverAllocated
+                                    ? 'bg-red-50 dark:bg-red-900/20'
+                                    : ''
+                                }`}
                                 onDragOver={handleDragOver}
                                 onDrop={(e) => handleDropOnDay(e, day, userRow.Id)}
                               />
@@ -3696,9 +3752,10 @@ export default function PlanningPage() {
                               style={{
                                 left: subtaskLeft,
                                 width: subtaskWidth,
-                                top: `${4 + row * 24}px`,
+                                top: `${2 + row * 24}px`,
                                 ...(statusColor ? { backgroundColor: statusColor } : {}),
                                 borderLeft: `${isSubtask ? '3' : '4'}px solid ${priorityBorderHex}`,
+                                zIndex: isSubtask ? 20 : 21,
                               }}
                               title={`${project?.ProjectName || 'Unknown'} » ${task.TaskName} [${task.StatusName || 'Unknown'}]${isSubtask ? ` (Level ${level} Subtask)` : ''}\nEstimated: ${estimatedHours}h | Planned: ${plannedHours}h | Worked: ${workedHours}h | Remaining: ${remainingHours}h\nPriority: ${task.PriorityName || 'Unknown'}${taskIsHobbyProject ? ' | Hobby Project' : ''}${hasDependency ? ' | Depends on: ' + task.DependsOnTaskName : ''}${isOverPlanned ? '\n⚠️ OVER-PLANNED: ' + (plannedHours - remainingHours).toFixed(1) + 'h more than needed!' : ''}${isUnderPlanned ? '\n⚠️ UNDER-PLANNED: ' + (remainingHours - plannedHours).toFixed(1) + 'h still to plan' : ''}`}
                             >
@@ -3746,12 +3803,13 @@ export default function PlanningPage() {
                               <div
                                 key={`recurring-${recurring.Id}-${occurrenceDateStr}`}
                                 onClick={() => setRecurringDetailModal({ show: true, recurring })}
-                                className="absolute h-6 rounded bg-pink-500 dark:bg-pink-600 opacity-70 hover:opacity-100 cursor-pointer flex items-center text-white text-[10px] px-1 border-l-3 border-pink-700 dark:border-pink-800 z-10"
+                                className="absolute h-6 rounded bg-pink-500 dark:bg-pink-600 opacity-45 hover:opacity-70 cursor-pointer flex items-center text-white text-[10px] px-1 border-l-3 border-pink-700 dark:border-pink-800"
                                 style={{
                                   left: left,
                                   width: width,
                                   top: '0px',
-                                  borderLeftWidth: '3px'
+                                  borderLeftWidth: '3px',
+                                  zIndex: 2,
                                 }}
                                 title={`🔄 ${recurring.Title}\n${recurring.StartTime} - ${recurring.EndTime} (${recurring.AllocatedHours}h)\n${recurring.Description || ''}\nClick for details`}
                               >
@@ -3777,23 +3835,22 @@ export default function PlanningPage() {
                           const hasWork = totals.work > 0;
                           const hasHobby = totals.hobby > 0;
                           const hasRecurring = totals.recurring > 0;
+                          const isOverAllocated = isDayOverAllocated(day);
                           
                           // Get capacity for this day
-                          const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                          const dayName = dayNames[day.getDay()];
-                          const workHoursKey = `WorkHours${dayName}` as keyof User;
-                          const hobbyHoursKey = `HobbyHours${dayName}` as keyof User;
-                          const workCapacity = parseFloat(userRow[workHoursKey] as any) || 0;
-                          const hobbyCapacity = parseFloat(userRow[hobbyHoursKey] as any) || 0;
+                          const { workCapacity, hobbyCapacity } = getDayCapacities(day);
                           
                           return (
                             <div
                               key={idx}
                               className={`flex-1 py-0.5 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
-                                day.getDay() === 0 || day.getDay() === 6
+                                isOverAllocated
+                                  ? 'bg-red-100/70 dark:bg-red-900/35'
+                                  : day.getDay() === 0 || day.getDay() === 6
                                   ? 'bg-gray-100 dark:bg-gray-700'
                                   : ''
                               }`}
+                              title={isOverAllocated ? 'Over allocated day: planned hours exceed configured capacity' : undefined}
                             >
                               {hasRecurring && (
                                 <div className="text-pink-600 dark:text-pink-400 font-medium">

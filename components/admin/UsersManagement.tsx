@@ -184,15 +184,17 @@ export default function UsersManagement() {
             </thead>
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {users.map((u) => (
-                <tr key={u.Id} className={u.CustomerId ? 'bg-orange-50/30 dark:bg-orange-900/10' : ''}>
+                <tr key={u.Id} className={(u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'customer' ? 'bg-orange-50/30 dark:bg-orange-900/10' : ''}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 text-sm font-medium ${
-                        u.CustomerId 
+                        (u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'customer'
                           ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-400'
+                          : (u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'fictitious'
+                          ? 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
                           : 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400'
                       }`}>
-                        {u.CustomerId ? '👤' : '🏢'}
+                        {(u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'customer' ? '👤' : (u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'fictitious' ? '🧪' : '🏢'}
                       </div>
                       <div>
                         <div className="text-sm font-medium text-gray-900 dark:text-white">
@@ -210,7 +212,7 @@ export default function UsersManagement() {
                     {u.Email}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {u.CustomerId ? (
+                    {(u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'customer' ? (
                       <div>
                         <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
                           Customer
@@ -219,6 +221,10 @@ export default function UsersManagement() {
                           {u.CustomerName}
                         </div>
                       </div>
+                    ) : (u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'fictitious' ? (
+                      <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                        Fictitious
+                      </span>
                     ) : (
                       <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
                         Internal
@@ -226,7 +232,7 @@ export default function UsersManagement() {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {u.CustomerId ? (
+                    {(u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'customer' ? (
                       <span className="text-gray-400 dark:text-gray-500">-</span>
                     ) : (
                       <div className="flex flex-wrap gap-1">
@@ -405,6 +411,7 @@ function CreateUserModal({
   const [formData, setFormData] = useState({
     username: '',
     email: '',
+    userType: 'internal' as 'internal' | 'customer' | 'fictitious',
     password: '',
     firstName: '',
     lastName: '',
@@ -432,11 +439,18 @@ function CreateUserModal({
     setError('');
     setIsLoading(true);
 
+    if (formData.userType === 'customer' && !formData.customerId) {
+      setError('Please select a customer for Customer User type');
+      setIsLoading(false);
+      return;
+    }
+
     try {
       await usersApi.create({
         username: formData.username,
-        email: formData.email,
-        password: formData.password,
+        email: formData.email || undefined,
+        userType: formData.userType,
+        password: formData.userType === 'fictitious' ? undefined : formData.password,
         firstName: formData.firstName || undefined,
         lastName: formData.lastName || undefined,
         isAdmin: formData.isAdmin,
@@ -499,13 +513,13 @@ function CreateUserModal({
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Email *
+                  Email {formData.userType !== 'fictitious' ? '*' : '(Optional)'}
                 </label>
                 <input
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
+                  required={formData.userType !== 'fictitious'}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
               </div>
@@ -513,16 +527,49 @@ function CreateUserModal({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Password *
+                User Type *
               </label>
-              <input
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                required
+              <select
+                value={formData.userType}
+                onChange={(e) => {
+                  const nextType = e.target.value as 'internal' | 'customer' | 'fictitious';
+                  setFormData({
+                    ...formData,
+                    userType: nextType,
+                    customerId: nextType === 'customer' ? formData.customerId : ''
+                  });
+                }}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
+              >
+                <option value="internal">Internal User</option>
+                <option value="customer">Customer User</option>
+                <option value="fictitious">Fictitious User</option>
+              </select>
+              {formData.userType === 'fictitious' && (
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Fictitious users are resources for planning and do not receive email alerts.
+                </p>
+              )}
             </div>
+
+            {formData.userType !== 'fictitious' ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Password *
+                </label>
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+            ) : (
+              <div className="p-3 bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600 rounded-lg text-sm text-gray-600 dark:text-gray-300">
+                Password is not required for fictitious users.
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -551,14 +598,15 @@ function CreateUserModal({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Customer (Optional)
+                Customer {formData.userType === 'customer' ? '*' : '(Optional)'}
               </label>
               <select
                 value={formData.customerId}
                 onChange={(e) => setFormData({ ...formData, customerId: e.target.value })}
+                required={formData.userType === 'customer'}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
-                <option value="">Internal User</option>
+                <option value="">No customer</option>
                 {customers.map((c) => (
                   <option key={c.Id} value={c.Id}>{c.Name}</option>
                 ))}
@@ -648,7 +696,7 @@ function CreateUserModal({
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="">No team leader</option>
-                {allUsers.filter(u => !u.CustomerId).map(u => (
+                {allUsers.filter(u => (u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'internal').map(u => (
                   <option key={u.Id} value={u.Id}>
                     {u.FirstName && u.LastName ? `${u.FirstName} ${u.LastName} (@${u.Username})` : u.Username}
                   </option>
@@ -698,6 +746,7 @@ function EditUserModal({
   const [formData, setFormData] = useState({
     username: user.Username,
     email: user.Email,
+    userType: (user.UserType as 'internal' | 'customer' | 'fictitious') || (user.CustomerId ? 'customer' : 'internal'),
     firstName: user.FirstName || '',
     lastName: user.LastName || '',
     isAdmin: !!user.IsAdmin,
@@ -724,10 +773,17 @@ function EditUserModal({
     setError('');
     setIsLoading(true);
 
+    if (formData.userType === 'customer' && !formData.customerId) {
+      setError('Please select a customer for Customer User type');
+      setIsLoading(false);
+      return;
+    }
+
     try {
       await usersApi.update(user.Id, {
         username: formData.username,
-        email: formData.email,
+        email: formData.email || undefined,
+        userType: formData.userType,
         firstName: formData.firstName || undefined,
         lastName: formData.lastName || undefined,
         isAdmin: formData.isAdmin,
@@ -790,16 +846,38 @@ function EditUserModal({
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Email *
+                  Email {formData.userType !== 'fictitious' ? '*' : '(Optional)'}
                 </label>
                 <input
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
+                  required={formData.userType !== 'fictitious'}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                User Type *
+              </label>
+              <select
+                value={formData.userType}
+                onChange={(e) => {
+                  const nextType = e.target.value as 'internal' | 'customer' | 'fictitious';
+                  setFormData({
+                    ...formData,
+                    userType: nextType,
+                    customerId: nextType === 'customer' ? formData.customerId : ''
+                  });
+                }}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="internal">Internal User</option>
+                <option value="customer">Customer User</option>
+                <option value="fictitious">Fictitious User</option>
+              </select>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -829,14 +907,15 @@ function EditUserModal({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Customer (Optional)
+                Customer {formData.userType === 'customer' ? '*' : '(Optional)'}
               </label>
               <select
                 value={formData.customerId}
                 onChange={(e) => setFormData({ ...formData, customerId: e.target.value })}
+                required={formData.userType === 'customer'}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
-                <option value="">Internal User</option>
+                <option value="">No customer</option>
                 {customers.map((c) => (
                   <option key={c.Id} value={c.Id}>{c.Name}</option>
                 ))}
@@ -872,7 +951,7 @@ function EditUserModal({
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="">No team leader</option>
-                {allUsers.filter(u => !u.CustomerId && u.Id !== user.Id).map(u => (
+                {allUsers.filter(u => (u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'internal' && u.Id !== user.Id).map(u => (
                   <option key={u.Id} value={u.Id}>
                     {u.FirstName && u.LastName ? `${u.FirstName} ${u.LastName} (@${u.Username})` : u.Username}
                   </option>

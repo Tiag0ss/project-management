@@ -13,6 +13,7 @@ interface UserDetails {
   Id: number;
   Username: string;
   Email: string;
+  UserType?: 'internal' | 'customer' | 'fictitious';
   FirstName: string | null;
   LastName: string | null;
   IsActive: number;
@@ -502,9 +503,19 @@ export default function UserDetailPage() {
                       Admin
                     </span>
                   )}
+                  {user.UserType === 'fictitious' && (
+                    <span className="px-2 py-0.5 text-xs bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300 rounded-full">
+                      Fictitious User
+                    </span>
+                  )}
                   {user.CustomerId && (
                     <span className="px-2 py-0.5 text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 rounded-full">
                       Customer: {user.CustomerName}
+                    </span>
+                  )}
+                  {!user.CustomerId && user.UserType !== 'fictitious' && (
+                    <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded-full">
+                      Internal User
                     </span>
                   )}
                   <span className={`px-2 py-0.5 text-xs rounded-full ${
