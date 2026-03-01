@@ -978,7 +978,6 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
         {activeTab === 'attachments' && (
           <AttachmentsTab 
-            customerId={customerId}
             token={token!}
             attachments={attachments}
             uploadingFile={uploadingFile}
@@ -1174,14 +1173,12 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
 // Attachments Tab Component  
 function AttachmentsTab({
-  customerId,
   token,
   attachments,
   uploadingFile,
   onFileUpload,
   onDeleteAttachment
 }: {
-  customerId: number;
   token: string;
   attachments: any[];
   uploadingFile: boolean;
@@ -1308,10 +1305,6 @@ function AttachmentsTab({
         </div>
       )}
       
-      {/* Change History */}
-      <div className="mt-6">
-        <ChangeHistory entityType="customer" entityId={customerId} />
-      </div>
     </div>
   );
 }

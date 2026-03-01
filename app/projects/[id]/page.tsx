@@ -5272,6 +5272,7 @@ function UtilitiesTab({ projectId, token, onTasksUpdated }: { projectId: number;
 function GanttViewTab({ tasks }: { tasks: Task[] }) {
   type ViewMode = 'Week' | 'Month' | 'Year';
   const [viewMode, setViewMode] = useState<ViewMode>('Month');
+  const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
   
   // Calculate initial start date (7 days ago)
   const sevenDaysAgo = new Date();
@@ -5285,6 +5286,16 @@ function GanttViewTab({ tasks }: { tasks: Task[] }) {
     return d;
   });
   const [days, setDays] = useState<Date[]>([]);
+
+  useEffect(() => {
+    const parentIds = new Set<number>();
+    for (const task of tasks) {
+      if (tasks.some(child => child.ParentTaskId === task.Id)) {
+        parentIds.add(task.Id);
+      }
+    }
+    setExpandedTasks(parentIds);
+  }, [tasks]);
   
   // Generate days based on view mode and startDate
   useEffect(() => {
@@ -5370,6 +5381,30 @@ function GanttViewTab({ tasks }: { tasks: Task[] }) {
     };
   };
 
+  const toggleExpand = (taskId: number) => {
+    setExpandedTasks(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  };
+
+  const compareTaskHierarchyOrder = (a: Task, b: Task) => {
+    const aOrder = Number(a.DisplayOrder || 0);
+    const bOrder = Number(b.DisplayOrder || 0);
+    if (aOrder !== bOrder) return aOrder - bOrder;
+
+    const aStart = a.PlannedStartDate ? new Date(a.PlannedStartDate).getTime() : Number.MAX_SAFE_INTEGER;
+    const bStart = b.PlannedStartDate ? new Date(b.PlannedStartDate).getTime() : Number.MAX_SAFE_INTEGER;
+    if (aStart !== bStart) return aStart - bStart;
+
+    return (a.TaskName || '').localeCompare(b.TaskName || '');
+  };
+
   const handlePrevious = () => {
     const newStart = new Date(startDate);
     if (viewMode === 'Week') {
@@ -5430,12 +5465,32 @@ function GanttViewTab({ tasks }: { tasks: Task[] }) {
     
     return false;
   });
+
+  const getPlannedSubtasks = (parentId: number) =>
+    tasksWithPlanning
+      .filter(task => task.ParentTaskId === parentId)
+      .sort(compareTaskHierarchyOrder);
+
+  const hasVisibleDescendantInRange = (taskId: number): boolean => {
+    const children = getPlannedSubtasks(taskId);
+    for (const child of children) {
+      if (getTaskPosition(child) !== null || hasVisibleDescendantInRange(child.Id)) {
+        return true;
+      }
+    }
+    return false;
+  };
   
   // Filter to only show tasks that are visible in the current date range
   const visibleTasksWithPlanning = tasksWithPlanning.filter(t => {
     const position = getTaskPosition(t);
-    return position !== null; // Only include tasks that have a visible position
+    return position !== null || hasVisibleDescendantInRange(t.Id);
   });
+
+  const visiblePlannedTaskIds = new Set(visibleTasksWithPlanning.map(task => task.Id));
+  const visibleRootTasks = visibleTasksWithPlanning
+    .filter(task => !task.ParentTaskId || !visiblePlannedTaskIds.has(task.ParentTaskId))
+    .sort(compareTaskHierarchyOrder);
   
   const tasksWithoutPlanning = tasks.filter(t => {
     // Exclude if already in planned list
@@ -5564,39 +5619,80 @@ function GanttViewTab({ tasks }: { tasks: Task[] }) {
 
           {/* Tasks Timeline */}
           <div>
-            {visibleTasksWithPlanning.map((task) => {
-              const position = getTaskPosition(task);
-              
-              return (
-                <div
-                  key={task.Id}
-                  className="flex border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                >
-                  <div className="w-64 flex-shrink-0 px-4 py-4">
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {task.TaskName}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      {task.AssigneeName || 'Unassigned'}
-                    </div>
-                  </div>
-                  <div className="flex-1 relative py-4 min-w-[800px]">
-                    {position && (
-                      <div
-                        className="absolute top-2 h-8 bg-blue-500 rounded flex items-center justify-center text-white text-xs font-medium px-2"
-                        style={{
-                          left: position.left,
-                          width: position.width
-                        }}
-                        title={`${task.TaskName}: ${new Date(task.PlannedStartDate!).toLocaleDateString()} - ${new Date(task.PlannedEndDate!).toLocaleDateString()}`}
-                      >
-                        {position.duration > 3 && task.EstimatedHours ? `${task.EstimatedHours}h` : ''}
+            {(() => {
+              const renderGanttRow = (task: Task, level: number = 0): React.JSX.Element[] => {
+                const subtasks = getPlannedSubtasks(task.Id).filter(subtask => visiblePlannedTaskIds.has(subtask.Id));
+                const hasSubtasks = subtasks.length > 0;
+                const isExpanded = expandedTasks.has(task.Id);
+                const position = getTaskPosition(task);
+                const indent = level * 20;
+                const rows: React.JSX.Element[] = [];
+
+                rows.push(
+                  <div
+                    key={task.Id}
+                    className={`flex border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 ${level > 0 ? 'bg-gray-50/60 dark:bg-gray-700/30' : ''}`}
+                  >
+                    <div className="w-64 flex-shrink-0 px-4 py-4">
+                      <div className="flex items-start gap-2" style={{ marginLeft: `${indent}px` }}>
+                        {hasSubtasks ? (
+                          <button
+                            onClick={() => toggleExpand(task.Id)}
+                            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-transform mt-0.5"
+                            style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                            title={isExpanded ? 'Collapse subtasks' : 'Expand subtasks'}
+                          >
+                            ▶
+                          </button>
+                        ) : (
+                          <span className="w-4" />
+                        )}
+                        {level > 0 && <span className="text-gray-400 mt-0.5">↳</span>}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <div className={`text-sm ${level > 0 ? 'text-gray-800 dark:text-gray-200' : 'font-medium text-gray-900 dark:text-white'}`}>
+                              {task.TaskName}
+                            </div>
+                            {hasSubtasks && (
+                              <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded-full">
+                                {subtasks.length}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {task.AssigneeName || 'Unassigned'}
+                          </div>
+                        </div>
                       </div>
-                    )}
+                    </div>
+                    <div className="flex-1 relative py-4 min-w-[800px]">
+                      {position && (
+                        <div
+                          className="absolute top-2 h-8 bg-blue-500 rounded flex items-center justify-center text-white text-xs font-medium px-2"
+                          style={{
+                            left: position.left,
+                            width: position.width
+                          }}
+                          title={`${task.TaskName}: ${new Date(task.PlannedStartDate!).toLocaleDateString()} - ${new Date(task.PlannedEndDate!).toLocaleDateString()}`}
+                        >
+                          {position.duration > 3 && task.EstimatedHours ? `${task.EstimatedHours}h` : ''}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+
+                if (hasSubtasks && isExpanded) {
+                  for (const subtask of subtasks) {
+                    rows.push(...renderGanttRow(subtask, level + 1));
+                  }
+                }
+
+                return rows;
+              };
+
+              return visibleRootTasks.flatMap(rootTask => renderGanttRow(rootTask, 0));
+            })()}
           </div>
         </div>
       )}
