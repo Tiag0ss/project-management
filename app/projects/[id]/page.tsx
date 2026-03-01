@@ -109,6 +109,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [hideIntegratedJiraTickets, setHideIntegratedJiraTickets] = useState(false);
   const [jiraTicketPriorityMapping, setJiraTicketPriorityMapping] = useState<{ [key: string]: string }>({});
   const [jiraTicketTypeMapping, setJiraTicketTypeMapping] = useState<{ [key: string]: string }>({});
+  const [isJiraStatusMappingOpen, setIsJiraStatusMappingOpen] = useState(false);
+  const [isJiraTaskTypeMappingOpen, setIsJiraTaskTypeMappingOpen] = useState(false);
+  const [isJiraPriorityMappingOpen, setIsJiraPriorityMappingOpen] = useState(false);
+  const [isJiraTicketMappingOpen, setIsJiraTicketMappingOpen] = useState(false);
   const { user, token, isLoading: authLoading } = useAuth();
   const { permissions } = usePermissions();
   const router = useRouter();
@@ -125,6 +129,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   const showAlert = (title: string, message: string) => {
     setModalMessage({ type: 'alert', title, message });
+  };
+
+  const parseMappingJson = (value: any): Record<string, string> => {
+    if (!value || typeof value !== 'string') return {};
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object') {
+        return parsed as Record<string, string>;
+      }
+    } catch {
+      // ignore invalid JSON persisted previously
+    }
+    return {};
   };
 
   const closeConfirmModal = () => {
@@ -699,19 +716,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       const data = await response.json();
       setJiraIssues(data.data || []);
 
-      const parseMappingJson = (value: any): Record<string, string> => {
-        if (!value || typeof value !== 'string') return {};
-        try {
-          const parsed = JSON.parse(value);
-          if (parsed && typeof parsed === 'object') {
-            return parsed as Record<string, string>;
-          }
-        } catch {
-          // ignore invalid JSON persisted previously
-        }
-        return {};
-      };
-
       const savedStatusMapping = parseMappingJson(project.JiraTaskStatusMappingJson);
       const savedPriorityMapping = parseMappingJson(project.JiraTaskPriorityMappingJson);
       const savedTaskTypeMapping = parseMappingJson(project.JiraTaskTypeMappingJson);
@@ -871,7 +875,60 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       }
 
       const data = await response.json();
-      setJiraTickets(data.issues || []);
+      const fetchedIssues = data.issues || [];
+      setJiraTickets(fetchedIssues);
+
+      if (taskPriorities.length > 0) {
+        const defaultPriority = taskPriorities.find(p => p.IsDefault);
+        setJiraTicketPriorityMapping(prev => {
+          const mapping = { ...prev };
+          const jiraPriorities = new Set<string>(fetchedIssues.map((issue: any) => issue.priority).filter(Boolean));
+
+          jiraPriorities.forEach((jiraPriority) => {
+            if (mapping[jiraPriority]) return;
+            const match = taskPriorities.find(
+              p => String(p.PriorityName || p.StatusName || '').toLowerCase() === jiraPriority.toLowerCase()
+            );
+            mapping[jiraPriority] = String(
+              match?.PriorityName ||
+              match?.StatusName ||
+              defaultPriority?.PriorityName ||
+              defaultPriority?.StatusName ||
+              taskPriorities[0]?.PriorityName ||
+              taskPriorities[0]?.StatusName ||
+              ''
+            );
+          });
+
+          return mapping;
+        });
+      }
+
+      if (taskTypes.length > 0) {
+        const defaultType = taskTypes.find(t => t.IsDefault);
+        setJiraTicketTypeMapping(prev => {
+          const mapping = { ...prev };
+          const jiraIssueTypes = new Set<string>(fetchedIssues.map((issue: any) => issue.issueType).filter(Boolean));
+
+          jiraIssueTypes.forEach((jiraIssueType) => {
+            if (mapping[jiraIssueType]) return;
+            const match = taskTypes.find(
+              t => String(t.TypeName || t.StatusName || '').toLowerCase() === jiraIssueType.toLowerCase()
+            );
+            mapping[jiraIssueType] = String(
+              match?.TypeName ||
+              match?.StatusName ||
+              defaultType?.TypeName ||
+              defaultType?.StatusName ||
+              taskTypes[0]?.TypeName ||
+              taskTypes[0]?.StatusName ||
+              ''
+            );
+          });
+
+          return mapping;
+        });
+      }
     } catch (err: any) {
       setJiraTicketsError(err.message || 'Failed to load Jira tickets');
     } finally {
@@ -923,6 +980,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       }
 
       showAlert('Import Successful', message);
+      await loadProject();
       setShowJiraTicketsModal(false);
       setSelectedJiraTickets(new Set());
       setJiraTicketPriorityMapping({});
@@ -1605,8 +1663,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setSelectedJiraTickets(new Set());
       setJiraTicketsError('');
       setJiraSearchQuery('');
-      setJiraTicketPriorityMapping({});
-      setJiraTicketTypeMapping({});
+      setJiraTicketPriorityMapping(parseMappingJson(project.JiraTaskPriorityMappingJson));
+      setJiraTicketTypeMapping(parseMappingJson(project.JiraTaskTypeMappingJson));
 
       const initializeJiraTicketImport = async () => {
         await Promise.all([
@@ -2064,99 +2122,129 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   {/* Status Mapping Section */}
                   {jiraIssues.length > 0 && taskStatuses.length > 0 && (
                     <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                      <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-3">📊 Status Mapping</h3>
-                      <p className="text-sm text-blue-800 dark:text-blue-400 mb-3">
-                        Map Jira statuses to your project's task statuses:
-                      </p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {Array.from(new Set(jiraIssues.map(i => i.status).filter(Boolean))).map(jiraStatus => (
-                          <div key={jiraStatus} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700">
-                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                              {jiraStatus}
-                            </label>
-                            <select
-                              value={statusMapping[jiraStatus]}
-                              onChange={(e) => setStatusMapping({
-                                ...statusMapping,
-                                [jiraStatus]: e.target.value
-                              })}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                            >
-                              {taskStatuses.map(status => (
-                                <option key={status.StatusName} value={status.StatusName}>
-                                  {status.StatusName}
-                                </option>
-                              ))}
-                            </select>
+                      <button
+                        onClick={() => setIsJiraStatusMappingOpen(!isJiraStatusMappingOpen)}
+                        className="w-full flex items-center justify-between text-left"
+                      >
+                        <h3 className="font-semibold text-blue-900 dark:text-blue-300">📊 Status Mapping</h3>
+                        <span className="text-blue-700 dark:text-blue-400 text-sm">{isJiraStatusMappingOpen ? '▲ Collapse' : '▼ Expand'}</span>
+                      </button>
+                      {isJiraStatusMappingOpen && (
+                        <>
+                          <p className="text-sm text-blue-800 dark:text-blue-400 mt-3 mb-3">
+                            Map Jira statuses to your project's task statuses:
+                          </p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {Array.from(new Set(jiraIssues.map(i => i.status).filter(Boolean))).map(jiraStatus => (
+                              <div key={jiraStatus} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700">
+                                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                  {jiraStatus}
+                                </label>
+                                <select
+                                  value={statusMapping[jiraStatus]}
+                                  onChange={(e) => setStatusMapping({
+                                    ...statusMapping,
+                                    [jiraStatus]: e.target.value
+                                  })}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                >
+                                  {taskStatuses.map(status => (
+                                    <option key={status.StatusName} value={status.StatusName}>
+                                      {status.StatusName}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        </>
+                      )}
                     </div>
                   )}
 
                   {/* Task Type Mapping Section */}
                   {jiraIssues.length > 0 && taskTypes.length > 0 && (
                     <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4">
-                      <h3 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-3">🧩 Task Type Mapping</h3>
-                      <p className="text-sm text-indigo-800 dark:text-indigo-400 mb-3">
-                        Map Jira issue types to your project's task types:
-                      </p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {Array.from(new Set(jiraIssues.map(i => i.issueType).filter(Boolean))).map(jiraIssueType => (
-                          <div key={jiraIssueType} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700">
-                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                              {jiraIssueType}
-                            </label>
-                            <select
-                              value={taskTypeMapping[jiraIssueType] || ''}
-                              onChange={(e) => setTaskTypeMapping({
-                                ...taskTypeMapping,
-                                [jiraIssueType]: e.target.value
-                              })}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                            >
-                              {taskTypes.map(type => (
-                                <option key={type.Id} value={type.TypeName || type.StatusName || ''}>
-                                  {type.TypeName || type.StatusName}
-                                </option>
-                              ))}
-                            </select>
+                      <button
+                        onClick={() => setIsJiraTaskTypeMappingOpen(!isJiraTaskTypeMappingOpen)}
+                        className="w-full flex items-center justify-between text-left"
+                      >
+                        <h3 className="font-semibold text-indigo-900 dark:text-indigo-300">🧩 Task Type Mapping</h3>
+                        <span className="text-indigo-700 dark:text-indigo-400 text-sm">{isJiraTaskTypeMappingOpen ? '▲ Collapse' : '▼ Expand'}</span>
+                      </button>
+                      {isJiraTaskTypeMappingOpen && (
+                        <>
+                          <p className="text-sm text-indigo-800 dark:text-indigo-400 mt-3 mb-3">
+                            Map Jira issue types to your project's task types:
+                          </p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {Array.from(new Set(jiraIssues.map(i => i.issueType).filter(Boolean))).map(jiraIssueType => (
+                              <div key={jiraIssueType} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700">
+                                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                  {jiraIssueType}
+                                </label>
+                                <select
+                                  value={taskTypeMapping[jiraIssueType] || ''}
+                                  onChange={(e) => setTaskTypeMapping({
+                                    ...taskTypeMapping,
+                                    [jiraIssueType]: e.target.value
+                                  })}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                >
+                                  {taskTypes.map(type => (
+                                    <option key={type.Id} value={type.TypeName || type.StatusName || ''}>
+                                      {type.TypeName || type.StatusName}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        </>
+                      )}
                     </div>
                   )}
 
                   {/* Priority Mapping Section */}
                   {jiraIssues.length > 0 && taskPriorities.length > 0 && (
                     <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
-                      <h3 className="font-semibold text-amber-900 dark:text-amber-300 mb-3">⚡ Priority Mapping</h3>
-                      <p className="text-sm text-amber-800 dark:text-amber-400 mb-3">
-                        Map Jira priorities to your project's task priorities:
-                      </p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {Array.from(new Set(jiraIssues.map(i => i.priority).filter(Boolean))).map(jiraPriority => (
-                          <div key={jiraPriority} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700">
-                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                              {jiraPriority}
-                            </label>
-                            <select
-                              value={priorityMapping[jiraPriority] || ''}
-                              onChange={(e) => setPriorityMapping({
-                                ...priorityMapping,
-                                [jiraPriority]: e.target.value
-                              })}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                            >
-                              {taskPriorities.map(priority => (
-                                <option key={priority.Id} value={priority.PriorityName || priority.StatusName || ''}>
-                                  {priority.PriorityName || priority.StatusName}
-                                </option>
-                              ))}
-                            </select>
+                      <button
+                        onClick={() => setIsJiraPriorityMappingOpen(!isJiraPriorityMappingOpen)}
+                        className="w-full flex items-center justify-between text-left"
+                      >
+                        <h3 className="font-semibold text-amber-900 dark:text-amber-300">⚡ Priority Mapping</h3>
+                        <span className="text-amber-700 dark:text-amber-400 text-sm">{isJiraPriorityMappingOpen ? '▲ Collapse' : '▼ Expand'}</span>
+                      </button>
+                      {isJiraPriorityMappingOpen && (
+                        <>
+                          <p className="text-sm text-amber-800 dark:text-amber-400 mt-3 mb-3">
+                            Map Jira priorities to your project's task priorities:
+                          </p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {Array.from(new Set(jiraIssues.map(i => i.priority).filter(Boolean))).map(jiraPriority => (
+                              <div key={jiraPriority} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700">
+                                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                  {jiraPriority}
+                                </label>
+                                <select
+                                  value={priorityMapping[jiraPriority] || ''}
+                                  onChange={(e) => setPriorityMapping({
+                                    ...priorityMapping,
+                                    [jiraPriority]: e.target.value
+                                  })}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                >
+                                  {taskPriorities.map(priority => (
+                                    <option key={priority.Id} value={priority.PriorityName || priority.StatusName || ''}>
+                                      {priority.PriorityName || priority.StatusName}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        </>
+                      )}
                     </div>
                   )}
 
@@ -3372,56 +3460,66 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               </div>
 
               {!jiraTicketsLoading && jiraTickets.length > 0 && (
-                <div className="mb-4 p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg space-y-4">
-                  <h3 className="font-semibold text-indigo-900 dark:text-indigo-300">🧩 Mapping (Issue Type & Priority)</h3>
+                <div className="mb-4 p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
+                  <button
+                    onClick={() => setIsJiraTicketMappingOpen(!isJiraTicketMappingOpen)}
+                    className="w-full flex items-center justify-between text-left"
+                  >
+                    <h3 className="font-semibold text-indigo-900 dark:text-indigo-300">🧩 Mapping (Issue Type & Priority)</h3>
+                    <span className="text-indigo-700 dark:text-indigo-400 text-sm">{isJiraTicketMappingOpen ? '▲ Collapse' : '▼ Expand'}</span>
+                  </button>
 
-                  {jiraTicketIssueTypes.length > 0 && (
-                    <div>
-                      <p className="text-xs text-indigo-800 dark:text-indigo-400 mb-2">Issue Type → Task Type</p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        {jiraTicketIssueTypes.map((issueType) => (
-                          <div key={issueType} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-2">
-                            <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{issueType}</label>
-                            <select
-                              value={jiraTicketTypeMapping[issueType] || ''}
-                              onChange={(e) => setJiraTicketTypeMapping(prev => ({ ...prev, [issueType]: e.target.value }))}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                            >
-                              <option value="">Auto map</option>
-                              {taskTypes.map(type => (
-                                <option key={type.Id} value={type.TypeName || type.StatusName || ''}>
-                                  {type.TypeName || type.StatusName}
-                                </option>
-                              ))}
-                            </select>
+                  {isJiraTicketMappingOpen && (
+                    <div className="mt-4 space-y-4">
+                      {jiraTicketIssueTypes.length > 0 && (
+                        <div>
+                          <p className="text-xs text-indigo-800 dark:text-indigo-400 mb-2">Issue Type → Task Type</p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {jiraTicketIssueTypes.map((issueType) => (
+                              <div key={issueType} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-2">
+                                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{issueType}</label>
+                                <select
+                                  value={jiraTicketTypeMapping[issueType] || ''}
+                                  onChange={(e) => setJiraTicketTypeMapping(prev => ({ ...prev, [issueType]: e.target.value }))}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                >
+                                  <option value="">Auto map</option>
+                                  {taskTypes.map(type => (
+                                    <option key={type.Id} value={type.TypeName || type.StatusName || ''}>
+                                      {type.TypeName || type.StatusName}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                        </div>
+                      )}
 
-                  {jiraTicketPriorities.length > 0 && (
-                    <div>
-                      <p className="text-xs text-indigo-800 dark:text-indigo-400 mb-2">Jira Priority → Task Priority</p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        {jiraTicketPriorities.map((priority) => (
-                          <div key={priority} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-2">
-                            <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{priority}</label>
-                            <select
-                              value={jiraTicketPriorityMapping[priority] || ''}
-                              onChange={(e) => setJiraTicketPriorityMapping(prev => ({ ...prev, [priority]: e.target.value }))}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                            >
-                              <option value="">Auto map</option>
-                              {taskPriorities.map(taskPriority => (
-                                <option key={taskPriority.Id} value={taskPriority.PriorityName || taskPriority.StatusName || ''}>
-                                  {taskPriority.PriorityName || taskPriority.StatusName}
-                                </option>
-                              ))}
-                            </select>
+                      {jiraTicketPriorities.length > 0 && (
+                        <div>
+                          <p className="text-xs text-indigo-800 dark:text-indigo-400 mb-2">Jira Priority → Task Priority</p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {jiraTicketPriorities.map((priority) => (
+                              <div key={priority} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-2">
+                                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{priority}</label>
+                                <select
+                                  value={jiraTicketPriorityMapping[priority] || ''}
+                                  onChange={(e) => setJiraTicketPriorityMapping(prev => ({ ...prev, [priority]: e.target.value }))}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                >
+                                  <option value="">Auto map</option>
+                                  {taskPriorities.map(taskPriority => (
+                                    <option key={taskPriority.Id} value={taskPriority.PriorityName || taskPriority.StatusName || ''}>
+                                      {taskPriority.PriorityName || taskPriority.StatusName}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

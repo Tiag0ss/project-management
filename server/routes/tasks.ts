@@ -2464,15 +2464,22 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
 
     const project = projects[0];
 
-    // Persist current Jira mapping preferences on the project for next imports
+    // Persist current Jira mapping preferences on the project for next imports.
+    // Keep existing values when a specific mapping payload is omitted.
+    const statusMappingJson = statusMapping && typeof statusMapping === 'object' ? JSON.stringify(statusMapping) : null;
+    const priorityMappingJson = priorityMapping && typeof priorityMapping === 'object' ? JSON.stringify(priorityMapping) : null;
+    const taskTypeMappingJson = taskTypeMapping && typeof taskTypeMapping === 'object' ? JSON.stringify(taskTypeMapping) : null;
+
     await pool.execute(
       `UPDATE Projects
-       SET JiraTaskStatusMappingJson = ?, JiraTaskPriorityMappingJson = ?, JiraTaskTypeMappingJson = ?
+       SET JiraTaskStatusMappingJson = COALESCE(?, JiraTaskStatusMappingJson),
+           JiraTaskPriorityMappingJson = COALESCE(?, JiraTaskPriorityMappingJson),
+           JiraTaskTypeMappingJson = COALESCE(?, JiraTaskTypeMappingJson)
        WHERE Id = ?`,
       [
-        statusMapping && typeof statusMapping === 'object' ? JSON.stringify(statusMapping) : null,
-        priorityMapping && typeof priorityMapping === 'object' ? JSON.stringify(priorityMapping) : null,
-        taskTypeMapping && typeof taskTypeMapping === 'object' ? JSON.stringify(taskTypeMapping) : null,
+        statusMappingJson,
+        priorityMappingJson,
+        taskTypeMappingJson,
         projectId
       ]
     );
