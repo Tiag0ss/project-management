@@ -253,6 +253,12 @@ export default function PlanningPage() {
     return getUserHolidayNames(userId, dateStr).length > 0;
   };
 
+  const splitUnavailableLabels = (labels: string[]) => {
+    const vacationLabels = labels.filter((label) => /^vacation\b/i.test(String(label || '').trim()));
+    const holidayLabels = labels.filter((label) => !/^vacation\b/i.test(String(label || '').trim()));
+    return { vacationLabels, holidayLabels };
+  };
+
   const getLatestAllocationDate = (allocations: { date: string }[]): string | null => {
     if (!allocations || allocations.length === 0) return null;
     return allocations.reduce((latest, current) => current.date > latest ? current.date : latest, allocations[0].date);
@@ -4179,6 +4185,7 @@ export default function PlanningPage() {
                           const isOverAllocated = isDayOverAllocated(day);
                           const holidayNames = getUserHolidayNames(userRow.Id, dateStr);
                           const isHoliday = holidayNames.length > 0;
+                          const { vacationLabels, holidayLabels } = splitUnavailableLabels(holidayNames);
                           
                           // Get capacity for this day
                           const { workCapacity, hobbyCapacity } = getDayCapacities(day);
@@ -4197,7 +4204,10 @@ export default function PlanningPage() {
                               }`}
                               title={isOverAllocated ? 'Over allocated day: planned hours exceed configured capacity' : isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
                             >
-                              {isHoliday && (
+                              {vacationLabels.length > 0 && (
+                                <div className="text-cyan-700 dark:text-cyan-300 font-medium">🏖️</div>
+                              )}
+                              {holidayLabels.length > 0 && (
                                 <div className="text-amber-700 dark:text-amber-300 font-medium">🎉</div>
                               )}
                               {hasRecurring && (

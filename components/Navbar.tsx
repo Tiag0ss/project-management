@@ -1101,6 +1101,21 @@ export default function Navbar() {
   const canShowVacationApprovalsOption = canAccessVacationApprovals;
   const canShowAnyApprovalsOption = canShowApprovalsOption || canShowVacationApprovalsOption;
 
+  const canShowDashboardLink = isCustomerUser || (!isCustomerUser && (permissionsLoading || permissions?.canViewDashboard));
+  const canShowProjectsLink = !isCustomerUser && (permissionsLoading || permissions?.canViewProjects || permissions?.canManageProjects || permissions?.canCreateProjects);
+  const canShowPlanningLink = !isCustomerUser && (permissionsLoading || permissions?.canViewPlanning);
+  const canShowTicketsLink = internalTicketsEnabled && (user?.isSupport || isCustomerUser || permissions?.canManageTickets || permissions?.canCreateTickets);
+  const canShowMemosLink = !isCustomerUser && memosEnabled;
+  const canShowTimesheetLink = !isCustomerUser;
+  const canShowCallRecordsLink = !isCustomerUser;
+  const canShowReportsLink = !isCustomerUser && (permissionsLoading || permissions?.canViewReports || permissions?.canManageOrganizations || !!user?.isAdmin);
+
+  const showOverviewSection = canShowDashboardLink;
+  const showDeliverySection = canShowProjectsLink || canShowPlanningLink || canShowTimesheetLink;
+  const showServiceSection = canShowTicketsLink || canShowMemosLink || canShowCallRecordsLink;
+  const showManagementSection = canShowCustomersOption || canShowApplicationsOption || canShowOrganizationsOption || canShowAnyApprovalsOption;
+  const showReportingSection = canShowReportsLink;
+
   const canShowManagementMenu =
     !isCustomerUser &&
     (canShowCustomersOption ||
@@ -1188,76 +1203,104 @@ export default function Navbar() {
             </div>
 
             <nav className="flex-1 overflow-y-auto p-2 space-y-1">
-              {(isCustomerUser || (!isCustomerUser && (permissionsLoading || permissions?.canViewDashboard))) && (
-                <a href="/dashboard" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                  <span className="w-5 text-center">📊</span>{!isSidebarEffectivelyCollapsed && <span>Dashboard</span>}
-                </a>
+              {showOverviewSection && (
+                <div>
+                  {!isSidebarEffectivelyCollapsed && (
+                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Overview</p>
+                  )}
+                  {canShowDashboardLink && (
+                    <a href="/dashboard" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📊</span>{!isSidebarEffectivelyCollapsed && <span>Dashboard</span>}
+                    </a>
+                  )}
+                </div>
               )}
 
-              {!isCustomerUser && (permissionsLoading || permissions?.canViewProjects || permissions?.canManageProjects || permissions?.canCreateProjects) && (
-                <a href="/projects" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                  <span className="w-5 text-center">📁</span>{!isSidebarEffectivelyCollapsed && <span>Projects</span>}
-                </a>
+              {showDeliverySection && (
+                <div className={`${showOverviewSection ? 'mt-2 pt-2 border-t border-gray-200 dark:border-gray-700' : ''}`}>
+                  {!isSidebarEffectivelyCollapsed && (
+                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Delivery</p>
+                  )}
+                  {canShowProjectsLink && (
+                    <a href="/projects" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📁</span>{!isSidebarEffectivelyCollapsed && <span>Projects</span>}
+                    </a>
+                  )}
+                  {canShowPlanningLink && (
+                    <a href="/planning" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📅</span>{!isSidebarEffectivelyCollapsed && <span>Planning</span>}
+                    </a>
+                  )}
+                  {canShowTimesheetLink && (
+                    <a href="/timesheet" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📝</span>{!isSidebarEffectivelyCollapsed && <span>Timesheet</span>}
+                    </a>
+                  )}
+                </div>
               )}
 
-              {!isCustomerUser && (permissionsLoading || permissions?.canViewPlanning) && (
-                <a href="/planning" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                  <span className="w-5 text-center">📅</span>{!isSidebarEffectivelyCollapsed && <span>Planning</span>}
-                </a>
+              {showServiceSection && (
+                <div className={`${showOverviewSection || showDeliverySection ? 'mt-2 pt-2 border-t border-gray-200 dark:border-gray-700' : ''}`}>
+                  {!isSidebarEffectivelyCollapsed && (
+                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Service</p>
+                  )}
+                  {canShowTicketsLink && (
+                    <a href="/tickets" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">🎫</span>{!isSidebarEffectivelyCollapsed && <span>Tickets</span>}
+                    </a>
+                  )}
+                  {canShowCallRecordsLink && (
+                    <a href="/call-records" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📞</span>{!isSidebarEffectivelyCollapsed && <span>Call Records</span>}
+                    </a>
+                  )}
+                  {canShowMemosLink && (
+                    <a href="/memos" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📝</span>{!isSidebarEffectivelyCollapsed && <span>Memos</span>}
+                    </a>
+                  )}
+                </div>
               )}
 
-              {internalTicketsEnabled && (user?.isSupport || isCustomerUser || permissions?.canManageTickets || permissions?.canCreateTickets) && (
-                <a href="/tickets" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                  <span className="w-5 text-center">🎫</span>{!isSidebarEffectivelyCollapsed && <span>Tickets</span>}
-                </a>
+              {showManagementSection && (
+                <div className={`${showOverviewSection || showDeliverySection || showServiceSection ? 'mt-2 pt-2 border-t border-gray-200 dark:border-gray-700' : ''}`}>
+                  {!isSidebarEffectivelyCollapsed && (
+                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Management</p>
+                  )}
+                  {canShowCustomersOption && (
+                    <a href="/customers" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">🏢</span>{!isSidebarEffectivelyCollapsed && <span>Customers</span>}
+                    </a>
+                  )}
+                  {canShowApplicationsOption && (
+                    <a href="/applications" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">🧩</span>{!isSidebarEffectivelyCollapsed && <span>Applications</span>}
+                    </a>
+                  )}
+                  {canShowOrganizationsOption && (
+                    <a href="/organizations" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">🏬</span>{!isSidebarEffectivelyCollapsed && <span>Organizations</span>}
+                    </a>
+                  )}
+                  {canShowAnyApprovalsOption && (
+                    <a href="/approvals" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">✅</span>{!isSidebarEffectivelyCollapsed && <span>Approvals</span>}
+                    </a>
+                  )}
+                </div>
               )}
 
-              {!isCustomerUser && memosEnabled && (
-                <a href="/memos" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                  <span className="w-5 text-center">📝</span>{!isSidebarEffectivelyCollapsed && <span>Memos</span>}
-                </a>
-              )}
-
-              {canShowCustomersOption && (
-                <a href="/customers" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                  <span className="w-5 text-center">🏢</span>{!isSidebarEffectivelyCollapsed && <span>Customers</span>}
-                </a>
-              )}
-
-              {canShowApplicationsOption && (
-                <a href="/applications" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                  <span className="w-5 text-center">🧩</span>{!isSidebarEffectivelyCollapsed && <span>Applications</span>}
-                </a>
-              )}
-
-              {canShowOrganizationsOption && (
-                <a href="/organizations" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                  <span className="w-5 text-center">🏬</span>{!isSidebarEffectivelyCollapsed && <span>Organizations</span>}
-                </a>
-              )}
-
-              {canShowAnyApprovalsOption && (
-                <a href="/approvals" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                  <span className="w-5 text-center">✅</span>{!isSidebarEffectivelyCollapsed && <span>Approvals</span>}
-                </a>
-              )}
-
-              {!isCustomerUser && (permissionsLoading || permissions?.canViewReports || permissions?.canManageOrganizations || !!user?.isAdmin) && (
-                <a href="/web-reports" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                  <span className="w-5 text-center">📈</span>{!isSidebarEffectivelyCollapsed && <span>Reports</span>}
-                </a>
-              )}
-
-              {!isCustomerUser && (
-                <>
-                  <div className="my-2 border-t border-gray-200 dark:border-gray-700" />
-                  <a href="/timesheet" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                    <span className="w-5 text-center">📝</span>{!isSidebarEffectivelyCollapsed && <span>Timesheet</span>}
-                  </a>
-                  <a href="/call-records" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                    <span className="w-5 text-center">📞</span>{!isSidebarEffectivelyCollapsed && <span>Call Records</span>}
-                  </a>
-                </>
+              {showReportingSection && (
+                <div className={`${showOverviewSection || showDeliverySection || showServiceSection || showManagementSection ? 'mt-2 pt-2 border-t border-gray-200 dark:border-gray-700' : ''}`}>
+                  {!isSidebarEffectivelyCollapsed && (
+                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Reporting</p>
+                  )}
+                  {canShowReportsLink && (
+                    <a href="/web-reports" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📈</span>{!isSidebarEffectivelyCollapsed && <span>Reports</span>}
+                    </a>
+                  )}
+                </div>
               )}
             </nav>
 

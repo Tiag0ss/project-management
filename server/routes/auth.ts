@@ -3,19 +3,23 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import {
   constants,
+  createHash,
   createDecipheriv,
   generateKeyPairSync,
   privateDecrypt,
+  randomBytes,
   randomUUID,
 } from 'crypto';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 import { logActivity } from './activityLogs';
+import { sendEmail } from '../utils/emailService';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 const SALT_ROUNDS = 10;
 const ENCRYPTION_SESSION_TTL_MS = 10 * 60 * 1000;
+const PASSWORD_RESET_TOKEN_TTL_HOURS = 1;
 
 interface EncryptionSession {
   privateKey: string;
@@ -538,6 +542,178 @@ router.post('/refresh', async (req: Request, res: Response) => {
     res.status(500).json({ 
       success: false, 
       message: 'Server error during token refresh' 
+    });
+  }
+});
+
+router.post('/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+
+    if (!normalizedEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    const [users] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id, Username, Email, IsActive, UserType
+       FROM Users
+       WHERE LOWER(Email) = ?
+       LIMIT 1`,
+      [normalizedEmail]
+    );
+
+    if (users.length > 0) {
+      const user = users[0];
+      const isActive = user.IsActive === 1 || user.IsActive === true;
+      const isFictitious = String(user.UserType || 'internal').toLowerCase() === 'fictitious';
+
+      if (isActive && !isFictitious) {
+        const resetToken = randomBytes(32).toString('hex');
+        const tokenHash = createHash('sha256').update(resetToken).digest('hex');
+
+        await pool.execute<ResultSetHeader>(
+          'UPDATE PasswordResetTokens SET UsedAt = NOW() WHERE UserId = ? AND UsedAt IS NULL',
+          [user.Id]
+        );
+
+        await pool.execute<ResultSetHeader>(
+          `INSERT INTO PasswordResetTokens (UserId, TokenHash, ExpiresAt)
+           VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? HOUR))`,
+          [user.Id, tokenHash, PASSWORD_RESET_TOKEN_TTL_HOURS]
+        );
+
+        const appBaseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000').replace(/\/$/, '');
+        const resetLink = `${appBaseUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
+
+        const emailSent = await sendEmail({
+          to: user.Email,
+          subject: 'Password reset request',
+          userId: user.Id,
+          username: user.Username,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #111827;">
+              <h2 style="margin: 0 0 16px;">Reset your password</h2>
+              <p style="margin: 0 0 16px;">We received a request to reset your password.</p>
+              <p style="margin: 0 0 16px;">Use the temporary link below. It expires in ${PASSWORD_RESET_TOKEN_TTL_HOURS} hour.</p>
+              <p style="margin: 24px 0;">
+                <a href="${resetLink}" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 16px; border-radius: 6px;">Reset Password</a>
+              </p>
+              <p style="margin: 0 0 8px; font-size: 14px; color: #4b5563;">If you didn’t request this, you can ignore this email.</p>
+              <p style="margin: 0; font-size: 12px; color: #6b7280; word-break: break-all;">${resetLink}</p>
+            </div>
+          `
+        });
+
+        if (!emailSent) {
+          console.error('Failed to send password reset email for user:', user.Id);
+        }
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'If an account with that email exists, a reset link has been sent.'
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to process password reset request'
+    });
+  }
+});
+
+router.get('/reset-password/validate', async (req: Request, res: Response) => {
+  try {
+    const token = typeof req.query.token === 'string' ? req.query.token.trim() : '';
+    if (!token) {
+      return res.status(400).json({ success: false, valid: false, message: 'Token is required' });
+    }
+
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const [tokens] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id
+       FROM PasswordResetTokens
+       WHERE TokenHash = ? AND UsedAt IS NULL AND ExpiresAt > NOW()
+       LIMIT 1`,
+      [tokenHash]
+    );
+
+    return res.json({ success: true, valid: tokens.length > 0 });
+  } catch (error) {
+    console.error('Validate reset token error:', error);
+    return res.status(500).json({ success: false, valid: false, message: 'Failed to validate token' });
+  }
+});
+
+router.post('/reset-password', async (req: Request, res: Response) => {
+  try {
+    const { token, newPassword } = req.body;
+    const normalizedToken = typeof token === 'string' ? token.trim() : '';
+    const normalizedPassword = typeof newPassword === 'string' ? newPassword : '';
+
+    if (!normalizedToken || !normalizedPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token and new password are required'
+      });
+    }
+
+    if (normalizedPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters'
+      });
+    }
+
+    const tokenHash = createHash('sha256').update(normalizedToken).digest('hex');
+
+    const [tokens] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id, UserId
+       FROM PasswordResetTokens
+       WHERE TokenHash = ? AND UsedAt IS NULL AND ExpiresAt > NOW()
+       LIMIT 1`,
+      [tokenHash]
+    );
+
+    if (tokens.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Reset token is invalid or expired'
+      });
+    }
+
+    const resetTokenRow = tokens[0];
+    const passwordHash = await bcrypt.hash(normalizedPassword, SALT_ROUNDS);
+
+    await pool.execute<ResultSetHeader>(
+      'UPDATE Users SET PasswordHash = ? WHERE Id = ?',
+      [passwordHash, resetTokenRow.UserId]
+    );
+
+    await pool.execute<ResultSetHeader>(
+      'UPDATE PasswordResetTokens SET UsedAt = NOW() WHERE Id = ?',
+      [resetTokenRow.Id]
+    );
+
+    await pool.execute<ResultSetHeader>(
+      'UPDATE PasswordResetTokens SET UsedAt = NOW() WHERE UserId = ? AND UsedAt IS NULL',
+      [resetTokenRow.UserId]
+    );
+
+    return res.json({
+      success: true,
+      message: 'Password reset successfully'
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to reset password'
     });
   }
 });

@@ -168,6 +168,22 @@ export interface AuthResponse {
   user?: User;
 }
 
+export interface ForgotPasswordResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface ResetPasswordResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface ValidateResetTokenResponse {
+  success: boolean;
+  valid: boolean;
+  message?: string;
+}
+
 export const authApi = {
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
     const encryptedPayload = await encryptAuthPayload(credentials);
@@ -222,6 +238,59 @@ export const authApi = {
     
     if (!response.ok) {
       throw new Error(data.message || 'Failed to fetch profile');
+    }
+
+    return data;
+  },
+
+  async forgotPassword(email: string): Promise<ForgotPasswordResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to request password reset');
+    }
+
+    return data;
+  },
+
+  async validateResetToken(token: string): Promise<ValidateResetTokenResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/auth/reset-password/validate?token=${encodeURIComponent(token)}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to validate reset token');
+    }
+
+    return data;
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<ResetPasswordResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ token, newPassword }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to reset password');
     }
 
     return data;
