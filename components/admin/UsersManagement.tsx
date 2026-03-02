@@ -546,6 +546,7 @@ function CreateUserModal({
     workHoursSaturday: '0',
     workHoursSunday: '0',
     hourlyRate: '',
+    annualVacationDays: '22',
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -586,6 +587,7 @@ function CreateUserModal({
         workHoursSaturday: parseFloat(formData.workHoursSaturday),
         workHoursSunday: parseFloat(formData.workHoursSunday),
         hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
+        annualVacationDays: parseFloat(formData.annualVacationDays || '0') || 0,
       }, token);
       onUserCreated();
     } catch (err: any) {
@@ -762,6 +764,20 @@ function CreateUserModal({
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Annual Vacation Days
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={formData.annualVacationDays}
+                onChange={(e) => setFormData({ ...formData, annualVacationDays: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
+
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Roles
@@ -915,6 +931,7 @@ function EditUserModal({
     workHoursSaturday: user.WorkHoursSaturday?.toString() || '0',
     workHoursSunday: user.WorkHoursSunday?.toString() || '0',
     hourlyRate: user.HourlyRate?.toString() || '',
+    annualVacationDays: user.AnnualVacationDays?.toString() || '22',
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -954,6 +971,7 @@ function EditUserModal({
         workHoursSaturday: parseFloat(formData.workHoursSaturday),
         workHoursSunday: parseFloat(formData.workHoursSunday),
         hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
+        annualVacationDays: parseFloat(formData.annualVacationDays || '0') || 0,
       }, token);
       onUserUpdated();
     } catch (err: any) {
@@ -1104,6 +1122,20 @@ function EditUserModal({
                   placeholder="0.00"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Annual Vacation Days
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={formData.annualVacationDays}
+                onChange={(e) => setFormData({ ...formData, annualVacationDays: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
             </div>
 
             <div>

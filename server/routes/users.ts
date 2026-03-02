@@ -87,7 +87,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
               HobbyStartFriday, HobbyStartSaturday, HobbyStartSunday,
               HobbyHoursMonday, HobbyHoursTuesday, HobbyHoursWednesday, HobbyHoursThursday,
               HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
-              Timezone, HourlyRate, CountryCode, JiraId,
+              Timezone, HourlyRate, AnnualVacationDays, CountryCode, JiraId,
               NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed,
               CreatedAt, UpdatedAt 
        FROM Users 
@@ -150,13 +150,14 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
       email,
       timezone,
       countryCode,
+      annualVacationDays,
       navbarMenuLayout,
       navbarLeftMode,
       navbarLeftCollapsed,
     } = req.body;
 
     const [oldProfile] = await pool.execute<RowDataPacket[]>(
-      `SELECT FirstName, LastName, Email, Timezone, CountryCode,
+      `SELECT FirstName, LastName, Email, Timezone, CountryCode, AnnualVacationDays,
               NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed
        FROM Users WHERE Id = ?`,
       [userId]
@@ -195,6 +196,10 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
       ? (navbarLeftCollapsed ? 1 : 0)
       : (oldData.NavbarLeftCollapsed ? 1 : 0);
 
+    const finalAnnualVacationDays = annualVacationDays !== undefined
+      ? Math.max(0, parseFloat(String(annualVacationDays || 0)))
+      : parseFloat(String(oldData.AnnualVacationDays || 22));
+
     // Validate email
     if (finalEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(finalEmail))) {
       return res.status(400).json({ 
@@ -221,7 +226,7 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
     await pool.execute(
       `UPDATE Users 
        SET FirstName = ?, LastName = ?, Email = ?, Timezone = ?, CountryCode = ?,
-           NavbarMenuLayout = ?, NavbarLeftMode = ?, NavbarLeftCollapsed = ?
+           AnnualVacationDays = ?, NavbarMenuLayout = ?, NavbarLeftMode = ?, NavbarLeftCollapsed = ?
        WHERE Id = ?`,
       [
         finalFirstName || null,
@@ -229,6 +234,7 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
         finalEmail,
         finalTimezone || null,
         normalizedCountryCodeInput,
+        finalAnnualVacationDays,
         finalNavbarMenuLayout,
         finalNavbarLeftMode,
         finalNavbarLeftCollapsed,
@@ -260,6 +266,9 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
     }
     if (String(finalNavbarLeftCollapsed || '') !== String(oldData.NavbarLeftCollapsed || '')) {
       await logUserHistory(userId!, userId!, 'updated', 'NavbarLeftCollapsed', String(oldData.NavbarLeftCollapsed || 0), String(finalNavbarLeftCollapsed || 0));
+    }
+    if (String(finalAnnualVacationDays || '') !== String(oldData.AnnualVacationDays || '')) {
+      await logUserHistory(userId!, userId!, 'updated', 'AnnualVacationDays', String(oldData.AnnualVacationDays || ''), String(finalAnnualVacationDays || ''));
     }
 
     // Log activity
@@ -545,7 +554,7 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName, u.IsActive, u.IsAdmin, 
               u.UserType, u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager,
-              u.HourlyRate, u.TeamLeaderId, u.CountryCode, u.JiraId, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
+              u.HourlyRate, u.AnnualVacationDays, u.TeamLeaderId, u.CountryCode, u.JiraId, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
               u.CreatedAt, u.UpdatedAt 
        FROM Users u
        LEFT JOIN Customers c ON u.CustomerId = c.Id
@@ -605,7 +614,7 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
 router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.params.id;
-    const { username, email, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId, countryCode, jiraId } = req.body;
+    const { username, email, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, annualVacationDays, teamLeaderId, countryCode, jiraId } = req.body;
     const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
 
     if (!isValidCountryCode(normalizedCountryCode)) {
@@ -733,12 +742,22 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
     // Parse hourlyRate correctly (handle 0 values)
     const parsedHourlyRate = (hourlyRate != null && hourlyRate !== '') ? parseFloat(hourlyRate) : null;
     const sanitizedHourlyRate = (parsedHourlyRate !== null && !isNaN(parsedHourlyRate)) ? parsedHourlyRate : null;
+    const parsedAnnualVacationDays = annualVacationDays != null && annualVacationDays !== ''
+      ? parseFloat(String(annualVacationDays))
+      : null;
+    const sanitizedAnnualVacationDays = parsedAnnualVacationDays !== null && !isNaN(parsedAnnualVacationDays)
+      ? Math.max(0, parsedAnnualVacationDays)
+      : parseFloat(String(oldUser.AnnualVacationDays ?? 22));
+
+    if (annualVacationDays !== undefined && String(sanitizedAnnualVacationDays) !== String(oldUser.AnnualVacationDays ?? 22)) {
+      changes.push({ field: 'AnnualVacationDays', oldVal: String(oldUser.AnnualVacationDays ?? 22), newVal: String(sanitizedAnnualVacationDays) });
+    }
 
     await pool.execute(
       `UPDATE Users 
-       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, UserType = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, TeamLeaderId = ?, CountryCode = ?, JiraId = ? 
+       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, UserType = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, AnnualVacationDays = ?, TeamLeaderId = ?, CountryCode = ?, JiraId = ? 
        WHERE Id = ?`,
-      [username, finalEmail, firstName || null, lastName || null, isActive, isAdmin, finalUserType, finalCustomerId, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null, normalizedCountryCode, jiraId || null, userId]
+      [username, finalEmail, firstName || null, lastName || null, isActive, isAdmin, finalUserType, finalCustomerId, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, sanitizedAnnualVacationDays, teamLeaderId || null, normalizedCountryCode, jiraId || null, userId]
     );
     
     // Log changes to history
@@ -997,7 +1016,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, 
  */
 router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId, countryCode, jiraId } = req.body;
+    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, annualVacationDays, teamLeaderId, countryCode, jiraId } = req.body;
     const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
 
     if (!isValidCountryCode(normalizedCountryCode)) {
@@ -1070,11 +1089,17 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
     // Parse hourlyRate correctly (handle 0 values)
     const parsedHourlyRate = (hourlyRate != null && hourlyRate !== '') ? parseFloat(hourlyRate) : null;
     const sanitizedHourlyRate = (parsedHourlyRate !== null && !isNaN(parsedHourlyRate)) ? parsedHourlyRate : null;
+    const parsedAnnualVacationDays = annualVacationDays != null && annualVacationDays !== ''
+      ? parseFloat(String(annualVacationDays))
+      : null;
+    const sanitizedAnnualVacationDays = parsedAnnualVacationDays !== null && !isNaN(parsedAnnualVacationDays)
+      ? Math.max(0, parsedAnnualVacationDays)
+      : 22;
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, TeamLeaderId, CountryCode, JiraId) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null, normalizedCountryCode, jiraId || null]
+      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, AnnualVacationDays, TeamLeaderId, CountryCode, JiraId) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, sanitizedAnnualVacationDays, teamLeaderId || null, normalizedCountryCode, jiraId || null]
     );
 
     // Log user creation

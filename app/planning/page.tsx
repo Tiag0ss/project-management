@@ -28,6 +28,14 @@ interface PlannerHoliday {
   IsActive: number;
 }
 
+interface PlannerVacationDay {
+  Id: number;
+  UserId: number;
+  VacationDate: string;
+  Status: string;
+  Notes?: string;
+}
+
 export default function PlanningPage() {
   const { user, isLoading, token } = useAuth();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
@@ -579,6 +587,28 @@ export default function PlanningPage() {
         return;
       }
 
+      const userIds = users.map((u) => u.Id).filter((id): id is number => Number.isInteger(id) && id > 0);
+      let approvedVacations: PlannerVacationDay[] = [];
+      if (userIds.length > 0) {
+        const vacationQuery = new URLSearchParams({
+          startDate: startDateKey,
+          endDate: endDateKey,
+          userIds: userIds.join(','),
+        });
+
+        const vacationResponse = await fetch(`${getApiUrl()}/api/vacations/calendar?${vacationQuery.toString()}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (vacationResponse.ok) {
+          const vacationData = await vacationResponse.json();
+          approvedVacations = (vacationData.entries || []) as PlannerVacationDay[];
+        }
+      }
+
       const countryYearResults = await Promise.all(
         countryCodes.flatMap((countryCode) =>
           years.map(async (year) => {
@@ -629,6 +659,26 @@ export default function PlanningPage() {
               holidayMapForUser[dateKey].push(holiday.HolidayName);
             });
         });
+
+        approvedVacations
+          .filter((vacation) => Number(vacation.UserId) === planningUser.Id)
+          .forEach((vacation) => {
+            const dateKey = normalizeDateKey(vacation.VacationDate);
+            if (dateKey < startDateKey || dateKey > endDateKey) {
+              return;
+            }
+            if (!holidayMapForUser[dateKey]) {
+              holidayMapForUser[dateKey] = [];
+            }
+
+            const label = vacation.Notes
+              ? `Vacation: ${vacation.Notes}`
+              : 'Vacation';
+
+            if (!holidayMapForUser[dateKey].includes(label)) {
+              holidayMapForUser[dateKey].push(label);
+            }
+          });
 
         result[planningUser.Id] = holidayMapForUser;
       });
@@ -1258,8 +1308,8 @@ export default function PlanningPage() {
     const droppedDateHolidayNames = getUserHolidayNames(userId, droppedDateStr);
     if (droppedDateHolidayNames.length > 0) {
       showAlert(
-        'Holiday',
-        `Cannot plan on holiday for this user (${droppedDateStr}): ${droppedDateHolidayNames.join(', ')}`
+        'Unavailable Day',
+        `Cannot plan on unavailable day for this user (${droppedDateStr}): ${droppedDateHolidayNames.join(', ')}`
       );
       setDraggedTask(null);
       return;
@@ -3001,8 +3051,8 @@ export default function PlanningPage() {
     if (manualAllocationModal.mode === 'add' && isUserHoliday(manualAllocationModal.userId, manualAllocationModal.allocationDate)) {
       const holidayNames = getUserHolidayNames(manualAllocationModal.userId, manualAllocationModal.allocationDate);
       showAlert(
-        'Holiday',
-        `Cannot create manual allocation on holiday (${manualAllocationModal.allocationDate}): ${holidayNames.join(', ')}`
+        'Unavailable Day',
+        `Cannot create manual allocation on unavailable day (${manualAllocationModal.allocationDate}): ${holidayNames.join(', ')}`
       );
       return;
     }
@@ -3910,7 +3960,7 @@ export default function PlanningPage() {
                                 }`}
                                 onDragOver={handleDragOver}
                                 onDrop={(e) => handleDropOnDay(e, day, userRow.Id)}
-                                title={isHoliday ? `Holiday: ${holidayNames.join(', ')}` : undefined}
+                                title={isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
                               />
                             );
                           })}
@@ -4145,7 +4195,7 @@ export default function PlanningPage() {
                                   ? 'bg-gray-100 dark:bg-gray-700'
                                   : ''
                               }`}
-                              title={isOverAllocated ? 'Over allocated day: planned hours exceed configured capacity' : isHoliday ? `Holiday: ${holidayNames.join(', ')}` : undefined}
+                              title={isOverAllocated ? 'Over allocated day: planned hours exceed configured capacity' : isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
                             >
                               {isHoliday && (
                                 <div className="text-amber-700 dark:text-amber-300 font-medium">🎉</div>

@@ -48,6 +48,7 @@ export interface User {
   HobbyHoursSunday?: number;
   Timezone?: string;
   HourlyRate?: number | null;
+  AnnualVacationDays?: number;
   TeamLeaderId?: number | null;
   TeamLeaderName?: string | null;
   CountryCode?: string | null;
@@ -76,6 +77,7 @@ export interface UpdateUserData {
   workHoursSaturday?: number;
   workHoursSunday?: number;
   hourlyRate?: number | null;
+  annualVacationDays?: number;
   teamLeaderId?: number | null;
   countryCode?: string | null;
   jiraId?: string | null;

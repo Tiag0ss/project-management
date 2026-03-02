@@ -1,0 +1,562 @@
+import express, { Response } from 'express';
+import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { pool } from '../config/database';
+import { authenticateToken, AuthRequest } from '../middleware/auth';
+
+const router = express.Router();
+
+const normalizeDate = (value: unknown): string => String(value || '').split('T')[0];
+
+const toDateRange = (startDate: string, endDate: string): string[] => {
+  const start = new Date(`${startDate}T12:00:00`);
+  const end = new Date(`${endDate}T12:00:00`);
+  const result: string[] = [];
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return result;
+
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    result.push(normalizeDate(cursor.toISOString()));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return result;
+};
+
+const getCanApproveVacations = async (userId: number, isAdmin: boolean): Promise<boolean> => {
+  if (isAdmin) return true;
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT COUNT(*) as Count FROM Users WHERE TeamLeaderId = ? AND IsActive = 1',
+    [userId]
+  );
+  return Number(rows[0]?.Count || 0) > 0;
+};
+
+const canManageTargetUser = async (currentUserId: number, isAdmin: boolean, targetUserId: number): Promise<boolean> => {
+  if (isAdmin) return true;
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT TeamLeaderId FROM Users WHERE Id = ?',
+    [targetUserId]
+  );
+  if (rows.length === 0) return false;
+  return Number(rows[0].TeamLeaderId || 0) === currentUserId;
+};
+
+router.get('/approval-scope', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = Number(req.user?.userId || 0);
+    const canApprove = await getCanApproveVacations(userId, !!req.user?.isAdmin);
+    res.json({ success: true, canApprove });
+  } catch (error) {
+    console.error('Error checking vacation approval scope:', error);
+    res.status(500).json({ success: false, message: 'Failed to check vacation approval scope' });
+  }
+});
+
+router.get('/my', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = Number(req.user?.userId || 0);
+    const year = Number(req.query.year || new Date().getFullYear());
+    const yearStart = `${year}-01-01`;
+    const yearEnd = `${year}-12-31`;
+
+    const [users] = await pool.execute<RowDataPacket[]>(
+      'SELECT AnnualVacationDays FROM Users WHERE Id = ?',
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const annualTotal = parseFloat(String(users[0].AnnualVacationDays || 22));
+
+    const [entries] = await pool.execute<RowDataPacket[]>(
+      `SELECT uv.*, 
+              CONCAT(rb.FirstName, ' ', rb.LastName) as RequestedByName,
+              CONCAT(ab.FirstName, ' ', ab.LastName) as ApprovedByName
+       FROM UserVacations uv
+       LEFT JOIN Users rb ON uv.RequestedBy = rb.Id
+       LEFT JOIN Users ab ON uv.ApprovedBy = ab.Id
+       WHERE uv.UserId = ? AND uv.VacationDate BETWEEN ? AND ?
+       ORDER BY uv.VacationDate ASC`,
+      [userId, yearStart, yearEnd]
+    );
+
+    const approvedDays = entries.filter((e: any) => String(e.Status).toLowerCase() === 'approved').length;
+    const pendingDays = entries.filter((e: any) => String(e.Status).toLowerCase() === 'pending').length;
+    const reservedDays = approvedDays + pendingDays;
+
+    res.json({
+      success: true,
+      year,
+      annualTotal,
+      approvedDays,
+      pendingDays,
+      reservedDays,
+      remainingDays: Math.max(0, annualTotal - reservedDays),
+      isOverLimit: reservedDays > annualTotal,
+      entries,
+    });
+  } catch (error) {
+    console.error('Error loading my vacations:', error);
+    res.status(500).json({ success: false, message: 'Failed to load vacations' });
+  }
+});
+
+router.post('/my/request', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = Number(req.user?.userId || 0);
+    const { startDate, endDate, notes } = req.body;
+
+    const normalizedStart = normalizeDate(startDate);
+    const normalizedEnd = normalizeDate(endDate || startDate);
+    const dates = toDateRange(normalizedStart, normalizedEnd);
+
+    if (dates.length === 0) {
+      return res.status(400).json({ success: false, message: 'Invalid vacation date range' });
+    }
+
+    const year = Number(normalizedStart.split('-')[0]);
+    const [users] = await pool.execute<RowDataPacket[]>(
+      'SELECT AnnualVacationDays FROM Users WHERE Id = ?',
+      [userId]
+    );
+    const annualTotal = parseFloat(String(users[0]?.AnnualVacationDays || 22));
+
+    const [existingYear] = await pool.execute<RowDataPacket[]>(
+      `SELECT COUNT(*) as Count
+       FROM UserVacations
+       WHERE UserId = ?
+         AND VacationDate BETWEEN ? AND ?
+         AND LOWER(Status) IN ('pending', 'approved')`,
+      [userId, `${year}-01-01`, `${year}-12-31`]
+    );
+    const reservedDays = Number(existingYear[0]?.Count || 0);
+
+    if (reservedDays + dates.length > annualTotal) {
+      return res.status(400).json({
+        success: false,
+        message: `Vacation request exceeds annual limit (${annualTotal} days). Current reserved: ${reservedDays}, requested: ${dates.length}`,
+      });
+    }
+
+    let created = 0;
+    let skipped = 0;
+
+    for (const date of dates) {
+      const [existing] = await pool.execute<RowDataPacket[]>(
+        `SELECT Id FROM UserVacations
+         WHERE UserId = ? AND VacationDate = ? AND LOWER(Status) IN ('pending', 'approved')`,
+        [userId, date]
+      );
+
+      if (existing.length > 0) {
+        skipped += 1;
+        continue;
+      }
+
+      await pool.execute<ResultSetHeader>(
+        `INSERT INTO UserVacations (UserId, VacationDate, Status, Notes, RequestedBy)
+         VALUES (?, ?, 'pending', ?, ?)`,
+        [userId, date, notes || null, userId]
+      );
+      created += 1;
+    }
+
+    res.json({ success: true, message: 'Vacation request submitted', created, skipped });
+  } catch (error) {
+    console.error('Error requesting vacations:', error);
+    res.status(500).json({ success: false, message: 'Failed to submit vacation request' });
+  }
+});
+
+router.get('/pending', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = Number(req.user?.userId || 0);
+    const isAdmin = !!req.user?.isAdmin;
+    const canApprove = await getCanApproveVacations(userId, isAdmin);
+
+    if (!canApprove) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    let query = `SELECT uv.*, u.Username, u.FirstName, u.LastName, u.TeamLeaderId
+                 FROM UserVacations uv
+                 INNER JOIN Users u ON uv.UserId = u.Id
+                 WHERE LOWER(uv.Status) = 'pending'`;
+    const params: any[] = [];
+
+    if (!isAdmin) {
+      query += ' AND u.TeamLeaderId = ?';
+      params.push(userId);
+    }
+
+    query += ' ORDER BY uv.VacationDate ASC';
+
+    const [rows] = await pool.execute<RowDataPacket[]>(query, params);
+    res.json({ success: true, requests: rows });
+  } catch (error) {
+    console.error('Error loading pending vacation requests:', error);
+    res.status(500).json({ success: false, message: 'Failed to load pending vacation requests' });
+  }
+});
+
+router.get('/requests', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = Number(req.user?.userId || 0);
+    const isAdmin = !!req.user?.isAdmin;
+    const canApprove = await getCanApproveVacations(userId, isAdmin);
+
+    if (!canApprove) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const year = Number(req.query.year || new Date().getFullYear());
+    const status = String(req.query.status || 'all').toLowerCase();
+    const filterUserId = req.query.userId ? Number(req.query.userId) : null;
+
+    const conditions: string[] = ['uv.VacationDate BETWEEN ? AND ?'];
+    const params: any[] = [`${year}-01-01`, `${year}-12-31`];
+
+    if (!isAdmin) {
+      conditions.push('(u.TeamLeaderId = ? OR u.Id = ?)');
+      params.push(userId, userId);
+    }
+
+    if (filterUserId) {
+      conditions.push('uv.UserId = ?');
+      params.push(filterUserId);
+    }
+
+    if (status !== 'all') {
+      conditions.push('LOWER(uv.Status) = ?');
+      params.push(status);
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      `SELECT uv.*, u.Username, u.FirstName, u.LastName, u.TeamLeaderId
+       FROM UserVacations uv
+       INNER JOIN Users u ON uv.UserId = u.Id
+       ${whereClause}
+       ORDER BY uv.VacationDate DESC, u.Username ASC`,
+      params
+    );
+
+    res.json({ success: true, requests: rows, year });
+  } catch (error) {
+    console.error('Error loading vacation requests:', error);
+    res.status(500).json({ success: false, message: 'Failed to load vacation requests' });
+  }
+});
+
+router.get('/calendar', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const currentUserId = Number(req.user?.userId || 0);
+    const isAdmin = !!req.user?.isAdmin;
+    const startDate = normalizeDate(req.query.startDate);
+    const endDate = normalizeDate(req.query.endDate || req.query.startDate);
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || startDate > endDate) {
+      return res.status(400).json({ success: false, message: 'Invalid date range' });
+    }
+
+    const requestedUserIds = String(req.query.userIds || '')
+      .split(',')
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isInteger(value) && value > 0);
+
+    const uniqueRequestedUserIds = Array.from(new Set(requestedUserIds));
+
+    const [subordinateRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM Users WHERE TeamLeaderId = ? AND IsActive = 1',
+      [currentUserId]
+    );
+    const subordinateIds = subordinateRows.map((row) => Number(row.Id));
+
+    const allowedUserIds = new Set<number>([currentUserId, ...subordinateIds]);
+
+    const effectiveUserIds = (isAdmin
+      ? (uniqueRequestedUserIds.length > 0 ? uniqueRequestedUserIds : [currentUserId])
+      : (uniqueRequestedUserIds.length > 0
+        ? uniqueRequestedUserIds.filter((id) => allowedUserIds.has(id))
+        : [currentUserId, ...subordinateIds]))
+      .filter((id) => Number.isInteger(id) && id > 0);
+
+    const uniqueEffectiveUserIds = Array.from(new Set(effectiveUserIds));
+
+    if (uniqueEffectiveUserIds.length === 0) {
+      return res.json({ success: true, entries: [] });
+    }
+
+    const placeholders = uniqueEffectiveUserIds.map(() => '?').join(',');
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id, UserId, VacationDate, Status, Notes
+       FROM UserVacations
+       WHERE LOWER(Status) = 'approved'
+         AND VacationDate BETWEEN ? AND ?
+         AND UserId IN (${placeholders})
+       ORDER BY VacationDate ASC`,
+      [startDate, endDate, ...uniqueEffectiveUserIds]
+    );
+
+    res.json({ success: true, entries: rows });
+  } catch (error) {
+    console.error('Error loading vacation calendar entries:', error);
+    res.status(500).json({ success: false, message: 'Failed to load vacation calendar entries' });
+  }
+});
+
+router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const vacationId = Number(req.params.id);
+    const currentUserId = Number(req.user?.userId || 0);
+    const isAdmin = !!req.user?.isAdmin;
+
+    if (!Number.isInteger(vacationId) || vacationId <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid vacation id' });
+    }
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      `SELECT uv.Id, uv.UserId
+       FROM UserVacations uv
+       WHERE uv.Id = ?`,
+      [vacationId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Vacation entry not found' });
+    }
+
+    const targetUserId = Number(rows[0].UserId || 0);
+    const canDeleteOwn = targetUserId === currentUserId;
+    const canDeleteManaged = await canManageTargetUser(currentUserId, isAdmin, targetUserId);
+
+    if (!canDeleteOwn && !canDeleteManaged) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    await pool.execute('DELETE FROM UserVacations WHERE Id = ?', [vacationId]);
+
+    res.json({ success: true, message: 'Vacation day deleted' });
+  } catch (error) {
+    console.error('Error deleting vacation entry:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete vacation entry' });
+  }
+});
+
+router.put('/:id/approval', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const vacationId = Number(req.params.id);
+    const userId = Number(req.user?.userId || 0);
+    const isAdmin = !!req.user?.isAdmin;
+    const { status } = req.body as { status: 'approved' | 'rejected' };
+
+    if (!['approved', 'rejected'].includes(String(status || '').toLowerCase())) {
+      return res.status(400).json({ success: false, message: 'Invalid status' });
+    }
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      `SELECT uv.Id, uv.UserId, u.TeamLeaderId
+       FROM UserVacations uv
+       INNER JOIN Users u ON uv.UserId = u.Id
+       WHERE uv.Id = ?`,
+      [vacationId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Vacation request not found' });
+    }
+
+    const targetUserId = Number(rows[0].UserId || 0);
+    const canManage = await canManageTargetUser(userId, isAdmin, targetUserId);
+    if (!canManage) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    await pool.execute(
+      `UPDATE UserVacations
+       SET Status = ?, ApprovedBy = ?, ApprovedAt = NOW()
+       WHERE Id = ?`,
+      [String(status).toLowerCase(), userId, vacationId]
+    );
+
+    res.json({ success: true, message: `Vacation request ${status}` });
+  } catch (error) {
+    console.error('Error approving vacation request:', error);
+    res.status(500).json({ success: false, message: 'Failed to update vacation request' });
+  }
+});
+
+router.get('/team-members', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = Number(req.user?.userId || 0);
+    const isAdmin = !!req.user?.isAdmin;
+    const year = Number(req.query.year || new Date().getFullYear());
+
+    let query = `SELECT u.Id, u.Username, u.FirstName, u.LastName, u.AnnualVacationDays,
+                        (SELECT COUNT(*) FROM UserVacations uv WHERE uv.UserId = u.Id AND YEAR(uv.VacationDate) = ? AND LOWER(uv.Status) = 'approved') as ApprovedDays,
+                        (SELECT COUNT(*) FROM UserVacations uv WHERE uv.UserId = u.Id AND YEAR(uv.VacationDate) = ? AND LOWER(uv.Status) = 'pending') as PendingDays,
+                        (SELECT COUNT(*) FROM UserVacations uv WHERE uv.UserId = u.Id AND YEAR(uv.VacationDate) = ? AND LOWER(uv.Status) = 'rejected') as RejectedDays
+                 FROM Users u
+                 WHERE u.IsActive = 1`;
+    const params: any[] = [year, year, year];
+
+    if (!isAdmin) {
+      query += ' AND u.TeamLeaderId = ?';
+      params.push(userId);
+    }
+
+    query += ' ORDER BY u.Username ASC';
+
+    const [members] = await pool.execute<RowDataPacket[]>(query, params);
+    res.json({ success: true, members });
+  } catch (error) {
+    console.error('Error loading team members for vacations:', error);
+    res.status(500).json({ success: false, message: 'Failed to load team members' });
+  }
+});
+
+router.put('/team-members/:userId/annual-total', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const currentUserId = Number(req.user?.userId || 0);
+    const isAdmin = !!req.user?.isAdmin;
+    const targetUserId = Number(req.params.userId);
+    const annualVacationDays = Math.max(0, parseFloat(String(req.body?.annualVacationDays || 0)));
+
+    const canManage = await canManageTargetUser(currentUserId, isAdmin, targetUserId);
+    if (!canManage) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    await pool.execute(
+      'UPDATE Users SET AnnualVacationDays = ? WHERE Id = ?',
+      [annualVacationDays, targetUserId]
+    );
+
+    res.json({ success: true, message: 'Annual vacation total updated' });
+  } catch (error) {
+    console.error('Error updating annual vacation total:', error);
+    res.status(500).json({ success: false, message: 'Failed to update annual vacation total' });
+  }
+});
+
+router.post('/team-members/:userId/configure', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const currentUserId = Number(req.user?.userId || 0);
+    const isAdmin = !!req.user?.isAdmin;
+    const targetUserId = Number(req.params.userId);
+    const { startDate, endDate, notes, status } = req.body;
+
+    const canManage = await canManageTargetUser(currentUserId, isAdmin, targetUserId);
+    if (!canManage) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const normalizedStart = normalizeDate(startDate);
+    const normalizedEnd = normalizeDate(endDate || startDate);
+    const dates = toDateRange(normalizedStart, normalizedEnd);
+    if (dates.length === 0) {
+      return res.status(400).json({ success: false, message: 'Invalid vacation date range' });
+    }
+
+    const normalizedStatus = ['approved', 'pending', 'rejected'].includes(String(status || '').toLowerCase())
+      ? String(status).toLowerCase()
+      : 'approved';
+
+    let created = 0;
+    let skipped = 0;
+    let exceeded = 0;
+    const exceededDates: string[] = [];
+
+    const enforceAnnualLimit = normalizedStatus === 'approved' || normalizedStatus === 'pending';
+    let annualTotal = 22;
+    const reservedByYear = new Map<number, number>();
+    const createdByYear = new Map<number, number>();
+
+    if (enforceAnnualLimit) {
+      const [users] = await pool.execute<RowDataPacket[]>(
+        'SELECT AnnualVacationDays FROM Users WHERE Id = ?',
+        [targetUserId]
+      );
+
+      if (users.length === 0) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      annualTotal = Math.max(0, parseFloat(String(users[0]?.AnnualVacationDays || 22)));
+
+      const years = Array.from(new Set(dates.map((date) => Number(date.split('-')[0]))));
+      if (years.length > 0) {
+        const minYear = Math.min(...years);
+        const maxYear = Math.max(...years);
+
+        const [existingYearCounts] = await pool.execute<RowDataPacket[]>(
+          `SELECT YEAR(VacationDate) as VacationYear, COUNT(*) as ReservedCount
+           FROM UserVacations
+           WHERE UserId = ?
+             AND VacationDate BETWEEN ? AND ?
+             AND LOWER(Status) IN ('pending', 'approved')
+           GROUP BY YEAR(VacationDate)`,
+          [targetUserId, `${minYear}-01-01`, `${maxYear}-12-31`]
+        );
+
+        for (const row of existingYearCounts) {
+          reservedByYear.set(Number(row.VacationYear), Number(row.ReservedCount || 0));
+        }
+      }
+    }
+
+    for (const date of dates) {
+      const [existing] = await pool.execute<RowDataPacket[]>(
+        `SELECT Id FROM UserVacations
+         WHERE UserId = ? AND VacationDate = ? AND LOWER(Status) IN ('pending', 'approved')`,
+        [targetUserId, date]
+      );
+
+      if (existing.length > 0) {
+        skipped += 1;
+        continue;
+      }
+
+      if (enforceAnnualLimit) {
+        const year = Number(date.split('-')[0]);
+        const reserved = reservedByYear.get(year) || 0;
+        const pendingCreation = createdByYear.get(year) || 0;
+
+        if (reserved + pendingCreation + 1 > annualTotal) {
+          exceeded += 1;
+          exceededDates.push(date);
+          continue;
+        }
+      }
+
+      await pool.execute<ResultSetHeader>(
+        `INSERT INTO UserVacations (UserId, VacationDate, Status, Notes, RequestedBy, ApprovedBy, ApprovedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?)` ,
+        [
+          targetUserId,
+          date,
+          normalizedStatus,
+          notes || null,
+          currentUserId,
+          normalizedStatus === 'approved' ? currentUserId : null,
+          normalizedStatus === 'approved' ? new Date() : null,
+        ]
+      );
+      created += 1;
+
+      if (enforceAnnualLimit) {
+        const year = Number(date.split('-')[0]);
+        createdByYear.set(year, (createdByYear.get(year) || 0) + 1);
+      }
+    }
+
+    res.json({ success: true, message: 'Vacation configuration saved', created, skipped, exceeded, exceededDates });
+  } catch (error) {
+    console.error('Error configuring user vacations:', error);
+    res.status(500).json({ success: false, message: 'Failed to configure user vacations' });
+  }
+});
+
+export default router;

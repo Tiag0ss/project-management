@@ -101,7 +101,7 @@ const TIMEZONES = [
 export default function ProfilePage() {
   const { user, token, isLoading: authLoading, isCustomerUser } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'info' | 'attachments' | 'workHours' | 'security' | 'emailAlerts' | 'recurringTasks'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'attachments' | 'workHours' | 'security' | 'emailAlerts' | 'recurringTasks' | 'vacations'>('info');
   const [attachments, setAttachments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -170,6 +170,21 @@ export default function ProfilePage() {
   const [emailPreferences, setEmailPreferences] = useState<any[]>([]);
   const [isSavingEmailPrefs, setIsSavingEmailPrefs] = useState(false);
   const [sendingTestEmail, setSendingTestEmail] = useState<string | null>(null);
+
+  const [vacationEntries, setVacationEntries] = useState<any[]>([]);
+  const [vacationSummary, setVacationSummary] = useState({
+    annualTotal: 22,
+    approvedDays: 0,
+    pendingDays: 0,
+    reservedDays: 0,
+    remainingDays: 22,
+    isOverLimit: false,
+  });
+  const [vacationStartDate, setVacationStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [vacationEndDate, setVacationEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [vacationNotes, setVacationNotes] = useState('');
+  const [isSavingVacation, setIsSavingVacation] = useState(false);
+  const [vacationDeleteTarget, setVacationDeleteTarget] = useState<{ id: number; date: string } | null>(null);
 
   // Recurring Tasks state
   const [recurringAllocations, setRecurringAllocations] = useState<RecurringAllocation[]>([]);
@@ -315,6 +330,118 @@ export default function ProfilePage() {
     } catch (err: any) {
       console.error('Failed to load email preferences:', err);
     }
+  };
+
+  const loadVacationData = async () => {
+    if (!token) return;
+    try {
+      const year = new Date().getFullYear();
+      const response = await fetch(`${getApiUrl()}/api/vacations/my?year=${year}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load vacations');
+      }
+
+      const data = await response.json();
+      setVacationEntries(data.entries || []);
+      setVacationSummary({
+        annualTotal: Number(data.annualTotal || 22),
+        approvedDays: Number(data.approvedDays || 0),
+        pendingDays: Number(data.pendingDays || 0),
+        reservedDays: Number(data.reservedDays || 0),
+        remainingDays: Number(data.remainingDays || 0),
+        isOverLimit: !!data.isOverLimit,
+      });
+    } catch (err: any) {
+      setMessage(err.message || 'Failed to load vacations');
+    }
+  };
+
+  const getVacationRequestDays = () => {
+    const start = new Date(`${vacationStartDate}T12:00:00`);
+    const end = new Date(`${vacationEndDate}T12:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return 0;
+    const msPerDay = 24 * 60 * 60 * 1000;
+    return Math.floor((end.getTime() - start.getTime()) / msPerDay) + 1;
+  };
+
+  const handleRequestVacation = async () => {
+    if (!token) return;
+    const requestDays = getVacationRequestDays();
+
+    if (requestDays <= 0) {
+      setMessage('Invalid vacation date range');
+      return;
+    }
+
+    if (vacationSummary.reservedDays + requestDays > vacationSummary.annualTotal) {
+      setMessage(`Vacation request exceeds annual limit (${vacationSummary.annualTotal} days)`);
+      return;
+    }
+
+    setIsSavingVacation(true);
+    try {
+      const response = await fetch(`${getApiUrl()}/api/vacations/my/request`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          startDate: vacationStartDate,
+          endDate: vacationEndDate,
+          notes: vacationNotes,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to submit vacation request');
+      }
+
+      setMessage(`Vacation request submitted (${data.created || 0} day(s) added)`);
+      setVacationNotes('');
+      await loadVacationData();
+    } catch (err: any) {
+      setMessage(err.message || 'Failed to submit vacation request');
+    } finally {
+      setIsSavingVacation(false);
+    }
+  };
+
+  const handleDeleteMyVacation = async (vacationId: number) => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${getApiUrl()}/api/vacations/${vacationId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to delete vacation day');
+      }
+
+      setMessage('Vacation day deleted');
+      await loadVacationData();
+    } catch (err: any) {
+      setMessage(err.message || 'Failed to delete vacation day');
+    }
+  };
+
+  const confirmDeleteMyVacation = async () => {
+    if (!vacationDeleteTarget) return;
+    const vacationId = vacationDeleteTarget.id;
+    setVacationDeleteTarget(null);
+    await handleDeleteMyVacation(vacationId);
   };
 
   const saveEmailPreferences = async () => {
@@ -915,6 +1042,21 @@ export default function ProfilePage() {
             >
               <span className="text-xl">📧</span>
               <span className="font-medium">Email Alerts</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab('vacations');
+                loadVacationData();
+              }}
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                activeTab === 'vacations'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <span className="text-xl">🏖️</span>
+              <span className="font-medium">Vacations</span>
             </button>
           </nav>
         </aside>
@@ -1593,6 +1735,108 @@ export default function ProfilePage() {
                 </div>
               )}
 
+              {activeTab === 'vacations' && (
+                <div className="space-y-6">
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Vacation Management</h2>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Annual Total</p>
+                      <p className="text-2xl font-bold text-gray-900 dark:text-white">{vacationSummary.annualTotal}</p>
+                    </div>
+                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Approved</p>
+                      <p className="text-2xl font-bold text-green-600 dark:text-green-400">{vacationSummary.approvedDays}</p>
+                    </div>
+                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Pending</p>
+                      <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{vacationSummary.pendingDays}</p>
+                    </div>
+                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Remaining</p>
+                      <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{vacationSummary.remainingDays}</p>
+                    </div>
+                  </div>
+
+                  {(vacationSummary.isOverLimit || (vacationSummary.reservedDays + getVacationRequestDays() > vacationSummary.annualTotal)) && (
+                    <div className="p-3 rounded border border-red-400 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
+                      Warning: Vacation allocation exceeds annual limit.
+                    </div>
+                  )}
+
+                  <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Request Vacation</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
+                        <input
+                          type="date"
+                          value={vacationStartDate}
+                          onChange={(e) => setVacationStartDate(e.target.value)}
+                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
+                        <input
+                          type="date"
+                          value={vacationEndDate}
+                          onChange={(e) => setVacationEndDate(e.target.value)}
+                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
+                      <input
+                        type="text"
+                        value={vacationNotes}
+                        onChange={(e) => setVacationNotes(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        placeholder="Optional notes"
+                      />
+                    </div>
+                    <button
+                      onClick={handleRequestVacation}
+                      disabled={isSavingVacation}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg"
+                    >
+                      {isSavingVacation ? 'Submitting...' : `Request ${getVacationRequestDays()} day(s)`}
+                    </button>
+                  </div>
+
+                  <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">My Vacation Days</h3>
+                    {vacationEntries.length === 0 ? (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">No vacation records yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {vacationEntries.map((entry) => (
+                          <div key={entry.Id} className="flex items-center justify-between p-2 rounded bg-gray-50 dark:bg-gray-700/50">
+                            <span className="text-sm text-gray-900 dark:text-white">{String(entry.VacationDate).split('T')[0]}</span>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs px-2 py-1 rounded ${String(entry.Status).toLowerCase() === 'approved'
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                : String(entry.Status).toLowerCase() === 'rejected'
+                                  ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                                  : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'}`}>
+                                {entry.Status}
+                              </span>
+                              <button
+                                onClick={() => setVacationDeleteTarget({ id: entry.Id, date: String(entry.VacationDate).split('T')[0] })}
+                                className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Recurring Task Modal */}
               {showRecurringModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
@@ -1785,6 +2029,34 @@ export default function ProfilePage() {
                           className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
                         >
                           {isSaving ? 'Saving...' : 'Save Recurring Task'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {vacationDeleteTarget && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[110] p-4">
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+                    <div className="p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete Vacation Day</h3>
+                      <p className="text-sm text-gray-700 dark:text-gray-300 mb-6">
+                        Are you sure you want to delete your vacation day on{' '}
+                        <span className="font-medium">{vacationDeleteTarget.date}</span>?
+                      </p>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => setVacationDeleteTarget(null)}
+                          className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={confirmDeleteMyVacation}
+                          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded"
+                        >
+                          Delete
                         </button>
                       </div>
                     </div>

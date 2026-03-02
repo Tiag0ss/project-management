@@ -315,6 +315,13 @@
       "Comment": "User's hourly billing/cost rate for budget calculations"
     },
     {
+      "FieldName": "AnnualVacationDays",
+      "DataType": "decimal(5,2)",
+      "NotNullable": true,
+      "DefaultValue": "22.00",
+      "Comment": "Total annual vacation days available to the user"
+    },
+    {
       "FieldName": "TeamLeaderId",
       "DataType": "int",
       "NotNullable": false,

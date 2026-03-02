@@ -88,6 +88,7 @@ export default function Navbar() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [canAccessApprovals, setCanAccessApprovals] = useState(false);
+  const [canAccessVacationApprovals, setCanAccessVacationApprovals] = useState(false);
 
   // Active timer state
   const [navTimer, setNavTimer] = useState<{ Id: number; TaskId: number; TaskName: string; ProjectId: number; ProjectName: string; StartedAt: string } | null>(null);
@@ -375,11 +376,13 @@ export default function Navbar() {
     const loadApprovalScope = async () => {
       if (!token || !user || isCustomerUser) {
         setCanAccessApprovals(false);
+        setCanAccessVacationApprovals(false);
         return;
       }
 
       if (user.isAdmin) {
         setCanAccessApprovals(true);
+        setCanAccessVacationApprovals(true);
         return;
       }
 
@@ -397,6 +400,20 @@ export default function Navbar() {
         setCanAccessApprovals(!!data?.canApprove);
       } catch {
         setCanAccessApprovals(false);
+      }
+
+      try {
+        const vacationRes = await fetch(`${getApiUrl()}/api/vacations/approval-scope`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!vacationRes.ok) {
+          setCanAccessVacationApprovals(false);
+          return;
+        }
+        const vacationData = await vacationRes.json();
+        setCanAccessVacationApprovals(!!vacationData?.canApprove);
+      } catch {
+        setCanAccessVacationApprovals(false);
       }
     };
 
@@ -1081,13 +1098,15 @@ export default function Navbar() {
 
   const canShowOrganizationsOption = !!permissions?.canManageOrganizations;
   const canShowApprovalsOption = canAccessApprovals;
+  const canShowVacationApprovalsOption = canAccessVacationApprovals;
+  const canShowAnyApprovalsOption = canShowApprovalsOption || canShowVacationApprovalsOption;
 
   const canShowManagementMenu =
     !isCustomerUser &&
     (canShowCustomersOption ||
       canShowApplicationsOption ||
       canShowOrganizationsOption ||
-      canShowApprovalsOption);
+    canShowAnyApprovalsOption);
 
   const shouldUseLeftSidebar = navbarMenuLayout === 'left';
   const isFloatingMode = shouldUseLeftSidebar && navbarLeftMode === 'floating';
@@ -1217,7 +1236,7 @@ export default function Navbar() {
                 </a>
               )}
 
-              {canShowApprovalsOption && (
+              {canShowAnyApprovalsOption && (
                 <a href="/approvals" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                   <span className="w-5 text-center">✅</span>{!isSidebarEffectivelyCollapsed && <span>Approvals</span>}
                 </a>
@@ -1410,13 +1429,13 @@ export default function Navbar() {
                             🏬 Organizations
                           </a>
                         )}
-                        {canShowApprovalsOption && (
+                        {canShowAnyApprovalsOption && (
                           <a
-                            href="/approvals"
+                            href={canShowApprovalsOption ? '/approvals?tab=time' : '/approvals?tab=vacations'}
                             className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             onClick={() => setManagementMenuOpen(false)}
                           >
-                            ✅ Time Approvals
+                            ✅ Approvals
                           </a>
                         )}
                       </div>
