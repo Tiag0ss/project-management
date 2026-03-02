@@ -3,6 +3,7 @@ import { RowDataPacket } from '../config/database';
 import { sendEmail } from './emailService';
 import { shouldSendEmail } from './emailPreferencesHelper';
 import logger from './logger';
+import cron, { ScheduledTask } from 'node-cron';
 
 // Number of days before due date to send reminder
 const REMINDER_DAYS_BEFORE = 1;
@@ -259,48 +260,51 @@ export async function checkAndSendDueDateReminders(): Promise<void> {
 }
 
 // Start the scheduler (runs every hour at minute 0; reminder logic deduplicates via log table)
-let schedulerTimeout: NodeJS.Timeout | null = null;
+let schedulerTask: ScheduledTask | null = null;
+let isSchedulerRunning = false;
 
-// Schedule the next run at the top of the next hour (minute 0)
-function scheduleNextRun(): void {
-  const now = new Date();
-  const nextHour = new Date(now);
-  nextHour.setHours(now.getHours() + 1, 0, 0, 0); // Next hour at minute 0
-  
-  const msUntilNextHour = nextHour.getTime() - now.getTime();
-  
-  schedulerTimeout = setTimeout(() => {
-    checkAndSendDueDateReminders().catch(err =>
-      logger.error('Due date reminder check failed:', err)
-    );
-    
-    // Schedule the next run
-    scheduleNextRun();
-  }, msUntilNextHour);
-  
-  logger.info(`Next due date reminder check scheduled for ${nextHour.toISOString()}`);
-}
+const runDueDateSchedulerSafely = async (): Promise<void> => {
+  if (isSchedulerRunning) {
+    logger.warn('Due date reminder scheduler run skipped because previous run is still in progress');
+    return;
+  }
+
+  isSchedulerRunning = true;
+  try {
+    await checkAndSendDueDateReminders();
+  } catch (error) {
+    logger.error('Due date reminder scheduler run failed:', error);
+  } finally {
+    isSchedulerRunning = false;
+  }
+};
 
 export function startDueDateReminderScheduler(): void {
-  if (schedulerTimeout) {
+  if (schedulerTask) {
     return; // Already running
   }
 
   logger.info('Starting due date reminder scheduler...');
 
-  // Run immediately on start if within working hours
-  checkAndSendDueDateReminders().catch(err =>
-    logger.error('Initial due date reminder check failed:', err)
+  // Catch-up once on startup
+  runDueDateSchedulerSafely().catch(err =>
+    logger.error('Initial due date reminder scheduler run failed:', err)
   );
 
-  // Schedule the next run at the top of the next hour
-  scheduleNextRun();
+  // Then run at minute 0 every hour
+  schedulerTask = cron.schedule('0 * * * *', () => {
+    runDueDateSchedulerSafely().catch(err =>
+      logger.error('Due date reminder scheduler cron run failed:', err)
+    );
+  });
+
+  logger.info('Due date reminder scheduler started (cron: minute 0 every hour)');
 }
 
 export function stopDueDateReminderScheduler(): void {
-  if (schedulerTimeout) {
-    clearTimeout(schedulerTimeout);
-    schedulerTimeout = null;
+  if (schedulerTask) {
+    schedulerTask.stop();
+    schedulerTask = null;
     logger.info('Due date reminder scheduler stopped');
   }
 }

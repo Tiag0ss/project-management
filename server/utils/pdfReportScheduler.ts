@@ -3,6 +3,7 @@ import { RowDataPacket } from '../config/database';
 import { sendEmail } from './emailService';
 import logger from './logger';
 import PDFDocument from 'pdfkit';
+import cron, { ScheduledTask } from 'node-cron';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -662,12 +663,44 @@ export async function sendReportNow(schedule: ReportSchedule): Promise<void> {
 
 // ─── Exported start function ──────────────────────────────────────────────────
 
+let pdfSchedulerTask: ScheduledTask | null = null;
+let isPdfSchedulerRunning = false;
+
+const runPdfSchedulerSafely = async (): Promise<void> => {
+  if (isPdfSchedulerRunning) {
+    logger.warn('[PDF Scheduler] Run skipped because previous run is still in progress.');
+    return;
+  }
+
+  isPdfSchedulerRunning = true;
+  try {
+    await runPdfReportScheduler();
+  } catch (error) {
+    logger.error('[PDF Scheduler] Safe run failed:', error);
+  } finally {
+    isPdfSchedulerRunning = false;
+  }
+};
+
 export function startPdfReportScheduler(): void {
-  // Run once at startup (in case the server was down during the scheduled time)
-  setTimeout(runPdfReportScheduler, 30_000); // wait 30s after boot
+  if (pdfSchedulerTask) {
+    logger.warn('[PDF Scheduler] Already started.');
+    return;
+  }
 
-  // Then check every hour
-  setInterval(runPdfReportScheduler, 60 * 60 * 1000);
+  // Run once at startup (in case server was down during scheduled window)
+  setTimeout(() => {
+    runPdfSchedulerSafely().catch((error) => {
+      logger.error('[PDF Scheduler] Initial catch-up run failed:', error);
+    });
+  }, 30_000); // wait 30s after boot
 
-  logger.info('[PDF Scheduler] Started — checking hourly.');
+  // Then run at minute 0 every hour
+  pdfSchedulerTask = cron.schedule('0 * * * *', () => {
+    runPdfSchedulerSafely().catch((error) => {
+      logger.error('[PDF Scheduler] Cron run failed:', error);
+    });
+  });
+
+  logger.info('[PDF Scheduler] Started (cron: minute 0 every hour).');
 }

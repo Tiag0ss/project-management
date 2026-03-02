@@ -3,6 +3,7 @@ import { RowDataPacket } from '../config/database';
 import { sendEmail } from './emailService';
 import { shouldSendEmail } from './emailPreferencesHelper';
 import logger from './logger';
+import cron, { ScheduledTask } from 'node-cron';
 
 interface UserWorkInfo {
   Id: number;
@@ -543,31 +544,51 @@ export async function checkAndSendWorkSummaries(): Promise<void> {
   }
 }
 
-// Start the scheduler (runs every hour)
-let schedulerInterval: NodeJS.Timeout | null = null;
+// Start the scheduler (runs at minute 0 every hour)
+let schedulerTask: ScheduledTask | null = null;
+let isSchedulerRunning = false;
+
+const runWorkSummarySchedulerSafely = async (): Promise<void> => {
+  if (isSchedulerRunning) {
+    logger.warn('Work summary scheduler run skipped because previous run is still in progress');
+    return;
+  }
+
+  isSchedulerRunning = true;
+  try {
+    await checkAndSendWorkSummaries();
+  } catch (error) {
+    logger.error('Work summary scheduler run failed:', error);
+  } finally {
+    isSchedulerRunning = false;
+  }
+};
 
 export function startWorkSummaryScheduler(): void {
-  if (schedulerInterval) {
+  if (schedulerTask) {
     logger.warn('Work summary scheduler is already running');
     return;
   }
 
-  // Run immediately on startup
-  checkAndSendWorkSummaries();
+  // Catch-up once on startup
+  runWorkSummarySchedulerSafely().catch((error) => {
+    logger.error('Initial work summary scheduler run failed:', error);
+  });
 
-  // Then run every hour
-  const ONE_HOUR = 60 * 60 * 1000;
-  schedulerInterval = setInterval(() => {
-    checkAndSendWorkSummaries();
-  }, ONE_HOUR);
+  // Then run at minute 0 every hour
+  schedulerTask = cron.schedule('0 * * * *', () => {
+    runWorkSummarySchedulerSafely().catch((error) => {
+      logger.error('Work summary scheduler cron run failed:', error);
+    });
+  });
 
-  logger.info('Work summary scheduler started (runs every hour)');
+  logger.info('Work summary scheduler started (cron: minute 0 every hour)');
 }
 
 export function stopWorkSummaryScheduler(): void {
-  if (schedulerInterval) {
-    clearInterval(schedulerInterval);
-    schedulerInterval = null;
+  if (schedulerTask) {
+    schedulerTask.stop();
+    schedulerTask = null;
     logger.info('Work summary scheduler stopped');
   }
 }
