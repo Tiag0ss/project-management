@@ -13,6 +13,54 @@ function formatDate(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
+function formatDateLocal(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function getUserCurrentTime(timezone: string | null): Date {
+  const now = new Date();
+  if (!timezone) {
+    return now;
+  }
+
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+
+    const parts = formatter.formatToParts(now);
+    const dateParts: Record<string, string> = {};
+    parts.forEach((part) => {
+      dateParts[part.type] = part.value;
+    });
+
+    return new Date(
+      Number(dateParts.year),
+      Number(dateParts.month) - 1,
+      Number(dateParts.day),
+      Number(dateParts.hour),
+      Number(dateParts.minute),
+      Number(dateParts.second)
+    );
+  } catch {
+    return now;
+  }
+}
+
+function normalizeDateString(value: unknown): string {
+  return String(value || '').split('T')[0];
+}
+
 // Check if a reminder was already sent for this user/task/date combo
 async function hasReminderBeenSent(userId: number, taskId: number, reminderDate: string): Promise<boolean> {
   const [rows] = await pool.execute<RowDataPacket[]>(
@@ -122,10 +170,9 @@ function generateDueDateReminderEmail(
   `;
 }
 
-// Check if current time is within working hours (8 AM - 6 PM)
-function isWorkingHours(): boolean {
-  const now = new Date();
-  const hour = now.getHours();
+// Check if given local time is within working hours (8 AM - 6 PM)
+function isWorkingHours(localNow: Date): boolean {
+  const hour = localNow.getHours();
   return hour >= 8 && hour < 18; // 8:00 AM to 5:59 PM
 }
 
@@ -134,90 +181,71 @@ export async function checkAndSendDueDateReminders(): Promise<void> {
   try {
     logger.info('Running due date reminder scheduler check...');
 
-    // Only send emails during working hours (8 AM - 6 PM)
-    if (!isWorkingHours()) {
-      logger.info('Outside working hours (8 AM - 6 PM), skipping due date reminder emails');
-      return;
-    }
-
-    const today = formatDate(new Date());
-
-    // Calculate the target due date (N days from now)
-    const targetDate = new Date();
-    targetDate.setDate(targetDate.getDate() + REMINDER_DAYS_BEFORE);
-    const targetDateStr = formatDate(targetDate);
-
-    // Find all tasks due on the target date that are not done/completed/cancelled
-    // and have an assigned user
-    const [tasks] = await pool.execute<RowDataPacket[]>(
-      `SELECT t.Id AS TaskId, t.TaskName, t.DueDate, t.AssignedTo, t.ProjectId,
-              p.ProjectName,
-              u.Id AS UserId, u.Email, u.FirstName, u.LastName, u.Username
-       FROM Tasks t
-       JOIN Projects p ON t.ProjectId = p.Id
-       JOIN Users u ON t.AssignedTo = u.Id
-       WHERE DATE(t.DueDate) = ?
-         AND t.AssignedTo IS NOT NULL
+    const [candidateUsers] = await pool.execute<RowDataPacket[]>(
+      `SELECT DISTINCT u.Id AS UserId, u.Email, u.FirstName, u.LastName, u.Username, u.Timezone
+       FROM Users u
+       INNER JOIN Tasks t ON t.AssignedTo = u.Id
+       WHERE t.DueDate IS NOT NULL
          AND LOWER(COALESCE(t.Status, '')) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled')
-         AND u.Email IS NOT NULL AND u.Email != ''`,
-      [targetDateStr]
+         AND u.Email IS NOT NULL AND u.Email != ''`
     );
 
-    if (tasks.length === 0) {
-      logger.info('No tasks due tomorrow — skipping due date reminder emails');
+    if (candidateUsers.length === 0) {
+      logger.info('No users with pending due-date tasks — skipping due date reminder emails');
       return;
-    }
-
-    // Group tasks by user
-    const tasksByUser = new Map<
-      number,
-      {
-        user: { UserId: number; Email: string; FirstName: string; LastName: string; Username: string };
-        tasks: Array<{ TaskName: string; ProjectName: string; DueDate: string; ProjectId: number; TaskId: number }>;
-      }
-    >();
-
-    for (const row of tasks as RowDataPacket[]) {
-      const userId = row.UserId as number;
-      if (!tasksByUser.has(userId)) {
-        tasksByUser.set(userId, {
-          user: {
-            UserId: userId,
-            Email: row.Email,
-            FirstName: row.FirstName,
-            LastName: row.LastName,
-            Username: row.Username,
-          },
-          tasks: [],
-        });
-      }
-      tasksByUser.get(userId)!.tasks.push({
-        TaskName: row.TaskName,
-        ProjectName: row.ProjectName,
-        DueDate: row.DueDate,
-        ProjectId: row.ProjectId,
-        TaskId: row.TaskId,
-      });
     }
 
     // Clean up old log entries periodically
     await cleanupOldLogs();
 
-    // Send reminders per user
-    for (const [userId, { user, tasks: userTasks }] of tasksByUser) {
+    // Send reminders per user (timezone-aware)
+    for (const user of candidateUsers as RowDataPacket[]) {
+      const userId = Number(user.UserId);
       try {
+        const userLocalNow = getUserCurrentTime((user.Timezone as string | null) || null);
+        if (!isWorkingHours(userLocalNow)) {
+          continue;
+        }
+
+        const userLocalToday = formatDateLocal(userLocalNow);
+        const userTargetDate = new Date(userLocalNow);
+        userTargetDate.setDate(userTargetDate.getDate() + REMINDER_DAYS_BEFORE);
+        const userTargetDateStr = formatDateLocal(userTargetDate);
+
+        const [tasks] = await pool.execute<RowDataPacket[]>(
+          `SELECT t.Id AS TaskId, t.TaskName, t.DueDate, t.ProjectId,
+                  p.ProjectName
+           FROM Tasks t
+           JOIN Projects p ON t.ProjectId = p.Id
+           WHERE t.AssignedTo = ?
+             AND DATE(t.DueDate) = ?
+             AND LOWER(COALESCE(t.Status, '')) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled')`,
+          [userId, userTargetDateStr]
+        );
+
+        if (tasks.length === 0) {
+          continue;
+        }
+
         // Check user preference
         const wantsReminder = await shouldSendEmail(userId, 'due_date_reminder');
         if (!wantsReminder) {
           continue;
         }
 
-        // Filter out tasks already reminded today
-        const pendingTasks: typeof userTasks = [];
-        for (const task of userTasks) {
-          const alreadySent = await hasReminderBeenSent(userId, task.TaskId, today);
+        // Filter out tasks already reminded on user's local day
+        const pendingTasks: Array<{ TaskName: string; ProjectName: string; DueDate: string; ProjectId: number; TaskId: number }> = [];
+        for (const task of tasks as RowDataPacket[]) {
+          const dueDate = normalizeDateString(task.DueDate);
+          const alreadySent = await hasReminderBeenSent(userId, Number(task.TaskId), userLocalToday);
           if (!alreadySent) {
-            pendingTasks.push(task);
+            pendingTasks.push({
+              TaskName: String(task.TaskName || ''),
+              ProjectName: String(task.ProjectName || ''),
+              DueDate: dueDate,
+              ProjectId: Number(task.ProjectId),
+              TaskId: Number(task.TaskId),
+            });
           }
         }
 
@@ -233,19 +261,19 @@ export async function checkAndSendDueDateReminders(): Promise<void> {
         const html = generateDueDateReminderEmail(displayName, pendingTasks);
         const taskWord = pendingTasks.length === 1 ? 'Task' : 'Tasks';
         const sent = await sendEmail({
-          to: user.Email,
+          to: String(user.Email),
           subject: `⏰ Reminder: ${pendingTasks.length} ${taskWord} Due Tomorrow`,
           html,
           userId,
-          username: user.Username,
+          username: String(user.Username || ''),
         });
 
         if (sent) {
           for (const task of pendingTasks) {
-            await recordSentReminder(userId, task.TaskId, today);
+            await recordSentReminder(userId, task.TaskId, userLocalToday);
           }
           logger.info(
-            `Sent due date reminder to user ${userId} (${user.Email}) for ${pendingTasks.length} task(s)`
+            `Sent due date reminder to user ${userId} (${String(user.Email)}) for ${pendingTasks.length} task(s)`
           );
         }
       } catch (userError) {

@@ -101,7 +101,10 @@ function getUserCurrentTime(timezone: string | null): Date {
 
 // Format date as YYYY-MM-DD
 function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 // Get task allocations for a user on a specific date
@@ -467,6 +470,9 @@ export async function checkAndSendWorkSummaries(): Promise<void> {
         if (wantsDailySummary && !dailyAlreadySent) {
           // Get allocations for today
           const allocations = await getUserAllocationsForDate(user.Id, todayDate);
+          if (allocations.length === 0) {
+            continue;
+          }
           const totalHours = allocations.reduce((sum, a) => sum + Number(a.AllocatedHours), 0);
 
           // Send daily summary email
@@ -503,6 +509,9 @@ export async function checkAndSendWorkSummaries(): Promise<void> {
           if (wantsWeeklySummary && !weeklyAlreadySent) {
             // Get allocations for the week
             const allocations = await getUserAllocationsForWeek(user.Id, weekStartStr, weekEndStr);
+            if (allocations.length === 0) {
+              continue;
+            }
             const totalHours = allocations.reduce((sum, a) => sum + Number(a.AllocatedHours), 0);
 
             // Calculate daily breakdown
@@ -627,6 +636,9 @@ export async function sendTestSummaryEmail(
     if (type === 'daily') {
       // Get allocations for today
       const allocations = await getUserAllocationsForDate(user.Id, todayDate);
+      if (allocations.length === 0) {
+        return { success: false, message: 'No scheduled tasks found for today' };
+      }
       const totalHours = allocations.reduce((sum, a) => sum + Number(a.AllocatedHours), 0);
 
       // Generate and send daily summary email
@@ -659,6 +671,9 @@ export async function sendTestSummaryEmail(
 
       // Get allocations for the week
       const allocations = await getUserAllocationsForWeek(user.Id, weekStartStr, weekEndStr);
+      if (allocations.length === 0) {
+        return { success: false, message: 'No scheduled tasks found for this week' };
+      }
       const totalHours = allocations.reduce((sum, a) => sum + Number(a.AllocatedHours), 0);
 
       // Calculate daily breakdown
