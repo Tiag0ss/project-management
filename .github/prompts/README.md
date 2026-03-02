@@ -21,6 +21,7 @@ Use them when asking Copilot for implementation work, so output stays consistent
 - `skill-jira-integration.prompt.md` — Jira org/project integration and issue-link workflows
 - `skill-permission-gated-ui.prompt.md` — UI changes with strict role/permission gating
 - `skill-release-pdf-flow.prompt.md` — Application releases, task linking, and PDF export flows
+- `skill-auth-password-recovery.prompt.md` — Forgot-password/reset-password flows, token safety, and SMTP-linked reset emails
 
 ## Notes
 

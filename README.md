@@ -12,20 +12,25 @@ This project is a work in progress, can be still found bugs, report the bugs in 
 - 📋 **Project & Task Management** — Kanban boards, task hierarchy (parent/subtasks), dependencies, custom statuses and priorities
 - 📊 **Resource Planning** — Gantt chart with drag-and-drop allocation, user availability tracking, intelligent replanning
 - ⏱️ **Time Tracking** — Daily and weekly timesheet views, per-task time entries, CSV export
+- ✅ **Approvals Center** — Team-lead/admin approval flows for time entries and vacations with batch actions
+- 🏖️ **Vacations & Holidays** — Annual vacation management, non-working-day-aware requests, and country holiday calendars
 - 👥 **Multi-Tenant Organizations** — Multiple organizations, team management, permission groups
 - 🔐 **Role-Based Permissions** — Developer, Support, Manager roles with granular permission control
 - 🎫 **Ticket System** — Support ticket management with auto-numbering, auto-assignment to default support users, task conversion, Jira integration, and fully customizable per-organization statuses and priorities
+- 🌐 **Customer Portal** — Customer-facing overview with ticket/project visibility and constrained ticket creation
 - 👤 **Customer Management** — Customer database with organization associations and default support user assignment
+- 📞 **Call Records** — Structured call logging with time, participants, notes, and optional task/project linkage
 - 🛠️ **Application Lifecycle Management** — Application registry, version control, release management with PDF exports, task-to-release linking
 - 🔗 **Jira Integration** — Two-tier Jira system connecting tickets and project boards with external linking and encrypted credentials
 - 📝 **Rich Text Editor** — Tiptap-based editor with formatting, images (inline base64), and markdown support for descriptions and comments
 - 📔 **Memos System** — Calendar-based note-taking with visibility controls (Private, Organizations, Public), tags, and rich content
 - 🔄 **Recurring Tasks** — Outlook-style recurring time blocks for meetings, standups, and fixed schedules that planning respects
 - 📧 **Email Notifications** — SMTP integration; task assignment, status change, priority change, @mention, and due-date reminder emails
+- 🔑 **Password Recovery** — Forgot-password flow with temporary email reset links and one-time token validation
 - 🚦 **RAG Health Score** — Automatic Red/Amber/Green project health indicator based on overdue tasks, budget burn, and unassigned work
 - 🔍 **Global Search** — Cross-entity search with paginated results and direct navigation
 - 🌙 **Dark Mode** — Full dark mode support across the entire UI
-- 📱 **Responsive Design** — Mobile-friendly interface with organised navigation dropdowns
+- 📱 **Responsive Design** — Mobile-friendly interface with grouped top menus and grouped left-sidebar navigation
 - 🧙 **Install Wizard** — Guided first-time setup
 
 ## Key Features in Detail
@@ -63,6 +68,21 @@ This project is a work in progress, can be still found bugs, report the bugs in 
 - **Approval workflow** — Managers can approve/reject time entries; approved entries are locked from editing
 - **Reporting integration** — Time data feeds into project reports
 
+### ✅ Approvals Center (Time + Vacations)
+- **Unified approvals workspace** — Dedicated approvals page with Time and Vacations tabs
+- **Team scope** — Admins and team leaders review only users within their approval scope
+- **Batch actions** — Approve/reject multiple time entries quickly
+- **Vacation controls** — Approve/reject/delete vacation requests and configure team member vacation ranges
+- **Yearly visibility** — Member totals for annual allowance, approved, pending, rejected, and remaining days
+
+### 🏖️ Vacations & Holidays
+- **Annual vacation allowance** — Per-user annual vacation days with remaining/reserved tracking
+- **Range requests with work-hour rules** — Vacation ranges automatically skip non-working weekdays based on user work schedule
+- **Validation feedback** — API/UI reports duplicate, exceeded, and non-working skipped dates
+- **Holiday calendars** — Country/year holiday management with manual CRUD and external import sources
+- **Calendar/Planning integration** — Holidays and vacations are rendered as unavailable dates in dashboard and planning views
+- **Visual distinction** — Vacations and holidays use different labels/icons in planning views
+
 ### 👥 Multi-Tenant Organizations
 - **Multiple organizations** — Single installation supports multiple companies/teams
 - **Organization isolation** — Projects, tasks, and data separated by organization
@@ -89,6 +109,7 @@ This project is a work in progress, can be still found bugs, report the bugs in 
 - **Auto-numbering** — Tickets get unique IDs like `TKT-ORG-123`
 - **Auto-assignment** — Tickets for customer projects automatically assigned to customer's default support user
 - **Intelligent detection** — Works for customer users AND internal users creating tickets for customers
+- **Customer-safe creation flow** — Customer users create tickets with minimal fields and cannot select a project
 - **Priority & category** — Classify tickets (Support, Bug, Feature Request, etc.)
 - **Custom statuses & priorities** — Fully configurable per organization (like task statuses); each status has a `StatusType` (`open`, `in_progress`, `waiting`, `resolved`, `closed`) for consistent filtering independent of label names
 - **Status workflow** — Open → In Progress → Waiting → Resolved → Closed (default); organizations can rename, recolour, or add statuses freely
@@ -108,6 +129,16 @@ This project is a work in progress, can be still found bugs, report the bugs in 
 - **Contact management** — Store customer contact details
 - **Custom fields** — Rich text descriptions and notes
 - **Searchable dropdowns** — Efficiently manage large customer lists with search functionality
+
+### 🌐 Customer Portal
+- **Customer-only access** — Dedicated portal endpoints/pages for customer users
+- **Overview metrics** — Customer ticket stats, recent tickets, and visible project summaries
+- **Scoped ticket creation** — Customer users can create tickets with minimal fields and without project assignment in internal ticket flow
+
+### 📞 Call Records
+- **Daily call logging** — Track call date/time, duration, type, participants, subject, and notes
+- **Work context linking** — Optional linkage to project and task for traceability
+- **User ownership** — Users manage their own call records with date filtering
 
 ### 📱 Application Lifecycle Management
 - **Application registry** — Centralized database of all applications within organizations
@@ -217,8 +248,16 @@ This project is a work in progress, can be still found bugs, report the bugs in 
   - Ticket assignments and updates
   - @mention in task comments
   - Due date reminders (1 day before)
+  - Password recovery reset links
   - Daily / weekly work summaries
 - **Deduplication** — Reminder and summary logs prevent duplicate sends on server restart
+
+### 🔐 Authentication & Password Recovery
+- **Secure login/register** — Authentication routes support encrypted client payloads and JWT token issuance
+- **Forgot password** — Users can request reset via email from the login page
+- **Temporary reset links** — One-time reset tokens with expiry are validated before password change
+- **Token storage safety** — Reset tokens are stored as hashes in database table `PasswordResetTokens`
+- **Privacy-preserving response** — Forgot-password API returns generic success message regardless of account existence
 
 ### 🌙 Dark Mode
 - **Full dark mode support** — Every page and component
@@ -236,7 +275,13 @@ This project is a work in progress, can be still found bugs, report the bugs in 
 - **One-time only** — Can't be accessed again after completion
 
 ### 🗂️ Navigation Organization
-- **Grouped menus** for better organization:
+- **Grouped left sidebar sections** for better organization:
+  - **Overview**: Dashboard
+  - **Delivery**: Projects, Planning, Timesheet
+  - **Service**: Tickets, Call Records, Memos
+  - **Management**: Customers, Applications, Organizations, Approvals
+  - **Reporting**: Reports
+- **Grouped top menus** remain available in top-navigation mode:
   - **Work** dropdown: Projects, Planning
   - **Management** dropdown: Applications, Customers, Organizations
 - **Quick access** to: Dashboard, Tickets, Memos, Reports

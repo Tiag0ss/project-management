@@ -16,6 +16,7 @@ Use reusable prompt templates from `.github/prompts/` when tasks match these cat
 - `skill-jira-integration.prompt.md`
 - `skill-permission-gated-ui.prompt.md`
 - `skill-release-pdf-flow.prompt.md`
+- `skill-auth-password-recovery.prompt.md`
 
 If a request is close to one of these templates, follow that template structure first, then adapt to the user-specific scope.
 
@@ -402,6 +403,23 @@ className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-
 - All protected routes check `user` from `useAuth()`
 - Redirect to `/login` if not authenticated
 - Admin-only pages check `user.isAdmin`
+- Password recovery flow is supported with:
+  - `POST /api/auth/forgot-password`
+  - `GET /api/auth/reset-password/validate?token=...`
+  - `POST /api/auth/reset-password`
+- Reset tokens are stored hashed in `PasswordResetTokens` and should be single-use with expiry
+- Forgot-password responses must stay generic (do not reveal whether email exists)
+
+### SMTP Settings Behavior
+- `smtpPassword` must not be returned as a visible/masked placeholder token in API responses for admin UI forms
+- In System Settings, saving an empty SMTP password means clear the stored password value
+- Do not reintroduce SMTP password show/hide toggle unless explicitly requested
+
+### Ticket Creation Constraints
+- For customer users (`isCustomerUser` / JWT `customerId`), ticket creation must remain minimal
+- Customer users must not select or assign `ProjectId` when creating tickets
+- Frontend payload must send `projectId: null` for customer users
+- Backend must validate and reject customer-user create requests that include `projectId`
 
 ### Task Hierarchy & Parent-Child Allocations
 - Tasks can have `ParentTaskId` to create subtasks
@@ -923,6 +941,9 @@ When generating code, ensure:
 15. **Use full-width page wrappers** - default to `w-full` for screen layouts; avoid introducing `container` wrappers unless explicitly requested
 16. **Keep history scoped to History tab** - never duplicate ChangeHistory content into non-history tabs
 17. **Avoid MySQL-only SQL in new backend routes** - keep queries portable for MySQL and MSSQL, or isolate provider-specific SQL with `dbProvider`
+18. **Avoid MySQL-only interval arithmetic in routes** - patterns like `DATE_ADD(..., INTERVAL ? HOUR)` are not portable; prefer app-calculated datetimes or provider-gated SQL
+19. **Password recovery privacy** - never leak account existence in forgot-password responses
+20. **Customer ticket creation rule** - do not allow project selection/assignment for customer users
 
 ## Example Files for Reference
 
