@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
 import { getApiUrl } from '@/lib/api/config';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import RichTextEditor from '@/components/RichTextEditor';
 
 interface PendingEntry {
@@ -90,7 +90,7 @@ export default function ApprovalsPage() {
   const { user, token } = useAuth();
   const { permissions } = usePermissions();
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const [initialTabFromQuery, setInitialTabFromQuery] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<'time' | 'vacations'>('time');
   const [canApproveTime, setCanApproveTime] = useState(false);
@@ -170,8 +170,14 @@ export default function ApprovalsPage() {
   }, [token, user]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    setInitialTabFromQuery(params.get('tab'));
+  }, []);
+
+  useEffect(() => {
     if (!scopeLoaded) return;
-    const tab = searchParams.get('tab');
+    const tab = initialTabFromQuery;
     if (tab === 'vacations' && canApproveVacations) {
       setActiveTab('vacations');
       return;
@@ -185,7 +191,7 @@ export default function ApprovalsPage() {
       return;
     }
     setActiveTab('time');
-  }, [searchParams, canApproveTime, canApproveVacations, scopeLoaded]);
+  }, [initialTabFromQuery, canApproveTime, canApproveVacations, scopeLoaded]);
 
   const loadEntries = useCallback(async () => {
     if (!token || !canApproveTime) {
