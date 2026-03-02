@@ -574,6 +574,7 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
       if (isActive && !isFictitious) {
         const resetToken = randomBytes(32).toString('hex');
         const tokenHash = createHash('sha256').update(resetToken).digest('hex');
+        const expiresAt = new Date(Date.now() + PASSWORD_RESET_TOKEN_TTL_HOURS * 60 * 60 * 1000);
 
         await pool.execute<ResultSetHeader>(
           'UPDATE PasswordResetTokens SET UsedAt = NOW() WHERE UserId = ? AND UsedAt IS NULL',
@@ -582,8 +583,8 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
 
         await pool.execute<ResultSetHeader>(
           `INSERT INTO PasswordResetTokens (UserId, TokenHash, ExpiresAt)
-           VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? HOUR))`,
-          [user.Id, tokenHash, PASSWORD_RESET_TOKEN_TTL_HOURS]
+           VALUES (?, ?, ?)`,
+          [user.Id, tokenHash, expiresAt]
         );
 
         const appBaseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000').replace(/\/$/, '');
