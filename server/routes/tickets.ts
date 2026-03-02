@@ -448,6 +448,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const userId = req.user?.userId;
     const customerId = req.user?.customerId;
     const { organizationId, projectId, title, description, priority, category, customerId: bodyCustomerId, externalTicketId } = req.body;
+    const isCustomerUser = !!customerId;
 
     if (!organizationId || !title) {
       return res.status(400).json({ success: false, message: 'Organization and title are required' });
@@ -455,6 +456,10 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     if (!priority) {
       return res.status(400).json({ success: false, message: 'Priority is required' });
+    }
+
+    if (isCustomerUser && projectId) {
+      return res.status(400).json({ success: false, message: 'Customer users cannot select a project when creating tickets' });
     }
 
     // Get organization abbreviation
@@ -570,7 +575,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       [
         organizationId,
         ticketCustomerId,
-        projectId || null,
+        isCustomerUser ? null : (projectId || null),
         userId,
         assignedToUserId,
         title,
