@@ -3252,6 +3252,13 @@ export default function PlanningPage() {
   }
 
   const days = getDaysInView();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayIndex = days.findIndex((day) => {
+    return day.getFullYear() === today.getFullYear()
+      && day.getMonth() === today.getMonth()
+      && day.getDate() === today.getDate();
+  });
   const normalizedGanttSearch = ganttSearch.trim().toLowerCase();
   const isGanttSearchActive = normalizedGanttSearch.length > 0;
   const matchesGanttSearch = (task: Task) => {
@@ -3636,6 +3643,11 @@ export default function PlanningPage() {
                               : ''
                           } ${viewMode === 'year' && day.getDate() === 1 ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
                         >
+                          {idx === todayIndex && (
+                            <div className="text-[9px] font-semibold text-blue-700 dark:text-blue-300 leading-tight mb-0.5">
+                              Today
+                            </div>
+                          )}
                           {dateHeader && (
                             <>
                               <div className="font-semibold text-gray-900 dark:text-white leading-tight">
@@ -3674,7 +3686,9 @@ export default function PlanningPage() {
                         {days.map((day, idx) => (
                           <div
                             key={idx}
-                            className="flex-1 border-r border-gray-200 dark:border-gray-700 relative"
+                            className={`flex-1 border-r border-gray-200 dark:border-gray-700 relative ${
+                              idx === todayIndex ? 'bg-blue-100/85 dark:bg-blue-800/30 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''
+                            }`}
                             onDragOver={handleDragOver}
                             onDrop={(e) => handleDropOnDay(e, day, null)}
                           />
@@ -3962,7 +3976,7 @@ export default function PlanningPage() {
                                     : isHoliday
                                     ? 'bg-amber-50 dark:bg-amber-900/20'
                                     : ''
-                                }`}
+                                } ${idx === todayIndex ? 'bg-blue-100/60 dark:bg-blue-800/20 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
                                 onDragOver={handleDragOver}
                                 onDrop={(e) => handleDropOnDay(e, day, userRow.Id)}
                                 title={isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
@@ -4200,7 +4214,7 @@ export default function PlanningPage() {
                                   : day.getDay() === 0 || day.getDay() === 6
                                   ? 'bg-gray-100 dark:bg-gray-700'
                                   : ''
-                              }`}
+                              } ${idx === todayIndex ? 'bg-blue-100/70 dark:bg-blue-800/25 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
                               title={isOverAllocated ? 'Over allocated day: planned hours exceed configured capacity' : isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
                             >
                               {vacationLabels.length > 0 && (

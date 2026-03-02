@@ -740,6 +740,10 @@ router.get('/project/:projectId/issues', authenticateToken, async (req: AuthRequ
         priority: issue.fields?.priority?.name,
         issueType: issue.fields?.issuetype?.name,
         assignee: issue.fields?.assignee?.displayName,
+        assigneeEmail: issue.fields?.assignee?.emailAddress || null,
+        assigneeAccountId: issue.fields?.assignee?.accountId || null,
+        assigneeKey: issue.fields?.assignee?.key || null,
+        assigneeName: issue.fields?.assignee?.name || null,
         created: issue.fields?.created,
         parentKey: issue.fields?.parent?.key || null,
         subtasks: issue.fields?.subtasks?.map((st: any) => ({

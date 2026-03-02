@@ -64,6 +64,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     status: '',
     issueType: '',
     priority: '',
+    assignee: '',
     showParentsOnly: false,
     showSubtasksOnly: false
   });
@@ -114,9 +115,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [jiraImportUsers, setJiraImportUsers] = useState<User[]>([]);
   const [jiraTicketPriorityMapping, setJiraTicketPriorityMapping] = useState<{ [key: string]: string }>({});
   const [jiraTicketTypeMapping, setJiraTicketTypeMapping] = useState<{ [key: string]: string }>({});
+  const [jiraBoardAssigneeMapping, setJiraBoardAssigneeMapping] = useState<Record<string, number | ''>>({});
   const [isJiraStatusMappingOpen, setIsJiraStatusMappingOpen] = useState(false);
   const [isJiraTaskTypeMappingOpen, setIsJiraTaskTypeMappingOpen] = useState(false);
   const [isJiraPriorityMappingOpen, setIsJiraPriorityMappingOpen] = useState(false);
+  const [isJiraAssigneeMappingOpen, setIsJiraAssigneeMappingOpen] = useState(false);
   const [isJiraTicketMappingOpen, setIsJiraTicketMappingOpen] = useState(false);
   const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
@@ -234,6 +237,48 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
 
     return mappings;
+  };
+
+  const buildAutoJiraBoardAssigneeMapping = (
+    issues: any[],
+    users: User[]
+  ): Record<string, number | ''> => {
+    const mapping: Record<string, number | ''> = {};
+    const assignees = Array.from(
+      new Set(issues.map((issue) => String(issue.assignee || '').trim()).filter(Boolean))
+    );
+
+    assignees.forEach((assigneeDisplay) => {
+      const normalizedDisplay = normalizeLookup(assigneeDisplay);
+      const identityCandidates = new Set<string>(
+        issues
+          .filter((issue) => normalizeLookup(issue.assignee) === normalizedDisplay)
+          .flatMap((issue) => [issue.assigneeAccountId, issue.assigneeEmail, issue.assigneeKey, issue.assigneeName, issue.assignee])
+          .map((value) => normalizeLookup(value))
+          .filter(Boolean)
+      );
+
+      let matchedUser: User | undefined;
+
+      if (identityCandidates.size > 0) {
+        matchedUser = users.find((candidate) => {
+          const jiraId = normalizeLookup(candidate.JiraId);
+          return jiraId ? identityCandidates.has(jiraId) : false;
+        });
+      }
+
+      if (!matchedUser) {
+        matchedUser = users.find((candidate) => {
+          const username = normalizeLookup(candidate.Username);
+          const fullName = normalizeLookup(`${candidate.FirstName || ''} ${candidate.LastName || ''}`);
+          return normalizedDisplay === username || normalizedDisplay === fullName;
+        });
+      }
+
+      mapping[assigneeDisplay] = matchedUser?.Id ?? '';
+    });
+
+    return mapping;
   };
 
   const closeConfirmModal = () => {
@@ -799,11 +844,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         const existingIds = new Set<string>(
           data.tasks
             .filter((task: any) => {
-              const hasExternalTicketId = task.ExternalTicketId;
+              const hasJiraIssueKey = task.JiraIssueKey;
               const hasExternalIssueId = task.ExternalIssueId;
-              return hasExternalTicketId || hasExternalIssueId;
+              return hasJiraIssueKey || hasExternalIssueId;
             })
-            .map((task: any) => String(task.ExternalTicketId || task.ExternalIssueId))
+            .map((task: any) => String(task.JiraIssueKey || task.ExternalIssueId).trim())
+            .filter((value: string) => value.length > 0)
         );
         setExistingIssueIds(existingIds);
       }
@@ -1173,6 +1219,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             statusMapping: statusMapping,
             priorityMapping: priorityMapping,
             taskTypeMapping: taskTypeMapping,
+            ticketMappings: Object.fromEntries(
+              issuesToImport.map((issue: any) => {
+                const selectedAssignee = jiraBoardAssigneeMapping[String(issue.assignee || '').trim()];
+                return [issue.key, {
+                  assigneeId: selectedAssignee ? Number(selectedAssignee) : null,
+                }];
+              })
+            ),
           }),
         }
       );
@@ -1201,6 +1255,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setSelectedIssues(new Set());
       setPriorityMapping({});
       setTaskTypeMapping({});
+      setJiraBoardAssigneeMapping({});
       await loadTasks();
       await loadExistingJiraIssues(); // Reload the imported issues list
     } catch (err: any) {
@@ -1236,6 +1291,18 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   // Filter and sort Jira issues hierarchically (parents followed by their subtasks)
   const getSortedFilteredJiraIssues = () => {
+    const statusFilter = normalizeLookup(jiraFilters.status);
+    const issueTypeFilter = normalizeLookup(jiraFilters.issueType);
+    const priorityFilter = normalizeLookup(jiraFilters.priority);
+    const assigneeFilter = normalizeLookup(jiraFilters.assignee);
+
+    const issueKeys = new Set(jiraIssues.map((issue) => String(issue.key || '')));
+    const parentKeySet = new Set(
+      jiraIssues
+        .map((issue) => String(issue.parentKey || '').trim())
+        .filter((parentKey) => parentKey.length > 0 && issueKeys.has(parentKey))
+    );
+
     // First, apply basic filters to all issues
     const basicFilteredIssues = jiraIssues.filter(issue => {
       // Text search
@@ -1249,17 +1316,22 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       }
       
       // Status filter
-      if (jiraFilters.status && issue.status !== jiraFilters.status) {
+      if (statusFilter && normalizeLookup(issue.status) !== statusFilter) {
         return false;
       }
       
       // Issue type filter
-      if (jiraFilters.issueType && issue.issueType !== jiraFilters.issueType) {
+      if (issueTypeFilter && normalizeLookup(issue.issueType) !== issueTypeFilter) {
         return false;
       }
       
       // Priority filter
-      if (jiraFilters.priority && issue.priority !== jiraFilters.priority) {
+      if (priorityFilter && normalizeLookup(issue.priority) !== priorityFilter) {
+        return false;
+      }
+
+      // Assignee filter
+      if (assigneeFilter && normalizeLookup(issue.assignee) !== assigneeFilter) {
         return false;
       }
       
@@ -1268,8 +1340,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
     // Apply hierarchy and import filters
     const finalFilteredIssues = basicFilteredIssues.filter(issue => {
-      const isParent = issue.subtasks && issue.subtasks.length > 0;
-      const isSubtask = issue.parentKey !== null;
+      const issueKey = String(issue.key || '').trim();
+      const parentKey = String(issue.parentKey || '').trim();
+      const isSubtask = parentKey.length > 0;
+      const isParent = parentKeySet.has(issueKey) || (issue.subtasks && issue.subtasks.length > 0);
       
       // Parent/subtask filters
       if (jiraFilters.showParentsOnly && !isParent) {
@@ -1281,7 +1355,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       }
       
       // Already imported filter - CORRECTED LOGIC
-      const isAlreadyImported = existingIssueIds.has(issue.key);
+      const isAlreadyImported = existingIssueIds.has(issueKey);
       
       // If showAlreadyImported is false (default), hide already imported issues
       if (!showAlreadyImported && isAlreadyImported) {
@@ -1292,62 +1366,54 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       return true;
     });
     
-    // Now sort hierarchically: parents first, then their subtasks
+    // Hierarchical ordering that guarantees all filtered issues are returned
     const result: any[] = [];
     const processedKeys = new Set<string>();
-    
-    // Process parent issues first (only those that passed all filters)
-    const parentIssues = finalFilteredIssues.filter(issue => {
-      const isParent = issue.subtasks && issue.subtasks.length > 0;
-      const isSubtask = issue.parentKey !== null;
-      return isParent && !isSubtask; // Parent but not subtask (root parents)
+    const byKey = new Map<string, any>();
+    const childrenByParent = new Map<string, any[]>();
+
+    finalFilteredIssues.forEach((issue) => {
+      const issueKey = String(issue.key || '').trim();
+      if (!issueKey) return;
+      byKey.set(issueKey, issue);
     });
-    
-    // Process standalone issues (neither parent nor subtask)
-    const standaloneIssues = finalFilteredIssues.filter(issue => {
-      const isParent = issue.subtasks && issue.subtasks.length > 0;
-      const isSubtask = issue.parentKey !== null;
-      return !isParent && !isSubtask;
+
+    finalFilteredIssues.forEach((issue) => {
+      const issueKey = String(issue.key || '').trim();
+      const parentKey = String(issue.parentKey || '').trim();
+      if (!issueKey || !parentKey || !byKey.has(parentKey)) return;
+
+      if (!childrenByParent.has(parentKey)) {
+        childrenByParent.set(parentKey, []);
+      }
+      childrenByParent.get(parentKey)!.push(issue);
     });
-    
-    // Process orphaned subtasks (subtasks whose parents are not in filtered list)
-    const orphanedSubtasks = finalFilteredIssues.filter(issue => {
-      const isSubtask = issue.parentKey !== null;
-      if (!isSubtask) return false;
-      // Check if parent exists in final filtered issues
-      const parentExists = finalFilteredIssues.some(p => p.key === issue.parentKey);
-      return !parentExists;
-    });
-    
-    // Add parents followed by their subtasks (both from finalFilteredIssues)
-    parentIssues.forEach(parent => {
-      result.push(parent);
-      processedKeys.add(parent.key);
-      
-      // Add subtasks of this parent (only those that passed all filters)
-      const childSubtasks = finalFilteredIssues.filter(issue => issue.parentKey === parent.key);
-      childSubtasks.forEach(subtask => {
-        result.push(subtask);
-        processedKeys.add(subtask.key);
-      });
-    });
-    
-    // Add standalone issues
-    standaloneIssues.forEach(issue => {
-      if (!processedKeys.has(issue.key)) {
-        result.push(issue);
-        processedKeys.add(issue.key);
+
+    const visitIssueTree = (issue: any) => {
+      const issueKey = String(issue.key || '').trim();
+      if (!issueKey || processedKeys.has(issueKey)) return;
+
+      result.push(issue);
+      processedKeys.add(issueKey);
+
+      const children = childrenByParent.get(issueKey) || [];
+      children.forEach(visitIssueTree);
+    };
+
+    // Start from roots (items without parent in the filtered set), preserving original order
+    finalFilteredIssues.forEach((issue) => {
+      const parentKey = String(issue.parentKey || '').trim();
+      const isRoot = !parentKey || !byKey.has(parentKey);
+      if (isRoot) {
+        visitIssueTree(issue);
       }
     });
-    
-    // Add orphaned subtasks
-    orphanedSubtasks.forEach(issue => {
-      if (!processedKeys.has(issue.key)) {
-        result.push(issue);
-        processedKeys.add(issue.key);
-      }
+
+    // Safety fallback: append anything not yet included
+    finalFilteredIssues.forEach((issue) => {
+      visitIssueTree(issue);
     });
-    
+
     return result;
   };
   
@@ -1766,6 +1832,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           loadTaskPriorities(),
           loadTaskTypes(),
           loadExistingJiraIssues(),
+          usersApi.getByOrganization(project.OrganizationId, token!).then((res) => setJiraImportUsers(res.users || [])).catch(() => setJiraImportUsers([])),
         ]);
         await loadJiraIssues();
       };
@@ -1778,6 +1845,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         status: '',
         issueType: '',
         priority: '',
+        assignee: '',
         showParentsOnly: false,
         showSubtasksOnly: false
       });
@@ -1785,8 +1853,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setExistingIssueIds(new Set());
       setPriorityMapping({});
       setTaskTypeMapping({});
+      setJiraBoardAssigneeMapping({});
     }
   }, [showJiraImportModal, project]);
+
+  useEffect(() => {
+    if (!showJiraImportModal || jiraIssues.length === 0 || jiraImportUsers.length === 0) return;
+
+    setJiraBoardAssigneeMapping((prev) => {
+      const autoMappings = buildAutoJiraBoardAssigneeMapping(jiraIssues, jiraImportUsers);
+      return {
+        ...autoMappings,
+        ...prev,
+      };
+    });
+  }, [showJiraImportModal, jiraIssues, jiraImportUsers]);
 
   // Load task statuses and GitHub issues when modal opens
   useEffect(() => {
@@ -2418,6 +2499,54 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     </div>
                   )}
 
+                  {/* Assignee Mapping Section */}
+                  {jiraIssues.length > 0 && jiraImportUsers.length > 0 && (
+                    <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-4">
+                      <button
+                        onClick={() => setIsJiraAssigneeMappingOpen(!isJiraAssigneeMappingOpen)}
+                        className="w-full flex items-center justify-between text-left"
+                      >
+                        <h3 className="font-semibold text-emerald-900 dark:text-emerald-300">👤 Jira User Mapping</h3>
+                        <span className="text-emerald-700 dark:text-emerald-400 text-sm">{isJiraAssigneeMappingOpen ? '▲ Collapse' : '▼ Expand'}</span>
+                      </button>
+                      {isJiraAssigneeMappingOpen && (
+                        <>
+                          <p className="text-sm text-emerald-800 dark:text-emerald-400 mt-3 mb-3">
+                            Map Jira assignees to users in this organization:
+                          </p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {Array.from(new Set(jiraIssues.map(i => String(i.assignee || '').trim()).filter(Boolean))).map(jiraAssignee => (
+                              <div key={jiraAssignee} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700">
+                                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                  {jiraAssignee}
+                                </label>
+                                <select
+                                  value={jiraBoardAssigneeMapping[jiraAssignee] || ''}
+                                  onChange={(e) => {
+                                    const value = e.target.value ? Number(e.target.value) : '';
+                                    setJiraBoardAssigneeMapping((prev) => ({
+                                      ...prev,
+                                      [jiraAssignee]: value,
+                                    }));
+                                  }}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                >
+                                  <option value="">Unassigned</option>
+                                  {jiraImportUsers.map((userOption) => {
+                                    const label = userOption.FirstName && userOption.LastName
+                                      ? `${userOption.FirstName} ${userOption.LastName} (${userOption.Username})`
+                                      : userOption.Username;
+                                    return <option key={userOption.Id} value={userOption.Id}>{label}</option>;
+                                  })}
+                                </select>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
                   {/* Filters Section */}
                   <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
                     <h3 className="font-semibold text-gray-900 dark:text-white mb-3">🔍 Filters</h3>
@@ -2477,6 +2606,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                           ))}
                         </select>
                       </div>
+
+                      {/* Assignee filter */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Assignee</label>
+                        <select
+                          value={jiraFilters.assignee}
+                          onChange={(e) => setJiraFilters({ ...jiraFilters, assignee: e.target.value })}
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        >
+                          <option value="">All Assignees</option>
+                          {Array.from(new Set(jiraIssues.map(i => String(i.assignee || '').trim()).filter(Boolean))).map(assignee => (
+                            <option key={assignee} value={assignee}>{assignee}</option>
+                          ))}
+                        </select>
+                      </div>
                       
                       {/* Hierarchy filters */}
                       <div className="lg:col-span-3 flex gap-4 flex-wrap">
@@ -2515,7 +2659,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                           />
                           <span className="text-sm text-gray-700 dark:text-gray-300">Show already imported</span>
                         </label>
-                        {(jiraFilters.search || jiraFilters.status || jiraFilters.issueType || jiraFilters.priority || jiraFilters.showParentsOnly || jiraFilters.showSubtasksOnly || showAlreadyImported) && (
+                        {(jiraFilters.search || jiraFilters.status || jiraFilters.issueType || jiraFilters.priority || jiraFilters.assignee || jiraFilters.showParentsOnly || jiraFilters.showSubtasksOnly || showAlreadyImported) && (
                           <button
                             onClick={() => {
                               setJiraFilters({
@@ -2523,6 +2667,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                                 status: '',
                                 issueType: '',
                                 priority: '',
+                                assignee: '',
                                 showParentsOnly: false,
                                 showSubtasksOnly: false
                               });
@@ -2585,6 +2730,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                                 status: '',
                                 issueType: '',
                                 priority: '',
+                                assignee: '',
                                 showParentsOnly: false,
                                 showSubtasksOnly: false
                               });
@@ -5016,7 +5162,7 @@ function TasksTab({
                             <span className="text-xl">🎫</span>
                             <div>
                               <div className="font-medium text-gray-900 dark:text-white">Import from Jira Ticket</div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">Single ticket import</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">Tickets import</div>
                             </div>
                           </button>
                         )}
