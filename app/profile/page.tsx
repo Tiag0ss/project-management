@@ -379,11 +379,6 @@ export default function ProfilePage() {
       return;
     }
 
-    if (vacationSummary.reservedDays + requestDays > vacationSummary.annualTotal) {
-      setMessage(`Vacation request exceeds annual limit (${vacationSummary.annualTotal} days)`);
-      return;
-    }
-
     setIsSavingVacation(true);
     try {
       const response = await fetch(`${getApiUrl()}/api/vacations/my/request`, {
@@ -404,7 +399,16 @@ export default function ProfilePage() {
         throw new Error(data.message || 'Failed to submit vacation request');
       }
 
-      setMessage(`Vacation request submitted (${data.created || 0} day(s) added)`);
+      const exceededDates = Array.isArray(data.exceededDates) ? data.exceededDates : [];
+      const nonWorkingDates = Array.isArray(data.nonWorkingDates) ? data.nonWorkingDates : [];
+      const exceededSuffix = exceededDates.length > 0
+        ? ` · Exceeded days: ${exceededDates.join(', ')}`
+        : '';
+      const nonWorkingSuffix = nonWorkingDates.length > 0
+        ? ` · Non-working days skipped: ${nonWorkingDates.join(', ')}`
+        : '';
+
+      setMessage(`Vacation request submitted (${data.created || 0} added${data.skipped ? `, ${data.skipped} duplicate` : ''}${data.exceeded ? `, ${data.exceeded} exceeded` : ''}${data.nonWorkingSkipped ? `, ${data.nonWorkingSkipped} non-working` : ''})${exceededSuffix}${nonWorkingSuffix}`);
       setVacationNotes('');
       await loadVacationData();
     } catch (err: any) {
@@ -1758,7 +1762,7 @@ export default function ProfilePage() {
                     </div>
                   </div>
 
-                  {(vacationSummary.isOverLimit || (vacationSummary.reservedDays + getVacationRequestDays() > vacationSummary.annualTotal)) && (
+                  {vacationSummary.isOverLimit && (
                     <div className="p-3 rounded border border-red-400 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
                       Warning: Vacation allocation exceeds annual limit.
                     </div>

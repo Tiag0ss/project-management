@@ -21,6 +21,44 @@ const toDateRange = (startDate: string, endDate: string): string[] => {
   return result;
 };
 
+const getWorkHoursFieldByWeekday = (weekday: number): string => {
+  switch (weekday) {
+    case 0:
+      return 'WorkHoursSunday';
+    case 1:
+      return 'WorkHoursMonday';
+    case 2:
+      return 'WorkHoursTuesday';
+    case 3:
+      return 'WorkHoursWednesday';
+    case 4:
+      return 'WorkHoursThursday';
+    case 5:
+      return 'WorkHoursFriday';
+    default:
+      return 'WorkHoursSaturday';
+  }
+};
+
+const splitWorkingAndNonWorkingDates = (dates: string[], userRow: RowDataPacket): { workingDates: string[]; nonWorkingDates: string[] } => {
+  const workingDates: string[] = [];
+  const nonWorkingDates: string[] = [];
+
+  for (const date of dates) {
+    const day = new Date(`${date}T12:00:00`).getDay();
+    const fieldName = getWorkHoursFieldByWeekday(day);
+    const hours = parseFloat(String(userRow[fieldName] ?? 0));
+
+    if (hours > 0) {
+      workingDates.push(date);
+    } else {
+      nonWorkingDates.push(date);
+    }
+  }
+
+  return { workingDates, nonWorkingDates };
+};
+
 const getCanApproveVacations = async (userId: number, isAdmin: boolean): Promise<boolean> => {
   if (isAdmin) return true;
   const [rows] = await pool.execute<RowDataPacket[]>(
@@ -115,34 +153,58 @@ router.post('/my/request', authenticateToken, async (req: AuthRequest, res: Resp
       return res.status(400).json({ success: false, message: 'Invalid vacation date range' });
     }
 
-    const year = Number(normalizedStart.split('-')[0]);
     const [users] = await pool.execute<RowDataPacket[]>(
-      'SELECT AnnualVacationDays FROM Users WHERE Id = ?',
+      `SELECT AnnualVacationDays,
+              WorkHoursMonday, WorkHoursTuesday, WorkHoursWednesday, WorkHoursThursday,
+              WorkHoursFriday, WorkHoursSaturday, WorkHoursSunday
+       FROM Users WHERE Id = ?`,
       [userId]
     );
+
+    if (users.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
     const annualTotal = parseFloat(String(users[0]?.AnnualVacationDays || 22));
+    const { workingDates, nonWorkingDates } = splitWorkingAndNonWorkingDates(dates, users[0]);
 
-    const [existingYear] = await pool.execute<RowDataPacket[]>(
-      `SELECT COUNT(*) as Count
-       FROM UserVacations
-       WHERE UserId = ?
-         AND VacationDate BETWEEN ? AND ?
-         AND LOWER(Status) IN ('pending', 'approved')`,
-      [userId, `${year}-01-01`, `${year}-12-31`]
-    );
-    const reservedDays = Number(existingYear[0]?.Count || 0);
-
-    if (reservedDays + dates.length > annualTotal) {
+    if (workingDates.length === 0) {
       return res.status(400).json({
         success: false,
-        message: `Vacation request exceeds annual limit (${annualTotal} days). Current reserved: ${reservedDays}, requested: ${dates.length}`,
+        message: 'Selected range contains only non-working days for this user.',
+        nonWorkingDates,
       });
+    }
+
+    const years = Array.from(new Set(workingDates.map((date) => Number(date.split('-')[0]))));
+    const reservedByYear = new Map<number, number>();
+
+    if (years.length > 0) {
+      const minYear = Math.min(...years);
+      const maxYear = Math.max(...years);
+
+      const [existingYearCounts] = await pool.execute<RowDataPacket[]>(
+        `SELECT YEAR(VacationDate) as VacationYear, COUNT(*) as ReservedCount
+         FROM UserVacations
+         WHERE UserId = ?
+           AND VacationDate BETWEEN ? AND ?
+           AND LOWER(Status) IN ('pending', 'approved')
+         GROUP BY YEAR(VacationDate)`,
+        [userId, `${minYear}-01-01`, `${maxYear}-12-31`]
+      );
+
+      for (const row of existingYearCounts) {
+        reservedByYear.set(Number(row.VacationYear), Number(row.ReservedCount || 0));
+      }
     }
 
     let created = 0;
     let skipped = 0;
+    let exceeded = 0;
+    const exceededDates: string[] = [];
+    const createdByYear = new Map<number, number>();
 
-    for (const date of dates) {
+    for (const date of workingDates) {
       const [existing] = await pool.execute<RowDataPacket[]>(
         `SELECT Id FROM UserVacations
          WHERE UserId = ? AND VacationDate = ? AND LOWER(Status) IN ('pending', 'approved')`,
@@ -154,15 +216,35 @@ router.post('/my/request', authenticateToken, async (req: AuthRequest, res: Resp
         continue;
       }
 
+      const year = Number(date.split('-')[0]);
+      const reserved = reservedByYear.get(year) || 0;
+      const pendingCreation = createdByYear.get(year) || 0;
+
+      if (reserved + pendingCreation + 1 > annualTotal) {
+        exceeded += 1;
+        exceededDates.push(date);
+        continue;
+      }
+
       await pool.execute<ResultSetHeader>(
         `INSERT INTO UserVacations (UserId, VacationDate, Status, Notes, RequestedBy)
          VALUES (?, ?, 'pending', ?, ?)`,
         [userId, date, notes || null, userId]
       );
       created += 1;
+      createdByYear.set(year, pendingCreation + 1);
     }
 
-    res.json({ success: true, message: 'Vacation request submitted', created, skipped });
+    res.json({
+      success: true,
+      message: 'Vacation request submitted',
+      created,
+      skipped,
+      exceeded,
+      exceededDates,
+      nonWorkingSkipped: nonWorkingDates.length,
+      nonWorkingDates,
+    });
   } catch (error) {
     console.error('Error requesting vacations:', error);
     res.status(500).json({ success: false, message: 'Failed to submit vacation request' });
@@ -464,6 +546,27 @@ router.post('/team-members/:userId/configure', authenticateToken, async (req: Au
       ? String(status).toLowerCase()
       : 'approved';
 
+    const [users] = await pool.execute<RowDataPacket[]>(
+      `SELECT AnnualVacationDays,
+              WorkHoursMonday, WorkHoursTuesday, WorkHoursWednesday, WorkHoursThursday,
+              WorkHoursFriday, WorkHoursSaturday, WorkHoursSunday
+       FROM Users WHERE Id = ?`,
+      [targetUserId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const { workingDates, nonWorkingDates } = splitWorkingAndNonWorkingDates(dates, users[0]);
+    if (workingDates.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selected range contains only non-working days for this user.',
+        nonWorkingDates,
+      });
+    }
+
     let created = 0;
     let skipped = 0;
     let exceeded = 0;
@@ -475,18 +578,9 @@ router.post('/team-members/:userId/configure', authenticateToken, async (req: Au
     const createdByYear = new Map<number, number>();
 
     if (enforceAnnualLimit) {
-      const [users] = await pool.execute<RowDataPacket[]>(
-        'SELECT AnnualVacationDays FROM Users WHERE Id = ?',
-        [targetUserId]
-      );
-
-      if (users.length === 0) {
-        return res.status(404).json({ success: false, message: 'User not found' });
-      }
-
       annualTotal = Math.max(0, parseFloat(String(users[0]?.AnnualVacationDays || 22)));
 
-      const years = Array.from(new Set(dates.map((date) => Number(date.split('-')[0]))));
+      const years = Array.from(new Set(workingDates.map((date) => Number(date.split('-')[0]))));
       if (years.length > 0) {
         const minYear = Math.min(...years);
         const maxYear = Math.max(...years);
@@ -507,7 +601,7 @@ router.post('/team-members/:userId/configure', authenticateToken, async (req: Au
       }
     }
 
-    for (const date of dates) {
+    for (const date of workingDates) {
       const [existing] = await pool.execute<RowDataPacket[]>(
         `SELECT Id FROM UserVacations
          WHERE UserId = ? AND VacationDate = ? AND LOWER(Status) IN ('pending', 'approved')`,
@@ -552,7 +646,16 @@ router.post('/team-members/:userId/configure', authenticateToken, async (req: Au
       }
     }
 
-    res.json({ success: true, message: 'Vacation configuration saved', created, skipped, exceeded, exceededDates });
+    res.json({
+      success: true,
+      message: 'Vacation configuration saved',
+      created,
+      skipped,
+      exceeded,
+      exceededDates,
+      nonWorkingSkipped: nonWorkingDates.length,
+      nonWorkingDates,
+    });
   } catch (error) {
     console.error('Error configuring user vacations:', error);
     res.status(500).json({ success: false, message: 'Failed to configure user vacations' });

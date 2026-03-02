@@ -412,10 +412,14 @@ export default function ApprovalsPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Failed to configure vacations');
       const exceededDates = Array.isArray(data.exceededDates) ? data.exceededDates : [];
+      const nonWorkingDates = Array.isArray(data.nonWorkingDates) ? data.nonWorkingDates : [];
       const exceededSuffix = exceededDates.length > 0
         ? ` · Exceeded days: ${exceededDates.join(', ')}`
         : '';
-      setVacationMessage(`Configured vacations (${data.created || 0} created, ${data.skipped || 0} skipped${data.exceeded ? `, ${data.exceeded} exceeded` : ''})${exceededSuffix}`);
+      const nonWorkingSuffix = nonWorkingDates.length > 0
+        ? ` · Non-working days skipped: ${nonWorkingDates.join(', ')}`
+        : '';
+      setVacationMessage(`Configured vacations (${data.created || 0} created, ${data.skipped || 0} skipped${data.exceeded ? `, ${data.exceeded} exceeded` : ''}${data.nonWorkingSkipped ? `, ${data.nonWorkingSkipped} non-working` : ''})${exceededSuffix}${nonWorkingSuffix}`);
       setConfigNotes('');
       setShowVacationConfigModal(false);
       await loadVacationData();
