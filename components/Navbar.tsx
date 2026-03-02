@@ -11,6 +11,7 @@ import RichTextEditor from './RichTextEditor';
 import SearchableSelect from './SearchableSelect';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { io, Socket } from 'socket.io-client';
+import { ThemeMode, getStoredThemeMode, setThemeMode } from '@/lib/theme';
 
 interface Organization {
   Id: number;
@@ -49,6 +50,7 @@ export default function Navbar() {
   const { user, token, logout, isCustomerUser } = useAuth();
   const { permissions, isLoading: permissionsLoading } = usePermissions();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const quickActionsRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
@@ -166,6 +168,10 @@ export default function Navbar() {
     subject: '',
     notes: '',
   });
+
+  useEffect(() => {
+    setThemeModeState(getStoredThemeMode());
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1604,7 +1610,7 @@ export default function Navbar() {
                 </button>
 
                 {dropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
+                  <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
                     <a
                       href="/profile"
                       className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -1649,6 +1655,31 @@ export default function Navbar() {
                     </a>
                     </>
                     )}
+                    <hr className="my-1 border-gray-200 dark:border-gray-700" />
+                    <div className="px-4 py-2">
+                      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                        Theme
+                      </p>
+                      <div className="grid grid-cols-3 gap-1">
+                        {(['light', 'dark', 'system'] as ThemeMode[]).map((mode) => (
+                          <button
+                            key={mode}
+                            onClick={() => {
+                              setThemeMode(mode);
+                              setThemeModeState(mode);
+                            }}
+                            aria-label={`Set theme to ${mode}`}
+                            title={mode.charAt(0).toUpperCase() + mode.slice(1)}
+                            className={`px-2 py-1 text-xs rounded capitalize border transition-colors ${themeMode === mode
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                              }`}
+                          >
+                            {mode === 'light' ? '☀️' : mode === 'dark' ? '🌙' : '💻'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <hr className="my-1 border-gray-200 dark:border-gray-700" />
                     <button
                       onClick={() => {

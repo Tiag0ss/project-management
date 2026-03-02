@@ -2611,13 +2611,21 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
       });
     }
 
-    // Get existing tasks with external issue IDs to avoid duplicates
+    // Get existing tasks with Jira issue identifiers to avoid duplicates
     const [existingTasks] = await pool.execute<RowDataPacket[]>(
-      'SELECT ExternalIssueId FROM Tasks WHERE ProjectId = ? AND ExternalIssueId IS NOT NULL',
+      `SELECT JiraIssueKey, ExternalIssueId
+       FROM Tasks
+       WHERE ProjectId = ?
+         AND (JiraIssueKey IS NOT NULL OR ExternalIssueId IS NOT NULL)`,
       [projectId]
     );
-    
-    const existingIssueIds = new Set(existingTasks.map((t: any) => t.ExternalIssueId));
+
+    const existingIssueIds = new Set(
+      existingTasks
+        .flatMap((t: any) => [t.JiraIssueKey, t.ExternalIssueId])
+        .filter((value: any) => value !== null && value !== undefined && String(value).trim() !== '')
+        .map((value: any) => String(value).trim())
+    );
     
     // Filter out issues that are already imported
     const newIssues = issues.filter(issue => !existingIssueIds.has(issue.key));
@@ -2718,7 +2726,7 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
       const normalizedDescription = normalizeJiraDescription(issue.description);
 
       const [result] = await pool.execute<ResultSetHeader>(
-        `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, CreatedBy, ExternalIssueId)
+        `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, CreatedBy, JiraIssueKey)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           projectId,
