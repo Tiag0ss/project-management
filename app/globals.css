@@ -38,3 +38,36 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+body.nav-left-fixed-expanded {
+  padding-left: 18rem;
+  transition: padding-left 0.2s ease;
+}
+
+body.nav-left-fixed-collapsed {
+  padding-left: 4rem;
+  transition: padding-left 0.2s ease;
+}
+
+body.nav-left-fixed-expanded .nav-top-compensate-left-expanded {
+  margin-left: -18rem;
+  width: calc(100% + 18rem);
+}
+
+body.nav-left-fixed-collapsed .nav-top-compensate-left-collapsed {
+  margin-left: -4rem;
+  width: calc(100% + 4rem);
+}
+
+@media (max-width: 1024px) {
+  body.nav-left-fixed-expanded,
+  body.nav-left-fixed-collapsed {
+    padding-left: 0;
+  }
+
+  body.nav-left-fixed-expanded .nav-top-compensate-left-expanded,
+  body.nav-left-fixed-collapsed .nav-top-compensate-left-collapsed {
+    margin-left: 0;
+    width: 100%;
+  }
+}

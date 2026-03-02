@@ -112,6 +112,9 @@ export default function ProfilePage() {
     lastName: '',
     email: '',
     timezone: '',
+    navbarMenuLayout: 'top',
+    navbarLeftMode: 'fixed',
+    navbarLeftCollapsed: false,
   });
   
   // Password change state
@@ -255,6 +258,9 @@ export default function ProfilePage() {
           lastName: profile.LastName || '',
           email: profile.Email || '',
           timezone: profile.Timezone || '',
+          navbarMenuLayout: (profile.NavbarMenuLayout || 'top') === 'left' ? 'left' : 'top',
+          navbarLeftMode: (profile.NavbarLeftMode || 'fixed') === 'floating' ? 'floating' : 'fixed',
+          navbarLeftCollapsed: !!profile.NavbarLeftCollapsed,
         });
       }
     } catch (err) {
@@ -944,12 +950,7 @@ export default function ProfilePage() {
                         <button
                           onClick={() => {
                             setIsEditingProfile(false);
-                            setProfileForm({
-                              firstName: user.firstName || '',
-                              lastName: user.lastName || '',
-                              email: user.email || '',
-                              timezone: profileForm.timezone || '',
-                            });
+                            loadUserProfile();
                           }}
                           className="px-4 py-2 bg-gray-300 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-900 dark:text-white rounded-lg transition-colors"
                         >
@@ -1044,6 +1045,75 @@ export default function ProfilePage() {
                       </p>
                     )}
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Navbar Menu Layout
+                    </label>
+                    {isEditingProfile ? (
+                      <select
+                        value={profileForm.navbarMenuLayout}
+                        onChange={(e) => setProfileForm(prev => ({
+                          ...prev,
+                          navbarMenuLayout: e.target.value === 'left' ? 'left' : 'top',
+                        }))}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      >
+                        <option value="top">Top (current)</option>
+                        <option value="left">Left sidebar</option>
+                      </select>
+                    ) : (
+                      <p className="text-gray-900 dark:text-white">
+                        {profileForm.navbarMenuLayout === 'left' ? 'Left sidebar' : 'Top (current)'}
+                      </p>
+                    )}
+                  </div>
+
+                  {profileForm.navbarMenuLayout === 'left' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Left Sidebar Mode
+                      </label>
+                      {isEditingProfile ? (
+                        <select
+                          value={profileForm.navbarLeftMode}
+                          onChange={(e) => setProfileForm(prev => ({
+                            ...prev,
+                            navbarLeftMode: e.target.value === 'floating' ? 'floating' : 'fixed',
+                          }))}
+                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        >
+                          <option value="fixed">Fixed</option>
+                          <option value="floating">Floating</option>
+                        </select>
+                      ) : (
+                        <p className="text-gray-900 dark:text-white">
+                          {profileForm.navbarLeftMode === 'floating' ? 'Floating' : 'Fixed'}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {profileForm.navbarMenuLayout === 'left' && (
+                    <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">Start Sidebar Collapsed</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">You can still expand/collapse from the navbar button.</p>
+                      </div>
+                      {isEditingProfile ? (
+                        <input
+                          type="checkbox"
+                          checked={profileForm.navbarLeftCollapsed}
+                          onChange={(e) => setProfileForm(prev => ({ ...prev, navbarLeftCollapsed: e.target.checked }))}
+                          className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      ) : (
+                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                          {profileForm.navbarLeftCollapsed ? 'Yes' : 'No'}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
 
                 </div>

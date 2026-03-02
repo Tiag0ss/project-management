@@ -336,6 +336,27 @@
       "Comment": "User identifier for Jira integrations"
     },
     {
+      "FieldName": "NavbarMenuLayout",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "top",
+      "Comment": "User preference for navbar menu layout: top or left"
+    },
+    {
+      "FieldName": "NavbarLeftMode",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "fixed",
+      "Comment": "When left layout is enabled: fixed or floating sidebar mode"
+    },
+    {
+      "FieldName": "NavbarLeftCollapsed",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "When left layout is enabled: whether sidebar starts collapsed"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,
