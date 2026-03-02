@@ -185,12 +185,17 @@ async function getStoredSchemaHash(tableName: string): Promise<string | null> {
 }
 
 async function updateSchemaHash(tableName: string, schemaHash: string): Promise<void> {
-  const [, updateMeta] = await pool.execute(
+  const [updateResult, updateMeta] = await pool.execute(
     `UPDATE SchemaVersions SET SchemaHash = ?, LastUpdated = CURRENT_TIMESTAMP WHERE TableName = ?`,
     [schemaHash, tableName]
   );
 
-  const affectedRows = Number((updateMeta as any)?.affectedRows || 0);
+  const affectedRows = Number(
+    (updateResult as any)?.affectedRows
+    || (updateResult as any)?.rowsAffected?.[0]
+    || (updateMeta as any)?.affectedRows
+    || 0
+  );
   if (affectedRows === 0) {
     await pool.execute(
       `INSERT INTO SchemaVersions (TableName, SchemaHash) VALUES (?, ?)`,

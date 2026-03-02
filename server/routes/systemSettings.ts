@@ -341,12 +341,17 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         finalValue = encrypt(finalValue);
       }
 
-      const [, updateMeta] = await pool.execute(
+      const [updateResult, updateMeta] = await pool.execute(
         `UPDATE SystemSettings SET SettingValue = ? WHERE SettingKey = ?`,
         [finalValue, key]
       );
 
-      const affectedRows = Number((updateMeta as any)?.affectedRows || 0);
+      const affectedRows = Number(
+        (updateResult as any)?.affectedRows
+        || (updateResult as any)?.rowsAffected?.[0]
+        || (updateMeta as any)?.affectedRows
+        || 0
+      );
       if (affectedRows === 0) {
         await pool.execute(
           `INSERT INTO SystemSettings (SettingKey, SettingValue) VALUES (?, ?)`,

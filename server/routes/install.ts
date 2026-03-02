@@ -312,12 +312,17 @@ router.post('/setup', async (req: Request, res: Response) => {
       ];
 
       for (const [key, value] of defaultSettings) {
-        const [, updateMeta] = await connection.execute(
+        const [updateResult, updateMeta] = await connection.execute(
           `UPDATE SystemSettings SET SettingValue = SettingValue WHERE SettingKey = ?`,
           [key]
         );
 
-        const affectedRows = Number((updateMeta as any)?.affectedRows || 0);
+        const affectedRows = Number(
+          (updateResult as any)?.affectedRows
+          || (updateResult as any)?.rowsAffected?.[0]
+          || (updateMeta as any)?.affectedRows
+          || 0
+        );
         if (affectedRows === 0) {
           await connection.execute(
             `INSERT INTO SystemSettings (SettingKey, SettingValue) VALUES (?, ?)`,
