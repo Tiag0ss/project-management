@@ -615,8 +615,9 @@ export default function ProjectsPage() {
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-2">
                                 <div className="font-medium text-gray-900 dark:text-white">{project.ProjectName}</div>
+                                {!!project.IsGlobal && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Global Project</span>}
                                 {!!project.IsHobby && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">Hobby</span>}
-                                {isOverdue && <span className="text-red-500 text-xs font-semibold">Overdue</span>}
+                                {!!isOverdue && <span className="text-red-500 text-xs font-semibold">Overdue</span>}
                               </div>
                               <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                                 {project.OrganizationName}{project.CustomerName && <span className="ml-2 text-blue-500">• {project.CustomerName}</span>}
@@ -698,7 +699,7 @@ export default function ProjectsPage() {
 
       {/* Confirm Modal */}
       {modalMessage && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <div className="flex items-start mb-4">
@@ -808,7 +809,10 @@ function ProjectCard({
                 {project.StatusName}
               </span>
             )}
-            {!!project.IsHobby && <span className="text-xs text-purple-500 font-medium">Hobby</span>}
+            <div className="flex items-center gap-2">
+              {!!project.IsGlobal && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Global Project</span>}
+              {!!project.IsHobby && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">Hobby</span>}
+            </div>
           </div>
         </div>
 
@@ -942,6 +946,7 @@ function ProjectModal({
     startDate: project?.StartDate ? project.StartDate.split('T')[0] : '',
     endDate: project?.EndDate ? project.EndDate.split('T')[0] : '',
     isHobby: project?.IsHobby || false,
+    isGlobal: !!project?.IsGlobal,
     customerId: project?.CustomerId || undefined,
     jiraBoardId: project?.JiraBoardId || undefined,
     gitHubOwner: project?.GitHubOwner || undefined,
@@ -1092,6 +1097,10 @@ function ProjectModal({
     setIsLoading(true);
 
     try {
+      if (formData.isGlobal && formData.customerId) {
+        throw new Error('Global projects cannot be associated with a customer');
+      }
+
       const requestData: CreateProjectData = canViewBudgetInfo
         ? formData
         : { ...formData, budget: undefined, budgetType: undefined };
@@ -1110,7 +1119,7 @@ function ProjectModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
@@ -1161,8 +1170,13 @@ function ProjectModal({
                 options={customers.map(customer => ({ value: customer.Id, label: customer.Name }))}
                 placeholder="Select Customer"
                 emptyText="No customer"
-                disabled={!formData.organizationId || formData.organizationId === 0}
+                disabled={!formData.organizationId || formData.organizationId === 0 || !!formData.isGlobal}
               />
+              {formData.isGlobal && (
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  Global projects cannot have a customer association
+                </p>
+              )}
               {formData.organizationId > 0 && customers.length === 0 && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   No customers available for this organization
@@ -1412,22 +1426,45 @@ function ProjectModal({
               </div>
             </div>
 
-            {/* Hobby Project Toggle */}
-            <div className="flex items-center gap-3 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
-              <input
-                type="checkbox"
-                id="isHobby"
-                checked={formData.isHobby || false}
-                onChange={(e) => setFormData({ ...formData, isHobby: e.target.checked })}
-                className="w-5 h-5 rounded border-purple-300 text-purple-600 focus:ring-purple-500 dark:bg-gray-700 dark:border-purple-600"
-              />
-              <div>
-                <label htmlFor="isHobby" className="block text-sm font-medium text-purple-700 dark:text-purple-300 cursor-pointer">
-                  🎨 Hobby Project
-                </label>
-                <p className="text-xs text-purple-600 dark:text-purple-400">
-                  Hobby projects are scheduled outside of regular work hours
-                </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="flex items-center gap-3 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <input
+                  type="checkbox"
+                  id="isGlobal"
+                  checked={!!formData.isGlobal}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    isGlobal: e.target.checked,
+                    customerId: e.target.checked ? undefined : formData.customerId,
+                  })}
+                  className="w-5 h-5 rounded border-blue-300 text-blue-600 focus:ring-blue-500 dark:bg-gray-700 dark:border-blue-600"
+                />
+                <div>
+                  <label htmlFor="isGlobal" className="block text-sm font-medium text-blue-700 dark:text-blue-300 cursor-pointer">
+                    🌐 Global Project
+                  </label>
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    Global projects are not associated with a specific customer
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                <input
+                  type="checkbox"
+                  id="isHobby"
+                  checked={formData.isHobby || false}
+                  onChange={(e) => setFormData({ ...formData, isHobby: e.target.checked })}
+                  className="w-5 h-5 rounded border-purple-300 text-purple-600 focus:ring-purple-500 dark:bg-gray-700 dark:border-purple-600"
+                />
+                <div>
+                  <label htmlFor="isHobby" className="block text-sm font-medium text-purple-700 dark:text-purple-300 cursor-pointer">
+                    🎨 Hobby Project
+                  </label>
+                  <p className="text-xs text-purple-600 dark:text-purple-400">
+                    Hobby projects are scheduled outside of regular work hours
+                  </p>
+                </div>
               </div>
             </div>
 

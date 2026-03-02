@@ -16,6 +16,7 @@ export interface Project {
   StartDate?: string;
   EndDate?: string;
   IsHobby?: boolean;
+  IsGlobal?: boolean | number;
   IsVisibleToCustomer?: boolean | number;
   CustomerId?: number;
   CustomerName?: string;
@@ -53,6 +54,7 @@ export interface CreateProjectData {
   startDate?: string;
   endDate?: string;
   isHobby?: boolean;
+  isGlobal?: boolean;
   isVisibleToCustomer?: boolean;
   customerId?: number;
   jiraBoardId?: string | null;
@@ -72,6 +74,7 @@ export interface UpdateProjectData {
   startDate?: string | null;
   endDate?: string | null;
   isHobby?: boolean;
+  isGlobal?: boolean;
   isVisibleToCustomer?: boolean;
   customerId?: number | null;
   jiraBoardId?: string | null;

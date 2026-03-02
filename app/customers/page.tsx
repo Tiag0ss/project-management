@@ -52,6 +52,7 @@ export default function CustomersPage() {
   // Form state
   const [formData, setFormData] = useState({
     Name: '',
+    ExternalName: '',
     Email: '',
     Phone: '',
     Address: '',
@@ -124,6 +125,7 @@ export default function CustomersPage() {
     if (searchQuery) {
       filtered = filtered.filter(customer =>
         customer.Name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (customer.ExternalName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         customer.Email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         customer.Phone?.toLowerCase().includes(searchQuery.toLowerCase())
       );
@@ -217,6 +219,7 @@ export default function CustomersPage() {
     setEditingCustomer(null);
     setFormData({
       Name: '',
+      ExternalName: '',
       Email: '',
       Phone: '',
       Address: '',
@@ -233,6 +236,7 @@ export default function CustomersPage() {
     setEditingCustomer(customer);
     setFormData({
       Name: customer.Name,
+      ExternalName: customer.ExternalName || '',
       Email: customer.Email || '',
       Phone: customer.Phone || '',
       Address: customer.Address || '',
@@ -278,6 +282,7 @@ export default function CustomersPage() {
         // Update
         const updateData: UpdateCustomerData = {
           Name: formData.Name,
+          ExternalName: formData.ExternalName || undefined,
           Email: formData.Email || undefined,
           Phone: formData.Phone || undefined,
           Address: formData.Address || undefined,
@@ -290,6 +295,7 @@ export default function CustomersPage() {
         // Create
         const createData: CreateCustomerData = {
           Name: formData.Name,
+          ExternalName: formData.ExternalName || undefined,
           Email: formData.Email || undefined,
           Phone: formData.Phone || undefined,
           Address: formData.Address || undefined,
@@ -434,6 +440,9 @@ export default function CustomersPage() {
                       <SortIcon field="name" />
                     </div>
                   </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    External Name
+                  </th>
                   <th 
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
                     onClick={() => handleSort('email')}
@@ -480,6 +489,9 @@ export default function CustomersPage() {
                   >
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="font-medium text-gray-900 dark:text-white">{customer.Name}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-gray-500 dark:text-gray-400">{customer.ExternalName || '-'}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-gray-500 dark:text-gray-400">{customer.Email || '-'}</div>
@@ -542,7 +554,7 @@ export default function CustomersPage() {
 
       {/* Create/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
@@ -577,6 +589,18 @@ export default function CustomersPage() {
                       onChange={(e) => setFormData({ ...formData, Name: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      External Name
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.ExternalName}
+                      onChange={(e) => setFormData({ ...formData, ExternalName: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
                   </div>
 
@@ -732,7 +756,7 @@ export default function CustomersPage() {
 
       {/* Confirm Modal */}
       {confirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">

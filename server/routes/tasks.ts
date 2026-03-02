@@ -731,7 +731,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, jiraIssueKey, applicationId, releaseVersionId } = req.body;
+    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, customerId, jiraIssueKey, applicationId, releaseVersionId } = req.body;
 
     if (!taskName || !projectId) {
       return res.status(400).json({ 
@@ -757,7 +757,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     // Verify user has access to this project through organization membership
     const [projects] = await pool.execute<RowDataPacket[]>(
-      `SELECT p.Id, p.OrganizationId 
+      `SELECT p.Id, p.OrganizationId, COALESCE(p.IsGlobal, 0) as IsGlobal
        FROM Projects p
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
        WHERE p.Id = ? AND om.UserId = ?`,
@@ -784,6 +784,18 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       });
     }
 
+    const isGlobalProject = Number(projects[0].IsGlobal) === 1;
+    const normalizedCustomerId = customerId !== undefined && customerId !== null && customerId !== ''
+      ? Number(customerId)
+      : null;
+
+    if (isGlobalProject && !normalizedCustomerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Customer is required for tasks in global projects'
+      });
+    }
+
     // Get max display order if not provided
     let order = displayOrder;
     if (order === undefined || order === null) {
@@ -795,8 +807,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, EstimatedHours, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, JiraIssueKey, ApplicationId, CreatedBy) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, EstimatedHours, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, ApplicationId, CreatedBy) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         projectId,
         taskName,
@@ -814,6 +826,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         toDateOnly(plannedEndDate),
         dependsOnTaskId || null,
         ticketId || null,
+        isGlobalProject ? normalizedCustomerId : null,
         jiraIssueKey || null,
         applicationId || null,
         userId
@@ -957,11 +970,12 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const taskId = req.params.id;
-    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, applicationId, releaseVersionId } = req.body;
+    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, applicationId, releaseVersionId, customerId } = req.body;
 
     // Verify user has access to this task's project through organization membership and has CanManageTasks permission
     const [access] = await pool.execute<RowDataPacket[]>(
-      `SELECT t.Id, t.AssignedTo, t.ParentTaskId, COALESCE(pg.CanManageTasks, 0) as CanManageTasks, COALESCE(pg.CanPlanTasks, 0) as CanPlanTasks, om.Role
+      `SELECT t.Id, t.AssignedTo, t.ParentTaskId, COALESCE(p.IsGlobal, 0) as IsGlobal,
+              COALESCE(pg.CanManageTasks, 0) as CanManageTasks, COALESCE(pg.CanPlanTasks, 0) as CanPlanTasks, om.Role
        FROM Tasks t
        JOIN Projects p ON t.ProjectId = p.Id
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
@@ -991,6 +1005,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       [taskId]
     );
     const oldTask = currentTask[0];
+    const isGlobalProject = Number(access[0].IsGlobal) === 1;
 
     const finalStatus = status !== undefined ? status : oldTask.Status;
     const finalPriority = priority !== undefined ? priority : oldTask.Priority;
@@ -998,6 +1013,12 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const finalDueDateMandatory = dueDateMandatory !== undefined
       ? toBooleanFlag(dueDateMandatory)
       : toBooleanFlag(oldTask.DueDateMandatory);
+    const incomingCustomerId = customerId !== undefined
+      ? (customerId === null || customerId === '' ? null : Number(customerId))
+      : undefined;
+    const finalCustomerId = isGlobalProject
+      ? (incomingCustomerId !== undefined ? incomingCustomerId : (oldTask.CustomerId ? Number(oldTask.CustomerId) : null))
+      : null;
 
     if (
       finalStatus === undefined || finalStatus === null || finalStatus === '' ||
@@ -1007,6 +1028,13 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       return res.status(400).json({
         success: false,
         message: 'Task status, priority, and type are required'
+      });
+    }
+
+    if (isGlobalProject && !finalCustomerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Customer is required for tasks in global projects'
       });
     }
 
@@ -1045,6 +1073,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         (parentTaskId !== undefined && hasEffectiveChange(oldTask.ParentTaskId, parentTaskId)) ||
         (displayOrder !== undefined && hasEffectiveChange(oldTask.DisplayOrder, displayOrder)) ||
         (dependsOnTaskId !== undefined && hasEffectiveChange(oldTask.DependsOnTaskId, dependsOnTaskId)) ||
+        (customerId !== undefined && hasEffectiveChange(oldTask.CustomerId, finalCustomerId)) ||
         (applicationId !== undefined && hasEffectiveChange(oldTask.ApplicationId, applicationId)) ||
         (releaseVersionId !== undefined && hasEffectiveChange(oldTask.ReleaseVersionId, releaseVersionId));
 
@@ -1066,7 +1095,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Tasks 
-       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, EstimatedHours = ?, ParentTaskId = ?, DisplayOrder = COALESCE(?, DisplayOrder), PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, ApplicationId = ?, ReleaseVersionId = ?
+       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, EstimatedHours = ?, ParentTaskId = ?, DisplayOrder = COALESCE(?, DisplayOrder), PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, CustomerId = ?, ApplicationId = ?, ReleaseVersionId = ?
        WHERE Id = ?`,
       [
         taskName,
@@ -1083,6 +1112,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         toDateOnly(plannedStartDate),
         toDateOnly(plannedEndDate),
         dependsOnTaskId || null,
+        finalCustomerId,
         applicationId !== undefined ? (applicationId || null) : null,
         releaseVersionId !== undefined ? (releaseVersionId || null) : null,
         taskId
@@ -1182,6 +1212,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     }
     if (displayOrder !== undefined && hasChanged(oldTask.DisplayOrder, displayOrder)) {
       changes.push({ field: 'DisplayOrder', oldVal: String(oldTask.DisplayOrder || ''), newVal: String(displayOrder || '') });
+    }
+    if (customerId !== undefined && hasChanged(oldTask.CustomerId, finalCustomerId)) {
+      changes.push({ field: 'CustomerId', oldVal: String(oldTask.CustomerId || ''), newVal: String(finalCustomerId || '') });
     }
     if (applicationId !== undefined && hasChanged(oldTask.ApplicationId, applicationId)) {
       changes.push({ field: 'ApplicationId', oldVal: String(oldTask.ApplicationId || ''), newVal: String(applicationId || '') });
@@ -1790,6 +1823,12 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
   try {
     const userId = req.user?.userId;
     const taskId = req.params.id;
+    const rawDeleteSubtasks = Array.isArray(req.query.deleteSubtasks)
+      ? req.query.deleteSubtasks[0]
+      : req.query.deleteSubtasks;
+    const deleteSubtasks = rawDeleteSubtasks === undefined
+      ? true
+      : !['false', '0', 'no'].includes(String(rawDeleteSubtasks).toLowerCase());
 
     // Verify user has permission to delete tasks
     const [access] = await pool.execute<RowDataPacket[]>(
@@ -1840,8 +1879,22 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       return ids;
     };
 
-    const descendantIds = await collectDescendants(Number(taskId));
+    const descendantIds = deleteSubtasks ? await collectDescendants(Number(taskId)) : [];
     const allTaskIds = [Number(taskId), ...descendantIds];
+
+    if (!deleteSubtasks) {
+      // Keep subtasks: detach direct children from parent task
+      await pool.execute('UPDATE Tasks SET ParentTaskId = NULL WHERE ParentTaskId = ?', [taskId]);
+    }
+
+    // Clear dependencies in remaining tasks that reference tasks being deleted
+    if (allTaskIds.length > 0) {
+      const dependencyPlaceholders = allTaskIds.map(() => '?').join(',');
+      await pool.execute(
+        `UPDATE Tasks SET DependsOnTaskId = NULL WHERE DependsOnTaskId IN (${dependencyPlaceholders})`,
+        allTaskIds
+      );
+    }
 
     // Delete dependent data for all tasks (the task itself + all subtasks)
     for (const tid of allTaskIds) {
@@ -1852,7 +1905,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     }
 
     // Delete all descendant tasks first (deepest first to avoid FK issues)
-    if (descendantIds.length > 0) {
+    if (deleteSubtasks && descendantIds.length > 0) {
       const placeholders = descendantIds.map(() => '?').join(',');
       await pool.execute(`DELETE FROM Tasks WHERE Id IN (${placeholders})`, descendantIds);
     }
@@ -1905,7 +1958,9 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({
       success: true,
-      message: 'Task deleted successfully'
+      message: deleteSubtasks
+        ? 'Task and subtasks deleted successfully'
+        : 'Task deleted successfully'
     });
   } catch (error) {
     console.error('Delete task error:', error);
@@ -2545,7 +2600,7 @@ router.post('/utilities/sync-parent-status/:projectId', authenticateToken, async
 router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, issues, statusMapping, priorityMapping, taskTypeMapping } = req.body;
+    const { projectId, issues, statusMapping, priorityMapping, taskTypeMapping, ticketMappings } = req.body;
 
     if (!projectId || !issues || !Array.isArray(issues) || issues.length === 0) {
       return res.status(400).json({ success: false, message: 'Project ID and issues are required' });
@@ -2565,6 +2620,25 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
     }
 
     const project = projects[0];
+    const isGlobalProject = Number(project.IsGlobal) === 1;
+
+    const [orgUsers] = await pool.execute<RowDataPacket[]>(
+      `SELECT u.Id
+       FROM Users u
+       INNER JOIN OrganizationMembers om ON om.UserId = u.Id
+       WHERE om.OrganizationId = ? AND u.IsActive = 1`,
+      [project.OrganizationId]
+    );
+    const validOrganizationUserIds = new Set<number>(orgUsers.map((u: any) => Number(u.Id)).filter((id: number) => !Number.isNaN(id)));
+
+    const [orgCustomers] = await pool.execute<RowDataPacket[]>(
+      `SELECT c.Id
+       FROM Customers c
+       INNER JOIN CustomerOrganizations co ON co.CustomerId = c.Id
+       WHERE co.OrganizationId = ? AND c.IsActive = 1`,
+      [project.OrganizationId]
+    );
+    const validOrganizationCustomerIds = new Set<number>(orgCustomers.map((c: any) => Number(c.Id)).filter((id: number) => !Number.isNaN(id)));
 
     // Persist current Jira mapping preferences on the project for next imports.
     // Keep existing values when a specific mapping payload is omitted.
@@ -2724,10 +2798,34 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
       const priorityId = resolveMappedPriorityId(issue.priority);
       const taskTypeId = resolveMappedTaskTypeId(issue.issueType);
       const normalizedDescription = normalizeJiraDescription(issue.description);
+      const issueMapping = ticketMappings && typeof ticketMappings === 'object' ? ticketMappings[issue.key] : null;
+
+      let mappedAssigneeId: number | null = null;
+      if (issueMapping && issueMapping.assigneeId !== undefined && issueMapping.assigneeId !== null && issueMapping.assigneeId !== '') {
+        const parsedAssigneeId = Number(issueMapping.assigneeId);
+        if (!Number.isNaN(parsedAssigneeId) && validOrganizationUserIds.has(parsedAssigneeId)) {
+          mappedAssigneeId = parsedAssigneeId;
+        }
+      }
+
+      let mappedCustomerId: number | null = null;
+      if (issueMapping && issueMapping.customerId !== undefined && issueMapping.customerId !== null && issueMapping.customerId !== '') {
+        const parsedCustomerId = Number(issueMapping.customerId);
+        if (!Number.isNaN(parsedCustomerId) && validOrganizationCustomerIds.has(parsedCustomerId)) {
+          mappedCustomerId = parsedCustomerId;
+        }
+      }
+
+      if (isGlobalProject && !mappedCustomerId) {
+        return res.status(400).json({
+          success: false,
+          message: `Customer is required for global project imports (missing mapping for ticket ${issue.key})`
+        });
+      }
 
       const [result] = await pool.execute<ResultSetHeader>(
-        `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, CreatedBy, JiraIssueKey)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, CustomerId, CreatedBy, JiraIssueKey)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           projectId,
           issue.summary || issue.key,
@@ -2735,6 +2833,8 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
           statusId || defaultStatusId,
           priorityId || defaultPriorityId,
           taskTypeId || defaultTaskTypeId,
+          mappedAssigneeId,
+          mappedCustomerId,
           userId,
           issue.key
         ]

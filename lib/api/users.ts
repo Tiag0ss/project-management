@@ -51,6 +51,7 @@ export interface User {
   TeamLeaderId?: number | null;
   TeamLeaderName?: string | null;
   CountryCode?: string | null;
+  JiraId?: string | null;
   CreatedAt: string;
   UpdatedAt: string;
 }
@@ -77,6 +78,7 @@ export interface UpdateUserData {
   hourlyRate?: number | null;
   teamLeaderId?: number | null;
   countryCode?: string | null;
+  jiraId?: string | null;
 }
 
 export interface CreateUserData extends UpdateUserData {

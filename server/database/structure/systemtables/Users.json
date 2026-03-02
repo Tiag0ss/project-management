@@ -329,6 +329,13 @@
       "Comment": "ISO 3166-1 alpha-2 country code used for user holiday calendars"
     },
     {
+      "FieldName": "JiraId",
+      "DataType": "varchar(100)",
+      "NotNullable": false,
+      "DefaultValue": null,
+      "Comment": "User identifier for Jira integrations"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

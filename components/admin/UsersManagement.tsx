@@ -135,6 +135,7 @@ export default function UsersManagement() {
     const customerName = (u.CustomerName || '').toLowerCase();
     const countryName = getCountryName(u.CountryCode).toLowerCase();
     const countryCode = (u.CountryCode || '').toLowerCase();
+    const jiraId = (u.JiraId || '').toLowerCase();
 
     return (
       u.Username.toLowerCase().includes(normalizedSearch) ||
@@ -142,7 +143,8 @@ export default function UsersManagement() {
       fullName.includes(normalizedSearch) ||
       customerName.includes(normalizedSearch) ||
       countryName.includes(normalizedSearch) ||
-      countryCode.includes(normalizedSearch)
+      countryCode.includes(normalizedSearch) ||
+      jiraId.includes(normalizedSearch)
     );
   });
 
@@ -186,7 +188,7 @@ export default function UsersManagement() {
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by username, email, name, customer, or country"
+            placeholder="Search by username, email, name, customer, country, or Jira ID"
             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           />
         </div>
@@ -224,6 +226,9 @@ export default function UsersManagement() {
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Email
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Jira ID
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Type
@@ -276,6 +281,9 @@ export default function UsersManagement() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                     {u.Email}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                    {u.JiraId || '—'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {(u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'customer' ? (
@@ -456,7 +464,7 @@ export default function UsersManagement() {
       
       {/* Confirm Modal */}
       {modalMessage && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <div className="flex items-start mb-4">
@@ -529,6 +537,7 @@ function CreateUserModal({
     customerId: '',
     teamLeaderId: '',
     countryCode: '',
+    jiraId: '',
     workHoursMonday: '8',
     workHoursTuesday: '8',
     workHoursWednesday: '8',
@@ -568,6 +577,7 @@ function CreateUserModal({
         customerId: formData.customerId ? parseInt(formData.customerId) : undefined,
         teamLeaderId: formData.teamLeaderId ? parseInt(formData.teamLeaderId) : null,
         countryCode: formData.countryCode || null,
+        jiraId: formData.jiraId || null,
         workHoursMonday: parseFloat(formData.workHoursMonday),
         workHoursTuesday: parseFloat(formData.workHoursTuesday),
         workHoursWednesday: parseFloat(formData.workHoursWednesday),
@@ -586,8 +596,8 @@ function CreateUserModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full my-8">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full h-[calc(100vh-2rem)] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Create User</h2>
@@ -702,6 +712,18 @@ function CreateUserModal({
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Jira ID
+              </label>
+              <input
+                type="text"
+                value={formData.jiraId}
+                onChange={(e) => setFormData({ ...formData, jiraId: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
             </div>
 
             <div>
@@ -884,6 +906,7 @@ function EditUserModal({
     customerId: user.CustomerId?.toString() || '',
     teamLeaderId: user.TeamLeaderId?.toString() || '',
     countryCode: user.CountryCode || '',
+    jiraId: user.JiraId || '',
     workHoursMonday: user.WorkHoursMonday?.toString() || '8',
     workHoursTuesday: user.WorkHoursTuesday?.toString() || '8',
     workHoursWednesday: user.WorkHoursWednesday?.toString() || '8',
@@ -922,6 +945,7 @@ function EditUserModal({
         customerId: formData.customerId ? parseInt(formData.customerId) : undefined,
         teamLeaderId: formData.teamLeaderId ? parseInt(formData.teamLeaderId) : null,
         countryCode: formData.countryCode || null,
+        jiraId: formData.jiraId || null,
         workHoursMonday: parseFloat(formData.workHoursMonday),
         workHoursTuesday: parseFloat(formData.workHoursTuesday),
         workHoursWednesday: parseFloat(formData.workHoursWednesday),
@@ -940,8 +964,8 @@ function EditUserModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full my-8">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full h-[calc(100vh-2rem)] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Edit User</h2>
@@ -1032,6 +1056,18 @@ function EditUserModal({
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Jira ID
+              </label>
+              <input
+                type="text"
+                value={formData.jiraId}
+                onChange={(e) => setFormData({ ...formData, jiraId: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
             </div>
 
             <div>
@@ -1223,8 +1259,8 @@ function ResetPasswordModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full max-h-[calc(100vh-2rem)] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Reset Password</h2>

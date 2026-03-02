@@ -1872,7 +1872,7 @@ export default function WebReportsPage() {
 
             {/* Save/Edit Report Modal */}
             {(modalState.type === 'save' || modalState.type === 'edit') && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
                     {modalState.type === 'save' ? '💾 Save Report' : '✏️ Edit Report'}
@@ -1937,7 +1937,7 @@ export default function WebReportsPage() {
 
             {/* Delete Confirmation Modal */}
             {modalState.type === 'delete' && modalState.reportId && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
                     🗑️ Delete Report
@@ -1967,7 +1967,7 @@ export default function WebReportsPage() {
 
             {/* Print Layout Selection Modal */}
             {modalState.type === 'print' && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
                     🖨️ Print Pivot Table
@@ -2011,7 +2011,7 @@ export default function WebReportsPage() {
 
             {/* Share Report Modal */}
             {modalState.type === 'share' && modalState.reportId && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
                     🔗 Share Report
@@ -2133,7 +2133,7 @@ export default function WebReportsPage() {
 
             {/* Drill-Down Modal */}
             {modalState.type === 'drillDown' && modalState.drillDownData && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
                   <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <h3 className="text-xl font-bold text-gray-900 dark:text-white">

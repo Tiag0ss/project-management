@@ -423,8 +423,20 @@ router.get('/:id/permissions', authenticateToken, async (req: AuthRequest, res: 
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { organizationId, projectName, description, status, startDate, endDate, isHobby, isVisibleToCustomer, customerId, jiraBoardId, budget, budgetType, applicationIds } = req.body;
+    const { organizationId, projectName, description, status, startDate, endDate, isHobby, isGlobal, isVisibleToCustomer, customerId, jiraBoardId, budget, budgetType, applicationIds } = req.body;
     const finalBudgetType = normalizeBudgetType(budgetType);
+    const finalIsGlobal = isGlobal === true || isGlobal === 1;
+    const hasCustomerInput = customerId !== undefined && customerId !== null && customerId !== '';
+
+    if (finalIsGlobal && hasCustomerInput) {
+      return res.status(400).json({
+        success: false,
+        message: 'Global projects cannot be associated with a customer'
+      });
+    }
+
+    const finalCustomerId = finalIsGlobal ? null : (hasCustomerInput ? customerId : null);
+    const finalIsVisibleToCustomer = finalCustomerId ? (isVisibleToCustomer ? 1 : 0) : 0;
 
     if (!projectName || !organizationId) {
       return res.status(400).json({ 
@@ -454,8 +466,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, IsVisibleToCustomer, CustomerId, JiraBoardId, Budget, BudgetType) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, IsGlobal, IsVisibleToCustomer, CustomerId, JiraBoardId, Budget, BudgetType) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         organizationId,
         projectName, 
@@ -465,8 +477,9 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         startDate || null, 
         endDate || null,
         isHobby ? 1 : 0,
-        isVisibleToCustomer ? 1 : 0,
-        customerId || null,
+        finalIsGlobal ? 1 : 0,
+        finalIsVisibleToCustomer,
+        finalCustomerId,
         jiraBoardId || null,
         budget !== undefined && budget !== '' ? parseFloat(budget) : null,
         finalBudgetType
@@ -671,7 +684,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const projectId = req.params.id;
-    const { projectName, description, status, startDate, endDate, isHobby, isVisibleToCustomer, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo, budget, budgetType, applicationIds } = req.body;
+    const { projectName, description, status, startDate, endDate, isHobby, isGlobal, isVisibleToCustomer, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo, budget, budgetType, applicationIds } = req.body;
 
     // Check if project exists and get current data
     const [existing] = await pool.execute<RowDataPacket[]>(
@@ -722,6 +735,26 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const finalBudgetType = budgetType !== undefined
       ? normalizeBudgetType(budgetType)
       : normalizeBudgetType(oldProject.BudgetType);
+    const finalIsGlobal = isGlobal !== undefined
+      ? (isGlobal === true || isGlobal === 1)
+      : Boolean(oldProject.IsGlobal);
+    const hasCustomerInput = customerId !== undefined && customerId !== null && customerId !== '';
+
+    if (finalIsGlobal && hasCustomerInput) {
+      return res.status(400).json({
+        success: false,
+        message: 'Global projects cannot be associated with a customer'
+      });
+    }
+
+    const requestedCustomerId = customerId !== undefined
+      ? (hasCustomerInput ? customerId : null)
+      : (oldProject.CustomerId || null);
+    const finalCustomerId = finalIsGlobal ? null : requestedCustomerId;
+    const finalIsVisibleToCustomer = finalCustomerId
+      ? (isVisibleToCustomer !== undefined ? (isVisibleToCustomer ? 1 : 0) : (oldProject.IsVisibleToCustomer ? 1 : 0))
+      : 0;
+
     if (finalStatus === undefined || finalStatus === null || finalStatus === '') {
       return res.status(400).json({
         success: false,
@@ -759,8 +792,11 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     if (isHobby !== undefined && isHobby !== Boolean(oldProject.IsHobby)) {
       changes.push({ field: 'IsHobby', oldVal: String(oldProject.IsHobby), newVal: String(isHobby) });
     }
-    if (customerId !== undefined && customerId !== oldProject.CustomerId) {
-      changes.push({ field: 'CustomerId', oldVal: String(oldProject.CustomerId || ''), newVal: String(customerId || '') });
+    if (finalIsGlobal !== Boolean(oldProject.IsGlobal)) {
+      changes.push({ field: 'IsGlobal', oldVal: String(oldProject.IsGlobal), newVal: String(finalIsGlobal ? 1 : 0) });
+    }
+    if (finalCustomerId !== (oldProject.CustomerId || null)) {
+      changes.push({ field: 'CustomerId', oldVal: String(oldProject.CustomerId || ''), newVal: String(finalCustomerId || '') });
     }
     if (jiraBoardId !== undefined && jiraBoardId !== oldProject.JiraBoardId) {
       changes.push({ field: 'JiraBoardId', oldVal: String(oldProject.JiraBoardId || ''), newVal: String(jiraBoardId || '') });
@@ -814,8 +850,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       }
     }
 
-    if (isVisibleToCustomer !== undefined && Boolean(isVisibleToCustomer) !== Boolean(oldProject.IsVisibleToCustomer)) {
-      changes.push({ field: 'IsVisibleToCustomer', oldVal: String(oldProject.IsVisibleToCustomer), newVal: String(isVisibleToCustomer) });
+    if (finalIsVisibleToCustomer !== (oldProject.IsVisibleToCustomer ? 1 : 0)) {
+      changes.push({ field: 'IsVisibleToCustomer', oldVal: String(oldProject.IsVisibleToCustomer), newVal: String(finalIsVisibleToCustomer) });
     }
 
     // Convert empty strings to null for date fields
@@ -824,9 +860,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Projects 
-       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, IsVisibleToCustomer = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ?, GiteaOwner = ?, GiteaRepo = ?, Budget = ?, BudgetType = ?
+       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, IsGlobal = ?, IsVisibleToCustomer = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ?, GiteaOwner = ?, GiteaRepo = ?, Budget = ?, BudgetType = ?
        WHERE Id = ?`,
-      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, isVisibleToCustomer ? 1 : 0, customerId || null, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, giteaOwner || null, giteaRepo || null, budget !== undefined && budget !== '' ? parseFloat(budget) : null, finalBudgetType, projectId]
+      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, finalIsGlobal ? 1 : 0, finalIsVisibleToCustomer, finalCustomerId, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, giteaOwner || null, giteaRepo || null, budget !== undefined && budget !== '' ? parseFloat(budget) : null, finalBudgetType, projectId]
     );
     
     // Log changes to history

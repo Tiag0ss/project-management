@@ -428,6 +428,49 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
     const authHeader = 'Basic ' + Buffer.from(`${JiraEmail}:${JiraApiToken}`).toString('base64');
     const searchUrl = `${JiraUrl}/rest/api/3/search/jql`;
 
+    const baseFields = ['summary', 'description', 'status', 'priority', 'issuetype', 'created', 'assignee', 'reporter'];
+    let organizationsFieldId: string | null = null;
+    let developerFieldId: string | null = null;
+
+    try {
+      const fieldsResponse = await fetch(`${JiraUrl}/rest/api/3/field`, {
+        method: 'GET',
+        headers: {
+          'Authorization': authHeader,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (fieldsResponse.ok) {
+        const fieldsData = await fieldsResponse.json();
+        const allFields = Array.isArray(fieldsData) ? fieldsData : [];
+        const organizationsField = allFields.find((field: any) => {
+          const fieldName = String(field?.name || '').toLowerCase().trim();
+          return fieldName === 'organizations' || fieldName.includes('organizations');
+        });
+        if (organizationsField?.id) {
+          organizationsFieldId = String(organizationsField.id);
+        }
+
+        const developerField = allFields.find((field: any) => {
+          const fieldName = String(field?.name || '').toLowerCase().trim();
+          return fieldName === 'developer' || fieldName.includes('developer');
+        });
+        if (developerField?.id) {
+          developerFieldId = String(developerField.id);
+        }
+      }
+    } catch {
+      organizationsFieldId = null;
+      developerFieldId = null;
+    }
+
+    const requestedFields = [
+      ...baseFields,
+      ...(organizationsFieldId ? [organizationsFieldId] : []),
+      ...(developerFieldId ? [developerFieldId] : []),
+    ];
+
     const response = await fetch(searchUrl, {
       method: 'POST',
       headers: {
@@ -438,7 +481,7 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
       body: JSON.stringify({
         jql,
         maxResults: 50,
-        fields: ['summary', 'description', 'status', 'priority', 'issuetype', 'created', 'assignee']
+        fields: requestedFields
       })
     });
 
@@ -453,17 +496,89 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
 
     const data = await response.json();
 
+    const extractOrganizations = (fields: any): string[] => {
+      const toNames = (value: any): string[] => {
+        if (!value) return [];
+        const source = Array.isArray(value) ? value : [value];
+        return source
+          .map((entry: any) => {
+            if (typeof entry === 'string') return entry;
+            if (entry?.name) return String(entry.name);
+            if (entry?.value) return String(entry.value);
+            if (entry?.displayName) return String(entry.displayName);
+            return '';
+          })
+          .filter((item: string) => item.trim().length > 0);
+      };
+
+      if (organizationsFieldId && fields?.[organizationsFieldId] !== undefined) {
+        const extracted = toNames(fields[organizationsFieldId]);
+        if (extracted.length > 0) return extracted;
+      }
+
+      const fallbackKey = Object.keys(fields || {}).find((key) => key.toLowerCase().includes('organization'));
+      if (fallbackKey) {
+        return toNames(fields[fallbackKey]);
+      }
+
+      return [];
+    };
+
+    const extractUserIdentity = (value: any): {
+      displayName: string | null;
+      email: string | null;
+      accountId: string | null;
+      key: string | null;
+      name: string | null;
+    } => {
+      if (!value) {
+        return { displayName: null, email: null, accountId: null, key: null, name: null };
+      }
+
+      const raw = Array.isArray(value) ? value[0] : value;
+      if (!raw || typeof raw !== 'object') {
+        return { displayName: null, email: null, accountId: null, key: null, name: null };
+      }
+
+      return {
+        displayName: raw.displayName ? String(raw.displayName) : null,
+        email: raw.emailAddress ? String(raw.emailAddress) : null,
+        accountId: raw.accountId ? String(raw.accountId) : null,
+        key: raw.key ? String(raw.key) : null,
+        name: raw.name ? String(raw.name) : null,
+      };
+    };
+
     // Format results
-    const issues = data.issues?.map((issue: any) => ({
-      key: issue.key,
-      summary: issue.fields?.summary,
-      description: issue.fields?.description,
-      status: issue.fields?.status?.name,
-      priority: issue.fields?.priority?.name,
-      issueType: issue.fields?.issuetype?.name,
-      assignee: issue.fields?.assignee?.displayName,
-      created: issue.fields?.created
-    })) || [];
+    const issues = data.issues?.map((issue: any) => {
+      const developerIdentity = extractUserIdentity(
+        developerFieldId ? issue.fields?.[developerFieldId] : null
+      );
+
+      return {
+        key: issue.key,
+        summary: issue.fields?.summary,
+        description: issue.fields?.description,
+        status: issue.fields?.status?.name,
+        priority: issue.fields?.priority?.name,
+        issueType: issue.fields?.issuetype?.name,
+        assignee: issue.fields?.assignee?.displayName,
+        assigneeEmail: issue.fields?.assignee?.emailAddress || null,
+        assigneeAccountId: issue.fields?.assignee?.accountId || null,
+        assigneeKey: issue.fields?.assignee?.key || null,
+        assigneeName: issue.fields?.assignee?.name || null,
+        developer: developerIdentity.displayName,
+        developerEmail: developerIdentity.email,
+        developerAccountId: developerIdentity.accountId,
+        developerKey: developerIdentity.key,
+        developerName: developerIdentity.name,
+        reporter: issue.fields?.reporter?.displayName || null,
+        reporterEmail: issue.fields?.reporter?.emailAddress || null,
+        reporterAccountId: issue.fields?.reporter?.accountId || null,
+        organizations: extractOrganizations(issue.fields),
+        created: issue.fields?.created
+      };
+    }) || [];
 
     res.json({ success: true, issues, total: data.total });
   } catch (error: any) {

@@ -87,7 +87,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
               HobbyStartFriday, HobbyStartSaturday, HobbyStartSunday,
               HobbyHoursMonday, HobbyHoursTuesday, HobbyHoursWednesday, HobbyHoursThursday,
               HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
-              Timezone, HourlyRate, CountryCode, CreatedAt, UpdatedAt 
+              Timezone, HourlyRate, CountryCode, JiraId, CreatedAt, UpdatedAt 
        FROM Users 
        WHERE Id = ?`,
       [userId]
@@ -486,7 +486,7 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName, u.IsActive, u.IsAdmin, 
               u.UserType, u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager,
-              u.HourlyRate, u.TeamLeaderId, u.CountryCode, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
+              u.HourlyRate, u.TeamLeaderId, u.CountryCode, u.JiraId, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
               u.CreatedAt, u.UpdatedAt 
        FROM Users u
        LEFT JOIN Customers c ON u.CustomerId = c.Id
@@ -546,7 +546,7 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
 router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.params.id;
-    const { username, email, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId, countryCode } = req.body;
+    const { username, email, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId, countryCode, jiraId } = req.body;
     const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
 
     if (!isValidCountryCode(normalizedCountryCode)) {
@@ -667,6 +667,9 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
     if (countryCode !== undefined && String(normalizedCountryCode || '') !== String(oldUser.CountryCode || '')) {
       changes.push({ field: 'CountryCode', oldVal: String(oldUser.CountryCode || ''), newVal: String(normalizedCountryCode || '') });
     }
+    if (jiraId !== undefined && String(jiraId || '') !== String(oldUser.JiraId || '')) {
+      changes.push({ field: 'JiraId', oldVal: String(oldUser.JiraId || ''), newVal: String(jiraId || '') });
+    }
 
     // Parse hourlyRate correctly (handle 0 values)
     const parsedHourlyRate = (hourlyRate != null && hourlyRate !== '') ? parseFloat(hourlyRate) : null;
@@ -674,9 +677,9 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
 
     await pool.execute(
       `UPDATE Users 
-       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, UserType = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, TeamLeaderId = ?, CountryCode = ? 
+       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, UserType = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, TeamLeaderId = ?, CountryCode = ?, JiraId = ? 
        WHERE Id = ?`,
-      [username, finalEmail, firstName || null, lastName || null, isActive, isAdmin, finalUserType, finalCustomerId, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null, normalizedCountryCode, userId]
+      [username, finalEmail, firstName || null, lastName || null, isActive, isAdmin, finalUserType, finalCustomerId, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null, normalizedCountryCode, jiraId || null, userId]
     );
     
     // Log changes to history
@@ -935,7 +938,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, 
  */
 router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId, countryCode } = req.body;
+    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId, countryCode, jiraId } = req.body;
     const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
 
     if (!isValidCountryCode(normalizedCountryCode)) {
@@ -1010,9 +1013,9 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
     const sanitizedHourlyRate = (parsedHourlyRate !== null && !isNaN(parsedHourlyRate)) ? parsedHourlyRate : null;
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, TeamLeaderId, CountryCode) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null, normalizedCountryCode]
+      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, TeamLeaderId, CountryCode, JiraId) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null, normalizedCountryCode, jiraId || null]
     );
 
     // Log user creation
@@ -1081,7 +1084,7 @@ router.get('/:id/details', authenticateToken, requireAdmin, async (req: AuthRequ
     // Get user info
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName, u.IsActive, u.IsAdmin, 
-              u.UserType, u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager, u.HourlyRate, u.CreatedAt, u.UpdatedAt,
+              u.UserType, u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager, u.HourlyRate, u.JiraId, u.CreatedAt, u.UpdatedAt,
               u.WorkHoursMonday, u.WorkHoursTuesday, u.WorkHoursWednesday, u.WorkHoursThursday,
               u.WorkHoursFriday, u.WorkHoursSaturday, u.WorkHoursSunday
        FROM Users u

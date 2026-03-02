@@ -114,6 +114,12 @@
       "Comment": "Foreign key - reference to Tickets.Id if created from a ticket"
     },
     {
+      "FieldName": "CustomerId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Customers.Id for global-project task ownership"
+    },
+    {
       "FieldName": "ExternalIssueId",
       "DataType": "varchar(100)",
       "NotNullable": false,
@@ -257,6 +263,14 @@
       "Description": "Task can be linked to a Ticket",
       "FromField": "TicketId",
       "ToTable": "Tickets",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TaskCustomer",
+      "Description": "Task can be assigned to a Customer in global projects",
+      "FromField": "CustomerId",
+      "ToTable": "Customers",
       "ToField": "Id",
       "Type": "ManyToOne"
     }

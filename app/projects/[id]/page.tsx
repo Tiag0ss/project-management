@@ -9,6 +9,7 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { projectsApi, Project, CreateProjectData, UpdateProjectData } from '@/lib/api/projects';
 import { tasksApi, Task, CreateTaskData } from '@/lib/api/tasks';
 import { organizationsApi, Organization } from '@/lib/api/organizations';
+import { getCustomersByOrganization, Customer } from '@/lib/api/customers';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { usersApi, User } from '@/lib/api/users';
 import Navbar from '@/components/Navbar';
@@ -107,6 +108,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [jiraTicketsError, setJiraTicketsError] = useState('');
   const [jiraSearchQuery, setJiraSearchQuery] = useState('');
   const [hideIntegratedJiraTickets, setHideIntegratedJiraTickets] = useState(false);
+  const [jiraTicketMappings, setJiraTicketMappings] = useState<Record<string, { customerId?: number; assigneeId?: number }>>({});
+  const [jiraImportCustomers, setJiraImportCustomers] = useState<Customer[]>([]);
+  const [jiraImportUsers, setJiraImportUsers] = useState<User[]>([]);
   const [jiraTicketPriorityMapping, setJiraTicketPriorityMapping] = useState<{ [key: string]: string }>({});
   const [jiraTicketTypeMapping, setJiraTicketTypeMapping] = useState<{ [key: string]: string }>({});
   const [isJiraStatusMappingOpen, setIsJiraStatusMappingOpen] = useState(false);
@@ -144,6 +148,91 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       // ignore invalid JSON persisted previously
     }
     return {};
+  };
+
+  const normalizeLookup = (value: unknown): string => {
+    return String(value || '')
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, ' ');
+  };
+
+  const buildAutoTicketMappings = (
+    issues: any[],
+    customers: Customer[],
+    users: User[]
+  ): Record<string, { customerId?: number; assigneeId?: number }> => {
+    const mappings: Record<string, { customerId?: number; assigneeId?: number }> = {};
+
+    for (const issue of issues) {
+      const combinedText = normalizeLookup([
+        issue.key,
+        issue.summary,
+        typeof issue.description === 'string' ? issue.description : '',
+        Array.isArray(issue.organizations) ? issue.organizations.join(' ') : '',
+      ].join(' '));
+
+      let matchedCustomerId: number | undefined;
+      let matchedCustomerTokenLength = 0;
+
+      for (const customer of customers) {
+        const candidates = [customer.ExternalName, customer.Name]
+          .map(normalizeLookup)
+          .filter((text) => text.length >= 2);
+
+        for (const candidate of candidates) {
+          if (combinedText.includes(candidate) && candidate.length > matchedCustomerTokenLength) {
+            matchedCustomerId = customer.Id;
+            matchedCustomerTokenLength = candidate.length;
+          }
+        }
+      }
+
+      const assigneeDisplay = normalizeLookup(issue.assignee);
+      const assigneeAccount = normalizeLookup(issue.assigneeAccountId);
+      const assigneeEmail = normalizeLookup(issue.assigneeEmail);
+      const assigneeKey = normalizeLookup(issue.assigneeKey);
+      const assigneeName = normalizeLookup(issue.assigneeName);
+      const developerDisplay = normalizeLookup(issue.developer);
+      const developerAccount = normalizeLookup(issue.developerAccountId);
+      const developerEmail = normalizeLookup(issue.developerEmail);
+      const developerKey = normalizeLookup(issue.developerKey);
+      const developerName = normalizeLookup(issue.developerName);
+
+      const hasDeveloperIdentity = !!(developerAccount || developerEmail || developerDisplay || developerKey || developerName);
+      const jiraUserCandidates = hasDeveloperIdentity
+        ? [developerAccount, developerEmail, developerDisplay, developerKey, developerName]
+        : [assigneeAccount, assigneeEmail, assigneeDisplay, assigneeKey, assigneeName];
+      const preferredDisplay = hasDeveloperIdentity ? developerDisplay : assigneeDisplay;
+
+      let matchedAssigneeId: number | undefined;
+
+      if (jiraUserCandidates.some(Boolean)) {
+        const jiraIdMatch = users.find((user) => {
+          const jiraId = normalizeLookup(user.JiraId);
+          if (!jiraId) return false;
+          return jiraUserCandidates.includes(jiraId);
+        });
+
+        if (jiraIdMatch) {
+          matchedAssigneeId = jiraIdMatch.Id;
+        } else {
+          const byNameOrUsername = users.find((user) => {
+            const username = normalizeLookup(user.Username);
+            const fullName = normalizeLookup(`${user.FirstName || ''} ${user.LastName || ''}`);
+            return preferredDisplay && (preferredDisplay === fullName || preferredDisplay === username);
+          });
+          matchedAssigneeId = byNameOrUsername?.Id;
+        }
+      }
+
+      mappings[issue.key] = {
+        customerId: matchedCustomerId,
+        assigneeId: matchedAssigneeId,
+      };
+    }
+
+    return mappings;
   };
 
   const closeConfirmModal = () => {
@@ -908,6 +997,18 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       const data = await response.json();
       const fetchedIssues = data.issues || [];
       setJiraTickets(fetchedIssues);
+      setJiraTicketMappings((prev) => {
+        const autoMappings = buildAutoTicketMappings(fetchedIssues, jiraImportCustomers, jiraImportUsers);
+        const merged: Record<string, { customerId?: number; assigneeId?: number }> = { ...autoMappings };
+
+        for (const key of Object.keys(prev)) {
+          if (!merged[key]) merged[key] = {};
+          if (prev[key]?.customerId !== undefined) merged[key].customerId = prev[key].customerId;
+          if (prev[key]?.assigneeId !== undefined) merged[key].assigneeId = prev[key].assigneeId;
+        }
+
+        return merged;
+      });
 
       if (taskPriorities.length > 0) {
         const defaultPriority = taskPriorities.find(p => p.IsDefault);
@@ -973,6 +1074,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     const validIssues = Array.from(selectedJiraTickets).filter(key => !existingIssueIds.has(key));
     if (validIssues.length === 0) return;
 
+    if (!!project.IsGlobal) {
+      const missingCustomerIssue = validIssues.find((key) => !jiraTicketMappings[key]?.customerId);
+      if (missingCustomerIssue) {
+        setJiraTicketsError(`Customer is required for global projects. Please select a customer for ticket ${missingCustomerIssue}.`);
+        return;
+      }
+    }
+
     setJiraTicketsImporting(true);
     setJiraTicketsError('');
 
@@ -992,6 +1101,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             issues: issuesToImport,
             priorityMapping: jiraTicketPriorityMapping,
             taskTypeMapping: jiraTicketTypeMapping,
+            ticketMappings: Object.fromEntries(
+              validIssues.map((key) => [
+                key,
+                {
+                  customerId: jiraTicketMappings[key]?.customerId || null,
+                  assigneeId: jiraTicketMappings[key]?.assigneeId || null,
+                },
+              ])
+            ),
           }),
         }
       );
@@ -1016,6 +1134,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setSelectedJiraTickets(new Set());
       setJiraTicketPriorityMapping({});
       setJiraTicketTypeMapping({});
+      setJiraTicketMappings({});
       await loadTasks();
       await loadExistingJiraIssues();
     } catch (err: any) {
@@ -1694,11 +1813,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setSelectedJiraTickets(new Set());
       setJiraTicketsError('');
       setJiraSearchQuery('');
+      setJiraTicketMappings({});
       setJiraTicketPriorityMapping(parseMappingJson(project.JiraTaskPriorityMappingJson));
       setJiraTicketTypeMapping(parseMappingJson(project.JiraTaskTypeMappingJson));
 
       const initializeJiraTicketImport = async () => {
         await Promise.all([
+          usersApi.getByOrganization(project.OrganizationId, token!).then((res) => setJiraImportUsers(res.users || [])).catch(() => setJiraImportUsers([])),
+          getCustomersByOrganization(token!, project.OrganizationId).then((data) => setJiraImportCustomers(data || [])).catch(() => setJiraImportCustomers([])),
           loadTaskPriorities(),
           loadTaskTypes(),
           loadExistingJiraIssues(),
@@ -1709,6 +1831,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       initializeJiraTicketImport();
     }
   }, [showJiraTicketsModal, project, jiraIntegration]);
+
+  useEffect(() => {
+    if (!showJiraTicketsModal || jiraTickets.length === 0) return;
+
+    setJiraTicketMappings((prev) => {
+      const autoMappings = buildAutoTicketMappings(jiraTickets, jiraImportCustomers, jiraImportUsers);
+      const merged: Record<string, { customerId?: number; assigneeId?: number }> = { ...autoMappings };
+      for (const key of Object.keys(prev)) {
+        if (!merged[key]) merged[key] = {};
+        if (prev[key]?.customerId !== undefined) merged[key].customerId = prev[key].customerId;
+        if (prev[key]?.assigneeId !== undefined) merged[key].assigneeId = prev[key].assigneeId;
+      }
+      return merged;
+    });
+  }, [showJiraTicketsModal, jiraTickets, jiraImportCustomers, jiraImportUsers]);
 
   const visibleJiraTickets = jiraTickets.filter(ticket => {
     if (!hideIntegratedJiraTickets) return true;
@@ -2102,7 +2239,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Jira Import Modal */}
       {showJiraImportModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header */}
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">
@@ -2589,7 +2726,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
       {/* GitHub Import Modal */}
       {showGitHubImportModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header */}
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">
@@ -2879,7 +3016,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Gitea Import Modal */}
       {showGiteaImportModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header */}
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">
@@ -3191,7 +3328,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Confirm Modal */}
       {modalMessage && modalMessage.type === 'confirm' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <div className="flex items-start mb-4">
@@ -3230,7 +3367,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Alert Modal */}
       {modalMessage && modalMessage.type === 'alert' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <div className="flex items-start mb-4">
@@ -3263,7 +3400,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Import Modal */}
       {showImportModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Import Tasks from CSV</h2>
@@ -3462,7 +3599,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Jira Ticket Selection Modal */}
       {showJiraTicketsModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
@@ -3476,6 +3613,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     setSelectedJiraTickets(new Set());
                     setJiraTicketsError('');
                     setJiraSearchQuery('');
+                    setJiraTicketMappings({});
                   }}
                   className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                 >
@@ -3642,7 +3780,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               {!jiraTicketsLoading && !jiraTicketsError && visibleJiraTickets.length > 0 && (
                 <div className="space-y-2 mb-4 max-h-[400px] overflow-y-auto">
                   {visibleJiraTickets.map((ticket) => (
-                    <label
+                    <div
                       key={ticket.key}
                       className={`block p-4 border rounded-lg cursor-pointer transition-all ${
                         selectedJiraTickets.has(ticket.key)
@@ -3696,9 +3834,64 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                               {typeof ticket.description === 'string' ? ticket.description : 'Description available in Jira'}
                             </div>
                           )}
+
+                          {!existingIssueIds.has(ticket.key) && (
+                            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Customer</label>
+                                <div className="mb-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                  Jira Organizations: {Array.isArray(ticket.organizations) && ticket.organizations.length > 0 ? ticket.organizations.join(', ') : '—'}
+                                </div>
+                                <SearchableSelect
+                                  value={jiraTicketMappings[ticket.key]?.customerId}
+                                  onChange={(value) => {
+                                    setJiraTicketMappings((prev) => ({
+                                      ...prev,
+                                      [ticket.key]: {
+                                        ...prev[ticket.key],
+                                        customerId: value,
+                                      },
+                                    }));
+                                  }}
+                                  options={jiraImportCustomers.map((customer) => ({
+                                    id: customer.Id,
+                                    label: customer.ExternalName?.trim() || customer.Name,
+                                  }))}
+                                  placeholder="Select customer..."
+                                  emptyMessage="No customers available"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Assignee</label>
+                                <div className="mb-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                  {ticket.developer || ticket.developerEmail
+                                    ? `Jira Developer: ${ticket.developer || ticket.developerEmail}${ticket.developer && ticket.developerEmail ? ` (${ticket.developerEmail})` : ''}`
+                                    : `Jira Assignee: ${ticket.assignee || ticket.assigneeEmail || 'Unassigned'}${ticket.assignee && ticket.assigneeEmail ? ` (${ticket.assigneeEmail})` : ''}`}
+                                </div>
+                                <SearchableSelect
+                                  value={jiraTicketMappings[ticket.key]?.assigneeId}
+                                  onChange={(value) => {
+                                    setJiraTicketMappings((prev) => ({
+                                      ...prev,
+                                      [ticket.key]: {
+                                        ...prev[ticket.key],
+                                        assigneeId: value,
+                                      },
+                                    }));
+                                  }}
+                                  options={jiraImportUsers.map((u) => ({
+                                    id: u.Id,
+                                    label: `${u.Username}${u.FirstName && u.LastName ? ` (${u.FirstName} ${u.LastName})` : ''}`,
+                                  }))}
+                                  placeholder="Select assignee..."
+                                  emptyMessage="No users available"
+                                />
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </label>
+                    </div>
                   ))}
                 </div>
               )}
@@ -3718,6 +3911,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     setSelectedJiraTickets(new Set());
                     setJiraTicketsError('');
                     setJiraSearchQuery('');
+                    setJiraTicketMappings({});
                   }}
                   className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
                 >
@@ -3809,7 +4003,12 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
                 {project.ProjectName}
               </h1>
-              {project.IsHobby && (
+              {!!project.IsGlobal && (
+                <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-sm font-medium">
+                  🌐 Global Project
+                </span>
+              )}
+              {!!project.IsHobby && (
                 <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-full text-sm font-medium">
                   🎮 Hobby
                 </span>
@@ -5346,7 +5545,7 @@ function UtilitiesTab({ projectId, token, onTasksUpdated }: { projectId: number;
 
       {/* Confirm Modal */}
       {confirmAction && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <div className="flex items-start mb-4">
@@ -7732,7 +7931,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
 
       {/* Task Detail Modal */}
       {selectedTask && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-start mb-6">
@@ -8250,7 +8449,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
 
       {/* Alert Modal */}
       {alertMessage && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
@@ -8369,7 +8568,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
 
       {/* Schedule Create/Edit Modal */}
       {showScheduleModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4">
             <div className="p-6">
               <h3 className="text-lg font-bold mb-5 text-gray-900 dark:text-white">
@@ -8496,7 +8695,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
 
       {/* Delete Schedule Confirm Modal */}
       {confirmDeleteSchedule !== null && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-sm w-full mx-4 p-6">
             <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">Delete Schedule</h3>
             <p className="text-gray-600 dark:text-gray-300 mb-6">Are you sure you want to delete this report schedule? This cannot be undone.</p>
@@ -8531,6 +8730,7 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
     startDate: project.StartDate ? project.StartDate.split('T')[0] : '',
     endDate: project.EndDate ? project.EndDate.split('T')[0] : '',
     isHobby: project.IsHobby || false,
+    isGlobal: !!project.IsGlobal,
     isVisibleToCustomer: !!project.IsVisibleToCustomer,
     jiraBoardId: project.JiraBoardId || '',
     gitHubOwner: project.GitHubOwner || '',
@@ -8690,6 +8890,10 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
   const saveProject = async () => {
     setIsLoading(true);
     try {
+      if (formData.isGlobal && formData.customerId) {
+        throw new Error('Global projects cannot be associated with a customer');
+      }
+
       // If organization changed, use transfer endpoint
       if (formData.organizationId !== project.OrganizationId) {
         await projectsApi.transfer(project.Id, formData.organizationId, token);
@@ -8702,13 +8906,14 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
         startDate: formData.startDate || null,
         endDate: formData.endDate || null,
         isHobby: formData.isHobby,
-        isVisibleToCustomer: formData.isVisibleToCustomer,
+        isGlobal: formData.isGlobal,
+        isVisibleToCustomer: formData.isGlobal ? false : formData.isVisibleToCustomer,
         jiraBoardId: formData.jiraBoardId || null,
         gitHubOwner: formData.gitHubOwner || null,
         gitHubRepo: formData.gitHubRepo || null,
         giteaOwner: formData.giteaOwner || null,
         giteaRepo: formData.giteaRepo || null,
-        customerId: formData.customerId || null,
+        customerId: formData.isGlobal ? null : (formData.customerId || null),
         applicationIds: formData.applicationIds || [],
       };
 
@@ -8806,6 +9011,7 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
             <select
               value={formData.customerId || ''}
               onChange={(e) => setFormData({ ...formData, customerId: e.target.value ? parseInt(e.target.value) : undefined })}
+              disabled={formData.isGlobal}
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="">No customer</option>
@@ -8813,6 +9019,11 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
                 <option key={c.Id} value={c.Id}>{c.Name}</option>
               ))}
             </select>
+            {formData.isGlobal && (
+              <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
+                Global projects cannot have a customer association
+              </p>
+            )}
           </div>
 
           <div>
@@ -8930,23 +9141,48 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
             </div>
           </div>
 
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="isHobby"
-              checked={formData.isHobby}
-              onChange={(e) => setFormData({ ...formData, isHobby: e.target.checked })}
-              className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
-            />
-            <label htmlFor="isHobby" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
-              <span className="font-medium">Hobby Project</span>
-              <span className="text-gray-500 dark:text-gray-400 ml-2">
-                (Uses hobby time slots instead of work hours)
-              </span>
-            </label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="flex items-center gap-3 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <input
+                type="checkbox"
+                id="isGlobal"
+                checked={formData.isGlobal}
+                onChange={(e) => setFormData({
+                  ...formData,
+                  isGlobal: e.target.checked,
+                  customerId: e.target.checked ? undefined : formData.customerId,
+                  isVisibleToCustomer: e.target.checked ? false : formData.isVisibleToCustomer,
+                })}
+                className="w-5 h-5 rounded border-blue-300 text-blue-600 focus:ring-blue-500 dark:bg-gray-700 dark:border-blue-600"
+              />
+              <div>
+                <label htmlFor="isGlobal" className="block text-sm font-medium text-blue-700 dark:text-blue-300 cursor-pointer">
+                  🌐 Global Project
+                </label>
+                <p className="text-xs text-blue-600 dark:text-blue-400">
+                  Global projects are not associated with a specific customer
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+              <input
+                type="checkbox"
+                id="isHobby"
+                checked={formData.isHobby}
+                onChange={(e) => setFormData({ ...formData, isHobby: e.target.checked })}
+                className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+              />
+              <label htmlFor="isHobby" className="block text-sm text-gray-700 dark:text-gray-300">
+                <span className="font-medium">Hobby Project</span>
+                <span className="text-gray-500 dark:text-gray-400 ml-2">
+                  (Uses hobby time slots instead of work hours)
+                </span>
+              </label>
+            </div>
           </div>
 
-          {formData.customerId && (
+          {formData.customerId && !formData.isGlobal && (
             <div className="flex items-center gap-3 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
               <input
                 type="checkbox"
@@ -9161,6 +9397,7 @@ function EditProjectModal({
     budget: project.Budget ?? undefined,
     budgetType: project.BudgetType === 'hours' ? 'hours' : 'monetary',
     customerId: project.CustomerId || undefined,
+    isGlobal: !!project.IsGlobal,
     isHobby: project.IsHobby || false,
     isVisibleToCustomer: !!project.IsVisibleToCustomer,
     applicationIds: project.ApplicationIds || [],
@@ -9312,6 +9549,10 @@ function EditProjectModal({
   const saveProject = async () => {
     setIsLoading(true);
     try {
+      if (formData.isGlobal && formData.customerId) {
+        throw new Error('Global projects cannot be associated with a customer');
+      }
+
       // If organization changed, use transfer endpoint
       if (formData.organizationId !== project.OrganizationId) {
         console.log('Transferring project to org:', formData.organizationId);
@@ -9333,9 +9574,10 @@ function EditProjectModal({
         giteaRepo: formData.giteaRepo || null,
         budget: formData.budget != null ? formData.budget : null,
         budgetType: formData.budgetType || 'monetary',
-        customerId: formData.customerId || null,
+        customerId: formData.isGlobal ? null : (formData.customerId || null),
+        isGlobal: !!formData.isGlobal,
         isHobby: formData.isHobby || false,
-        isVisibleToCustomer: formData.isVisibleToCustomer || false,
+        isVisibleToCustomer: formData.isGlobal ? false : (formData.isVisibleToCustomer || false),
         applicationIds: formData.applicationIds || [],
       };
       console.log('Updating project with data:', updateData);
@@ -9351,7 +9593,7 @@ function EditProjectModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
@@ -9658,6 +9900,7 @@ function EditProjectModal({
               <select
                 value={formData.customerId || ''}
                 onChange={(e) => setFormData({ ...formData, customerId: e.target.value ? parseInt(e.target.value) : undefined })}
+                disabled={!!formData.isGlobal}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="">No customer</option>
@@ -9665,27 +9908,57 @@ function EditProjectModal({
                   <option key={c.Id} value={c.Id}>{c.Name}</option>
                 ))}
               </select>
+              {formData.isGlobal && (
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  Global projects cannot have a customer association
+                </p>
+              )}
             </div>
 
-            <div className="flex items-center gap-3 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
-              <input
-                type="checkbox"
-                id="editIsHobby"
-                checked={formData.isHobby || false}
-                onChange={(e) => setFormData({ ...formData, isHobby: e.target.checked })}
-                className="w-5 h-5 rounded border-purple-300 text-purple-600 focus:ring-purple-500 dark:bg-gray-700 dark:border-purple-600"
-              />
-              <div>
-                <label htmlFor="editIsHobby" className="block text-sm font-medium text-purple-700 dark:text-purple-300 cursor-pointer">
-                  🎨 Hobby Project
-                </label>
-                <p className="text-xs text-purple-600 dark:text-purple-400">
-                  Hobby projects are scheduled outside of regular work hours
-                </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="flex items-center gap-3 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <input
+                  type="checkbox"
+                  id="editIsGlobal"
+                  checked={!!formData.isGlobal}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    isGlobal: e.target.checked,
+                    customerId: e.target.checked ? undefined : formData.customerId,
+                    isVisibleToCustomer: e.target.checked ? false : formData.isVisibleToCustomer,
+                  })}
+                  className="w-5 h-5 rounded border-blue-300 text-blue-600 focus:ring-blue-500 dark:bg-gray-700 dark:border-blue-600"
+                />
+                <div>
+                  <label htmlFor="editIsGlobal" className="block text-sm font-medium text-blue-700 dark:text-blue-300 cursor-pointer">
+                    🌐 Global Project
+                  </label>
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    Global projects are not associated with a specific customer
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                <input
+                  type="checkbox"
+                  id="editIsHobby"
+                  checked={formData.isHobby || false}
+                  onChange={(e) => setFormData({ ...formData, isHobby: e.target.checked })}
+                  className="w-5 h-5 rounded border-purple-300 text-purple-600 focus:ring-purple-500 dark:bg-gray-700 dark:border-purple-600"
+                />
+                <div>
+                  <label htmlFor="editIsHobby" className="block text-sm font-medium text-purple-700 dark:text-purple-300 cursor-pointer">
+                    🎨 Hobby Project
+                  </label>
+                  <p className="text-xs text-purple-600 dark:text-purple-400">
+                    Hobby projects are scheduled outside of regular work hours
+                  </p>
+                </div>
               </div>
             </div>
 
-            {formData.customerId && (
+            {formData.customerId && !formData.isGlobal && (
               <div className="flex items-center gap-3 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
                 <input
                   type="checkbox"
@@ -10248,7 +10521,7 @@ function TaskModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
@@ -10825,7 +11098,7 @@ function SaveTemplateModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
         <div className="p-6">
           {success ? (
@@ -10972,7 +11245,7 @@ function ApplyTemplateModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full max-h-[85vh] flex flex-col">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">📥 Apply Task Template</h2>
@@ -11653,7 +11926,7 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
 
       {/* Sprint Create/Edit Modal */}
       {showSprintModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
@@ -11736,7 +12009,7 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
 
       {/* Confirm Modal */}
       {confirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-sm w-full mx-4 p-6">
             <p className="text-gray-900 dark:text-white mb-6">{confirmModal.message}</p>
             <div className="flex gap-3">
