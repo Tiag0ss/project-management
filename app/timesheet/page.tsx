@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { usersApi, User } from '@/lib/api/users';
 import { tasksApi, Task } from '@/lib/api/tasks';
+import { downloadTablePdf } from '@/lib/api/pdfExport';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import SearchableSelect from '@/components/SearchableSelect';
@@ -1635,41 +1636,85 @@ export default function TimesheetPage() {
                         <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                           All Time Entries
                         </h2>
-                        <button
-                          onClick={() => {
-                            const filtered = timeEntries.filter(entry => {
-                              const entryDate = normalizeDateString(entry.WorkDate);
-                              if (historyDateFrom && entryDate < historyDateFrom) return false;
-                              if (historyDateTo && entryDate > historyDateTo) return false;
-                              if (historyProjectFilter && entry.ProjectName !== historyProjectFilter) return false;
-                              if (historyTaskFilter && entry.TaskId !== parseInt(historyTaskFilter)) return false;
-                              return true;
-                            });
-                            const header = ['Date', 'Customer', 'Project', 'Task', 'Start', 'End', 'Hours', 'Description', 'Status'];
-                            const rows = filtered.map(e => [
-                              normalizeDateString(e.WorkDate),
-                              e.CustomerName || '',
-                              e.ProjectName || '',
-                              e.TaskName || '',
-                              e.StartTime || '',
-                              e.EndTime || '',
-                              parseFloat(e.Hours as any).toFixed(2),
-                              stripHtml(e.Description || '').replace(/"/g, '""'),
-                              e.ApprovalStatus || ''
-                            ].map(v => `"${v}"`).join(','));
-                            const csv = [header.join(','), ...rows].join('\n');
-                            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `time-entries-${historyDateFrom}-${historyDateTo}.csv`;
-                            a.click();
-                            URL.revokeObjectURL(url);
-                          }}
-                          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
-                        >
-                          ⬇ Export CSV
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              const filtered = timeEntries.filter(entry => {
+                                const entryDate = normalizeDateString(entry.WorkDate);
+                                if (historyDateFrom && entryDate < historyDateFrom) return false;
+                                if (historyDateTo && entryDate > historyDateTo) return false;
+                                if (historyProjectFilter && entry.ProjectName !== historyProjectFilter) return false;
+                                if (historyTaskFilter && entry.TaskId !== parseInt(historyTaskFilter)) return false;
+                                return true;
+                              });
+                              const header = ['Date', 'Customer', 'Project', 'Task', 'Start', 'End', 'Hours', 'Description', 'Status'];
+                              const rows = filtered.map(e => [
+                                normalizeDateString(e.WorkDate),
+                                e.CustomerName || '',
+                                e.ProjectName || '',
+                                e.TaskName || '',
+                                e.StartTime || '',
+                                e.EndTime || '',
+                                parseFloat(e.Hours as any).toFixed(2),
+                                stripHtml(e.Description || '').replace(/"/g, '""'),
+                                e.ApprovalStatus || ''
+                              ].map(v => `"${v}"`).join(','));
+                              const csv = [header.join(','), ...rows].join('\n');
+                              const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `time-entries-${historyDateFrom}-${historyDateTo}.csv`;
+                              a.click();
+                              URL.revokeObjectURL(url);
+                            }}
+                            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                          >
+                            ⬇ Export CSV
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!token) return;
+
+                              const filtered = timeEntries.filter(entry => {
+                                const entryDate = normalizeDateString(entry.WorkDate);
+                                if (historyDateFrom && entryDate < historyDateFrom) return false;
+                                if (historyDateTo && entryDate > historyDateTo) return false;
+                                if (historyProjectFilter && entry.ProjectName !== historyProjectFilter) return false;
+                                if (historyTaskFilter && entry.TaskId !== parseInt(historyTaskFilter)) return false;
+                                return true;
+                              });
+
+                              const header = ['Date', 'Customer', 'Project', 'Task', 'Start', 'End', 'Hours', 'Description', 'Status'];
+                              const rows = filtered.map(e => [
+                                normalizeDateString(e.WorkDate),
+                                e.CustomerName || '',
+                                e.ProjectName || '',
+                                e.TaskName || '',
+                                e.StartTime || '',
+                                e.EndTime || '',
+                                parseFloat(e.Hours as any).toFixed(2),
+                                stripHtml(e.Description || ''),
+                                e.ApprovalStatus || ''
+                              ]);
+
+                              try {
+                                await downloadTablePdf({
+                                  title: 'Time Entries',
+                                  filename: `time-entries-${historyDateFrom}-${historyDateTo}`,
+                                  headers: header,
+                                  rows,
+                                }, token);
+                              } catch (error) {
+                                console.error('Error exporting PDF:', error);
+                                setMessage(error instanceof Error ? error.message : 'Failed to export PDF');
+                              }
+                            }}
+                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                          >
+                            📄 Export PDF
+                          </button>
+                        </div>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                         <div>

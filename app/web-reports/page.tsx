@@ -8,6 +8,7 @@ import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import DynamicQueryBuilder from '@/components/DynamicQueryBuilder';
 import * as savedReportsApi from '@/lib/api/savedReports';
+import { downloadTablePdf } from '@/lib/api/pdfExport';
 
 interface ReportField {
   key: string;
@@ -1092,6 +1093,50 @@ export default function WebReportsPage() {
     URL.revokeObjectURL(url);
   };
 
+  const exportToPDF = async () => {
+    if (!pivotData || !token) return;
+
+    const { rows: pivotRows, columns: cols } = pivotData;
+
+    const rowHeaders = pivotConfig.rows.map(r => {
+      const field = currentSource?.fields.find(f => f.key === r);
+      return field?.label || r;
+    });
+
+    const valueHeaders = cols.map((col: string) => {
+      const [colValue, field, aggregation] = col.split('|||');
+      const fieldLabel = currentSource?.fields.find(f => f.key === field)?.label || field;
+      const aggLabel = aggregation ? ` (${aggregation})` : '';
+      return field && field !== 'undefined'
+        ? `${colValue}${colValue !== 'Total' ? ' | ' : ''}${fieldLabel}${aggLabel}`
+        : colValue;
+    });
+
+    const headers = [...rowHeaders, ...valueHeaders, 'Total'];
+    const rows = pivotRows.map((row: any) => {
+      const keys = row.key.split('|');
+      const rowValues = new Array(pivotConfig.rows.length).fill('');
+      for (let i = 0; i <= row.level && i < keys.length; i++) {
+        rowValues[i] = keys[i];
+      }
+      const valueFields = cols.map((colKey: string) => (row.data[colKey] || 0).toFixed(2));
+      const rowTotal = cols.reduce((sum: number, col: string) => sum + (row.data[col] || 0), 0);
+      return [...rowValues, ...valueFields, rowTotal.toFixed(2)];
+    });
+
+    try {
+      await downloadTablePdf({
+        title: 'Pivot Report',
+        filename: 'pivot-report',
+        headers,
+        rows,
+      }, token);
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      setError(error instanceof Error ? error.message : 'Failed to export PDF');
+    }
+  };
+
   const handleSaveReport = async () => {
     if (!reportNameInput.trim()) {
       setError('Please enter a report name');
@@ -1827,6 +1872,12 @@ export default function WebReportsPage() {
                             className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
                           >
                             📥 Export to CSV
+                          </button>
+                          <button
+                            onClick={() => { void exportToPDF(); }}
+                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                          >
+                            📄 Export to PDF
                           </button>
                           <button
                             onClick={() => setModalState({ type: 'print' })}

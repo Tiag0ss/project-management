@@ -62,6 +62,7 @@ import applicationsRoutes from './routes/applications';
 import projectReportSchedulesRoutes from './routes/projectReportSchedules';
 import holidaysRoutes from './routes/holidays';
 import vacationsRoutes from './routes/vacations';
+import pdfExportsRoutes from './routes/pdfExports';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
 import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler';
 import { startPdfReportScheduler } from './utils/pdfReportScheduler';
@@ -234,6 +235,7 @@ app.prepare().then(async () => {
   server.use('/api/project-report-schedules', projectReportSchedulesRoutes);
   server.use('/api/holidays', holidaysRoutes);
   server.use('/api/vacations', vacationsRoutes);
+  server.use('/api/pdf-exports', pdfExportsRoutes);
 
   // Error handling middleware
   server.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

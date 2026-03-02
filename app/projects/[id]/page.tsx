@@ -19,6 +19,7 @@ import ChangeHistory from '@/components/ChangeHistory';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import { getTaskAttachment } from '@/lib/api/taskAttachments';
+import { downloadTablePdf } from '@/lib/api/pdfExport';
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -7333,6 +7334,27 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
     URL.revokeObjectURL(link.href);
   };
 
+  const exportToPDF = async (data: any[], filename: string, headers: string[], title: string) => {
+    if (!token) {
+      setError('You must be logged in to export PDF');
+      return;
+    }
+
+    const rows = data.map(row => headers.map(header => String(row[header] ?? '')));
+
+    try {
+      await downloadTablePdf({
+        title,
+        filename,
+        headers,
+        rows,
+      }, token);
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      setError(error instanceof Error ? error.message : 'Failed to export PDF');
+    }
+  };
+
   const handleExportSummary = () => {
     const data = tasks.map(t => ({
       TaskName: t.TaskName,
@@ -7347,6 +7369,20 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
     exportToCSV(data, 'project_summary', ['TaskName', 'Status', 'Priority', 'AssignedTo', 'EstimatedHours', 'AllocatedHours', 'WorkedHours', 'Progress']);
   };
 
+  const handleExportSummaryPDF = async () => {
+    const data = tasks.map(t => ({
+      TaskName: t.TaskName,
+      Status: t.Status || '',
+      Priority: t.Priority || '',
+      AssignedTo: t.AssigneeName || 'Unassigned',
+      EstimatedHours: parseFloat(t.EstimatedHours || 0).toFixed(2),
+      AllocatedHours: parseFloat(t.TotalAllocated || 0).toFixed(2),
+      WorkedHours: parseFloat(t.TotalWorked || 0).toFixed(2),
+      Progress: `${Math.round((parseFloat(t.TotalWorked || 0) / parseFloat(t.EstimatedHours || 1)) * 100)}%`
+    }));
+    await exportToPDF(data, 'project_summary', ['TaskName', 'Status', 'Priority', 'AssignedTo', 'EstimatedHours', 'AllocatedHours', 'WorkedHours', 'Progress'], 'Project Report - Summary');
+  };
+
   const handleExportAllocations = () => {
     const data = allocations.map(a => ({
       Date: new Date(a.AllocationDate).toLocaleDateString(),
@@ -7357,6 +7393,18 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
       EndTime: a.EndTime || ''
     }));
     exportToCSV(data, 'project_allocations', ['Date', 'Task', 'User', 'AllocatedHours', 'StartTime', 'EndTime']);
+  };
+
+  const handleExportAllocationsPDF = async () => {
+    const data = allocations.map(a => ({
+      Date: new Date(a.AllocationDate).toLocaleDateString(),
+      Task: a.TaskName || '',
+      User: a.Username || '',
+      AllocatedHours: parseFloat(a.AllocatedHours || 0).toFixed(2),
+      StartTime: a.StartTime || '',
+      EndTime: a.EndTime || ''
+    }));
+    await exportToPDF(data, 'project_allocations', ['Date', 'Task', 'User', 'AllocatedHours', 'StartTime', 'EndTime'], 'Project Report - Allocations');
   };
 
   const handleExportTimeEntries = () => {
@@ -7372,6 +7420,19 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
     exportToCSV(data, 'project_time_entries', ['Date', 'Task', 'User', 'Hours', 'StartTime', 'EndTime', 'Description']);
   };
 
+  const handleExportTimeEntriesPDF = async () => {
+    const data = timeEntries.map(e => ({
+      Date: new Date(e.WorkDate).toLocaleDateString(),
+      Task: e.TaskName || '',
+      User: e.Username || '',
+      Hours: parseFloat(e.Hours || 0).toFixed(2),
+      StartTime: e.StartTime || '',
+      EndTime: e.EndTime || '',
+      Description: e.Description || ''
+    }));
+    await exportToPDF(data, 'project_time_entries', ['Date', 'Task', 'User', 'Hours', 'StartTime', 'EndTime', 'Description'], 'Project Report - Time Entries');
+  };
+
   const handleExportByUser = () => {
     const data = userStats.map(u => ({
       User: `${u.FirstName || ''} ${u.LastName || ''}`.trim() || u.Username,
@@ -7382,21 +7443,44 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
     exportToCSV(data, 'project_by_user', ['User', 'TotalAllocated', 'TotalWorked', 'TasksCount']);
   };
 
+  const handleExportByUserPDF = async () => {
+    const data = userStats.map(u => ({
+      User: `${u.FirstName || ''} ${u.LastName || ''}`.trim() || u.Username,
+      TotalAllocated: parseFloat(u.TotalAllocated || 0).toFixed(2),
+      TotalWorked: parseFloat(u.TotalWorked || 0).toFixed(2),
+      TasksCount: u.Tasks?.length || 0
+    }));
+    await exportToPDF(data, 'project_by_user', ['User', 'TotalAllocated', 'TotalWorked', 'TasksCount'], 'Project Report - By User');
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Reporting</h1>
-        <button
-          onClick={() => {
-            if (reportTab === 'summary') handleExportSummary();
-            else if (reportTab === 'allocations') handleExportAllocations();
-            else if (reportTab === 'timeEntries') handleExportTimeEntries();
-            else if (reportTab === 'byUser') handleExportByUser();
-          }}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
-        >
-          📥 Export CSV
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              if (reportTab === 'summary') handleExportSummary();
+              else if (reportTab === 'allocations') handleExportAllocations();
+              else if (reportTab === 'timeEntries') handleExportTimeEntries();
+              else if (reportTab === 'byUser') handleExportByUser();
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            📥 Export CSV
+          </button>
+          <button
+            onClick={() => {
+              if (reportTab === 'summary') { void handleExportSummaryPDF(); }
+              else if (reportTab === 'allocations') { void handleExportAllocationsPDF(); }
+              else if (reportTab === 'timeEntries') { void handleExportTimeEntriesPDF(); }
+              else if (reportTab === 'byUser') { void handleExportByUserPDF(); }
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            📄 Export PDF
+          </button>
+        </div>
       </div>
 
       {error && (
