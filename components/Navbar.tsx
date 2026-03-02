@@ -11,6 +11,7 @@ import RichTextEditor from './RichTextEditor';
 import SearchableSelect from './SearchableSelect';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { io, Socket } from 'socket.io-client';
+import { ThemeMode, getStoredThemeMode, setThemeMode } from '@/lib/theme';
 
 interface Organization {
   Id: number;
@@ -49,6 +50,7 @@ export default function Navbar() {
   const { user, token, logout, isCustomerUser } = useAuth();
   const { permissions, isLoading: permissionsLoading } = usePermissions();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const quickActionsRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
@@ -59,6 +61,8 @@ export default function Navbar() {
   const [managementMenuOpen, setManagementMenuOpen] = useState(false);
   const workMenuRef = useRef<HTMLDivElement>(null);
   const managementMenuRef = useRef<HTMLDivElement>(null);
+  const workMenuCloseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const managementMenuCloseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Global Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -72,6 +76,11 @@ export default function Navbar() {
   const [memosEnabled, setMemosEnabled] = useState(true);
   const [companyName, setCompanyName] = useState('Project Management');
   const [companyLogoUrl, setCompanyLogoUrl] = useState('');
+  const [navbarMenuLayout, setNavbarMenuLayout] = useState<'top' | 'left'>('top');
+  const [navbarLeftMode, setNavbarLeftMode] = useState<'fixed' | 'floating'>('fixed');
+  const [navbarLeftCollapsed, setNavbarLeftCollapsed] = useState(false);
+  const [isLeftSidebarHovered, setIsLeftSidebarHovered] = useState(false);
+  const [isFloatingSidebarOpen, setIsFloatingSidebarOpen] = useState(false);
 
   // Notifications state
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -79,6 +88,7 @@ export default function Navbar() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [canAccessApprovals, setCanAccessApprovals] = useState(false);
+  const [canAccessVacationApprovals, setCanAccessVacationApprovals] = useState(false);
 
   // Active timer state
   const [navTimer, setNavTimer] = useState<{ Id: number; TaskId: number; TaskName: string; ProjectId: number; ProjectName: string; StartedAt: string } | null>(null);
@@ -168,6 +178,10 @@ export default function Navbar() {
   });
 
   useEffect(() => {
+    setThemeModeState(getStoredThemeMode());
+  }, []);
+
+  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setDropdownOpen(false);
@@ -190,7 +204,11 @@ export default function Navbar() {
     };
 
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      if (workMenuCloseTimeoutRef.current) clearTimeout(workMenuCloseTimeoutRef.current);
+      if (managementMenuCloseTimeoutRef.current) clearTimeout(managementMenuCloseTimeoutRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -213,6 +231,68 @@ export default function Navbar() {
 
     loadFeatureFlags();
   }, []);
+
+  useEffect(() => {
+    const loadNavbarPreferences = async () => {
+      if (!token) return;
+      try {
+        const response = await fetch(`${getApiUrl()}/api/users/profile`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        const profile = data?.user;
+        if (!profile) return;
+        setNavbarMenuLayout((profile.NavbarMenuLayout || 'top') === 'left' ? 'left' : 'top');
+        setNavbarLeftMode((profile.NavbarLeftMode || 'fixed') === 'floating' ? 'floating' : 'fixed');
+        setNavbarLeftCollapsed(!!profile.NavbarLeftCollapsed);
+      } catch {
+        setNavbarMenuLayout('top');
+        setNavbarLeftMode('fixed');
+        setNavbarLeftCollapsed(false);
+      }
+    };
+
+    loadNavbarPreferences();
+  }, [token]);
+
+  useEffect(() => {
+    document.body.classList.remove('nav-left-fixed-expanded');
+    document.body.classList.remove('nav-left-fixed-collapsed');
+
+    const shouldApplyFixedOffset =
+      navbarMenuLayout === 'left' &&
+      navbarLeftMode === 'fixed';
+
+    if (shouldApplyFixedOffset) {
+      document.body.classList.add(navbarLeftCollapsed ? 'nav-left-fixed-collapsed' : 'nav-left-fixed-expanded');
+    }
+
+    return () => {
+      document.body.classList.remove('nav-left-fixed-expanded');
+      document.body.classList.remove('nav-left-fixed-collapsed');
+    };
+  }, [navbarMenuLayout, navbarLeftMode, navbarLeftCollapsed]);
+
+  const saveNavbarPreference = async (updates: {
+    navbarLeftCollapsed?: boolean;
+  }) => {
+    if (!token) return;
+    try {
+      await fetch(`${getApiUrl()}/api/users/profile`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updates),
+      });
+    } catch {
+      // no-op
+    }
+  };
 
   // Load notification count on mount and periodically (fallback polling at 5 min)
   useEffect(() => {
@@ -296,11 +376,13 @@ export default function Navbar() {
     const loadApprovalScope = async () => {
       if (!token || !user || isCustomerUser) {
         setCanAccessApprovals(false);
+        setCanAccessVacationApprovals(false);
         return;
       }
 
       if (user.isAdmin) {
         setCanAccessApprovals(true);
+        setCanAccessVacationApprovals(true);
         return;
       }
 
@@ -318,6 +400,20 @@ export default function Navbar() {
         setCanAccessApprovals(!!data?.canApprove);
       } catch {
         setCanAccessApprovals(false);
+      }
+
+      try {
+        const vacationRes = await fetch(`${getApiUrl()}/api/vacations/approval-scope`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!vacationRes.ok) {
+          setCanAccessVacationApprovals(false);
+          return;
+        }
+        const vacationData = await vacationRes.json();
+        setCanAccessVacationApprovals(!!vacationData?.canApprove);
+      } catch {
+        setCanAccessVacationApprovals(false);
       }
     };
 
@@ -1002,22 +1098,244 @@ export default function Navbar() {
 
   const canShowOrganizationsOption = !!permissions?.canManageOrganizations;
   const canShowApprovalsOption = canAccessApprovals;
+  const canShowVacationApprovalsOption = canAccessVacationApprovals;
+  const canShowAnyApprovalsOption = canShowApprovalsOption || canShowVacationApprovalsOption;
+
+  const canShowDashboardLink = isCustomerUser || (!isCustomerUser && (permissionsLoading || permissions?.canViewDashboard));
+  const canShowProjectsLink = !isCustomerUser && (permissionsLoading || permissions?.canViewProjects || permissions?.canManageProjects || permissions?.canCreateProjects);
+  const canShowPlanningLink = !isCustomerUser && (permissionsLoading || permissions?.canViewPlanning);
+  const canShowTicketsLink = internalTicketsEnabled && (user?.isSupport || isCustomerUser || permissions?.canManageTickets || permissions?.canCreateTickets);
+  const canShowMemosLink = !isCustomerUser && memosEnabled;
+  const canShowTimesheetLink = !isCustomerUser;
+  const canShowCallRecordsLink = !isCustomerUser;
+  const canShowReportsLink = !isCustomerUser && (permissionsLoading || permissions?.canViewReports || permissions?.canManageOrganizations || !!user?.isAdmin);
+
+  const showOverviewSection = canShowDashboardLink;
+  const showDeliverySection = canShowProjectsLink || canShowPlanningLink || canShowTimesheetLink;
+  const showServiceSection = canShowTicketsLink || canShowMemosLink || canShowCallRecordsLink;
+  const showManagementSection = canShowCustomersOption || canShowApplicationsOption || canShowOrganizationsOption || canShowAnyApprovalsOption;
+  const showReportingSection = canShowReportsLink;
 
   const canShowManagementMenu =
     !isCustomerUser &&
     (canShowCustomersOption ||
       canShowApplicationsOption ||
       canShowOrganizationsOption ||
-      canShowApprovalsOption);
+    canShowAnyApprovalsOption);
+
+  const shouldUseLeftSidebar = navbarMenuLayout === 'left';
+  const isFloatingMode = shouldUseLeftSidebar && navbarLeftMode === 'floating';
+  const shouldRenderLeftSidebar = shouldUseLeftSidebar && (navbarLeftMode === 'fixed' || isFloatingSidebarOpen);
+  const isFixedCollapsedRail = shouldUseLeftSidebar && navbarLeftMode === 'fixed' && navbarLeftCollapsed;
+  const isHoverExpandedRail = isFixedCollapsedRail && isLeftSidebarHovered;
+  const isSidebarEffectivelyCollapsed = !isFloatingMode && navbarLeftCollapsed && !isHoverExpandedRail;
+  const sidebarItemClass = `flex items-center ${isSidebarEffectivelyCollapsed ? 'justify-center px-2' : 'gap-2 px-3'} py-2 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700`;
+
+  const toggleLeftSidebar = () => {
+    if (isFloatingMode) {
+      setIsFloatingSidebarOpen(prev => !prev);
+      return;
+    }
+
+    const nextCollapsed = !navbarLeftCollapsed;
+    setNavbarLeftCollapsed(nextCollapsed);
+    saveNavbarPreference({ navbarLeftCollapsed: nextCollapsed });
+  };
+
+  const handleWorkMenuMouseEnter = () => {
+    if (workMenuCloseTimeoutRef.current) {
+      clearTimeout(workMenuCloseTimeoutRef.current);
+      workMenuCloseTimeoutRef.current = null;
+    }
+    setWorkMenuOpen(true);
+  };
+
+  const handleWorkMenuMouseLeave = () => {
+    if (workMenuCloseTimeoutRef.current) clearTimeout(workMenuCloseTimeoutRef.current);
+    workMenuCloseTimeoutRef.current = setTimeout(() => {
+      setWorkMenuOpen(false);
+    }, 180);
+  };
+
+  const handleManagementMenuMouseEnter = () => {
+    if (managementMenuCloseTimeoutRef.current) {
+      clearTimeout(managementMenuCloseTimeoutRef.current);
+      managementMenuCloseTimeoutRef.current = null;
+    }
+    setManagementMenuOpen(true);
+  };
+
+  const handleManagementMenuMouseLeave = () => {
+    if (managementMenuCloseTimeoutRef.current) clearTimeout(managementMenuCloseTimeoutRef.current);
+    managementMenuCloseTimeoutRef.current = setTimeout(() => {
+      setManagementMenuOpen(false);
+    }, 180);
+  };
 
   return (
     <>
+      {isFloatingMode && isFloatingSidebarOpen && (
+        <div
+          className="fixed inset-0 z-[65] bg-black/30"
+          onClick={() => setIsFloatingSidebarOpen(false)}
+        />
+      )}
+
+      {shouldRenderLeftSidebar && (
+        <aside
+          onMouseEnter={() => {
+            if (isFixedCollapsedRail) setIsLeftSidebarHovered(true);
+          }}
+          onMouseLeave={() => {
+            if (isFixedCollapsedRail) setIsLeftSidebarHovered(false);
+          }}
+          className={`${navbarLeftMode === 'floating'
+            ? 'fixed left-4 top-20 bottom-4 z-[70] rounded-xl border border-gray-200 dark:border-gray-700'
+            : 'fixed left-0 top-16 bottom-0 z-[70] border-r border-gray-200 dark:border-gray-700'} ${isSidebarEffectivelyCollapsed ? (isHoverExpandedRail ? 'w-72' : 'w-16') : 'w-72'} bg-white dark:bg-gray-800 shadow-xl transition-all duration-200`}
+        >
+          <div className="h-full flex flex-col">
+            <div className={`flex items-center ${isSidebarEffectivelyCollapsed ? 'justify-center' : 'justify-between'} p-3 border-b border-gray-200 dark:border-gray-700`}>
+              {isSidebarEffectivelyCollapsed ? (
+                <span className="text-gray-700 dark:text-gray-300">☰</span>
+              ) : (
+                <span className="font-semibold text-gray-900 dark:text-white">Navigation</span>
+              )}
+            </div>
+
+            <nav className="flex-1 overflow-y-auto p-2 space-y-1">
+              {showOverviewSection && (
+                <div>
+                  {!isSidebarEffectivelyCollapsed && (
+                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Overview</p>
+                  )}
+                  {canShowDashboardLink && (
+                    <a href="/dashboard" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📊</span>{!isSidebarEffectivelyCollapsed && <span>Dashboard</span>}
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {showDeliverySection && (
+                <div className={`${showOverviewSection ? 'mt-2 pt-2 border-t border-gray-200 dark:border-gray-700' : ''}`}>
+                  {!isSidebarEffectivelyCollapsed && (
+                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Delivery</p>
+                  )}
+                  {canShowProjectsLink && (
+                    <a href="/projects" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📁</span>{!isSidebarEffectivelyCollapsed && <span>Projects</span>}
+                    </a>
+                  )}
+                  {canShowPlanningLink && (
+                    <a href="/planning" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📅</span>{!isSidebarEffectivelyCollapsed && <span>Planning</span>}
+                    </a>
+                  )}
+                  {canShowTimesheetLink && (
+                    <a href="/timesheet" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📝</span>{!isSidebarEffectivelyCollapsed && <span>Timesheet</span>}
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {showServiceSection && (
+                <div className={`${showOverviewSection || showDeliverySection ? 'mt-2 pt-2 border-t border-gray-200 dark:border-gray-700' : ''}`}>
+                  {!isSidebarEffectivelyCollapsed && (
+                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Service</p>
+                  )}
+                  {canShowTicketsLink && (
+                    <a href="/tickets" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">🎫</span>{!isSidebarEffectivelyCollapsed && <span>Tickets</span>}
+                    </a>
+                  )}
+                  {canShowCallRecordsLink && (
+                    <a href="/call-records" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📞</span>{!isSidebarEffectivelyCollapsed && <span>Call Records</span>}
+                    </a>
+                  )}
+                  {canShowMemosLink && (
+                    <a href="/memos" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📝</span>{!isSidebarEffectivelyCollapsed && <span>Memos</span>}
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {showManagementSection && (
+                <div className={`${showOverviewSection || showDeliverySection || showServiceSection ? 'mt-2 pt-2 border-t border-gray-200 dark:border-gray-700' : ''}`}>
+                  {!isSidebarEffectivelyCollapsed && (
+                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Management</p>
+                  )}
+                  {canShowCustomersOption && (
+                    <a href="/customers" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">🏢</span>{!isSidebarEffectivelyCollapsed && <span>Customers</span>}
+                    </a>
+                  )}
+                  {canShowApplicationsOption && (
+                    <a href="/applications" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">🧩</span>{!isSidebarEffectivelyCollapsed && <span>Applications</span>}
+                    </a>
+                  )}
+                  {canShowOrganizationsOption && (
+                    <a href="/organizations" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">🏬</span>{!isSidebarEffectivelyCollapsed && <span>Organizations</span>}
+                    </a>
+                  )}
+                  {canShowAnyApprovalsOption && (
+                    <a href="/approvals" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">✅</span>{!isSidebarEffectivelyCollapsed && <span>Approvals</span>}
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {showReportingSection && (
+                <div className={`${showOverviewSection || showDeliverySection || showServiceSection || showManagementSection ? 'mt-2 pt-2 border-t border-gray-200 dark:border-gray-700' : ''}`}>
+                  {!isSidebarEffectivelyCollapsed && (
+                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Reporting</p>
+                  )}
+                  {canShowReportsLink && (
+                    <a href="/web-reports" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📈</span>{!isSidebarEffectivelyCollapsed && <span>Reports</span>}
+                    </a>
+                  )}
+                </div>
+              )}
+            </nav>
+
+            <div className="p-2 border-t border-gray-200 dark:border-gray-700">
+              {!isSidebarEffectivelyCollapsed && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 px-1">Mode: {navbarLeftMode === 'floating' ? 'Floating' : 'Fixed'}</p>
+              )}
+            </div>
+          </div>
+        </aside>
+      )}
+
       {/* outer nav stretches across entire header so background fills 100% */}
-      <nav className="sticky top-0 z-[60] w-full bg-white dark:bg-gray-800 shadow">
+      <nav
+        className={`sticky top-0 z-[80] w-full bg-white dark:bg-gray-800 shadow ${
+          navbarMenuLayout === 'left' && navbarLeftMode === 'fixed'
+            ? (navbarLeftCollapsed ? 'nav-top-compensate-left-collapsed' : 'nav-top-compensate-left-expanded')
+            : ''
+        }`}
+      >
         {/* content not limited to max width so nav items span entire header */}
         <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center space-x-8">
+              {shouldUseLeftSidebar && (
+                <button
+                  onClick={toggleLeftSidebar}
+                  className="p-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  title={isFloatingMode ? (isFloatingSidebarOpen ? 'Hide menu' : 'Show menu') : (navbarLeftCollapsed ? 'Show menu' : 'Hide menu')}
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+              )}
               <div className="flex items-center gap-3">
                 {companyLogoUrl ? (
                   <img
@@ -1034,6 +1352,7 @@ export default function Navbar() {
                   {companyName || 'Project Management'}
                 </h1>
               </div>
+              {!shouldUseLeftSidebar && (
               <div className="hidden md:flex space-x-4">
                 {/* Dashboard */}
                 {(isCustomerUser || (!isCustomerUser && (permissionsLoading || permissions?.canViewDashboard))) && (
@@ -1041,18 +1360,23 @@ export default function Navbar() {
                     href="/dashboard" 
                     className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
                   >
-                    Dashboard
+                    📊 Dashboard
                   </a>
                 )}
 
                 {/* Work Dropdown (Projects & Planning) */}
                 {!isCustomerUser && (permissionsLoading || permissions?.canViewProjects || permissions?.canManageProjects || permissions?.canCreateProjects || permissions?.canViewPlanning) && (
-                  <div className="relative" ref={workMenuRef}>
+                  <div
+                    className="relative"
+                    ref={workMenuRef}
+                    onMouseEnter={handleWorkMenuMouseEnter}
+                    onMouseLeave={handleWorkMenuMouseLeave}
+                  >
                     <button
                       onClick={() => setWorkMenuOpen(!workMenuOpen)}
                       className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium flex items-center space-x-1"
                     >
-                      <span>Work</span>
+                      <span>🗂️ Work</span>
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
@@ -1065,7 +1389,7 @@ export default function Navbar() {
                             className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             onClick={() => setWorkMenuOpen(false)}
                           >
-                            Projects
+                            📁 Projects
                           </a>
                         )}
                         {(permissionsLoading || permissions?.canViewPlanning) && (
@@ -1074,7 +1398,7 @@ export default function Navbar() {
                             className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             onClick={() => setWorkMenuOpen(false)}
                           >
-                            Planning
+                            📅 Planning
                           </a>
                         )}
                       </div>
@@ -1088,7 +1412,7 @@ export default function Navbar() {
                       href="/tickets" 
                       className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
                     >
-                      Tickets
+                      🎫 Tickets
                     </a>
                 )}
 
@@ -1098,18 +1422,23 @@ export default function Navbar() {
                     href="/memos" 
                     className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
                   >
-                    Memos
+                    📝 Memos
                   </a>
                 )}
 
                 {/* Management Dropdown (Customers & Organizations) */}
                 {canShowManagementMenu && (
-                  <div className="relative" ref={managementMenuRef}>
+                  <div
+                    className="relative"
+                    ref={managementMenuRef}
+                    onMouseEnter={handleManagementMenuMouseEnter}
+                    onMouseLeave={handleManagementMenuMouseLeave}
+                  >
                     <button
                       onClick={() => setManagementMenuOpen(!managementMenuOpen)}
                       className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium flex items-center space-x-1"
                     >
-                      <span>Management</span>
+                      <span>⚙️ Management</span>
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
@@ -1122,7 +1451,7 @@ export default function Navbar() {
                             className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             onClick={() => setManagementMenuOpen(false)}
                           >
-                            Customers
+                            🏢 Customers
                           </a>
                         )}
                         {canShowApplicationsOption && (
@@ -1131,7 +1460,7 @@ export default function Navbar() {
                             className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             onClick={() => setManagementMenuOpen(false)}
                           >
-                            Applications
+                            🧩 Applications
                           </a>
                         )}
                         {canShowOrganizationsOption && (
@@ -1140,16 +1469,16 @@ export default function Navbar() {
                             className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             onClick={() => setManagementMenuOpen(false)}
                           >
-                            Organizations
+                            🏬 Organizations
                           </a>
                         )}
-                        {canShowApprovalsOption && (
+                        {canShowAnyApprovalsOption && (
                           <a
-                            href="/approvals"
+                            href={canShowApprovalsOption ? '/approvals?tab=time' : '/approvals?tab=vacations'}
                             className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             onClick={() => setManagementMenuOpen(false)}
                           >
-                            Time Approvals
+                            ✅ Approvals
                           </a>
                         )}
                       </div>
@@ -1165,10 +1494,11 @@ export default function Navbar() {
                     href="/web-reports" 
                     className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
                   >
-                    Reports
+                    📈 Reports
                   </a>
                 )}
               </div>
+              )}
             </div>
             <div className="flex items-center space-x-4">
               {/* Global Search - Hidden for customer users */}
@@ -1604,7 +1934,7 @@ export default function Navbar() {
                 </button>
 
                 {dropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
+                  <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
                     <a
                       href="/profile"
                       className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -1612,7 +1942,7 @@ export default function Navbar() {
                     >
                       👤 My Profile
                     </a>
-                    {!isCustomerUser && (
+                    {!isCustomerUser && !shouldUseLeftSidebar && (
                     <>
                     <a
                       href="/timesheet"
@@ -1622,18 +1952,23 @@ export default function Navbar() {
                       📝 Timesheet
                     </a>
                     <a
-                      href="/dashboard?tab=calendar"
-                      className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                      onClick={() => setDropdownOpen(false)}
-                    >
-                      📅 Calendar
-                    </a>
-                    <a
                       href="/call-records"
                       className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                       onClick={() => setDropdownOpen(false)}
                     >
                       📞 Call Records
+                    </a>
+                    </>
+                    )}
+
+                    {!isCustomerUser && (
+                    <>
+                    <a
+                      href="/dashboard?tab=calendar"
+                      className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      onClick={() => setDropdownOpen(false)}
+                    >
+                      📅 Calendar
                     </a>
                     </>
                     )}
@@ -1649,6 +1984,31 @@ export default function Navbar() {
                     </a>
                     </>
                     )}
+                    <hr className="my-1 border-gray-200 dark:border-gray-700" />
+                    <div className="px-4 py-2">
+                      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                        Theme
+                      </p>
+                      <div className="grid grid-cols-3 gap-1">
+                        {(['light', 'dark', 'system'] as ThemeMode[]).map((mode) => (
+                          <button
+                            key={mode}
+                            onClick={() => {
+                              setThemeMode(mode);
+                              setThemeModeState(mode);
+                            }}
+                            aria-label={`Set theme to ${mode}`}
+                            title={mode.charAt(0).toUpperCase() + mode.slice(1)}
+                            className={`px-2 py-1 text-xs rounded capitalize border transition-colors ${themeMode === mode
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                              }`}
+                          >
+                            {mode === 'light' ? '☀️' : mode === 'dark' ? '🌙' : '💻'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <hr className="my-1 border-gray-200 dark:border-gray-700" />
                     <button
                       onClick={() => {

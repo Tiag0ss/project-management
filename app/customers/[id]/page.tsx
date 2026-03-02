@@ -85,6 +85,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   // Settings form
   const [settingsForm, setSettingsForm] = useState({
     Name: '',
+    ExternalName: '',
     Email: '',
     Phone: '',
     Address: '',
@@ -159,6 +160,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       // Initialize settings form
       setSettingsForm({
         Name: customerData.Name || '',
+        ExternalName: (customerData as any).ExternalName || '',
         Email: customerData.Email || '',
         Phone: customerData.Phone || '',
         Address: customerData.Address || '',
@@ -542,6 +544,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         },
         body: JSON.stringify({
           Name: settingsForm.Name,
+          ExternalName: settingsForm.ExternalName || null,
           Email: settingsForm.Email || null,
           Phone: settingsForm.Phone || null,
           Address: settingsForm.Address || null,
@@ -943,6 +946,17 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      External Name
+                    </label>
+                    <input
+                      type="text"
+                      value={settingsForm.ExternalName}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, ExternalName: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Project Manager
                     </label>
                     <select
@@ -1133,7 +1147,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
       {/* Add User Modal */}
       {showAddUserModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
@@ -1275,7 +1289,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
       {/* Confirm Modal */}
       {confirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">

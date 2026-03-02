@@ -529,7 +529,7 @@ export default function OrganizationsPage() {
 
       {/* Confirm Modal */}
       {modalMessage && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <div className="flex items-start mb-4">
@@ -758,7 +758,7 @@ function EditOrganizationModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
@@ -875,7 +875,7 @@ function CreateOrganizationModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">

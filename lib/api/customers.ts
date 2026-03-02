@@ -5,6 +5,7 @@ const API_URL = getApiUrl();
 export interface Customer {
   Id: number;
   Name: string;
+  ExternalName?: string | null;
   Email: string | null;
   Phone: string | null;
   Address: string | null;
@@ -37,6 +38,7 @@ export interface CustomerOrganization {
 
 export interface CreateCustomerData {
   Name: string;
+  ExternalName?: string;
   Email?: string;
   Phone?: string;
   Address?: string;
@@ -49,6 +51,7 @@ export interface CreateCustomerData {
 
 export interface UpdateCustomerData {
   Name?: string;
+  ExternalName?: string;
   Email?: string;
   Phone?: string;
   Address?: string;

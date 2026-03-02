@@ -904,7 +904,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
 
       {/* ── Version Modal ─────────────────────────────────────────────────── */}
       {showVersionModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[92vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
@@ -1076,7 +1076,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
 
       {/* Date Range Print Modal */}
       {showDateRangePrintModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Download Release Notes PDF</h3>
@@ -1131,7 +1131,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
 
       {/* Customer Management Modal */}
       {showCustomerModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
@@ -1196,7 +1196,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
 
       {/* Confirm modal */}
       {confirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">{confirmModal.title}</h3>

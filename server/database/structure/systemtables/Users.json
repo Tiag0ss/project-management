@@ -315,6 +315,13 @@
       "Comment": "User's hourly billing/cost rate for budget calculations"
     },
     {
+      "FieldName": "AnnualVacationDays",
+      "DataType": "decimal(5,2)",
+      "NotNullable": true,
+      "DefaultValue": "22.00",
+      "Comment": "Total annual vacation days available to the user"
+    },
+    {
       "FieldName": "TeamLeaderId",
       "DataType": "int",
       "NotNullable": false,
@@ -327,6 +334,34 @@
       "NotNullable": false,
       "DefaultValue": null,
       "Comment": "ISO 3166-1 alpha-2 country code used for user holiday calendars"
+    },
+    {
+      "FieldName": "JiraId",
+      "DataType": "varchar(100)",
+      "NotNullable": false,
+      "DefaultValue": null,
+      "Comment": "User identifier for Jira integrations"
+    },
+    {
+      "FieldName": "NavbarMenuLayout",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "top",
+      "Comment": "User preference for navbar menu layout: top or left"
+    },
+    {
+      "FieldName": "NavbarLeftMode",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "fixed",
+      "Comment": "When left layout is enabled: fixed or floating sidebar mode"
+    },
+    {
+      "FieldName": "NavbarLeftCollapsed",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "When left layout is enabled: whether sidebar starts collapsed"
     },
     {
       "FieldName": "CreatedAt",

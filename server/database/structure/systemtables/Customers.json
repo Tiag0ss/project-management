@@ -16,6 +16,12 @@
       "Comment": "Customer company or organization name"
     },
     {
+      "FieldName": "ExternalName",
+      "DataType": "varchar(255)",
+      "NotNullable": false,
+      "Comment": "External customer name used in third-party systems"
+    },
+    {
       "FieldName": "Email",
       "DataType": "varchar(255)",
       "NotNullable": false,

@@ -309,7 +309,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { Name, Email, Phone, Address, Notes, DefaultSupportUserId, OrganizationIds, CreateDefaultProject, DefaultProjectName, Contacts } = req.body;
+    const { Name, ExternalName, Email, Phone, Address, Notes, DefaultSupportUserId, OrganizationIds, CreateDefaultProject, DefaultProjectName, Contacts } = req.body;
 
     if (!Name || !Name.trim()) {
       return res.status(400).json({
@@ -347,9 +347,9 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     // Create customer
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Customers (Name, Email, Phone, Address, Notes, DefaultSupportUserId, IsActive, CreatedBy)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
-      [Name.trim(), Email || null, Phone || null, Address || null, Notes || null, DefaultSupportUserId || null, userId]
+      `INSERT INTO Customers (Name, ExternalName, Email, Phone, Address, Notes, DefaultSupportUserId, IsActive, CreatedBy)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+      [Name.trim(), ExternalName || null, Email || null, Phone || null, Address || null, Notes || null, DefaultSupportUserId || null, userId]
     );
 
     const customerId = result.insertId;
@@ -473,7 +473,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const customerId = parseInt(req.params.id as string);
-    const { Name, Email, Phone, Address, Notes, DefaultSupportUserId, IsActive, OrganizationIds, Website, ContactPerson, ContactEmail, ContactPhone, ProjectManagerId, Contacts } = req.body;
+    const { Name, ExternalName, Email, Phone, Address, Notes, DefaultSupportUserId, IsActive, OrganizationIds, Website, ContactPerson, ContactEmail, ContactPhone, ProjectManagerId, Contacts } = req.body;
 
     // Check if user has access to this customer
     const [existingCustomers] = await pool.execute<RowDataPacket[]>(
@@ -512,6 +512,15 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       }
       updates.push('Name = ?');
       values.push(Name.trim());
+    }
+    if (ExternalName !== undefined) {
+      const oldVal = normalizeValue(oldCustomer.ExternalName);
+      const newVal = normalizeValue(ExternalName);
+      if (newVal !== oldVal) {
+        changes.push({ field: 'ExternalName', oldVal, newVal });
+      }
+      updates.push('ExternalName = ?');
+      values.push(ExternalName || null);
     }
     if (Email !== undefined) {
       const oldVal = normalizeValue(oldCustomer.Email);
@@ -867,13 +876,23 @@ router.get('/:id/projects', authenticateToken, async (req: AuthRequest, res: Res
        FROM Projects p
        LEFT JOIN ProjectStatusValues psv ON p.Status = psv.Id
        LEFT JOIN Tasks t ON p.Id = t.ProjectId
+         AND (COALESCE(p.IsGlobal, 0) = 0 OR t.CustomerId = ?)
        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        LEFT JOIN TimeEntries te ON t.Id = te.TaskId
        WHERE p.CustomerId = ?
+          OR (
+            COALESCE(p.IsGlobal, 0) = 1
+            AND EXISTS (
+              SELECT 1
+              FROM Tasks tg
+              WHERE tg.ProjectId = p.Id
+                AND tg.CustomerId = ?
+            )
+          )
        GROUP BY p.Id, p.ProjectName, p.Status, p.StartDate, p.EndDate,
-                psv.StatusName, psv.ColorCode, psv.IsClosed, psv.IsCancelled
+                      psv.StatusName, psv.ColorCode, psv.IsClosed, psv.IsCancelled
        ORDER BY p.ProjectName`,
-      [customerId]
+      [customerId, customerId, customerId]
     );
 
     res.json({ success: true, data: projects });

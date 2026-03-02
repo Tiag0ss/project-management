@@ -47,6 +47,8 @@ export interface Task {
   TicketIdRef?: number;
   TicketNumber?: string;
   TicketTitle?: string;
+  CustomerId?: number | null;
+  CustomerName?: string | null;
   ExternalTicketId?: string | null;
   JiraUrl?: string | null;
   ExternalIssueId?: string | null;
@@ -79,6 +81,7 @@ export interface CreateTaskData {
   plannedEndDate?: string;
   dependsOnTaskId?: number;
   ticketId?: number;
+  customerId?: number | null;
   jiraIssueKey?: string;
   applicationId?: number | null;
   releaseVersionId?: number | null;
@@ -95,7 +98,6 @@ export const tasksApi = {
     });
 
     const data = await response.json();
-    
     if (!response.ok) {
       throw new Error(data.message || 'Failed to fetch tasks');
     }
@@ -225,8 +227,12 @@ export const tasksApi = {
     return data;
   },
 
-  async delete(id: number, token: string): Promise<{ success: boolean }> {
-    const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`, {
+  async delete(id: number, token: string, options?: { deleteSubtasks?: boolean }): Promise<{ success: boolean }> {
+    const query = options?.deleteSubtasks === undefined
+      ? ''
+      : `?deleteSubtasks=${options.deleteSubtasks ? '1' : '0'}`;
+
+    const response = await fetch(`${API_BASE_URL}/api/tasks/${id}${query}`, {
       method: 'DELETE',
       headers: {
         'Authorization': `Bearer ${token}`,

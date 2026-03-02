@@ -5,6 +5,7 @@ import { getApiUrl } from '@/lib/api/config';
 import React, { useState, useEffect, useRef } from 'react';
 import { Task, CreateTaskData, tasksApi, TaskAssignee } from '@/lib/api/tasks';
 import { Project } from '@/lib/api/projects';
+import { Customer, getCustomersByOrganization } from '@/lib/api/customers';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { usersApi, User } from '@/lib/api/users';
 import RichTextEditor from './RichTextEditor';
@@ -229,6 +230,7 @@ export default function TaskDetailModal({
     plannedStartDate: task?.PlannedStartDate ? task.PlannedStartDate.split('T')[0] : '',
     plannedEndDate: task?.PlannedEndDate ? task.PlannedEndDate.split('T')[0] : '',
     dependsOnTaskId: task?.DependsOnTaskId || undefined,
+    customerId: task?.CustomerId ?? null,
     jiraIssueKey: task?.JiraIssueKey || undefined,
     applicationId: task?.ApplicationId ?? null,
     releaseVersionId: task?.ReleaseVersionId ?? null,
@@ -238,6 +240,7 @@ export default function TaskDetailModal({
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
   const [taskTypes, setTaskTypes] = useState<StatusValue[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [organizationUsers, setOrganizationUsers] = useState<User[]>([]);
   const [taskAssignees, setTaskAssignees] = useState<TaskAssignee[]>(task?.Assignees || []);
   const [taskHistory, setTaskHistory] = useState<TaskHistory[]>([]);
@@ -272,6 +275,7 @@ export default function TaskDetailModal({
   // UI states
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
@@ -282,6 +286,7 @@ export default function TaskDetailModal({
   const [modalMessage, setModalMessage] = useState<
     | { type: 'alert'; title: string; message: string }
     | { type: 'confirm'; title: string; message: string; onConfirm: () => void }
+    | { type: 'delete-choice'; title: string; message: string; onDeleteOnly: () => void; onDeleteWithSubtasks: () => void }
     | null
   >(null);
 
@@ -291,6 +296,7 @@ export default function TaskDetailModal({
 
   // Calculate if this task has subtasks
   const subtasks = task?.Id ? tasks.filter(t => t.ParentTaskId === task.Id) : [];
+  const isGlobalProject = !!project?.IsGlobal;
   const hasSubtasks = subtasks.length > 0;
   const subtasksTotal = hasSubtasks 
     ? subtasks.reduce((sum, st) => sum + (parseFloat(st.EstimatedHours as any) || 0), 0) 
@@ -306,6 +312,9 @@ export default function TaskDetailModal({
     loadTaskPriorities();
     loadTaskTypes();
     loadOrganizationUsers();
+    if (isGlobalProject) {
+      loadCustomers();
+    }
     loadApplications();
     if (task?.Id) {
       loadTaskDetails();
@@ -319,7 +328,7 @@ export default function TaskDetailModal({
         .catch(() => {});
     }
     return () => { if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); };
-  }, [task?.Id]);
+  }, [task?.Id, isGlobalProject, organizationId]);
 
   // Tick elapsed time when timer is for current task
   useEffect(() => {
@@ -548,6 +557,16 @@ export default function TaskDetailModal({
     }
   };
 
+  const loadCustomers = async () => {
+    try {
+      const customerList = await getCustomersByOrganization(token, organizationId);
+      setCustomers(customerList || []);
+    } catch (err) {
+      console.error('Failed to load customers:', err);
+      setCustomers([]);
+    }
+  };
+
   const checkHasChildren = async () => {
     if (!task?.Id) {
       setHasChildren(false);
@@ -662,6 +681,11 @@ export default function TaskDetailModal({
       return;
     }
 
+    if (isGlobalProject && !formData.customerId) {
+      setError('Customer is required for tasks in global projects');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -689,6 +713,47 @@ export default function TaskDetailModal({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const executeDeleteTask = async (deleteSubtasks: boolean) => {
+    if (!task?.Id) return;
+
+    setIsDeleting(true);
+    try {
+      await tasksApi.delete(task.Id, token, { deleteSubtasks });
+      setModalMessage(null);
+      onSaved();
+    } catch (err: any) {
+      setModalMessage({
+        type: 'alert',
+        title: 'Delete Failed',
+        message: err.message || 'Failed to delete task',
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteFromModal = () => {
+    if (!task?.Id) return;
+
+    if (hasSubtasks) {
+      setModalMessage({
+        type: 'delete-choice',
+        title: 'Delete Task with Subtasks?',
+        message: 'This task has subtasks. Do you want to delete only this task, or delete this task and all subtasks (including related allocations)?',
+        onDeleteOnly: () => executeDeleteTask(false),
+        onDeleteWithSubtasks: () => executeDeleteTask(true),
+      });
+      return;
+    }
+
+    setModalMessage({
+      type: 'confirm',
+      title: 'Delete Task',
+      message: 'Are you sure you want to delete this task?',
+      onConfirm: () => executeDeleteTask(false),
+    });
   };
 
   const handleAddAssignee = (userId: number) => {
@@ -1158,13 +1223,14 @@ export default function TaskDetailModal({
   }, [task?.Id, activeTab]);
 
   const canSaveTask = !!(task?.Id ? permissions?.canManageTasks : permissions?.canCreateTasks);
+  const canDeleteTask = !!(task?.Id && permissions?.canDeleteTasks);
   const visibleTabs = (task?.Id
     ? (['details', 'checklist', 'hours', 'comments', 'attachments', 'history'] as const)
     : (['details', 'hours'] as const)
   );
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
@@ -1541,6 +1607,24 @@ export default function TaskDetailModal({
                 Assignment
               </h3>
               <div>
+                {isGlobalProject && (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Customer *
+                    </label>
+                    <SearchableSelect
+                      options={customers.map((customer) => ({
+                        id: customer.Id,
+                        label: customer.ExternalName?.trim() || customer.Name,
+                      }))}
+                      value={typeof formData.customerId === 'number' ? formData.customerId : undefined}
+                      onChange={(val: number | undefined) => setFormData({ ...formData, customerId: val ?? null })}
+                      placeholder="Select customer..."
+                      emptyMessage="No customers found in this organization"
+                    />
+                  </div>
+                )}
+
                 {/* Principal Assignee field (searchable) */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -2463,6 +2547,16 @@ export default function TaskDetailModal({
             >
               Cancel
             </button>
+            {canDeleteTask && (
+              <button
+                type="button"
+                onClick={handleDeleteFromModal}
+                disabled={isDeleting}
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Task'}
+              </button>
+            )}
             {canSaveTask && (
               <button
                 type="button"
@@ -2479,7 +2573,7 @@ export default function TaskDetailModal({
 
       {/* Modal de Alocação Manual */}
       {manualAllocationModal.show && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
@@ -2567,7 +2661,7 @@ export default function TaskDetailModal({
 
       {/* Modal de Alerta */}
       {modalMessage && modalMessage.type === 'alert' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
@@ -2591,7 +2685,7 @@ export default function TaskDetailModal({
 
       {/* Modal de Confirmação */}
       {modalMessage && modalMessage.type === 'confirm' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
@@ -2613,9 +2707,48 @@ export default function TaskDetailModal({
                       modalMessage.onConfirm();
                     }
                   }}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                  disabled={isDeleting}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg transition-colors"
                 >
-                  Delete
+                  {isDeleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalMessage && modalMessage.type === 'delete-choice' && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
+                {modalMessage.title}
+              </h3>
+              <p className="text-gray-700 dark:text-gray-300 mb-6">
+                {modalMessage.message}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button
+                  onClick={() => setModalMessage(null)}
+                  disabled={isDeleting}
+                  className="w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 disabled:opacity-70 text-gray-900 dark:text-white rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => modalMessage.onDeleteOnly()}
+                  disabled={isDeleting}
+                  className="w-full px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white rounded-lg transition-colors"
+                >
+                  {isDeleting ? 'Deleting...' : 'Delete Only This Task'}
+                </button>
+                <button
+                  onClick={() => modalMessage.onDeleteWithSubtasks()}
+                  disabled={isDeleting}
+                  className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg transition-colors"
+                >
+                  {isDeleting ? 'Deleting...' : 'Delete Task + Subtasks'}
                 </button>
               </div>
             </div>

@@ -87,7 +87,9 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
               HobbyStartFriday, HobbyStartSaturday, HobbyStartSunday,
               HobbyHoursMonday, HobbyHoursTuesday, HobbyHoursWednesday, HobbyHoursThursday,
               HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
-              Timezone, HourlyRate, CountryCode, CreatedAt, UpdatedAt 
+              Timezone, HourlyRate, AnnualVacationDays, CountryCode, JiraId,
+              NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed,
+              CreatedAt, UpdatedAt 
        FROM Users 
        WHERE Id = ?`,
       [userId]
@@ -142,15 +144,64 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
 router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { firstName, lastName, email, timezone, countryCode } = req.body;
-    const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
+    const {
+      firstName,
+      lastName,
+      email,
+      timezone,
+      countryCode,
+      annualVacationDays,
+      navbarMenuLayout,
+      navbarLeftMode,
+      navbarLeftCollapsed,
+    } = req.body;
 
-    if (!isValidCountryCode(normalizedCountryCode)) {
+    const [oldProfile] = await pool.execute<RowDataPacket[]>(
+      `SELECT FirstName, LastName, Email, Timezone, CountryCode, AnnualVacationDays,
+              NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed
+       FROM Users WHERE Id = ?`,
+      [userId]
+    );
+
+    if (oldProfile.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const oldData = oldProfile[0];
+
+    const finalFirstName = firstName !== undefined ? firstName : oldData.FirstName;
+    const finalLastName = lastName !== undefined ? lastName : oldData.LastName;
+    const finalEmail = email !== undefined ? email : oldData.Email;
+    const finalTimezone = timezone !== undefined ? timezone : oldData.Timezone;
+
+    const normalizedCountryCodeInput = countryCode !== undefined
+      ? (countryCode ? String(countryCode).trim().toUpperCase() : null)
+      : oldData.CountryCode;
+
+    if (!isValidCountryCode(normalizedCountryCodeInput)) {
       return res.status(400).json({ success: false, message: 'Country code must be a valid ISO 2-letter code' });
     }
 
+    const finalNavbarMenuLayoutRaw = navbarMenuLayout !== undefined
+      ? String(navbarMenuLayout).trim().toLowerCase()
+      : String(oldData.NavbarMenuLayout || 'top').trim().toLowerCase();
+    const finalNavbarMenuLayout = finalNavbarMenuLayoutRaw === 'left' ? 'left' : 'top';
+
+    const finalNavbarLeftModeRaw = navbarLeftMode !== undefined
+      ? String(navbarLeftMode).trim().toLowerCase()
+      : String(oldData.NavbarLeftMode || 'fixed').trim().toLowerCase();
+    const finalNavbarLeftMode = finalNavbarLeftModeRaw === 'floating' ? 'floating' : 'fixed';
+
+    const finalNavbarLeftCollapsed = navbarLeftCollapsed !== undefined
+      ? (navbarLeftCollapsed ? 1 : 0)
+      : (oldData.NavbarLeftCollapsed ? 1 : 0);
+
+    const finalAnnualVacationDays = annualVacationDays !== undefined
+      ? Math.max(0, parseFloat(String(annualVacationDays || 0)))
+      : parseFloat(String(oldData.AnnualVacationDays || 22));
+
     // Validate email
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (finalEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(finalEmail))) {
       return res.status(400).json({ 
         success: false, 
         message: 'Invalid email format' 
@@ -158,10 +209,10 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
     }
 
     // Check if email already exists for another user
-    if (email) {
+    if (finalEmail) {
       const [duplicates] = await pool.execute<RowDataPacket[]>(
         'SELECT Id FROM Users WHERE Email = ? AND Id != ?',
-        [email, userId]
+        [finalEmail, userId]
       );
 
       if (duplicates.length > 0) {
@@ -172,35 +223,52 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
       }
     }
 
-    // Get old profile data for logging
-    const [oldProfile] = await pool.execute<RowDataPacket[]>(
-      'SELECT FirstName, LastName, Email, Timezone, CountryCode FROM Users WHERE Id = ?',
-      [userId]
-    );
-    const oldData = oldProfile[0];
-
     await pool.execute(
       `UPDATE Users 
-       SET FirstName = ?, LastName = ?, Email = ?, Timezone = ?, CountryCode = ?
+       SET FirstName = ?, LastName = ?, Email = ?, Timezone = ?, CountryCode = ?,
+           AnnualVacationDays = ?, NavbarMenuLayout = ?, NavbarLeftMode = ?, NavbarLeftCollapsed = ?
        WHERE Id = ?`,
-      [firstName || null, lastName || null, email, timezone || null, normalizedCountryCode, userId]
+      [
+        finalFirstName || null,
+        finalLastName || null,
+        finalEmail,
+        finalTimezone || null,
+        normalizedCountryCodeInput,
+        finalAnnualVacationDays,
+        finalNavbarMenuLayout,
+        finalNavbarLeftMode,
+        finalNavbarLeftCollapsed,
+        userId,
+      ]
     );
 
     // Log profile changes
-    if (firstName !== oldData.FirstName) {
-      await logUserHistory(userId!, userId!, 'updated', 'FirstName', oldData.FirstName || '', firstName || '');
+    if (finalFirstName !== oldData.FirstName) {
+      await logUserHistory(userId!, userId!, 'updated', 'FirstName', oldData.FirstName || '', finalFirstName || '');
     }
-    if (lastName !== oldData.LastName) {
-      await logUserHistory(userId!, userId!, 'updated', 'LastName', oldData.LastName || '', lastName || '');
+    if (finalLastName !== oldData.LastName) {
+      await logUserHistory(userId!, userId!, 'updated', 'LastName', oldData.LastName || '', finalLastName || '');
     }
-    if (email !== oldData.Email) {
-      await logUserHistory(userId!, userId!, 'updated', 'Email', oldData.Email || '', email || '');
+    if (finalEmail !== oldData.Email) {
+      await logUserHistory(userId!, userId!, 'updated', 'Email', oldData.Email || '', finalEmail || '');
     }
-    if (timezone !== oldData.Timezone) {
-      await logUserHistory(userId!, userId!, 'updated', 'Timezone', oldData.Timezone || '', timezone || '');
+    if (finalTimezone !== oldData.Timezone) {
+      await logUserHistory(userId!, userId!, 'updated', 'Timezone', oldData.Timezone || '', finalTimezone || '');
     }
-    if (String(normalizedCountryCode || '') !== String(oldData.CountryCode || '')) {
-      await logUserHistory(userId!, userId!, 'updated', 'CountryCode', oldData.CountryCode || '', normalizedCountryCode || '');
+    if (String(normalizedCountryCodeInput || '') !== String(oldData.CountryCode || '')) {
+      await logUserHistory(userId!, userId!, 'updated', 'CountryCode', oldData.CountryCode || '', normalizedCountryCodeInput || '');
+    }
+    if (String(finalNavbarMenuLayout || '') !== String(oldData.NavbarMenuLayout || '')) {
+      await logUserHistory(userId!, userId!, 'updated', 'NavbarMenuLayout', oldData.NavbarMenuLayout || '', finalNavbarMenuLayout || '');
+    }
+    if (String(finalNavbarLeftMode || '') !== String(oldData.NavbarLeftMode || '')) {
+      await logUserHistory(userId!, userId!, 'updated', 'NavbarLeftMode', oldData.NavbarLeftMode || '', finalNavbarLeftMode || '');
+    }
+    if (String(finalNavbarLeftCollapsed || '') !== String(oldData.NavbarLeftCollapsed || '')) {
+      await logUserHistory(userId!, userId!, 'updated', 'NavbarLeftCollapsed', String(oldData.NavbarLeftCollapsed || 0), String(finalNavbarLeftCollapsed || 0));
+    }
+    if (String(finalAnnualVacationDays || '') !== String(oldData.AnnualVacationDays || '')) {
+      await logUserHistory(userId!, userId!, 'updated', 'AnnualVacationDays', String(oldData.AnnualVacationDays || ''), String(finalAnnualVacationDays || ''));
     }
 
     // Log activity
@@ -486,7 +554,7 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName, u.IsActive, u.IsAdmin, 
               u.UserType, u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager,
-              u.HourlyRate, u.TeamLeaderId, u.CountryCode, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
+              u.HourlyRate, u.AnnualVacationDays, u.TeamLeaderId, u.CountryCode, u.JiraId, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
               u.CreatedAt, u.UpdatedAt 
        FROM Users u
        LEFT JOIN Customers c ON u.CustomerId = c.Id
@@ -546,7 +614,7 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
 router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.params.id;
-    const { username, email, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId, countryCode } = req.body;
+    const { username, email, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, annualVacationDays, teamLeaderId, countryCode, jiraId } = req.body;
     const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
 
     if (!isValidCountryCode(normalizedCountryCode)) {
@@ -667,16 +735,29 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
     if (countryCode !== undefined && String(normalizedCountryCode || '') !== String(oldUser.CountryCode || '')) {
       changes.push({ field: 'CountryCode', oldVal: String(oldUser.CountryCode || ''), newVal: String(normalizedCountryCode || '') });
     }
+    if (jiraId !== undefined && String(jiraId || '') !== String(oldUser.JiraId || '')) {
+      changes.push({ field: 'JiraId', oldVal: String(oldUser.JiraId || ''), newVal: String(jiraId || '') });
+    }
 
     // Parse hourlyRate correctly (handle 0 values)
     const parsedHourlyRate = (hourlyRate != null && hourlyRate !== '') ? parseFloat(hourlyRate) : null;
     const sanitizedHourlyRate = (parsedHourlyRate !== null && !isNaN(parsedHourlyRate)) ? parsedHourlyRate : null;
+    const parsedAnnualVacationDays = annualVacationDays != null && annualVacationDays !== ''
+      ? parseFloat(String(annualVacationDays))
+      : null;
+    const sanitizedAnnualVacationDays = parsedAnnualVacationDays !== null && !isNaN(parsedAnnualVacationDays)
+      ? Math.max(0, parsedAnnualVacationDays)
+      : parseFloat(String(oldUser.AnnualVacationDays ?? 22));
+
+    if (annualVacationDays !== undefined && String(sanitizedAnnualVacationDays) !== String(oldUser.AnnualVacationDays ?? 22)) {
+      changes.push({ field: 'AnnualVacationDays', oldVal: String(oldUser.AnnualVacationDays ?? 22), newVal: String(sanitizedAnnualVacationDays) });
+    }
 
     await pool.execute(
       `UPDATE Users 
-       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, UserType = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, TeamLeaderId = ?, CountryCode = ? 
+       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, UserType = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, AnnualVacationDays = ?, TeamLeaderId = ?, CountryCode = ?, JiraId = ? 
        WHERE Id = ?`,
-      [username, finalEmail, firstName || null, lastName || null, isActive, isAdmin, finalUserType, finalCustomerId, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null, normalizedCountryCode, userId]
+      [username, finalEmail, firstName || null, lastName || null, isActive, isAdmin, finalUserType, finalCustomerId, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, sanitizedAnnualVacationDays, teamLeaderId || null, normalizedCountryCode, jiraId || null, userId]
     );
     
     // Log changes to history
@@ -935,7 +1016,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, 
  */
 router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, teamLeaderId, countryCode } = req.body;
+    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, annualVacationDays, teamLeaderId, countryCode, jiraId } = req.body;
     const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
 
     if (!isValidCountryCode(normalizedCountryCode)) {
@@ -1008,11 +1089,17 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
     // Parse hourlyRate correctly (handle 0 values)
     const parsedHourlyRate = (hourlyRate != null && hourlyRate !== '') ? parseFloat(hourlyRate) : null;
     const sanitizedHourlyRate = (parsedHourlyRate !== null && !isNaN(parsedHourlyRate)) ? parsedHourlyRate : null;
+    const parsedAnnualVacationDays = annualVacationDays != null && annualVacationDays !== ''
+      ? parseFloat(String(annualVacationDays))
+      : null;
+    const sanitizedAnnualVacationDays = parsedAnnualVacationDays !== null && !isNaN(parsedAnnualVacationDays)
+      ? Math.max(0, parsedAnnualVacationDays)
+      : 22;
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, TeamLeaderId, CountryCode) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, teamLeaderId || null, normalizedCountryCode]
+      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, AnnualVacationDays, TeamLeaderId, CountryCode, JiraId) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, sanitizedAnnualVacationDays, teamLeaderId || null, normalizedCountryCode, jiraId || null]
     );
 
     // Log user creation
@@ -1081,7 +1168,7 @@ router.get('/:id/details', authenticateToken, requireAdmin, async (req: AuthRequ
     // Get user info
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName, u.IsActive, u.IsAdmin, 
-              u.UserType, u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager, u.HourlyRate, u.CreatedAt, u.UpdatedAt,
+              u.UserType, u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager, u.HourlyRate, u.JiraId, u.CreatedAt, u.UpdatedAt,
               u.WorkHoursMonday, u.WorkHoursTuesday, u.WorkHoursWednesday, u.WorkHoursThursday,
               u.WorkHoursFriday, u.WorkHoursSaturday, u.WorkHoursSunday
        FROM Users u

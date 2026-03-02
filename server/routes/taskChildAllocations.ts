@@ -22,6 +22,20 @@ const getHolidayDateSetForUser = async (userId: number, startDate: string, endDa
   for (const row of rows) {
     result.add(normalizeDateKey(row.HolidayDate));
   }
+
+  const [vacationRows] = await pool.execute<RowDataPacket[]>(
+    `SELECT VacationDate
+     FROM UserVacations
+     WHERE UserId = ?
+       AND LOWER(Status) = 'approved'
+       AND VacationDate BETWEEN ? AND ?`,
+    [userId, startDate, endDate]
+  );
+
+  for (const row of vacationRows) {
+    result.add(normalizeDateKey(row.VacationDate));
+  }
+
   return result;
 };
 

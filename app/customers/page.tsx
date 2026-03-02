@@ -9,6 +9,7 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import SearchableSelect from '@/components/SearchableSelect';
+import { projectsApi, Project } from '@/lib/api/projects';
 import { 
   getCustomers, 
   createCustomer, 
@@ -27,6 +28,12 @@ interface Organization {
   Name: string;
 }
 
+interface CustomerProjectStats {
+  projectCount: number;
+  totalTasks: number;
+  completedTasks: number;
+}
+
 export default function CustomersPage() {
   const { user, token, isLoading: authLoading } = useAuth();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
@@ -38,6 +45,8 @@ export default function CustomersPage() {
   const [supportUsers, setSupportUsers] = useState<{Id: number; FirstName: string; LastName: string; Username: string}[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [customerProjectStats, setCustomerProjectStats] = useState<Record<number, CustomerProjectStats>>({});
   
   // Search and sort
   const [searchQuery, setSearchQuery] = useState('');
@@ -52,6 +61,7 @@ export default function CustomersPage() {
   // Form state
   const [formData, setFormData] = useState({
     Name: '',
+    ExternalName: '',
     Email: '',
     Phone: '',
     Address: '',
@@ -124,6 +134,7 @@ export default function CustomersPage() {
     if (searchQuery) {
       filtered = filtered.filter(customer =>
         customer.Name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (customer.ExternalName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         customer.Email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         customer.Phone?.toLowerCase().includes(searchQuery.toLowerCase())
       );
@@ -206,6 +217,34 @@ export default function CustomersPage() {
         const supportUsersList = usersData.users.filter((u: any) => u.IsSupport);
         setSupportUsers(supportUsersList);
       }
+
+      // Load projects for customer/project/task summary data
+      try {
+        const projectsResponse = await projectsApi.getAll(token!);
+        const projects = projectsResponse.projects || [];
+
+        const statsByCustomer: Record<number, CustomerProjectStats> = {};
+
+        projects.forEach((project: Project) => {
+          if (!project.CustomerId) return;
+
+          if (!statsByCustomer[project.CustomerId]) {
+            statsByCustomer[project.CustomerId] = {
+              projectCount: 0,
+              totalTasks: 0,
+              completedTasks: 0,
+            };
+          }
+
+          statsByCustomer[project.CustomerId].projectCount += 1;
+          statsByCustomer[project.CustomerId].totalTasks += Number(project.TotalTasks) || 0;
+          statsByCustomer[project.CustomerId].completedTasks += Number(project.CompletedTasks) || 0;
+        });
+
+        setCustomerProjectStats(statsByCustomer);
+      } catch {
+        setCustomerProjectStats({});
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load data');
     } finally {
@@ -213,10 +252,15 @@ export default function CustomersPage() {
     }
   };
 
+  const getCustomerStats = (customerId: number): CustomerProjectStats => {
+    return customerProjectStats[customerId] || { projectCount: 0, totalTasks: 0, completedTasks: 0 };
+  };
+
   const openCreateModal = () => {
     setEditingCustomer(null);
     setFormData({
       Name: '',
+      ExternalName: '',
       Email: '',
       Phone: '',
       Address: '',
@@ -233,6 +277,7 @@ export default function CustomersPage() {
     setEditingCustomer(customer);
     setFormData({
       Name: customer.Name,
+      ExternalName: customer.ExternalName || '',
       Email: customer.Email || '',
       Phone: customer.Phone || '',
       Address: customer.Address || '',
@@ -278,6 +323,7 @@ export default function CustomersPage() {
         // Update
         const updateData: UpdateCustomerData = {
           Name: formData.Name,
+          ExternalName: formData.ExternalName || undefined,
           Email: formData.Email || undefined,
           Phone: formData.Phone || undefined,
           Address: formData.Address || undefined,
@@ -290,6 +336,7 @@ export default function CustomersPage() {
         // Create
         const createData: CreateCustomerData = {
           Name: formData.Name,
+          ExternalName: formData.ExternalName || undefined,
           Email: formData.Email || undefined,
           Phone: formData.Phone || undefined,
           Address: formData.Address || undefined,
@@ -367,17 +414,39 @@ export default function CustomersPage() {
       <div className="w-full mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Customers</h1>
-          {permissions?.canCreateCustomers && (
-          <button
-            onClick={openCreateModal}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Customer
-          </button>
-          )}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                title="Grid view"
+              >
+                <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                title="List view"
+              >
+                <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+              </button>
+            </div>
+            {permissions?.canCreateCustomers && (
+              <button
+                onClick={openCreateModal}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Customer
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Search and Sort */}
@@ -420,6 +489,98 @@ export default function CustomersPage() {
             </button>
             )}
           </div>
+        ) : viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredCustomers.map((customer) => {
+              const stats = getCustomerStats(customer.Id);
+              const progress = stats.totalTasks > 0
+                ? Math.round((stats.completedTasks / stats.totalTasks) * 100)
+                : 0;
+
+              return (
+                <div
+                  key={customer.Id}
+                  className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => router.push(`/customers/${customer.Id}`)}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{customer.Name}</h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">{customer.ExternalName || '—'}</p>
+                    </div>
+                    {internalTicketsEnabled && (
+                      <span className="px-2 py-1 rounded text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
+                        {customer.OpenTickets || 0} tickets
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mb-3 text-sm">
+                    <div>
+                      <p className="text-gray-500 dark:text-gray-400">Projects</p>
+                      <p className="font-medium text-gray-900 dark:text-white">{stats.projectCount}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500 dark:text-gray-400">Task Progress</p>
+                      <p className="font-medium text-gray-900 dark:text-white">{progress}%</p>
+                    </div>
+                  </div>
+
+                  <div className="mb-3">
+                    <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-green-500"
+                        style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      {stats.completedTasks}/{stats.totalTasks} tasks completed
+                    </p>
+                  </div>
+
+                  {customer.Organizations && customer.Organizations.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-4">
+                      {customer.Organizations.map((org) => (
+                        <span
+                          key={org.OrganizationId}
+                          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                        >
+                          {org.OrganizationName}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-end gap-3 text-sm">
+                    {permissions?.canManageCustomers && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); router.push(`/customers/${customer.Id}`); }}
+                        className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium"
+                      >
+                        Manage
+                      </button>
+                    )}
+                    {permissions?.canManageCustomers && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openEditModal(customer); }}
+                        className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 font-medium"
+                      >
+                        Edit
+                      </button>
+                    )}
+                    {permissions?.canDeleteCustomers && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(customer); }}
+                        className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -433,6 +594,9 @@ export default function CustomersPage() {
                       Name
                       <SortIcon field="name" />
                     </div>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    External Name
                   </th>
                   <th 
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
@@ -463,6 +627,12 @@ export default function CustomersPage() {
                       </div>
                     </th>
                   )}
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Projects
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Task Progress
+                  </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Organizations
                   </th>
@@ -473,6 +643,13 @@ export default function CustomersPage() {
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {filteredCustomers.map((customer) => (
+                  (() => {
+                    const stats = getCustomerStats(customer.Id);
+                    const progress = stats.totalTasks > 0
+                      ? Math.round((stats.completedTasks / stats.totalTasks) * 100)
+                      : 0;
+
+                    return (
                   <tr 
                     key={customer.Id} 
                     className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
@@ -480,6 +657,9 @@ export default function CustomersPage() {
                   >
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="font-medium text-gray-900 dark:text-white">{customer.Name}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-gray-500 dark:text-gray-400">{customer.ExternalName || '-'}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-gray-500 dark:text-gray-400">{customer.Email || '-'}</div>
@@ -492,6 +672,20 @@ export default function CustomersPage() {
                         <div className="text-gray-900 dark:text-white font-medium">{customer.OpenTickets || 0}</div>
                       </td>
                     )}
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <div className="text-gray-900 dark:text-white font-medium">{stats.projectCount}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <div className="w-28 mx-auto">
+                        <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-green-500"
+                            style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+                          />
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{stats.completedTasks}/{stats.totalTasks}</div>
+                      </div>
+                    </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-wrap gap-1">
                         {customer.Organizations?.map((org) => (
@@ -533,6 +727,8 @@ export default function CustomersPage() {
                       </div>
                     </td>
                   </tr>
+                    );
+                  })()
                 ))}
               </tbody>
             </table>
@@ -542,7 +738,7 @@ export default function CustomersPage() {
 
       {/* Create/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
@@ -577,6 +773,18 @@ export default function CustomersPage() {
                       onChange={(e) => setFormData({ ...formData, Name: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      External Name
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.ExternalName}
+                      onChange={(e) => setFormData({ ...formData, ExternalName: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
                   </div>
 
@@ -732,7 +940,7 @@ export default function CustomersPage() {
 
       {/* Confirm Modal */}
       {confirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">

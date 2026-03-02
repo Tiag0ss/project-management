@@ -95,6 +95,13 @@ interface HolidayItem {
   IsActive: number;
 }
 
+interface VacationCalendarItem {
+  Id: number;
+  VacationDate: string;
+  Status: string;
+  Notes?: string;
+}
+
 interface CalendarEvent {
   id: string;
   title: string;
@@ -102,7 +109,7 @@ interface CalendarEvent {
   end: Date;
   allDay?: boolean;
   resource: {
-    type: 'task' | 'timeEntry' | 'call' | 'lunch' | 'recurring' | 'holiday';
+    type: 'task' | 'timeEntry' | 'call' | 'lunch' | 'recurring' | 'holiday' | 'vacation';
     projectId?: number;
     taskId?: number;
     entryId?: number;
@@ -112,6 +119,8 @@ interface CalendarEvent {
     workDate?: string;
     recurringAllocationId?: number;
     holidayId?: number;
+    vacationId?: number;
+    vacationStatus?: string;
     source?: string;
   };
 }
@@ -147,16 +156,20 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   const [currentView, setCurrentView] = useState<'week' | 'month'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
+  const [vacations, setVacations] = useState<VacationCalendarItem[]>([]);
   
   // Slot selection modal state
   const [showSlotModal, setShowSlotModal] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<SlotInfo | null>(null);
-  const [slotAction, setSlotAction] = useState<'choice' | 'timeEntry' | 'call'>('choice');
+  const [slotAction, setSlotAction] = useState<'choice' | 'timeEntry' | 'call' | 'vacation'>('choice');
   const [selectedTaskId, setSelectedTaskId] = useState<string>('');
   const [entryHours, setEntryHours] = useState<string>('1');
   const [entryDescription, setEntryDescription] = useState('');
   const [entryStartTime, setEntryStartTime] = useState<string>('09:00');
   const [entryEndTime, setEntryEndTime] = useState<string>('10:00');
+  const [vacationStartDate, setVacationStartDate] = useState<string>('');
+  const [vacationEndDate, setVacationEndDate] = useState<string>('');
+  const [vacationNotes, setVacationNotes] = useState('');
   const [callData, setCallData] = useState({
     startTime: '09:00',
     endTime: '09:30',
@@ -220,6 +233,54 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     };
 
     loadHolidays();
+  }, [token, currentDate, currentView]);
+
+  useEffect(() => {
+    if (!token) {
+      setVacations([]);
+      return;
+    }
+
+    const loadVacations = async () => {
+      try {
+        const visibleStart = currentView === 'month'
+          ? startOfMonth(currentDate)
+          : startOfWeek(currentDate);
+        const visibleEnd = currentView === 'month'
+          ? endOfMonth(currentDate)
+          : endOfWeek(currentDate);
+
+        const years = Array.from(new Set([visibleStart.getFullYear(), visibleEnd.getFullYear()]));
+
+        const responses = await Promise.all(
+          years.map((year) =>
+            fetch(`${getApiUrl()}/api/vacations/my?year=${year}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+          )
+        );
+
+        const vacationLists = await Promise.all(
+          responses.map(async (response) => {
+            if (!response.ok) {
+              return [] as VacationCalendarItem[];
+            }
+            const data = await response.json();
+            return (data.entries || []) as VacationCalendarItem[];
+          })
+        );
+
+        const merged = vacationLists.flat();
+        const uniqueById = new Map<number, VacationCalendarItem>();
+        merged.forEach((vacation) => uniqueById.set(vacation.Id, vacation));
+        setVacations(Array.from(uniqueById.values()));
+      } catch (error) {
+        console.error('Error loading vacations for calendar:', error);
+        setVacations([]);
+      }
+    };
+
+    loadVacations();
   }, [token, currentDate, currentView]);
   
   // Load organizations on mount
@@ -591,6 +652,37 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       });
     });
 
+    vacations.forEach((vacation) => {
+      const datePart = String(vacation.VacationDate).split('T')[0];
+      const [year, month, day] = datePart.split('-').map(Number);
+
+      if (!year || !month || !day) {
+        return;
+      }
+
+      const status = String(vacation.Status || '').toLowerCase();
+      if (status !== 'approved' && status !== 'pending') {
+        return;
+      }
+
+      const start = new Date(year, month - 1, day, 0, 0, 0);
+      const end = new Date(year, month - 1, day + 1, 0, 0, 0);
+
+      calendarEvents.push({
+        id: `vacation-${vacation.Id}`,
+        title: `🏖️ Vacation${status === 'pending' ? ' (Pending)' : ''}`,
+        start,
+        end,
+        allDay: true,
+        resource: {
+          type: 'vacation',
+          vacationId: vacation.Id,
+          vacationStatus: status,
+          description: vacation.Notes || '',
+        },
+      });
+    });
+
     const seenEventIds = new Map<string, number>();
     return calendarEvents.map((event) => {
       const baseId = String(event.id);
@@ -606,10 +698,10 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
         id: `${baseId}__${count}`,
       };
     });
-  }, [taskAllocations, timeEntries, callRecords, recurringAllocations, holidays, workStartTimes, lunchTime, lunchDuration]);
+  }, [taskAllocations, timeEntries, callRecords, recurringAllocations, holidays, vacations, workStartTimes, lunchTime, lunchDuration]);
 
   const handleSelectEvent = useCallback((event: CalendarEvent) => {
-    if (event.resource.type === 'holiday') {
+    if (event.resource.type === 'holiday' || event.resource.type === 'vacation') {
       return;
     }
 
@@ -645,6 +737,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     const isLunch = event.resource.type === 'lunch';
     const isRecurring = event.resource.type === 'recurring';
     const isHoliday = event.resource.type === 'holiday';
+    const isVacation = event.resource.type === 'vacation';
     
     let bgColor = '#10b981'; // green for time entries
     let borderColor = '#059669';
@@ -664,6 +757,9 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     } else if (isHoliday) {
       bgColor = '#ef4444'; // red for holidays
       borderColor = '#dc2626';
+    } else if (isVacation) {
+      bgColor = '#06b6d4'; // cyan for vacations
+      borderColor = '#0891b2';
     }
     
     return {
@@ -721,6 +817,19 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     setEntryEndTime(endTimeStr);
     setEntryHours(slotHours.toString());
     setEntryDescription('');
+
+    const slotStartDate = format(slotInfo.start, 'yyyy-MM-dd');
+    const slotEndDate = new Date(slotInfo.end);
+    if (slotEndDate.getHours() === 0 && slotEndDate.getMinutes() === 0 && slotEndDate.getSeconds() === 0) {
+      slotEndDate.setDate(slotEndDate.getDate() - 1);
+    }
+    if (slotEndDate < slotInfo.start) {
+      slotEndDate.setTime(slotInfo.start.getTime());
+    }
+    const slotEndDateString = format(slotEndDate, 'yyyy-MM-dd');
+    setVacationStartDate(slotStartDate);
+    setVacationEndDate(slotEndDateString);
+    setVacationNotes('');
     
     // Set call data with slot times
     setCallData({
@@ -743,6 +852,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     setShowSlotModal(false);
     setSelectedSlot(null);
     setSlotAction('choice');
+    setVacationNotes('');
   };
 
   const closeEditEntryModal = () => {
@@ -878,6 +988,38 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       }
     } catch (err) {
       console.error('Failed to create call record:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCreateVacationRequest = async () => {
+    if (!selectedSlot || !vacationStartDate || !vacationEndDate) return;
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/vacations/my/request`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            startDate: vacationStartDate,
+            endDate: vacationEndDate,
+            notes: vacationNotes,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        closeSlotModal();
+        onDataChanged();
+      }
+    } catch (err) {
+      console.error('Failed to create vacation request:', err);
     } finally {
       setIsSaving(false);
     }
@@ -1059,12 +1201,16 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
             <div className="w-4 h-4 bg-red-500 rounded"></div>
             <span className="text-gray-700 dark:text-gray-300">Holidays</span>
           </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-cyan-500 rounded"></div>
+            <span className="text-gray-700 dark:text-gray-300">Vacations</span>
+          </div>
         </div>
       </div>
 
       {/* Slot Selection Modal */}
       {showSlotModal && selectedSlot && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               {/* Header */}
@@ -1073,6 +1219,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                   {slotAction === 'choice' && '📅 Add Entry'}
                   {slotAction === 'timeEntry' && '⏱️ Add Time Entry'}
                   {slotAction === 'call' && '📞 Add Call Record'}
+                  {slotAction === 'vacation' && '🏖️ Add Vacation'}
                 </h3>
                 <button
                   onClick={closeSlotModal}
@@ -1116,6 +1263,16 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                     <div className="text-left">
                       <p className="font-medium text-gray-900 dark:text-white">Call Record</p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">Record a meeting or call</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setSlotAction('vacation')}
+                    className="w-full flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <span className="text-2xl">🏖️</span>
+                    <div className="text-left">
+                      <p className="font-medium text-gray-900 dark:text-white">Vacation</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">Request vacation for selected range</p>
                     </div>
                   </button>
                 </div>
@@ -1416,6 +1573,75 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                   </div>
                 </div>
               )}
+
+              {slotAction === 'vacation' && (
+                <div className="space-y-4">
+                  <button
+                    onClick={() => setSlotAction('choice')}
+                    className="text-sm text-blue-600 hover:text-blue-700 mb-2"
+                  >
+                    ← Back to options
+                  </button>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Start Date *
+                      </label>
+                      <input
+                        type="date"
+                        value={vacationStartDate}
+                        onChange={(e) => setVacationStartDate(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        End Date *
+                      </label>
+                      <input
+                        type="date"
+                        value={vacationEndDate}
+                        onChange={(e) => setVacationEndDate(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Notes
+                    </label>
+                    <input
+                      type="text"
+                      value={vacationNotes}
+                      onChange={(e) => setVacationNotes(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      placeholder="Optional notes"
+                    />
+                  </div>
+
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Non-working days in the selected range are skipped automatically.
+                  </p>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      onClick={closeSlotModal}
+                      className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleCreateVacationRequest}
+                      disabled={isSaving || !vacationStartDate || !vacationEndDate}
+                      className="flex-1 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-cyan-400 text-white rounded-lg transition-colors"
+                    >
+                      {isSaving ? 'Saving...' : 'Request Vacation'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1423,7 +1649,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
 
       {/* Edit Time Entry Modal */}
       {showEditEntryModal && editingEntry && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">

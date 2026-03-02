@@ -28,6 +28,14 @@ interface PlannerHoliday {
   IsActive: number;
 }
 
+interface PlannerVacationDay {
+  Id: number;
+  UserId: number;
+  VacationDate: string;
+  Status: string;
+  Notes?: string;
+}
+
 export default function PlanningPage() {
   const { user, isLoading, token } = useAuth();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
@@ -60,6 +68,7 @@ export default function PlanningPage() {
   const [showDependencyLines, setShowDependencyLines] = useState(true);
   const [showCriticalPath, setShowCriticalPath] = useState(false);
   const [showBaseline, setShowBaseline] = useState(false);
+  const [ganttSearch, setGanttSearch] = useState('');
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'year'>('week');
   const [activeTab, setActiveTab] = useState<'gantt' | 'allocations'>('gantt');
   const [maxVisibleLevel, setMaxVisibleLevel] = useState<number>(0);
@@ -242,6 +251,12 @@ export default function PlanningPage() {
 
   const isUserHoliday = (userId: number, dateStr: string): boolean => {
     return getUserHolidayNames(userId, dateStr).length > 0;
+  };
+
+  const splitUnavailableLabels = (labels: string[]) => {
+    const vacationLabels = labels.filter((label) => /^vacation\b/i.test(String(label || '').trim()));
+    const holidayLabels = labels.filter((label) => !/^vacation\b/i.test(String(label || '').trim()));
+    return { vacationLabels, holidayLabels };
   };
 
   const getLatestAllocationDate = (allocations: { date: string }[]): string | null => {
@@ -578,6 +593,28 @@ export default function PlanningPage() {
         return;
       }
 
+      const userIds = users.map((u) => u.Id).filter((id): id is number => Number.isInteger(id) && id > 0);
+      let approvedVacations: PlannerVacationDay[] = [];
+      if (userIds.length > 0) {
+        const vacationQuery = new URLSearchParams({
+          startDate: startDateKey,
+          endDate: endDateKey,
+          userIds: userIds.join(','),
+        });
+
+        const vacationResponse = await fetch(`${getApiUrl()}/api/vacations/calendar?${vacationQuery.toString()}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (vacationResponse.ok) {
+          const vacationData = await vacationResponse.json();
+          approvedVacations = (vacationData.entries || []) as PlannerVacationDay[];
+        }
+      }
+
       const countryYearResults = await Promise.all(
         countryCodes.flatMap((countryCode) =>
           years.map(async (year) => {
@@ -628,6 +665,26 @@ export default function PlanningPage() {
               holidayMapForUser[dateKey].push(holiday.HolidayName);
             });
         });
+
+        approvedVacations
+          .filter((vacation) => Number(vacation.UserId) === planningUser.Id)
+          .forEach((vacation) => {
+            const dateKey = normalizeDateKey(vacation.VacationDate);
+            if (dateKey < startDateKey || dateKey > endDateKey) {
+              return;
+            }
+            if (!holidayMapForUser[dateKey]) {
+              holidayMapForUser[dateKey] = [];
+            }
+
+            const label = vacation.Notes
+              ? `Vacation: ${vacation.Notes}`
+              : 'Vacation';
+
+            if (!holidayMapForUser[dateKey].includes(label)) {
+              holidayMapForUser[dateKey].push(label);
+            }
+          });
 
         result[planningUser.Id] = holidayMapForUser;
       });
@@ -1209,7 +1266,7 @@ export default function PlanningPage() {
   };
 
   const handleDragStart = (e: React.DragEvent, task: Task) => {
-    if (!permissions?.canPlanTasks) {
+    if (!permissions?.canPlanTasks || ganttSearch.trim().length > 0) {
       e.preventDefault();
       return;
     }
@@ -1218,7 +1275,7 @@ export default function PlanningPage() {
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    if (!permissions?.canPlanTasks) {
+    if (!permissions?.canPlanTasks || ganttSearch.trim().length > 0) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'none';
       return;
@@ -1229,7 +1286,7 @@ export default function PlanningPage() {
 
   const handleDropOnUser = async (e: React.DragEvent, userId: number | null) => {
     e.preventDefault();
-    if (!draggedTask || !permissions?.canPlanTasks) return;
+    if (!draggedTask || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) return;
 
     // Check if user has access to the project
     if (userId) {
@@ -1251,14 +1308,14 @@ export default function PlanningPage() {
   const handleDropOnDay = async (e: React.DragEvent, day: Date, userId: number | null) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!draggedTask || !permissions?.canPlanTasks || !userId) return;
+    if (!draggedTask || !permissions?.canPlanTasks || ganttSearch.trim().length > 0 || !userId) return;
 
     const droppedDateStr = getDateKeyFromDate(day);
     const droppedDateHolidayNames = getUserHolidayNames(userId, droppedDateStr);
     if (droppedDateHolidayNames.length > 0) {
       showAlert(
-        'Holiday',
-        `Cannot plan on holiday for this user (${droppedDateStr}): ${droppedDateHolidayNames.join(', ')}`
+        'Unavailable Day',
+        `Cannot plan on unavailable day for this user (${droppedDateStr}): ${droppedDateHolidayNames.join(', ')}`
       );
       setDraggedTask(null);
       return;
@@ -2999,8 +3056,8 @@ export default function PlanningPage() {
     if (manualAllocationModal.mode === 'add' && isUserHoliday(manualAllocationModal.userId, manualAllocationModal.allocationDate)) {
       const holidayNames = getUserHolidayNames(manualAllocationModal.userId, manualAllocationModal.allocationDate);
       showAlert(
-        'Holiday',
-        `Cannot create manual allocation on holiday (${manualAllocationModal.allocationDate}): ${holidayNames.join(', ')}`
+        'Unavailable Day',
+        `Cannot create manual allocation on unavailable day (${manualAllocationModal.allocationDate}): ${holidayNames.join(', ')}`
       );
       return;
     }
@@ -3195,7 +3252,25 @@ export default function PlanningPage() {
   }
 
   const days = getDaysInView();
+  const normalizedGanttSearch = ganttSearch.trim().toLowerCase();
+  const isGanttSearchActive = normalizedGanttSearch.length > 0;
+  const matchesGanttSearch = (task: Task) => {
+    if (!isGanttSearchActive) return true;
+    const projectName = projects.find((p) => p.Id === task.ProjectId)?.ProjectName || '';
+    const searchable = [
+      task.TaskName,
+      projectName,
+      task.CustomerName || '',
+      task.TicketNumber || '',
+      task.ExternalTicketId || '',
+      task.JiraIssueKey || '',
+    ]
+      .join(' ')
+      .toLowerCase();
+    return searchable.includes(normalizedGanttSearch);
+  };
   const unassignedTasks = getTasksForUser(null);
+  const visibleUnassignedTasks = unassignedTasks.filter(matchesGanttSearch);
 
   return (
     <CustomerUserGuard>
@@ -3224,27 +3299,49 @@ export default function PlanningPage() {
           <>
             {/* Tab Navigation */}
             <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex gap-4 px-4">
-                <button
-                  onClick={() => setActiveTab('gantt')}
-                  className={`pb-3 pt-4 px-4 font-medium transition-colors border-b-2 ${
-                    activeTab === 'gantt'
-                      ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                      : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                  }`}
-                >
-                  📊 Gantt Chart
-                </button>
-                <button
-                  onClick={() => setActiveTab('allocations')}
-                  className={`pb-3 pt-4 px-4 font-medium transition-colors border-b-2 ${
-                    activeTab === 'allocations'
-                      ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                      : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                  }`}
-                >
-                  📋 All Allocations ({allAllocations.length})
-                </button>
+              <div className="flex items-center gap-4 px-4">
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setActiveTab('gantt')}
+                    className={`pb-3 pt-4 px-4 font-medium transition-colors border-b-2 ${
+                      activeTab === 'gantt'
+                        ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    📊 Gantt Chart
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('allocations')}
+                    className={`pb-3 pt-4 px-4 font-medium transition-colors border-b-2 ${
+                      activeTab === 'allocations'
+                        ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    📋 All Allocations ({allAllocations.length})
+                  </button>
+                </div>
+
+                {activeTab === 'gantt' && (
+                  <div className="ml-auto flex items-center gap-2 py-2">
+                    <input
+                      type="text"
+                      value={ganttSearch}
+                      onChange={(e) => setGanttSearch(e.target.value)}
+                      placeholder="Search tasks in Gantt..."
+                      className="w-72 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    />
+                    {isGanttSearchActive && (
+                      <button
+                        onClick={() => setGanttSearch('')}
+                        className="px-3 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -3256,6 +3353,14 @@ export default function PlanningPage() {
                 <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200">
                   <span className="text-xl">🔒</span>
                   <span className="font-medium">Read-only view - You don't have permission to plan tasks</span>
+                </div>
+              </div>
+            )}
+            {isGanttSearchActive && (
+              <div className="bg-orange-50 dark:bg-orange-900/20 border-b-2 border-orange-400 dark:border-orange-600 p-4">
+                <div className="flex items-center gap-2 text-orange-800 dark:text-orange-200">
+                  <span className="text-xl">🔎</span>
+                  <span className="font-medium">Search filter active — planning is locked while filtering.</span>
                 </div>
               </div>
             )}
@@ -3550,7 +3655,7 @@ export default function PlanningPage() {
                 </div>
 
                 {/* Unassigned tasks row */}
-                {unassignedTasks.length > 0 && (
+                {visibleUnassignedTasks.length > 0 && (
                   <div
                     className="flex border-b-2 border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/20"
                     onDragOver={handleDragOver}
@@ -3558,13 +3663,13 @@ export default function PlanningPage() {
                   >
                     <div className="w-48 flex-shrink-0 p-3 border-r border-gray-200 dark:border-gray-700">
                       <div className="text-sm font-medium text-red-700 dark:text-red-400">
-                        ⚠️ Not Planned ({unassignedTasks.length})
+                        ⚠️ Not Planned ({visibleUnassignedTasks.length})
                       </div>
                       <div className="text-xs text-red-600 dark:text-red-500">
                         Click to plan subtasks
                       </div>
                     </div>
-                    <div className="flex-1 relative" style={{ minHeight: `${Math.max(40, unassignedTasks.length * 24 + 8)}px` }}>
+                    <div className="flex-1 relative" style={{ minHeight: `${Math.max(40, visibleUnassignedTasks.length * 24 + 8)}px` }}>
                       <div className="flex h-full">
                         {days.map((day, idx) => (
                           <div
@@ -3575,7 +3680,7 @@ export default function PlanningPage() {
                           />
                         ))}
                       </div>
-                      {unassignedTasks.map((parentTask, taskIdx) => {
+                      {visibleUnassignedTasks.map((parentTask, taskIdx) => {
                         const position = getTaskPosition(parentTask, days);
                         const row = taskIdx;
                         const taskIsHobbyProject = isTaskHobby(parentTask);
@@ -3585,15 +3690,45 @@ export default function PlanningPage() {
                         const subtaskCount = tasks.filter(t => t.ParentTaskId === parentTask.Id).length;
                         const statusColor = getTaskStatusColor(parentTask);
                         const priorityBorderHex = getPriorityBorderHex(parentTask);
+                        const parentCustomerName = parentTask.CustomerName || project?.CustomerName || null;
+                        const parentJiraRef = parentTask.ExternalTicketId || parentTask.JiraIssueKey || null;
+                        const parentTooltipLines = [
+                          `Project: ${project?.ProjectName || 'Unknown'}`,
+                          `Task: ${parentTask.TaskName}`,
+                          `Status: ${parentTask.StatusName || 'Unknown'}`,
+                          `Priority: ${parentTask.PriorityName || 'Unknown'}`,
+                          `Estimated: ${Number(parentTask.EstimatedHours || 0).toFixed(1)}h`,
+                          `Planned Dates: ${parentTask.PlannedStartDate || 'Not planned'} → ${parentTask.PlannedEndDate || 'Not planned'}`,
+                        ];
+
+                        if (hasSubtasks) {
+                          parentTooltipLines.push(`Subtasks: ${subtaskCount} (click to manage subtasks)`);
+                        }
+                        if (parentCustomerName) {
+                          parentTooltipLines.push(`Customer: ${parentCustomerName}`);
+                        }
+                        if (parentTask.TicketNumber) {
+                          parentTooltipLines.push(`Ticket: ${parentTask.TicketNumber}${parentTask.TicketTitle ? ` - ${parentTask.TicketTitle}` : ''}`);
+                        }
+                        if (parentJiraRef) {
+                          parentTooltipLines.push(`Jira: ${parentJiraRef}`);
+                        }
+                        if (taskIsHobbyProject) {
+                          parentTooltipLines.push('Type: Hobby Project');
+                        }
+                        if (hasDependency) {
+                          parentTooltipLines.push(`Depends on: ${parentTask.DependsOnTaskName}`);
+                        }
+                        const parentTooltip = parentTooltipLines.join('\n');
                         
                         return (
                           <div
                             key={parentTask.Id}
                             data-task-id={parentTask.Id}
-                            draggable={permissions?.canPlanTasks}
+                            draggable={permissions?.canPlanTasks && !isGanttSearchActive}
                             onDragStart={(e) => handleDragStart(e, parentTask)}
                             onClick={() => hasSubtasks ? openSubtasksModal(parentTask) : handleTaskClick(parentTask)}
-                            className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(parentTask) : ''} opacity-75 hover:opacity-100 ${permissions?.canPlanTasks ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white text-xs px-2 transition-all`}
+                            className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(parentTask) : ''} opacity-75 hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white text-xs px-2 transition-all`}
                             style={{
                               left: position ? position.left : '8px',
                               width: position ? position.width : 'calc(100% - 16px)',
@@ -3601,7 +3736,7 @@ export default function PlanningPage() {
                               ...(statusColor ? { backgroundColor: statusColor } : {}),
                               borderLeft: `4px solid ${priorityBorderHex}`,
                             }}
-                            title={`${project?.ProjectName || 'Unknown'} » ${parentTask.TaskName} [${parentTask.StatusName || 'Unknown'}]${hasSubtasks ? `\n📁 ${subtaskCount} subtask(s) - Drag to plan or click to see subtasks` : ''}${taskIsHobbyProject ? '\nHobby Project' : ''}\nPriority: ${parentTask.PriorityName || 'Unknown'}${hasDependency ? '\nDepends on: ' + parentTask.DependsOnTaskName : ''}`}
+                            title={parentTooltip}
                           >
                             {taskIsHobbyProject && (
                               <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0">HOBBY</span>
@@ -3630,7 +3765,8 @@ export default function PlanningPage() {
                     t.AssignedTo === userRow.Id &&
                     !t.ParentTaskId &&
                     t.PlannedStartDate &&
-                    t.PlannedEndDate
+                    t.PlannedEndDate &&
+                    matchesGanttSearch(t)
                   );
                   
                   // Build complete subtask tree recursively for visualization
@@ -3652,7 +3788,7 @@ export default function PlanningPage() {
                   const subtasksMap = new Map<number, Task[]>();
                   
                   parentTasksWithDates.forEach(parentTask => {
-                    const allDescendants = getAllDescendantsRecursive(parentTask.Id);
+                    const allDescendants = getAllDescendantsRecursive(parentTask.Id).filter(matchesGanttSearch);
                     if (allDescendants.length > 0) {
                       subtasksMap.set(parentTask.Id, allDescendants);
                     }
@@ -3829,7 +3965,7 @@ export default function PlanningPage() {
                                 }`}
                                 onDragOver={handleDragOver}
                                 onDrop={(e) => handleDropOnDay(e, day, userRow.Id)}
-                                title={isHoliday ? `Holiday: ${holidayNames.join(', ')}` : undefined}
+                                title={isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
                               />
                             );
                           })}
@@ -3878,6 +4014,48 @@ export default function PlanningPage() {
                           const remainingHours = Math.max(0, estimatedHours - workedHours);
                           const isOverPlanned = plannedHours > remainingHours && remainingHours > 0;
                           const isUnderPlanned = plannedHours < remainingHours && plannedHours > 0;
+                          const planningCoverage = remainingHours > 0
+                            ? `${((plannedHours / remainingHours) * 100).toFixed(0)}% of remaining`
+                            : plannedHours > 0
+                              ? 'Complete scope planned'
+                              : 'No remaining hours';
+                          const taskCustomerName = task.CustomerName || project?.CustomerName || null;
+                          const taskJiraRef = task.ExternalTicketId || task.JiraIssueKey || null;
+                          const assigneeName = userRow.FirstName && userRow.LastName
+                            ? `${userRow.FirstName} ${userRow.LastName}`
+                            : userRow.Username;
+                          const taskTooltipLines = [
+                            `Project: ${project?.ProjectName || 'Unknown'}`,
+                            `Task: ${task.TaskName}${isSubtask ? ` (Level ${level} Subtask)` : ''}`,
+                            `Assignee: ${assigneeName}`,
+                            `Status: ${task.StatusName || 'Unknown'}`,
+                            `Priority: ${task.PriorityName || 'Unknown'}`,
+                            `Dates: ${task.PlannedStartDate || 'Not planned'} → ${task.PlannedEndDate || 'Not planned'}`,
+                            `Hours: Est ${estimatedHours}h | Planned ${plannedHours}h | Worked ${workedHours}h | Remaining ${remainingHours}h`,
+                            `Coverage: ${planningCoverage}`,
+                          ];
+                          if (taskCustomerName) {
+                            taskTooltipLines.push(`Customer: ${taskCustomerName}`);
+                          }
+                          if (task.TicketNumber) {
+                            taskTooltipLines.push(`Ticket: ${task.TicketNumber}${task.TicketTitle ? ` - ${task.TicketTitle}` : ''}`);
+                          }
+                          if (taskJiraRef) {
+                            taskTooltipLines.push(`Jira: ${taskJiraRef}`);
+                          }
+                          if (taskIsHobbyProject) {
+                            taskTooltipLines.push('Type: Hobby Project');
+                          }
+                          if (hasDependency) {
+                            taskTooltipLines.push(`Depends on: ${task.DependsOnTaskName}`);
+                          }
+                          if (isOverPlanned) {
+                            taskTooltipLines.push(`⚠ OVER-PLANNED: ${(plannedHours - remainingHours).toFixed(1)}h more than needed`);
+                          }
+                          if (isUnderPlanned) {
+                            taskTooltipLines.push(`⚠ UNDER-PLANNED: ${(remainingHours - plannedHours).toFixed(1)}h still to plan`);
+                          }
+                          const taskTooltip = taskTooltipLines.join('\n');
                           const statusColor = getTaskStatusColor(task);
                           const priorityBorderHex = getPriorityBorderHex(task);
                           
@@ -3922,10 +4100,10 @@ export default function PlanningPage() {
                             <div
                               key={task.Id}
                               data-task-id={task.Id}
-                              draggable={permissions?.canPlanTasks}
+                              draggable={permissions?.canPlanTasks && !isGanttSearchActive}
                               onDragStart={(e) => handleDragStart(e, task)}
                               onClick={() => handleTaskClick(task)}
-                              className={`absolute ${subtaskHeight} rounded ${!statusColor ? getPriorityColor(task) : ''} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${permissions?.canPlanTasks ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''}`}
+                              className={`absolute ${subtaskHeight} rounded ${!statusColor ? getPriorityColor(task) : ''} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''}`}
                               style={{
                                 left: subtaskLeft,
                                 width: subtaskWidth,
@@ -3934,7 +4112,7 @@ export default function PlanningPage() {
                                 borderLeft: `${isSubtask ? '3' : '4'}px solid ${priorityBorderHex}`,
                                 zIndex: isSubtask ? 20 : 21,
                               }}
-                              title={`${project?.ProjectName || 'Unknown'} » ${task.TaskName} [${task.StatusName || 'Unknown'}]${isSubtask ? ` (Level ${level} Subtask)` : ''}\nEstimated: ${estimatedHours}h | Planned: ${plannedHours}h | Worked: ${workedHours}h | Remaining: ${remainingHours}h\nPriority: ${task.PriorityName || 'Unknown'}${taskIsHobbyProject ? ' | Hobby Project' : ''}${hasDependency ? ' | Depends on: ' + task.DependsOnTaskName : ''}${isOverPlanned ? '\n⚠️ OVER-PLANNED: ' + (plannedHours - remainingHours).toFixed(1) + 'h more than needed!' : ''}${isUnderPlanned ? '\n⚠️ UNDER-PLANNED: ' + (remainingHours - plannedHours).toFixed(1) + 'h still to plan' : ''}`}
+                              title={taskTooltip}
                             >
                               {!isSubtask && isOverPlanned && <span className="mr-1">⚠️</span>}
                               {!isSubtask && taskIsHobbyProject && (
@@ -4006,6 +4184,7 @@ export default function PlanningPage() {
                           const isOverAllocated = isDayOverAllocated(day);
                           const holidayNames = getUserHolidayNames(userRow.Id, dateStr);
                           const isHoliday = holidayNames.length > 0;
+                          const { vacationLabels, holidayLabels } = splitUnavailableLabels(holidayNames);
                           
                           // Get capacity for this day
                           const { workCapacity, hobbyCapacity } = getDayCapacities(day);
@@ -4022,9 +4201,12 @@ export default function PlanningPage() {
                                   ? 'bg-gray-100 dark:bg-gray-700'
                                   : ''
                               }`}
-                              title={isOverAllocated ? 'Over allocated day: planned hours exceed configured capacity' : isHoliday ? `Holiday: ${holidayNames.join(', ')}` : undefined}
+                              title={isOverAllocated ? 'Over allocated day: planned hours exceed configured capacity' : isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
                             >
-                              {isHoliday && (
+                              {vacationLabels.length > 0 && (
+                                <div className="text-cyan-700 dark:text-cyan-300 font-medium">🏖️</div>
+                              )}
+                              {holidayLabels.length > 0 && (
                                 <div className="text-amber-700 dark:text-amber-300 font-medium">🎉</div>
                               )}
                               {hasRecurring && (
@@ -4100,7 +4282,7 @@ export default function PlanningPage() {
 
         {/* Recurring Allocation Detail Modal */}
         {recurringDetailModal.show && recurringDetailModal.recurring && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
               <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -4536,7 +4718,7 @@ export default function PlanningPage() {
 
         {/* Planning Progress Modal */}
         {planningProgress.show && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                 Planning Task: {planningProgress.taskName}
@@ -4582,7 +4764,7 @@ export default function PlanningPage() {
 
         {/* Alert/Confirm Modal */}
         {modalMessage && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
               <div className="p-6">
                 <div className="flex items-start mb-4">
@@ -4633,7 +4815,7 @@ export default function PlanningPage() {
 
         {/* Subtasks Planning Modal */}
         {subtasksModal.show && subtasksModal.parentTask && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -4744,7 +4926,7 @@ export default function PlanningPage() {
 
         {/* Manual Allocation Modal */}
         {manualAllocationModal.show && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">

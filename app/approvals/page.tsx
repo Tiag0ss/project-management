@@ -37,6 +37,28 @@ interface Subordinate {
   LastName?: string;
 }
 
+interface VacationRequest {
+  Id: number;
+  UserId: number;
+  VacationDate: string;
+  Status: string;
+  Notes?: string;
+  Username: string;
+  FirstName?: string;
+  LastName?: string;
+}
+
+interface VacationTeamMember {
+  Id: number;
+  Username: string;
+  FirstName?: string;
+  LastName?: string;
+  AnnualVacationDays: number;
+  ApprovedDays: number;
+  PendingDays: number;
+  RejectedDays?: number;
+}
+
 const normalizeDateString = (dateValue: any): string => {
   if (dateValue instanceof Date) return dateValue.toISOString().split('T')[0];
   return String(dateValue).split('T')[0];
@@ -68,6 +90,12 @@ export default function ApprovalsPage() {
   const { user, token } = useAuth();
   const { permissions } = usePermissions();
   const router = useRouter();
+  const [initialTabFromQuery, setInitialTabFromQuery] = useState<string | null>(null);
+
+  const [activeTab, setActiveTab] = useState<'time' | 'vacations'>('time');
+  const [canApproveTime, setCanApproveTime] = useState(false);
+  const [canApproveVacations, setCanApproveVacations] = useState(false);
+  const [scopeLoaded, setScopeLoaded] = useState(false);
 
   const [entries, setEntries] = useState<PendingEntry[]>([]);
   const [subordinates, setSubordinates] = useState<Subordinate[]>([]);
@@ -95,8 +123,82 @@ export default function ApprovalsPage() {
   const [adminDescriptionDraft, setAdminDescriptionDraft] = useState('');
   const [isSavingDescription, setIsSavingDescription] = useState(false);
 
+  // Vacations tab state
+  const [vacationMessage, setVacationMessage] = useState('');
+  const [vacationIsLoading, setVacationIsLoading] = useState(false);
+  const [vacationTeamRequests, setVacationTeamRequests] = useState<VacationRequest[]>([]);
+  const [vacationMembers, setVacationMembers] = useState<VacationTeamMember[]>([]);
+  const [vacationYear, setVacationYear] = useState<number>(new Date().getFullYear());
+  const [vacationStatusFilter, setVacationStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [selectedMemberId, setSelectedMemberId] = useState('');
+  const [vacationSortField, setVacationSortField] = useState<'user' | 'date' | 'status'>('date');
+  const [vacationSortDirection, setVacationSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [configStartDate, setConfigStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [configEndDate, setConfigEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [configNotes, setConfigNotes] = useState('');
+  const [isSavingVacationConfig, setIsSavingVacationConfig] = useState(false);
+  const [showVacationConfigModal, setShowVacationConfigModal] = useState(false);
+  const [vacationDeleteTarget, setVacationDeleteTarget] = useState<VacationRequest | null>(null);
+
+  useEffect(() => {
+    if (!token || !user) return;
+    const loadScopes = async () => {
+      try {
+        const [timeScopeRes, vacationScopeRes] = await Promise.all([
+          fetch(`${getApiUrl()}/api/time-entries/approval-scope`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+          }),
+          fetch(`${getApiUrl()}/api/vacations/approval-scope`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+          }),
+        ]);
+
+        const canTime = timeScopeRes.ok ? !!(await timeScopeRes.json())?.canApprove : false;
+        const canVacation = vacationScopeRes.ok ? !!(await vacationScopeRes.json())?.canApprove : false;
+
+        setCanApproveTime(canTime || !!user.isAdmin);
+        setCanApproveVacations(canVacation || !!user.isAdmin);
+      } catch {
+        setCanApproveTime(!!user.isAdmin);
+        setCanApproveVacations(!!user.isAdmin);
+      } finally {
+        setScopeLoaded(true);
+      }
+    };
+
+    loadScopes();
+  }, [token, user]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    setInitialTabFromQuery(params.get('tab'));
+  }, []);
+
+  useEffect(() => {
+    if (!scopeLoaded) return;
+    const tab = initialTabFromQuery;
+    if (tab === 'vacations' && canApproveVacations) {
+      setActiveTab('vacations');
+      return;
+    }
+    if (tab === 'time' && canApproveTime) {
+      setActiveTab('time');
+      return;
+    }
+    if (!canApproveTime && canApproveVacations) {
+      setActiveTab('vacations');
+      return;
+    }
+    setActiveTab('time');
+  }, [initialTabFromQuery, canApproveTime, canApproveVacations, scopeLoaded]);
+
   const loadEntries = useCallback(async () => {
-    if (!token) return;
+    if (!token || !canApproveTime) {
+      setEntries([]);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError('');
     try {
@@ -127,13 +229,206 @@ export default function ApprovalsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [token, filterUserId, filterProjectId, filterDateFrom, filterDateTo, filterStatus]);
+  }, [token, filterUserId, filterProjectId, filterDateFrom, filterDateTo, filterStatus, canApproveTime]);
 
   useEffect(() => {
-    if (user && token) {
+    if (user && token && activeTab === 'time') {
       loadEntries();
     }
-  }, [user, token, loadEntries]);
+  }, [user, token, activeTab, loadEntries]);
+
+  const loadVacationData = useCallback(async () => {
+    if (!token) return;
+
+    setVacationIsLoading(true);
+    setVacationMessage('');
+
+    try {
+      if (canApproveVacations) {
+        const teamMembersRes = await fetch(`${getApiUrl()}/api/vacations/team-members?year=${vacationYear}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+        if (teamMembersRes.ok) {
+        const membersData = await teamMembersRes.json();
+        const members = membersData.members || [];
+        setVacationMembers(members);
+
+          const effectiveMemberId = selectedMemberId || (members.length > 0 ? String(members[0].Id) : '');
+          if (effectiveMemberId && effectiveMemberId !== selectedMemberId) {
+            setSelectedMemberId(effectiveMemberId);
+          }
+
+          if (effectiveMemberId) {
+            const teamRequestsRes = await fetch(
+              `${getApiUrl()}/api/vacations/requests?year=${vacationYear}&status=${vacationStatusFilter}&userId=${effectiveMemberId}`,
+              { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+
+            if (teamRequestsRes.ok) {
+              const teamReqData = await teamRequestsRes.json();
+              setVacationTeamRequests(teamReqData.requests || []);
+            } else {
+              setVacationTeamRequests([]);
+            }
+          } else {
+            setVacationTeamRequests([]);
+          }
+        }
+      } else {
+        setVacationTeamRequests([]);
+      }
+    } catch (err: any) {
+      setVacationMessage(err.message || 'Failed to load vacations data');
+    } finally {
+      setVacationIsLoading(false);
+    }
+  }, [token, vacationYear, vacationStatusFilter, canApproveVacations, selectedMemberId]);
+
+  useEffect(() => {
+    if (user && token && activeTab === 'vacations') {
+      loadVacationData();
+    }
+  }, [user, token, activeTab, loadVacationData]);
+
+  const handleVacationApproval = async (id: number, status: 'approved' | 'rejected') => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${getApiUrl()}/api/vacations/${id}/approval`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to update vacation request');
+      setVacationMessage(`Vacation request ${status}`);
+      await loadVacationData();
+    } catch (err: any) {
+      setVacationMessage(err.message || 'Failed to update vacation request');
+    }
+  };
+
+  const handleDeleteVacationDay = async (id: number) => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${getApiUrl()}/api/vacations/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to delete vacation day');
+      setVacationMessage('Vacation day deleted');
+      await loadVacationData();
+    } catch (err: any) {
+      setVacationMessage(err.message || 'Failed to delete vacation day');
+    }
+  };
+
+  const handleConfirmVacationDelete = async () => {
+    if (!vacationDeleteTarget) return;
+    const vacationId = vacationDeleteTarget.Id;
+    setVacationDeleteTarget(null);
+    await handleDeleteVacationDay(vacationId);
+  };
+
+  const handleApproveAllVisibleVacations = async () => {
+    if (!token) return;
+
+    const pendingVisible = sortedVacationRequests.filter((request) => String(request.Status).toLowerCase() === 'pending');
+    if (pendingVisible.length === 0) {
+      setVacationMessage('No pending vacation requests to approve.');
+      return;
+    }
+
+    setVacationIsLoading(true);
+    let approved = 0;
+    let failed = 0;
+
+    try {
+      await Promise.all(
+        pendingVisible.map(async (request) => {
+          try {
+            const response = await fetch(`${getApiUrl()}/api/vacations/${request.Id}/approval`, {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ status: 'approved' }),
+            });
+
+            if (response.ok) {
+              approved += 1;
+            } else {
+              failed += 1;
+            }
+          } catch {
+            failed += 1;
+          }
+        })
+      );
+
+      setVacationMessage(failed > 0
+        ? `Approved ${approved} request(s), ${failed} failed.`
+        : `Approved ${approved} vacation request(s).`);
+      await loadVacationData();
+    } finally {
+      setVacationIsLoading(false);
+    }
+  };
+
+  const handleVacationSort = (field: 'user' | 'date' | 'status') => {
+    if (vacationSortField === field) {
+      setVacationSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setVacationSortField(field);
+    setVacationSortDirection(field === 'date' ? 'desc' : 'asc');
+  };
+
+  const configureVacationForUser = async () => {
+    if (!token || !selectedMemberId) return;
+    setIsSavingVacationConfig(true);
+    try {
+      const response = await fetch(`${getApiUrl()}/api/vacations/team-members/${selectedMemberId}/configure`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          startDate: configStartDate,
+          endDate: configEndDate,
+          notes: configNotes,
+          status: 'approved',
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to configure vacations');
+      const exceededDates = Array.isArray(data.exceededDates) ? data.exceededDates : [];
+      const nonWorkingDates = Array.isArray(data.nonWorkingDates) ? data.nonWorkingDates : [];
+      const exceededSuffix = exceededDates.length > 0
+        ? ` · Exceeded days: ${exceededDates.join(', ')}`
+        : '';
+      const nonWorkingSuffix = nonWorkingDates.length > 0
+        ? ` · Non-working days skipped: ${nonWorkingDates.join(', ')}`
+        : '';
+      setVacationMessage(`Configured vacations (${data.created || 0} created, ${data.skipped || 0} skipped${data.exceeded ? `, ${data.exceeded} exceeded` : ''}${data.nonWorkingSkipped ? `, ${data.nonWorkingSkipped} non-working` : ''})${exceededSuffix}${nonWorkingSuffix}`);
+      setConfigNotes('');
+      setShowVacationConfigModal(false);
+      await loadVacationData();
+    } catch (err: any) {
+      setVacationMessage(err.message || 'Failed to configure vacations');
+    } finally {
+      setIsSavingVacationConfig(false);
+    }
+  };
 
   const handleApproval = async (entryId: number, status: 'approved' | 'rejected') => {
     if (!token) return;
@@ -269,7 +564,25 @@ export default function ApprovalsPage() {
       }, {} as Record<string, { user: PendingEntry; entries: PendingEntry[] }>)
     : null;
 
+  const sortedVacationRequests = [...vacationTeamRequests].sort((a, b) => {
+    let compare = 0;
+
+    if (vacationSortField === 'user') {
+      compare = getUserDisplayName(a).localeCompare(getUserDisplayName(b));
+    } else if (vacationSortField === 'status') {
+      compare = String(a.Status || '').localeCompare(String(b.Status || ''));
+    } else {
+      compare = String(a.VacationDate || '').localeCompare(String(b.VacationDate || ''));
+    }
+
+    return vacationSortDirection === 'asc' ? compare : -compare;
+  });
+
   if (!user) return null;
+
+  const selectedVacationMember = vacationMembers.find((m) => String(m.Id) === selectedMemberId);
+  const selectedMemberNotApproved = (selectedVacationMember?.PendingDays || 0) + (selectedVacationMember?.RejectedDays || 0);
+  const pendingVisibleVacationCount = sortedVacationRequests.filter((request) => String(request.Status).toLowerCase() === 'pending').length;
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
@@ -278,11 +591,47 @@ export default function ApprovalsPage() {
 
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Time Entry Approvals</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Approvals</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Review and approve time entries submitted by your team members.
+            Review and manage team approvals in one place.
           </p>
         </div>
+
+        <div className="mb-6 flex items-center gap-2">
+          <button
+            onClick={() => {
+              setActiveTab('time');
+              router.replace('/approvals?tab=time');
+            }}
+            disabled={!canApproveTime}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'time'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
+          >
+            Time Entries
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('vacations');
+              router.replace('/approvals?tab=vacations');
+            }}
+            disabled={!canApproveVacations && !user?.isAdmin}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'vacations'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
+          >
+            Vacations
+          </button>
+        </div>
+
+        {!canApproveTime && !canApproveVacations && (
+          <div className="mb-6 p-4 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 text-yellow-700 dark:text-yellow-300 rounded-lg">
+            You don't currently have approval scope for time entries or vacations.
+          </div>
+        )}
+
+        {activeTab === 'time' ? (
+          <>
 
         {error && (
           <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded-lg">
@@ -714,7 +1063,7 @@ export default function ApprovalsPage() {
         )}
 
         {showAdminDescriptionModal && selectedEntryForDescription && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4">
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Edit Admin Description</h3>
@@ -746,6 +1095,290 @@ export default function ApprovalsPage() {
               </div>
             </div>
           </div>
+        )}
+          </>
+        ) : (
+          <>
+            {vacationMessage && (
+              <div className="mb-4 p-3 rounded border border-blue-300 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                {vacationMessage}
+              </div>
+            )}
+
+            {vacationIsLoading ? (
+              <div className="text-gray-600 dark:text-gray-300">Loading vacations…</div>
+            ) : (
+              <div className="space-y-6">
+                {canApproveVacations && (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5">
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <div className="space-y-2">
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Team Vacation Requests</h2>
+                        {selectedVacationMember && (
+                          <div className="flex flex-wrap gap-2 text-xs">
+                            <span className="px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
+                              Allowed: {selectedVacationMember.AnnualVacationDays}
+                            </span>
+                            <span className="px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300">
+                              Approved: {selectedVacationMember.ApprovedDays}
+                            </span>
+                            <span className="px-2 py-1 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300">
+                              Not Approved: {selectedMemberNotApproved}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleApproveAllVisibleVacations}
+                          disabled={pendingVisibleVacationCount === 0 || vacationIsLoading}
+                          className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded text-sm"
+                        >
+                          Approve All ({pendingVisibleVacationCount})
+                        </button>
+                        <button
+                          onClick={() => setShowVacationConfigModal(true)}
+                          className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm"
+                        >
+                          Add Vacation
+                        </button>
+                      </div>
+                    </div>
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                        <input
+                          type="number"
+                          min="2000"
+                          max="2100"
+                          value={vacationYear}
+                          onChange={(e) => setVacationYear(parseInt(e.target.value || String(new Date().getFullYear()), 10))}
+                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          placeholder="Year"
+                        />
+                        <select
+                          value={selectedMemberId}
+                          onChange={(e) => setSelectedMemberId(e.target.value)}
+                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        >
+                          {vacationMembers.map((member) => (
+                            <option key={member.Id} value={member.Id}>
+                              {(member.FirstName && member.LastName) ? `${member.FirstName} ${member.LastName}` : member.Username}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={vacationStatusFilter}
+                          onChange={(e) => setVacationStatusFilter(e.target.value as 'all' | 'pending' | 'approved' | 'rejected')}
+                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        >
+                          <option value="all">All statuses</option>
+                          <option value="pending">Pending</option>
+                          <option value="approved">Approved</option>
+                          <option value="rejected">Rejected</option>
+                        </select>
+                        <button
+                          onClick={loadVacationData}
+                          className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
+                        >
+                          Apply
+                        </button>
+                      </div>
+
+                      <div className="h-[calc(100vh-340px)] min-h-[420px] overflow-y-auto border border-gray-200 dark:border-gray-700 rounded">
+                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                          <thead className="bg-gray-50 dark:bg-gray-700">
+                            <tr>
+                              <th
+                                className="px-3 py-2 text-left text-xs text-gray-500 dark:text-gray-300 uppercase cursor-pointer"
+                                onClick={() => handleVacationSort('user')}
+                              >
+                                User {vacationSortField === 'user' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
+                              </th>
+                              <th
+                                className="px-3 py-2 text-left text-xs text-gray-500 dark:text-gray-300 uppercase cursor-pointer"
+                                onClick={() => handleVacationSort('date')}
+                              >
+                                Date {vacationSortField === 'date' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
+                              </th>
+                              <th
+                                className="px-3 py-2 text-left text-xs text-gray-500 dark:text-gray-300 uppercase cursor-pointer"
+                                onClick={() => handleVacationSort('status')}
+                              >
+                                Status {vacationSortField === 'status' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
+                              </th>
+                              <th className="px-3 py-2 text-left text-xs text-gray-500 dark:text-gray-300 uppercase">Notes</th>
+                              <th className="px-3 py-2 text-left text-xs text-gray-500 dark:text-gray-300 uppercase">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700">
+                            {sortedVacationRequests.map((request) => (
+                              <tr key={request.Id}>
+                                <td className="px-3 py-2 text-sm text-gray-900 dark:text-white">
+                                  {(request.FirstName && request.LastName) ? `${request.FirstName} ${request.LastName}` : request.Username}
+                                </td>
+                                <td className="px-3 py-2 text-sm text-gray-900 dark:text-white">{String(request.VacationDate).split('T')[0]}</td>
+                                <td className="px-3 py-2 text-sm text-gray-900 dark:text-white capitalize">{request.Status}</td>
+                                <td className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">{request.Notes || '—'}</td>
+                                <td className="px-3 py-2 text-sm text-gray-900 dark:text-white">
+                                  <div className="flex items-center gap-2">
+                                    {String(request.Status).toLowerCase() === 'pending' && (
+                                      <>
+                                        <button
+                                          onClick={() => handleVacationApproval(request.Id, 'approved')}
+                                          className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs"
+                                        >
+                                          Approve
+                                        </button>
+                                        <button
+                                          onClick={() => handleVacationApproval(request.Id, 'rejected')}
+                                          className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs"
+                                        >
+                                          Reject
+                                        </button>
+                                      </>
+                                    )}
+                                    <button
+                                      onClick={() => setVacationDeleteTarget(request)}
+                                      className="px-2 py-1 bg-gray-700 hover:bg-gray-800 text-white rounded text-xs"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                            {sortedVacationRequests.length === 0 && (
+                              <tr>
+                                <td className="px-3 py-3 text-sm text-gray-500 dark:text-gray-400" colSpan={5}>No requests found for this filter.</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {showVacationConfigModal && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full mx-4">
+                  <div className="p-6 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Add / Configure Vacation</h3>
+                      <button
+                        onClick={() => setShowVacationConfigModal(false)}
+                        className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Team Member</label>
+                      <select
+                        value={selectedMemberId}
+                        onChange={(e) => {
+                          const memberId = e.target.value;
+                          setSelectedMemberId(memberId);
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      >
+                        <option value="">Select user</option>
+                        {vacationMembers.map((member) => (
+                          <option key={member.Id} value={member.Id}>
+                            {(member.FirstName && member.LastName) ? `${member.FirstName} ${member.LastName}` : member.Username}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {selectedVacationMember && (
+                      <div className="text-xs text-gray-600 dark:text-gray-400">
+                        Approved: {selectedVacationMember.ApprovedDays} · Pending: {selectedVacationMember.PendingDays}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
+                        <input
+                          type="date"
+                          value={configStartDate}
+                          onChange={(e) => setConfigStartDate(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
+                        <input
+                          type="date"
+                          value={configEndDate}
+                          onChange={(e) => setConfigEndDate(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
+                      <input
+                        type="text"
+                        value={configNotes}
+                        onChange={(e) => setConfigNotes(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        placeholder="Optional notes"
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button
+                        onClick={() => setShowVacationConfigModal(false)}
+                        className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded"
+                      >
+                        Close
+                      </button>
+                      <button
+                        onClick={configureVacationForUser}
+                        disabled={!selectedMemberId || isSavingVacationConfig}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded"
+                      >
+                        Add Vacation Days
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {vacationDeleteTarget && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[110] p-4">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+                  <div className="p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete Vacation Day</h3>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mb-6">
+                      Are you sure you want to delete this vacation day for{' '}
+                      <span className="font-medium">{getUserDisplayName(vacationDeleteTarget)}</span>{' '}
+                      on <span className="font-medium">{String(vacationDeleteTarget.VacationDate).split('T')[0]}</span>?
+                    </p>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => setVacationDeleteTarget(null)}
+                        className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleConfirmVacationDelete}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>

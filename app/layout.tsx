@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { PermissionsProvider } from "@/contexts/PermissionsContext";
 import BrandingRuntime from "@/components/BrandingRuntime";
+import ThemeRuntime from "@/components/ThemeRuntime";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,6 +33,7 @@ export default function RootLayout({
       >
         <AuthProvider>
           <PermissionsProvider>
+            <ThemeRuntime />
             <BrandingRuntime />
             {children}
           </PermissionsProvider>

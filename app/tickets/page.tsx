@@ -405,6 +405,11 @@ export default function TicketsPage() {
         projectId: '',
         externalTicketId: ''
       }));
+    } else if (isCustomerUser && createForm.projectId) {
+      setCreateForm(prev => ({
+        ...prev,
+        projectId: '',
+      }));
     }
 
     if (!targetOrgId) {
@@ -484,7 +489,7 @@ export default function TicketsPage() {
           body: JSON.stringify({
             organizationId: parseInt(orgId),
             customerId: createForm.customerId ? parseInt(createForm.customerId) : null,
-            projectId: createForm.projectId ? parseInt(createForm.projectId) : null,
+            projectId: isCustomerUser ? null : (createForm.projectId ? parseInt(createForm.projectId) : null),
             title: createForm.title.trim(),
             description: createForm.description || null,
             priority: createForm.priority,
@@ -1179,7 +1184,7 @@ export default function TicketsPage() {
 
       {/* Create Ticket Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
             <form onSubmit={handleCreateTicket}>
               <div className="p-6">

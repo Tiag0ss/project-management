@@ -263,9 +263,9 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     // Convert to key-value object
     const settingsObj: Record<string, string> = {};
     settings.forEach(setting => {
-      // Mask sensitive values - never send passwords to the frontend
+      // Never send sensitive values to the frontend
       if (MASKED_KEYS.includes(setting.SettingKey) && setting.SettingValue) {
-        settingsObj[setting.SettingKey] = '••••••••';
+        settingsObj[setting.SettingKey] = '';
       } else {
         settingsObj[setting.SettingKey] = setting.SettingValue;
       }
