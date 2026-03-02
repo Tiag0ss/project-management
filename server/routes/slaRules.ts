@@ -33,9 +33,12 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
   try {
     const { organizationId } = req.params;
     const [rules] = await pool.execute<RowDataPacket[]>(
-      `SELECT sr.*, tpv.PriorityName, tpv.Color as PriorityColor
+      `SELECT sr.*, tpv.PriorityName, tpv.Color as PriorityColor,
+              tsv.StatusName as AutoTransitionStatusName,
+              tsv.Color as AutoTransitionStatusColor
        FROM SLARules sr
        LEFT JOIN TicketPriorityValues tpv ON sr.PriorityId = tpv.Id
+       LEFT JOIN TicketStatusValues tsv ON sr.AutoTransitionStatusId = tsv.Id
        WHERE sr.OrganizationId = ?
        ORDER BY sr.IsActive DESC, sr.Id ASC`,
       [organizationId]
@@ -183,14 +186,51 @@ router.get('/ticket/:ticketId/status', authenticateToken, async (req: AuthReques
  */
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { organizationId, name, priorityId, firstResponseHours, resolutionHours, isActive = true } = req.body;
+    const {
+      organizationId,
+      name,
+      priorityId,
+      firstResponseHours,
+      resolutionHours,
+      autoTransitionHours,
+      autoTransitionStatusId,
+      isActive = true,
+    } = req.body;
+
     if (!organizationId || !name) {
       return res.status(400).json({ success: false, message: 'organizationId and name are required' });
     }
+
+    const autoHours = autoTransitionHours != null ? Number(autoTransitionHours) : null;
+    const autoStatusId = autoTransitionStatusId != null ? Number(autoTransitionStatusId) : null;
+
+    if ((autoHours == null) !== (autoStatusId == null)) {
+      return res.status(400).json({
+        success: false,
+        message: 'autoTransitionHours and autoTransitionStatusId must be provided together',
+      });
+    }
+
+    if (autoHours != null && (!Number.isFinite(autoHours) || autoHours <= 0)) {
+      return res.status(400).json({
+        success: false,
+        message: 'autoTransitionHours must be greater than 0',
+      });
+    }
+
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO SLARules (OrganizationId, Name, PriorityId, FirstResponseHours, ResolutionHours, IsActive)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [organizationId, name, priorityId || null, firstResponseHours || null, resolutionHours || null, isActive ? 1 : 0]
+      `INSERT INTO SLARules (OrganizationId, Name, PriorityId, FirstResponseHours, ResolutionHours, AutoTransitionHours, AutoTransitionStatusId, IsActive)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        organizationId,
+        name,
+        priorityId || null,
+        firstResponseHours || null,
+        resolutionHours || null,
+        autoHours,
+        autoStatusId,
+        isActive ? 1 : 0,
+      ]
     );
     res.status(201).json({ success: true, id: result.insertId });
   } catch (error) {
@@ -219,11 +259,46 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, priorityId, firstResponseHours, resolutionHours, isActive } = req.body;
+    const {
+      name,
+      priorityId,
+      firstResponseHours,
+      resolutionHours,
+      autoTransitionHours,
+      autoTransitionStatusId,
+      isActive,
+    } = req.body;
+
+    const autoHours = autoTransitionHours != null ? Number(autoTransitionHours) : null;
+    const autoStatusId = autoTransitionStatusId != null ? Number(autoTransitionStatusId) : null;
+
+    if ((autoHours == null) !== (autoStatusId == null)) {
+      return res.status(400).json({
+        success: false,
+        message: 'autoTransitionHours and autoTransitionStatusId must be provided together',
+      });
+    }
+
+    if (autoHours != null && (!Number.isFinite(autoHours) || autoHours <= 0)) {
+      return res.status(400).json({
+        success: false,
+        message: 'autoTransitionHours must be greater than 0',
+      });
+    }
+
     await pool.execute(
-      `UPDATE SLARules SET Name = ?, PriorityId = ?, FirstResponseHours = ?, ResolutionHours = ?, IsActive = ?
+      `UPDATE SLARules SET Name = ?, PriorityId = ?, FirstResponseHours = ?, ResolutionHours = ?, AutoTransitionHours = ?, AutoTransitionStatusId = ?, IsActive = ?
        WHERE Id = ?`,
-      [name, priorityId || null, firstResponseHours || null, resolutionHours || null, isActive ? 1 : 0, id]
+      [
+        name,
+        priorityId || null,
+        firstResponseHours || null,
+        resolutionHours || null,
+        autoHours,
+        autoStatusId,
+        isActive ? 1 : 0,
+        id,
+      ]
     );
     res.json({ success: true });
   } catch (error) {

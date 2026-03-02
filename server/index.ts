@@ -66,6 +66,7 @@ import pdfExportsRoutes from './routes/pdfExports';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
 import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler';
 import { startPdfReportScheduler } from './utils/pdfReportScheduler';
+import { startSlaAutoTransitionScheduler } from './utils/slaAutoTransitionScheduler';
 import { initSocketHub } from './utils/socketHub';
 
 dotenv.config();
@@ -290,6 +291,9 @@ app.prepare().then(async () => {
 
     // Start the PDF report scheduler
     startPdfReportScheduler();
+
+    // Start SLA auto-transition scheduler
+    startSlaAutoTransitionScheduler();
   });
 }).catch((error) => {
   logger.error('Failed to start server', { error });

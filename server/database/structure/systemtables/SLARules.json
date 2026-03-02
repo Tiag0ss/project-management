@@ -39,6 +39,18 @@
       "Comment": "Maximum hours allowed until ticket resolution"
     },
     {
+      "FieldName": "AutoTransitionHours",
+      "DataType": "decimal(6,2)",
+      "NotNullable": false,
+      "Comment": "If set, automatically changes ticket status after this many hours from creation"
+    },
+    {
+      "FieldName": "AutoTransitionStatusId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to TicketStatusValues.Id to apply when auto-transition threshold is reached"
+    },
+    {
       "FieldName": "IsActive",
       "DataType": "tinyint(1)",
       "NotNullable": true,

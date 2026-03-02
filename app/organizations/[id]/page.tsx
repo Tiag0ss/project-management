@@ -4175,6 +4175,10 @@ interface SlaRule {
   PriorityColor: string | null;
   FirstResponseHours: number | null;
   ResolutionHours: number | null;
+  AutoTransitionHours: number | null;
+  AutoTransitionStatusId: number | null;
+  AutoTransitionStatusName?: string | null;
+  AutoTransitionStatusColor?: string | null;
   IsActive: number;
 }
 
@@ -4182,6 +4186,12 @@ interface TicketPriority {
   Id: number;
   PriorityName: string;
   Color: string;
+}
+
+interface TicketStatus {
+  Id: number;
+  StatusName: string;
+  Color?: string;
 }
 
 function SlaTab({
@@ -4198,6 +4208,7 @@ function SlaTab({
   const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
   const [rules, setRules] = useState<SlaRule[]>([]);
   const [priorities, setPriorities] = useState<TicketPriority[]>([]);
+  const [statuses, setStatuses] = useState<TicketStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -4208,6 +4219,8 @@ function SlaTab({
     priorityId: '',
     firstResponseHours: '',
     resolutionHours: '',
+    autoTransitionHours: '',
+    autoTransitionStatusId: '',
     isActive: true,
   });
 
@@ -4219,11 +4232,14 @@ function SlaTab({
     setIsLoading(true);
     setError('');
     try {
-      const [rulesRes, priRes] = await Promise.all([
+      const [rulesRes, priRes, statusRes] = await Promise.all([
         fetch(`${API_URL}/api/sla-rules/organization/${orgId}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         fetch(`${API_URL}/api/status-values/ticket-priority/${orgId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${API_URL}/api/status-values/ticket/${orgId}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);
@@ -4231,6 +4247,10 @@ function SlaTab({
       if (priRes.ok) {
         const d = await priRes.json();
         setPriorities(d.priorities || d.ticketPriorities || []);
+      }
+      if (statusRes.ok) {
+        const d = await statusRes.json();
+        setStatuses(d.statuses || []);
       }
     } catch {
       setError('Failed to load SLA configuration');
@@ -4241,7 +4261,15 @@ function SlaTab({
 
   const openCreate = () => {
     setEditingRule(null);
-    setForm({ name: '', priorityId: '', firstResponseHours: '', resolutionHours: '', isActive: true });
+    setForm({
+      name: '',
+      priorityId: '',
+      firstResponseHours: '',
+      resolutionHours: '',
+      autoTransitionHours: '',
+      autoTransitionStatusId: '',
+      isActive: true,
+    });
     setShowModal(true);
   };
 
@@ -4252,6 +4280,8 @@ function SlaTab({
       priorityId: rule.PriorityId != null ? String(rule.PriorityId) : '',
       firstResponseHours: rule.FirstResponseHours != null ? String(rule.FirstResponseHours) : '',
       resolutionHours: rule.ResolutionHours != null ? String(rule.ResolutionHours) : '',
+      autoTransitionHours: rule.AutoTransitionHours != null ? String(rule.AutoTransitionHours) : '',
+      autoTransitionStatusId: rule.AutoTransitionStatusId != null ? String(rule.AutoTransitionStatusId) : '',
       isActive: rule.IsActive === 1,
     });
     setShowModal(true);
@@ -4267,6 +4297,8 @@ function SlaTab({
         priorityId: form.priorityId ? parseInt(form.priorityId) : null,
         firstResponseHours: form.firstResponseHours ? parseFloat(form.firstResponseHours) : null,
         resolutionHours: form.resolutionHours ? parseFloat(form.resolutionHours) : null,
+        autoTransitionHours: form.autoTransitionHours ? parseFloat(form.autoTransitionHours) : null,
+        autoTransitionStatusId: form.autoTransitionStatusId ? parseInt(form.autoTransitionStatusId) : null,
         isActive: form.isActive,
       };
       const url = editingRule ? `${API_URL}/api/sla-rules/${editingRule.Id}` : `${API_URL}/api/sla-rules`;
@@ -4313,6 +4345,8 @@ function SlaTab({
         priorityId: rule.PriorityId,
         firstResponseHours: rule.FirstResponseHours,
         resolutionHours: rule.ResolutionHours,
+        autoTransitionHours: rule.AutoTransitionHours,
+        autoTransitionStatusId: rule.AutoTransitionStatusId,
         isActive: !rule.IsActive,
       }),
     });
@@ -4380,6 +4414,7 @@ function SlaTab({
                 <th className="text-left py-3 pr-4 text-gray-600 dark:text-gray-400 font-medium">Applies to Priority</th>
                 <th className="text-left py-3 pr-4 text-gray-600 dark:text-gray-400 font-medium">First Response</th>
                 <th className="text-left py-3 pr-4 text-gray-600 dark:text-gray-400 font-medium">Resolution</th>
+                <th className="text-left py-3 pr-4 text-gray-600 dark:text-gray-400 font-medium">Auto Status Change</th>
                 <th className="text-left py-3 pr-4 text-gray-600 dark:text-gray-400 font-medium">Status</th>
                 {canManage && <th className="text-right py-3 text-gray-600 dark:text-gray-400 font-medium">Actions</th>}
               </tr>
@@ -4408,6 +4443,24 @@ function SlaTab({
                   </td>
                   <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">
                     {formatHours(rule.ResolutionHours)}
+                  </td>
+                  <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">
+                    {rule.AutoTransitionHours != null && rule.AutoTransitionStatusId != null ? (
+                      <span>
+                        {formatHours(rule.AutoTransitionHours)} →{' '}
+                        <span
+                          className="inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium"
+                          style={{
+                            backgroundColor: rule.AutoTransitionStatusColor ? `${rule.AutoTransitionStatusColor}22` : undefined,
+                            color: rule.AutoTransitionStatusColor || undefined,
+                          }}
+                        >
+                          {rule.AutoTransitionStatusName || `Status ${rule.AutoTransitionStatusId}`}
+                        </span>
+                      </span>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   <td className="py-3 pr-4">
                     {canManage ? (
@@ -4536,6 +4589,39 @@ function SlaTab({
                     placeholder="e.g. 24"
                   />
                   <p className="text-xs text-gray-400 mt-1">Max hours until ticket is resolved</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Auto Status Change After (hours)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={form.autoTransitionHours}
+                    onChange={e => setForm({ ...form, autoTransitionHours: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                    placeholder="e.g. 8"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Optional. Leave empty to disable auto transition.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Change Status To
+                  </label>
+                  <select
+                    value={form.autoTransitionStatusId}
+                    onChange={e => setForm({ ...form, autoTransitionStatusId: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                  >
+                    <option value="">Disabled</option>
+                    {statuses.map(s => (
+                      <option key={s.Id} value={s.Id}>{s.StatusName}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">Pick a target status used when the time limit is reached.</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
