@@ -3795,11 +3795,11 @@ export default function PlanningPage() {
                     })}
                   </svg>
                 )}
-                {/* Month header for long-range views */}
-                {(viewMode === 'month' || viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) && (
+                {/* Month header */}
+                {timelineColumns.length > 0 && (
                   <div className="flex border-b-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800">
                     <div className="w-48 flex-shrink-0 p-2 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
-                      {viewMode === 'month' ? 'Month' : 'Year'}
+                      Month
                     </div>
                     <div className="flex-1 flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
                       {(() => {
@@ -3826,8 +3826,12 @@ export default function PlanningPage() {
                         return monthGroups.map((group, idx) => (
                           <div
                             key={idx}
-                            className="border-r border-gray-300 dark:border-gray-600 p-2 text-center font-semibold text-gray-900 dark:text-white text-sm"
-                            style={{ width: `${group.count * dayColumnWidthPx}px` }}
+                            className="border-r border-gray-300 dark:border-gray-600 p-2 text-center font-semibold text-gray-900 dark:text-white text-sm truncate"
+                            style={
+                              useFixedPixelColumns
+                                ? { width: `${group.count * dayColumnWidthPx}px` }
+                                : { width: `${(group.count / Math.max(1, timelineColumns.length)) * 100}%` }
+                            }
                           >
                             {group.month} {group.year}
                           </div>
