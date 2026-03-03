@@ -1109,6 +1109,7 @@ export default function Navbar() {
   const canShowTimesheetLink = !isCustomerUser;
   const canShowCallRecordsLink = !isCustomerUser;
   const canShowReportsLink = !isCustomerUser && (permissionsLoading || permissions?.canViewReports || permissions?.canManageOrganizations || !!user?.isAdmin);
+  const canShowDocsLink = true;
 
   const showOverviewSection = canShowDashboardLink;
   const showDeliverySection = canShowProjectsLink || canShowPlanningLink || canShowTimesheetLink;
@@ -1305,6 +1306,15 @@ export default function Navbar() {
             </nav>
 
             <div className="p-2 border-t border-gray-200 dark:border-gray-700">
+              {canShowDocsLink && shouldUseLeftSidebar && (
+                <a
+                  href="/docs"
+                  className={`${sidebarItemClass} mb-2`}
+                  onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}
+                >
+                  <span className="w-5 text-center">📘</span>{!isSidebarEffectivelyCollapsed && <span>User Manual</span>}
+                </a>
+              )}
               {!isSidebarEffectivelyCollapsed && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 px-1">Mode: {navbarLeftMode === 'floating' ? 'Floating' : 'Fixed'}</p>
               )}
@@ -1942,6 +1952,15 @@ export default function Navbar() {
                     >
                       👤 My Profile
                     </a>
+                    {!shouldUseLeftSidebar && (
+                      <a
+                        href="/docs"
+                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        onClick={() => setDropdownOpen(false)}
+                      >
+                        📘 User Manual
+                      </a>
+                    )}
                     {!isCustomerUser && !shouldUseLeftSidebar && (
                     <>
                     <a
