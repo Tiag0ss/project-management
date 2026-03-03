@@ -893,7 +893,7 @@ export default function PlanningPage() {
         subheader = `${date.getDate()}/${date.getMonth() + 1}`;
       } else if (viewMode === 'month') {
         header = `${date.getDate()}`;
-        subheader = date.toLocaleDateString('en-US', { month: 'short' });
+        subheader = `${date.getMonth() + 1}`;
       } else if (viewMode === 'year') {
         header = `${date.getDate()}`;
         subheader = `${date.getMonth() + 1}`;
@@ -949,7 +949,16 @@ export default function PlanningPage() {
     return Math.max(1, getDaysInView().length);
   };
 
-  const getTaskPosition = (task: Task, columns: TimelineColumn[]) => {
+  const getTaskPosition = (
+    task: Task,
+    columns: TimelineColumn[],
+    options?: {
+      minVisibleDuration?: number;
+      preferRangeStartForUnplanned?: boolean;
+      useFixedPixelColumns?: boolean;
+      columnWidthPx?: number;
+    }
+  ) => {
     if (columns.length === 0) return null;
 
     const today = new Date();
@@ -961,21 +970,17 @@ export default function PlanningPage() {
     if (task.PlannedStartDate && task.PlannedEndDate) {
       // Parse planned dates - handle both 'YYYY-MM-DD' and ISO timestamp formats
       const parseDate = (dateStr: string) => {
-        // If it's already an ISO timestamp, just create Date
-        if (dateStr.includes('T')) {
-          return new Date(dateStr);
-        }
-        // Otherwise add T12:00:00 to avoid timezone issues
-        return new Date(dateStr + 'T12:00:00');
+        const dateOnly = String(dateStr).split('T')[0];
+        return new Date(dateOnly + 'T12:00:00');
       };
       
       startDate = parseDate(task.PlannedStartDate);
       endDate = parseDate(task.PlannedEndDate);
     } else {
-      // Use today as start date
-      startDate = new Date(today);
+      // Use range start for unplanned tasks when requested (keeps Not Planned readable in any view window)
+      startDate = options?.preferRangeStartForUnplanned ? new Date(columns[0].start) : new Date(today);
       const estimatedDays = Math.max(1, Math.ceil((task.EstimatedHours || 8) / 8));
-      endDate = new Date(today);
+      endDate = new Date(startDate);
       endDate.setDate(endDate.getDate() + estimatedDays - 1);
     }
 
@@ -1013,12 +1018,22 @@ export default function PlanningPage() {
     }
 
     const visibleDuration = Math.max(1, endIndex - startIndex + 1);
+    const minVisibleDuration = Math.max(1, options?.minVisibleDuration || 1);
+    const maxDurationAtPosition = Math.max(1, columns.length - startIndex);
+    const adjustedDuration = Math.min(maxDurationAtPosition, Math.max(visibleDuration, minVisibleDuration));
+
+    const useFixedPixelColumns = !!options?.useFixedPixelColumns;
+    const columnWidthPx = Math.max(1, options?.columnWidthPx || 1);
 
     return {
-      left: `${(startIndex / columns.length) * 100}%`,
-      width: `${(visibleDuration / columns.length) * 100}%`,
+      left: useFixedPixelColumns
+        ? `${startIndex * columnWidthPx}px`
+        : `${(startIndex / columns.length) * 100}%`,
+      width: useFixedPixelColumns
+        ? `${adjustedDuration * columnWidthPx}px`
+        : `${(adjustedDuration / columns.length) * 100}%`,
       startIndex,
-      duration: visibleDuration
+      duration: adjustedDuration
     };
   };
 
@@ -3359,6 +3374,8 @@ export default function PlanningPage() {
   const days = getDaysInView();
   const timelineColumns = getTimelineColumns(days);
   const customIntervalType = viewMode === 'custom' ? getCustomIntervalType(days.length) : null;
+  const useAnnualStyleDensity = viewMode === 'month' || viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month');
+  const useFixedPixelColumns = viewMode === 'month' || viewMode === 'year' || viewMode === 'custom';
   const dayColumnWidthPx =
     viewMode === 'custom'
       ? customIntervalType === 'month'
@@ -3369,16 +3386,11 @@ export default function PlanningPage() {
       : viewMode === 'day' || viewMode === 'week'
       ? 32
       : 20;
+  const fixedTimelineTotalWidthPx = 192 + timelineColumns.length * dayColumnWidthPx;
   const timelineDaysWidthPx = timelineColumns.length * dayColumnWidthPx;
   const timelineMinWidth =
-    viewMode === 'year'
-      ? Math.max(5400, 192 + timelineDaysWidthPx)
-      : viewMode === 'month'
-      ? Math.max(2600, 192 + timelineDaysWidthPx)
-      : viewMode === 'custom'
-      ? customIntervalType === 'month'
-        ? Math.max(5400, 192 + timelineDaysWidthPx)
-        : 192 + timelineDaysWidthPx
+    useFixedPixelColumns
+      ? fixedTimelineTotalWidthPx
       : viewMode === 'week'
       ? Math.max(1600, 192 + timelineDaysWidthPx)
       : 1200;
@@ -3733,7 +3745,15 @@ export default function PlanningPage() {
 
             {/* Gantt Chart */}
             <div className="overflow-x-auto">
-              <div className="relative" ref={ganttContainerRef} style={{ minWidth: `${timelineMinWidth}px` }}>
+              <div
+                className="relative"
+                ref={ganttContainerRef}
+                style={
+                  useFixedPixelColumns
+                    ? { width: `${timelineMinWidth}px`, minWidth: `${timelineMinWidth}px` }
+                    : { minWidth: `${timelineMinWidth}px` }
+                }
+              >
                 {/* SVG overlay for dependency lines */}
                 {showDependencyLines && dependencyLines.length > 0 && (
                   <svg 
@@ -3775,13 +3795,13 @@ export default function PlanningPage() {
                     })}
                   </svg>
                 )}
-                {/* Month header for Year View */}
-                {(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) && (
+                {/* Month header for long-range views */}
+                {(viewMode === 'month' || viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) && (
                   <div className="flex border-b-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800">
                     <div className="w-48 flex-shrink-0 p-2 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
-                      Year
+                      {viewMode === 'month' ? 'Month' : 'Year'}
                     </div>
-                    <div className="flex-1 flex" style={{ minWidth: `${timelineDaysWidthPx}px` }}>
+                    <div className="flex-1 flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
                       {(() => {
                         const monthGroups: { month: string; year: string; count: number }[] = [];
                         let currentMonth = -1;
@@ -3821,17 +3841,17 @@ export default function PlanningPage() {
                   <div className="w-48 flex-shrink-0 p-3 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
                     User
                   </div>
-                  <div className="flex-1 flex" style={{ minWidth: `${timelineDaysWidthPx}px` }}>
+                  <div className="flex-1 flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
                     {timelineColumns.map((column, idx) => {
                       return (
                         <div
                           key={idx}
-                          className={`flex-shrink-0 p-1 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
+                          className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} p-1 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
                             column.isWeekend
                               ? 'bg-gray-100 dark:bg-gray-600'
                               : ''
-                          } ${(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) && column.isMonthStart ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                          style={{ overflow: 'hidden', width: `${dayColumnWidthPx}px` }}
+                          } ${useAnnualStyleDensity && column.isMonthStart ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                          style={useFixedPixelColumns ? { overflow: 'hidden', width: `${dayColumnWidthPx}px` } : { overflow: 'hidden' }}
                         >
                           {idx === todayIndex && (
                             <div className="text-[9px] font-semibold text-blue-700 dark:text-blue-300 leading-tight mb-0.5 truncate">
@@ -3840,11 +3860,11 @@ export default function PlanningPage() {
                           )}
                           {column.header && (
                             <>
-                              <div className="font-semibold text-gray-900 dark:text-white leading-tight truncate" style={{ fontSize: (viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '9px' : undefined }}>
+                              <div className="font-semibold text-gray-900 dark:text-white leading-tight truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>
                                 {column.header}
                               </div>
                               {column.subheader && (
-                                <div className="text-gray-600 dark:text-gray-400 leading-tight truncate" style={{ fontSize: (viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '9px' : undefined }}>
+                                <div className="text-gray-600 dark:text-gray-400 leading-tight truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>
                                   {column.subheader}
                                 </div>
                               )}
@@ -3871,24 +3891,30 @@ export default function PlanningPage() {
                         Click to plan subtasks
                       </div>
                     </div>
-                    <div className="flex-1 relative" style={{ minHeight: `${Math.max(40, visibleUnassignedTasks.length * 24 + 8)}px`, minWidth: `${timelineDaysWidthPx}px` }}>
-                      <div className="flex h-full" style={{ minWidth: `${timelineDaysWidthPx}px` }}>
+                    <div className="flex-1 relative" style={useFixedPixelColumns ? { minHeight: `${Math.max(40, visibleUnassignedTasks.length * 24 + 8)}px`, minWidth: `${timelineDaysWidthPx}px` } : { minHeight: `${Math.max(40, visibleUnassignedTasks.length * 24 + 8)}px` }}>
+                      <div className="flex h-full" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
                         {timelineColumns.map((column, idx) => (
                           <div
                             key={idx}
-                            className={`flex-shrink-0 border-r border-gray-200 dark:border-gray-700 relative ${
+                            className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} border-r border-gray-200 dark:border-gray-700 relative ${
                               idx === todayIndex ? 'bg-blue-100/85 dark:bg-blue-800/30 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''
                             }`}
-                            style={{ width: `${dayColumnWidthPx}px` }}
+                            style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
                             onDragOver={handleDragOver}
                             onDrop={(e) => handleDropOnDay(e, column.start, null)}
                           />
                         ))}
                       </div>
                       {visibleUnassignedTasks.map((parentTask, taskIdx) => {
-                        const position = getTaskPosition(parentTask, timelineColumns);
+                        const position = getTaskPosition(parentTask, timelineColumns, {
+                          minVisibleDuration: 5,
+                          preferRangeStartForUnplanned: true,
+                          useFixedPixelColumns,
+                          columnWidthPx: dayColumnWidthPx,
+                        });
                         const row = taskIdx;
                         const taskIsHobbyProject = isTaskHobby(parentTask);
+                        const hasEstimatedHours = Number(parentTask.EstimatedHours || 0) > 0;
                         const hasDependency = !!parentTask.DependsOnTaskId;
                         const project = projects.find(p => p.Id === parentTask.ProjectId);
                         const hasSubtasks = tasks.some(t => t.ParentTaskId === parentTask.Id);
@@ -3905,6 +3931,10 @@ export default function PlanningPage() {
                           `Estimated: ${Number(parentTask.EstimatedHours || 0).toFixed(1)}h`,
                           `Planned Dates: ${parentTask.PlannedStartDate || 'Not planned'} → ${parentTask.PlannedEndDate || 'Not planned'}`,
                         ];
+
+                        if (!hasEstimatedHours) {
+                          parentTooltipLines.unshift('⚠️ No estimated hours defined');
+                        }
 
                         if (hasSubtasks) {
                           parentTooltipLines.push(`Subtasks: ${subtaskCount} (click to manage subtasks)`);
@@ -3935,8 +3965,8 @@ export default function PlanningPage() {
                             onClick={() => hasSubtasks ? openSubtasksModal(parentTask) : handleTaskClick(parentTask)}
                             className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(parentTask) : ''} opacity-75 hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white text-xs px-2 transition-all`}
                             style={{
-                              left: position ? position.left : '8px',
-                              width: position ? position.width : 'calc(100% - 16px)',
+                              left: position ? position.left : '0%',
+                              width: position ? position.width : `${(Math.min(5, Math.max(1, timelineColumns.length)) / Math.max(1, timelineColumns.length)) * 100}%`,
                               top: `${4 + row * 24}px`,
                               ...(statusColor ? { backgroundColor: statusColor } : {}),
                               borderLeft: `4px solid ${priorityBorderHex}`,
@@ -3947,6 +3977,7 @@ export default function PlanningPage() {
                               <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0">HOBBY</span>
                             )}
                             <span className="truncate flex-1">
+                              {!hasEstimatedHours && <span className="mr-1">⚠️</span>}
                               {hasSubtasks && <span className="mr-1">📁</span>}
                               {hasDependency ? '🔗 ' : ''}
                               {parentTask.TaskName}
@@ -4086,7 +4117,10 @@ export default function PlanningPage() {
                   });
                   
                   parentTasks.forEach((task, taskIdx) => {
-                    const position = getTaskPosition(task, timelineColumns);
+                    const position = getTaskPosition(task, timelineColumns, {
+                      useFixedPixelColumns,
+                      columnWidthPx: dayColumnWidthPx,
+                    });
                     if (!position) {
                       console.log(`Parent task ${task.TaskName} has no position - skipping`);
                       return;
@@ -4104,7 +4138,10 @@ export default function PlanningPage() {
                     // Check previous tasks to find overlaps
                     for (let i = 0; i < taskIdx; i++) {
                       const otherTask = parentTasks[i];
-                      const otherPosition = getTaskPosition(otherTask, timelineColumns);
+                      const otherPosition = getTaskPosition(otherTask, timelineColumns, {
+                        useFixedPixelColumns,
+                        columnWidthPx: dayColumnWidthPx,
+                      });
                       if (!otherPosition) continue;
                       
                       const taskStart = task.PlannedStartDate || '';
@@ -4189,8 +4226,8 @@ export default function PlanningPage() {
                           {allUserTasks.length} task{allUserTasks.length !== 1 ? 's' : ''}
                         </div>
                       </div>
-                      <div className="flex-1 relative" style={{ minHeight: `${rowHeight}px`, minWidth: `${timelineDaysWidthPx}px` }}>
-                        <div className="flex h-full" style={{ minWidth: `${timelineDaysWidthPx}px` }}>
+                      <div className="flex-1 relative" style={useFixedPixelColumns ? { minHeight: `${rowHeight}px`, minWidth: `${timelineDaysWidthPx}px` } : { minHeight: `${rowHeight}px` }}>
+                        <div className="flex h-full" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
                           {timelineColumns.map((column, idx) => {
                             const summary = timelineColumnSummaries[idx];
                             const isOverAllocated = summary.isOverAllocated;
@@ -4199,14 +4236,14 @@ export default function PlanningPage() {
                             return (
                               <div
                                 key={idx}
-                                className={`flex-shrink-0 border-r border-gray-200 dark:border-gray-700 relative ${
+                                className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} border-r border-gray-200 dark:border-gray-700 relative ${
                                   isOverAllocated
                                     ? 'bg-red-50 dark:bg-red-900/20'
                                     : isHoliday
                                     ? 'bg-amber-50 dark:bg-amber-900/20'
                                     : ''
                                 } ${idx === todayIndex ? 'bg-blue-100/60 dark:bg-blue-800/20 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
-                                style={{ width: `${dayColumnWidthPx}px` }}
+                                style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
                                 onDragOver={handleDragOver}
                                 onDrop={(e) => handleDropOnDay(e, column.start, userRow.Id)}
                                 title={isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
@@ -4230,10 +4267,16 @@ export default function PlanningPage() {
                                 PlannedEndDate: childDates.endDate
                               };
                               
-                              position = getTaskPosition(tempTask, timelineColumns);
+                              position = getTaskPosition(tempTask, timelineColumns, {
+                                useFixedPixelColumns,
+                                columnWidthPx: dayColumnWidthPx,
+                              });
                             } else if (task.PlannedStartDate && task.PlannedEndDate) {
                               // No child allocations but has own dates - use them
-                              position = getTaskPosition(task, timelineColumns);
+                              position = getTaskPosition(task, timelineColumns, {
+                                useFixedPixelColumns,
+                                columnWidthPx: dayColumnWidthPx,
+                              });
                             } else {
                               // No allocations and no dates - skip
                               return null;
@@ -4243,7 +4286,10 @@ export default function PlanningPage() {
                             subtaskLeft = position.left;
                             subtaskWidth = position.width;
                           } else {
-                            position = getTaskPosition(task, timelineColumns);
+                            position = getTaskPosition(task, timelineColumns, {
+                              useFixedPixelColumns,
+                              columnWidthPx: dayColumnWidthPx,
+                            });
                             if (!position) return null;
                             subtaskLeft = position.left;
                             subtaskWidth = position.width;
@@ -4314,7 +4360,14 @@ export default function PlanningPage() {
                           
                           // Compute baseline bar position if applicable
                           const baselinePosition = showBaseline && task.BaselineStartDate && task.BaselineEndDate
-                            ? getTaskPosition({ ...task, PlannedStartDate: task.BaselineStartDate, PlannedEndDate: task.BaselineEndDate }, timelineColumns)
+                            ? getTaskPosition(
+                                { ...task, PlannedStartDate: task.BaselineStartDate, PlannedEndDate: task.BaselineEndDate },
+                                timelineColumns,
+                                {
+                                  useFixedPixelColumns,
+                                  columnWidthPx: dayColumnWidthPx,
+                                }
+                              )
                             : null;
                           const driftDays = (baselinePosition && subtaskLeft && subtaskWidth)
                             ? (() => {
@@ -4389,8 +4442,12 @@ export default function PlanningPage() {
                             
                             if (dayIndex === -1) return null;
                             
-                            const left = `${dayIndex * dayColumnWidthPx}px`;
-                            const width = `${dayColumnWidthPx}px`;
+                            const left = useFixedPixelColumns
+                              ? `${dayIndex * dayColumnWidthPx}px`
+                              : `${(dayIndex / timelineColumns.length) * 100}%`;
+                            const width = useFixedPixelColumns
+                              ? `${dayColumnWidthPx}px`
+                              : `${100 / timelineColumns.length}%`;
                             
                             return (
                               <div
@@ -4418,10 +4475,10 @@ export default function PlanningPage() {
                     <div className="flex border-b border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-750">
                       <div className="w-48 flex-shrink-0 px-3 py-0.5 border-r border-gray-200 dark:border-gray-700">
                         <div className="text-[10px] text-gray-500 dark:text-gray-400 italic">
-                          {(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '└ Totals (monthly)' : '└ Totals'}
+                          {useAnnualStyleDensity ? '└ Totals (monthly)' : '└ Totals'}
                         </div>
                       </div>
-                      <div className="flex-1 flex" style={{ minWidth: `${timelineDaysWidthPx}px` }}>
+                      <div className="flex-1 flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
                         {timelineColumns.map((column, idx) => {
                           const summary = timelineColumnSummaries[idx];
                           const totals = summary.totals;
@@ -4439,7 +4496,7 @@ export default function PlanningPage() {
                           return (
                             <div
                               key={idx}
-                              className={`flex-shrink-0 py-0.5 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
+                              className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} py-0.5 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
                                 isOverAllocated
                                   ? 'bg-red-100/70 dark:bg-red-900/35'
                                   : isHoliday
@@ -4449,7 +4506,7 @@ export default function PlanningPage() {
                                   : ''
                               } ${idx === todayIndex ? 'bg-blue-100/70 dark:bg-blue-800/25 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
                               title={isOverAllocated ? 'Over allocated day: planned hours exceed configured capacity' : isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
-                              style={{ overflow: 'hidden', width: `${dayColumnWidthPx}px` }}
+                              style={useFixedPixelColumns ? { overflow: 'hidden', width: `${dayColumnWidthPx}px` } : { overflow: 'hidden' }}
                             >
                               {vacationLabels.length > 0 && (
                                 <div className="text-cyan-700 dark:text-cyan-300 font-medium truncate">🏖️</div>
@@ -4458,38 +4515,38 @@ export default function PlanningPage() {
                                 <div className="text-amber-700 dark:text-amber-300 font-medium truncate">🎉</div>
                               )}
                               {hasRecurring && (
-                                <div className="text-pink-600 dark:text-pink-400 font-medium truncate" style={{ fontSize: (viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '9px' : undefined }}>
-                                  {(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? `🔄${totals.recurring.toFixed(0)}` : `🔄 ${totals.recurring.toFixed(1)}h`}
+                                <div className="text-pink-600 dark:text-pink-400 font-medium truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>
+                                  {useAnnualStyleDensity ? `🔄${totals.recurring.toFixed(0)}` : `🔄 ${totals.recurring.toFixed(1)}h`}
                                 </div>
                               )}
                               {hasWork && (
-                                <div className="text-blue-600 dark:text-blue-400 font-medium truncate" style={{ fontSize: (viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '9px' : undefined }}>
-                                  {(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month'))
+                                <div className="text-blue-600 dark:text-blue-400 font-medium truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>
+                                  {useAnnualStyleDensity
                                     ? `${totals.work.toFixed(0)}/${workCapacity.toFixed(0)}`
                                     : `${totals.work.toFixed(1)}h`}
-                                  {!(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) && workCapacity > 0 && (
+                                  {!useAnnualStyleDensity && workCapacity > 0 && (
                                     <span className="text-gray-400 dark:text-gray-500"> /{workCapacity}h</span>
                                   )}
                                 </div>
                               )}
                               {!hasWork && workCapacity > 0 && (
-                                <div className="text-gray-400 dark:text-gray-500 truncate" style={{ fontSize: (viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '9px' : undefined }}>
-                                  {(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? `0/${workCapacity.toFixed(0)}` : `0/${workCapacity}h`}
+                                <div className="text-gray-400 dark:text-gray-500 truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>
+                                  {useAnnualStyleDensity ? `0/${workCapacity.toFixed(0)}` : `0/${workCapacity}h`}
                                 </div>
                               )}
                               {hasHobby && (
-                                <div className="text-purple-600 dark:text-purple-400 font-medium truncate" style={{ fontSize: (viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '9px' : undefined }}>
-                                  {(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month'))
+                                <div className="text-purple-600 dark:text-purple-400 font-medium truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>
+                                  {useAnnualStyleDensity
                                     ? `${totals.hobby.toFixed(0)}/${hobbyCapacity.toFixed(0)}`
                                     : `${totals.hobby.toFixed(1)}h`}
-                                  {!(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) && hobbyCapacity > 0 && (
+                                  {!useAnnualStyleDensity && hobbyCapacity > 0 && (
                                     <span className="text-gray-400 dark:text-gray-500"> /{hobbyCapacity}h</span>
                                   )}
                                 </div>
                               )}
                               {!hasHobby && hobbyCapacity > 0 && (
-                                <div className="text-gray-400 dark:text-gray-500 truncate" style={{ fontSize: (viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '9px' : undefined }}>
-                                  {(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? `0/${hobbyCapacity.toFixed(0)}` : `0/${hobbyCapacity}h`}
+                                <div className="text-gray-400 dark:text-gray-500 truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>
+                                  {useAnnualStyleDensity ? `0/${hobbyCapacity.toFixed(0)}` : `0/${hobbyCapacity}h`}
                                 </div>
                               )}
                               {!hasWork && !hasHobby && !hasRecurring && workCapacity === 0 && hobbyCapacity === 0 && (
