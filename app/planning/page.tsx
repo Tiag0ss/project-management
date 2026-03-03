@@ -18,6 +18,13 @@ import SearchableSelect from '@/components/SearchableSelect';
 // Week days constant - reused throughout the component
 const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+const formatDateForInput = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 interface PlannerHoliday {
   Id: number;
   Year: number;
@@ -34,6 +41,15 @@ interface PlannerVacationDay {
   VacationDate: string;
   Status: string;
   Notes?: string;
+}
+
+interface TimelineColumn {
+  start: Date;
+  end: Date;
+  header: string;
+  subheader: string;
+  isWeekend: boolean;
+  isMonthStart: boolean;
 }
 
 export default function PlanningPage() {
@@ -69,7 +85,13 @@ export default function PlanningPage() {
   const [showCriticalPath, setShowCriticalPath] = useState(false);
   const [showBaseline, setShowBaseline] = useState(false);
   const [ganttSearch, setGanttSearch] = useState('');
-  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'year'>('week');
+  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'year' | 'custom'>('week');
+  const [customStartDate, setCustomStartDate] = useState(() => formatDateForInput(viewStartDate));
+  const [customEndDate, setCustomEndDate] = useState(() => {
+    const endDate = new Date(viewStartDate);
+    endDate.setDate(endDate.getDate() + 27);
+    return formatDateForInput(endDate);
+  });
   const [activeTab, setActiveTab] = useState<'gantt' | 'allocations'>('gantt');
   const [maxVisibleLevel, setMaxVisibleLevel] = useState<number>(0);
   const [allocationFilters, setAllocationFilters] = useState({
@@ -523,12 +545,14 @@ export default function PlanningPage() {
     if (!token || users.length === 0) return;
     
     try {
-      // Calculate date range based on viewStartDate and viewMode
-      const daysToShow = viewMode === 'day' ? 1 : viewMode === 'week' ? 28 : viewMode === 'month' ? 90 : 365;
-      const startDate = getDateKeyFromDate(viewStartDate);
-      const rangeEnd = new Date(viewStartDate);
-      rangeEnd.setDate(rangeEnd.getDate() + daysToShow - 1);
-      const endDate = getDateKeyFromDate(rangeEnd);
+      const visibleDays = getDaysInView();
+      if (visibleDays.length === 0) {
+        setRecurringAllocations([]);
+        return;
+      }
+
+      const startDate = getDateKeyFromDate(visibleDays[0]);
+      const endDate = getDateKeyFromDate(visibleDays[visibleDays.length - 1]);
       
       // Fetch recurring allocation occurrences for all visible users
       const allRecurringOccurrences: any[] = [];
@@ -811,6 +835,7 @@ export default function PlanningPage() {
   const getDaysInView = () => {
     const days = [];
     let daysToShow = 30; // default for week view
+    let rangeStart = new Date(viewStartDate);
     
     if (viewMode === 'day') {
       daysToShow = 7; // Show 7 days for day view
@@ -818,14 +843,89 @@ export default function PlanningPage() {
       daysToShow = 90; // Show ~3 months for month view
     } else if (viewMode === 'year') {
       daysToShow = 365; // Show 1 year for year view
+    } else if (viewMode === 'custom') {
+      const parsedStart = new Date(`${customStartDate}T12:00:00`);
+      const parsedEnd = new Date(`${customEndDate}T12:00:00`);
+
+      if (!Number.isNaN(parsedStart.getTime()) && !Number.isNaN(parsedEnd.getTime())) {
+        if (parsedEnd < parsedStart) {
+          rangeStart = parsedStart;
+          daysToShow = 1;
+        } else {
+          const cursor = new Date(parsedStart);
+          cursor.setHours(12, 0, 0, 0);
+          const end = new Date(parsedEnd);
+          end.setHours(12, 0, 0, 0);
+
+          while (cursor <= end) {
+            days.push(new Date(cursor));
+            cursor.setDate(cursor.getDate() + 1);
+          }
+
+          return days;
+        }
+      }
     }
     
     for (let i = 0; i < daysToShow; i++) {
-      const date = new Date(viewStartDate);
+      const date = new Date(rangeStart);
       date.setDate(date.getDate() + i);
       days.push(date);
     }
     return days;
+  };
+
+  const getCustomIntervalType = (totalDays: number): 'day' | 'week' | 'month' => {
+    if (totalDays <= 35) return 'day';
+    if (totalDays <= 180) return 'week';
+    return 'month';
+  };
+
+  const getTimelineColumns = (days: Date[]): TimelineColumn[] => {
+    if (days.length === 0) return [];
+
+    const buildDayColumn = (date: Date): TimelineColumn => {
+      let header = '';
+      let subheader = '';
+
+      if (viewMode === 'day' || viewMode === 'week') {
+        header = date.toLocaleDateString('en-US', { weekday: 'short' });
+        subheader = `${date.getDate()}/${date.getMonth() + 1}`;
+      } else if (viewMode === 'month') {
+        header = `${date.getDate()}`;
+        subheader = date.toLocaleDateString('en-US', { month: 'short' });
+      } else if (viewMode === 'year') {
+        header = `${date.getDate()}`;
+        subheader = `${date.getMonth() + 1}`;
+      } else {
+        const customInterval = getCustomIntervalType(days.length);
+        if (customInterval === 'day') {
+          header = date.toLocaleDateString('en-US', { weekday: 'short' });
+          subheader = `${date.getDate()}/${date.getMonth() + 1}`;
+        } else if (customInterval === 'week') {
+          header = `${date.getDate()}`;
+          subheader = date.toLocaleDateString('en-US', { month: 'short' });
+        } else {
+          header = `${date.getDate()}`;
+          subheader = `${date.getMonth() + 1}`;
+        }
+      }
+
+      return {
+        start: new Date(date),
+        end: new Date(date),
+        header,
+        subheader,
+        isWeekend: date.getDay() === 0 || date.getDay() === 6,
+        isMonthStart: date.getDate() === 1,
+      };
+    };
+
+    if (viewMode !== 'custom') {
+      return days.map(buildDayColumn);
+    }
+
+    return days.map(buildDayColumn);
   };
 
   const goToToday = () => {
@@ -833,9 +933,25 @@ export default function PlanningPage() {
     today.setDate(today.getDate() - 2);
     today.setHours(0, 0, 0, 0);
     setViewStartDate(today);
+    if (viewMode === 'custom') {
+      const start = new Date(today);
+      const end = new Date(today);
+      end.setDate(end.getDate() + 27);
+      setCustomStartDate(formatDateForInput(start));
+      setCustomEndDate(formatDateForInput(end));
+    }
   };
 
-  const getTaskPosition = (task: Task, days: Date[]) => {
+  const getNavigationStepDays = () => {
+    if (viewMode === 'day' || viewMode === 'week') return 7;
+    if (viewMode === 'month') return 30;
+    if (viewMode === 'year') return 365;
+    return Math.max(1, getDaysInView().length);
+  };
+
+  const getTaskPosition = (task: Task, columns: TimelineColumn[]) => {
+    if (columns.length === 0) return null;
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -872,46 +988,35 @@ export default function PlanningPage() {
 
     const normalizedStart = normalizeDate(startDate);
     const normalizedEnd = normalizeDate(endDate);
-    const firstDay = normalizeDate(days[0]);
-    const lastDay = normalizeDate(days[days.length - 1]);
+    const firstDay = normalizeDate(columns[0].start);
+    const lastDay = normalizeDate(columns[columns.length - 1].end);
 
     // Check if task is within visible range
     if (normalizedEnd < firstDay || normalizedStart > lastDay) {
       return null;
     }
 
-    // Find start position (clamp to visible range)
-    let startIndex = 0;
-    for (let i = 0; i < days.length; i++) {
-      const dayNorm = normalizeDate(days[i]);
-      if (dayNorm.getTime() === normalizedStart.getTime()) {
-        startIndex = i;
-        break;
-      } else if (dayNorm.getTime() > normalizedStart.getTime()) {
-        // Task starts before this day - use this day or previous if available
-        startIndex = i;
-        break;
-      }
-    }
+    const overlapsColumn = (column: TimelineColumn) => {
+      const columnStart = normalizeDate(column.start);
+      const columnEnd = normalizeDate(column.end);
+      return normalizedStart <= columnEnd && normalizedEnd >= columnStart;
+    };
 
-    // Find end position
-    let endIndex = days.length - 1;
-    for (let i = 0; i < days.length; i++) {
-      const dayNorm = normalizeDate(days[i]);
-      if (dayNorm.getTime() === normalizedEnd.getTime()) {
+    const startIndex = columns.findIndex(overlapsColumn);
+    if (startIndex === -1) return null;
+
+    let endIndex = startIndex;
+    for (let i = startIndex; i < columns.length; i++) {
+      if (overlapsColumn(columns[i])) {
         endIndex = i;
-        break;
-      } else if (dayNorm.getTime() > normalizedEnd.getTime()) {
-        endIndex = Math.max(startIndex, i - 1);
-        break;
       }
     }
 
     const visibleDuration = Math.max(1, endIndex - startIndex + 1);
 
     return {
-      left: `${(startIndex / days.length) * 100}%`,
-      width: `${(visibleDuration / days.length) * 100}%`,
+      left: `${(startIndex / columns.length) * 100}%`,
+      width: `${(visibleDuration / columns.length) * 100}%`,
       startIndex,
       duration: visibleDuration
     };
@@ -1033,7 +1138,7 @@ export default function PlanningPage() {
     // Delay to ensure DOM is updated
     const timer = setTimeout(updateLines, 100);
     return () => clearTimeout(timer);
-  }, [tasks, viewStartDate, showDependencyLines, getDependencyLines]);
+  }, [tasks, viewStartDate, viewMode, customStartDate, customEndDate, showDependencyLines, getDependencyLines]);
 
   // Critical path computation using CPM (Critical Path Method)
   const criticalPathIds = React.useMemo((): Set<number> => {
@@ -1091,7 +1196,7 @@ export default function PlanningPage() {
     if (users.length > 0 && token) {
       loadRecurringAllocations();
     }
-  }, [viewStartDate, viewMode, users.length]);
+  }, [viewStartDate, viewMode, customStartDate, customEndDate, users.length]);
 
   useEffect(() => {
     if (users.length > 0 && token) {
@@ -1099,7 +1204,7 @@ export default function PlanningPage() {
     } else {
       setHolidayNamesByUserDate({});
     }
-  }, [viewStartDate, viewMode, users, token]);
+  }, [viewStartDate, viewMode, customStartDate, customEndDate, users, token]);
 
   const getTasksForUser = (userId: number | null) => {
     let result: Task[];
@@ -3252,12 +3357,40 @@ export default function PlanningPage() {
   }
 
   const days = getDaysInView();
+  const timelineColumns = getTimelineColumns(days);
+  const customIntervalType = viewMode === 'custom' ? getCustomIntervalType(days.length) : null;
+  const dayColumnWidthPx =
+    viewMode === 'custom'
+      ? customIntervalType === 'month'
+        ? 20
+        : customIntervalType === 'week'
+        ? 24
+        : 32
+      : viewMode === 'day' || viewMode === 'week'
+      ? 32
+      : 20;
+  const timelineDaysWidthPx = timelineColumns.length * dayColumnWidthPx;
+  const timelineMinWidth =
+    viewMode === 'year'
+      ? Math.max(5400, 192 + timelineDaysWidthPx)
+      : viewMode === 'month'
+      ? Math.max(2600, 192 + timelineDaysWidthPx)
+      : viewMode === 'custom'
+      ? customIntervalType === 'month'
+        ? Math.max(5400, 192 + timelineDaysWidthPx)
+        : 192 + timelineDaysWidthPx
+      : viewMode === 'week'
+      ? Math.max(1600, 192 + timelineDaysWidthPx)
+      : 1200;
+  const isGanttLoading = isLoadingData || loadingAllocations;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayIndex = days.findIndex((day) => {
-    return day.getFullYear() === today.getFullYear()
-      && day.getMonth() === today.getMonth()
-      && day.getDate() === today.getDate();
+  const todayIndex = timelineColumns.findIndex((column) => {
+    const columnStart = new Date(column.start);
+    const columnEnd = new Date(column.end);
+    columnStart.setHours(0, 0, 0, 0);
+    columnEnd.setHours(0, 0, 0, 0);
+    return today >= columnStart && today <= columnEnd;
   });
   const normalizedGanttSearch = ganttSearch.trim().toLowerCase();
   const isGanttSearchActive = normalizedGanttSearch.length > 0;
@@ -3292,7 +3425,19 @@ export default function PlanningPage() {
           </p>
         </div>
 
-        {tasks.length === 0 ? (
+        {isGanttLoading ? (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
+            <div className="flex items-center justify-center mb-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              Loading planning data...
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400">
+              Rendering timeline for {viewMode} view
+            </p>
+          </div>
+        ) : tasks.length === 0 ? (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
             <div className="text-6xl mb-4">📊</div>
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
@@ -3378,9 +3523,19 @@ export default function PlanningPage() {
                 <button
                   onClick={() => {
                     const newDate = new Date(viewStartDate);
-                    const daysToMove = viewMode === 'day' ? 7 : viewMode === 'week' ? 7 : viewMode === 'month' ? 30 : 365;
+                    const daysToMove = getNavigationStepDays();
                     newDate.setDate(newDate.getDate() - daysToMove);
                     setViewStartDate(newDate);
+                    if (viewMode === 'custom') {
+                      const newCustomStart = new Date(`${customStartDate}T12:00:00`);
+                      const newCustomEnd = new Date(`${customEndDate}T12:00:00`);
+                      if (!Number.isNaN(newCustomStart.getTime()) && !Number.isNaN(newCustomEnd.getTime())) {
+                        newCustomStart.setDate(newCustomStart.getDate() - daysToMove);
+                        newCustomEnd.setDate(newCustomEnd.getDate() - daysToMove);
+                        setCustomStartDate(formatDateForInput(newCustomStart));
+                        setCustomEndDate(formatDateForInput(newCustomEnd));
+                      }
+                    }
                   }}
                   className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded hover:bg-gray-300 dark:hover:bg-gray-600"
                 >
@@ -3396,9 +3551,19 @@ export default function PlanningPage() {
                 <button
                   onClick={() => {
                     const newDate = new Date(viewStartDate);
-                    const daysToMove = viewMode === 'day' ? 7 : viewMode === 'week' ? 7 : viewMode === 'month' ? 30 : 365;
+                    const daysToMove = getNavigationStepDays();
                     newDate.setDate(newDate.getDate() + daysToMove);
                     setViewStartDate(newDate);
+                    if (viewMode === 'custom') {
+                      const newCustomStart = new Date(`${customStartDate}T12:00:00`);
+                      const newCustomEnd = new Date(`${customEndDate}T12:00:00`);
+                      if (!Number.isNaN(newCustomStart.getTime()) && !Number.isNaN(newCustomEnd.getTime())) {
+                        newCustomStart.setDate(newCustomStart.getDate() + daysToMove);
+                        newCustomEnd.setDate(newCustomEnd.getDate() + daysToMove);
+                        setCustomStartDate(formatDateForInput(newCustomStart));
+                        setCustomEndDate(formatDateForInput(newCustomEnd));
+                      }
+                    }
                   }}
                   className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded hover:bg-gray-300 dark:hover:bg-gray-600"
                 >
@@ -3406,9 +3571,47 @@ export default function PlanningPage() {
                 </button>
               </div>
               
-              <span className="text-gray-900 dark:text-white font-medium">
-                {viewStartDate.toLocaleDateString()} - {days[days.length - 1].toLocaleDateString()}
-              </span>
+              {viewMode === 'custom' ? (
+                <div className="flex items-center gap-2 text-gray-900 dark:text-white font-medium">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">From:</label>
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setCustomStartDate(value);
+                      if (customEndDate < value) {
+                        setCustomEndDate(value);
+                      }
+                      const parsedStart = new Date(`${value}T12:00:00`);
+                      if (!Number.isNaN(parsedStart.getTime())) {
+                        parsedStart.setHours(0, 0, 0, 0);
+                        setViewStartDate(parsedStart);
+                      }
+                    }}
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  />
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">To:</label>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    min={customStartDate}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value < customStartDate) {
+                        setCustomEndDate(customStartDate);
+                        return;
+                      }
+                      setCustomEndDate(value);
+                    }}
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              ) : (
+                <span className="text-gray-900 dark:text-white font-medium">
+                  {viewStartDate.toLocaleDateString()} - {days[days.length - 1].toLocaleDateString()}
+                </span>
+              )}
               <div className="flex items-center gap-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   Subtask Levels:
@@ -3433,16 +3636,27 @@ export default function PlanningPage() {
                 </label>
                 <select
                   value={viewMode}
-                  onChange={(e) => setViewMode(e.target.value as 'day' | 'week' | 'month' | 'year')}
+                  onChange={(e) => {
+                    const nextViewMode = e.target.value as 'day' | 'week' | 'month' | 'year' | 'custom';
+                    setViewMode(nextViewMode);
+                    if (nextViewMode === 'custom') {
+                      const parsedStart = new Date(`${customStartDate}T12:00:00`);
+                      if (!Number.isNaN(parsedStart.getTime())) {
+                        parsedStart.setHours(0, 0, 0, 0);
+                        setViewStartDate(parsedStart);
+                      }
+                    }
+                  }}
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="day">Day</option>
                   <option value="week">Week</option>
                   <option value="month">Month</option>
                   <option value="year">Year</option>
+                  <option value="custom">Custom</option>
                 </select>
               </div>
-              
+
               <div className="flex items-center gap-2"> 
                 <button
                   onClick={() => setShowDependencyLines(!showDependencyLines)}
@@ -3519,7 +3733,7 @@ export default function PlanningPage() {
 
             {/* Gantt Chart */}
             <div className="overflow-x-auto">
-              <div className="min-w-[1200px] relative" ref={ganttContainerRef}>
+              <div className="relative" ref={ganttContainerRef} style={{ minWidth: `${timelineMinWidth}px` }}>
                 {/* SVG overlay for dependency lines */}
                 {showDependencyLines && dependencyLines.length > 0 && (
                   <svg 
@@ -3562,12 +3776,12 @@ export default function PlanningPage() {
                   </svg>
                 )}
                 {/* Month header for Year View */}
-                {viewMode === 'year' && (
+                {(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) && (
                   <div className="flex border-b-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800">
                     <div className="w-48 flex-shrink-0 p-2 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
                       Year
                     </div>
-                    <div className="flex-1 flex">
+                    <div className="flex-1 flex" style={{ minWidth: `${timelineDaysWidthPx}px` }}>
                       {(() => {
                         const monthGroups: { month: string; year: string; count: number }[] = [];
                         let currentMonth = -1;
@@ -3593,7 +3807,7 @@ export default function PlanningPage() {
                           <div
                             key={idx}
                             className="border-r border-gray-300 dark:border-gray-600 p-2 text-center font-semibold text-gray-900 dark:text-white text-sm"
-                            style={{ width: `${(group.count / days.length) * 100}%` }}
+                            style={{ width: `${group.count * dayColumnWidthPx}px` }}
                           >
                             {group.month} {group.year}
                           </div>
@@ -3607,55 +3821,31 @@ export default function PlanningPage() {
                   <div className="w-48 flex-shrink-0 p-3 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
                     User
                   </div>
-                  <div className="flex-1 flex">
-                    {days.map((day, idx) => {
-                      // Adapt date display based on view mode
-                      let dateHeader = '';
-                      let dateSubheader = '';
-                      
-                      if (viewMode === 'day') {
-                        // Day view: Show weekday and date
-                        dateHeader = day.toLocaleDateString('en-US', { weekday: 'short' });
-                        dateSubheader = `${day.getDate()}/${day.getMonth() + 1}`;
-                      } else if (viewMode === 'week') {
-                        // Week view: Show weekday and date
-                        dateHeader = day.toLocaleDateString('en-US', { weekday: 'short' });
-                        dateSubheader = `${day.getDate()}/${day.getMonth() + 1}`;
-                      } else if (viewMode === 'month') {
-                        // Month view: Show every 7th day or first of month
-                        if (day.getDate() === 1 || idx % 7 === 0) {
-                          dateHeader = `${day.getDate()}`;
-                          dateSubheader = day.toLocaleDateString('en-US', { month: 'short' });
-                        }
-                      } else if (viewMode === 'year') {
-                        // Year view: Show week numbers or first/15th of month
-                        if (day.getDate() === 1 || day.getDate() === 15) {
-                          dateHeader = `${day.getDate()}`;
-                        }
-                      }
-                      
+                  <div className="flex-1 flex" style={{ minWidth: `${timelineDaysWidthPx}px` }}>
+                    {timelineColumns.map((column, idx) => {
                       return (
                         <div
                           key={idx}
-                          className={`flex-1 p-1 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
-                            day.getDay() === 0 || day.getDay() === 6
+                          className={`flex-shrink-0 p-1 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
+                            column.isWeekend
                               ? 'bg-gray-100 dark:bg-gray-600'
                               : ''
-                          } ${viewMode === 'year' && day.getDate() === 1 ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                          } ${(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) && column.isMonthStart ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                          style={{ overflow: 'hidden', width: `${dayColumnWidthPx}px` }}
                         >
                           {idx === todayIndex && (
-                            <div className="text-[9px] font-semibold text-blue-700 dark:text-blue-300 leading-tight mb-0.5">
+                            <div className="text-[9px] font-semibold text-blue-700 dark:text-blue-300 leading-tight mb-0.5 truncate">
                               Today
                             </div>
                           )}
-                          {dateHeader && (
+                          {column.header && (
                             <>
-                              <div className="font-semibold text-gray-900 dark:text-white leading-tight">
-                                {dateHeader}
+                              <div className="font-semibold text-gray-900 dark:text-white leading-tight truncate" style={{ fontSize: (viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '9px' : undefined }}>
+                                {column.header}
                               </div>
-                              {dateSubheader && (
-                                <div className="text-gray-600 dark:text-gray-400 leading-tight">
-                                  {dateSubheader}
+                              {column.subheader && (
+                                <div className="text-gray-600 dark:text-gray-400 leading-tight truncate" style={{ fontSize: (viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '9px' : undefined }}>
+                                  {column.subheader}
                                 </div>
                               )}
                             </>
@@ -3681,21 +3871,22 @@ export default function PlanningPage() {
                         Click to plan subtasks
                       </div>
                     </div>
-                    <div className="flex-1 relative" style={{ minHeight: `${Math.max(40, visibleUnassignedTasks.length * 24 + 8)}px` }}>
-                      <div className="flex h-full">
-                        {days.map((day, idx) => (
+                    <div className="flex-1 relative" style={{ minHeight: `${Math.max(40, visibleUnassignedTasks.length * 24 + 8)}px`, minWidth: `${timelineDaysWidthPx}px` }}>
+                      <div className="flex h-full" style={{ minWidth: `${timelineDaysWidthPx}px` }}>
+                        {timelineColumns.map((column, idx) => (
                           <div
                             key={idx}
-                            className={`flex-1 border-r border-gray-200 dark:border-gray-700 relative ${
+                            className={`flex-shrink-0 border-r border-gray-200 dark:border-gray-700 relative ${
                               idx === todayIndex ? 'bg-blue-100/85 dark:bg-blue-800/30 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''
                             }`}
+                            style={{ width: `${dayColumnWidthPx}px` }}
                             onDragOver={handleDragOver}
-                            onDrop={(e) => handleDropOnDay(e, day, null)}
+                            onDrop={(e) => handleDropOnDay(e, column.start, null)}
                           />
                         ))}
                       </div>
                       {visibleUnassignedTasks.map((parentTask, taskIdx) => {
-                        const position = getTaskPosition(parentTask, days);
+                        const position = getTaskPosition(parentTask, timelineColumns);
                         const row = taskIdx;
                         const taskIsHobbyProject = isTaskHobby(parentTask);
                         const hasDependency = !!parentTask.DependsOnTaskId;
@@ -3825,19 +4016,57 @@ export default function PlanningPage() {
                     return { workCapacity, hobbyCapacity };
                   };
 
-                  const isDayOverAllocated = (day: Date) => {
-                    const dateStr = getDateKeyFromDate(day);
-                    const totals = userDailyTotals[dateStr] || { work: 0, hobby: 0, recurring: 0 };
-                    const { workCapacity, hobbyCapacity } = getDayCapacities(day);
+                  const getTimelineColumnSummary = (column: TimelineColumn) => {
+                    const totals = { work: 0, hobby: 0, recurring: 0 };
+                    let workCapacity = 0;
+                    let hobbyCapacity = 0;
+                    let isOverAllocated = false;
+                    const holidaySet = new Set<string>();
 
-                    // Recurring allocations consume regular work capacity.
-                    const totalWorkUsed = totals.work + totals.recurring;
+                    const cursor = new Date(column.start);
+                    cursor.setHours(12, 0, 0, 0);
+                    const end = new Date(column.end);
+                    end.setHours(12, 0, 0, 0);
 
-                    const isWorkOver = workCapacity > 0 && totalWorkUsed > workCapacity + 0.001;
-                    const isHobbyOver = hobbyCapacity > 0 && totals.hobby > hobbyCapacity + 0.001;
-                    return isWorkOver || isHobbyOver;
+                    while (cursor <= end) {
+                      const dateStr = getDateKeyFromDate(cursor);
+                      const dayTotals = userDailyTotals[dateStr] || { work: 0, hobby: 0, recurring: 0 };
+                      totals.work += dayTotals.work;
+                      totals.hobby += dayTotals.hobby;
+                      totals.recurring += dayTotals.recurring;
+
+                      const dayCapacities = getDayCapacities(cursor);
+                      workCapacity += dayCapacities.workCapacity;
+                      hobbyCapacity += dayCapacities.hobbyCapacity;
+
+                      const totalWorkUsed = dayTotals.work + dayTotals.recurring;
+                      const dayOverAllocated =
+                        (dayCapacities.workCapacity > 0 && totalWorkUsed > dayCapacities.workCapacity + 0.001) ||
+                        (dayCapacities.hobbyCapacity > 0 && dayTotals.hobby > dayCapacities.hobbyCapacity + 0.001);
+                      if (dayOverAllocated) {
+                        isOverAllocated = true;
+                      }
+
+                      const holidayNames = getUserHolidayNames(userRow.Id, dateStr);
+                      holidayNames.forEach((name) => holidaySet.add(name));
+
+                      cursor.setDate(cursor.getDate() + 1);
+                    }
+
+                    const holidayNames = Array.from(holidaySet);
+                    return {
+                      totals,
+                      workCapacity,
+                      hobbyCapacity,
+                      isOverAllocated,
+                      holidayNames,
+                      isHoliday: holidayNames.length > 0,
+                      isWeekend: column.isWeekend,
+                    };
                   };
-                  
+
+                  const timelineColumnSummaries = timelineColumns.map(getTimelineColumnSummary);
+
                   // Separate parent tasks
                   const parentTasks = parentTasksWithDates;
                   
@@ -3857,7 +4086,7 @@ export default function PlanningPage() {
                   });
                   
                   parentTasks.forEach((task, taskIdx) => {
-                    const position = getTaskPosition(task, days);
+                    const position = getTaskPosition(task, timelineColumns);
                     if (!position) {
                       console.log(`Parent task ${task.TaskName} has no position - skipping`);
                       return;
@@ -3875,7 +4104,7 @@ export default function PlanningPage() {
                     // Check previous tasks to find overlaps
                     for (let i = 0; i < taskIdx; i++) {
                       const otherTask = parentTasks[i];
-                      const otherPosition = getTaskPosition(otherTask, days);
+                      const otherPosition = getTaskPosition(otherTask, timelineColumns);
                       if (!otherPosition) continue;
                       
                       const taskStart = task.PlannedStartDate || '';
@@ -3960,25 +4189,26 @@ export default function PlanningPage() {
                           {allUserTasks.length} task{allUserTasks.length !== 1 ? 's' : ''}
                         </div>
                       </div>
-                      <div className="flex-1 relative" style={{ minHeight: `${rowHeight}px` }}>
-                        <div className="flex h-full">
-                          {days.map((day, idx) => {
-                            const isOverAllocated = isDayOverAllocated(day);
-                            const dateKey = getDateKeyFromDate(day);
-                            const holidayNames = getUserHolidayNames(userRow.Id, dateKey);
-                            const isHoliday = holidayNames.length > 0;
+                      <div className="flex-1 relative" style={{ minHeight: `${rowHeight}px`, minWidth: `${timelineDaysWidthPx}px` }}>
+                        <div className="flex h-full" style={{ minWidth: `${timelineDaysWidthPx}px` }}>
+                          {timelineColumns.map((column, idx) => {
+                            const summary = timelineColumnSummaries[idx];
+                            const isOverAllocated = summary.isOverAllocated;
+                            const holidayNames = summary.holidayNames;
+                            const isHoliday = summary.isHoliday;
                             return (
                               <div
                                 key={idx}
-                                className={`flex-1 border-r border-gray-200 dark:border-gray-700 relative ${
+                                className={`flex-shrink-0 border-r border-gray-200 dark:border-gray-700 relative ${
                                   isOverAllocated
                                     ? 'bg-red-50 dark:bg-red-900/20'
                                     : isHoliday
                                     ? 'bg-amber-50 dark:bg-amber-900/20'
                                     : ''
                                 } ${idx === todayIndex ? 'bg-blue-100/60 dark:bg-blue-800/20 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
+                                style={{ width: `${dayColumnWidthPx}px` }}
                                 onDragOver={handleDragOver}
-                                onDrop={(e) => handleDropOnDay(e, day, userRow.Id)}
+                                onDrop={(e) => handleDropOnDay(e, column.start, userRow.Id)}
                                 title={isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
                               />
                             );
@@ -4000,10 +4230,10 @@ export default function PlanningPage() {
                                 PlannedEndDate: childDates.endDate
                               };
                               
-                              position = getTaskPosition(tempTask, days);
+                              position = getTaskPosition(tempTask, timelineColumns);
                             } else if (task.PlannedStartDate && task.PlannedEndDate) {
                               // No child allocations but has own dates - use them
-                              position = getTaskPosition(task, days);
+                              position = getTaskPosition(task, timelineColumns);
                             } else {
                               // No allocations and no dates - skip
                               return null;
@@ -4013,7 +4243,7 @@ export default function PlanningPage() {
                             subtaskLeft = position.left;
                             subtaskWidth = position.width;
                           } else {
-                            position = getTaskPosition(task, days);
+                            position = getTaskPosition(task, timelineColumns);
                             if (!position) return null;
                             subtaskLeft = position.left;
                             subtaskWidth = position.width;
@@ -4084,7 +4314,7 @@ export default function PlanningPage() {
                           
                           // Compute baseline bar position if applicable
                           const baselinePosition = showBaseline && task.BaselineStartDate && task.BaselineEndDate
-                            ? getTaskPosition({ ...task, PlannedStartDate: task.BaselineStartDate, PlannedEndDate: task.BaselineEndDate }, days)
+                            ? getTaskPosition({ ...task, PlannedStartDate: task.BaselineStartDate, PlannedEndDate: task.BaselineEndDate }, timelineColumns)
                             : null;
                           const driftDays = (baselinePosition && subtaskLeft && subtaskWidth)
                             ? (() => {
@@ -4151,13 +4381,16 @@ export default function PlanningPage() {
                             // Normalize the occurrence date for comparison
                             const occurrenceDateStr = normalizeDateKey(recurring.OccurrenceDate);
                             
-                            const dayIndex = days.findIndex(d => getDateKeyFromDate(d) === occurrenceDateStr);
+                            const dayIndex = timelineColumns.findIndex((column) => {
+                              const startKey = getDateKeyFromDate(column.start);
+                              const endKey = getDateKeyFromDate(column.end);
+                              return occurrenceDateStr >= startKey && occurrenceDateStr <= endKey;
+                            });
                             
                             if (dayIndex === -1) return null;
                             
-                            const dayWidth = 100 / days.length;
-                            const left = `${dayIndex * dayWidth}%`;
-                            const width = `${dayWidth}%`;
+                            const left = `${dayIndex * dayColumnWidthPx}px`;
+                            const width = `${dayColumnWidthPx}px`;
                             
                             return (
                               <div
@@ -4185,73 +4418,78 @@ export default function PlanningPage() {
                     <div className="flex border-b border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-750">
                       <div className="w-48 flex-shrink-0 px-3 py-0.5 border-r border-gray-200 dark:border-gray-700">
                         <div className="text-[10px] text-gray-500 dark:text-gray-400 italic">
-                          └ Totals
+                          {(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '└ Totals (monthly)' : '└ Totals'}
                         </div>
                       </div>
-                      <div className="flex-1 flex">
-                        {days.map((day, idx) => {
-                          const dateStr = getDateKeyFromDate(day);
-                          const totals = userDailyTotals[dateStr] || { work: 0, hobby: 0, recurring: 0 };
+                      <div className="flex-1 flex" style={{ minWidth: `${timelineDaysWidthPx}px` }}>
+                        {timelineColumns.map((column, idx) => {
+                          const summary = timelineColumnSummaries[idx];
+                          const totals = summary.totals;
                           const hasWork = totals.work > 0;
                           const hasHobby = totals.hobby > 0;
                           const hasRecurring = totals.recurring > 0;
-                          const isOverAllocated = isDayOverAllocated(day);
-                          const holidayNames = getUserHolidayNames(userRow.Id, dateStr);
-                          const isHoliday = holidayNames.length > 0;
+                          const isOverAllocated = summary.isOverAllocated;
+                          const holidayNames = summary.holidayNames;
+                          const isHoliday = summary.isHoliday;
                           const { vacationLabels, holidayLabels } = splitUnavailableLabels(holidayNames);
                           
-                          // Get capacity for this day
-                          const { workCapacity, hobbyCapacity } = getDayCapacities(day);
+                          const workCapacity = summary.workCapacity;
+                          const hobbyCapacity = summary.hobbyCapacity;
                           
                           return (
                             <div
                               key={idx}
-                              className={`flex-1 py-0.5 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
+                              className={`flex-shrink-0 py-0.5 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
                                 isOverAllocated
                                   ? 'bg-red-100/70 dark:bg-red-900/35'
                                   : isHoliday
                                   ? 'bg-amber-100/70 dark:bg-amber-900/35'
-                                  : day.getDay() === 0 || day.getDay() === 6
+                                    : summary.isWeekend
                                   ? 'bg-gray-100 dark:bg-gray-700'
                                   : ''
                               } ${idx === todayIndex ? 'bg-blue-100/70 dark:bg-blue-800/25 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
                               title={isOverAllocated ? 'Over allocated day: planned hours exceed configured capacity' : isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
+                              style={{ overflow: 'hidden', width: `${dayColumnWidthPx}px` }}
                             >
                               {vacationLabels.length > 0 && (
-                                <div className="text-cyan-700 dark:text-cyan-300 font-medium">🏖️</div>
+                                <div className="text-cyan-700 dark:text-cyan-300 font-medium truncate">🏖️</div>
                               )}
                               {holidayLabels.length > 0 && (
-                                <div className="text-amber-700 dark:text-amber-300 font-medium">🎉</div>
+                                <div className="text-amber-700 dark:text-amber-300 font-medium truncate">🎉</div>
                               )}
                               {hasRecurring && (
-                                <div className="text-pink-600 dark:text-pink-400 font-medium">
-                                  🔄 {totals.recurring.toFixed(1)}h
+                                <div className="text-pink-600 dark:text-pink-400 font-medium truncate" style={{ fontSize: (viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '9px' : undefined }}>
+                                  {(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? `🔄${totals.recurring.toFixed(0)}` : `🔄 ${totals.recurring.toFixed(1)}h`}
                                 </div>
                               )}
                               {hasWork && (
-                                <div className="text-blue-600 dark:text-blue-400 font-medium">
-                                  {totals.work.toFixed(1)}h
-                                  {workCapacity > 0 && (
+                                <div className="text-blue-600 dark:text-blue-400 font-medium truncate" style={{ fontSize: (viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '9px' : undefined }}>
+                                  {(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month'))
+                                    ? `${totals.work.toFixed(0)}/${workCapacity.toFixed(0)}`
+                                    : `${totals.work.toFixed(1)}h`}
+                                  {!(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) && workCapacity > 0 && (
                                     <span className="text-gray-400 dark:text-gray-500"> /{workCapacity}h</span>
                                   )}
                                 </div>
                               )}
                               {!hasWork && workCapacity > 0 && (
-                                <div className="text-gray-400 dark:text-gray-500">
-                                  0/{workCapacity}h
+                                <div className="text-gray-400 dark:text-gray-500 truncate" style={{ fontSize: (viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '9px' : undefined }}>
+                                  {(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? `0/${workCapacity.toFixed(0)}` : `0/${workCapacity}h`}
                                 </div>
                               )}
                               {hasHobby && (
-                                <div className="text-purple-600 dark:text-purple-400 font-medium">
-                                  {totals.hobby.toFixed(1)}h
-                                  {hobbyCapacity > 0 && (
+                                <div className="text-purple-600 dark:text-purple-400 font-medium truncate" style={{ fontSize: (viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '9px' : undefined }}>
+                                  {(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month'))
+                                    ? `${totals.hobby.toFixed(0)}/${hobbyCapacity.toFixed(0)}`
+                                    : `${totals.hobby.toFixed(1)}h`}
+                                  {!(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) && hobbyCapacity > 0 && (
                                     <span className="text-gray-400 dark:text-gray-500"> /{hobbyCapacity}h</span>
                                   )}
                                 </div>
                               )}
                               {!hasHobby && hobbyCapacity > 0 && (
-                                <div className="text-gray-400 dark:text-gray-500">
-                                  0/{hobbyCapacity}h
+                                <div className="text-gray-400 dark:text-gray-500 truncate" style={{ fontSize: (viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? '9px' : undefined }}>
+                                  {(viewMode === 'year' || (viewMode === 'custom' && customIntervalType === 'month')) ? `0/${hobbyCapacity.toFixed(0)}` : `0/${hobbyCapacity}h`}
                                 </div>
                               )}
                               {!hasWork && !hasHobby && !hasRecurring && workCapacity === 0 && hobbyCapacity === 0 && (
