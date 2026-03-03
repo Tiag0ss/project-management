@@ -1,0 +1,2 @@
+ProjectName,Description,OrganizationName,CustomerName,StartDate,EndDate,IsHobby,IsGlobal,IsVisibleToCustomer,Budget,BudgetType
+Platform Revamp,Modernization rollout,Core Org,Acme Corp,2026-03-01,2026-09-30,false,false,true,1200,hours

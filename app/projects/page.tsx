@@ -8,7 +8,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { projectsApi, Project, CreateProjectData } from '@/lib/api/projects';
 import { organizationsApi, Organization } from '@/lib/api/organizations';
+import { getCustomers, Customer } from '@/lib/api/customers';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
+import { downloadCsv, parseBooleanLike, parseCsv, parseNumberLike, toCsv } from '@/lib/csv';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import SearchableSelect from '@/components/SearchableSelect';
@@ -99,6 +101,8 @@ export default function ProjectsPage() {
   } | null>(null);
   const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
+  const [isImportingCsv, setIsImportingCsv] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setModalMessage({ type: 'confirm', title, message, onConfirm });
@@ -214,6 +218,143 @@ export default function ProjectsPage() {
   const handleProjectSaved = () => {
     handleModalClose();
     loadProjects();
+  };
+
+  const handleExportProjectsCsv = () => {
+    const headers = [
+      'ProjectName',
+      'Description',
+      'OrganizationName',
+      'CustomerName',
+      'StartDate',
+      'EndDate',
+      'IsHobby',
+      'IsGlobal',
+      'IsVisibleToCustomer',
+      'Budget',
+      'BudgetType'
+    ];
+
+    const rows = filteredAndSortedProjects.map((project) => ({
+      ProjectName: project.ProjectName || '',
+      Description: project.Description || '',
+      OrganizationName: project.OrganizationName || '',
+      CustomerName: project.CustomerName || '',
+      StartDate: project.StartDate ? project.StartDate.split('T')[0] : '',
+      EndDate: project.EndDate ? project.EndDate.split('T')[0] : '',
+      IsHobby: project.IsHobby ? 'true' : 'false',
+      IsGlobal: project.IsGlobal ? 'true' : 'false',
+      IsVisibleToCustomer: project.IsVisibleToCustomer ? 'true' : 'false',
+      Budget: project.Budget != null ? String(project.Budget) : '',
+      BudgetType: project.BudgetType || 'monetary'
+    }));
+
+    downloadCsv('projects_export.csv', toCsv(rows, headers));
+  };
+
+  const handleProjectsCsvImport = async (file: File) => {
+    if (!token) return;
+
+    setIsImportingCsv(true);
+    setError('');
+
+    try {
+      const [organizationsResponse, allCustomers] = await Promise.all([
+        organizationsApi.getAll(token),
+        getCustomers(token)
+      ]);
+
+      const availableOrganizations = organizationsResponse.organizations || [];
+
+      const text = await file.text();
+      const rows = parseCsv(text);
+
+      if (!rows.length) {
+        throw new Error('CSV is empty or has no data rows');
+      }
+
+      let successCount = 0;
+      const failures: string[] = [];
+
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const rowNumber = index + 2;
+
+        try {
+          const projectName = (row.ProjectName || '').trim();
+          const organizationName = (row.OrganizationName || '').trim();
+
+          if (!projectName) {
+            throw new Error('ProjectName is required');
+          }
+
+          if (!organizationName) {
+            throw new Error('OrganizationName is required');
+          }
+
+          const organization = availableOrganizations.find((entry) => entry.Name.toLowerCase() === organizationName.toLowerCase());
+          if (!organization) {
+            throw new Error(`Unknown organization: ${organizationName}`);
+          }
+
+          const customerName = (row.CustomerName || '').trim();
+          let customerId: number | undefined;
+          if (customerName) {
+            const customer = allCustomers.find((entry: Customer) => {
+              const inOrganization = (entry.Organizations || []).some((item) => item.OrganizationId === organization.Id);
+              return inOrganization && entry.Name.toLowerCase() === customerName.toLowerCase();
+            });
+
+            if (!customer) {
+              throw new Error(`Unknown customer in organization ${organizationName}: ${customerName}`);
+            }
+
+            customerId = customer.Id;
+          }
+
+          const parsedBudget = parseNumberLike(row.Budget || '');
+
+          const payload: CreateProjectData = {
+            organizationId: organization.Id,
+            projectName,
+            description: (row.Description || '').trim() || undefined,
+            startDate: (row.StartDate || '').trim() || undefined,
+            endDate: (row.EndDate || '').trim() || undefined,
+            isHobby: parseBooleanLike(row.IsHobby || ''),
+            isGlobal: parseBooleanLike(row.IsGlobal || ''),
+            isVisibleToCustomer: parseBooleanLike(row.IsVisibleToCustomer || ''),
+            customerId,
+            budget: parsedBudget,
+            budgetType: (row.BudgetType || '').trim().toLowerCase() === 'hours' ? 'hours' : 'monetary',
+          };
+
+          await projectsApi.create(payload, token);
+          successCount += 1;
+        } catch (importError: any) {
+          failures.push(`Row ${rowNumber}: ${importError.message || 'Failed to import project'}`);
+        }
+      }
+
+      await loadProjects();
+
+      if (failures.length) {
+        setError(`Imported ${successCount}/${rows.length} projects. ${failures.slice(0, 5).join(' | ')}${failures.length > 5 ? ' | ...' : ''}`);
+      } else {
+        setError('');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to import projects CSV');
+    } finally {
+      setIsImportingCsv(false);
+    }
+  };
+
+  const handleProjectsCsvFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    await handleProjectsCsvImport(file);
+    event.target.value = '';
   };
 
   // Filter and sort projects
@@ -399,6 +540,21 @@ export default function ProjectsPage() {
                   </svg>
                 </button>
               </div>
+              {permissions?.canCreateProjects && (
+                <button
+                  onClick={() => setShowImportModal(true)}
+                  disabled={isImportingCsv}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white px-3 py-2 rounded-lg transition-colors font-medium"
+                >
+                  {isImportingCsv ? 'Importing...' : 'Import CSV'}
+                </button>
+              )}
+              <button
+                onClick={handleExportProjectsCsv}
+                className="bg-gray-700 hover:bg-gray-800 text-white px-3 py-2 rounded-lg transition-colors font-medium"
+              >
+                Export CSV
+              </button>
               {permissions?.canCreateProjects && (
                 <button
                   onClick={handleCreateProject}
@@ -695,6 +851,53 @@ export default function ProjectsPage() {
           token={token!}
           canViewBudgetInfo={canViewBudgetInfo}
         />
+      )}
+
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full mx-4">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Import Projects from CSV</h2>
+                <button
+                  onClick={() => setShowImportModal(false)}
+                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">📄 CSV Format</h3>
+                <code className="text-xs bg-blue-100 dark:bg-blue-900/40 px-2 py-1 rounded block overflow-x-auto">
+                  ProjectName,Description,OrganizationName,CustomerName,StartDate,EndDate,IsHobby,IsGlobal,IsVisibleToCustomer,Budget,BudgetType
+                </code>
+                <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
+                  <a href="/templates/projects_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
+                </p>
+              </div>
+
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select CSV File</label>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleProjectsCsvFileChange}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => setShowImportModal(false)}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Confirm Modal */}

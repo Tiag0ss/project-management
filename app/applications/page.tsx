@@ -7,6 +7,7 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
+import { downloadCsv, parseBooleanLike, parseCsv, toCsv } from '@/lib/csv';
 
 interface Application {
   Id: number;
@@ -74,6 +75,8 @@ export default function ApplicationsPage() {
     message: string;
     onConfirm: () => void;
   } | null>(null);
+  const [isImportingCsv, setIsImportingCsv] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
@@ -292,6 +295,129 @@ export default function ApplicationsPage() {
     });
   };
 
+  const handleExportApplicationsCsv = () => {
+    const headers = [
+      'Name',
+      'Description',
+      'RepositoryUrl',
+      'OrganizationName',
+      'IsCustomerSpecific',
+      'CustomerNames'
+    ];
+
+    const rows = filteredAndSortedApplications.map((application) => ({
+      Name: application.Name || '',
+      Description: application.Description || '',
+      RepositoryUrl: application.RepositoryUrl || '',
+      OrganizationName: application.OrganizationName || '',
+      IsCustomerSpecific: application.IsCustomerSpecific ? 'true' : 'false',
+      CustomerNames: (application.Customers || []).map((customer) => customer.Name).join('|')
+    }));
+
+    downloadCsv('applications_export.csv', toCsv(rows, headers));
+  };
+
+  const handleApplicationsCsvImport = async (file: File) => {
+    if (!token) return;
+
+    setIsImportingCsv(true);
+    setError('');
+
+    try {
+      const text = await file.text();
+      const rows = parseCsv(text);
+
+      if (!rows.length) {
+        throw new Error('CSV is empty or has no data rows');
+      }
+
+      let successCount = 0;
+      const failures: string[] = [];
+
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const rowNumber = index + 2;
+
+        try {
+          const name = (row.Name || '').trim();
+          const organizationName = (row.OrganizationName || '').trim();
+
+          if (!name) {
+            throw new Error('Name is required');
+          }
+
+          if (!organizationName) {
+            throw new Error('OrganizationName is required');
+          }
+
+          const organization = organizations.find((org) => org.Name.toLowerCase() === organizationName.toLowerCase());
+          if (!organization) {
+            throw new Error(`Unknown organization: ${organizationName}`);
+          }
+
+          const customerNames = (row.CustomerNames || '')
+            .split('|')
+            .map((value) => value.trim())
+            .filter(Boolean);
+
+          const customerIds = customerNames.map((customerName) => {
+            const customer = customers.find((entry) => entry.Name.toLowerCase() === customerName.toLowerCase());
+            if (!customer) {
+              throw new Error(`Unknown customer: ${customerName}`);
+            }
+            return customer.Id;
+          });
+
+          const payload = {
+            Name: name,
+            Description: (row.Description || '').trim() || null,
+            RepositoryUrl: (row.RepositoryUrl || '').trim() || null,
+            OrganizationId: organization.Id,
+            IsCustomerSpecific: row.IsCustomerSpecific
+              ? parseBooleanLike(row.IsCustomerSpecific)
+              : customerIds.length > 0,
+            CustomerIds: customerIds,
+          };
+
+          const response = await fetch(`${getApiUrl()}/api/applications`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.message || 'Failed to create application');
+          }
+
+          successCount += 1;
+        } catch (importError: any) {
+          failures.push(`Row ${rowNumber}: ${importError.message || 'Failed to import application'}`);
+        }
+      }
+
+      await loadData();
+
+      if (failures.length) {
+        setError(`Imported ${successCount}/${rows.length} applications. ${failures.slice(0, 5).join(' | ')}${failures.length > 5 ? ' | ...' : ''}`);
+      } else {
+        setError('');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to import applications CSV');
+    } finally {
+      setIsImportingCsv(false);
+    }
+  };
+
+  const handleApplicationsCsvFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    await handleApplicationsCsvImport(file);
+    event.target.value = '';
+  };
+
   if (authLoading || permissionsLoading || isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -341,6 +467,21 @@ export default function ApplicationsPage() {
                 </svg>
               </button>
             </div>
+            {permissions?.canCreateApplications && (
+              <button
+                onClick={() => setShowImportModal(true)}
+                disabled={isImportingCsv}
+                className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white px-3 py-2 rounded-lg transition-colors font-medium"
+              >
+                {isImportingCsv ? 'Importing...' : 'Import CSV'}
+              </button>
+            )}
+            <button
+              onClick={handleExportApplicationsCsv}
+              className="bg-gray-700 hover:bg-gray-800 text-white px-3 py-2 rounded-lg transition-colors font-medium"
+            >
+              Export CSV
+            </button>
             {permissions?.canCreateApplications && (
               <button
                 onClick={openCreateModal}
@@ -664,6 +805,53 @@ export default function ApplicationsPage() {
           </div>
         )}
       </div>
+
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full mx-4">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Import Applications from CSV</h2>
+                <button
+                  onClick={() => setShowImportModal(false)}
+                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">📄 CSV Format</h3>
+                <code className="text-xs bg-blue-100 dark:bg-blue-900/40 px-2 py-1 rounded block overflow-x-auto">
+                  Name,Description,RepositoryUrl,OrganizationName,IsCustomerSpecific,CustomerNames
+                </code>
+                <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
+                  <a href="/templates/applications_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
+                </p>
+              </div>
+
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select CSV File</label>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleApplicationsCsvFileChange}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => setShowImportModal(false)}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create / Edit Modal */}
       {showModal && (

@@ -1318,6 +1318,82 @@ function PermissionExpectationMatrix({ rows }: { rows: PermissionMatrixRow[] }) 
   );
 }
 
+function CsvTemplatesReference() {
+  const modules = [
+    {
+      name: 'Tasks (inside Project detail)',
+      exportSupport: 'Template docs + project task exports where available',
+      required: ['TaskName'],
+      optional: ['Description', 'Status', 'Priority', 'AssignedToUsername', 'DueDate', 'EstimatedHours', 'ParentTaskName', 'PlannedStartDate', 'PlannedEndDate', 'DependsOnTaskName'],
+      sample: 'TaskName,Status,Priority,AssignedToUsername,DueDate,EstimatedHours\nDesign API,In Progress,High,john.doe,2026-03-20,8'
+    },
+    {
+      name: 'Customers',
+      exportSupport: 'Customers list -> Export CSV',
+      required: ['Name', 'OrganizationNames (pipe-separated)'],
+      optional: ['ExternalName', 'Email', 'Phone', 'Address', 'Notes', 'DefaultSupportUsername', 'CreateDefaultProject', 'DefaultProjectName'],
+      sample: 'Name,OrganizationNames,Email,CreateDefaultProject\nAcme Corp,"Core Org|Support Org",ops@acme.com,true'
+    },
+    {
+      name: 'Organizations',
+      exportSupport: 'Organizations list -> Export CSV',
+      required: ['Name'],
+      optional: ['Abbreviation', 'Description'],
+      sample: 'Name,Abbreviation,Description\nNorth Division,ND,Regional operations organization'
+    },
+    {
+      name: 'Applications',
+      exportSupport: 'Applications list -> Export CSV',
+      required: ['Name', 'OrganizationName'],
+      optional: ['Description', 'RepositoryUrl', 'IsCustomerSpecific', 'CustomerNames (pipe-separated)'],
+      sample: 'Name,OrganizationName,IsCustomerSpecific,CustomerNames\nPortal API,Core Org,true,"Acme Corp|Globex"'
+    },
+    {
+      name: 'Projects',
+      exportSupport: 'Projects list -> Export CSV',
+      required: ['ProjectName', 'OrganizationName'],
+      optional: ['Description', 'CustomerName', 'StartDate', 'EndDate', 'IsHobby', 'IsGlobal', 'IsVisibleToCustomer', 'Budget', 'BudgetType'],
+      sample: 'ProjectName,OrganizationName,StartDate,EndDate,Budget,BudgetType\nPlatform Revamp,Core Org,2026-01-01,2026-06-30,1200,hours'
+    },
+  ];
+
+  return (
+    <section id="csv-templates" className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      <h2 className="text-xl font-semibold text-gray-900 dark:text-white">CSV Import and Export Templates</h2>
+      <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+        Use these templates when importing bulk data. Keep header names exactly as shown. For multi-value columns use <span className="font-semibold">|</span> (pipe) separator.
+      </p>
+      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        Boolean fields accept: true/false, yes/no, or 1/0. Dates should use YYYY-MM-DD.
+      </p>
+
+      <div className="mt-5 space-y-4">
+        {modules.map((module) => (
+          <div key={module.name} className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-700/30">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{module.name}</h3>
+            <p className="mt-1 text-xs text-gray-600 dark:text-gray-300"><span className="font-semibold">Export source:</span> {module.exportSupport}</p>
+            <p className="mt-2 text-xs text-gray-700 dark:text-gray-200"><span className="font-semibold">Required columns:</span> {module.required.join(', ')}</p>
+            <p className="mt-1 text-xs text-gray-700 dark:text-gray-200"><span className="font-semibold">Optional columns:</span> {module.optional.join(', ')}</p>
+            <div className="mt-3 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Example row</p>
+              <pre className="mt-1 text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{module.sample}</pre>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4">
+        <p className="text-sm font-semibold text-blue-900 dark:text-blue-300">Import validation rules</p>
+        <ul className="mt-2 space-y-1 text-xs text-blue-800 dark:text-blue-200">
+          <li>Rows with unknown organization/customer/user names are skipped and reported.</li>
+          <li>Import runs as batch create (no update/upsert); duplicates depend on backend validation.</li>
+          <li>After import, reload the list and export again if you need a normalized CSV snapshot.</li>
+        </ul>
+      </div>
+    </section>
+  );
+}
+
 export default function DocsPage() {
   const { user, isLoading, isCustomerUser } = useAuth();
   const router = useRouter();
@@ -1425,6 +1501,12 @@ export default function DocsPage() {
                         className="block text-sm px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/50 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                       >
                         Permission Expectation Matrix
+                      </a>
+                      <a
+                        href="#csv-templates"
+                        className="block text-sm px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/50 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                      >
+                        CSV Templates
                       </a>
                     </div>
                   </div>
@@ -1535,6 +1617,8 @@ export default function DocsPage() {
             <RoleResponsibilityMatrix rows={roleMatrixRows} />
 
             <PermissionExpectationMatrix rows={permissionMatrixRows} />
+
+            <CsvTemplatesReference />
 
             <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6">
               <h2 className="text-lg font-semibold text-amber-900 dark:text-amber-300">Permissions Reminder</h2>

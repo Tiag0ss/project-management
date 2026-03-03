@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { organizationsApi, Organization, CreateOrganizationData } from '@/lib/api/organizations';
+import { downloadCsv, parseCsv, toCsv } from '@/lib/csv';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 
@@ -34,6 +35,8 @@ export default function OrganizationsPage() {
   } | null>(null);
   const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
+  const [isImportingCsv, setIsImportingCsv] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setModalMessage({ type: 'confirm', title, message, onConfirm });
@@ -126,6 +129,79 @@ export default function OrganizationsPage() {
 
   const handleEdit = (org: Organization) => {
     setEditingOrganization(org);
+  };
+
+  const handleExportOrganizationsCsv = () => {
+    const headers = ['Name', 'Abbreviation', 'Description'];
+    const rows = filteredAndSortedOrgs.map((organization) => ({
+      Name: organization.Name || '',
+      Abbreviation: organization.Abbreviation || '',
+      Description: organization.Description || ''
+    }));
+
+    downloadCsv('organizations_export.csv', toCsv(rows, headers));
+  };
+
+  const handleOrganizationsCsvImport = async (file: File) => {
+    if (!token) return;
+
+    setIsImportingCsv(true);
+    setError('');
+
+    try {
+      const text = await file.text();
+      const rows = parseCsv(text);
+
+      if (!rows.length) {
+        throw new Error('CSV is empty or has no data rows');
+      }
+
+      let successCount = 0;
+      const failures: string[] = [];
+
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const rowNumber = index + 2;
+
+        try {
+          const name = (row.Name || '').trim();
+          if (!name) {
+            throw new Error('Name is required');
+          }
+
+          const createData: CreateOrganizationData = {
+            name,
+            abbreviation: (row.Abbreviation || '').trim() || undefined,
+            description: (row.Description || '').trim() || undefined
+          };
+
+          await organizationsApi.create(createData, token);
+          successCount += 1;
+        } catch (importError: any) {
+          failures.push(`Row ${rowNumber}: ${importError.message || 'Failed to import organization'}`);
+        }
+      }
+
+      await loadOrganizations();
+
+      if (failures.length) {
+        setError(`Imported ${successCount}/${rows.length} organizations. ${failures.slice(0, 5).join(' | ')}${failures.length > 5 ? ' | ...' : ''}`);
+      } else {
+        setError('');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to import organizations CSV');
+    } finally {
+      setIsImportingCsv(false);
+    }
+  };
+
+  const handleOrganizationsCsvFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    await handleOrganizationsCsvImport(file);
+    event.target.value = '';
   };
 
   // Filter and sort organizations
@@ -242,6 +318,21 @@ export default function OrganizationsPage() {
                 </svg>
               </button>
             </div>
+            {(user?.isAdmin || permissions?.canManageOrganizations) && (
+              <button
+                onClick={() => setShowImportModal(true)}
+                disabled={isImportingCsv}
+                className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white px-3 py-2 rounded-lg transition-colors font-medium"
+              >
+                {isImportingCsv ? 'Importing...' : 'Import CSV'}
+              </button>
+            )}
+            <button
+              onClick={handleExportOrganizationsCsv}
+              className="bg-gray-700 hover:bg-gray-800 text-white px-3 py-2 rounded-lg transition-colors font-medium"
+            >
+              Export CSV
+            </button>
             {(user?.isAdmin || permissions?.canManageOrganizations) && (
               <button
                 onClick={() => setShowCreateModal(true)}
@@ -525,6 +616,53 @@ export default function OrganizationsPage() {
           }}
           token={token!}
         />
+      )}
+
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full mx-4">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Import Organizations from CSV</h2>
+                <button
+                  onClick={() => setShowImportModal(false)}
+                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">📄 CSV Format</h3>
+                <code className="text-xs bg-blue-100 dark:bg-blue-900/40 px-2 py-1 rounded block overflow-x-auto">
+                  Name,Abbreviation,Description
+                </code>
+                <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
+                  <a href="/templates/organizations_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
+                </p>
+              </div>
+
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select CSV File</label>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleOrganizationsCsvFileChange}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => setShowImportModal(false)}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Confirm Modal */}

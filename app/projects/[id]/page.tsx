@@ -3558,8 +3558,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   Your CSV should have the following columns (header required):
                 </p>
                 <code className="text-xs bg-blue-100 dark:bg-blue-900/40 px-2 py-1 rounded block overflow-x-auto">
-                  ProjectId,TaskName,Description,Status,Priority,AssignedToUsername,DueDate,EstimatedHours,ParentTaskName,PlannedStartDate,PlannedEndDate,DependsOnTaskName
+                  TaskName,Description,Status,Priority,AssignedToUsername,DueDate,EstimatedHours,ParentTaskName,PlannedStartDate,PlannedEndDate,DependsOnTaskName
                 </code>
+                <p className="text-xs text-blue-800 dark:text-blue-400 mt-2">
+                  ProjectId is added automatically from the current project.
+                </p>
                 <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
                   <a href="/templates/tasks_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
                   {' | '}

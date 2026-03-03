@@ -1,4 +1,4 @@
 TaskName,Description,Status,Priority,AssignedToUsername,DueDate,EstimatedHours,ParentTaskName,PlannedStartDate,PlannedEndDate,DependsOnTaskName
-Example Task 1,This is a sample task description,To Do,High,john.doe,2026-03-15,8.5,,2026-02-10,2026-02-15,
-Example Task 2,Another example task with dependencies,In Progress,Medium,jane.smith,2026-03-20,16.0,Example Task 1,2026-02-16,2026-02-25,Example Task 1
-Example Subtask,This is a subtask,To Do,Low,john.doe,2026-03-18,4.0,Example Task 1,2026-02-12,2026-02-14,
+Platform Setup,Initial setup and baseline configuration,To Do,High,john.doe,2026-03-20,8.0,,2026-03-10,2026-03-12,
+API Foundation,Create core API endpoints,In Progress,Critical,jane.smith,2026-03-28,20.0,,2026-03-13,2026-03-20,Platform Setup
+API Validation Tests,Implement endpoint tests,To Do,Medium,john.doe,2026-03-30,10.0,API Foundation,2026-03-21,2026-03-25,API Foundation

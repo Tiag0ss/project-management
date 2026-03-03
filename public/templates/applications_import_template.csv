@@ -1,0 +1,2 @@
+Name,Description,RepositoryUrl,OrganizationName,IsCustomerSpecific,CustomerNames
+Portal API,Main backend API,https://github.com/example/portal-api,Core Org,true,"Acme Corp|Globex"

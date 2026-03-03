@@ -1,0 +1,2 @@
+Name,ExternalName,Email,Phone,Address,Notes,OrganizationNames,DefaultSupportUsername,CreateDefaultProject,DefaultProjectName
+Acme Corp,ACME,ops@acme.com,+351123456789,"Main Street 100","Priority customer","Core Org|Support Org",john.support,true,Acme Default Project

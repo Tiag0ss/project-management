@@ -1,93 +1,60 @@
 # Task Import Template - README
 
 ## Overview
-This CSV template allows you to import multiple tasks into a project at once.
+Use this CSV to import multiple tasks into the currently opened project.
 
 ## File Format
 - **Encoding**: UTF-8
 - **Delimiter**: Comma (,)
 - **Extension**: .csv
 
-## Column Descriptions
+## Current Supported Columns
 
-| Column | Required | Type | Description | Example |
-|--------|----------|------|-------------|---------|
-| **TaskName** | Yes | Text | Name of the task (max 255 characters) | "Implement login feature" |
-| **Description** | No | Text | Detailed description of the task | "Create login form with email and password validation" |
-| **Status** | No | Text | Task status (default: "To Do") | To Do, In Progress, Done |
-| **Priority** | No | Text | Task priority (default: "Medium") | Low, Medium, High, Critical |
-| **AssignedToUsername** | No | Text | Username of the assigned user | john.doe |
-| **DueDate** | No | Date | Due date in YYYY-MM-DD format | 2026-03-15 |
-| **EstimatedHours** | No | Decimal | Estimated hours (max 2 decimal places) | 8.5 |
-| **ParentTaskName** | No | Text | Name of parent task (for subtasks) | "Example Task 1" |
-| **PlannedStartDate** | No | Date | Planned start date in YYYY-MM-DD format | 2026-02-10 |
-| **PlannedEndDate** | No | Date | Planned end date in YYYY-MM-DD format | 2026-02-15 |
-| **DependsOnTaskName** | No | Text | Name of task this depends on | "Example Task 1" |
+| Column | Required | Type | Description |
+|--------|----------|------|-------------|
+| **TaskName** | Yes | Text | Task title. This must be unique inside the import file if it is referenced by parent/dependency columns. |
+| **Description** | No | Text | Task description. |
+| **Status** | No | Text | Status name from your organization (mapped in import modal). |
+| **Priority** | No | Text | Priority name from your organization (mapped in import modal). |
+| **AssignedToUsername** | No | Text | Username of assignee. Must exist in the system. |
+| **DueDate** | No | Date | Due date in `YYYY-MM-DD`. |
+| **EstimatedHours** | No | Decimal | Estimated effort in hours (dot decimal). |
+| **ParentTaskName** | No | Text | Parent task name (must match another `TaskName` in the same CSV). |
+| **PlannedStartDate** | No | Date | Planned start date in `YYYY-MM-DD`. |
+| **PlannedEndDate** | No | Date | Planned end date in `YYYY-MM-DD`. |
+| **DependsOnTaskName** | No | Text | Dependency task name (must match another `TaskName` in the same CSV). |
 
-## Important Notes
+## ProjectId Behavior
+- In the **Project Detail > Import Tasks from CSV** modal, you do **not** need `ProjectId` in the CSV.
+- The frontend injects the current project id automatically before sending rows to the backend.
 
-1. **TaskName**: This is the only required field besides ProjectId. Must be unique within the import file for dependency resolution.
+## Mapping Behavior (Important)
+- `Status` and `Priority` values in CSV are names.
+- During import, the modal maps those names to your organization’s internal IDs.
+- Unmapped values must be fixed in the mapping UI before import.
 
-2. **Status & Priority**: Use the exact values defined in your organization. The template shows common examples.
+## Parent/Dependency Resolution
+- Parent/dependency links are resolved **after** tasks are created.
+- `ParentTaskName` and `DependsOnTaskName` must exactly match a `TaskName` from the same file.
+- Keep task names unique in the file to avoid ambiguous linking.
 
-3. **AssignedToUsername**: Must match an existing username. Leave empty if unassigned.
+## Example
 
-4. **Parent Tasks & Dependencies**: 
-   - Use the exact TaskName from within the same CSV file
-   - Parent tasks and dependencies will be resolved after all tasks are created
-   - Ensure parent tasks appear before their children in the CSV
-
-5. **Date Format**: Always use YYYY-MM-DD format (e.g., 2026-03-15)
-
-6. **Decimal Numbers**: Use dot (.) as decimal separator (e.g., 8.5, not 8,5)
-
-## Example Usage
-
-### Simple Tasks
 ```csv
-TaskName,Description,Status,Priority,AssignedToUsername,DueDate,EstimatedHours
-Setup Database,Create MySQL database and tables,To Do,High,admin,2026-03-01,4.0
-Design UI,Create mockups for main pages,To Do,Medium,designer,2026-03-05,8.0
+TaskName,Description,Status,Priority,AssignedToUsername,DueDate,EstimatedHours,ParentTaskName,PlannedStartDate,PlannedEndDate,DependsOnTaskName
+Platform Setup,Initial setup and baseline configuration,To Do,High,john.doe,2026-03-20,8.0,,2026-03-10,2026-03-12,
+API Foundation,Create core API endpoints,In Progress,Critical,jane.smith,2026-03-28,20.0,,2026-03-13,2026-03-20,Platform Setup
+API Validation Tests,Implement endpoint tests,To Do,Medium,john.doe,2026-03-30,10.0,API Foundation,2026-03-21,2026-03-25,API Foundation
 ```
 
-### Tasks with Dependencies
-```csv
-TaskName,Description,Status,Priority,AssignedToUsername,DueDate,EstimatedHours,DependsOnTaskName
-Setup Database,Create MySQL database,To Do,High,admin,2026-03-01,4.0,
-Create API,Build REST API endpoints,To Do,High,developer,2026-03-10,16.0,Setup Database
-Connect Frontend,Integrate frontend with API,To Do,Medium,developer,2026-03-15,8.0,Create API
-```
+## Common Validation Errors
+- `ProjectId and TaskName are required` (when not importing via project modal/API payload missing ProjectId)
+- `User '<name>' not found`
+- `Parent task '<name>' not found in import`
+- `Dependency task '<name>' not found in import`
 
-### Tasks with Subtasks
-```csv
-TaskName,Description,Status,Priority,AssignedToUsername,DueDate,EstimatedHours,ParentTaskName
-User Management,Main task for user features,In Progress,High,admin,2026-04-01,40.0,
-Create User Model,Database model for users,To Do,High,developer,2026-03-10,4.0,User Management
-User Registration,Registration form and logic,To Do,High,developer,2026-03-15,8.0,User Management
-User Login,Login form and authentication,To Do,High,developer,2026-03-20,8.0,User Management
-```
-
-## Tips
-
-1. **Start Simple**: Begin with just TaskName to test the import
-2. **Check Usernames**: Verify all usernames exist before importing
-3. **Review Status/Priority**: Ensure they match your organization's custom values
-4. **Order Matters**: For dependencies, list prerequisite tasks before dependent tasks
-5. **Test First**: Try importing a small subset before importing hundreds of tasks
-
-## Common Errors
-
-- **"Project not found"**: Invalid ProjectId
-- **"User not found"**: AssignedToUsername doesn't exist
-- **"Parent task not found"**: ParentTaskName doesn't match any task in the import
-- **"Invalid date format"**: Use YYYY-MM-DD format only
-- **"Circular dependency"**: Task A depends on B which depends on A
-
-## Import Process
-
-The import will:
-1. Validate all required fields
-2. Create all tasks with basic information
-3. Resolve and set parent task relationships
-4. Resolve and set task dependencies
-5. Return a summary of created tasks and any errors
+## Practical Tips
+1. Start with 2-3 rows and confirm mapping before large imports.
+2. Use exact usernames for `AssignedToUsername`.
+3. Use `YYYY-MM-DD` dates and dot decimal for hours (e.g., `7.5`).
+4. Keep parent/dependency names consistent and typo-free.
