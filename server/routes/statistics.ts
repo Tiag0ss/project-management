@@ -177,7 +177,14 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
         COALESCE(SUM(CASE WHEN p.IsHobby = 1 THEN t.EstimatedHours ELSE 0 END), 0) as totalEstimatedHoursHobby
       FROM Tasks t
       INNER JOIN Projects p ON t.ProjectId = p.Id
-      WHERE t.ParentTaskId IS NULL
+      LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+      WHERE COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
+        AND NOT EXISTS (
+          SELECT 1
+          FROM Tasks tChild
+          WHERE tChild.ProjectId = t.ProjectId
+            AND tChild.ParentTaskId = t.Id
+        )
     `);
 
     // Get total worked hours (separated by hobby/normal)
@@ -188,6 +195,8 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
       FROM TimeEntries te
       INNER JOIN Tasks t ON te.TaskId = t.Id
       INNER JOIN Projects p ON t.ProjectId = p.Id
+      LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+      WHERE COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
     `);
 
     // Get this week's hours across all users (separated by hobby/normal)
@@ -198,7 +207,9 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
       FROM TimeEntries te
       INNER JOIN Tasks t ON te.TaskId = t.Id
       INNER JOIN Projects p ON t.ProjectId = p.Id
+      LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
       WHERE te.WorkDate >= DATE_SUB(CURDATE(), INTERVAL DAYOFWEEK(CURDATE())-1 DAY)
+        AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
     `);
 
     // Get selected period's hours across all users (separated by hobby/normal)
@@ -211,6 +222,8 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
         FROM TimeEntries te
         INNER JOIN Tasks t ON te.TaskId = t.Id
         INNER JOIN Projects p ON t.ProjectId = p.Id
+        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+        WHERE COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
       `);
     } else {
       [monthHoursStats] = await pool.execute<RowDataPacket[]>(`
@@ -220,7 +233,9 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
         FROM TimeEntries te
         INNER JOIN Tasks t ON te.TaskId = t.Id
         INNER JOIN Projects p ON t.ProjectId = p.Id
+        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
         WHERE te.WorkDate BETWEEN ? AND ?
+          AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
       `, [dateFrom, dateTo]);
     }
 
@@ -236,7 +251,9 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
         FROM Projects p
         LEFT JOIN Organizations o ON p.OrganizationId = o.Id
         LEFT JOIN Tasks t ON t.ProjectId = p.Id
+        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
         LEFT JOIN TimeEntries te ON te.TaskId = t.Id
+          AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
         GROUP BY p.Id, p.ProjectName, o.Name
         ORDER BY hoursThisMonth DESC
         LIMIT 5
@@ -251,7 +268,9 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
         FROM Projects p
         LEFT JOIN Organizations o ON p.OrganizationId = o.Id
         LEFT JOIN Tasks t ON t.ProjectId = p.Id
+        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
         LEFT JOIN TimeEntries te ON te.TaskId = t.Id 
+          AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
           AND te.WorkDate BETWEEN ? AND ?
         GROUP BY p.Id, p.ProjectName, o.Name
         ORDER BY hoursThisMonth DESC
@@ -268,12 +287,15 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
           u.FirstName,
           u.LastName,
           u.Username,
-          COALESCE(SUM(te.Hours), 0) as hoursThisMonth
+          COALESCE(SUM(CASE WHEN t.Id IS NOT NULL AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 THEN te.Hours ELSE 0 END), 0) as hoursThisMonth
         FROM Users u
         LEFT JOIN TimeEntries te ON te.UserId = u.Id
+        LEFT JOIN Tasks t ON te.TaskId = t.Id
+        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+          AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
         WHERE u.CustomerId IS NULL
         GROUP BY u.Id, u.FirstName, u.LastName, u.Username
-        HAVING COALESCE(SUM(te.Hours), 0) > 0
+        HAVING COALESCE(SUM(CASE WHEN t.Id IS NOT NULL AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 THEN te.Hours ELSE 0 END), 0) > 0
         ORDER BY hoursThisMonth DESC
         LIMIT 5
       `);
@@ -284,13 +306,16 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
           u.FirstName,
           u.LastName,
           u.Username,
-          COALESCE(SUM(te.Hours), 0) as hoursThisMonth
+          COALESCE(SUM(CASE WHEN t.Id IS NOT NULL AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 THEN te.Hours ELSE 0 END), 0) as hoursThisMonth
         FROM Users u
         LEFT JOIN TimeEntries te ON te.UserId = u.Id 
           AND te.WorkDate BETWEEN ? AND ?
+        LEFT JOIN Tasks t ON te.TaskId = t.Id
+        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+          AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
         WHERE u.CustomerId IS NULL
         GROUP BY u.Id, u.FirstName, u.LastName, u.Username
-        HAVING COALESCE(SUM(te.Hours), 0) > 0
+        HAVING COALESCE(SUM(CASE WHEN t.Id IS NOT NULL AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 THEN te.Hours ELSE 0 END), 0) > 0
         ORDER BY hoursThisMonth DESC
         LIMIT 5
       `, [dateFrom, dateTo]);

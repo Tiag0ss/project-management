@@ -16,6 +16,7 @@ interface TaskWithProject extends Task {
   ProjectName?: string;
   IsHobby?: boolean;
   SubtaskCount?: number;
+  StatusHideFromPlanningAndStatistics?: number | boolean;
 }
 
 interface TimeEntry {
@@ -474,13 +475,14 @@ function DashboardContent() {
       if (tasksResponse.ok) {
         const tasksData = await tasksResponse.json();
         const tasks = tasksData.tasks || [];
-        myTasksCount = tasks.length;
+        const visibleTasks = tasks.filter((t: TaskWithProject) => !t.StatusHideFromPlanningAndStatistics);
+        myTasksCount = visibleTasks.length;
         totalTasks = myTasksCount;
         
         // Identify tasks with children (parent tasks)
-        const taskIdsWithChildren = new Set(tasks.filter((t: any) => t.ParentTaskId).map((t: any) => t.ParentTaskId));
+        const taskIdsWithChildren = new Set(visibleTasks.filter((t: any) => t.ParentTaskId).map((t: any) => t.ParentTaskId));
         // Get only leaf tasks (tasks without children)
-        const leafTasks = tasks.filter((t: any) => !taskIdsWithChildren.has(t.Id));
+        const leafTasks = visibleTasks.filter((t: any) => !taskIdsWithChildren.has(t.Id));
         
         // Calculate estimated hours only from leaf tasks and overdue tasks
         leafTasks.forEach((task: any) => {
@@ -496,7 +498,7 @@ function DashboardContent() {
         });
         
         // Check overdue tasks (all tasks, not just leaf)
-        tasks.forEach((task: any) => {
+        visibleTasks.forEach((task: any) => {
           if (task.DueDate && 
               !task.StatusIsClosed &&
               !task.StatusIsCancelled) {
@@ -780,7 +782,9 @@ function DashboardContent() {
         // Order: overdue first, then by planned start date
         const pending = tasks
           .filter((task: TaskWithProject) => 
-            !task.StatusIsClosed && !task.StatusIsCancelled
+            !task.StatusIsClosed &&
+            !task.StatusIsCancelled &&
+            !task.StatusHideFromPlanningAndStatistics
           )
           .sort((a: TaskWithProject, b: TaskWithProject) => {
             const dueA = a.DueDate ? new Date(a.DueDate) : null;

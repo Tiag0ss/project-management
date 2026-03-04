@@ -256,7 +256,9 @@ router.get('/:id/burndown', authenticateToken, async (req: AuthRequest, res: Res
     const [leafHoursRows] = await pool.execute<RowDataPacket[]>(
       `SELECT COALESCE(SUM(t.EstimatedHours), 0) as TotalEstimatedHours
        FROM Tasks t
+       LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        WHERE t.ProjectId = ?
+         AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
          AND t.Id NOT IN (SELECT DISTINCT ParentTaskId FROM Tasks WHERE ParentTaskId IS NOT NULL AND ProjectId = ?)`,
       [projectId, projectId]
     );
@@ -267,7 +269,9 @@ router.get('/:id/burndown', authenticateToken, async (req: AuthRequest, res: Res
       `SELECT DATE_FORMAT(te.WorkDate, '%Y-%m-%d') as WorkDate, SUM(te.Hours) as DailyHours
        FROM TimeEntries te
        INNER JOIN Tasks t ON te.TaskId = t.Id
+       LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        WHERE t.ProjectId = ?
+         AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
        GROUP BY te.WorkDate
        ORDER BY te.WorkDate ASC`,
       [projectId]

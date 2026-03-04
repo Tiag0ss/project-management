@@ -353,6 +353,7 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
               depTask.TaskName as DependsOnTaskName,
               tsv.StatusName, tsv.ColorCode as StatusColor,
               COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
+              COALESCE(tsv.HideFromPlanningAndStatistics, 0) as StatusHideFromPlanningAndStatistics,
               tpv.PriorityName, tpv.ColorCode as PriorityColor,
               ttv.TypeName as TaskTypeName, ttv.ColorCode as TaskTypeColor,
               COALESCE((SELECT COUNT(*) FROM Tasks st WHERE st.ParentTaskId = t.Id), 0) as SubtaskCount,

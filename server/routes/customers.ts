@@ -872,7 +872,7 @@ router.get('/:id/projects', authenticateToken, async (req: AuthRequest, res: Res
               COUNT(CASE WHEN COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 THEN t.Id END) as TotalTasks,
               SUM(CASE WHEN COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 AND tsv.IsClosed = 1 THEN 1 ELSE 0 END) as CompletedTasks,
               COALESCE(SUM(CASE WHEN COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 THEN t.EstimatedHours ELSE 0 END), 0) as TotalEstimatedHours,
-              COALESCE(SUM(te.Hours), 0) as TotalWorkedHours
+              COALESCE(SUM(CASE WHEN COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 THEN te.Hours ELSE 0 END), 0) as TotalWorkedHours
        FROM Projects p
        LEFT JOIN ProjectStatusValues psv ON p.Status = psv.Id
        LEFT JOIN Tasks t ON p.Id = t.ProjectId
