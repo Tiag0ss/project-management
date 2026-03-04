@@ -8,6 +8,8 @@ const router = Router();
 interface GridPreferencesPayload {
   columnOrder?: string[];
   hiddenColumns?: string[];
+  columnSizing?: Record<string, number>;
+  columnSizeMode?: Record<string, 'fixed' | 'grow'>;
   sortField?: string | null;
   sortDirection?: 'asc' | 'desc' | null;
 }
@@ -23,6 +25,27 @@ const sanitizePreferences = (raw: any): GridPreferencesPayload => {
     ? value.hiddenColumns.filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0)
     : [];
 
+  const columnSizing = value.columnSizing && typeof value.columnSizing === 'object' && !Array.isArray(value.columnSizing)
+    ? Object.entries(value.columnSizing).reduce<Record<string, number>>((accumulator, [key, raw]) => {
+        if (typeof key !== 'string' || key.trim().length === 0) return accumulator;
+        const numeric = Number(raw);
+        if (!Number.isFinite(numeric)) return accumulator;
+        const normalized = Math.max(60, Math.min(1400, Math.round(numeric)));
+        accumulator[key] = normalized;
+        return accumulator;
+      }, {})
+    : {};
+
+  const columnSizeMode = value.columnSizeMode && typeof value.columnSizeMode === 'object' && !Array.isArray(value.columnSizeMode)
+    ? Object.entries(value.columnSizeMode).reduce<Record<string, 'fixed' | 'grow'>>((accumulator, [key, raw]) => {
+        if (typeof key !== 'string' || key.trim().length === 0) return accumulator;
+        if (raw === 'fixed' || raw === 'grow') {
+          accumulator[key] = raw;
+        }
+        return accumulator;
+      }, {})
+    : {};
+
   const sortField = typeof value.sortField === 'string' && value.sortField.trim().length > 0
     ? value.sortField
     : null;
@@ -34,6 +57,8 @@ const sanitizePreferences = (raw: any): GridPreferencesPayload => {
   return {
     columnOrder,
     hiddenColumns,
+    columnSizing,
+    columnSizeMode,
     sortField,
     sortDirection,
   };

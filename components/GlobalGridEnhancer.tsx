@@ -8,6 +8,8 @@ import { getAllGridPreferences, saveGridPreference, GridPreference } from '@/lib
 interface RuntimeGridPreference {
   columnOrder: string[];
   hiddenColumns: string[];
+  columnSizing: Record<string, number>;
+  columnSizeMode: Record<string, 'fixed' | 'grow'>;
   sortField: string | null;
   sortDirection: 'asc' | 'desc' | null;
 }
@@ -32,6 +34,8 @@ const hashString = (value: string): string => {
 const defaultPreference = (columnIds: string[]): RuntimeGridPreference => ({
   columnOrder: [...columnIds],
   hiddenColumns: [],
+  columnSizing: {},
+  columnSizeMode: Object.fromEntries(columnIds.map((columnId) => [columnId, 'grow' as const])),
   sortField: null,
   sortDirection: null,
 });
@@ -49,20 +53,38 @@ const sanitizePreference = (raw: Partial<GridPreference> | null | undefined, ava
   const available = new Set(availableColumnIds);
 
   const savedOrder = Array.isArray(raw?.columnOrder)
-    ? raw!.columnOrder.filter((columnId): columnId is string => typeof columnId === 'string' && available.has(columnId))
+    ? raw.columnOrder.filter((columnId): columnId is string => typeof columnId === 'string' && available.has(columnId))
     : [];
 
   const missing = availableColumnIds.filter((columnId) => !savedOrder.includes(columnId));
   const columnOrder = [...savedOrder, ...missing];
 
   const hiddenColumns = Array.isArray(raw?.hiddenColumns)
-    ? raw!.hiddenColumns.filter((columnId): columnId is string => typeof columnId === 'string' && available.has(columnId))
+    ? raw.hiddenColumns.filter((columnId): columnId is string => typeof columnId === 'string' && available.has(columnId))
     : [];
+
+  const columnSizing = raw?.columnSizing && typeof raw.columnSizing === 'object'
+    ? Object.entries(raw.columnSizing).reduce<Record<string, number>>((accumulator, [key, value]) => {
+        if (!available.has(key)) return accumulator;
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return accumulator;
+        accumulator[key] = Math.max(60, Math.min(1400, Math.round(numeric)));
+        return accumulator;
+      }, {})
+    : {};
+
+  const columnSizeMode = availableColumnIds.reduce<Record<string, 'fixed' | 'grow'>>((accumulator, columnId) => {
+    const mode = raw?.columnSizeMode && typeof raw.columnSizeMode === 'object'
+      ? raw.columnSizeMode[columnId]
+      : undefined;
+    accumulator[columnId] = mode === 'fixed' ? 'fixed' : 'grow';
+    return accumulator;
+  }, {});
 
   const sortField = typeof raw?.sortField === 'string' && available.has(raw.sortField) ? raw.sortField : null;
   const sortDirection = raw?.sortDirection === 'asc' || raw?.sortDirection === 'desc' ? raw.sortDirection : null;
 
-  return { columnOrder, hiddenColumns, sortField, sortDirection };
+  return { columnOrder, hiddenColumns, columnSizing, columnSizeMode, sortField, sortDirection };
 };
 
 const isActionHeader = (label: string) => {
@@ -100,6 +122,8 @@ export default function GlobalGridEnhancer() {
           map.set(pref.gridKey, {
             columnOrder: Array.isArray(pref.columnOrder) ? pref.columnOrder : [],
             hiddenColumns: Array.isArray(pref.hiddenColumns) ? pref.hiddenColumns : [],
+            columnSizing: pref.columnSizing && typeof pref.columnSizing === 'object' ? pref.columnSizing : {},
+            columnSizeMode: pref.columnSizeMode && typeof pref.columnSizeMode === 'object' ? pref.columnSizeMode : {},
             sortField: pref.sortField ?? null,
             sortDirection: pref.sortDirection ?? null,
           });
@@ -126,13 +150,14 @@ export default function GlobalGridEnhancer() {
       const tables = Array.from(document.querySelectorAll('table'));
       const signatureUsageCount = new Map<string, number>();
 
-      tables.forEach((table, tableIndex) => {
+      tables.forEach((table) => {
         if (!(table instanceof HTMLTableElement)) return;
         if (table.closest('[data-grid-enhancer-ignore="true"]')) return;
 
         const thead = table.querySelector('thead');
         const tbody = table.querySelector('tbody');
         if (!thead || !tbody) return;
+
         const isSortDisabled = table.dataset.gridDisableSort === 'true';
         const isReorderDisabled = table.dataset.gridDisableReorder === 'true' || isSortDisabled;
 
@@ -152,6 +177,18 @@ export default function GlobalGridEnhancer() {
           return count > 0 ? `${normalized}-${count + 1}` : normalized;
         });
 
+        const actionColumnIds = new Set<string>();
+        const actionColumnDefaultWidths: Record<string, number> = {};
+        headerCells.forEach((headerCell, index) => {
+          const columnId = columnIds[index];
+          if (!columnId) return;
+          const label = (headerCell.textContent || '').trim();
+          if (!isActionHeader(label)) return;
+          actionColumnIds.add(columnId);
+          const measuredWidth = Math.max(80, Math.round(headerCell.getBoundingClientRect().width || 120));
+          actionColumnDefaultWidths[columnId] = Math.max(60, Math.min(1400, measuredWidth));
+        });
+
         const explicitGridKey = table.dataset.gridKey?.trim();
         const visualSignature = columnIds.join('|');
         const signatureHash = hashString(visualSignature);
@@ -169,6 +206,9 @@ export default function GlobalGridEnhancer() {
           cells.forEach((cell) => {
             delete cell.dataset.gridColumnId;
             cell.style.display = '';
+            cell.style.removeProperty('width');
+            cell.style.removeProperty('min-width');
+            cell.style.removeProperty('max-width');
           });
         }
 
@@ -211,6 +251,22 @@ export default function GlobalGridEnhancer() {
           }
         }
 
+        if (actionColumnIds.size > 0) {
+          const nextMode = { ...runtimePref.columnSizeMode };
+          const nextSizing = { ...runtimePref.columnSizing };
+          actionColumnIds.forEach((columnId) => {
+            nextMode[columnId] = 'fixed';
+            if (!Number.isFinite(nextSizing[columnId])) {
+              nextSizing[columnId] = actionColumnDefaultWidths[columnId] || 120;
+            }
+          });
+          runtimePref = {
+            ...runtimePref,
+            columnSizeMode: nextMode,
+            columnSizing: nextSizing,
+          };
+        }
+
         const savePreferenceDebounced = () => {
           if (!token) return;
 
@@ -224,6 +280,8 @@ export default function GlobalGridEnhancer() {
               await saveGridPreference(token, gridKey, {
                 columnOrder: runtimePref.columnOrder,
                 hiddenColumns: runtimePref.hiddenColumns,
+                columnSizing: runtimePref.columnSizing,
+                columnSizeMode: runtimePref.columnSizeMode,
                 sortField: runtimePref.sortField,
                 sortDirection: runtimePref.sortDirection,
               });
@@ -281,6 +339,22 @@ export default function GlobalGridEnhancer() {
                 return;
               }
               cell.style.display = hiddenSet.has(columnId) ? 'none' : '';
+
+              const isActionColumn = actionColumnIds.has(columnId);
+              const mode = isActionColumn ? 'fixed' : (runtimePref.columnSizeMode[columnId] === 'fixed' ? 'fixed' : 'grow');
+              const width = Number.isFinite(runtimePref.columnSizing[columnId])
+                ? runtimePref.columnSizing[columnId]
+                : (isActionColumn ? (actionColumnDefaultWidths[columnId] || 120) : undefined);
+              if (mode === 'fixed' && typeof width === 'number' && Number.isFinite(width)) {
+                const finalWidth = `${Math.max(60, Math.min(1400, Math.round(width)))}px`;
+                cell.style.width = finalWidth;
+                cell.style.minWidth = finalWidth;
+                cell.style.maxWidth = finalWidth;
+              } else {
+                cell.style.removeProperty('width');
+                cell.style.removeProperty('min-width');
+                cell.style.removeProperty('max-width');
+              }
             });
           });
         };
@@ -347,7 +421,6 @@ export default function GlobalGridEnhancer() {
           clearSortIndicators();
 
           if (isSortDisabled) return;
-
           if (!runtimePref.sortField || !runtimePref.sortDirection) return;
 
           const visibleOrder = runtimePref.columnOrder.filter((columnId) => columnIds.includes(columnId));
@@ -383,7 +456,6 @@ export default function GlobalGridEnhancer() {
             const label = (headerCell.textContent || '').trim();
             if (isActionHeader(label)) return;
             if (headerCell.dataset.gridSortIgnore === 'true') return;
-
             if (headerCell.dataset.gridSortBound === 'true') return;
 
             headerCell.dataset.gridSortBound = 'true';
@@ -402,6 +474,91 @@ export default function GlobalGridEnhancer() {
               refreshTable();
               savePreferenceDebounced();
             });
+          });
+        };
+
+        const attachResizeHandles = () => {
+          const headers = Array.from(table.querySelectorAll('thead th')) as HTMLTableCellElement[];
+          const visibleOrder = runtimePref.columnOrder.filter((columnId) => columnIds.includes(columnId));
+
+          headers.forEach((headerCell, position) => {
+            const columnId = visibleOrder[position];
+            if (!columnId) return;
+            if (isActionHeader((headerCell.textContent || '').trim())) return;
+            if (headerCell.dataset.gridResizeBound === 'true') return;
+
+            headerCell.dataset.gridResizeBound = 'true';
+            if (!headerCell.style.position) {
+              headerCell.style.position = 'relative';
+            }
+
+            const handle = document.createElement('div');
+            handle.className = 'grid-column-resize-handle';
+            handle.style.position = 'absolute';
+            handle.style.top = '0';
+            handle.style.right = '0';
+            handle.style.width = '9px';
+            handle.style.height = '100%';
+            handle.style.cursor = 'col-resize';
+            handle.style.userSelect = 'none';
+            handle.style.touchAction = 'none';
+            handle.style.zIndex = '3';
+
+            const line = document.createElement('div');
+            line.style.position = 'absolute';
+            line.style.top = '20%';
+            line.style.right = '2px';
+            line.style.width = '2px';
+            line.style.height = '60%';
+            line.style.borderRadius = '9999px';
+            line.style.backgroundColor = 'rgba(156, 163, 175, 0.7)';
+            handle.appendChild(line);
+
+            handle.addEventListener('mousedown', (downEvent) => {
+              downEvent.preventDefault();
+              downEvent.stopPropagation();
+
+              const startX = downEvent.clientX;
+              const startWidth = Math.max(60, Math.round(headerCell.getBoundingClientRect().width));
+
+              runtimePref = {
+                ...runtimePref,
+                columnSizeMode: {
+                  ...runtimePref.columnSizeMode,
+                  [columnId]: 'fixed',
+                },
+                columnSizing: {
+                  ...runtimePref.columnSizing,
+                  [columnId]: runtimePref.columnSizing[columnId] || startWidth,
+                },
+              };
+
+              const onMouseMove = (moveEvent: MouseEvent) => {
+                const delta = moveEvent.clientX - startX;
+                const nextWidth = Math.max(60, Math.min(1400, Math.round(startWidth + delta)));
+                runtimePref = {
+                  ...runtimePref,
+                  columnSizing: {
+                    ...runtimePref.columnSizing,
+                    [columnId]: nextWidth,
+                  },
+                };
+                applyColumnLayout();
+              };
+
+              const onMouseUp = () => {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                refreshTable();
+                ensureControlPanel();
+                savePreferenceDebounced();
+              };
+
+              document.addEventListener('mousemove', onMouseMove);
+              document.addEventListener('mouseup', onMouseUp);
+            });
+
+            headerCell.appendChild(handle);
           });
         };
 
@@ -424,7 +581,7 @@ export default function GlobalGridEnhancer() {
           button.textContent = 'Columns';
 
           const panel = document.createElement('div');
-          panel.className = 'hidden fixed z-[2147483647] w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3';
+          panel.className = 'hidden fixed z-[2147483647] w-[28rem] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3';
           panel.style.top = '0px';
           panel.style.left = '0px';
 
@@ -432,6 +589,14 @@ export default function GlobalGridEnhancer() {
           panelTitle.className = 'text-sm font-semibold text-gray-900 dark:text-white mb-2';
           panelTitle.textContent = 'Table Columns';
           panel.appendChild(panelTitle);
+
+          const fixedColumnsCount = runtimePref.columnOrder.filter((columnId) => runtimePref.columnSizeMode[columnId] === 'fixed').length;
+          const panelSummary = document.createElement('div');
+          panelSummary.className = 'text-xs text-gray-600 dark:text-gray-300 mb-2';
+          panelSummary.textContent = fixedColumnsCount > 0
+            ? `${fixedColumnsCount} fixed column${fixedColumnsCount > 1 ? 's' : ''}`
+            : 'No fixed columns';
+          panel.appendChild(panelSummary);
 
           const list = document.createElement('div');
           list.className = 'space-y-2 max-h-80 overflow-y-auto';
@@ -444,7 +609,7 @@ export default function GlobalGridEnhancer() {
             if (isActionHeader(headerLabel)) return;
 
             const item = document.createElement('div');
-            item.className = 'flex items-center gap-2';
+            item.className = 'flex items-center gap-2 flex-wrap';
 
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
@@ -510,10 +675,70 @@ export default function GlobalGridEnhancer() {
               savePreferenceDebounced();
             });
 
+            const modeSelect = document.createElement('select');
+            modeSelect.className = 'px-2 py-1 rounded text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-100';
+            modeSelect.innerHTML = '<option value="grow">Grow</option><option value="fixed">Fixed</option>';
+            modeSelect.value = runtimePref.columnSizeMode[columnId] === 'fixed' ? 'fixed' : 'grow';
+
+            modeSelect.addEventListener('change', () => {
+              const nextMode = modeSelect.value === 'fixed' ? 'fixed' : 'grow';
+              runtimePref = {
+                ...runtimePref,
+                columnSizeMode: {
+                  ...runtimePref.columnSizeMode,
+                  [columnId]: nextMode,
+                },
+                columnSizing: nextMode === 'fixed'
+                  ? {
+                      ...runtimePref.columnSizing,
+                      [columnId]: Number.isFinite(runtimePref.columnSizing[columnId])
+                        ? runtimePref.columnSizing[columnId]
+                        : Math.max(100, Math.round(headerCells[originalIndex].getBoundingClientRect().width || 140)),
+                    }
+                  : runtimePref.columnSizing,
+              };
+              refreshTable();
+              ensureControlPanel();
+              savePreferenceDebounced();
+            });
+
+            const widthInput = document.createElement('input');
+            widthInput.type = 'number';
+            widthInput.min = '60';
+            widthInput.max = '1400';
+            widthInput.step = '1';
+            widthInput.className = 'w-20 px-2 py-1 rounded text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-100';
+            widthInput.value = String(
+              Number.isFinite(runtimePref.columnSizing[columnId])
+                ? runtimePref.columnSizing[columnId]
+                : Math.max(100, Math.round(headerCells[originalIndex].getBoundingClientRect().width || 140))
+            );
+            widthInput.disabled = runtimePref.columnSizeMode[columnId] !== 'fixed';
+
+            widthInput.addEventListener('change', () => {
+              const nextWidth = Math.max(60, Math.min(1400, Math.round(Number(widthInput.value) || 140)));
+              runtimePref = {
+                ...runtimePref,
+                columnSizeMode: {
+                  ...runtimePref.columnSizeMode,
+                  [columnId]: 'fixed',
+                },
+                columnSizing: {
+                  ...runtimePref.columnSizing,
+                  [columnId]: nextWidth,
+                },
+              };
+              refreshTable();
+              ensureControlPanel();
+              savePreferenceDebounced();
+            });
+
             item.appendChild(checkbox);
             item.appendChild(label);
             item.appendChild(upButton);
             item.appendChild(downButton);
+            item.appendChild(modeSelect);
+            item.appendChild(widthInput);
             list.appendChild(item);
           });
 
@@ -536,7 +761,7 @@ export default function GlobalGridEnhancer() {
 
           button.addEventListener('click', () => {
             const rect = button.getBoundingClientRect();
-            const panelWidth = 320;
+            const panelWidth = 448;
             const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
             const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
             const top = Math.min(viewportHeight - 20, rect.bottom + 8);
@@ -552,6 +777,7 @@ export default function GlobalGridEnhancer() {
 
         refreshTable();
         attachHeaderSortHandlers();
+        attachResizeHandles();
         ensureControlPanel();
       });
     };

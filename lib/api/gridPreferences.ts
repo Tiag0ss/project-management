@@ -6,6 +6,8 @@ export interface GridPreference {
   gridKey: string;
   columnOrder?: string[];
   hiddenColumns?: string[];
+  columnSizing?: Record<string, number>;
+  columnSizeMode?: Record<string, 'fixed' | 'grow'>;
   sortField?: string | null;
   sortDirection?: 'asc' | 'desc' | null;
 }

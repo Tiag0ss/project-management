@@ -4809,8 +4809,11 @@ function TasksTab({
   const [newRootTaskInputResetKey, setNewRootTaskInputResetKey] = useState(0);
   const tasksGridRef = useRef<HTMLDivElement>(null);
   const [showTaskColumnsPanel, setShowTaskColumnsPanel] = useState(false);
+  const [taskColumnsPanelPosition, setTaskColumnsPanelPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [hiddenTaskColumns, setHiddenTaskColumns] = useState<string[]>([]);
   const [taskColumnOrder, setTaskColumnOrder] = useState<string[]>([]);
+  const [taskColumnSizing, setTaskColumnSizing] = useState<Record<string, number>>({});
+  const [taskColumnSizeMode, setTaskColumnSizeMode] = useState<Record<string, 'fixed' | 'grow'>>({});
   const [taskColumnsReady, setTaskColumnsReady] = useState(false);
 
   const additionalTaskColumnKeys = React.useMemo(() => {
@@ -4951,6 +4954,18 @@ function TasksTab({
 
   const isTaskColumnVisible = (columnId: string) => !hiddenTaskColumns.includes(columnId);
 
+  const getTaskColumnCurrentWidth = (columnId: string) => {
+    const grid = tasksGridRef.current;
+    if (!grid) return 140;
+    const table = grid.querySelector('table');
+    if (!(table instanceof HTMLTableElement)) return 140;
+    const headerCells = Array.from(table.querySelectorAll('thead th')) as HTMLTableCellElement[];
+    const target = headerCells.find((cell) => cell.dataset.columnKey?.trim() === columnId);
+    if (!target) return 140;
+    const width = Math.round(target.getBoundingClientRect().width || 140);
+    return Math.max(100, Math.min(1400, width));
+  };
+
   useEffect(() => {
     if (!token) return;
 
@@ -4962,7 +4977,12 @@ function TasksTab({
         const cached = typeof window !== 'undefined' ? window.sessionStorage.getItem(taskGridSessionKey) : null;
         if (cached) {
           hasSessionCache = true;
-          const parsed = JSON.parse(cached) as { columnOrder?: string[]; hiddenColumns?: string[] };
+          const parsed = JSON.parse(cached) as {
+            columnOrder?: string[];
+            hiddenColumns?: string[];
+            columnSizing?: Record<string, number>;
+            columnSizeMode?: Record<string, 'fixed' | 'grow'>;
+          };
           const valid = new Set(taskSelectableColumnIds);
 
           const cachedOrder = Array.isArray(parsed.columnOrder)
@@ -4976,8 +4996,26 @@ function TasksTab({
           const cachedHidden = Array.isArray(parsed.hiddenColumns)
             ? parsed.hiddenColumns.filter((columnId) => valid.has(columnId))
             : [];
+          const cachedSizing = parsed.columnSizing && typeof parsed.columnSizing === 'object'
+            ? Object.entries(parsed.columnSizing).reduce<Record<string, number>>((accumulator, [columnId, width]) => {
+                if (!valid.has(columnId)) return accumulator;
+                const numericWidth = Number(width);
+                if (!Number.isFinite(numericWidth)) return accumulator;
+                accumulator[columnId] = Math.max(60, Math.min(1400, Math.round(numericWidth)));
+                return accumulator;
+              }, {})
+            : {};
+          const cachedSizeMode = taskSelectableColumnIds.reduce<Record<string, 'fixed' | 'grow'>>((accumulator, columnId) => {
+            const mode = parsed.columnSizeMode && typeof parsed.columnSizeMode === 'object'
+              ? parsed.columnSizeMode[columnId]
+              : undefined;
+            accumulator[columnId] = mode === 'fixed' ? 'fixed' : 'grow';
+            return accumulator;
+          }, {});
           if (!cancelled) {
             setHiddenTaskColumns(cachedHidden);
+            setTaskColumnSizing(cachedSizing);
+            setTaskColumnSizeMode(cachedSizeMode);
             setTaskColumnsReady(true);
           }
         }
@@ -4994,6 +5032,8 @@ function TasksTab({
         if (!current || !Array.isArray(current.hiddenColumns)) {
           setTaskColumnOrder(taskSelectableColumnIds);
           setHiddenTaskColumns(taskDefaultHiddenColumns);
+          setTaskColumnSizing({});
+          setTaskColumnSizeMode(Object.fromEntries(taskSelectableColumnIds.map((columnId) => [columnId, 'grow' as const])));
           setTaskColumnsReady(true);
           return;
         }
@@ -5005,14 +5045,34 @@ function TasksTab({
         const missingOrder = taskSelectableColumnIds.filter((columnId) => !savedOrder.includes(columnId));
         const normalizedOrder = [...savedOrder, ...missingOrder];
         const savedHidden = current.hiddenColumns.filter((columnId) => valid.has(columnId));
+        const savedSizing = current.columnSizing && typeof current.columnSizing === 'object'
+          ? Object.entries(current.columnSizing).reduce<Record<string, number>>((accumulator, [columnId, width]) => {
+              if (!valid.has(columnId)) return accumulator;
+              const numericWidth = Number(width);
+              if (!Number.isFinite(numericWidth)) return accumulator;
+              accumulator[columnId] = Math.max(60, Math.min(1400, Math.round(numericWidth)));
+              return accumulator;
+            }, {})
+          : {};
+        const savedSizeMode = taskSelectableColumnIds.reduce<Record<string, 'fixed' | 'grow'>>((accumulator, columnId) => {
+          const mode = current.columnSizeMode && typeof current.columnSizeMode === 'object'
+            ? current.columnSizeMode[columnId]
+            : undefined;
+          accumulator[columnId] = mode === 'fixed' ? 'fixed' : 'grow';
+          return accumulator;
+        }, {});
         const savedSet = new Set(savedHidden);
         const newDefaults = taskDefaultHiddenColumns.filter((columnId) => !savedSet.has(columnId));
         setTaskColumnOrder(normalizedOrder);
         setHiddenTaskColumns(Array.from(new Set([...savedHidden, ...newDefaults])));
+        setTaskColumnSizing(savedSizing);
+        setTaskColumnSizeMode(savedSizeMode);
       } catch {
         if (!cancelled) {
           setTaskColumnOrder(taskSelectableColumnIds);
           setHiddenTaskColumns(taskDefaultHiddenColumns);
+          setTaskColumnSizing({});
+          setTaskColumnSizeMode(Object.fromEntries(taskSelectableColumnIds.map((columnId) => [columnId, 'grow' as const])));
           setTaskColumnsReady(true);
         }
       } finally {
@@ -5035,6 +5095,17 @@ function TasksTab({
     const valid = new Set(taskSelectableColumnIds);
     const sanitizedOrder = (taskColumnOrder.length > 0 ? taskColumnOrder : taskSelectableColumnIds).filter((columnId) => valid.has(columnId));
     const sanitizedHidden = hiddenTaskColumns.filter((columnId) => valid.has(columnId));
+    const sanitizedSizing = Object.entries(taskColumnSizing).reduce<Record<string, number>>((accumulator, [columnId, width]) => {
+      if (!valid.has(columnId)) return accumulator;
+      const numericWidth = Number(width);
+      if (!Number.isFinite(numericWidth)) return accumulator;
+      accumulator[columnId] = Math.max(60, Math.min(1400, Math.round(numericWidth)));
+      return accumulator;
+    }, {});
+    const sanitizedSizeMode = taskSelectableColumnIds.reduce<Record<string, 'fixed' | 'grow'>>((accumulator, columnId) => {
+      accumulator[columnId] = taskColumnSizeMode[columnId] === 'fixed' ? 'fixed' : 'grow';
+      return accumulator;
+    }, {});
 
     try {
       if (typeof window !== 'undefined') {
@@ -5043,6 +5114,8 @@ function TasksTab({
           JSON.stringify({
             columnOrder: sanitizedOrder,
             hiddenColumns: sanitizedHidden,
+            columnSizing: sanitizedSizing,
+            columnSizeMode: sanitizedSizeMode,
           })
         );
       }
@@ -5054,6 +5127,8 @@ function TasksTab({
       void saveGridPreference(token, taskGridPreferenceKey, {
         columnOrder: sanitizedOrder,
         hiddenColumns: sanitizedHidden,
+        columnSizing: sanitizedSizing,
+        columnSizeMode: sanitizedSizeMode,
         sortField: null,
         sortDirection: null,
       }).catch(() => undefined);
@@ -5064,11 +5139,13 @@ function TasksTab({
       void saveGridPreference(token, taskGridPreferenceKey, {
         columnOrder: sanitizedOrder,
         hiddenColumns: sanitizedHidden,
+        columnSizing: sanitizedSizing,
+        columnSizeMode: sanitizedSizeMode,
         sortField: null,
         sortDirection: null,
       }).catch(() => undefined);
     };
-  }, [taskColumnsReady, token, taskGridPreferenceKey, taskGridSessionKey, hiddenTaskColumns, taskColumnOrder, taskSelectableColumnIds.join('|')]);
+  }, [taskColumnsReady, token, taskGridPreferenceKey, taskGridSessionKey, hiddenTaskColumns, taskColumnOrder, taskColumnSizing, taskColumnSizeMode, taskSelectableColumnIds.join('|')]);
 
   useEffect(() => {
     const grid = tasksGridRef.current;
@@ -5104,12 +5181,110 @@ function TasksTab({
       const updatedCells = Array.from(row.children) as HTMLElement[];
       updatedCells.forEach((cell, index) => {
         const columnId = finalOrder[index];
-        cell.style.display = hiddenSet.has(columnId) ? 'none' : '';
+        const isHidden = hiddenSet.has(columnId);
+        cell.style.display = isHidden ? 'none' : '';
+
+        const isActionsColumn = columnId === 'actions';
+        if (!columnId || (!taskSelectableColumnIds.includes(columnId) && !isActionsColumn)) {
+          cell.style.removeProperty('width');
+          cell.style.removeProperty('min-width');
+          cell.style.removeProperty('max-width');
+          return;
+        }
+
+        const mode = isActionsColumn ? 'fixed' : (taskColumnSizeMode[columnId] === 'fixed' ? 'fixed' : 'grow');
+        const width = Number.isFinite(taskColumnSizing[columnId])
+          ? taskColumnSizing[columnId]
+          : (isActionsColumn ? 120 : undefined);
+        if (mode === 'fixed' && Number.isFinite(width)) {
+          const finalWidth = `${Math.max(60, Math.min(1400, Math.round(width)))}px`;
+          cell.style.width = finalWidth;
+          cell.style.minWidth = finalWidth;
+          cell.style.maxWidth = finalWidth;
+        } else {
+          cell.style.removeProperty('width');
+          cell.style.removeProperty('min-width');
+          cell.style.removeProperty('max-width');
+        }
       });
+    });
+
+    const reorderedHeaderCells = Array.from(headerRow.children).filter((cell) => cell instanceof HTMLTableCellElement) as HTMLTableCellElement[];
+    reorderedHeaderCells.forEach((headerCell, index) => {
+      const columnId = finalOrder[index];
+      if (!columnId || !taskSelectableColumnIds.includes(columnId) || hiddenSet.has(columnId)) return;
+
+      if (!headerCell.style.position) {
+        headerCell.style.position = 'relative';
+      }
+
+      if (headerCell.dataset.taskResizeBound === 'true') return;
+      headerCell.dataset.taskResizeBound = 'true';
+
+      const handle = document.createElement('div');
+      handle.className = 'task-grid-column-resize-handle';
+      handle.style.position = 'absolute';
+      handle.style.top = '0';
+      handle.style.right = '0';
+      handle.style.width = '9px';
+      handle.style.height = '100%';
+      handle.style.cursor = 'col-resize';
+      handle.style.userSelect = 'none';
+      handle.style.touchAction = 'none';
+      handle.style.zIndex = '3';
+
+      const line = document.createElement('div');
+      line.style.position = 'absolute';
+      line.style.top = '20%';
+      line.style.right = '2px';
+      line.style.width = '2px';
+      line.style.height = '60%';
+      line.style.borderRadius = '9999px';
+      line.style.backgroundColor = 'rgba(156, 163, 175, 0.7)';
+      handle.appendChild(line);
+
+      handle.addEventListener('mousedown', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const startX = event.clientX;
+        const startWidth = Math.max(60, Math.round(headerCell.getBoundingClientRect().width));
+
+        setTaskColumnSizeMode((previous) => ({
+          ...previous,
+          [columnId]: 'fixed',
+        }));
+        setTaskColumnSizing((previous) => ({
+          ...previous,
+          [columnId]: Number.isFinite(previous[columnId]) ? previous[columnId] : startWidth,
+        }));
+
+        const onMouseMove = (moveEvent: MouseEvent) => {
+          const delta = moveEvent.clientX - startX;
+          const nextWidth = Math.max(60, Math.min(1400, Math.round(startWidth + delta)));
+          setTaskColumnSizing((previous) => ({
+            ...previous,
+            [columnId]: nextWidth,
+          }));
+        };
+
+        const onMouseUp = () => {
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+        };
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+      });
+
+      headerCell.appendChild(handle);
     });
   }, [
     hiddenTaskColumns,
     taskColumnOrder,
+    taskColumnSizing,
+    taskColumnSizeMode,
+    taskSelectableColumnIds,
     tasks,
     taskColumnsReady,
     sortField,
@@ -6496,7 +6671,16 @@ function TasksTab({
           <div className="global-grid-controls mb-2 flex justify-end relative">
             <button
               type="button"
-              onClick={() => setShowTaskColumnsPanel((previous) => !previous)}
+              onClick={(event) => {
+                const buttonRect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                const panelWidth = 448;
+                const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+                const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+                const top = Math.min(viewportHeight - 20, buttonRect.bottom + 8);
+                const left = Math.max(8, Math.min(viewportWidth - panelWidth - 8, buttonRect.right - panelWidth));
+                setTaskColumnsPanelPosition({ top, left });
+                setShowTaskColumnsPanel((previous) => !previous);
+              }}
               className="h-9 px-3 rounded-lg text-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-colors"
             >
               Columns
@@ -6504,14 +6688,26 @@ function TasksTab({
             {showTaskColumnsPanel && (
               <>
                 <div className="fixed inset-0 z-[2147483646]" onClick={() => setShowTaskColumnsPanel(false)}></div>
-                <div className="absolute right-0 top-10 z-[2147483647] w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-3">
-                  <div className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Task Columns</div>
-                  <div className="max-h-80 overflow-y-auto space-y-2">
+                <div
+                  className="fixed z-[2147483647] w-[28rem] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3"
+                  style={{ top: `${taskColumnsPanelPosition.top}px`, left: `${taskColumnsPanelPosition.left}px` }}
+                >
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Table Columns</div>
+                  <div className="text-xs text-gray-600 dark:text-gray-300 mb-2">
+                    {taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length > 0
+                      ? `${taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length} fixed column${taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length > 1 ? 's' : ''}`
+                      : 'No fixed columns'}
+                  </div>
+                  <div className="space-y-2 max-h-80 overflow-y-auto">
                     {(taskColumnOrder.length > 0 ? taskColumnOrder : taskSelectableColumnIds).map((columnId, index) => {
                       const option = taskColumnOptions.find((entry) => entry.id === columnId);
                       if (!option) return null;
+                      const mode = taskColumnSizeMode[option.id] === 'fixed' ? 'fixed' : 'grow';
+                      const widthValue = Number.isFinite(taskColumnSizing[option.id])
+                        ? taskColumnSizing[option.id]
+                        : getTaskColumnCurrentWidth(option.id);
                       return (
-                        <div key={`task-column-${option.id}`} className="flex items-center gap-2">
+                        <div key={`task-column-${option.id}`} className="flex items-center gap-2 flex-wrap">
                           <input
                             type="checkbox"
                             checked={isTaskColumnVisible(option.id)}
@@ -6555,6 +6751,46 @@ function TasksTab({
                           >
                             ↓
                           </button>
+                          <select
+                            value={mode}
+                            onChange={(event) => {
+                              const nextMode = event.target.value === 'fixed' ? 'fixed' : 'grow';
+                              setTaskColumnSizeMode((previous) => ({
+                                ...previous,
+                                [option.id]: nextMode,
+                              }));
+                              if (nextMode === 'fixed') {
+                                setTaskColumnSizing((previous) => ({
+                                  ...previous,
+                                  [option.id]: Number.isFinite(previous[option.id]) ? previous[option.id] : getTaskColumnCurrentWidth(option.id),
+                                }));
+                              }
+                            }}
+                            className="px-2 py-1 rounded text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-100"
+                          >
+                            <option value="grow">Grow</option>
+                            <option value="fixed">Fixed</option>
+                          </select>
+                          <input
+                            type="number"
+                            min={60}
+                            max={1400}
+                            step={1}
+                            value={String(widthValue)}
+                            onChange={(event) => {
+                              const nextWidth = Math.max(60, Math.min(1400, Math.round(Number(event.target.value) || 140)));
+                              setTaskColumnSizeMode((previous) => ({
+                                ...previous,
+                                [option.id]: 'fixed',
+                              }));
+                              setTaskColumnSizing((previous) => ({
+                                ...previous,
+                                [option.id]: nextWidth,
+                              }));
+                            }}
+                            disabled={mode !== 'fixed'}
+                            className="w-20 px-2 py-1 rounded text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-100 disabled:opacity-50"
+                          />
                         </div>
                       );
                     })}
@@ -6564,6 +6800,8 @@ function TasksTab({
                     onClick={() => {
                       setTaskColumnOrder(taskSelectableColumnIds);
                       setHiddenTaskColumns(taskDefaultHiddenColumns);
+                      setTaskColumnSizing({});
+                      setTaskColumnSizeMode(Object.fromEntries(taskSelectableColumnIds.map((columnId) => [columnId, 'grow' as const])));
                     }}
                     className="mt-3 h-9 px-3 rounded-lg text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-colors"
                   >
