@@ -2,7 +2,7 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect, useMemo, Suspense } from 'react';
+import { useState, useEffect, useMemo, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -218,6 +218,9 @@ function DashboardContent() {
   const [recurringAllocations, setRecurringAllocations] = useState<any[]>([]);
   const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setModalMessage({ type: 'confirm', title, message, onConfirm });
@@ -259,29 +262,50 @@ function DashboardContent() {
     loadFeatureFlags();
   }, [token]);
 
+  const loadPendingTasksFromTasks = useCallback((tasks: TaskWithProject[]) => {
+    const pending = tasks
+      .filter((task: TaskWithProject) =>
+        !task.StatusIsClosed &&
+        !task.StatusIsCancelled &&
+        !task.StatusHideFromPlanningAndStatistics
+      )
+      .sort((a: TaskWithProject, b: TaskWithProject) => {
+        const dueA = a.DueDate ? new Date(a.DueDate) : null;
+        const dueB = b.DueDate ? new Date(b.DueDate) : null;
+        const overdueA = isTaskOverdue(a.DueDate ? String(a.DueDate) : null);
+        const overdueB = isTaskOverdue(b.DueDate ? String(b.DueDate) : null);
+
+        if (overdueA !== overdueB) {
+          return overdueA ? -1 : 1;
+        }
+
+        if (overdueA && overdueB) {
+          const dueATime = dueA ? dueA.getTime() : Infinity;
+          const dueBTime = dueB ? dueB.getTime() : Infinity;
+          if (dueATime !== dueBTime) {
+            return dueATime - dueBTime;
+          }
+        }
+
+        const plannedA = a.PlannedStartDate ? new Date(a.PlannedStartDate).getTime() : Infinity;
+        const plannedB = b.PlannedStartDate ? new Date(b.PlannedStartDate).getTime() : Infinity;
+        if (plannedA !== plannedB) {
+          return plannedA - plannedB;
+        }
+
+        const dueATime = dueA ? dueA.getTime() : Infinity;
+        const dueBTime = dueB ? dueB.getTime() : Infinity;
+        return dueATime - dueBTime;
+      });
+
+    setPendingTasks(pending);
+  }, []);
+
   useEffect(() => {
     if (!isLoading && !user) {
       router.push('/login');
-    } else if (user && token && featureFlagsLoaded) {
-      if (isCustomerUser) {
-        loadPortalData();
-      } else {
-        loadUserProfile();
-        loadSummaryStats();
-        loadPendingTasks();
-        if (user?.isAdmin) {
-          loadGlobalStats(analyticsPeriod);
-        }
-        if (activeTab === 'calendar') {
-          loadMyTasks();
-          loadTimeEntries();
-          loadCallRecords();
-          loadTaskAllocations();
-          loadRecurringAllocations();
-        }
-      }
     }
-  }, [user, isLoading, router, token, activeTab, analyticsPeriod, featureFlagsLoaded]);
+  }, [isLoading, user, router]);
 
   // Update active tab when URL param changes
   useEffect(() => {
@@ -434,6 +458,7 @@ function DashboardContent() {
   };
 
   const loadSummaryStats = async () => {
+    setOverviewLoading(true);
     try {
       // Load projects count
       const projectsResponse = await fetch(
@@ -452,16 +477,13 @@ function DashboardContent() {
         totalProjects = projectsData.projects?.length || 0;
       }
 
-      // Load my tasks
-      const tasksResponse = await fetch(
-        `${getApiUrl()}/api/tasks/my-tasks`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      const [tasks, entries, allocations] = await Promise.all([
+        loadMyTasks(),
+        loadTimeEntries(),
+        loadTaskAllocations()
+      ]);
+
+      loadPendingTasksFromTasks(tasks);
       
       let myTasksCount = 0;
       let totalTasks = 0;
@@ -471,56 +493,40 @@ function DashboardContent() {
       let overdueTasks = 0;
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      
-      if (tasksResponse.ok) {
-        const tasksData = await tasksResponse.json();
-        const tasks = tasksData.tasks || [];
-        const visibleTasks = tasks.filter((t: TaskWithProject) => !t.StatusHideFromPlanningAndStatistics);
-        myTasksCount = visibleTasks.length;
-        totalTasks = myTasksCount;
-        
-        // Identify tasks with children (parent tasks)
-        const taskIdsWithChildren = new Set(visibleTasks.filter((t: any) => t.ParentTaskId).map((t: any) => t.ParentTaskId));
-        // Get only leaf tasks (tasks without children)
-        const leafTasks = visibleTasks.filter((t: any) => !taskIdsWithChildren.has(t.Id));
-        
-        // Calculate estimated hours only from leaf tasks and overdue tasks
-        leafTasks.forEach((task: any) => {
-          const hours = Number(task.EstimatedHours || 0);
-          estimatedHours += hours;
-          
-          // Separate by project type
-          if (task.IsHobby) {
-            hobbyEstimatedHours += hours;
-          } else {
-            normalEstimatedHours += hours;
-          }
-        });
-        
-        // Check overdue tasks (all tasks, not just leaf)
-        visibleTasks.forEach((task: any) => {
-          if (task.DueDate && 
-              !task.StatusIsClosed &&
-              !task.StatusIsCancelled) {
-            const endDate = new Date(task.DueDate);
-            endDate.setHours(0, 0, 0, 0);
-            if (endDate < today) {
-              overdueTasks++;
-            }
-          }
-        });
-      }
+      const visibleTasks = tasks.filter((t: TaskWithProject) => !t.StatusHideFromPlanningAndStatistics);
+      myTasksCount = visibleTasks.length;
+      totalTasks = myTasksCount;
 
-      // Load time entries for this week and month
-      const entriesResponse = await fetch(
-        `${getApiUrl()}/api/time-entries/my-entries`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
+      // Identify tasks with children (parent tasks)
+      const taskIdsWithChildren = new Set(visibleTasks.filter((t: any) => t.ParentTaskId).map((t: any) => t.ParentTaskId));
+      // Get only leaf tasks (tasks without children)
+      const leafTasks = visibleTasks.filter((t: any) => !taskIdsWithChildren.has(t.Id));
+
+      // Calculate estimated hours only from leaf tasks and overdue tasks
+      leafTasks.forEach((task: any) => {
+        const hours = Number(task.EstimatedHours || 0);
+        estimatedHours += hours;
+
+        // Separate by project type
+        if (task.IsHobby) {
+          hobbyEstimatedHours += hours;
+        } else {
+          normalEstimatedHours += hours;
         }
-      );
+      });
+
+      // Check overdue tasks (all tasks, not just leaf)
+      visibleTasks.forEach((task: any) => {
+        if (task.DueDate &&
+            !task.StatusIsClosed &&
+            !task.StatusIsCancelled) {
+          const endDate = new Date(task.DueDate);
+          endDate.setHours(0, 0, 0, 0);
+          if (endDate < today) {
+            overdueTasks++;
+          }
+        }
+      });
       
       let hoursThisWeek = 0;
       let hoursThisMonth = 0;
@@ -529,103 +535,79 @@ function DashboardContent() {
       let hobbyWorkedHours = 0;
       let normalHoursThisWeek = 0;
       let hobbyHoursThisWeek = 0;
-      
-      if (entriesResponse.ok) {
-        const entriesData = await entriesResponse.json();
-        const entries = entriesData.entries || [];
-        
-        const now = new Date();
-        const startOfWeek = new Date(now);
-        startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
-        startOfWeek.setHours(0, 0, 0, 0);
-        
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        
-        entries.forEach((entry: any) => {
-          const entryDate = new Date(entry.WorkDate);
-          const hours = parseFloat(entry.Hours || 0);
-          const isHobby = entry.IsHobby || false;
-          
-          workedHours += hours;
-          
-          if (isHobby) {
-            hobbyWorkedHours += hours;
-          } else {
-            normalWorkedHours += hours;
-          }
-          
-          if (entryDate >= startOfWeek) {
-            hoursThisWeek += hours;
-            if (isHobby) {
-              hobbyHoursThisWeek += hours;
-            } else {
-              normalHoursThisWeek += hours;
-            }
-          }
-          
-          if (entryDate >= startOfMonth) {
-            hoursThisMonth += hours;
-          }
-        });
-      }
+      const now = new Date();
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+      startOfWeek.setHours(0, 0, 0, 0);
 
-      // Load task allocations for today and this week
-      const allocationsResponse = await fetch(
-        `${getApiUrl()}/api/task-allocations/my-allocations`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      entries.forEach((entry: any) => {
+        const entryDate = new Date(entry.WorkDate);
+        const hours = parseFloat(entry.Hours || 0);
+        const isHobby = entry.IsHobby || false;
+
+        workedHours += hours;
+
+        if (isHobby) {
+          hobbyWorkedHours += hours;
+        } else {
+          normalWorkedHours += hours;
         }
-      );
+
+        if (entryDate >= startOfWeek) {
+          hoursThisWeek += hours;
+          if (isHobby) {
+            hobbyHoursThisWeek += hours;
+          } else {
+            normalHoursThisWeek += hours;
+          }
+        }
+
+        if (entryDate >= startOfMonth) {
+          hoursThisMonth += hours;
+        }
+      });
       
       let allocatedToday = 0;
       let allocatedThisWeek = 0;
       let normalAllocatedThisWeek = 0;
       let hobbyAllocatedThisWeek = 0;
       const tasksToday: any[] = [];
-      
-      if (allocationsResponse.ok) {
-        const allocationsData = await allocationsResponse.json();
-        const allocations = allocationsData.allocations || [];
-        
-        const todayStr = today.toISOString().split('T')[0];
-        const now = new Date();
-        const startOfWeek = new Date(now);
-        startOfWeek.setDate(now.getDate() - now.getDay());
-        startOfWeek.setHours(0, 0, 0, 0);
-        const endOfWeek = new Date(startOfWeek);
-        endOfWeek.setDate(endOfWeek.getDate() + 6);
-        
-        allocations.forEach((alloc: any) => {
-          const allocDate = new Date(alloc.AllocationDate);
-          const allocDateStr = allocDate.toISOString().split('T')[0];
-          const hours = parseFloat(alloc.AllocatedHours || 0);
-          const isHobby = alloc.IsHobby || false;
-          
-          if (allocDateStr === todayStr) {
-            allocatedToday += hours;
-            tasksToday.push({
-              taskName: alloc.TaskName,
-              projectName: alloc.ProjectName,
-              isHobby,
-              hours: hours,
-              startTime: alloc.StartTime,
-              endTime: alloc.EndTime,
-            });
+      const todayStr = today.toISOString().split('T')[0];
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - now.getDay());
+      weekStart.setHours(0, 0, 0, 0);
+      const endOfWeek = new Date(weekStart);
+      endOfWeek.setDate(endOfWeek.getDate() + 6);
+
+      allocations.forEach((alloc: any) => {
+        const allocDate = new Date(alloc.AllocationDate);
+        const allocDateStr = allocDate.toISOString().split('T')[0];
+        const hours = parseFloat(alloc.AllocatedHours || 0);
+        const isHobby = alloc.IsHobby || false;
+
+        if (allocDateStr === todayStr) {
+          allocatedToday += hours;
+          tasksToday.push({
+            taskName: alloc.TaskName,
+            projectName: alloc.ProjectName,
+            isHobby,
+            hours: hours,
+            startTime: alloc.StartTime,
+            endTime: alloc.EndTime,
+          });
+        }
+
+        if (allocDate >= weekStart && allocDate <= endOfWeek) {
+          allocatedThisWeek += hours;
+          if (isHobby) {
+            hobbyAllocatedThisWeek += hours;
+          } else {
+            normalAllocatedThisWeek += hours;
           }
-          
-          if (allocDate >= startOfWeek && allocDate <= endOfWeek) {
-            allocatedThisWeek += hours;
-            if (isHobby) {
-              hobbyAllocatedThisWeek += hours;
-            } else {
-              normalAllocatedThisWeek += hours;
-            }
-          }
-        });
-      }
+        }
+      });
 
       setSummaryStats({
         totalProjects,
@@ -684,6 +666,8 @@ function DashboardContent() {
       }
     } catch (err) {
       console.error('Failed to load summary stats:', err);
+    } finally {
+      setOverviewLoading(false);
     }
   };
 
@@ -691,6 +675,7 @@ function DashboardContent() {
     if (!user?.isAdmin) return;
     
     try {
+      setAnalyticsLoading(true);
       const params = new URLSearchParams();
       const range = getPeriodRange(period);
       if (!range) {
@@ -717,10 +702,12 @@ function DashboardContent() {
       }
     } catch (err) {
       console.error('Failed to load global stats:', err);
+    } finally {
+      setAnalyticsLoading(false);
     }
   };
 
-  const loadTimeEntries = async () => {
+  const loadTimeEntries = async (): Promise<TimeEntry[]> => {
     try {
       const response = await fetch(
         `${getApiUrl()}/api/time-entries/my-entries`,
@@ -734,14 +721,17 @@ function DashboardContent() {
       
       if (response.ok) {
         const data = await response.json();
-        setTimeEntries(data.entries);
+        const entries = data.entries || [];
+        setTimeEntries(entries);
+        return entries;
       }
     } catch (err) {
       console.error('Failed to load time entries:', err);
     }
+    return [];
   };
 
-  const loadMyTasks = async () => {
+  const loadMyTasks = async (): Promise<TaskWithProject[]> => {
     try {
       // Get all tasks assigned to current user across all projects
       const response = await fetch(
@@ -756,69 +746,14 @@ function DashboardContent() {
       
       if (response.ok) {
         const data = await response.json();
-        setMyTasks(data.tasks || []);
+        const tasks = data.tasks || [];
+        setMyTasks(tasks);
+        return tasks;
       }
     } catch (err) {
       console.error('Failed to load tasks:', err);
     }
-  };
-
-  const loadPendingTasks = async () => {
-    try {
-      const response = await fetch(
-        `${getApiUrl()}/api/tasks/my-tasks`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        const tasks = data.tasks || [];
-        // Filter for pending tasks (not closed or cancelled)
-        // Order: overdue first, then by planned start date
-        const pending = tasks
-          .filter((task: TaskWithProject) => 
-            !task.StatusIsClosed &&
-            !task.StatusIsCancelled &&
-            !task.StatusHideFromPlanningAndStatistics
-          )
-          .sort((a: TaskWithProject, b: TaskWithProject) => {
-            const dueA = a.DueDate ? new Date(a.DueDate) : null;
-            const dueB = b.DueDate ? new Date(b.DueDate) : null;
-            const overdueA = isTaskOverdue(a.DueDate ? String(a.DueDate) : null);
-            const overdueB = isTaskOverdue(b.DueDate ? String(b.DueDate) : null);
-
-            if (overdueA !== overdueB) {
-              return overdueA ? -1 : 1;
-            }
-
-            if (overdueA && overdueB) {
-              const dueATime = dueA ? dueA.getTime() : Infinity;
-              const dueBTime = dueB ? dueB.getTime() : Infinity;
-              if (dueATime !== dueBTime) {
-                return dueATime - dueBTime;
-              }
-            }
-
-            const plannedA = a.PlannedStartDate ? new Date(a.PlannedStartDate).getTime() : Infinity;
-            const plannedB = b.PlannedStartDate ? new Date(b.PlannedStartDate).getTime() : Infinity;
-            if (plannedA !== plannedB) {
-              return plannedA - plannedB;
-            }
-
-            const dueATime = dueA ? dueA.getTime() : Infinity;
-            const dueBTime = dueB ? dueB.getTime() : Infinity;
-            return dueATime - dueBTime;
-          });
-        setPendingTasks(pending);
-      }
-    } catch (err) {
-      console.error('Failed to load pending tasks:', err);
-    }
+    return [];
   };
 
   const loadCallRecords = async () => {
@@ -842,7 +777,7 @@ function DashboardContent() {
     }
   };
 
-  const loadTaskAllocations = async () => {
+  const loadTaskAllocations = async (): Promise<TaskAllocationForCalendar[]> => {
     try {
       const response = await fetch(
         `${getApiUrl()}/api/task-allocations/my-allocations`,
@@ -856,11 +791,14 @@ function DashboardContent() {
       
       if (response.ok) {
         const data = await response.json();
-        setTaskAllocations(data.allocations || []);
+        const allocations = data.allocations || [];
+        setTaskAllocations(allocations);
+        return allocations;
       }
     } catch (err) {
       console.error('Failed to load task allocations:', err);
     }
+    return [];
   };
 
   const loadRecurringAllocations = async () => {
@@ -885,6 +823,42 @@ function DashboardContent() {
       console.error('Failed to load recurring allocations:', err);
     }
   };
+
+  const loadCalendarData = async () => {
+    setCalendarLoading(true);
+    try {
+      await Promise.all([
+        loadMyTasks(),
+        loadTimeEntries(),
+        loadCallRecords(),
+        loadTaskAllocations(),
+        loadRecurringAllocations(),
+      ]);
+    } finally {
+      setCalendarLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!user || !token || !featureFlagsLoaded || isCustomerUser) return;
+
+    loadUserProfile();
+    loadSummaryStats();
+  }, [user, token, featureFlagsLoaded, isCustomerUser, internalTicketsEnabled]);
+
+  useEffect(() => {
+    if (!user || !token || !featureFlagsLoaded || isCustomerUser || !user.isAdmin) return;
+    if (activeTab !== 'analytics') return;
+
+    loadGlobalStats(analyticsPeriod);
+  }, [user, token, featureFlagsLoaded, isCustomerUser, activeTab, analyticsPeriod]);
+
+  useEffect(() => {
+    if (!user || !token || !featureFlagsLoaded || isCustomerUser) return;
+    if (activeTab !== 'calendar') return;
+
+    loadCalendarData();
+  }, [user, token, featureFlagsLoaded, isCustomerUser, activeTab]);
   
   if (isLoading) {
     return (
@@ -1115,6 +1089,21 @@ function DashboardContent() {
           <main className="flex-1 overflow-auto p-6">
             {/* Overview Tab */}
             {activeTab === 'overview' && (
+            overviewLoading ? (
+              <div className="space-y-6 animate-pulse">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 h-28" />
+                <div className={`grid grid-cols-1 md:grid-cols-2 ${internalTicketsEnabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
+                  {Array.from({ length: internalTicketsEnabled ? 5 : 4 }).map((_, idx) => (
+                    <div key={`overview-kpi-skeleton-${idx}`} className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 h-24" />
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 h-72" />
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 h-72" />
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 h-80" />
+              </div>
+            ) : (
             <div className="space-y-6">
               {/* Welcome Header */}
               <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow p-6 text-white">
@@ -1487,27 +1476,36 @@ function DashboardContent() {
                 )}
               </div>
             </div>
+            )
           )}
 
           {/* Calendar Tab */}
           {activeTab === 'calendar' && (
-            <CalendarTab
-              tasks={myTasks}
-              timeEntries={timeEntries}
-              callRecords={callRecords}
-              taskAllocations={taskAllocations}
-              recurringAllocations={recurringAllocations}
-              workStartTimes={workStartTimes}
-              lunchTime={lunchTime}
-              lunchDuration={lunchDuration}
-              token={token || ''}
-              onDataChanged={() => {
-                loadTimeEntries();
-                loadCallRecords();
-                loadTaskAllocations();
-                loadRecurringAllocations();
-              }}
-            />
+            calendarLoading ? (
+              <div className="space-y-4 animate-pulse">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-20" />
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-[520px]" />
+              </div>
+            ) : (
+              <CalendarTab
+                tasks={myTasks}
+                timeEntries={timeEntries}
+                callRecords={callRecords}
+                taskAllocations={taskAllocations}
+                recurringAllocations={recurringAllocations}
+                workStartTimes={workStartTimes}
+                lunchTime={lunchTime}
+                lunchDuration={lunchDuration}
+                token={token || ''}
+                onDataChanged={() => {
+                  loadTimeEntries();
+                  loadCallRecords();
+                  loadTaskAllocations();
+                  loadRecurringAllocations();
+                  loadSummaryStats();
+                }}
+              />
+            )
           )}
 
           {/* Resume Tab */}
@@ -1556,7 +1554,20 @@ function DashboardContent() {
                 </div>
               </div>
 
-              {!globalStats ? (
+              {analyticsLoading ? (
+                <div className="space-y-4 animate-pulse">
+                  <div className={`grid grid-cols-2 md:grid-cols-4 ${internalTicketsEnabled ? 'lg:grid-cols-8' : 'lg:grid-cols-7'} gap-4`}>
+                    {Array.from({ length: internalTicketsEnabled ? 8 : 7 }).map((_, idx) => (
+                      <div key={`analytics-kpi-skeleton-${idx}`} className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 h-24" />
+                    ))}
+                  </div>
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-72" />
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-72" />
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-72" />
+                  </div>
+                </div>
+              ) : !globalStats ? (
                 <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
                   <p className="text-gray-500 dark:text-gray-400">Loading analytics data...</p>
                 </div>
