@@ -1,0 +1,39 @@
+{
+  "TableName": "UserGridPreferences",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "GridKey",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "PreferencesJson",
+      "DataType": "text",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

@@ -4689,7 +4689,7 @@ export default function PlanningPage() {
 
         {/* Allocations Tab */}
         {activeTab === 'allocations' && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700" data-grid-enhancer-ignore="true">
             {/* Filters */}
             <div className="p-4 border-b border-gray-200 dark:border-gray-700 space-y-4">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Filters</h2>

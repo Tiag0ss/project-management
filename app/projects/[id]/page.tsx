@@ -20,6 +20,7 @@ import RichTextEditor from '@/components/RichTextEditor';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import { getTaskAttachment } from '@/lib/api/taskAttachments';
 import { downloadTablePdf } from '@/lib/api/pdfExport';
+import { getAllGridPreferences, saveGridPreference } from '@/lib/api/gridPreferences';
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -4748,7 +4749,7 @@ function TasksTab({
   const [filterAssignee, setFilterAssignee] = useState<number | undefined>(undefined);
   const [filterTaskType, setFilterTaskType] = useState<number | undefined>(undefined);
   const [hideClosed, setHideClosed] = useState(false);
-  const [sortField, setSortField] = useState<'task' | 'assignee' | 'status' | 'priority' | 'dueDate' | 'TaskTypeName'>('task');
+  const [sortField, setSortField] = useState<string>('task');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [filterTagIds, setFilterTagIds] = useState<number[]>([]);
   const [taskTagMap, setTaskTagMap] = useState<Map<number, Array<{ id: number; name: string; color: string }>>>(new Map());
@@ -4807,6 +4808,317 @@ function TasksTab({
   const [isSavingRootInline, setIsSavingRootInline] = useState(false);
   const [newRootTaskInputResetKey, setNewRootTaskInputResetKey] = useState(0);
   const tasksGridRef = useRef<HTMLDivElement>(null);
+  const [showTaskColumnsPanel, setShowTaskColumnsPanel] = useState(false);
+  const [hiddenTaskColumns, setHiddenTaskColumns] = useState<string[]>([]);
+  const [taskColumnOrder, setTaskColumnOrder] = useState<string[]>([]);
+  const [taskColumnsReady, setTaskColumnsReady] = useState(false);
+
+  const additionalTaskColumnKeys = React.useMemo(() => {
+    const excludedKeys = new Set<string>([
+      'Id',
+      'ProjectId',
+      'ProjectName',
+      'TaskName',
+      'Description',
+      'Status',
+      'StatusName',
+      'StatusColor',
+      'StatusIsClosed',
+      'StatusIsCancelled',
+      'Priority',
+      'PriorityName',
+      'PriorityColor',
+      'TaskType',
+      'TaskTypeName',
+      'TaskTypeColor',
+      'AssignedTo',
+      'AssigneeName',
+      'Assignees',
+      'DueDate',
+      'ParentTaskId',
+      'DisplayOrder',
+    ]);
+
+    const discoveredKeys = new Set<string>();
+
+    for (const task of tasks) {
+      const entry = task as unknown as Record<string, unknown>;
+      for (const key of Object.keys(entry)) {
+        if (excludedKeys.has(key)) continue;
+        const value = entry[key];
+        if (value === undefined || value === null) continue;
+        if (Array.isArray(value)) continue;
+        if (typeof value === 'object') continue;
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+            continue;
+          }
+        }
+        discoveredKeys.add(key);
+      }
+    }
+
+    return Array.from(discoveredKeys).sort((a, b) => a.localeCompare(b));
+  }, [tasks]);
+
+  const formatAdditionalTaskColumnLabel = (rawKey: string) =>
+    rawKey
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^./, (value) => value.toUpperCase());
+
+  const renderAdditionalTaskColumnValue = (task: Task, rawKey: string): string => {
+    const record = task as unknown as Record<string, unknown>;
+    const value = record[rawKey];
+    if (value === null || value === undefined) return '-';
+
+    const relationBase = rawKey.endsWith('Id')
+      ? rawKey.slice(0, -2)
+      : rawKey.toLowerCase().endsWith('_id')
+        ? rawKey.slice(0, -3)
+        : null;
+
+    if (relationBase) {
+      const relationKeys = [
+        `${relationBase}Name`,
+        `${relationBase}Title`,
+        `${relationBase}Description`,
+        `${relationBase}DisplayName`,
+        `${relationBase}Label`,
+        `${relationBase}Code`,
+        `${relationBase}Number`,
+        `${relationBase}_name`,
+        `${relationBase}_title`,
+        `${relationBase}_description`,
+      ];
+
+      const relationValue = relationKeys
+        .map((key) => record[key])
+        .find((candidate) => candidate !== undefined && candidate !== null && String(candidate).trim().length > 0);
+
+      if (relationValue !== undefined && relationValue !== null) {
+        const idText = String(value).trim();
+        const descriptionText = String(relationValue).trim();
+        if (descriptionText && descriptionText !== idText) {
+          return `${idText} — ${descriptionText}`;
+        }
+      }
+    }
+
+    if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '-';
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (typeof value !== 'string') return String(value);
+
+    const trimmed = value.trim();
+    if (!trimmed) return '-';
+
+    const parsedDate = Date.parse(trimmed);
+    if (Number.isFinite(parsedDate) && /^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+      return new Date(parsedDate).toLocaleDateString();
+    }
+
+    return trimmed;
+  };
+
+  const taskGridPreferenceKey = `project-tasks-local-columns-v1-${Number(project.Id)}`;
+  const taskGridSessionKey = `task-grid-session-v1-${Number(project.Id)}`;
+
+  const taskColumnOptions = React.useMemo(
+    () => [
+      { id: 'task-type', label: 'Task Type' },
+      { id: 'task', label: 'Task' },
+      { id: 'assigned-to', label: 'Assigned To' },
+      { id: 'status', label: 'Status' },
+      { id: 'priority', label: 'Priority' },
+      { id: 'due-date', label: 'Due Date' },
+      ...additionalTaskColumnKeys.map((columnKey) => ({ id: `extra-${columnKey}`, label: formatAdditionalTaskColumnLabel(columnKey) })),
+    ],
+    [additionalTaskColumnKeys]
+  );
+
+  const taskSelectableColumnIds = React.useMemo(
+    () => taskColumnOptions.map((option) => option.id),
+    [taskColumnOptions]
+  );
+
+  const taskDefaultHiddenColumns = React.useMemo(
+    () => taskSelectableColumnIds.filter((columnId) => columnId.startsWith('extra-')),
+    [taskSelectableColumnIds]
+  );
+
+  const isTaskColumnVisible = (columnId: string) => !hiddenTaskColumns.includes(columnId);
+
+  useEffect(() => {
+    if (!token) return;
+
+    let cancelled = false;
+    let hasSessionCache = false;
+
+    const loadTaskColumnsPreference = async () => {
+      try {
+        const cached = typeof window !== 'undefined' ? window.sessionStorage.getItem(taskGridSessionKey) : null;
+        if (cached) {
+          hasSessionCache = true;
+          const parsed = JSON.parse(cached) as { columnOrder?: string[]; hiddenColumns?: string[] };
+          const valid = new Set(taskSelectableColumnIds);
+
+          const cachedOrder = Array.isArray(parsed.columnOrder)
+            ? parsed.columnOrder.filter((columnId) => valid.has(columnId))
+            : [];
+          const missingCachedOrder = taskSelectableColumnIds.filter((columnId) => !cachedOrder.includes(columnId));
+          if (!cancelled) {
+            setTaskColumnOrder(cachedOrder.length > 0 ? [...cachedOrder, ...missingCachedOrder] : taskSelectableColumnIds);
+          }
+
+          const cachedHidden = Array.isArray(parsed.hiddenColumns)
+            ? parsed.hiddenColumns.filter((columnId) => valid.has(columnId))
+            : [];
+          if (!cancelled) {
+            setHiddenTaskColumns(cachedHidden);
+            setTaskColumnsReady(true);
+          }
+        }
+      } catch {
+        // ignore session cache parse errors
+      }
+
+      try {
+        const preferences = await getAllGridPreferences(token);
+        if (cancelled) return;
+        if (hasSessionCache) return;
+
+        const current = preferences.find((entry) => entry.gridKey === taskGridPreferenceKey);
+        if (!current || !Array.isArray(current.hiddenColumns)) {
+          setTaskColumnOrder(taskSelectableColumnIds);
+          setHiddenTaskColumns(taskDefaultHiddenColumns);
+          setTaskColumnsReady(true);
+          return;
+        }
+
+        const valid = new Set(taskSelectableColumnIds);
+        const savedOrder = Array.isArray(current.columnOrder)
+          ? current.columnOrder.filter((columnId) => valid.has(columnId))
+          : [];
+        const missingOrder = taskSelectableColumnIds.filter((columnId) => !savedOrder.includes(columnId));
+        const normalizedOrder = [...savedOrder, ...missingOrder];
+        const savedHidden = current.hiddenColumns.filter((columnId) => valid.has(columnId));
+        const savedSet = new Set(savedHidden);
+        const newDefaults = taskDefaultHiddenColumns.filter((columnId) => !savedSet.has(columnId));
+        setTaskColumnOrder(normalizedOrder);
+        setHiddenTaskColumns(Array.from(new Set([...savedHidden, ...newDefaults])));
+      } catch {
+        if (!cancelled) {
+          setTaskColumnOrder(taskSelectableColumnIds);
+          setHiddenTaskColumns(taskDefaultHiddenColumns);
+          setTaskColumnsReady(true);
+        }
+      } finally {
+        if (!cancelled && !hasSessionCache) {
+          setTaskColumnsReady(true);
+        }
+      }
+    };
+
+    loadTaskColumnsPreference();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, taskGridPreferenceKey, taskGridSessionKey, taskSelectableColumnIds.join('|')]);
+
+  useEffect(() => {
+    if (!taskColumnsReady || !token) return;
+
+    const valid = new Set(taskSelectableColumnIds);
+    const sanitizedOrder = (taskColumnOrder.length > 0 ? taskColumnOrder : taskSelectableColumnIds).filter((columnId) => valid.has(columnId));
+    const sanitizedHidden = hiddenTaskColumns.filter((columnId) => valid.has(columnId));
+
+    try {
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(
+          taskGridSessionKey,
+          JSON.stringify({
+            columnOrder: sanitizedOrder,
+            hiddenColumns: sanitizedHidden,
+          })
+        );
+      }
+    } catch {
+      // ignore session storage failures
+    }
+
+    const timer = setTimeout(() => {
+      void saveGridPreference(token, taskGridPreferenceKey, {
+        columnOrder: sanitizedOrder,
+        hiddenColumns: sanitizedHidden,
+        sortField: null,
+        sortDirection: null,
+      }).catch(() => undefined);
+    }, 250);
+
+    return () => {
+      clearTimeout(timer);
+      void saveGridPreference(token, taskGridPreferenceKey, {
+        columnOrder: sanitizedOrder,
+        hiddenColumns: sanitizedHidden,
+        sortField: null,
+        sortDirection: null,
+      }).catch(() => undefined);
+    };
+  }, [taskColumnsReady, token, taskGridPreferenceKey, taskGridSessionKey, hiddenTaskColumns, taskColumnOrder, taskSelectableColumnIds.join('|')]);
+
+  useEffect(() => {
+    const grid = tasksGridRef.current;
+    if (!grid) return;
+
+    const table = grid.querySelector('table');
+    if (!(table instanceof HTMLTableElement)) return;
+
+    const headerRow = table.querySelector('thead tr');
+    if (!headerRow) return;
+
+    const headerCells = Array.from(headerRow.children).filter((cell) => cell instanceof HTMLTableCellElement) as HTMLTableCellElement[];
+    const columnIds = headerCells.map((cell, index) => cell.dataset.columnKey?.trim() || `column-${index + 1}`);
+    const valid = new Set(columnIds);
+    const orderedColumnIds = (taskColumnOrder.length > 0 ? taskColumnOrder : columnIds)
+      .filter((columnId) => valid.has(columnId));
+    const missing = columnIds.filter((columnId) => !orderedColumnIds.includes(columnId));
+    const finalOrder = [...orderedColumnIds, ...missing];
+    const hiddenSet = new Set(hiddenTaskColumns);
+
+    const rows = Array.from(table.querySelectorAll('tr')) as HTMLTableRowElement[];
+    rows.forEach((row) => {
+      const cells = Array.from(row.children) as HTMLElement[];
+      if (cells.length !== columnIds.length) return;
+      const byColumn = new Map<string, HTMLElement>();
+      cells.forEach((cell, index) => {
+        byColumn.set(columnIds[index], cell);
+      });
+      finalOrder.forEach((columnId) => {
+        const cell = byColumn.get(columnId);
+        if (cell) row.appendChild(cell);
+      });
+      const updatedCells = Array.from(row.children) as HTMLElement[];
+      updatedCells.forEach((cell, index) => {
+        const columnId = finalOrder[index];
+        cell.style.display = hiddenSet.has(columnId) ? 'none' : '';
+      });
+    });
+  }, [
+    hiddenTaskColumns,
+    taskColumnOrder,
+    tasks,
+    taskColumnsReady,
+    sortField,
+    sortDirection,
+    expandedTasks,
+    editingRowTaskId,
+    creatingSubtaskParentId,
+    creatingRootTaskInline,
+  ]);
 
   // Check which integrations are configured
   const hasJiraIntegration = jiraIntegration?.IsEnabled && jiraIntegration?.JiraUrl;
@@ -4997,6 +5309,10 @@ function TasksTab({
       const search = filterText.toLowerCase();
       const descriptionText = (task.Description || '').replace(/<[^>]*>/g, ' ').toLowerCase();
       const taskTagsText = (taskTagMap.get(task.Id) || []).map(taskTag => taskTag.name.toLowerCase()).join(' ');
+      const additionalColumnsText = additionalTaskColumnKeys
+        .map((columnKey) => renderAdditionalTaskColumnValue(task, columnKey).toLowerCase())
+        .filter((textValue) => textValue && textValue !== '-')
+        .join(' ');
       const matches =
         (task.TaskName || '').toLowerCase().includes(search) ||
         (task.AssigneeName || '').toLowerCase().includes(search) ||
@@ -5004,10 +5320,36 @@ function TasksTab({
         (task.PriorityName || '').toLowerCase().includes(search) ||
         (task.TaskTypeName || '').toLowerCase().includes(search) ||
         descriptionText.includes(search) ||
-        taskTagsText.includes(search);
+        taskTagsText.includes(search) ||
+        additionalColumnsText.includes(search);
       if (!matches) return false;
     }
     return true;
+  };
+
+  const comparePrimitiveValues = (valueA: unknown, valueB: unknown): number => {
+    const textA = valueA === null || valueA === undefined ? '' : String(valueA).trim();
+    const textB = valueB === null || valueB === undefined ? '' : String(valueB).trim();
+
+    const numberA = Number(textA.replace(/[^0-9.-]/g, ''));
+    const numberB = Number(textB.replace(/[^0-9.-]/g, ''));
+    const isNumberA = Number.isFinite(numberA) && /\d/.test(textA);
+    const isNumberB = Number.isFinite(numberB) && /\d/.test(textB);
+
+    if (isNumberA && isNumberB) {
+      return numberA - numberB;
+    }
+
+    const dateA = Date.parse(textA);
+    const dateB = Date.parse(textB);
+    const isDateA = Number.isFinite(dateA);
+    const isDateB = Number.isFinite(dateB);
+
+    if (isDateA && isDateB) {
+      return dateA - dateB;
+    }
+
+    return textA.localeCompare(textB, undefined, { sensitivity: 'base', numeric: true });
   };
 
   const compareTasks = (a: Task, b: Task): number => {
@@ -5035,6 +5377,17 @@ function TasksTab({
         else if (aTime === null) comparison = 1;
         else if (bTime === null) comparison = -1;
         else comparison = aTime - bTime;
+        break;
+      }
+      default: {
+        if (sortField.startsWith('extra:')) {
+          const rawKey = sortField.slice('extra:'.length);
+          const valueA = (a as unknown as Record<string, unknown>)[rawKey];
+          const valueB = (b as unknown as Record<string, unknown>)[rawKey];
+          comparison = comparePrimitiveValues(valueA, valueB);
+        } else {
+          comparison = 0;
+        }
         break;
       }
     }
@@ -5066,7 +5419,7 @@ function TasksTab({
     return false;
   };
 
-  const handleSort = (field: 'task' | 'assignee' | 'status' | 'priority' | 'dueDate' | 'TaskTypeName') => {
+  const handleSort = (field: string) => {
     if (sortField === field) {
       setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -5075,7 +5428,7 @@ function TasksTab({
     }
   };
 
-  const SortIcon = ({ field }: { field: 'task' | 'assignee' | 'status' | 'priority' | 'dueDate' | 'TaskTypeName' }) => {
+  const SortIcon = ({ field }: { field: string }) => {
     if (sortField !== field) {
       return (
         <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -5650,6 +6003,11 @@ function TasksTab({
             task.DueDate ? new Date(task.DueDate).toLocaleDateString() : '-'
           )}
         </td>
+        {additionalTaskColumnKeys.map((columnKey) => (
+          <td key={`task-${task.Id}-extra-${columnKey}`} className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+            {renderAdditionalTaskColumnValue(task, columnKey)}
+          </td>
+        ))}
         <td className="px-2 py-2 whitespace-nowrap text-right text-sm font-medium">
           {canManage && isEditingRow ? (
             <div className="flex items-center justify-end gap-1">
@@ -5809,6 +6167,11 @@ function TasksTab({
               className="w-full"
             />
           </td>
+          {additionalTaskColumnKeys.map((columnKey) => (
+            <td key={`new-subtask-extra-${task.Id}-${columnKey}`} className="px-2 py-2 whitespace-nowrap text-sm text-gray-400 dark:text-gray-500">
+              -
+            </td>
+          ))}
           <td className="px-2 py-2 whitespace-nowrap text-right text-sm font-medium">
             <div className="flex items-center justify-end gap-1">
               <button
@@ -6130,13 +6493,94 @@ function TasksTab({
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-visible border border-gray-200 dark:border-gray-700" ref={tasksGridRef}>
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+          <div className="global-grid-controls mb-2 flex justify-end relative">
+            <button
+              type="button"
+              onClick={() => setShowTaskColumnsPanel((previous) => !previous)}
+              className="h-9 px-3 rounded-lg text-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-colors"
+            >
+              Columns
+            </button>
+            {showTaskColumnsPanel && (
+              <>
+                <div className="fixed inset-0 z-[2147483646]" onClick={() => setShowTaskColumnsPanel(false)}></div>
+                <div className="absolute right-0 top-10 z-[2147483647] w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-3">
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Task Columns</div>
+                  <div className="max-h-80 overflow-y-auto space-y-2">
+                    {(taskColumnOrder.length > 0 ? taskColumnOrder : taskSelectableColumnIds).map((columnId, index) => {
+                      const option = taskColumnOptions.find((entry) => entry.id === columnId);
+                      if (!option) return null;
+                      return (
+                        <div key={`task-column-${option.id}`} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isTaskColumnVisible(option.id)}
+                            onChange={() => {
+                              setHiddenTaskColumns((previous) =>
+                                previous.includes(option.id)
+                                  ? previous.filter((columnKey) => columnKey !== option.id)
+                                  : [...previous, option.id]
+                              );
+                            }}
+                            className="h-4 w-4"
+                          />
+                          <div className="flex-1 text-sm text-gray-800 dark:text-gray-200">{option.label}</div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (index === 0) return;
+                              setTaskColumnOrder((previous) => {
+                                const currentOrder = [...(previous.length > 0 ? previous : taskSelectableColumnIds)];
+                                [currentOrder[index - 1], currentOrder[index]] = [currentOrder[index], currentOrder[index - 1]];
+                                return currentOrder;
+                              });
+                            }}
+                            disabled={index === 0}
+                            className="px-2 py-1 rounded text-xs bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (index === (taskColumnOrder.length > 0 ? taskColumnOrder.length : taskSelectableColumnIds.length) - 1) return;
+                              setTaskColumnOrder((previous) => {
+                                const currentOrder = [...(previous.length > 0 ? previous : taskSelectableColumnIds)];
+                                [currentOrder[index + 1], currentOrder[index]] = [currentOrder[index], currentOrder[index + 1]];
+                                return currentOrder;
+                              });
+                            }}
+                            disabled={index === (taskColumnOrder.length > 0 ? taskColumnOrder.length : taskSelectableColumnIds.length) - 1}
+                            className="px-2 py-1 rounded text-xs bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
+                          >
+                            ↓
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTaskColumnOrder(taskSelectableColumnIds);
+                      setHiddenTaskColumns(taskDefaultHiddenColumns);
+                    }}
+                    className="mt-3 h-9 px-3 rounded-lg text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-colors"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-visible border border-gray-200 dark:border-gray-700" ref={tasksGridRef} data-grid-enhancer-ignore="true">
+          <table data-grid-disable-sort="true" data-grid-disable-reorder="true" data-grid-key={`project-tasks-${Number(project.Id)}-v2`} className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th data-column-key="task-type" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <div className="flex items-center justify-between gap-2">
-                    <button onClick={() => handleSort('TaskTypeName')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
+                    <button onClick={(event) => { event.stopPropagation(); handleSort('TaskTypeName'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
                       Task Type <SortIcon field="TaskTypeName" />
                     </button>
                     {canCreate && (
@@ -6152,32 +6596,50 @@ function TasksTab({
                     )}
                   </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  <button onClick={() => handleSort('task')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
+                <th data-column-key="task" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <button onClick={(event) => { event.stopPropagation(); handleSort('task'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
                     Task <SortIcon field="task" />
                   </button>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  <button onClick={() => handleSort('assignee')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
+                <th data-column-key="assigned-to" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <button onClick={(event) => { event.stopPropagation(); handleSort('assignee'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
                     Assigned To <SortIcon field="assignee" />
                   </button>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  <button onClick={() => handleSort('status')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
+                <th data-column-key="status" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <button onClick={(event) => { event.stopPropagation(); handleSort('status'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
                     Status <SortIcon field="status" />
                   </button>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  <button onClick={() => handleSort('priority')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
+                <th data-column-key="priority" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <button onClick={(event) => { event.stopPropagation(); handleSort('priority'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
                     Priority <SortIcon field="priority" />
                   </button>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  <button onClick={() => handleSort('dueDate')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
+                <th data-column-key="due-date" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <button onClick={(event) => { event.stopPropagation(); handleSort('dueDate'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
                     Due Date <SortIcon field="dueDate" />
                   </button>
                 </th>
-                <th scope="col" className="relative px-6 py-3">
+                {additionalTaskColumnKeys.map((columnKey) => (
+                  <th
+                    key={`extra-header-${columnKey}`}
+                    data-column-key={`extra-${columnKey}`}
+                    data-default-hidden="true"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
+                  >
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleSort(`extra:${columnKey}`);
+                      }}
+                      className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100"
+                    >
+                      {formatAdditionalTaskColumnLabel(columnKey)} <SortIcon field={`extra:${columnKey}`} />
+                    </button>
+                  </th>
+                ))}
+                <th data-column-key="actions" scope="col" className="relative px-6 py-3">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
@@ -6263,6 +6725,11 @@ function TasksTab({
                           className="w-full"
                         />
                       </td>
+                      {additionalTaskColumnKeys.map((columnKey) => (
+                        <td key={`new-root-extra-${columnKey}`} className="px-2 py-2 whitespace-nowrap text-sm text-gray-400 dark:text-gray-500">
+                          -
+                        </td>
+                      ))}
                       <td className="px-2 py-2 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end gap-1">
                           <button
@@ -6302,7 +6769,7 @@ function TasksTab({
                 </>
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                  <td colSpan={7 + additionalTaskColumnKeys.length} className="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                     No tasks match the current filters.
                   </td>
                 </tr>

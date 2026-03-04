@@ -207,15 +207,54 @@ export default function OrganizationsPage() {
   // Filter and sort organizations
   const filteredAndSortedOrgs = useMemo(() => {
     let result = [...organizations];
+
+    const rowMatchesSearch = (org: Organization, search: string): boolean => {
+      const record = org as unknown as Record<string, unknown>;
+
+      for (const [key, rawValue] of Object.entries(record)) {
+        if (rawValue === null || rawValue === undefined) continue;
+        if (Array.isArray(rawValue)) continue;
+        if (typeof rawValue === 'object') continue;
+
+        const valueText = String(rawValue).toLowerCase();
+        if (valueText.includes(search)) return true;
+
+        const relationBase = key.endsWith('Id')
+          ? key.slice(0, -2)
+          : key.toLowerCase().endsWith('_id')
+            ? key.slice(0, -3)
+            : null;
+
+        if (relationBase) {
+          const relationKeys = [
+            `${relationBase}Name`,
+            `${relationBase}Title`,
+            `${relationBase}Description`,
+            `${relationBase}DisplayName`,
+            `${relationBase}Label`,
+            `${relationBase}Code`,
+            `${relationBase}Number`,
+            `${relationBase}_name`,
+            `${relationBase}_title`,
+            `${relationBase}_description`,
+          ];
+
+          const relationMatch = relationKeys.some((relationKey) => {
+            const relationValue = record[relationKey];
+            return relationValue !== null && relationValue !== undefined && String(relationValue).toLowerCase().includes(search);
+          });
+
+          if (relationMatch) return true;
+        }
+      }
+
+      return false;
+    };
     
     // Apply filter
     if (filterText.trim()) {
       const search = filterText.toLowerCase();
-      result = result.filter(org => 
-        org.Name.toLowerCase().includes(search) ||
-        (org.Description && org.Description.toLowerCase().includes(search)) ||
-        org.Role.toLowerCase().includes(search)
-      );
+      result = result.filter((org) => rowMatchesSearch(org, search));
     }
     
     // Apply sort
@@ -249,6 +288,98 @@ export default function OrganizationsPage() {
     
     return result;
   }, [organizations, filterText, sortField, sortDirection]);
+
+  const additionalOrganizationColumnKeys = useMemo(() => {
+    const excludedKeys = new Set<string>([
+      'Id',
+      'Name',
+      'Description',
+      'Role',
+      'MemberCount',
+      'ProjectCount',
+      'OpenTickets',
+      'TotalTasks',
+      'CompletedTasks',
+      'CreatedAt',
+      'UpdatedAt',
+    ]);
+
+    const keys = new Set<string>();
+    for (const org of organizations) {
+      const record = org as unknown as Record<string, unknown>;
+      for (const key of Object.keys(record)) {
+        if (excludedKeys.has(key)) continue;
+        const value = record[key];
+        if (value === undefined || value === null) continue;
+        if (Array.isArray(value)) continue;
+        if (typeof value === 'object') continue;
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+            continue;
+          }
+        }
+        keys.add(key);
+      }
+    }
+
+    return Array.from(keys).sort((a, b) => a.localeCompare(b));
+  }, [organizations]);
+
+  const formatExtraColumnLabel = (rawKey: string) =>
+    rawKey
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^./, (value) => value.toUpperCase());
+
+  const renderOrganizationExtraColumnValue = (org: Organization, rawKey: string): string => {
+    const record = org as unknown as Record<string, unknown>;
+    const value = record[rawKey];
+    if (value === undefined || value === null) return '-';
+
+    const relationBase = rawKey.endsWith('Id')
+      ? rawKey.slice(0, -2)
+      : rawKey.toLowerCase().endsWith('_id')
+        ? rawKey.slice(0, -3)
+        : null;
+    if (relationBase) {
+      const relationKeys = [
+        `${relationBase}Name`,
+        `${relationBase}Title`,
+        `${relationBase}Description`,
+        `${relationBase}DisplayName`,
+        `${relationBase}Label`,
+        `${relationBase}Code`,
+        `${relationBase}Number`,
+        `${relationBase}_name`,
+        `${relationBase}_title`,
+        `${relationBase}_description`,
+      ];
+      const relationValue = relationKeys
+        .map((key) => record[key])
+        .find((candidate) => candidate !== undefined && candidate !== null && String(candidate).trim().length > 0);
+
+      if (relationValue !== undefined && relationValue !== null) {
+        const idText = String(value).trim();
+        const descriptionText = String(relationValue).trim();
+        if (descriptionText && descriptionText !== idText) {
+          return `${idText} — ${descriptionText}`;
+        }
+      }
+    }
+
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '-';
+    const text = String(value).trim();
+    if (!text) return '-';
+    const parsedDate = Date.parse(text);
+    if (Number.isFinite(parsedDate) && /^\d{4}-\d{2}-\d{2}/.test(text)) {
+      return new Date(parsedDate).toLocaleDateString();
+    }
+    return text;
+  };
 
   const handleSort = (field: OrgSortField) => {
     if (sortField === field) {
@@ -504,6 +635,16 @@ export default function OrganizationsPage() {
                         <SortIcon field="tasks" />
                       </div>
                     </th>
+                    {additionalOrganizationColumnKeys.map((columnKey) => (
+                      <th
+                        key={`extra-org-header-${columnKey}`}
+                        data-column-key={`extra-${columnKey}`}
+                        data-default-hidden="true"
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                      >
+                        {formatExtraColumnLabel(columnKey)}
+                      </th>
+                    ))}
                     <th scope="col" className="relative px-6 py-3">
                       <span className="sr-only">Actions</span>
                     </th>
@@ -561,6 +702,11 @@ export default function OrganizationsPage() {
                           )}
                         </div>
                       </td>
+                      {additionalOrganizationColumnKeys.map((columnKey) => (
+                        <td key={`extra-org-cell-${org.Id}-${columnKey}`} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                          {renderOrganizationExtraColumnValue(org, columnKey)}
+                        </td>
+                      ))}
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button

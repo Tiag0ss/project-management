@@ -2,7 +2,7 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -129,18 +129,148 @@ export default function CustomersPage() {
     }
   }, [internalTicketsEnabled, sortBy]);
 
+  const additionalCustomerColumnKeys = useMemo(() => {
+    const excludedKeys = new Set<string>([
+      'Id',
+      'Name',
+      'ExternalName',
+      'Email',
+      'Phone',
+      'OpenTickets',
+      'Organizations',
+      'Contacts',
+      'Address',
+      'Notes',
+    ]);
+
+    const keys = new Set<string>();
+    for (const customer of customers) {
+      const record = customer as unknown as Record<string, unknown>;
+      for (const key of Object.keys(record)) {
+        if (excludedKeys.has(key)) continue;
+        const value = record[key];
+        if (value === undefined || value === null) continue;
+        if (Array.isArray(value)) continue;
+        if (typeof value === 'object') continue;
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+            continue;
+          }
+        }
+        keys.add(key);
+      }
+    }
+
+    return Array.from(keys).sort((a, b) => a.localeCompare(b));
+  }, [customers]);
+
+  const formatExtraColumnLabel = (rawKey: string) =>
+    rawKey
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^./, (value) => value.toUpperCase());
+
+  const renderCustomerExtraColumnValue = (customer: Customer, rawKey: string): string => {
+    const record = customer as unknown as Record<string, unknown>;
+    const value = record[rawKey];
+    if (value === undefined || value === null) return '-';
+
+    const relationBase = rawKey.endsWith('Id')
+      ? rawKey.slice(0, -2)
+      : rawKey.toLowerCase().endsWith('_id')
+        ? rawKey.slice(0, -3)
+        : null;
+    if (relationBase) {
+      const relationKeys = [
+        `${relationBase}Name`,
+        `${relationBase}Title`,
+        `${relationBase}Description`,
+        `${relationBase}DisplayName`,
+        `${relationBase}Label`,
+        `${relationBase}Code`,
+        `${relationBase}Number`,
+        `${relationBase}_name`,
+        `${relationBase}_title`,
+        `${relationBase}_description`,
+      ];
+      const relationValue = relationKeys
+        .map((key) => record[key])
+        .find((candidate) => candidate !== undefined && candidate !== null && String(candidate).trim().length > 0);
+
+      if (relationValue !== undefined && relationValue !== null) {
+        const idText = String(value).trim();
+        const descriptionText = String(relationValue).trim();
+        if (descriptionText && descriptionText !== idText) {
+          return `${idText} — ${descriptionText}`;
+        }
+      }
+    }
+
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '-';
+    const text = String(value).trim();
+    if (!text) return '-';
+    const parsedDate = Date.parse(text);
+    if (Number.isFinite(parsedDate) && /^\d{4}-\d{2}-\d{2}/.test(text)) {
+      return new Date(parsedDate).toLocaleDateString();
+    }
+    return text;
+  };
+
   // Filter and sort customers when data or filters change
   useEffect(() => {
     let filtered = [...customers];
+
+    const rowMatchesSearch = (customer: Customer, search: string): boolean => {
+      const record = customer as unknown as Record<string, unknown>;
+
+      for (const [key, rawValue] of Object.entries(record)) {
+        if (rawValue === null || rawValue === undefined) continue;
+        if (Array.isArray(rawValue)) continue;
+        if (typeof rawValue === 'object') continue;
+
+        const valueText = String(rawValue).toLowerCase();
+        if (valueText.includes(search)) return true;
+
+        const relationBase = key.endsWith('Id')
+          ? key.slice(0, -2)
+          : key.toLowerCase().endsWith('_id')
+            ? key.slice(0, -3)
+            : null;
+
+        if (relationBase) {
+          const relationKeys = [
+            `${relationBase}Name`,
+            `${relationBase}Title`,
+            `${relationBase}Description`,
+            `${relationBase}DisplayName`,
+            `${relationBase}Label`,
+            `${relationBase}Code`,
+            `${relationBase}Number`,
+            `${relationBase}_name`,
+            `${relationBase}_title`,
+            `${relationBase}_description`,
+          ];
+
+          const relationMatch = relationKeys.some((relationKey) => {
+            const relationValue = record[relationKey];
+            return relationValue !== null && relationValue !== undefined && String(relationValue).toLowerCase().includes(search);
+          });
+
+          if (relationMatch) return true;
+        }
+      }
+
+      return false;
+    };
     
     // Apply search filter
     if (searchQuery) {
-      filtered = filtered.filter(customer =>
-        customer.Name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (customer.ExternalName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        customer.Email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        customer.Phone?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+      const search = searchQuery.toLowerCase();
+      filtered = filtered.filter((customer) => rowMatchesSearch(customer, search));
     }
     
     // Apply sorting
@@ -793,6 +923,16 @@ export default function CustomersPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Organizations
                   </th>
+                  {additionalCustomerColumnKeys.map((columnKey) => (
+                    <th
+                      key={`extra-customer-header-${columnKey}`}
+                      data-column-key={`extra-${columnKey}`}
+                      data-default-hidden="true"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                    >
+                      {formatExtraColumnLabel(columnKey)}
+                    </th>
+                  ))}
                   <th scope="col" className="relative px-6 py-3">
                     <span className="sr-only">Actions</span>
                   </th>
@@ -855,6 +995,11 @@ export default function CustomersPage() {
                         ))}
                       </div>
                     </td>
+                    {additionalCustomerColumnKeys.map((columnKey) => (
+                      <td key={`extra-customer-cell-${customer.Id}-${columnKey}`} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                        {renderCustomerExtraColumnValue(customer, columnKey)}
+                      </td>
+                    ))}
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                       <div className="flex items-center justify-end gap-1">
                         {permissions?.canManageCustomers && (

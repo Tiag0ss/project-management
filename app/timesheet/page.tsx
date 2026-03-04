@@ -1285,7 +1285,7 @@ export default function TimesheetPage() {
 
                       return (
                         <>
-                          <div className="overflow-x-auto mb-4">
+                          <div className="overflow-x-auto mb-4" data-grid-enhancer-ignore="true">
                             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                               <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0">
                                 <tr>
@@ -1823,7 +1823,7 @@ export default function TimesheetPage() {
 
                       return (
                         <>
-                          <div className="overflow-x-auto">
+                          <div className="overflow-x-auto" data-grid-enhancer-ignore="true">
                             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                               <thead className="bg-gray-50 dark:bg-gray-900">
                                 <tr>

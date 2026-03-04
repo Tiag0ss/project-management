@@ -380,16 +380,53 @@ export default function ProjectsPage() {
   const filteredAndSortedProjects = useMemo(() => {
     let result = [...projects];
 
+    const rowMatchesSearch = (project: Project, search: string): boolean => {
+      const record = project as unknown as Record<string, unknown>;
+
+      for (const [key, rawValue] of Object.entries(record)) {
+        if (rawValue === null || rawValue === undefined) continue;
+        if (Array.isArray(rawValue)) continue;
+        if (typeof rawValue === 'object') continue;
+
+        const valueText = String(rawValue).toLowerCase();
+        if (valueText.includes(search)) return true;
+
+        const relationBase = key.endsWith('Id')
+          ? key.slice(0, -2)
+          : key.toLowerCase().endsWith('_id')
+            ? key.slice(0, -3)
+            : null;
+
+        if (relationBase) {
+          const relationKeys = [
+            `${relationBase}Name`,
+            `${relationBase}Title`,
+            `${relationBase}Description`,
+            `${relationBase}DisplayName`,
+            `${relationBase}Label`,
+            `${relationBase}Code`,
+            `${relationBase}Number`,
+            `${relationBase}_name`,
+            `${relationBase}_title`,
+            `${relationBase}_description`,
+          ];
+
+          const relationMatch = relationKeys.some((relationKey) => {
+            const relationValue = record[relationKey];
+            return relationValue !== null && relationValue !== undefined && String(relationValue).toLowerCase().includes(search);
+          });
+
+          if (relationMatch) return true;
+        }
+      }
+
+      return false;
+    };
+
     // Apply filter
     if (filterText.trim()) {
       const search = filterText.toLowerCase();
-      result = result.filter(project =>
-        project.ProjectName.toLowerCase().includes(search) ||
-        (project.Description && project.Description.toLowerCase().includes(search)) ||
-        (project.OrganizationName && project.OrganizationName.toLowerCase().includes(search)) ||
-        (project.CustomerName && project.CustomerName.toLowerCase().includes(search)) ||
-        (project.StatusName || '').toLowerCase().includes(search)
-      );
+      result = result.filter((project) => rowMatchesSearch(project, search));
     }
     if (filterOrg) result = result.filter(p => p.OrganizationName === filterOrg);
     if (filterStatus) result = result.filter(p => p.StatusName === filterStatus);
@@ -450,6 +487,114 @@ export default function ProjectsPage() {
 
     return result;
   }, [projects, filterText, filterOrg, filterStatus, filterRAG, hideCompleted, sortField, sortDirection, ragMap, canViewBudgetInfo]);
+
+  const additionalProjectColumnKeys = useMemo(() => {
+    const excludedKeys = new Set<string>([
+      'Id',
+      'ProjectName',
+      'OrganizationName',
+      'StatusName',
+      'StatusColor',
+      'StatusIsClosed',
+      'StatusIsCancelled',
+      'TotalTasks',
+      'CompletedTasks',
+      'TotalEstimatedHours',
+      'TotalWorkedHours',
+      'Budget',
+      'BudgetSpent',
+      'BudgetType',
+      'OpenTickets',
+      'StartDate',
+      'EndDate',
+      'IsGlobal',
+      'IsHobby',
+      'CustomerName',
+      'ApplicationNames',
+      'OrganizationId',
+      'Status',
+      'CreatedBy',
+      'CreatedAt',
+      'UpdatedAt',
+      'Description',
+    ]);
+
+    const keys = new Set<string>();
+    for (const project of projects) {
+      const record = project as unknown as Record<string, unknown>;
+      for (const key of Object.keys(record)) {
+        if (excludedKeys.has(key)) continue;
+        const value = record[key];
+        if (value === undefined || value === null) continue;
+        if (Array.isArray(value)) continue;
+        if (typeof value === 'object') continue;
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+            continue;
+          }
+        }
+        keys.add(key);
+      }
+    }
+
+    return Array.from(keys).sort((a, b) => a.localeCompare(b));
+  }, [projects]);
+
+  const formatExtraColumnLabel = (rawKey: string) =>
+    rawKey
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^./, (value) => value.toUpperCase());
+
+  const renderProjectExtraColumnValue = (project: Project, rawKey: string): string => {
+    const record = project as unknown as Record<string, unknown>;
+    const value = record[rawKey];
+    if (value === undefined || value === null) return '-';
+
+    const relationBase = rawKey.endsWith('Id')
+      ? rawKey.slice(0, -2)
+      : rawKey.toLowerCase().endsWith('_id')
+        ? rawKey.slice(0, -3)
+        : null;
+    if (relationBase) {
+      const relationKeys = [
+        `${relationBase}Name`,
+        `${relationBase}Title`,
+        `${relationBase}Description`,
+        `${relationBase}DisplayName`,
+        `${relationBase}Label`,
+        `${relationBase}Code`,
+        `${relationBase}Number`,
+        `${relationBase}_name`,
+        `${relationBase}_title`,
+        `${relationBase}_description`,
+      ];
+      const relationValue = relationKeys
+        .map((key) => record[key])
+        .find((candidate) => candidate !== undefined && candidate !== null && String(candidate).trim().length > 0);
+
+      if (relationValue !== undefined && relationValue !== null) {
+        const idText = String(value).trim();
+        const descriptionText = String(relationValue).trim();
+        if (descriptionText && descriptionText !== idText) {
+          return `${idText} — ${descriptionText}`;
+        }
+      }
+    }
+
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '-';
+    const text = String(value).trim();
+    if (!text) return '-';
+    const parsedDate = Date.parse(text);
+    if (Number.isFinite(parsedDate) && /^\d{4}-\d{2}-\d{2}/.test(text)) {
+      return new Date(parsedDate).toLocaleDateString();
+    }
+    return text;
+  };
 
   const handleSort = (field: ProjectSortField) => {
     if (sortField === field) {
@@ -747,6 +892,16 @@ export default function ProjectsPage() {
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('endDate')}>
                           <div className="flex items-center justify-center gap-1">Dates <SortIcon field="endDate" /></div>
                         </th>
+                        {additionalProjectColumnKeys.map((columnKey) => (
+                          <th
+                            key={`extra-project-header-${columnKey}`}
+                            data-column-key={`extra-${columnKey}`}
+                            data-default-hidden="true"
+                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                          >
+                            {formatExtraColumnLabel(columnKey)}
+                          </th>
+                        ))}
                         <th scope="col" className="relative px-6 py-3">
                           <span className="sr-only">Actions</span>
                         </th>
@@ -825,6 +980,11 @@ export default function ProjectsPage() {
                               {' → '}
                               <span className={isOverdue ? 'text-red-500 font-medium' : ''}>{project.EndDate ? new Date(project.EndDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '-'}</span>
                             </td>
+                            {additionalProjectColumnKeys.map((columnKey) => (
+                              <td key={`extra-project-cell-${project.Id}-${columnKey}`} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                {renderProjectExtraColumnValue(project, columnKey)}
+                              </td>
+                            ))}
                             <td className="px-6 py-4 text-right">
                               <div className="flex items-center justify-end gap-1">
                                 <button

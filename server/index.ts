@@ -44,6 +44,7 @@ import systemSettingsRoutes from './routes/systemSettings';
 import activityLogsRoutes from './routes/activityLogs';
 import changeHistoryRoutes from './routes/changeHistory';
 import emailPreferencesRoutes from './routes/emailPreferences';
+import gridPreferencesRoutes from './routes/gridPreferences';
 import installRoutes from './routes/install';
 import savedReportsRoutes from './routes/savedReports';
 import dynamicReportsRoutes from './routes/dynamicReports';
@@ -220,6 +221,7 @@ app.prepare().then(async () => {
   server.use('/api/activity-logs', activityLogsRoutes);
   server.use('/api/change-history', changeHistoryRoutes);
   server.use('/api/email-preferences', emailPreferencesRoutes);
+  server.use('/api/grid-preferences', gridPreferencesRoutes);
   server.use('/api/saved-reports', savedReportsRoutes);
   server.use('/api/dynamic-reports', dynamicReportsRoutes);
   server.use('/api/memos', memosRoutes);

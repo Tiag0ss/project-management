@@ -5,6 +5,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { PermissionsProvider } from "@/contexts/PermissionsContext";
 import BrandingRuntime from "@/components/BrandingRuntime";
 import ThemeRuntime from "@/components/ThemeRuntime";
+import GlobalGridEnhancer from "@/components/GlobalGridEnhancer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,6 +36,7 @@ export default function RootLayout({
           <PermissionsProvider>
             <ThemeRuntime />
             <BrandingRuntime />
+            <GlobalGridEnhancer />
             {children}
           </PermissionsProvider>
         </AuthProvider>
