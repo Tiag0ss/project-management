@@ -68,7 +68,14 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
            t.ProjectId,
            COUNT(CASE WHEN COALESCE(tsv2.HideFromPlanningAndStatistics, 0) = 0 THEN 1 END) as TotalTasks,
            COUNT(CASE WHEN COALESCE(tsv2.HideFromPlanningAndStatistics, 0) = 0 AND COALESCE(tsv2.IsClosed, 0) = 1 THEN 1 END) as CompletedTasks,
-           SUM(CASE WHEN t.ParentTaskId IS NULL AND COALESCE(tsv2.HideFromPlanningAndStatistics, 0) = 0 THEN t.EstimatedHours ELSE 0 END) as TotalEstimatedHours,
+           SUM(CASE WHEN COALESCE(tsv2.HideFromPlanningAndStatistics, 0) = 0
+                     AND NOT EXISTS (
+                       SELECT 1
+                       FROM Tasks tChild
+                       WHERE tChild.ProjectId = t.ProjectId
+                         AND tChild.ParentTaskId = t.Id
+                     )
+                    THEN t.EstimatedHours ELSE 0 END) as TotalEstimatedHours,
            COALESCE((SELECT SUM(te.Hours) FROM TimeEntries te WHERE te.TaskId IN (SELECT Id FROM Tasks WHERE ProjectId = t.ProjectId)), 0) as TotalWorkedHours,
            COUNT(CASE WHEN COALESCE(tsv2.HideFromPlanningAndStatistics, 0) = 0 AND t.DueDate IS NOT NULL AND t.DueDate < CURDATE() AND COALESCE(tsv2.IsClosed, 0) = 0 AND COALESCE(tsv2.IsCancelled, 0) = 0 THEN 1 END) as OverdueTasks
          FROM Tasks t

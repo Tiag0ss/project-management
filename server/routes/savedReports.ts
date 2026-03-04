@@ -6,6 +6,103 @@ import { dbProvider } from '../config/database';
 
 const router = express.Router();
 
+type DefaultSavedReport = {
+  Id: number;
+  UserId: number;
+  DataSource: string;
+  ReportName: string;
+  PivotConfig: Record<string, unknown>;
+  Filters: unknown[];
+  CreatedAt: string;
+  UpdatedAt: string;
+  SharedWith: string;
+  IsPublic: number;
+  IsSystemDefault: number;
+};
+
+const createDefaultReports = (): DefaultSavedReport[] => {
+  const now = new Date().toISOString();
+  let nextId = -1000;
+
+  const create = (
+    dataSource: string,
+    reportName: string,
+    rows: string[],
+    columns: string[],
+    values: Array<{ field: string; aggregation: 'sum' | 'count' | 'avg' | 'min' | 'max' | 'distinctCount' }>,
+    filters: unknown[] = []
+  ): DefaultSavedReport => ({
+    Id: nextId--,
+    UserId: 0,
+    DataSource: dataSource,
+    ReportName: reportName,
+    PivotConfig: { rows, columns, values },
+    Filters: filters,
+    CreatedAt: now,
+    UpdatedAt: now,
+    SharedWith: '',
+    IsPublic: 1,
+    IsSystemDefault: 1,
+  });
+
+  return [
+    create('time-entries', 'Time by Project and Task', ['ProjectName', 'TaskName'], ['WorkDate'], [{ field: 'Hours', aggregation: 'sum' }]),
+    create('time-entries', 'Hours by Day', ['WorkDate'], ['ProjectName'], [{ field: 'Hours', aggregation: 'sum' }]),
+    create('time-entries', 'Hours by Project', ['ProjectName'], ['TaskName'], [{ field: 'Hours', aggregation: 'sum' }]),
+    create('time-entries', 'Entries Count by Project', ['ProjectName'], ['WorkDate'], [{ field: 'TaskName', aggregation: 'count' }]),
+    create('time-entries', 'Start/End Time Coverage', ['ProjectName', 'TaskName'], ['StartTime'], [{ field: 'Hours', aggregation: 'sum' }]),
+
+    create('tasks', 'Tasks by Status', ['ProjectName', 'StatusName'], ['PriorityName'], [{ field: 'TaskName', aggregation: 'count' }]),
+    create(
+      'tasks',
+      'Estimated Hours by Project',
+      ['ProjectName'],
+      ['StatusName'],
+      [{ field: 'EstimatedHours', aggregation: 'sum' }],
+      [{ id: 'default-leaf-only', field: 'SubtaskCount', operator: 'equals', value: '0' }]
+    ),
+    create('tasks', 'Tasks by Assignee', ['AssigneeName'], ['StatusName'], [{ field: 'TaskName', aggregation: 'count' }]),
+    create('tasks', 'Planned Start by Project', ['ProjectName'], ['PlannedStartDate'], [{ field: 'TaskName', aggregation: 'count' }]),
+    create('tasks', 'Subtask Distribution', ['ProjectName'], ['StatusName'], [{ field: 'SubtaskCount', aggregation: 'sum' }]),
+
+    create('projects', 'Projects by Organization and Status', ['OrganizationName'], ['StatusName'], [{ field: 'ProjectName', aggregation: 'count' }]),
+    create('projects', 'Estimated vs Worked Hours', ['ProjectName'], ['StatusName'], [
+      { field: 'TotalEstimatedHours', aggregation: 'sum' },
+      { field: 'TotalWorkedHours', aggregation: 'sum' },
+    ]),
+    create('projects', 'Open Tickets by Project', ['ProjectName'], ['StatusName'], [{ field: 'OpenTickets', aggregation: 'sum' }]),
+    create('projects', 'Unplanned Tasks by Project', ['ProjectName'], ['StatusName'], [{ field: 'UnplannedTasks', aggregation: 'sum' }]),
+    create('projects', 'Projects by Customer', ['CustomerName'], ['StatusName'], [{ field: 'ProjectName', aggregation: 'count' }]),
+
+    create('task-allocations', 'Allocated Hours by Date', ['AllocationDate'], ['ProjectName'], [{ field: 'AllocatedHours', aggregation: 'sum' }]),
+    create('task-allocations', 'Allocated Hours by Project', ['ProjectName'], ['TaskName'], [{ field: 'AllocatedHours', aggregation: 'sum' }]),
+    create('task-allocations', 'Allocation Count by Task', ['TaskName'], ['AllocationDate'], [{ field: 'AllocatedHours', aggregation: 'count' }]),
+    create('task-allocations', 'Allocation Coverage by Start Time', ['ProjectName'], ['StartTime'], [{ field: 'AllocatedHours', aggregation: 'sum' }]),
+    create('task-allocations', 'Allocation Coverage by End Time', ['ProjectName'], ['EndTime'], [{ field: 'AllocatedHours', aggregation: 'sum' }]),
+
+    create('tickets', 'Tickets by Status', ['StatusName'], ['PriorityName'], [{ field: 'Title', aggregation: 'count' }]),
+    create('tickets', 'Tickets by Customer and Type', ['CustomerName'], ['TypeName'], [{ field: 'Title', aggregation: 'count' }]),
+    create('tickets', 'Ticket Estimated Hours', ['ProjectName'], ['StatusName'], [{ field: 'EstimatedHours', aggregation: 'sum' }]),
+    create('tickets', 'Tickets by Assignee', ['AssigneeName'], ['StatusName'], [{ field: 'Title', aggregation: 'count' }]),
+    create('tickets', 'Created vs Resolved by Date', ['CreatedAt'], ['ResolvedAt'], [{ field: 'Title', aggregation: 'count' }]),
+  ];
+};
+
+const SYSTEM_DEFAULT_REPORTS = createDefaultReports();
+
+const normalizeStoredReport = (report: any) => ({
+  ...report,
+  PivotConfig: typeof report.PivotConfig === 'string' ? JSON.parse(report.PivotConfig) : report.PivotConfig,
+  Filters: typeof report.Filters === 'string' ? JSON.parse(report.Filters) : (report.Filters || []),
+  SharedWith: report.SharedWith || '',
+  IsSystemDefault: Number(report.IsSystemDefault || 0),
+});
+
+const isSystemDefaultReportId = (id: string | number): boolean => {
+  const numericId = Number(id);
+  return Number.isFinite(numericId) && numericId <= 0;
+};
+
 /**
  * @swagger
  * tags:
@@ -42,15 +139,10 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       [userId, userId]
     );
 
-    // Parse JSON fields
-    const parsedReports = reports.map(report => ({
-      ...report,
-      PivotConfig: JSON.parse(report.PivotConfig),
-      Filters: report.Filters ? JSON.parse(report.Filters) : [],
-      SharedWith: report.SharedWith || ''
-    }));
+    const parsedReports = reports.map(normalizeStoredReport);
+    const mergedReports = [...SYSTEM_DEFAULT_REPORTS, ...parsedReports];
 
-    res.json({ success: true, reports: parsedReports });
+    res.json({ success: true, reports: mergedReports });
   } catch (error) {
     console.error('Error fetching saved reports:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch saved reports' });
@@ -94,15 +186,11 @@ router.get('/datasource/:dataSource', authenticateToken, async (req: AuthRequest
       [userId, userId, dataSource]
     );
 
-    // Parse JSON fields
-    const parsedReports = reports.map(report => ({
-      ...report,
-      PivotConfig: JSON.parse(report.PivotConfig),
-      Filters: report.Filters ? JSON.parse(report.Filters) : [],
-      SharedWith: report.SharedWith || ''
-    }));
+    const parsedReports = reports.map(normalizeStoredReport);
+    const defaultReportsForSource = SYSTEM_DEFAULT_REPORTS.filter((report) => report.DataSource === dataSource);
+    const mergedReports = [...defaultReportsForSource, ...parsedReports];
 
-    res.json({ success: true, reports: parsedReports });
+    res.json({ success: true, reports: mergedReports });
   } catch (error) {
     console.error('Error fetching saved reports:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch saved reports' });
@@ -225,7 +313,13 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { id } = req.params;
+    const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = String(rawId || '');
+
+    if (isSystemDefaultReportId(id)) {
+      return res.status(403).json({ success: false, message: 'System default reports cannot be modified' });
+    }
+
     const { reportName, pivotConfig, filters } = req.body;
 
     if (!reportName || !pivotConfig) {
@@ -290,7 +384,12 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { id } = req.params;
+    const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = String(rawId || '');
+
+    if (isSystemDefaultReportId(id)) {
+      return res.status(403).json({ success: false, message: 'System default reports cannot be deleted' });
+    }
 
     // Verify the report belongs to the user
     const [report] = await pool.execute<RowDataPacket[]>(
@@ -350,7 +449,13 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 router.post('/:id/share', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { id } = req.params;
+    const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = String(rawId || '');
+
+    if (isSystemDefaultReportId(id)) {
+      return res.status(403).json({ success: false, message: 'System default reports cannot be shared' });
+    }
+
     const { userIds } = req.body; // Array of user IDs
 
     // Verify the report belongs to the user
@@ -404,7 +509,13 @@ router.post('/:id/share', authenticateToken, async (req: AuthRequest, res: Respo
 router.post('/:id/toggle-public', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { id } = req.params;
+    const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = String(rawId || '');
+
+    if (isSystemDefaultReportId(id)) {
+      return res.status(403).json({ success: false, message: 'System default reports are always public' });
+    }
+
     const { isPublic } = req.body;
 
     // Verify the report belongs to the user

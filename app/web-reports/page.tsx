@@ -83,6 +83,7 @@ interface SavedReport {
   UpdatedAt: string;
   SharedWith?: string; // JSON array of user IDs
   IsPublic?: number; // 0 or 1
+  IsSystemDefault?: number; // 0 or 1
 }
 
 interface ModalState {
@@ -103,7 +104,7 @@ interface ChartPoint {
 export default function WebReportsPage() {
   const { user, token, isLoading } = useAuth();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
-  const [dataSource, setDataSource] = useState<string>('');
+  const [dataSource, setDataSource] = useState<string>('time-entries');
   const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
   const [modalState, setModalState] = useState<ModalState>({ type: null });
   const [reportNameInput, setReportNameInput] = useState('');
@@ -1405,57 +1406,6 @@ export default function WebReportsPage() {
                   )}
                 </div>
 
-                {/* Dynamic Query Builder */}
-                {dataSource === 'dynamic' && token && (
-                  <DynamicQueryBuilder 
-                    token={token}
-                    initialConfig={dynamicQueryConfigToLoad}
-                    onDataLoaded={(data, fields, dynamicPivotConfig, dynamicQueryConfig) => {
-                      // Normalize date fields in dynamic query data
-                      const dateFields = fields.filter(f => f.type === 'date').map(f => f.key);
-                      const normalizedData = data.map((record: any) => {
-                        const normalized = { ...record };
-                        dateFields.forEach(field => {
-                          if (normalized[field]) {
-                            const strValue = String(normalized[field]);
-                            // If it's an ISO timestamp, extract just the date part
-                            if (strValue.includes('T')) {
-                              normalized[field] = strValue.split('T')[0];
-                            } else if (/^\d{4}-\d{2}-\d{2}$/.test(strValue)) {
-                              // Already in correct format
-                              normalized[field] = strValue;
-                            } else {
-                              // Try to parse and format
-                              const date = new Date(normalized[field]);
-                              if (!isNaN(date.getTime())) {
-                                normalized[field] = date.toISOString().split('T')[0];
-                              }
-                            }
-                          }
-                        });
-                        return normalized;
-                      });
-                      
-                      setRawData(normalizedData);
-                      setDynamicFields(fields);
-                      
-                      // Use the exact configuration from the dynamic query builder
-                      setPivotConfig({
-                        rows: dynamicPivotConfig.rows,
-                        columns: dynamicPivotConfig.columns,
-                        values: dynamicPivotConfig.values as ValueConfig[],
-                        dynamicQueryConfig
-                      });
-                      
-                      // Update currentSource to use dynamic fields
-                      const dynamicSource = dataSources.find(ds => ds.id === 'dynamic');
-                      if (dynamicSource) {
-                        dynamicSource.fields = fields;
-                      }
-                    }}
-                  />
-                )}
-
                 {/* Saved Reports Section - always visible when a data source is selected */}
                 {dataSource && (
                   <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
@@ -1485,34 +1435,43 @@ export default function WebReportsPage() {
                                 </p>
                               </div>
                               <div className="flex gap-1 ml-2">
-                                <button
-                                  onClick={() => handleOpenEditModal(report)}
-                                  className="p-1 text-gray-600 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400"
-                                  title="Edit report"
-                                >
-                                  ✏️
-                                </button>
-                                <button
-                                  onClick={() => handleOpenShareModal(report)}
-                                  className="p-1 text-gray-600 hover:text-green-600 dark:text-gray-400 dark:hover:text-green-400"
-                                  title="Share report"
-                                >
-                                  🔗
-                                </button>
-                                <button
-                                  onClick={() => handleTogglePublic(report.Id, report.IsPublic || 0)}
-                                  className={`p-1 ${report.IsPublic === 1 ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-400 dark:text-gray-600'} hover:text-yellow-600 dark:hover:text-yellow-400`}
-                                  title={report.IsPublic === 1 ? 'Make private' : 'Make public'}
-                                >
-                                  {report.IsPublic === 1 ? '🌐' : '🔒'}
-                                </button>
-                                <button
-                                  onClick={() => handleOpenDeleteModal(report)}
-                                  className="p-1 text-gray-600 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
-                                  title="Delete report"
-                                >
-                                  🗑️
-                                </button>
+                                {Number(report.IsSystemDefault || 0) !== 1 && (
+                                  <>
+                                    <button
+                                      onClick={() => handleOpenEditModal(report)}
+                                      className="p-1 text-gray-600 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400"
+                                      title="Edit report"
+                                    >
+                                      ✏️
+                                    </button>
+                                    <button
+                                      onClick={() => handleOpenShareModal(report)}
+                                      className="p-1 text-gray-600 hover:text-green-600 dark:text-gray-400 dark:hover:text-green-400"
+                                      title="Share report"
+                                    >
+                                      🔗
+                                    </button>
+                                    <button
+                                      onClick={() => handleTogglePublic(report.Id, report.IsPublic || 0)}
+                                      className={`p-1 ${report.IsPublic === 1 ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-400 dark:text-gray-600'} hover:text-yellow-600 dark:hover:text-yellow-400`}
+                                      title={report.IsPublic === 1 ? 'Make private' : 'Make public'}
+                                    >
+                                      {report.IsPublic === 1 ? '🌐' : '🔒'}
+                                    </button>
+                                    <button
+                                      onClick={() => handleOpenDeleteModal(report)}
+                                      className="p-1 text-gray-600 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
+                                      title="Delete report"
+                                    >
+                                      🗑️
+                                    </button>
+                                  </>
+                                )}
+                                {Number(report.IsSystemDefault || 0) === 1 && (
+                                  <span className="p-1 text-amber-500" title="Default report">
+                                    🔒
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1524,6 +1483,50 @@ export default function WebReportsPage() {
                       </p>
                     )}
                   </div>
+                )}
+
+                {/* Dynamic Query Builder */}
+                {dataSource === 'dynamic' && token && (
+                  <DynamicQueryBuilder 
+                    token={token}
+                    initialConfig={dynamicQueryConfigToLoad}
+                    onDataLoaded={(data, fields, dynamicPivotConfig, dynamicQueryConfig) => {
+                      const dateFields = fields.filter(f => f.type === 'date').map(f => f.key);
+                      const normalizedData = data.map((record: any) => {
+                        const normalized = { ...record };
+                        dateFields.forEach(field => {
+                          if (normalized[field]) {
+                            const strValue = String(normalized[field]);
+                            if (strValue.includes('T')) {
+                              normalized[field] = strValue.split('T')[0];
+                            } else if (/^\d{4}-\d{2}-\d{2}$/.test(strValue)) {
+                              normalized[field] = strValue;
+                            } else {
+                              const date = new Date(normalized[field]);
+                              if (!isNaN(date.getTime())) {
+                                normalized[field] = date.toISOString().split('T')[0];
+                              }
+                            }
+                          }
+                        });
+                        return normalized;
+                      });
+
+                      setRawData(normalizedData);
+                      setDynamicFields(fields);
+                      setPivotConfig({
+                        rows: dynamicPivotConfig.rows,
+                        columns: dynamicPivotConfig.columns,
+                        values: dynamicPivotConfig.values as ValueConfig[],
+                        dynamicQueryConfig
+                      });
+
+                      const dynamicSource = dataSources.find(ds => ds.id === 'dynamic');
+                      if (dynamicSource) {
+                        dynamicSource.fields = fields;
+                      }
+                    }}
+                  />
                 )}
 
                 {/* Show filters and pivot configuration for regular datasources OR dynamic after query execution */}
