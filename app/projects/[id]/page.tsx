@@ -4788,6 +4788,24 @@ function TasksTab({
   });
   const [isSavingSubtaskInline, setIsSavingSubtaskInline] = useState(false);
   const [newSubtaskInputResetKey, setNewSubtaskInputResetKey] = useState(0);
+  const [creatingRootTaskInline, setCreatingRootTaskInline] = useState(false);
+  const [newRootTaskData, setNewRootTaskData] = useState<{
+    taskName: string;
+    assignedTo: number | null;
+    taskType: number | null;
+    status: number | null;
+    priority: number | null;
+    dueDate: string;
+  }>({
+    taskName: '',
+    assignedTo: null,
+    taskType: null,
+    status: null,
+    priority: null,
+    dueDate: '',
+  });
+  const [isSavingRootInline, setIsSavingRootInline] = useState(false);
+  const [newRootTaskInputResetKey, setNewRootTaskInputResetKey] = useState(0);
   const tasksGridRef = useRef<HTMLDivElement>(null);
 
   // Check which integrations are configured
@@ -5130,6 +5148,8 @@ function TasksTab({
 
     setEditingRowTaskId(null);
     setIsSavingInline(false);
+    setCreatingRootTaskInline(false);
+    setIsSavingRootInline(false);
     setCreatingSubtaskParentId(parentTaskId);
     setNewSubtaskData({
       taskName: '',
@@ -5160,11 +5180,118 @@ function TasksTab({
     setIsSavingSubtaskInline(false);
   };
 
+  const startInlineRootTaskCreate = () => {
+    if (!canCreate) return;
+
+    const defaultTaskType = taskTypeOptions.length > 0 ? taskTypeOptions[0].id : null;
+    const defaultStatusFromDb =
+      (taskStatuses || []).find((statusOption) => Number(statusOption.IsDefault || 0) === 1) ||
+      [...(taskStatuses || [])].sort((a, b) => Number(a.SortOrder || 0) - Number(b.SortOrder || 0) || Number(a.Id) - Number(b.Id))[0];
+    const defaultPriorityFromDb =
+      (taskPriorities || []).find((priorityOption) => Number(priorityOption.IsDefault || 0) === 1) ||
+      [...(taskPriorities || [])].sort((a, b) => Number(a.SortOrder || 0) - Number(b.SortOrder || 0) || Number(a.Id) - Number(b.Id))[0];
+
+    const defaultStatus = defaultStatusFromDb ? Number(defaultStatusFromDb.Id) : null;
+    const defaultPriority = defaultPriorityFromDb ? Number(defaultPriorityFromDb.Id) : null;
+
+    setEditingRowTaskId(null);
+    setIsSavingInline(false);
+    setCreatingSubtaskParentId(null);
+    setIsSavingSubtaskInline(false);
+    setCreatingRootTaskInline(true);
+    setNewRootTaskData({
+      taskName: '',
+      assignedTo: null,
+      taskType: defaultTaskType,
+      status: defaultStatus,
+      priority: defaultPriority,
+      dueDate: '',
+    });
+  };
+
+  const cancelInlineRootTaskCreate = () => {
+    setCreatingRootTaskInline(false);
+    setNewRootTaskData({
+      taskName: '',
+      assignedTo: null,
+      taskType: null,
+      status: null,
+      priority: null,
+      dueDate: '',
+    });
+    setIsSavingRootInline(false);
+  };
+
+  const saveInlineRootTaskCreate = async (createNextOnSuccess: boolean = false) => {
+    if (!canCreate || isSavingRootInline) return;
+
+    const nextName = newRootTaskData.taskName.trim();
+    if (!nextName) return;
+
+    const fallbackStatusId =
+      (taskStatuses || []).find((statusOption) => Number(statusOption.IsDefault || 0) === 1)?.Id ||
+      [...(taskStatuses || [])].sort((a, b) => Number(a.SortOrder || 0) - Number(b.SortOrder || 0) || Number(a.Id) - Number(b.Id))[0]?.Id;
+    const fallbackPriorityId =
+      (taskPriorities || []).find((priorityOption) => Number(priorityOption.IsDefault || 0) === 1)?.Id ||
+      [...(taskPriorities || [])].sort((a, b) => Number(a.SortOrder || 0) - Number(b.SortOrder || 0) || Number(a.Id) - Number(b.Id))[0]?.Id;
+
+    const effectiveStatus = newRootTaskData.status ?? (fallbackStatusId !== undefined ? Number(fallbackStatusId) : null);
+    const effectivePriority = newRootTaskData.priority ?? (fallbackPriorityId !== undefined ? Number(fallbackPriorityId) : null);
+
+    if (!effectiveStatus || !effectivePriority) return;
+
+    const nextDueDate = newRootTaskData.dueDate.trim();
+    if (nextDueDate && !/^\d{4}-\d{2}-\d{2}$/.test(nextDueDate)) return;
+
+    setIsSavingRootInline(true);
+    try {
+      await tasksApi.create(
+        {
+          projectId: Number(project.Id),
+          taskName: nextName,
+          taskType: newRootTaskData.taskType,
+          status: effectiveStatus,
+          priority: effectivePriority,
+          assignedTo: newRootTaskData.assignedTo || undefined,
+          dueDate: nextDueDate || undefined,
+        },
+        token
+      );
+
+      await onRefreshTasks();
+      if (createNextOnSuccess) {
+        setNewRootTaskData((prev) => ({
+          ...prev,
+          taskName: '',
+          dueDate: '',
+        }));
+        setNewRootTaskInputResetKey((prev) => prev + 1);
+        setIsSavingRootInline(false);
+      } else {
+        cancelInlineRootTaskCreate();
+      }
+    } catch {
+      setIsSavingRootInline(false);
+    }
+  };
+
   const saveInlineSubtaskCreate = async (createNextOnSuccess: boolean = false) => {
     if (!canManage || isSavingSubtaskInline || !creatingSubtaskParentId) return;
 
     const nextName = newSubtaskData.taskName.trim();
-    if (!nextName || !newSubtaskData.status || !newSubtaskData.priority) return;
+    if (!nextName) return;
+
+    const fallbackStatusId =
+      (taskStatuses || []).find((statusOption) => Number(statusOption.IsDefault || 0) === 1)?.Id ||
+      [...(taskStatuses || [])].sort((a, b) => Number(a.SortOrder || 0) - Number(b.SortOrder || 0) || Number(a.Id) - Number(b.Id))[0]?.Id;
+    const fallbackPriorityId =
+      (taskPriorities || []).find((priorityOption) => Number(priorityOption.IsDefault || 0) === 1)?.Id ||
+      [...(taskPriorities || [])].sort((a, b) => Number(a.SortOrder || 0) - Number(b.SortOrder || 0) || Number(a.Id) - Number(b.Id))[0]?.Id;
+
+    const effectiveStatus = newSubtaskData.status ?? (fallbackStatusId !== undefined ? Number(fallbackStatusId) : null);
+    const effectivePriority = newSubtaskData.priority ?? (fallbackPriorityId !== undefined ? Number(fallbackPriorityId) : null);
+
+    if (!effectiveStatus || !effectivePriority) return;
 
     const nextDueDate = newSubtaskData.dueDate.trim();
     if (nextDueDate && !/^\d{4}-\d{2}-\d{2}$/.test(nextDueDate)) return;
@@ -5177,8 +5304,8 @@ function TasksTab({
           taskName: nextName,
           parentTaskId: creatingSubtaskParentId,
           taskType: newSubtaskData.taskType,
-          status: newSubtaskData.status,
-          priority: newSubtaskData.priority,
+          status: effectiveStatus,
+          priority: effectivePriority,
           assignedTo: newSubtaskData.assignedTo || undefined,
           dueDate: nextDueDate || undefined,
         },
@@ -5203,7 +5330,7 @@ function TasksTab({
   };
 
   useEffect(() => {
-    if (!editingRowTaskId && !creatingSubtaskParentId) return;
+    if (!editingRowTaskId && !creatingSubtaskParentId && !creatingRootTaskInline) return;
 
     const handleOutsideClick = (event: MouseEvent) => {
       const gridElement = tasksGridRef.current;
@@ -5214,7 +5341,9 @@ function TasksTab({
         ? gridElement.querySelector(`[data-task-row-id="${editingRowTaskId}"]`)
         : creatingSubtaskParentId
           ? gridElement.querySelector(`[data-task-new-subtask-parent-id="${creatingSubtaskParentId}"]`)
-          : null;
+          : creatingRootTaskInline
+            ? gridElement.querySelector('[data-task-new-root-row="true"]')
+            : null;
 
       if (activeRow && !activeRow.contains(target)) {
         if (editingRowTaskId) {
@@ -5223,12 +5352,15 @@ function TasksTab({
         if (creatingSubtaskParentId) {
           cancelInlineSubtaskCreate();
         }
+        if (creatingRootTaskInline) {
+          cancelInlineRootTaskCreate();
+        }
       }
     };
 
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [editingRowTaskId, creatingSubtaskParentId]);
+  }, [editingRowTaskId, creatingSubtaskParentId, creatingRootTaskInline]);
 
   const handleInlineEditorKeyDown = (event: React.KeyboardEvent, task: Task) => {
     if (event.key === 'Enter') {
@@ -5244,7 +5376,7 @@ function TasksTab({
   };
 
   const handleInlineSubtaskKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' || event.key === 'NumpadEnter') {
       event.preventDefault();
       void saveInlineSubtaskCreate(true);
       return;
@@ -5253,6 +5385,19 @@ function TasksTab({
     if (event.key === 'Escape') {
       event.preventDefault();
       cancelInlineSubtaskCreate();
+    }
+  };
+
+  const handleInlineRootTaskKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter' || event.key === 'NumpadEnter') {
+      event.preventDefault();
+      void saveInlineRootTaskCreate(true);
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      cancelInlineRootTaskCreate();
     }
   };
 
@@ -5962,9 +6107,22 @@ function TasksTab({
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  <button onClick={() => handleSort('TaskTypeName')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
-                    Task Type <SortIcon field="TaskTypeName" />
-                  </button>
+                  <div className="flex items-center justify-between gap-2">
+                    <button onClick={() => handleSort('TaskTypeName')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
+                      Task Type <SortIcon field="TaskTypeName" />
+                    </button>
+                    {canCreate && (
+                      <button
+                        type="button"
+                        onClick={startInlineRootTaskCreate}
+                        title="Add level 0 task"
+                        aria-label="Add level 0 task"
+                        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-semibold"
+                      >
+                        +
+                      </button>
+                    )}
+                  </div>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <button onClick={() => handleSort('task')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
@@ -5998,7 +6156,109 @@ function TasksTab({
             </thead>
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {visibleParentTasks.length > 0 ? (
-                visibleParentTasks.map((task) => renderTaskRow(task))
+                <>
+                  {visibleParentTasks.map((task) => renderTaskRow(task))}
+                  {creatingRootTaskInline && (
+                    <tr data-task-new-root-row="true" className="bg-blue-50/60 dark:bg-blue-900/10">
+                      <td className="px-2 py-2">
+                        <SearchableSelect
+                          value={newRootTaskData.taskType ?? undefined}
+                          onChange={(value) => {
+                            setNewRootTaskData((prev) => ({
+                              ...prev,
+                              taskType: value ?? null,
+                            }));
+                          }}
+                          options={taskTypeOptions.map((taskType) => ({ id: taskType.id, label: taskType.name }))}
+                          placeholder="Task Type"
+                          className="w-full"
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <InlineTextField
+                          key={`new-root-task-input-${newRootTaskInputResetKey}`}
+                          value={newRootTaskData.taskName}
+                          onChange={(e) => setNewRootTaskData((prev) => ({ ...prev, taskName: e.target.value }))}
+                          onKeyDown={handleInlineRootTaskKeyDown}
+                          autoFocus
+                          className="w-full"
+                          placeholder="New task name"
+                        />
+                      </td>
+                      <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                        <SearchableSelect
+                          value={newRootTaskData.assignedTo ?? undefined}
+                          onChange={(value) => {
+                            setNewRootTaskData((prev) => ({
+                              ...prev,
+                              assignedTo: value ?? null,
+                            }));
+                          }}
+                          options={assigneeOptions.map((assignee) => ({ id: assignee.id, label: assignee.name }))}
+                          placeholder="Unassigned"
+                          className="w-full"
+                        />
+                      </td>
+                      <td className="px-2 py-2 whitespace-nowrap">
+                        <SearchableSelect
+                          value={newRootTaskData.status ?? undefined}
+                          onChange={(value) => {
+                            setNewRootTaskData((prev) => ({
+                              ...prev,
+                              status: value ?? null,
+                            }));
+                          }}
+                          options={statusOptions.map((status) => ({ id: status.id, label: status.name }))}
+                          placeholder="Status"
+                          className="w-full"
+                        />
+                      </td>
+                      <td className="px-2 py-2 whitespace-nowrap">
+                        <SearchableSelect
+                          value={newRootTaskData.priority ?? undefined}
+                          onChange={(value) => {
+                            setNewRootTaskData((prev) => ({
+                              ...prev,
+                              priority: value ?? null,
+                            }));
+                          }}
+                          options={priorityOptions.map((priority) => ({ id: priority.id, label: priority.name }))}
+                          placeholder="Priority"
+                          className="w-full"
+                        />
+                      </td>
+                      <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                        <InlineDateField
+                          value={newRootTaskData.dueDate}
+                          onChange={(e) => setNewRootTaskData((prev) => ({ ...prev, dueDate: e.target.value }))}
+                          onKeyDown={handleInlineRootTaskKeyDown}
+                          className="w-full"
+                        />
+                      </td>
+                      <td className="px-2 py-2 whitespace-nowrap text-right text-sm font-medium">
+                        <button
+                          type="button"
+                          onClick={() => void saveInlineRootTaskCreate(false)}
+                          disabled={isSavingRootInline || !newRootTaskData.taskName.trim() || !newRootTaskData.status || !newRootTaskData.priority}
+                          title={isSavingRootInline ? 'Saving task' : 'Save task'}
+                          aria-label={isSavingRootInline ? 'Saving task' : 'Save task'}
+                          className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 mr-3 disabled:opacity-50"
+                        >
+                          {isSavingRootInline ? '⏳' : '💾'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelInlineRootTaskCreate}
+                          title="Cancel task"
+                          aria-label="Cancel task"
+                          className="text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                </>
               ) : (
                 <tr>
                   <td colSpan={7} className="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
