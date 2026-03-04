@@ -3644,7 +3644,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Preview (first 5 rows)</h3>
                   <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                      <thead className="bg-gray-50 dark:bg-gray-700">
+                      <thead className="bg-gray-50 dark:bg-gray-900">
                         <tr>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Task Name</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Assigned To</th>
@@ -5652,33 +5652,46 @@ function TasksTab({
         </td>
         <td className="px-2 py-2 whitespace-nowrap text-right text-sm font-medium">
           {canManage && isEditingRow ? (
-            <>
+            <div className="flex items-center justify-end gap-1">
               <button
                 onClick={() => void saveInlineEdit(task)}
                 disabled={isRowSaveDisabled}
                 title={isSavingInline ? 'Saving task' : 'Save task'}
                 aria-label={isSavingInline ? 'Saving task' : 'Save task'}
-                className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 mr-3 disabled:opacity-50"
+                className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
               >
-                {isSavingInline ? '⏳' : '💾'}
+                {isSavingInline ? (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
               </button>
               <button
                 onClick={cancelInlineEdit}
                 title="Cancel edit"
                 aria-label="Cancel edit"
-                className="text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
+                className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
               >
-                ✕
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
-            </>
+            </div>
           ) : canManage ? (
             <button
               onClick={() => onEditTask(task)}
               title="Edit task"
               aria-label="Edit task"
-              className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4"
+              className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
             >
-              ✏️
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M16.5 3.5a2.121 2.121 0 113 3L12 14l-4 1 1-4 7.5-7.5z" />
+              </svg>
             </button>
           ) : null}
           {canDelete && !isEditingRow && (
@@ -5686,9 +5699,11 @@ function TasksTab({
               onClick={() => onDeleteTask(task.Id)}
               title="Delete task"
               aria-label="Delete task"
-              className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+              className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
             >
-              🗑️
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
             </button>
           )}
         </td>
@@ -5795,25 +5810,38 @@ function TasksTab({
             />
           </td>
           <td className="px-2 py-2 whitespace-nowrap text-right text-sm font-medium">
-            <button
-              type="button"
-              onClick={() => void saveInlineSubtaskCreate(false)}
-              disabled={isSubtaskSaveDisabled}
-              title={isSavingSubtaskInline ? 'Saving subtask' : 'Save subtask'}
-              aria-label={isSavingSubtaskInline ? 'Saving subtask' : 'Save subtask'}
-              className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 mr-3 disabled:opacity-50"
-            >
-              {isSavingSubtaskInline ? '⏳' : '💾'}
-            </button>
-            <button
-              type="button"
-              onClick={cancelInlineSubtaskCreate}
-              title="Cancel subtask"
-              aria-label="Cancel subtask"
-              className="text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
-            >
-              ✕
-            </button>
+            <div className="flex items-center justify-end gap-1">
+              <button
+                type="button"
+                onClick={() => void saveInlineSubtaskCreate(false)}
+                disabled={isSubtaskSaveDisabled}
+                title={isSavingSubtaskInline ? 'Saving subtask' : 'Save subtask'}
+                aria-label={isSavingSubtaskInline ? 'Saving subtask' : 'Save subtask'}
+                className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
+              >
+                {isSavingSubtaskInline ? (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={cancelInlineSubtaskCreate}
+                title="Cancel subtask"
+                aria-label="Cancel subtask"
+                className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </td>
         </tr>
       );
@@ -5833,9 +5861,9 @@ function TasksTab({
               <div className="relative">
                 <button
                   onClick={() => setShowImportDropdown(!showImportDropdown)}
-                  className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
+                  className="h-10 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center gap-2"
                 >
-                  <span className="text-xl">📥</span>
+                  <span className="text-base leading-none">📥</span>
                   Import Tasks
                   <svg className={`w-4 h-4 transition-transform ${showImportDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -5944,18 +5972,18 @@ function TasksTab({
               
               <button
                 onClick={onCreateTask}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
+                className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center gap-2"
               >
-                <span className="text-xl">+</span>
+                <span className="text-base leading-none">+</span>
                 New Task
               </button>
               {/* Template Dropdown */}
               <div className="relative">
                 <button
                   onClick={() => setShowTemplateDropdown(!showTemplateDropdown)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
+                  className="h-10 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center gap-2"
                 >
-                  <span className="text-xl">📋</span>
+                  <span className="text-base leading-none">📋</span>
                   Templates
                   <svg className={`w-4 h-4 transition-transform ${showTemplateDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -6008,7 +6036,7 @@ function TasksTab({
           {canCreate && (
             <button
               onClick={onCreateTask}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors font-medium"
+              className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
             >
               Create Task
             </button>
@@ -6102,9 +6130,9 @@ function TasksTab({
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-visible" ref={tasksGridRef}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-visible border border-gray-200 dark:border-gray-700" ref={tasksGridRef}>
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-gray-50 dark:bg-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <div className="flex items-center justify-between gap-2">
@@ -6149,8 +6177,8 @@ function TasksTab({
                     Due Date <SortIcon field="dueDate" />
                   </button>
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Actions
+                <th scope="col" className="relative px-6 py-3">
+                  <span className="sr-only">Actions</span>
                 </th>
               </tr>
             </thead>
@@ -6236,25 +6264,38 @@ function TasksTab({
                         />
                       </td>
                       <td className="px-2 py-2 whitespace-nowrap text-right text-sm font-medium">
-                        <button
-                          type="button"
-                          onClick={() => void saveInlineRootTaskCreate(false)}
-                          disabled={isSavingRootInline || !newRootTaskData.taskName.trim() || !newRootTaskData.status || !newRootTaskData.priority}
-                          title={isSavingRootInline ? 'Saving task' : 'Save task'}
-                          aria-label={isSavingRootInline ? 'Saving task' : 'Save task'}
-                          className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 mr-3 disabled:opacity-50"
-                        >
-                          {isSavingRootInline ? '⏳' : '💾'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelInlineRootTaskCreate}
-                          title="Cancel task"
-                          aria-label="Cancel task"
-                          className="text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
-                        >
-                          ✕
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => void saveInlineRootTaskCreate(false)}
+                            disabled={isSavingRootInline || !newRootTaskData.taskName.trim() || !newRootTaskData.status || !newRootTaskData.priority}
+                            title={isSavingRootInline ? 'Saving task' : 'Save task'}
+                            aria-label={isSavingRootInline ? 'Saving task' : 'Save task'}
+                            className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
+                          >
+                            {isSavingRootInline ? (
+                              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelInlineRootTaskCreate}
+                            title="Cancel task"
+                            aria-label="Cancel task"
+                            className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -6453,7 +6494,7 @@ function UtilitiesTab({ projectId, token, onTasksUpdated }: { projectId: number;
           {results.details.length > 0 && (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-900">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Task</th>
                     {results.details[0]?.oldHours !== undefined && (
@@ -7200,9 +7241,9 @@ function KanbanTab({
         {canCreate && (
           <button
             onClick={onCreateTask}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
+            className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center gap-2"
           >
-            <span className="text-xl">+</span>
+            <span className="text-base leading-none">+</span>
             New Task
           </button>
         )}
@@ -8556,7 +8597,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
           </div>
 
           {/* Tasks Table */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
             <div className="p-6">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Tasks Summary</h2>
 
@@ -8565,9 +8606,9 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
               ) : tasks.length === 0 ? (
                 <div className="text-center py-8 text-gray-500 dark:text-gray-400">No tasks found</div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
                   <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                    <thead className="bg-gray-50 dark:bg-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-900">
                       <tr>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                           Task Name
@@ -8587,8 +8628,8 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
                         <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                           Worked
                         </th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                          Actions
+                        <th scope="col" className="relative px-4 py-3">
+                          <span className="sr-only">Actions</span>
                         </th>
                       </tr>
                     </thead>
@@ -8745,13 +8786,13 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
 
           {/* Summary Table */}
           {!isLoading && userStats.length > 0 && (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
               <div className="p-4 border-b border-gray-100 dark:border-gray-700">
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white">User Summary</h2>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">User</th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Allocated</th>
@@ -8820,7 +8861,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
 
       {/* Allocations Tab */}
       {reportTab === 'allocations' && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
           <div className="p-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">Planned Allocations</h2>
@@ -8839,7 +8880,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                         Task
@@ -8904,7 +8945,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
 
       {/* Time Entries Tab */}
       {reportTab === 'timeEntries' && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
           <div className="p-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">Recorded Time Entries</h2>
@@ -8923,7 +8964,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                         Task
@@ -9129,7 +9170,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                      <thead className="bg-gray-50 dark:bg-gray-700">
+                      <thead className="bg-gray-50 dark:bg-gray-900">
                         <tr>
                           <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
                             Date
@@ -9184,7 +9225,7 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                      <thead className="bg-gray-50 dark:bg-gray-700">
+                      <thead className="bg-gray-50 dark:bg-gray-900">
                         <tr>
                           <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
                             Date
@@ -12842,7 +12883,7 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
                     <p className="text-sm text-gray-400 px-4 py-3 italic">No tasks in this sprint.</p>
                   ) : (
                     <table className="w-full text-sm">
-                      <thead className="bg-gray-50 dark:bg-gray-700/50">
+                      <thead className="bg-gray-50 dark:bg-gray-900">
                         <tr>
                           <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium">Task</th>
                           <th className="text-left px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hidden md:table-cell">Status</th>
@@ -12966,7 +13007,7 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
           <p className="text-sm text-gray-400 px-4 py-8 text-center italic">No backlog tasks match the current filters.</p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 dark:bg-gray-700/50">
+            <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
                 <th className="px-4 py-2 w-8">
                   <input

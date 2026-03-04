@@ -1008,7 +1008,7 @@ function DashboardContent() {
                     ) : (
                       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
                         <table className="w-full text-sm">
-                          <thead className="bg-gray-50 dark:bg-gray-700/50">
+                          <thead className="bg-gray-50 dark:bg-gray-900">
                             <tr>
                               <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">#</th>
                               <th className="text-left px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">Title</th>

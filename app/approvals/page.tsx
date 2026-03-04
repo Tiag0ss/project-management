@@ -831,7 +831,7 @@ export default function ApprovalsPage() {
                   {/* Entries Table */}
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                      <thead className="bg-gray-50 dark:bg-gray-700">
+                      <thead className="bg-gray-50 dark:bg-gray-900">
                         <tr>
                           {filterStatus === 'pending' && (
                             <th className="px-4 py-2 w-8">
@@ -855,7 +855,9 @@ export default function ApprovalsPage() {
                           <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Hours</th>
                           <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Description</th>
                           <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Status</th>
-                          <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
+                          <th scope="col" className="relative px-4 py-2">
+                            <span className="sr-only">Actions</span>
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700">
@@ -960,7 +962,7 @@ export default function ApprovalsPage() {
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-900">
                   <tr>
                     {filterStatus === 'pending' && (
                       <th className="px-4 py-3 w-8">
@@ -979,7 +981,9 @@ export default function ApprovalsPage() {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Hours</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Description</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                    <th scope="col" className="relative px-4 py-3">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -1205,7 +1209,7 @@ export default function ApprovalsPage() {
 
                       <div className="h-[calc(100vh-340px)] min-h-[420px] overflow-y-auto border border-gray-200 dark:border-gray-700 rounded">
                         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                          <thead className="bg-gray-50 dark:bg-gray-700">
+                          <thead className="bg-gray-50 dark:bg-gray-900">
                             <tr>
                               <th
                                 className="px-3 py-2 text-left text-xs text-gray-500 dark:text-gray-300 uppercase cursor-pointer"
@@ -1226,7 +1230,9 @@ export default function ApprovalsPage() {
                                 Status {vacationSortField === 'status' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
                               </th>
                               <th className="px-3 py-2 text-left text-xs text-gray-500 dark:text-gray-300 uppercase">Notes</th>
-                              <th className="px-3 py-2 text-left text-xs text-gray-500 dark:text-gray-300 uppercase">Actions</th>
+                              <th scope="col" className="relative px-3 py-2">
+                                <span className="sr-only">Actions</span>
+                              </th>
                             </tr>
                           </thead>
                           <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700">
@@ -1239,34 +1245,40 @@ export default function ApprovalsPage() {
                                 <td className="px-3 py-2 text-sm text-gray-900 dark:text-white capitalize">{request.Status}</td>
                                 <td className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">{request.Notes || '—'}</td>
                                 <td className="px-3 py-2 text-sm text-gray-900 dark:text-white">
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center justify-end gap-1">
                                     {String(request.Status).toLowerCase() === 'pending' && (
                                       <>
                                         <button
                                           onClick={() => handleVacationApproval(request.Id, 'approved')}
-                                          className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs"
+                                          className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
                                           title="Approve"
                                           aria-label="Approve"
                                         >
-                                          ✓
+                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                          </svg>
                                         </button>
                                         <button
                                           onClick={() => handleVacationApproval(request.Id, 'rejected')}
-                                          className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs"
+                                          className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
                                           title="Reject"
                                           aria-label="Reject"
                                         >
-                                          ✗
+                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                          </svg>
                                         </button>
                                       </>
                                     )}
                                     <button
                                       onClick={() => setVacationDeleteTarget(request)}
-                                      className="px-2 py-1 bg-gray-700 hover:bg-gray-800 text-white rounded text-xs"
+                                      className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
                                       title="Delete request"
                                       aria-label="Delete request"
                                     >
-                                      🗑️
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
                                     </button>
                                   </div>
                                 </td>

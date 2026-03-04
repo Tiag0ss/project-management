@@ -862,17 +862,19 @@ function MembersTab({
         </div>
       )}
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-700">
+          <thead className="bg-gray-50 dark:bg-gray-900">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">User</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Email</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Role</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Permission Group</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Joined</th>
-              {canManage && (
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
+                {canManage && (
+                <th scope="col" className="relative px-6 py-3">
+                  <span className="sr-only">Actions</span>
+                </th>
               )}
             </tr>
           </thead>
@@ -2290,7 +2292,7 @@ function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: bo
       ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-gray-50 dark:bg-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Project Name
@@ -2304,8 +2306,8 @@ function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: bo
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Created At
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Actions
+                <th scope="col" className="relative px-6 py-3">
+                  <span className="sr-only">Actions</span>
                 </th>
               </tr>
             </thead>
@@ -2328,25 +2330,32 @@ function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: bo
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                     {new Date(project.CreatedAt).toLocaleDateString()}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex items-center justify-end gap-1">
                     <button
                       onClick={() => router.push(`/projects/${project.Id}`)}
                       title="View project"
                       aria-label="View project"
-                      className="text-blue-600 dark:text-blue-400 hover:underline"
+                      className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
                     >
-                      👁️
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5s8.268 2.943 9.542 7c-1.274 4.057-5.065 7-9.542 7S3.732 16.057 2.458 12z" />
+                      </svg>
                     </button>
                     {canManage && organizations.length > 0 && (
                       <button
                         onClick={() => setTransferringProject(project)}
                         title="Transfer project"
                         aria-label="Transfer project"
-                        className="text-orange-600 dark:text-orange-400 hover:underline"
+                        className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
                       >
-                        ⇄
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h11m0 0l-3-3m3 3l-3 3M16 17H5m0 0l3-3m-3 3l3 3" />
+                        </svg>
                       </button>
                     )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -4432,7 +4441,11 @@ function SlaTab({
                 <th className="text-left py-3 pr-4 text-gray-600 dark:text-gray-400 font-medium">Resolution</th>
                 <th className="text-left py-3 pr-4 text-gray-600 dark:text-gray-400 font-medium">Auto Status Change</th>
                 <th className="text-left py-3 pr-4 text-gray-600 dark:text-gray-400 font-medium">Status</th>
-                {canManage && <th className="text-right py-3 text-gray-600 dark:text-gray-400 font-medium">Actions</th>}
+                {canManage && (
+                  <th scope="col" className="relative px-6 py-3">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">

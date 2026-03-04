@@ -1156,7 +1156,7 @@ function FieldDictionaryTable({ items }: { items: FieldDictionaryEntry[] }) {
 
       <div className="mt-4 overflow-x-auto">
         <table className="min-w-full text-sm border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-          <thead className="bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">
+          <thead className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
             <tr>
               <th className="text-left p-3">Field</th>
               <th className="text-left p-3">Where Used</th>
@@ -1192,7 +1192,7 @@ function RoleResponsibilityMatrix({ rows }: { rows: RoleMatrixRow[] }) {
 
       <div className="mt-4 overflow-x-auto">
         <table className="min-w-[1100px] w-full text-sm border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-          <thead className="bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">
+          <thead className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
             <tr>
               <th className="text-left p-3">Module</th>
               <th className="text-left p-3">Admin</th>
@@ -1284,7 +1284,7 @@ function PermissionExpectationMatrix({ rows }: { rows: PermissionMatrixRow[] }) 
 
       <div className="mt-4 overflow-x-auto">
         <table className="min-w-[1150px] w-full text-sm border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-          <thead className="bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">
+          <thead className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
             <tr>
               <th className="text-left p-3">Module</th>
               <th className="text-left p-3">Admin</th>

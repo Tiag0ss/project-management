@@ -3510,7 +3510,7 @@ export default function PlanningPage() {
             </div>
 
             {activeTab === 'gantt' && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
             {/* Permission Notice */}
             {!permissions?.canPlanTasks && (
               <div className="bg-yellow-50 dark:bg-yellow-900/20 border-b-2 border-yellow-400 dark:border-yellow-600 p-4">
@@ -4689,7 +4689,7 @@ export default function PlanningPage() {
 
         {/* Allocations Tab */}
         {activeTab === 'allocations' && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
             {/* Filters */}
             <div className="p-4 border-b border-gray-200 dark:border-gray-700 space-y-4">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Filters</h2>
@@ -4772,7 +4772,7 @@ export default function PlanningPage() {
             {/* Allocations Table */}
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-900">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                       Task
@@ -4792,8 +4792,8 @@ export default function PlanningPage() {
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                       Allocations
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Actions
+                    <th scope="col" className="relative px-6 py-3">
+                      <span className="sr-only">Actions</span>
                     </th>
                   </tr>
                 </thead>
@@ -4841,9 +4841,13 @@ export default function PlanningPage() {
                           {permissions?.canPlanTasks && (
                             <button
                               onClick={() => handleDeleteTaskAllocations(group.TaskId)}
-                              className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                              title="Delete all allocations"
+                              aria-label="Delete all allocations"
+                              className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
                             >
-                              Delete All
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
                             </button>
                           )}
                         </td>

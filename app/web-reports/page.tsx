@@ -2212,7 +2212,7 @@ export default function WebReportsPage() {
                     
                     <div className="overflow-x-auto">
                       <table className="min-w-full border border-gray-300 dark:border-gray-600">
-                        <thead className="bg-gray-100 dark:bg-gray-700 sticky top-0">
+                        <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0">
                           <tr>
                             {Object.keys(modalState.drillDownData[0] || {}).map(key => (
                               <th 
@@ -2259,7 +2259,7 @@ export default function WebReportsPage() {
 
             {/* Pivot Table Display */}
             {pivotData && (
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto border border-gray-200 dark:border-gray-700">
                 <div className="p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white">
@@ -2286,9 +2286,9 @@ export default function WebReportsPage() {
                   {viewMode === 'table' ? (
                     <div className="overflow-x-auto">
                       <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                      <thead className="bg-gray-50 dark:bg-gray-700">
+                      <thead className="bg-gray-50 dark:bg-gray-900">
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider sticky left-0 bg-gray-50 dark:bg-gray-700">
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider sticky left-0 bg-gray-50 dark:bg-gray-900">
                             {pivotConfig.rows.map(r => currentSource?.fields.find(f => f.key === r)?.label).join(' / ')}
                           </th>
                           {pivotData.columns.map((col: string) => {

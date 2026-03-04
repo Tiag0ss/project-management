@@ -32,6 +32,8 @@ Out of scope:
 8. If hours are aggregated at project/report level, use leaf-task rule to avoid double counting.
 9. Keep feature placement consistent with current UX (e.g., Resume belongs to Timesheet; ChangeHistory only in History tab).
 10. For period selectors in analytics/resume contexts, include `allTime` when the requirement asks for aggregate lifetime metrics.
+11. For table/grid/list action columns, use the Applications-list action style (`app/applications/page.tsx`): icon-only SVG buttons with `title` + `aria-label`, gray base color, blue hover for edit/manage/open and red hover for delete.
+12. For top toolbar actions (`Import CSV`, `Export CSV`, `New ...`), normalize size with `h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center` (add `gap-2` only when there is a leading icon); do not alter `Quick Actions` button sizing unless explicitly requested.
 
 ## Output Contract
 

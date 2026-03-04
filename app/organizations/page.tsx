@@ -322,23 +322,23 @@ export default function OrganizationsPage() {
               <button
                 onClick={() => setShowImportModal(true)}
                 disabled={isImportingCsv}
-                className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white px-3 py-2 rounded-lg transition-colors font-medium"
+                className="h-10 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
               >
                 {isImportingCsv ? 'Importing...' : 'Import CSV'}
               </button>
             )}
             <button
               onClick={handleExportOrganizationsCsv}
-              className="bg-gray-700 hover:bg-gray-800 text-white px-3 py-2 rounded-lg transition-colors font-medium"
+              className="h-10 px-4 bg-gray-700 hover:bg-gray-800 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
             >
               Export CSV
             </button>
             {(user?.isAdmin || permissions?.canManageOrganizations) && (
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
+                className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center gap-2"
               >
-                <span className="text-xl">+</span>
+                <span className="text-base leading-none">+</span>
                 New Organization
               </button>
             )}
@@ -444,12 +444,12 @@ export default function OrganizationsPage() {
                 </p>
               )}
             </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-900">
                   <tr>
                     <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('name')}
                     >
                       <div className="flex items-center gap-1">
@@ -458,7 +458,7 @@ export default function OrganizationsPage() {
                       </div>
                     </th>
                     <th 
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('role')}
                     >
                       <div className="flex items-center justify-center gap-1">
@@ -467,7 +467,7 @@ export default function OrganizationsPage() {
                       </div>
                     </th>
                     <th 
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('members')}
                     >
                       <div className="flex items-center justify-center gap-1">
@@ -476,7 +476,7 @@ export default function OrganizationsPage() {
                       </div>
                     </th>
                     <th 
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('projects')}
                     >
                       <div className="flex items-center justify-center gap-1">
@@ -486,7 +486,7 @@ export default function OrganizationsPage() {
                     </th>
                     {internalTicketsEnabled && (
                       <th 
-                        className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
+                        className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                         onClick={() => handleSort('tickets')}
                       >
                         <div className="flex items-center justify-center gap-1">
@@ -496,7 +496,7 @@ export default function OrganizationsPage() {
                       </th>
                     )}
                     <th 
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 select-none"
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('tasks')}
                     >
                       <div className="flex items-center justify-center gap-1">
@@ -504,7 +504,9 @@ export default function OrganizationsPage() {
                         <SortIcon field="tasks" />
                       </div>
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                    <th scope="col" className="relative px-6 py-3">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -560,23 +562,28 @@ export default function OrganizationsPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={(e) => { e.stopPropagation(); router.push(`/organizations/${org.Id}`); }}
                             title="Manage organization"
                             aria-label="Manage organization"
-                            className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+                            className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
                           >
-                            ⚙️
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317a1 1 0 011.35-.936l.7.312a1 1 0 00.812 0l.7-.312a1 1 0 011.35.936l.094.765a1 1 0 00.57.795l.676.339a1 1 0 01.445 1.342l-.33.705a1 1 0 000 .848l.33.705a1 1 0 01-.445 1.342l-.676.339a1 1 0 00-.57.795l-.094.765a1 1 0 01-1.35.936l-.7-.312a1 1 0 00-.812 0l-.7.312a1 1 0 01-1.35-.936l-.094-.765a1 1 0 00-.57-.795l-.676-.339a1 1 0 01-.445-1.342l.33-.705a1 1 0 000-.848l-.33-.705a1 1 0 01.445-1.342l.676-.339a1 1 0 00.57-.795l.094-.765z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" />
+                            </svg>
                           </button>
                           {(org.Role === 'Owner' || org.Role === 'Admin') && (
                             <button
                               onClick={(e) => { e.stopPropagation(); handleEdit(org); }}
                               title="Edit organization"
                               aria-label="Edit organization"
-                              className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300"
+                              className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
                             >
-                              ✏️
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M16.5 3.5a2.121 2.121 0 113 3L12 14l-4 1 1-4 7.5-7.5z" />
+                              </svg>
                             </button>
                           )}
                           {(org.Role === 'Owner' || org.Role === 'Admin') && (
@@ -584,9 +591,11 @@ export default function OrganizationsPage() {
                               onClick={(e) => { e.stopPropagation(); handleDelete(org.Id); }}
                               title="Delete organization"
                               aria-label="Delete organization"
-                              className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+                              className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
                             >
-                              🗑️
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
                             </button>
                           )}
                         </div>

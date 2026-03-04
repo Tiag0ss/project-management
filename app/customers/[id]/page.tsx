@@ -102,6 +102,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const [selectedUserRole, setSelectedUserRole] = useState('User');
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [customerUsersSortField, setCustomerUsersSortField] = useState<'user' | 'email' | 'role'>('user');
+  const [customerUsersSortDirection, setCustomerUsersSortDirection] = useState<'asc' | 'desc'>('asc');
   
   // Confirm modal
   const [confirmModal, setConfirmModal] = useState<{
@@ -588,6 +590,57 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const projectManager = projectManagers.find(pm => pm.Id === parseInt(settingsForm.ProjectManagerId));
   const defaultContact = customerContacts.find((contact) => contact.IsDefault === 1) || customerContacts[0] || null;
 
+  const handleCustomerUsersSort = (field: 'user' | 'email' | 'role') => {
+    if (customerUsersSortField === field) {
+      setCustomerUsersSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setCustomerUsersSortField(field);
+      setCustomerUsersSortDirection('asc');
+    }
+  };
+
+  const sortedCustomerUsers = [...customerUsers].sort((a, b) => {
+    let comparison = 0;
+
+    switch (customerUsersSortField) {
+      case 'email':
+        comparison = (a.Email || '').localeCompare(b.Email || '');
+        break;
+      case 'role':
+        comparison = (a.Role || '').localeCompare(b.Role || '');
+        break;
+      case 'user':
+      default: {
+        const aName = `${a.FirstName || ''} ${a.LastName || ''}`.trim() || a.Username || '';
+        const bName = `${b.FirstName || ''} ${b.LastName || ''}`.trim() || b.Username || '';
+        comparison = aName.localeCompare(bName);
+        break;
+      }
+    }
+
+    return customerUsersSortDirection === 'asc' ? comparison : -comparison;
+  });
+
+  const CustomerUsersSortIcon = ({ field }: { field: 'user' | 'email' | 'role' }) => {
+    if (customerUsersSortField !== field) {
+      return (
+        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+        </svg>
+      );
+    }
+
+    return customerUsersSortDirection === 'asc' ? (
+      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+      </svg>
+    ) : (
+      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    );
+  };
+
   if (authLoading || isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -872,17 +925,46 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               Users associated with this customer will have limited access and can only view projects and tasks for this customer.
             </p>
 
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-900">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">User</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Email</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Role</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                      onClick={() => handleCustomerUsersSort('user')}
+                    >
+                      <div className="flex items-center gap-1">
+                        User
+                        <CustomerUsersSortIcon field="user" />
+                      </div>
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                      onClick={() => handleCustomerUsersSort('email')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Email
+                        <CustomerUsersSortIcon field="email" />
+                      </div>
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                      onClick={() => handleCustomerUsersSort('role')}
+                    >
+                      <div className="flex items-center justify-center gap-1">
+                        Role
+                        <CustomerUsersSortIcon field="role" />
+                      </div>
+                    </th>
+                    <th scope="col" className="relative px-6 py-3">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                   {customerUsers.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
@@ -890,8 +972,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                       </td>
                     </tr>
                   ) : (
-                    customerUsers.map((cu) => (
-                      <tr key={cu.UserId} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    sortedCustomerUsers.map((cu) => (
+                      <tr key={cu.UserId} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="font-medium text-gray-900 dark:text-white">
                             {cu.FirstName} {cu.LastName}
@@ -904,15 +986,17 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                             {cu.Role}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-right">
+                        <td className="px-6 py-4 text-right whitespace-nowrap">
                           {permissions?.canManageCustomers && (
                           <button
                             onClick={() => handleRemoveUser(cu.UserId)}
                             title="Remove user"
                             aria-label="Remove user"
-                            className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+                            className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"
                           >
-                            🗑️
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
                           </button>
                           )}
                         </td>
@@ -1429,17 +1513,23 @@ function AttachmentsTab({
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleDownloadAttachment(attachment.Id, attachment.FileName)}
-                    className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                    className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded transition-colors"
                     title="Download"
+                    aria-label="Download"
                   >
-                    ⬇️
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                    </svg>
                   </button>
                   <button
                     onClick={() => onDeleteAttachment(attachment.Id)}
-                    className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                    className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"
                     title="Delete"
+                    aria-label="Delete"
                   >
-                    🗑️
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
                   </button>
                 </div>
               </div>

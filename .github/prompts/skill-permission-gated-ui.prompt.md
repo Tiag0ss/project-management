@@ -27,6 +27,8 @@ Fallback behavior when denied:
 9. Ensure tab-gated content stays in the correct tab scope (e.g., history-only components remain in History tab).
 10. When a permission exists in both global roles and org PermissionGroups, implement OR-merge behavior consistently with `getUserPermissions()`.
 11. For sensitive financial fields (e.g., project budget), hide values, columns/cards, sort options, and budget-derived status hints when permission is denied.
+12. In permission-gated action columns, render icon-only SVG buttons with `title` + `aria-label` (Applications-list style), and gate each icon independently (`view/edit/delete`) by permission.
+13. Keep top toolbar action buttons (`Import CSV`, `Export CSV`, `New ...`) size-normalized with `h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center` (use `gap-2` only when a leading icon exists), and do not change `Quick Actions` button sizing unless explicitly requested.
 
 ## Output Contract
 

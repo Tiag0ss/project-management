@@ -356,7 +356,7 @@ export default function CallRecordsPage() {
             📞 Call Records
           </h1>
           <div className="flex gap-2">
-            <label className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg cursor-pointer transition-colors">
+            <label className="h-10 px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg cursor-pointer transition-colors text-sm font-medium inline-flex items-center">
               📥 Import CSV
               <input
                 type="file"
@@ -370,7 +370,7 @@ export default function CallRecordsPage() {
                 resetForm();
                 setShowForm(true);
               }}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
             >
               + Add Call
             </button>
@@ -538,7 +538,7 @@ export default function CallRecordsPage() {
         </div>
 
         {/* Call Records Table */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden border border-gray-200 dark:border-gray-700">
           {isLoadingRecords ? (
             <div className="text-center py-8 text-gray-500 dark:text-gray-400">
               Loading call records...
@@ -552,7 +552,7 @@ export default function CallRecordsPage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-50 dark:bg-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-900">
                   <tr>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Date</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Time</th>
@@ -563,7 +563,9 @@ export default function CallRecordsPage() {
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Project</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Task</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Participants</th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Actions</th>
+                    <th scope="col" className="relative px-4 py-3">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -604,20 +606,28 @@ export default function CallRecordsPage() {
                         {record.Participants || '-'}
                       </td>
                       <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => handleEdit(record)}
-                          className="text-blue-600 hover:text-blue-700 mr-3"
+                          className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
                           title="Edit"
+                          aria-label="Edit"
                         >
-                          ✏️
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M16.5 3.5a2.121 2.121 0 113 3L12 14l-4 1 1-4 7.5-7.5z" />
+                          </svg>
                         </button>
                         <button
                           onClick={() => handleDelete(record.Id)}
-                          className="text-red-600 hover:text-red-700"
+                          className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
                           title="Delete"
+                          aria-label="Delete"
                         >
-                          🗑️
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
                         </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

@@ -382,6 +382,35 @@ className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-
 - Do not introduce `container` or fixed-width outer wrappers unless explicitly requested for a specific screen.
 - Keep existing spacing/grid utilities, but preserve full-width behavior as the default layout baseline.
 
+### Grid Styling Standard (CRITICAL)
+
+- When implementing or updating list/table/grid UIs, align with the Applications list visual pattern in `app/applications/page.tsx`.
+- Table shell pattern must follow Applications list style exactly:
+  - Outer wrapper: `bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700`
+  - Header row container: `<thead className="bg-gray-50 dark:bg-gray-900">`
+  - Sortable header hover tone: `hover:bg-gray-100 dark:hover:bg-gray-800`
+- For action columns (`Actions`) in tables/grids:
+  - Do not render visible `Actions` header text; keep the column header visual empty and use `<span className="sr-only">Actions</span>` for accessibility.
+  - Use icon-only buttons with tooltips (`title`) and accessibility labels (`aria-label`).
+  - Prefer inline SVG icons (edit/trash) instead of text labels like `Edit`/`Delete`.
+  - Use this interaction style consistently:
+    - Base: `p-1.5 text-gray-400 rounded transition-colors`
+    - Edit hover: `hover:text-blue-600 dark:hover:text-blue-400`
+    - Delete hover: `hover:text-red-600 dark:hover:text-red-400`
+- Keep icon button sizing and spacing consistent across grids (`w-4 h-4` icons, compact gaps).
+- Preserve permission gating on each action button before rendering.
+- Header pattern for action column must follow Applications list style:
+  - `<th scope="col" className="relative px-6 py-3">` + `<span className="sr-only">Actions</span>`
+  - Never show literal `Actions` as visible header text in table/grid UIs.
+- Row action container pattern:
+  - `<div className="flex items-center justify-end gap-1">` (or `gap-2` when spacing requires)
+  - Do not use emoji icons in grid action columns; use inline SVG only.
+- Top toolbar action buttons (e.g., `Import CSV`, `Export CSV`, `New ...`) must use normalized sizing:
+  - Base pattern: `h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center`
+  - Primary variant may add `gap-2` when it includes a leading plus icon.
+  - Keep `Import`, `Export`, and primary `New ...` buttons the same height on the same toolbar.
+  - Do not change `Quick Actions` button sizing unless explicitly requested.
+
 **Modal Pattern:**
 ```typescript
 {showModal && (

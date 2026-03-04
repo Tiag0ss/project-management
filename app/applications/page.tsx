@@ -471,23 +471,23 @@ export default function ApplicationsPage() {
               <button
                 onClick={() => setShowImportModal(true)}
                 disabled={isImportingCsv}
-                className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white px-3 py-2 rounded-lg transition-colors font-medium"
+                className="h-10 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
               >
                 {isImportingCsv ? 'Importing...' : 'Import CSV'}
               </button>
             )}
             <button
               onClick={handleExportApplicationsCsv}
-              className="bg-gray-700 hover:bg-gray-800 text-white px-3 py-2 rounded-lg transition-colors font-medium"
+              className="h-10 px-4 bg-gray-700 hover:bg-gray-800 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
             >
               Export CSV
             </button>
             {permissions?.canCreateApplications && (
               <button
                 onClick={openCreateModal}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
+                className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center gap-2"
               >
-                <span className="text-xl">+</span>
+                <span className="text-base leading-none">+</span>
                 New Application
               </button>
             )}
