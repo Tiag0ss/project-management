@@ -825,9 +825,34 @@ export default function ProjectsPage() {
                             </td>
                             <td className="px-6 py-4 text-right">
                               <div className="flex items-center justify-end gap-2">
-                                <button onClick={e => { e.stopPropagation(); router.push(`/projects/${project.Id}`); }} className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium">Open</button>
-                                {permissions?.canManageProjects && <button onClick={e => { e.stopPropagation(); handleEditProject(project); }} className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 text-sm font-medium">Edit</button>}
-                                {permissions?.canDeleteProjects && <button onClick={e => { e.stopPropagation(); handleDeleteProject(project.Id); }} className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium">Delete</button>}
+                                <button
+                                  onClick={e => { e.stopPropagation(); router.push(`/projects/${project.Id}`); }}
+                                  title="Open project"
+                                  aria-label="Open project"
+                                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+                                >
+                                  👁️
+                                </button>
+                                {permissions?.canManageProjects && (
+                                  <button
+                                    onClick={e => { e.stopPropagation(); handleEditProject(project); }}
+                                    title="Edit project"
+                                    aria-label="Edit project"
+                                    className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300"
+                                  >
+                                    ✏️
+                                  </button>
+                                )}
+                                {permissions?.canDeleteProjects && (
+                                  <button
+                                    onClick={e => { e.stopPropagation(); handleDeleteProject(project.Id); }}
+                                    title="Delete project"
+                                    aria-label="Delete project"
+                                    className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+                                  >
+                                    🗑️
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>

@@ -1136,15 +1136,19 @@ export default function TimesheetPage() {
                                         <>
                                           <button
                                             onClick={() => handleEditTimeEntry(entry)}
+                                            title="Edit entry"
+                                            aria-label="Edit entry"
                                             className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-3"
                                           >
-                                            Edit
+                                            ✏️
                                           </button>
                                           <button
                                             onClick={() => handleDeleteTimeEntry(entry.Id)}
+                                            title="Delete entry"
+                                            aria-label="Delete entry"
                                             className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
                                           >
-                                            Delete
+                                            🗑️
                                           </button>
                                         </>
                                       ) : null}
@@ -2014,15 +2018,19 @@ export default function TimesheetPage() {
                                           <>
                                             <button
                                               onClick={() => handleEditTimeEntry(entry)}
+                                              title="Edit entry"
+                                              aria-label="Edit entry"
                                               className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-3"
                                             >
-                                              Edit
+                                              ✏️
                                             </button>
                                             <button
                                               onClick={() => handleDeleteTimeEntry(entry.Id)}
+                                              title="Delete entry"
+                                              aria-label="Delete entry"
                                               className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
                                             >
-                                              Delete
+                                              🗑️
                                             </button>
                                           </>
                                         ) : null}

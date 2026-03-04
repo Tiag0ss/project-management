@@ -263,9 +263,10 @@ export default function NotificationsPage() {
                             <button
                               onClick={() => handleNotificationClick(notification)}
                               className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
-                              title="View"
+                              title="View notification"
+                              aria-label="View notification"
                             >
-                              View
+                              👁️
                             </button>
                           )}
                           {!notification.IsRead && (
@@ -273,16 +274,18 @@ export default function NotificationsPage() {
                               onClick={() => markAsRead(notification.Id)}
                               className="px-3 py-1.5 text-xs bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md transition-colors"
                               title="Mark as read"
+                              aria-label="Mark as read"
                             >
-                              Mark read
+                              ✓
                             </button>
                           )}
                           <button
                             onClick={() => deleteNotification(notification.Id)}
                             className="px-3 py-1.5 text-xs bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 rounded-md transition-colors"
-                            title="Delete"
+                            title="Delete notification"
+                            aria-label="Delete notification"
                           >
-                            Delete
+                            🗑️
                           </button>
                         </div>
                       </div>

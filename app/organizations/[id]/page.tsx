@@ -900,15 +900,19 @@ function MembersTab({
                       <div className="flex gap-2 justify-end">
                         <button
                           onClick={() => setEditingMember(member)}
+                          title="Edit member"
+                          aria-label="Edit member"
                           className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
                         >
-                          Edit
+                          ✏️
                         </button>
                         <button
                           onClick={() => handleRemove(member.Id)}
+                          title="Remove member"
+                          aria-label="Remove member"
                           className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
                         >
-                          Remove
+                          🗑️
                         </button>
                       </div>
                     )}
@@ -1455,9 +1459,11 @@ function PermissionsTab({
               <div className="flex gap-2 mt-4">
                 <button
                   onClick={() => setEditingGroup(group)}
+                  title="Edit permission group"
+                  aria-label="Edit permission group"
                   className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm"
                 >
-                  Edit
+                  ✏️
                 </button>
                 {group.IsSystemGroup ? (
                   <button
@@ -1470,9 +1476,11 @@ function PermissionsTab({
                 ) : (
                   <button
                     onClick={() => handleDelete(group.Id)}
+                    title="Delete permission group"
+                    aria-label="Delete permission group"
                     className="flex-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm"
                   >
-                    Delete
+                    🗑️
                   </button>
                 )}
               </div>
@@ -1908,15 +1916,19 @@ function StatusesTab({
               <div className="flex gap-2">
                 <button
                   onClick={() => setEditingStatus(status)}
+                  title="Edit value"
+                  aria-label="Edit value"
                   className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 px-3 py-1"
                 >
-                  Edit
+                  ✏️
                 </button>
                 <button
                   onClick={() => handleDelete(status.Id, activeType)}
+                  title="Delete value"
+                  aria-label="Delete value"
                   className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 px-3 py-1"
                 >
-                  Delete
+                  🗑️
                 </button>
               </div>
             )}
@@ -2319,16 +2331,20 @@ function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: bo
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                     <button
                       onClick={() => router.push(`/projects/${project.Id}`)}
+                      title="View project"
+                      aria-label="View project"
                       className="text-blue-600 dark:text-blue-400 hover:underline"
                     >
-                      View
+                      👁️
                     </button>
                     {canManage && organizations.length > 0 && (
                       <button
                         onClick={() => setTransferringProject(project)}
+                        title="Transfer project"
+                        aria-label="Transfer project"
                         className="text-orange-600 dark:text-orange-400 hover:underline"
                       >
-                        Transfer
+                        ⇄
                       </button>
                     )}
                   </td>
@@ -4485,15 +4501,19 @@ function SlaTab({
                     <td className="py-3 text-right">
                       <button
                         onClick={() => openEdit(rule)}
-                        className="text-blue-600 dark:text-blue-400 hover:underline text-xs mr-3"
+                        title="Edit SLA rule"
+                        aria-label="Edit SLA rule"
+                        className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 mr-3"
                       >
-                        Edit
+                        ✏️
                       </button>
                       <button
                         onClick={() => deleteRule(rule)}
-                        className="text-red-600 dark:text-red-400 hover:underline text-xs"
+                        title="Delete SLA rule"
+                        aria-label="Delete SLA rule"
+                        className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
                       >
-                        Delete
+                        🗑️
                       </button>
                     </td>
                   )}

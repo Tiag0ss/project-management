@@ -59,6 +59,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
   const [taskTypes, setTaskTypes] = useState<StatusValue[]>([]);
+  const [taskEditorUsers, setTaskEditorUsers] = useState<User[]>([]);
   const [jiraFilters, setJiraFilters] = useState({
     search: '',
     status: '',
@@ -409,6 +410,25 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const handleEditTask = (task: Task) => {
     setEditingTask(task);
     setShowTaskModal(true);
+  };
+
+  const handleInlineTaskSave = async (taskId: number, taskData: Partial<CreateTaskData>) => {
+    if (!token) return;
+
+    const trimmedTaskName = (taskData.taskName || '').trim();
+    if (!trimmedTaskName) {
+      setError('Task name is required');
+      return;
+    }
+
+    try {
+      await tasksApi.update(taskId, { ...taskData, taskName: trimmedTaskName }, token);
+      setError('');
+      await loadTasks();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save task');
+      throw err;
+    }
   };
 
   const handleDeleteTask = async (id: number) => {
@@ -1956,6 +1976,24 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   }, [showGiteaImportModal, project]);
 
+  useEffect(() => {
+    if (activeTab !== 'tasks' || !project || !token) return;
+
+    const loadTaskEditorMetadata = async () => {
+      await Promise.all([
+        loadTaskStatuses(),
+        loadTaskPriorities(),
+        loadTaskTypes(),
+        usersApi
+          .getByOrganization(project.OrganizationId, token)
+          .then((res) => setTaskEditorUsers(res.users || []))
+          .catch(() => setTaskEditorUsers([])),
+      ]);
+    };
+
+    loadTaskEditorMetadata();
+  }, [activeTab, project, token]);
+
   if (authLoading || isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -2136,8 +2174,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               tasks={tasks}
               project={project}
               jiraIntegration={jiraIntegration}
+              taskStatuses={taskStatuses}
+              taskPriorities={taskPriorities}
+              taskTypes={taskTypes}
+              organizationUsers={taskEditorUsers}
               onCreateTask={handleCreateTask}
               onEditTask={handleEditTask}
+              onInlineSaveTask={handleInlineTaskSave}
+              onRefreshTasks={loadTasks}
               onDeleteTask={handleDeleteTask}
               onImportClick={handleImportClick}
               onImportFromJira={() => setShowJiraImportModal(true)}
@@ -4650,8 +4694,14 @@ function TasksTab({
   tasks,
   project,
   jiraIntegration,
+  taskStatuses,
+  taskPriorities,
+  taskTypes,
+  organizationUsers,
   onCreateTask,
   onEditTask,
+  onInlineSaveTask,
+  onRefreshTasks,
   onDeleteTask,
   onImportClick,
   onImportFromJira,
@@ -4667,8 +4717,14 @@ function TasksTab({
   tasks: Task[];
   project: Project;
   jiraIntegration: any;
+  taskStatuses: StatusValue[];
+  taskPriorities: StatusValue[];
+  taskTypes: StatusValue[];
+  organizationUsers: User[];
   onCreateTask: () => void;
   onEditTask: (task: Task) => void;
+  onInlineSaveTask: (taskId: number, taskData: Partial<CreateTaskData>) => Promise<void>;
+  onRefreshTasks: () => Promise<void>;
   onDeleteTask: (id: number) => void;
   onImportClick: () => void;
   onImportFromJira: () => void;
@@ -4687,16 +4743,52 @@ function TasksTab({
   const [showTemplateSaveModal, setShowTemplateSaveModal] = useState(false);
   const [showTemplateApplyModal, setShowTemplateApplyModal] = useState(false);
   const [filterText, setFilterText] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterPriority, setFilterPriority] = useState('');
-  const [filterAssignee, setFilterAssignee] = useState('');
-  const [filterTaskType, setFilterTaskType] = useState('');
+  const [filterStatus, setFilterStatus] = useState<number | undefined>(undefined);
+  const [filterPriority, setFilterPriority] = useState<number | undefined>(undefined);
+  const [filterAssignee, setFilterAssignee] = useState<number | undefined>(undefined);
+  const [filterTaskType, setFilterTaskType] = useState<number | undefined>(undefined);
   const [hideClosed, setHideClosed] = useState(false);
   const [sortField, setSortField] = useState<'task' | 'assignee' | 'status' | 'priority' | 'dueDate' | 'TaskTypeName'>('task');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [filterTagIds, setFilterTagIds] = useState<number[]>([]);
   const [taskTagMap, setTaskTagMap] = useState<Map<number, Array<{ id: number; name: string; color: string }>>>(new Map());
   const [tagFilterOptions, setTagFilterOptions] = useState<Array<{ value: number; label: string; subtitle?: string }>>([]);
+  const [editingRowTaskId, setEditingRowTaskId] = useState<number | null>(null);
+  const [editingRowData, setEditingRowData] = useState<{
+    taskName: string;
+    assignedTo: number | null;
+    taskType: number | null;
+    status: number | null;
+    priority: number | null;
+    dueDate: string;
+  }>({
+    taskName: '',
+    assignedTo: null,
+    taskType: null,
+    status: null,
+    priority: null,
+    dueDate: '',
+  });
+  const [isSavingInline, setIsSavingInline] = useState(false);
+  const [creatingSubtaskParentId, setCreatingSubtaskParentId] = useState<number | null>(null);
+  const [newSubtaskData, setNewSubtaskData] = useState<{
+    taskName: string;
+    assignedTo: number | null;
+    taskType: number | null;
+    status: number | null;
+    priority: number | null;
+    dueDate: string;
+  }>({
+    taskName: '',
+    assignedTo: null,
+    taskType: null,
+    status: null,
+    priority: null,
+    dueDate: '',
+  });
+  const [isSavingSubtaskInline, setIsSavingSubtaskInline] = useState(false);
+  const [newSubtaskInputResetKey, setNewSubtaskInputResetKey] = useState(0);
+  const tasksGridRef = useRef<HTMLDivElement>(null);
 
   // Check which integrations are configured
   const hasJiraIntegration = jiraIntegration?.IsEnabled && jiraIntegration?.JiraUrl;
@@ -4739,10 +4831,38 @@ function TasksTab({
   const parentTasks = tasks.filter(task => !task.ParentTaskId);
   const getSubtasks = (parentId: number) => tasks.filter(task => task.ParentTaskId === parentId);
 
-  const taskStatuses = Array.from(new Set(tasks.map(t => t.StatusName || '').filter(Boolean))).sort();
-  const taskPriorities = Array.from(new Set(tasks.map(t => t.PriorityName || '').filter(Boolean))).sort();
-  const taskAssignees = Array.from(new Set(tasks.map(t => t.AssigneeName || '').filter(Boolean))).sort();
-  const taskTypes = Array.from(new Set(tasks.map(t => t.TaskTypeName || '').filter(Boolean))).sort();
+  const assigneeOptions = Array.from(
+    new Map(
+      [
+        ...(organizationUsers || [])
+          .filter((userOption) => {
+            const normalizedActive = Number(userOption.IsActive as any);
+            return Number.isNaN(normalizedActive) || normalizedActive !== 0;
+          })
+          .map((userOption) => ({ id: Number(userOption.Id), name: String(userOption.Username || '').trim() })),
+        ...tasks
+          .filter((task) => task.AssignedTo && task.AssigneeName)
+          .map((task) => ({ id: Number(task.AssignedTo), name: String(task.AssigneeName || '').trim() })),
+      ]
+        .filter((entry) => entry.id > 0 && entry.name.length > 0)
+        .map((entry) => [entry.id, entry])
+    ).values()
+  ).sort((a, b) => a.name.localeCompare(b.name));
+
+  const statusOptions = (taskStatuses || [])
+    .map((statusOption) => ({ id: Number(statusOption.Id), name: String(statusOption.StatusName || '') }))
+    .filter((statusOption) => !!statusOption.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const priorityOptions = (taskPriorities || [])
+    .map((priorityOption) => ({ id: Number(priorityOption.Id), name: String(priorityOption.PriorityName || priorityOption.StatusName || '') }))
+    .filter((priorityOption) => !!priorityOption.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const taskTypeOptions = (taskTypes || [])
+    .map((taskTypeOption) => ({ id: Number(taskTypeOption.Id), name: String(taskTypeOption.TypeName || taskTypeOption.StatusName || '') }))
+    .filter((taskTypeOption) => !!taskTypeOption.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   useEffect(() => {
     if (!token || !project?.OrganizationId || !project?.Id) return;
@@ -4840,10 +4960,15 @@ function TasksTab({
 
   const taskMatchesFilters = (task: Task): boolean => {
     if (hideClosed && Number(task.StatusIsClosed || 0) === 1) return false;
-    if (filterStatus && (task.StatusName || '') !== filterStatus) return false;
-    if (filterPriority && (task.PriorityName || '') !== filterPriority) return false;
-    if (filterAssignee && (task.AssigneeName || '') !== filterAssignee) return false;
-    if (filterTaskType && (task.TaskTypeName || '') !== filterTaskType) return false;
+    const taskStatusId = task.Status !== null && task.Status !== undefined ? Number(task.Status) : undefined;
+    const taskPriorityId = task.Priority !== null && task.Priority !== undefined ? Number(task.Priority) : undefined;
+    const taskAssigneeId = task.AssignedTo !== null && task.AssignedTo !== undefined ? Number(task.AssignedTo) : undefined;
+    const taskTypeId = task.TaskType !== null && task.TaskType !== undefined ? Number(task.TaskType) : undefined;
+
+    if (filterStatus !== undefined && taskStatusId !== filterStatus) return false;
+    if (filterPriority !== undefined && taskPriorityId !== filterPriority) return false;
+    if (filterAssignee !== undefined && taskAssigneeId !== filterAssignee) return false;
+    if (filterTaskType !== undefined && taskTypeId !== filterTaskType) return false;
     if (filterTagIds.length > 0) {
       const taskTags = taskTagMap.get(task.Id) || [];
       const taskTagIds = taskTags.map(taskTag => taskTag.id);
@@ -4900,6 +5025,19 @@ function TasksTab({
 
   const getSortedTasks = (taskList: Task[]) => [...taskList].sort(compareTasks);
 
+  const getDisplayOrderSortedTasks = (taskList: Task[]) => {
+    return [...taskList].sort((a, b) => {
+      const aOrder = Number.isFinite(Number(a.DisplayOrder)) ? Number(a.DisplayOrder) : Number.MAX_SAFE_INTEGER;
+      const bOrder = Number.isFinite(Number(b.DisplayOrder)) ? Number(b.DisplayOrder) : Number.MAX_SAFE_INTEGER;
+
+      if (aOrder !== bOrder) {
+        return aOrder - bOrder;
+      }
+
+      return Number(a.Id) - Number(b.Id);
+    });
+  };
+
   const hasMatchingDescendant = (task: Task): boolean => {
     const subtasks = getSubtasks(task.Id);
     for (const subtask of subtasks) {
@@ -4945,9 +5083,226 @@ function TasksTab({
     })
   );
 
+  const startInlineEdit = (task: Task) => {
+    if (!canManage) return;
+
+    const normalizedDueDate = task.DueDate
+      ? String(task.DueDate).split('T')[0]
+      : '';
+
+    setEditingRowTaskId(task.Id);
+    setEditingRowData({
+      taskName: task.TaskName || '',
+      assignedTo: task.AssignedTo ? Number(task.AssignedTo) : null,
+      taskType: task.TaskType !== null && task.TaskType !== undefined ? Number(task.TaskType) : null,
+      status: task.Status !== null && task.Status !== undefined ? Number(task.Status) : null,
+      priority: task.Priority !== null && task.Priority !== undefined ? Number(task.Priority) : null,
+      dueDate: normalizedDueDate,
+    });
+  };
+
+  const cancelInlineEdit = () => {
+    setEditingRowTaskId(null);
+    setEditingRowData({
+      taskName: '',
+      assignedTo: null,
+      taskType: null,
+      status: null,
+      priority: null,
+      dueDate: '',
+    });
+    setIsSavingInline(false);
+  };
+
+  const startInlineSubtaskCreate = (parentTaskId: number) => {
+    if (!canManage) return;
+
+    const defaultTaskType = taskTypeOptions.length > 0 ? taskTypeOptions[0].id : null;
+    const defaultStatusFromDb =
+      (taskStatuses || []).find((statusOption) => Number(statusOption.IsDefault || 0) === 1) ||
+      [...(taskStatuses || [])].sort((a, b) => Number(a.SortOrder || 0) - Number(b.SortOrder || 0) || Number(a.Id) - Number(b.Id))[0];
+    const defaultPriorityFromDb =
+      (taskPriorities || []).find((priorityOption) => Number(priorityOption.IsDefault || 0) === 1) ||
+      [...(taskPriorities || [])].sort((a, b) => Number(a.SortOrder || 0) - Number(b.SortOrder || 0) || Number(a.Id) - Number(b.Id))[0];
+
+    const defaultStatus = defaultStatusFromDb ? Number(defaultStatusFromDb.Id) : null;
+    const defaultPriority = defaultPriorityFromDb ? Number(defaultPriorityFromDb.Id) : null;
+
+    setEditingRowTaskId(null);
+    setIsSavingInline(false);
+    setCreatingSubtaskParentId(parentTaskId);
+    setNewSubtaskData({
+      taskName: '',
+      assignedTo: null,
+      taskType: defaultTaskType,
+      status: defaultStatus,
+      priority: defaultPriority,
+      dueDate: '',
+    });
+
+    setExpandedTasks((prev) => {
+      const next = new Set(prev);
+      next.add(parentTaskId);
+      return next;
+    });
+  };
+
+  const cancelInlineSubtaskCreate = () => {
+    setCreatingSubtaskParentId(null);
+    setNewSubtaskData({
+      taskName: '',
+      assignedTo: null,
+      taskType: null,
+      status: null,
+      priority: null,
+      dueDate: '',
+    });
+    setIsSavingSubtaskInline(false);
+  };
+
+  const saveInlineSubtaskCreate = async (createNextOnSuccess: boolean = false) => {
+    if (!canManage || isSavingSubtaskInline || !creatingSubtaskParentId) return;
+
+    const nextName = newSubtaskData.taskName.trim();
+    if (!nextName || !newSubtaskData.status || !newSubtaskData.priority) return;
+
+    const nextDueDate = newSubtaskData.dueDate.trim();
+    if (nextDueDate && !/^\d{4}-\d{2}-\d{2}$/.test(nextDueDate)) return;
+
+    setIsSavingSubtaskInline(true);
+    try {
+      await tasksApi.create(
+        {
+          projectId: Number(project.Id),
+          taskName: nextName,
+          parentTaskId: creatingSubtaskParentId,
+          taskType: newSubtaskData.taskType,
+          status: newSubtaskData.status,
+          priority: newSubtaskData.priority,
+          assignedTo: newSubtaskData.assignedTo || undefined,
+          dueDate: nextDueDate || undefined,
+        },
+        token
+      );
+
+      await onRefreshTasks();
+      if (createNextOnSuccess) {
+        setNewSubtaskData((prev) => ({
+          ...prev,
+          taskName: '',
+          dueDate: '',
+        }));
+        setNewSubtaskInputResetKey((prev) => prev + 1);
+        setIsSavingSubtaskInline(false);
+      } else {
+        cancelInlineSubtaskCreate();
+      }
+    } catch {
+      setIsSavingSubtaskInline(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!editingRowTaskId && !creatingSubtaskParentId) return;
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      const gridElement = tasksGridRef.current;
+      if (!gridElement) return;
+
+      const target = event.target as Node;
+      const activeRow = editingRowTaskId
+        ? gridElement.querySelector(`[data-task-row-id="${editingRowTaskId}"]`)
+        : creatingSubtaskParentId
+          ? gridElement.querySelector(`[data-task-new-subtask-parent-id="${creatingSubtaskParentId}"]`)
+          : null;
+
+      if (activeRow && !activeRow.contains(target)) {
+        if (editingRowTaskId) {
+          cancelInlineEdit();
+        }
+        if (creatingSubtaskParentId) {
+          cancelInlineSubtaskCreate();
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [editingRowTaskId, creatingSubtaskParentId]);
+
+  const handleInlineEditorKeyDown = (event: React.KeyboardEvent, task: Task) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void saveInlineEdit(task);
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      cancelInlineEdit();
+    }
+  };
+
+  const handleInlineSubtaskKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void saveInlineSubtaskCreate(true);
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      cancelInlineSubtaskCreate();
+    }
+  };
+
+  const saveInlineEdit = async (task: Task) => {
+    if (!canManage || isSavingInline) return;
+    const nextName = editingRowData.taskName.trim();
+
+    if (!nextName) return;
+
+    const currentDueDate = task.DueDate ? String(task.DueDate).split('T')[0] : '';
+    const nextDueDate = editingRowData.dueDate.trim();
+
+    if (nextDueDate && !/^\d{4}-\d{2}-\d{2}$/.test(nextDueDate)) {
+      return;
+    }
+
+    const hasChanges =
+      nextName !== (task.TaskName || '').trim() ||
+      Number(task.AssignedTo || 0) !== Number(editingRowData.assignedTo || 0) ||
+      Number(task.TaskType || 0) !== Number(editingRowData.taskType || 0) ||
+      Number(task.Status || 0) !== Number(editingRowData.status || 0) ||
+      Number(task.Priority || 0) !== Number(editingRowData.priority || 0) ||
+      currentDueDate !== nextDueDate;
+
+    if (!hasChanges) {
+      cancelInlineEdit();
+      return;
+    }
+
+    const updateData: Partial<CreateTaskData> = {
+      taskName: nextName,
+      assignedTo: editingRowData.assignedTo || undefined,
+      taskType: editingRowData.taskType,
+      status: editingRowData.status,
+      priority: editingRowData.priority,
+      dueDate: nextDueDate || undefined,
+    };
+
+    setIsSavingInline(true);
+    try {
+      await onInlineSaveTask(task.Id, updateData);
+      cancelInlineEdit();
+    } catch {
+      setIsSavingInline(false);
+    }
+  };
+
   // Recursive function to render task and all its descendants
   const renderTaskRow = (task: Task, level: number = 0): React.JSX.Element[] => {
-    const subtasks = getSortedTasks(getSubtasks(task.Id));
+    const subtasks = getDisplayOrderSortedTasks(getSubtasks(task.Id));
     const hasAnyMatchingDescendant = hasMatchingDescendant(task);
 
     if (isFilterActive && !taskMatchesFilters(task) && !hasAnyMatchingDescendant) {
@@ -4956,7 +5311,19 @@ function TasksTab({
 
     const isExpanded = shouldAutoExpandForFilters ? true : expandedTasks.has(task.Id);
     const hasSubtasks = subtasks.length > 0;
+    const isEditingRow = editingRowTaskId === task.Id;
+    const isRowSaveDisabled = isSavingInline || !editingRowData.taskName.trim();
     const indentPixels = level * 24; // 24px per level
+    const plainDescription = task.Description
+      ? task.Description.replace(/<[^>]*>/g, '').trim()
+      : '';
+    const taskTooltip = [
+      task.TaskName,
+      plainDescription ? `Description: ${plainDescription}` : '',
+      task.CreatorName && level === 0 ? `Created by: ${task.CreatorName}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     const rows: React.JSX.Element[] = [];
 
@@ -4964,10 +5331,47 @@ function TasksTab({
     rows.push(
       <tr 
         key={task.Id} 
-        className={`${level > 0 ? 'bg-gray-50 dark:bg-gray-700/30' : ''} hover:bg-gray-100 dark:hover:bg-gray-700/50`}
+        data-task-row-id={task.Id}
+        className={`group ${level > 0 ? 'bg-gray-50 dark:bg-gray-700/30' : ''} hover:bg-gray-100 dark:hover:bg-gray-700/50`}
+        onDoubleClick={() => startInlineEdit(task)}
       >
-        <td className="px-6 py-4">
-          <div className="flex items-center gap-2" style={{ marginLeft: `${indentPixels}px` }}>
+        <td className="px-2 py-2">
+          {isEditingRow ? (
+            <SearchableSelect
+              value={editingRowData.taskType ?? undefined}
+              onChange={(value) => {
+                setEditingRowData((prev) => ({
+                  ...prev,
+                  taskType: value ?? null,
+                }));
+              }}
+              options={taskTypeOptions.map((taskType) => ({ id: taskType.id, label: taskType.name }))}
+              placeholder="Task Type"
+              className="w-full"
+            />
+          ) : task.TaskTypeName ? (
+            <div className="flex w-full items-center justify-between gap-2">
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={task.TaskTypeColor ? { backgroundColor: task.TaskTypeColor + '20', color: task.TaskTypeColor } : undefined}>
+                {task.TaskTypeName}
+              </span>
+              {canCreate && canManage && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    startInlineSubtaskCreate(task.Id);
+                  }}
+                  title="Add subtask"
+                  className="ml-auto opacity-0 group-hover:opacity-100 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-semibold transition-opacity"
+                >
+                  +
+                </button>
+              )}
+            </div>
+          ) : <span className="text-xs text-gray-400">-</span>}
+        </td>
+        <td className="px-2 py-2">
+          <div className="flex items-center gap-1.5" style={{ marginLeft: `${indentPixels}px` }}>
             {hasSubtasks ? (
               <button
                 onClick={() => toggleExpand(task.Id)}
@@ -4980,38 +5384,34 @@ function TasksTab({
               <span className="w-4"></span>
             )}
             {level > 0 && <span className="text-gray-400 flex-shrink-0">↳</span>}
-            <div>
+            <div title={taskTooltip || undefined} className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className={`text-sm ${level > 0 ? 'text-gray-700 dark:text-gray-300' : 'font-medium text-gray-900 dark:text-white'}`}>
-                  {task.TaskName}
-                </span>
-                {hasSubtasks && (
+                {isEditingRow ? (
+                  <InlineTextField
+                    value={editingRowData.taskName}
+                    onChange={(e) => setEditingRowData((prev) => ({ ...prev, taskName: e.target.value }))}
+                    onKeyDown={(e) => handleInlineEditorKeyDown(e, task)}
+                    autoFocus
+                    className="w-full"
+                  />
+                ) : (
+                  <span className={`text-sm ${level > 0 ? 'text-gray-700 dark:text-gray-300' : 'font-medium text-gray-900 dark:text-white'}`}>
+                    {task.TaskName}
+                  </span>
+                )}
+                {!isEditingRow && hasSubtasks && (
                   <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded-full flex-shrink-0">
                     {subtasks.length}
                   </span>
                 )}
-                {task.EstimatedHours && (
+                {!isEditingRow && task.EstimatedHours && (
                   <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
                     ⏱️ {task.EstimatedHours}h
                   </span>
                 )}
               </div>
-              {task.Description && (() => {
-                const plainText = task.Description.replace(/<[^>]*>/g, '').trim();
-                return plainText ? (
-                  <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    {plainText.substring(0, level > 0 ? 60 : 100)}
-                    {plainText.length > (level > 0 ? 60 : 100) ? '...' : ''}
-                  </div>
-                ) : null;
-              })()}
-              {task.CreatorName && level === 0 && (
-                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                  Created by: {task.CreatorName}
-                </div>
-              )}
-              {(taskTagMap.get(task.Id) || []).length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1">
+              {!isEditingRow && (taskTagMap.get(task.Id) || []).length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-0.5">
                   {(taskTagMap.get(task.Id) || []).map(tag => (
                     <span
                       key={`${task.Id}-${tag.id}`}
@@ -5030,8 +5430,21 @@ function TasksTab({
             </div>
           </div>
         </td>
-        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-          {task.AssigneeName ? (
+        <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+          {isEditingRow ? (
+            <SearchableSelect
+              value={editingRowData.assignedTo ?? undefined}
+              onChange={(value) => {
+                setEditingRowData((prev) => ({
+                  ...prev,
+                  assignedTo: value ?? null,
+                }));
+              }}
+              options={assigneeOptions.map((assignee) => ({ id: assignee.id, label: assignee.name }))}
+              placeholder="Unassigned"
+              className="w-full"
+            />
+          ) : task.AssigneeName ? (
             <div className="flex items-center gap-1">
               <span>👤</span>
               <span>{task.AssigneeName}</span>
@@ -5040,41 +5453,97 @@ function TasksTab({
             <span className="text-gray-400 dark:text-gray-500 italic">Unassigned</span>
           )}
         </td>
-        <td className="px-4 py-3">
-          {task.TaskTypeName ? (
-            <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={task.TaskTypeColor ? { backgroundColor: task.TaskTypeColor + '20', color: task.TaskTypeColor } : undefined}>
-              {task.TaskTypeName}
+        <td className="px-2 py-2 whitespace-nowrap">
+          {isEditingRow ? (
+            <SearchableSelect
+              value={editingRowData.status ?? undefined}
+              onChange={(value) => {
+                setEditingRowData((prev) => ({
+                  ...prev,
+                  status: value ?? null,
+                }));
+              }}
+              options={statusOptions.map((status) => ({ id: status.id, label: status.name }))}
+              placeholder="Status"
+              className="w-full"
+            />
+          ) : (
+            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full" style={getStatusStyle(task)}>
+              {task.StatusName || 'Unknown'}
             </span>
-          ) : <span className="text-xs text-gray-400">-</span>}
+          )}
         </td>
-        <td className="px-6 py-4 whitespace-nowrap">
-          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full" style={getStatusStyle(task)}>
-            {task.StatusName || 'Unknown'}
-          </span>
+        <td className="px-2 py-2 whitespace-nowrap">
+          {isEditingRow ? (
+            <SearchableSelect
+              value={editingRowData.priority ?? undefined}
+              onChange={(value) => {
+                setEditingRowData((prev) => ({
+                  ...prev,
+                  priority: value ?? null,
+                }));
+              }}
+              options={priorityOptions.map((priority) => ({ id: priority.id, label: priority.name }))}
+              placeholder="Priority"
+              className="w-full"
+            />
+          ) : (
+            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full" style={getPriorityStyle(task)}>
+              {task.PriorityName || 'No Priority'}
+            </span>
+          )}
         </td>
-        <td className="px-6 py-4 whitespace-nowrap">
-          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full" style={getPriorityStyle(task)}>
-            {task.PriorityName || 'No Priority'}
-          </span>
+        <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+          {isEditingRow ? (
+            <InlineDateField
+              value={editingRowData.dueDate}
+              onChange={(e) => setEditingRowData((prev) => ({ ...prev, dueDate: e.target.value }))}
+              onKeyDown={(e) => handleInlineEditorKeyDown(e, task)}
+              className="w-full"
+            />
+          ) : (
+            task.DueDate ? new Date(task.DueDate).toLocaleDateString() : '-'
+          )}
         </td>
-        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-          {task.DueDate ? new Date(task.DueDate).toLocaleDateString() : '-'}
-        </td>
-        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-          {canManage && (
+        <td className="px-2 py-2 whitespace-nowrap text-right text-sm font-medium">
+          {canManage && isEditingRow ? (
+            <>
+              <button
+                onClick={() => void saveInlineEdit(task)}
+                disabled={isRowSaveDisabled}
+                title={isSavingInline ? 'Saving task' : 'Save task'}
+                aria-label={isSavingInline ? 'Saving task' : 'Save task'}
+                className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 mr-3 disabled:opacity-50"
+              >
+                {isSavingInline ? '⏳' : '💾'}
+              </button>
+              <button
+                onClick={cancelInlineEdit}
+                title="Cancel edit"
+                aria-label="Cancel edit"
+                className="text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
+              >
+                ✕
+              </button>
+            </>
+          ) : canManage ? (
             <button
               onClick={() => onEditTask(task)}
+              title="Edit task"
+              aria-label="Edit task"
               className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4"
             >
-              Edit
+              ✏️
             </button>
-          )}
-          {canDelete && (
+          ) : null}
+          {canDelete && !isEditingRow && (
             <button
               onClick={() => onDeleteTask(task.Id)}
+              title="Delete task"
+              aria-label="Delete task"
               className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
             >
-              Delete
+              🗑️
             </button>
           )}
         </td>
@@ -5086,6 +5555,123 @@ function TasksTab({
       subtasks.forEach(subtask => {
         rows.push(...renderTaskRow(subtask, level + 1));
       });
+    }
+
+    if (creatingSubtaskParentId === task.Id) {
+      const isSubtaskSaveDisabled =
+        isSavingSubtaskInline ||
+        !newSubtaskData.taskName.trim() ||
+        !newSubtaskData.status ||
+        !newSubtaskData.priority;
+
+      rows.push(
+        <tr
+          key={`new-subtask-${task.Id}`}
+          data-task-new-subtask-parent-id={task.Id}
+          className="bg-blue-50/60 dark:bg-blue-900/10"
+        >
+          <td className="px-2 py-2">
+            <SearchableSelect
+              value={newSubtaskData.taskType ?? undefined}
+              onChange={(value) => {
+                setNewSubtaskData((prev) => ({
+                  ...prev,
+                  taskType: value ?? null,
+                }));
+              }}
+              options={taskTypeOptions.map((taskType) => ({ id: taskType.id, label: taskType.name }))}
+              placeholder="Task Type"
+              className="w-full"
+            />
+          </td>
+          <td className="px-2 py-2">
+            <div className="flex items-center gap-1.5" style={{ marginLeft: `${(level + 1) * 24}px` }}>
+              <span className="w-4"></span>
+              <span className="text-gray-400 flex-shrink-0">↳</span>
+              <InlineTextField
+                key={`new-subtask-input-${task.Id}-${newSubtaskInputResetKey}`}
+                value={newSubtaskData.taskName}
+                onChange={(e) => setNewSubtaskData((prev) => ({ ...prev, taskName: e.target.value }))}
+                onKeyDown={handleInlineSubtaskKeyDown}
+                autoFocus
+                className="w-full"
+                placeholder="New subtask name"
+              />
+            </div>
+          </td>
+          <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+            <SearchableSelect
+              value={newSubtaskData.assignedTo ?? undefined}
+              onChange={(value) => {
+                setNewSubtaskData((prev) => ({
+                  ...prev,
+                  assignedTo: value ?? null,
+                }));
+              }}
+              options={assigneeOptions.map((assignee) => ({ id: assignee.id, label: assignee.name }))}
+              placeholder="Unassigned"
+              className="w-full"
+            />
+          </td>
+          <td className="px-2 py-2 whitespace-nowrap">
+            <SearchableSelect
+              value={newSubtaskData.status ?? undefined}
+              onChange={(value) => {
+                setNewSubtaskData((prev) => ({
+                  ...prev,
+                  status: value ?? null,
+                }));
+              }}
+              options={statusOptions.map((status) => ({ id: status.id, label: status.name }))}
+              placeholder="Status"
+              className="w-full"
+            />
+          </td>
+          <td className="px-2 py-2 whitespace-nowrap">
+            <SearchableSelect
+              value={newSubtaskData.priority ?? undefined}
+              onChange={(value) => {
+                setNewSubtaskData((prev) => ({
+                  ...prev,
+                  priority: value ?? null,
+                }));
+              }}
+              options={priorityOptions.map((priority) => ({ id: priority.id, label: priority.name }))}
+              placeholder="Priority"
+              className="w-full"
+            />
+          </td>
+          <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+            <InlineDateField
+              value={newSubtaskData.dueDate}
+              onChange={(e) => setNewSubtaskData((prev) => ({ ...prev, dueDate: e.target.value }))}
+              onKeyDown={handleInlineSubtaskKeyDown}
+              className="w-full"
+            />
+          </td>
+          <td className="px-2 py-2 whitespace-nowrap text-right text-sm font-medium">
+            <button
+              type="button"
+              onClick={() => void saveInlineSubtaskCreate(false)}
+              disabled={isSubtaskSaveDisabled}
+              title={isSavingSubtaskInline ? 'Saving subtask' : 'Save subtask'}
+              aria-label={isSavingSubtaskInline ? 'Saving subtask' : 'Save subtask'}
+              className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 mr-3 disabled:opacity-50"
+            >
+              {isSavingSubtaskInline ? '⏳' : '💾'}
+            </button>
+            <button
+              type="button"
+              onClick={cancelInlineSubtaskCreate}
+              title="Cancel subtask"
+              aria-label="Cancel subtask"
+              className="text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
+            >
+              ✕
+            </button>
+          </td>
+        </tr>
+      );
     }
 
     return rows;
@@ -5297,52 +5883,40 @@ function TasksTab({
                 />
               </div>
               <div>
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="">All statuses</option>
-                  {taskStatuses.map(status => (
-                    <option key={status} value={status}>{status}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <select
-                  value={filterPriority}
-                  onChange={(e) => setFilterPriority(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="">All priorities</option>
-                  {taskPriorities.map(priority => (
-                    <option key={priority} value={priority}>{priority}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <select
-                  value={filterAssignee}
-                  onChange={(e) => setFilterAssignee(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="">All assignees</option>
-                  {taskAssignees.map(assignee => (
-                    <option key={assignee} value={assignee}>{assignee}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <select
+                <SearchableSelect
                   value={filterTaskType}
-                  onChange={(e) => setFilterTaskType(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="">All task types</option>
-                  {taskTypes.map(type => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
+                  onChange={(value) => setFilterTaskType(value)}
+                  options={taskTypeOptions.map((taskType) => ({ id: taskType.id, label: taskType.name }))}
+                  placeholder="All task types"
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <SearchableSelect
+                  value={filterStatus}
+                  onChange={(value) => setFilterStatus(value)}
+                  options={statusOptions.map((status) => ({ id: status.id, label: status.name }))}
+                  placeholder="All statuses"
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <SearchableSelect
+                  value={filterPriority}
+                  onChange={(value) => setFilterPriority(value)}
+                  options={priorityOptions.map((priority) => ({ id: priority.id, label: priority.name }))}
+                  placeholder="All priorities"
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <SearchableSelect
+                  value={filterAssignee}
+                  onChange={(value) => setFilterAssignee(value)}
+                  options={assigneeOptions.map((assignee) => ({ id: assignee.id, label: assignee.name }))}
+                  placeholder="All assignees"
+                  className="w-full"
+                />
               </div>
               <div>
                 <SearchableMultiSelect
@@ -5368,10 +5942,10 @@ function TasksTab({
                 <button
                   onClick={() => {
                     setFilterText('');
-                    setFilterStatus('');
-                    setFilterPriority('');
-                    setFilterAssignee('');
-                    setFilterTaskType('');
+                    setFilterStatus(undefined);
+                    setFilterPriority(undefined);
+                    setFilterAssignee(undefined);
+                    setFilterTaskType(undefined);
                     setFilterTagIds([]);
                     setHideClosed(false);
                   }}
@@ -5383,10 +5957,15 @@ function TasksTab({
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-visible" ref={tasksGridRef}>
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <button onClick={() => handleSort('TaskTypeName')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
+                    Task Type <SortIcon field="TaskTypeName" />
+                  </button>
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <button onClick={() => handleSort('task')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
                     Task <SortIcon field="task" />
@@ -5395,11 +5974,6 @@ function TasksTab({
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <button onClick={() => handleSort('assignee')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
                     Assigned To <SortIcon field="assignee" />
-                  </button>
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  <button onClick={() => handleSort('TaskTypeName')} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
-                    Task Type <SortIcon field="TaskTypeName" />
                   </button>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -5481,26 +6055,22 @@ function UtilitiesTab({ projectId, token, onTasksUpdated }: { projectId: number;
       return;
     }
 
-    setIsRunning(actionName);
-    setError('');
-    setResults(null);
-
     try {
-      const response = await fetch(
-        `${getApiUrl()}/api/tasks/utilities/${endpoint}/${projectId}`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      setError('');
+      setResults(null);
+      setIsRunning(actionName);
+
+      const response = await fetch(`${getApiUrl()}/api/tasks/utilities/${endpoint}/${projectId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
       const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.message || 'Operation failed');
+        throw new Error(data.message || 'Failed to run utility');
       }
 
       setResults({
@@ -10438,6 +11008,59 @@ function DependencyGraphTab({ tasks, onOpenTask }: { tasks: Task[]; onOpenTask: 
   );
 }
 // Searchable Select Component for large dropdowns
+function InlineTextField({
+  value,
+  onChange,
+  onKeyDown,
+  placeholder,
+  autoFocus = false,
+  className = '',
+}: {
+  value: string;
+  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+  className?: string;
+}) {
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={onChange}
+      onKeyDown={onKeyDown}
+      placeholder={placeholder}
+      autoFocus={autoFocus}
+      className={`w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent ${className}`}
+    />
+  );
+}
+
+function InlineDateField({
+  value,
+  onChange,
+  onKeyDown,
+  autoFocus = false,
+  className = '',
+}: {
+  value: string;
+  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  autoFocus?: boolean;
+  className?: string;
+}) {
+  return (
+    <input
+      type="date"
+      value={value}
+      onChange={onChange}
+      onKeyDown={onKeyDown}
+      autoFocus={autoFocus}
+      className={`w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent ${className}`}
+    />
+  );
+}
+
 function SearchableSelect({
   value,
   onChange,
@@ -10492,7 +11115,7 @@ function SearchableSelect({
       </div>
 
       {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-72 overflow-hidden">
+        <div className="absolute z-[9999] w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-72 overflow-hidden">
           <div className="p-2 border-b border-gray-200 dark:border-gray-600">
             <input
               type="text"

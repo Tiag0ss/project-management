@@ -686,15 +686,19 @@ export default function UserDetailPage() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleEditMembership(membership)}
+                          title="Edit membership"
+                          aria-label="Edit membership"
                           className="px-3 py-1.5 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400"
                         >
-                          Edit
+                          ✏️
                         </button>
                         <button
                           onClick={() => handleRemoveMembership(membership.Id)}
+                          title="Remove membership"
+                          aria-label="Remove membership"
                           className="px-3 py-1.5 text-sm text-red-600 hover:text-red-800 dark:text-red-400"
                         >
-                          Remove
+                          🗑️
                         </button>
                       </div>
                     </div>

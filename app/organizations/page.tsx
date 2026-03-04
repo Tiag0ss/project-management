@@ -563,24 +563,30 @@ export default function OrganizationsPage() {
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={(e) => { e.stopPropagation(); router.push(`/organizations/${org.Id}`); }}
-                            className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium"
+                            title="Manage organization"
+                            aria-label="Manage organization"
+                            className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
                           >
-                            Manage
+                            ⚙️
                           </button>
                           {(org.Role === 'Owner' || org.Role === 'Admin') && (
                             <button
                               onClick={(e) => { e.stopPropagation(); handleEdit(org); }}
-                              className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 text-sm font-medium"
+                              title="Edit organization"
+                              aria-label="Edit organization"
+                              className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300"
                             >
-                              Edit
+                              ✏️
                             </button>
                           )}
                           {(org.Role === 'Owner' || org.Role === 'Admin') && (
                             <button
                               onClick={(e) => { e.stopPropagation(); handleDelete(org.Id); }}
-                              className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium"
+                              title="Delete organization"
+                              aria-label="Delete organization"
+                              className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
                             >
-                              Delete
+                              🗑️
                             </button>
                           )}
                         </div>

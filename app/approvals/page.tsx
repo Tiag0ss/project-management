@@ -903,20 +903,26 @@ export default function ApprovalsPage() {
                                   <button
                                     onClick={() => handleApproval(entry.Id, 'approved')}
                                     className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded transition-colors"
+                                    title="Approve"
+                                    aria-label="Approve"
                                   >
-                                    ✓ Approve
+                                    ✓
                                   </button>
                                   <button
                                     onClick={() => handleApproval(entry.Id, 'rejected')}
                                     className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded transition-colors"
+                                    title="Reject"
+                                    aria-label="Reject"
                                   >
-                                    ✗ Reject
+                                    ✗
                                   </button>
                                   <button
                                     onClick={() => openAdminDescriptionModal(entry)}
                                     className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded transition-colors"
+                                    title="Edit description"
+                                    aria-label="Edit description"
                                   >
-                                    ✎ Edit Desc
+                                    ✎
                                   </button>
                                 </div>
                               ) : (
@@ -924,14 +930,18 @@ export default function ApprovalsPage() {
                                   <button
                                     onClick={() => handleReopen(entry.Id)}
                                     className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium rounded transition-colors"
+                                    title="Reopen"
+                                    aria-label="Reopen"
                                   >
-                                    ↻ Reopen
+                                    ↻
                                   </button>
                                   <button
                                     onClick={() => openAdminDescriptionModal(entry)}
                                     className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded transition-colors"
+                                    title="Edit description"
+                                    aria-label="Edit description"
                                   >
-                                    ✎ Edit Desc
+                                    ✎
                                   </button>
                                 </div>
                               )}
@@ -1021,20 +1031,26 @@ export default function ApprovalsPage() {
                             <button
                               onClick={() => handleApproval(entry.Id, 'approved')}
                               className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded transition-colors"
+                              title="Approve"
+                              aria-label="Approve"
                             >
-                              ✓ Approve
+                              ✓
                             </button>
                             <button
                               onClick={() => handleApproval(entry.Id, 'rejected')}
                               className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded transition-colors"
+                              title="Reject"
+                              aria-label="Reject"
                             >
-                              ✗ Reject
+                              ✗
                             </button>
                             <button
                               onClick={() => openAdminDescriptionModal(entry)}
                               className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded transition-colors"
+                              title="Edit description"
+                              aria-label="Edit description"
                             >
-                              ✎ Edit Desc
+                              ✎
                             </button>
                           </div>
                         ) : (
@@ -1042,14 +1058,18 @@ export default function ApprovalsPage() {
                             <button
                               onClick={() => handleReopen(entry.Id)}
                               className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium rounded transition-colors"
+                              title="Reopen"
+                              aria-label="Reopen"
                             >
-                              ↻ Reopen
+                              ↻
                             </button>
                             <button
                               onClick={() => openAdminDescriptionModal(entry)}
                               className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded transition-colors"
+                              title="Edit description"
+                              aria-label="Edit description"
                             >
-                              ✎ Edit Desc
+                              ✎
                             </button>
                           </div>
                         )}
@@ -1225,22 +1245,28 @@ export default function ApprovalsPage() {
                                         <button
                                           onClick={() => handleVacationApproval(request.Id, 'approved')}
                                           className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs"
+                                          title="Approve"
+                                          aria-label="Approve"
                                         >
-                                          Approve
+                                          ✓
                                         </button>
                                         <button
                                           onClick={() => handleVacationApproval(request.Id, 'rejected')}
                                           className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs"
+                                          title="Reject"
+                                          aria-label="Reject"
                                         >
-                                          Reject
+                                          ✗
                                         </button>
                                       </>
                                     )}
                                     <button
                                       onClick={() => setVacationDeleteTarget(request)}
                                       className="px-2 py-1 bg-gray-700 hover:bg-gray-800 text-white rounded text-xs"
+                                      title="Delete request"
+                                      aria-label="Delete request"
                                     >
-                                      Delete
+                                      🗑️
                                     </button>
                                   </div>
                                 </td>

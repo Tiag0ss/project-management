@@ -877,9 +877,11 @@ export default function DynamicQueryBuilder({ token, onDataLoaded, initialConfig
                           <td className="px-4 py-3">
                             <button
                               onClick={() => handleBaseTableSelect(tableName)}
-                              className="text-red-600 hover:text-red-700 text-sm font-medium"
+                              title="Remove table"
+                              aria-label="Remove table"
+                              className="text-red-600 hover:text-red-700"
                             >
-                              Remove
+                              🗑️
                             </button>
                           </td>
                         </tr>

@@ -330,9 +330,11 @@ export default function HolidaysManagement() {
                       <button
                         type="button"
                         onClick={() => handleDeleteHoliday(holiday.Id)}
-                        className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-sm"
+                        title="Delete holiday"
+                        aria-label="Delete holiday"
+                        className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
                       >
-                        Delete
+                        🗑️
                       </button>
                     </td>
                   </tr>

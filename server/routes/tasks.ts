@@ -1128,28 +1128,60 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       }
     }
 
+    const finalTaskName = taskName !== undefined ? taskName : oldTask.TaskName;
+    const finalDescription = description !== undefined
+      ? (sanitizeRichText(description) || null)
+      : oldTask.Description;
+    const finalAssignedTo = assignedTo !== undefined
+      ? (assignedTo === null || assignedTo === '' ? null : Number(assignedTo))
+      : (oldTask.AssignedTo ?? null);
+    const finalEstimatedHours = estimatedHours !== undefined
+      ? (estimatedHours === null || estimatedHours === '' ? null : Number(estimatedHours))
+      : (oldTask.EstimatedHours ?? null);
+    const finalParentTaskId = parentTaskId !== undefined
+      ? (parentTaskId === null || parentTaskId === '' ? null : Number(parentTaskId))
+      : (oldTask.ParentTaskId ?? null);
+    const finalDisplayOrder = displayOrder !== undefined
+      ? Number(displayOrder)
+      : Number(oldTask.DisplayOrder);
+    const finalPlannedStartDate = plannedStartDate !== undefined
+      ? toDateOnly(plannedStartDate)
+      : toDateOnly(oldTask.PlannedStartDate);
+    const finalPlannedEndDate = plannedEndDate !== undefined
+      ? toDateOnly(plannedEndDate)
+      : toDateOnly(oldTask.PlannedEndDate);
+    const finalDependsOnTaskId = dependsOnTaskId !== undefined
+      ? (dependsOnTaskId === null || dependsOnTaskId === '' ? null : Number(dependsOnTaskId))
+      : (oldTask.DependsOnTaskId ?? null);
+    const finalApplicationId = applicationId !== undefined
+      ? (applicationId === null || applicationId === '' ? null : Number(applicationId))
+      : (oldTask.ApplicationId ?? null);
+    const finalReleaseVersionId = releaseVersionId !== undefined
+      ? (releaseVersionId === null || releaseVersionId === '' ? null : Number(releaseVersionId))
+      : (oldTask.ReleaseVersionId ?? null);
+
     await pool.execute(
       `UPDATE Tasks 
-       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, EstimatedHours = ?, ParentTaskId = ?, DisplayOrder = COALESCE(?, DisplayOrder), PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, CustomerId = ?, ApplicationId = ?, ReleaseVersionId = ?
+       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, EstimatedHours = ?, ParentTaskId = ?, DisplayOrder = ?, PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, CustomerId = ?, ApplicationId = ?, ReleaseVersionId = ?
        WHERE Id = ?`,
       [
-        taskName,
-        sanitizeRichText(description) || null,
+        finalTaskName,
+        finalDescription,
         finalStatus,
         finalPriority,
         finalTaskType,
-        assignedTo || null,
+        finalAssignedTo,
         effectiveDueDate,
         finalDueDateMandatory,
-        estimatedHours || null,
-        parentTaskId || null,
-        displayOrder || null,
-        toDateOnly(plannedStartDate),
-        toDateOnly(plannedEndDate),
-        dependsOnTaskId || null,
+        finalEstimatedHours,
+        finalParentTaskId,
+        finalDisplayOrder,
+        finalPlannedStartDate,
+        finalPlannedEndDate,
+        finalDependsOnTaskId,
         finalCustomerId,
-        applicationId !== undefined ? (applicationId || null) : null,
-        releaseVersionId !== undefined ? (releaseVersionId || null) : null,
+        finalApplicationId,
+        finalReleaseVersionId,
         taskId
       ]
     );

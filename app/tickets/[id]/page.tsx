@@ -1080,17 +1080,21 @@ export default function TicketDetailPage() {
                   {permissions?.canManageTickets && (
                     <button
                       onClick={() => setIsEditing(true)}
+                      title="Edit ticket"
+                      aria-label="Edit ticket"
                       className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
                     >
-                      Edit
+                      ✏️
                     </button>
                   )}
                   {permissions?.canDeleteTickets && (
                     <button
                       onClick={handleDeleteTicket}
+                      title="Delete ticket"
+                      aria-label="Delete ticket"
                       className="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50"
                     >
-                      Delete
+                      🗑️
                     </button>
                   )}
                 </>

@@ -706,25 +706,31 @@ export default function CustomersPage() {
                     {permissions?.canManageCustomers && (
                       <button
                         onClick={(e) => { e.stopPropagation(); router.push(`/customers/${customer.Id}`); }}
+                        title="Manage customer"
+                        aria-label="Manage customer"
                         className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium"
                       >
-                        Manage
+                        ⚙️
                       </button>
                     )}
                     {permissions?.canManageCustomers && (
                       <button
                         onClick={(e) => { e.stopPropagation(); openEditModal(customer); }}
+                        title="Edit customer"
+                        aria-label="Edit customer"
                         className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 font-medium"
                       >
-                        Edit
+                        ✏️
                       </button>
                     )}
                     {permissions?.canDeleteCustomers && (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDelete(customer); }}
+                        title="Delete customer"
+                        aria-label="Delete customer"
                         className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium"
                       >
-                        Delete
+                        🗑️
                       </button>
                     )}
                   </div>
@@ -854,25 +860,31 @@ export default function CustomersPage() {
                         {permissions?.canManageCustomers && (
                         <button
                           onClick={(e) => { e.stopPropagation(); router.push(`/customers/${customer.Id}`); }}
+                          title="Manage customer"
+                          aria-label="Manage customer"
                           className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium"
                         >
-                          Manage
+                          ⚙️
                         </button>
                         )}
                         {permissions?.canManageCustomers && (
                         <button
                           onClick={(e) => { e.stopPropagation(); openEditModal(customer); }}
+                          title="Edit customer"
+                          aria-label="Edit customer"
                           className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 font-medium"
                         >
-                          Edit
+                          ✏️
                         </button>
                         )}
                         {permissions?.canDeleteCustomers && (
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDelete(customer); }}
+                          title="Delete customer"
+                          aria-label="Delete customer"
                           className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium"
                         >
-                          Delete
+                          🗑️
                         </button>
                         )}
                       </div>

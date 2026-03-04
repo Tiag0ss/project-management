@@ -908,9 +908,11 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                           {permissions?.canManageCustomers && (
                           <button
                             onClick={() => handleRemoveUser(cu.UserId)}
-                            className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium"
+                            title="Remove user"
+                            aria-label="Remove user"
+                            className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
                           >
-                            Remove
+                            🗑️
                           </button>
                           )}
                         </td>
