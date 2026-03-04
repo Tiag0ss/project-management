@@ -280,25 +280,6 @@ export default function ApplicationsPage() {
     }
   };
 
-  const SortIcon = ({ field }: { field: ApplicationSortField }) => {
-    if (sortField !== field) {
-      return (
-        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-        </svg>
-      );
-    }
-    return sortDirection === 'asc' ? (
-      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-      </svg>
-    ) : (
-      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-      </svg>
-    );
-  };
-
   const loadData = async () => {
     setIsLoading(true);
     try {
@@ -722,19 +703,19 @@ export default function ApplicationsPage() {
               <thead className="bg-gray-50 dark:bg-gray-900">
                 <tr>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('name')}>
-                    <div className="flex items-center gap-1">Application <SortIcon field="name" /></div>
+                    <div className="flex items-center">Application</div>
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('organization')}>
-                    <div className="flex items-center gap-1">Organization <SortIcon field="organization" /></div>
+                    <div className="flex items-center">Organization</div>
                   </th>
                   <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('projects')}>
-                    <div className="flex items-center justify-center gap-1">Projects <SortIcon field="projects" /></div>
+                    <div className="flex items-center justify-center">Projects</div>
                   </th>
                   <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('versions')}>
-                    <div className="flex items-center justify-center gap-1">Versions <SortIcon field="versions" /></div>
+                    <div className="flex items-center justify-center">Versions</div>
                   </th>
                   <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('customers')}>
-                    <div className="flex items-center justify-center gap-1">Customers <SortIcon field="customers" /></div>
+                    <div className="flex items-center justify-center">Customers</div>
                   </th>
                   {additionalApplicationColumnKeys.map((columnKey) => (
                     <th

@@ -5603,25 +5603,6 @@ function TasksTab({
     }
   };
 
-  const SortIcon = ({ field }: { field: string }) => {
-    if (sortField !== field) {
-      return (
-        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-        </svg>
-      );
-    }
-    return sortDirection === 'asc' ? (
-      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-      </svg>
-    ) : (
-      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-      </svg>
-    );
-  };
-
   const visibleParentTasks = getSortedTasks(
     parentTasks.filter(parent => {
       if (!isFilterActive) return true;
@@ -6819,7 +6800,7 @@ function TasksTab({
                 <th data-column-key="task-type" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <div className="flex items-center justify-between gap-2">
                     <button onClick={(event) => { event.stopPropagation(); handleSort('TaskTypeName'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
-                      Task Type <SortIcon field="TaskTypeName" />
+                      Task Type
                     </button>
                     {canCreate && (
                       <button
@@ -6836,27 +6817,27 @@ function TasksTab({
                 </th>
                 <th data-column-key="task" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <button onClick={(event) => { event.stopPropagation(); handleSort('task'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
-                    Task <SortIcon field="task" />
+                    Task
                   </button>
                 </th>
                 <th data-column-key="assigned-to" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <button onClick={(event) => { event.stopPropagation(); handleSort('assignee'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
-                    Assigned To <SortIcon field="assignee" />
+                    Assigned To
                   </button>
                 </th>
                 <th data-column-key="status" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <button onClick={(event) => { event.stopPropagation(); handleSort('status'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
-                    Status <SortIcon field="status" />
+                    Status
                   </button>
                 </th>
                 <th data-column-key="priority" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <button onClick={(event) => { event.stopPropagation(); handleSort('priority'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
-                    Priority <SortIcon field="priority" />
+                    Priority
                   </button>
                 </th>
                 <th data-column-key="due-date" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <button onClick={(event) => { event.stopPropagation(); handleSort('dueDate'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
-                    Due Date <SortIcon field="dueDate" />
+                    Due Date
                   </button>
                 </th>
                 {additionalTaskColumnKeys.map((columnKey) => (
@@ -6873,7 +6854,7 @@ function TasksTab({
                       }}
                       className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100"
                     >
-                      {formatAdditionalTaskColumnLabel(columnKey)} <SortIcon field={`extra:${columnKey}`} />
+                      {formatAdditionalTaskColumnLabel(columnKey)}
                     </button>
                   </th>
                 ))}

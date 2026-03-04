@@ -302,25 +302,6 @@ export default function CustomersPage() {
     }
   };
 
-  const SortIcon = ({ field }: { field: CustomerSortField }) => {
-    if (sortBy !== field) {
-      return (
-        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-        </svg>
-      );
-    }
-    return sortOrder === 'asc' ? (
-      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-      </svg>
-    ) : (
-      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-      </svg>
-    );
-  };
-
   const loadData = async () => {
     setIsLoading(true);
     try {
@@ -877,10 +858,7 @@ export default function CustomersPage() {
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                     onClick={() => handleSort('name')}
                   >
-                    <div className="flex items-center gap-1">
-                      Name
-                      <SortIcon field="name" />
-                    </div>
+                    <div className="flex items-center">Name</div>
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     External Name
@@ -889,29 +867,20 @@ export default function CustomersPage() {
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                     onClick={() => handleSort('email')}
                   >
-                    <div className="flex items-center gap-1">
-                      Email
-                      <SortIcon field="email" />
-                    </div>
+                    <div className="flex items-center">Email</div>
                   </th>
                   <th 
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                     onClick={() => handleSort('phone')}
                   >
-                    <div className="flex items-center gap-1">
-                      Phone
-                      <SortIcon field="phone" />
-                    </div>
+                    <div className="flex items-center">Phone</div>
                   </th>
                   {internalTicketsEnabled && (
                     <th 
                       className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('tickets')}
                     >
-                      <div className="flex items-center justify-center gap-1">
-                        Open Tickets
-                        <SortIcon field="tickets" />
-                      </div>
+                      <div className="flex items-center justify-center">Open Tickets</div>
                     </th>
                   )}
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">

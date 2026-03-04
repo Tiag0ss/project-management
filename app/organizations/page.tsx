@@ -390,25 +390,6 @@ export default function OrganizationsPage() {
     }
   };
 
-  const SortIcon = ({ field }: { field: OrgSortField }) => {
-    if (sortField !== field) {
-      return (
-        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-        </svg>
-      );
-    }
-    return sortDirection === 'asc' ? (
-      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-      </svg>
-    ) : (
-      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-      </svg>
-    );
-  };
-
   if (authLoading || isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -583,57 +564,39 @@ export default function OrganizationsPage() {
                       className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('name')}
                     >
-                      <div className="flex items-center gap-1">
-                        Organization
-                        <SortIcon field="name" />
-                      </div>
+                      <div className="flex items-center">Organization</div>
                     </th>
                     <th 
                       className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('role')}
                     >
-                      <div className="flex items-center justify-center gap-1">
-                        Role
-                        <SortIcon field="role" />
-                      </div>
+                      <div className="flex items-center justify-center">Role</div>
                     </th>
                     <th 
                       className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('members')}
                     >
-                      <div className="flex items-center justify-center gap-1">
-                        Members
-                        <SortIcon field="members" />
-                      </div>
+                      <div className="flex items-center justify-center">Members</div>
                     </th>
                     <th 
                       className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('projects')}
                     >
-                      <div className="flex items-center justify-center gap-1">
-                        Projects
-                        <SortIcon field="projects" />
-                      </div>
+                      <div className="flex items-center justify-center">Projects</div>
                     </th>
                     {internalTicketsEnabled && (
                       <th 
                         className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                         onClick={() => handleSort('tickets')}
                       >
-                        <div className="flex items-center justify-center gap-1">
-                          Open Tickets
-                          <SortIcon field="tickets" />
-                        </div>
+                        <div className="flex items-center justify-center">Open Tickets</div>
                       </th>
                     )}
                     <th 
                       className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('tasks')}
                     >
-                      <div className="flex items-center justify-center gap-1">
-                        Tasks
-                        <SortIcon field="tasks" />
-                      </div>
+                      <div className="flex items-center justify-center">Tasks</div>
                     </th>
                     {additionalOrganizationColumnKeys.map((columnKey) => (
                       <th

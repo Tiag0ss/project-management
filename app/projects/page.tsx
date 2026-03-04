@@ -605,25 +605,6 @@ export default function ProjectsPage() {
     }
   };
 
-  const SortIcon = ({ field }: { field: ProjectSortField }) => {
-    if (sortField !== field) {
-      return (
-        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-        </svg>
-      );
-    }
-    return sortDirection === 'asc' ? (
-      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-      </svg>
-    ) : (
-      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-      </svg>
-    );
-  };
-
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -865,32 +846,32 @@ export default function ProjectsPage() {
                     <thead className="bg-gray-50 dark:bg-gray-900">
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('name')}>
-                          <div className="flex items-center gap-1">Project <SortIcon field="name" /></div>
+                          <div className="flex items-center">Project</div>
                         </th>
                         <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('rag')}>
-                          <div className="flex items-center justify-center gap-1">Health <SortIcon field="rag" /></div>
+                          <div className="flex items-center justify-center">Health</div>
                         </th>
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('status')}>
-                          <div className="flex items-center justify-center gap-1">Status <SortIcon field="status" /></div>
+                          <div className="flex items-center justify-center">Status</div>
                         </th>
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('progress')}>
-                          <div className="flex items-center justify-center gap-1">Progress <SortIcon field="progress" /></div>
+                          <div className="flex items-center justify-center">Progress</div>
                         </th>
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('hours')}>
-                          <div className="flex items-center justify-center gap-1">Hours <SortIcon field="hours" /></div>
+                          <div className="flex items-center justify-center">Hours</div>
                         </th>
                         {canViewBudgetInfo && (
                           <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('budget')}>
-                            <div className="flex items-center justify-center gap-1">Budget <SortIcon field="budget" /></div>
+                            <div className="flex items-center justify-center">Budget</div>
                           </th>
                         )}
                         {internalTicketsEnabled && (
                           <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('tickets')}>
-                            <div className="flex items-center justify-center gap-1">Tickets <SortIcon field="tickets" /></div>
+                            <div className="flex items-center justify-center">Tickets</div>
                           </th>
                         )}
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('endDate')}>
-                          <div className="flex items-center justify-center gap-1">Dates <SortIcon field="endDate" /></div>
+                          <div className="flex items-center justify-center">Dates</div>
                         </th>
                         {additionalProjectColumnKeys.map((columnKey) => (
                           <th
