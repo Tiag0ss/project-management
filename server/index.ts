@@ -63,6 +63,7 @@ import portalRoutes from './routes/portal';
 import applicationsRoutes from './routes/applications';
 import projectReportSchedulesRoutes from './routes/projectReportSchedules';
 import retrospectiveActionsRoutes from './routes/retrospectiveActions';
+import workflowTransitionPoliciesRoutes from './routes/workflowTransitionPolicies';
 import holidaysRoutes from './routes/holidays';
 import vacationsRoutes from './routes/vacations';
 import pdfExportsRoutes from './routes/pdfExports';
@@ -240,6 +241,7 @@ app.prepare().then(async () => {
   server.use('/api/portal', portalRoutes);
   server.use('/api/project-report-schedules', projectReportSchedulesRoutes);
   server.use('/api/retrospective-actions', retrospectiveActionsRoutes);
+  server.use('/api/workflow-transition-policies', workflowTransitionPoliciesRoutes);
   server.use('/api/holidays', holidaysRoutes);
   server.use('/api/vacations', vacationsRoutes);
   server.use('/api/pdf-exports', pdfExportsRoutes);

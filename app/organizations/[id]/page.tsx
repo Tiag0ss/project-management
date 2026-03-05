@@ -9,6 +9,7 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { organizationsApi, Organization, OrganizationMember, AddMemberData } from '@/lib/api/organizations';
 import { permissionGroupsApi, PermissionGroup, CreatePermissionGroupData } from '@/lib/api/permissionGroups';
 import { statusValuesApi, StatusValue, CreateStatusValueData } from '@/lib/api/statusValues';
+import { workflowTransitionPoliciesApi, WorkflowTransitionPolicy, UpsertWorkflowTransitionPolicyData } from '@/lib/api/workflowTransitionPolicies';
 import { projectsApi, Project } from '@/lib/api/projects';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
@@ -1747,11 +1748,14 @@ function StatusesTab({
   const [milestoneTypes, setMilestoneTypes] = useState<StatusValue[]>([]);
   const [ticketStatuses, setTicketStatuses] = useState<any[]>([]);
   const [ticketPriorities, setTicketPriorities] = useState<any[]>([]);
+  const [workflowPolicies, setWorkflowPolicies] = useState<WorkflowTransitionPolicy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeType, setActiveType] = useState<'project' | 'task' | 'priority' | 'type' | 'milestone-type' | 'ticket' | 'ticket-priority'>('project');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingStatus, setEditingStatus] = useState<StatusValue | null>(null);
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [editingPolicy, setEditingPolicy] = useState<WorkflowTransitionPolicy | null>(null);
 
   useEffect(() => {
     loadStatuses();
@@ -1766,12 +1770,13 @@ function StatusesTab({
   const loadStatuses = async () => {
     try {
       setIsLoading(true);
-      const [projectRes, taskRes, priorityRes, typeRes, milestoneTypeRes] = await Promise.all([
+      const [projectRes, taskRes, priorityRes, typeRes, milestoneTypeRes, workflowPolicyRes] = await Promise.all([
         statusValuesApi.getProjectStatuses(orgId, token),
         statusValuesApi.getTaskStatuses(orgId, token),
         statusValuesApi.getTaskPriorities(orgId, token),
         statusValuesApi.getTaskTypes(orgId, token),
         statusValuesApi.getMilestoneTypes(orgId, token),
+        workflowTransitionPoliciesApi.getByOrganization(orgId, token),
       ]);
 
       let ticketRes: any = { statuses: [] };
@@ -1791,6 +1796,7 @@ function StatusesTab({
       setMilestoneTypes(milestoneTypeRes.types);
       setTicketStatuses(ticketRes.statuses || []);
       setTicketPriorities(ticketPriRes.priorities || []);
+      setWorkflowPolicies(workflowPolicyRes.policies || []);
       setError('');
     } catch (err: any) {
       setError(err.message || 'Failed to load status values');
@@ -1830,6 +1836,21 @@ function StatusesTab({
           await loadStatuses();
         } catch (err: any) {
           setError(err.message || 'Failed to delete ' + itemType);
+        }
+      }
+    );
+  };
+
+  const handleDeletePolicy = async (policyId: number) => {
+    showConfirm(
+      'Delete Workflow Policy',
+      'Are you sure you want to delete this workflow transition policy?',
+      async () => {
+        try {
+          await workflowTransitionPoliciesApi.delete(policyId, token);
+          await loadStatuses();
+        } catch (err: any) {
+          setError(err.message || 'Failed to delete workflow transition policy');
         }
       }
     );
@@ -2000,6 +2021,81 @@ function StatusesTab({
         ))}
       </div>
 
+      <div className="mt-8 border-t border-gray-200 dark:border-gray-700 pt-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Workflow Transition Policies (DoR/DoD)</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Validate required fields when moving tasks between statuses.</p>
+          </div>
+          {canManage && (
+            <button
+              onClick={() => setShowPolicyModal(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              Add Policy
+            </button>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          {workflowPolicies.length === 0 ? (
+            <div className="text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+              No workflow transition policies configured yet.
+            </div>
+          ) : workflowPolicies.map((policy) => {
+            const requiredFields = [
+              policy.RequireDescription ? 'Description' : null,
+              policy.RequireAssignee ? 'Assignee' : null,
+              policy.RequireDueDate ? 'Due Date' : null,
+              policy.RequireEstimatedHours ? 'Estimated Hours' : null,
+              policy.RequireStoryPoints ? 'Story Points' : null,
+              policy.RequirePlannedDates ? 'Planned Dates' : null,
+            ].filter(Boolean);
+
+            return (
+              <div key={policy.Id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-gray-900 dark:text-white">{policy.PolicyName}</span>
+                    <span className="text-xs px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded-full">{policy.RuleType || 'Custom'}</span>
+                    {!policy.IsActive && (
+                      <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full">Inactive</span>
+                    )}
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                    {policy.FromStatusName || `#${policy.FromStatusId}`} → {policy.ToStatusName || `#${policy.ToStatusId}`}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Required: {requiredFields.length > 0 ? requiredFields.join(', ') : 'None'}
+                  </div>
+                </div>
+
+                {canManage && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setEditingPolicy(policy)}
+                      title="Edit policy"
+                      aria-label="Edit policy"
+                      className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 px-3 py-1"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      onClick={() => handleDeletePolicy(policy.Id)}
+                      title="Delete policy"
+                      aria-label="Delete policy"
+                      className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 px-3 py-1"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {showCreateModal && (
         <StatusValueModal
           orgId={orgId}
@@ -2026,6 +2122,260 @@ function StatusesTab({
           token={token}
         />
       )}
+
+      {showPolicyModal && (
+        <WorkflowPolicyModal
+          orgId={orgId}
+          taskStatuses={taskStatuses}
+          onClose={() => setShowPolicyModal(false)}
+          onSaved={() => {
+            setShowPolicyModal(false);
+            loadStatuses();
+          }}
+          token={token}
+        />
+      )}
+
+      {editingPolicy && (
+        <WorkflowPolicyModal
+          orgId={orgId}
+          taskStatuses={taskStatuses}
+          policy={editingPolicy}
+          onClose={() => setEditingPolicy(null)}
+          onSaved={() => {
+            setEditingPolicy(null);
+            loadStatuses();
+          }}
+          token={token}
+        />
+      )}
+    </div>
+  );
+}
+
+function WorkflowPolicyModal({
+  orgId,
+  taskStatuses,
+  policy,
+  onClose,
+  onSaved,
+  token,
+}: {
+  orgId: number;
+  taskStatuses: StatusValue[];
+  policy?: WorkflowTransitionPolicy;
+  onClose: () => void;
+  onSaved: () => void;
+  token: string;
+}) {
+  const [formData, setFormData] = useState<UpsertWorkflowTransitionPolicyData>({
+    organizationId: orgId,
+    fromStatusId: policy?.FromStatusId || 0,
+    toStatusId: policy?.ToStatusId || 0,
+    policyName: policy?.PolicyName || '',
+    ruleType: policy?.RuleType || 'Custom',
+    requireDescription: !!policy?.RequireDescription,
+    requireAssignee: !!policy?.RequireAssignee,
+    requireDueDate: !!policy?.RequireDueDate,
+    requireEstimatedHours: !!policy?.RequireEstimatedHours,
+    requireStoryPoints: !!policy?.RequireStoryPoints,
+    requirePlannedDates: !!policy?.RequirePlannedDates,
+    isActive: policy ? !!policy.IsActive : true,
+  });
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!formData.fromStatusId || !formData.toStatusId) {
+      setError('From status and to status are required');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      if (policy) {
+        await workflowTransitionPoliciesApi.update(policy.Id, formData, token);
+      } else {
+        await workflowTransitionPoliciesApi.create(formData, token);
+      }
+      onSaved();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save workflow policy');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+              {policy ? 'Edit Workflow Policy' : 'Create Workflow Policy'}
+            </h2>
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
+            >
+              ×
+            </button>
+          </div>
+
+          {error && (
+            <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Policy Name</label>
+              <input
+                type="text"
+                value={formData.policyName || ''}
+                onChange={(e) => setFormData({ ...formData, policyName: e.target.value })}
+                placeholder="e.g., DoD before Done"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Rule Type</label>
+              <select
+                value={formData.ruleType || 'Custom'}
+                onChange={(e) => setFormData({ ...formData, ruleType: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="DoR">DoR</option>
+                <option value="DoD">DoD</option>
+                <option value="Custom">Custom</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">From Status *</label>
+                <select
+                  value={formData.fromStatusId || ''}
+                  onChange={(e) => setFormData({ ...formData, fromStatusId: Number(e.target.value) })}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  required
+                >
+                  <option value="">Select status</option>
+                  {taskStatuses.map((status) => (
+                    <option key={status.Id} value={status.Id}>{status.StatusName}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">To Status *</label>
+                <select
+                  value={formData.toStatusId || ''}
+                  onChange={(e) => setFormData({ ...formData, toStatusId: Number(e.target.value) })}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  required
+                >
+                  <option value="">Select status</option>
+                  {taskStatuses.map((status) => (
+                    <option key={status.Id} value={status.Id}>{status.StatusName}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-2">
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Required fields for this transition</p>
+
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={!!formData.requireDescription}
+                  onChange={(e) => setFormData({ ...formData, requireDescription: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                Description
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={!!formData.requireAssignee}
+                  onChange={(e) => setFormData({ ...formData, requireAssignee: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                Assignee
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={!!formData.requireDueDate}
+                  onChange={(e) => setFormData({ ...formData, requireDueDate: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                Due Date
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={!!formData.requireEstimatedHours}
+                  onChange={(e) => setFormData({ ...formData, requireEstimatedHours: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                Estimated Hours
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={!!formData.requireStoryPoints}
+                  onChange={(e) => setFormData({ ...formData, requireStoryPoints: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                Story Points
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={!!formData.requirePlannedDates}
+                  onChange={(e) => setFormData({ ...formData, requirePlannedDates: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                Planned Start and End Dates
+              </label>
+            </div>
+
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={!!formData.isActive}
+                onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+              />
+              Policy is active
+            </label>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
+              >
+                {isLoading ? 'Saving...' : policy ? 'Update' : 'Create'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
   );
 }

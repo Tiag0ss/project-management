@@ -1,0 +1,123 @@
+{
+  "TableName": "WorkflowTransitionPolicies",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "FromStatusId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "ToStatusId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "PolicyName",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "RuleType",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "Custom"
+    },
+    {
+      "FieldName": "RequireDescription",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "RequireAssignee",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "RequireDueDate",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "RequireEstimatedHours",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "RequireStoryPoints",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "RequirePlannedDates",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "IsActive",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    }
+  ],
+  "Relationships": [
+    {
+      "Name": "WorkflowTransitionPolicyOrganization",
+      "Description": "Workflow policy belongs to organization",
+      "FromField": "OrganizationId",
+      "ToTable": "Organizations",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "WorkflowTransitionPolicyFromStatus",
+      "Description": "Source task status for transition",
+      "FromField": "FromStatusId",
+      "ToTable": "TaskStatusValues",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "WorkflowTransitionPolicyToStatus",
+      "Description": "Target task status for transition",
+      "FromField": "ToStatusId",
+      "ToTable": "TaskStatusValues",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    }
+  ]
+}

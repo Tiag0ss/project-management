@@ -52,6 +52,16 @@ const toBooleanFlag = (value: any): number => {
   return 0;
 };
 
+const hasMeaningfulText = (value: any): boolean => {
+  if (value === null || value === undefined) return false;
+  const normalized = String(value)
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized.length > 0;
+};
+
 const syncTaskPrimaryAssignee = async (
   taskId: number,
   assigneeId: any,
@@ -1011,7 +1021,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     // Verify user has access to this task's project through organization membership and has CanManageTasks permission
     const [access] = await pool.execute<RowDataPacket[]>(
-      `SELECT t.Id, t.AssignedTo, t.ParentTaskId, COALESCE(p.IsGlobal, 0) as IsGlobal,
+      `SELECT t.Id, t.AssignedTo, t.ParentTaskId, p.OrganizationId, COALESCE(p.IsGlobal, 0) as IsGlobal,
               COALESCE(pg.CanManageTasks, 0) as CanManageTasks, COALESCE(pg.CanPlanTasks, 0) as CanPlanTasks, om.Role
        FROM Tasks t
        JOIN Projects p ON t.ProjectId = p.Id
@@ -1165,6 +1175,56 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const finalReleaseVersionId = releaseVersionId !== undefined
       ? (releaseVersionId === null || releaseVersionId === '' ? null : Number(releaseVersionId))
       : (oldTask.ReleaseVersionId ?? null);
+
+    const oldStatusId = Number(oldTask.Status);
+    const newStatusId = Number(finalStatus);
+    const isStatusTransition = Number.isFinite(oldStatusId) && Number.isFinite(newStatusId) && oldStatusId !== newStatusId;
+
+    if (isStatusTransition) {
+      const organizationId = Number(access[0].OrganizationId);
+      const [policyRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT *
+         FROM WorkflowTransitionPolicies
+         WHERE OrganizationId = ?
+           AND FromStatusId = ?
+           AND ToStatusId = ?
+           AND IsActive = 1
+         ORDER BY Id DESC
+         LIMIT 1`,
+        [organizationId, oldStatusId, newStatusId]
+      );
+
+      if (policyRows.length > 0) {
+        const policy = policyRows[0];
+        const missingFields: string[] = [];
+
+        if (Number(policy.RequireDescription || 0) === 1 && !hasMeaningfulText(finalDescription)) {
+          missingFields.push('description');
+        }
+        if (Number(policy.RequireAssignee || 0) === 1 && !finalAssignedTo) {
+          missingFields.push('assignee');
+        }
+        if (Number(policy.RequireDueDate || 0) === 1 && !effectiveDueDate) {
+          missingFields.push('due date');
+        }
+        if (Number(policy.RequireEstimatedHours || 0) === 1 && !(finalEstimatedHours && finalEstimatedHours > 0)) {
+          missingFields.push('estimated hours');
+        }
+        if (Number(policy.RequireStoryPoints || 0) === 1 && !(finalStoryPoints && finalStoryPoints > 0)) {
+          missingFields.push('story points');
+        }
+        if (Number(policy.RequirePlannedDates || 0) === 1 && (!finalPlannedStartDate || !finalPlannedEndDate)) {
+          missingFields.push('planned start and end dates');
+        }
+
+        if (missingFields.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Transition blocked by workflow policy "${policy.PolicyName}". Missing required fields: ${missingFields.join(', ')}`,
+          });
+        }
+      }
+    }
 
     await pool.execute(
       `UPDATE Tasks 
@@ -1743,8 +1803,16 @@ router.post('/reorder-kanban', authenticateToken, async (req: AuthRequest, res: 
       return res.status(400).json({ success: false, message: 'Invalid updates array' });
     }
 
-    const ids = updates.map((u: any) => u.taskId);
-    const placeholders = ids.map(() => '?').join(', ');
+    const ids = updates
+      .map((u: any) => Number(u.taskId))
+      .filter((id: number) => Number.isInteger(id) && id > 0);
+
+    if (ids.length !== updates.length) {
+      return res.status(400).json({ success: false, message: 'Invalid taskId in updates array' });
+    }
+
+    const uniqueIds = Array.from(new Set(ids));
+    const placeholders = uniqueIds.map(() => '?').join(', ');
 
     // Verify the requesting user has access to all of these tasks
     const [accessRows] = await pool.execute<RowDataPacket[]>(
@@ -1753,18 +1821,127 @@ router.post('/reorder-kanban', authenticateToken, async (req: AuthRequest, res: 
        JOIN Projects p ON t.ProjectId = p.Id
        JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
        WHERE t.Id IN (${placeholders}) AND om.UserId = ?`,
-      [...ids, userId]
+      [...uniqueIds, userId]
     );
 
-    if (accessRows.length !== ids.length) {
+    if (accessRows.length !== uniqueIds.length) {
       return res.status(403).json({ success: false, message: 'Access denied to one or more tasks' });
     }
 
+    const [taskRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.Id, t.TaskName, t.Status, t.Description, t.AssignedTo, t.DueDate,
+              t.EstimatedHours, t.StoryPoints, t.PlannedStartDate, t.PlannedEndDate,
+              p.OrganizationId
+       FROM Tasks t
+       JOIN Projects p ON t.ProjectId = p.Id
+       WHERE t.Id IN (${placeholders})`,
+      uniqueIds
+    );
+
+    const taskById = new Map<number, RowDataPacket>();
+    for (const row of taskRows) {
+      taskById.set(Number(row.Id), row);
+    }
+
+    const normalizedUpdates = updates.map((update: any) => {
+      const taskId = Number(update.taskId);
+      const task = taskById.get(taskId);
+      if (!task) {
+        throw new Error(`Task ${taskId} was not found`);
+      }
+
+      const displayOrder = Number(update.displayOrder);
+      if (!Number.isFinite(displayOrder)) {
+        throw new Error(`Invalid displayOrder for task ${taskId}`);
+      }
+
+      const incomingStatus = update.status;
+      const nextStatus = incomingStatus === undefined || incomingStatus === null || incomingStatus === ''
+        ? Number(task.Status)
+        : Number(incomingStatus);
+
+      if (!Number.isFinite(nextStatus)) {
+        throw new Error(`Invalid status for task ${taskId}`);
+      }
+
+      return {
+        taskId,
+        displayOrder,
+        status: nextStatus,
+        currentTask: task,
+      };
+    });
+
+    const transitions = normalizedUpdates.filter((update) => Number(update.currentTask.Status) !== update.status);
+
+    if (transitions.length > 0) {
+      const transitionClauses: string[] = [];
+      const transitionParams: any[] = [];
+
+      for (const transition of transitions) {
+        transitionClauses.push('(OrganizationId = ? AND FromStatusId = ? AND ToStatusId = ? AND IsActive = 1)');
+        transitionParams.push(
+          Number(transition.currentTask.OrganizationId),
+          Number(transition.currentTask.Status),
+          Number(transition.status)
+        );
+      }
+
+      const [policyRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT * FROM WorkflowTransitionPolicies WHERE ${transitionClauses.join(' OR ')}`,
+        transitionParams
+      );
+
+      const policyByTransition = new Map<string, RowDataPacket>();
+      for (const policy of policyRows) {
+        const key = `${Number(policy.OrganizationId)}:${Number(policy.FromStatusId)}:${Number(policy.ToStatusId)}`;
+        if (!policyByTransition.has(key)) {
+          policyByTransition.set(key, policy);
+        }
+      }
+
+      for (const transition of transitions) {
+        const organizationId = Number(transition.currentTask.OrganizationId);
+        const fromStatusId = Number(transition.currentTask.Status);
+        const toStatusId = Number(transition.status);
+        const policy = policyByTransition.get(`${organizationId}:${fromStatusId}:${toStatusId}`);
+
+        if (!policy) continue;
+
+        const missingFields: string[] = [];
+        if (Number(policy.RequireDescription || 0) === 1 && !hasMeaningfulText(transition.currentTask.Description)) {
+          missingFields.push('description');
+        }
+        if (Number(policy.RequireAssignee || 0) === 1 && !transition.currentTask.AssignedTo) {
+          missingFields.push('assignee');
+        }
+        if (Number(policy.RequireDueDate || 0) === 1 && !toDateOnly(transition.currentTask.DueDate)) {
+          missingFields.push('due date');
+        }
+        if (Number(policy.RequireEstimatedHours || 0) === 1 && !(Number(transition.currentTask.EstimatedHours || 0) > 0)) {
+          missingFields.push('estimated hours');
+        }
+        if (Number(policy.RequireStoryPoints || 0) === 1 && !(Number(transition.currentTask.StoryPoints || 0) > 0)) {
+          missingFields.push('story points');
+        }
+        if (Number(policy.RequirePlannedDates || 0) === 1 && (!toDateOnly(transition.currentTask.PlannedStartDate) || !toDateOnly(transition.currentTask.PlannedEndDate))) {
+          missingFields.push('planned start and end dates');
+        }
+
+        if (missingFields.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Transition blocked by workflow policy "${policy.PolicyName}" for task "${transition.currentTask.TaskName}". Missing required fields: ${missingFields.join(', ')}`,
+          });
+        }
+      }
+    }
+
     // Build and execute a single CASE-based UPDATE
-    const orderCase  = updates.map(() => 'WHEN ? THEN ?').join(' ');
-    const statusCase = updates.map(() => 'WHEN ? THEN ?').join(' ');
-    const orderParams: any[]  = updates.flatMap((u: any) => [u.taskId, u.displayOrder]);
-    const statusParams: any[] = updates.flatMap((u: any) => [u.taskId, u.status ?? null]);
+    const orderCase  = normalizedUpdates.map(() => 'WHEN ? THEN ?').join(' ');
+    const statusCase = normalizedUpdates.map(() => 'WHEN ? THEN ?').join(' ');
+    const orderParams: any[]  = normalizedUpdates.flatMap((u) => [u.taskId, u.displayOrder]);
+    const statusParams: any[] = normalizedUpdates.flatMap((u) => [u.taskId, u.status]);
 
     await pool.execute(
       `UPDATE Tasks
@@ -1772,7 +1949,7 @@ router.post('/reorder-kanban', authenticateToken, async (req: AuthRequest, res: 
          DisplayOrder = CASE Id ${orderCase} ELSE DisplayOrder END,
          Status       = CASE Id ${statusCase} ELSE Status END
        WHERE Id IN (${placeholders})`,
-      [...orderParams, ...statusParams, ...ids]
+      [...orderParams, ...statusParams, ...uniqueIds]
     );
 
     res.json({ success: true });

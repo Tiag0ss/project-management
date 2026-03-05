@@ -2207,6 +2207,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               tasks={tasks}
               project={project}
               onTaskUpdated={loadTasks}
+              onError={setError}
               onCreateTask={handleCreateTask}
               onEditTask={handleEditTask}
               token={token!}
@@ -7883,6 +7884,7 @@ function KanbanTab({
   tasks,
   project,
   onTaskUpdated,
+  onError,
   onCreateTask,
   onEditTask,
   token,
@@ -7892,6 +7894,7 @@ function KanbanTab({
   tasks: Task[];
   project: Project;
   onTaskUpdated: () => void;
+  onError: (message: string) => void;
   onCreateTask: () => void;
   onEditTask: (task: Task) => void;
   token: string;
@@ -7989,12 +7992,12 @@ function KanbanTab({
 
     try {
       await tasksApi.reorderKanban(updates, token);
+      onError('');
       // Only trigger full reload if status changed (so other views stay accurate)
       if (srcTask.Status !== newStatus) onTaskUpdated();
-    } catch (err) {
-      console.error('Failed to reorder tasks:', err);
+    } catch (err: any) {
       setLocalTasks(prev); // rollback
-      onTaskUpdated();
+      onError(err?.message || 'Failed to reorder tasks');
     }
   };
 
@@ -8021,11 +8024,11 @@ function KanbanTab({
 
     try {
       await tasksApi.reorderKanban([{ taskId: srcId, displayOrder: newOrder, status: newStatusId }], token);
+      onError('');
       onTaskUpdated();
-    } catch (err) {
-      console.error('Failed to move task:', err);
+    } catch (err: any) {
       setLocalTasks(prev);
-      onTaskUpdated();
+      onError(err?.message || 'Failed to move task');
     }
   };
 
@@ -8044,9 +8047,11 @@ function KanbanTab({
     ? taskStatuses.sort((a, b) => a.SortOrder - b.SortOrder)
     : [{ Id: -1, StatusName: 'To Do', SortOrder: 0 }, { Id: -2, StatusName: 'In Progress', SortOrder: 1 }, { Id: -3, StatusName: 'Done', SortOrder: 2 }] as StatusValue[];
 
+  const columnsPerRow = Math.min(Math.max(statuses.length, 1), 6);
+
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
+    <div className="h-[calc(100vh-220px)] min-h-[560px] flex flex-col">
+      <div className="flex justify-between items-center mb-4">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Kanban Board</h1>
         {canCreate && (
           <button
@@ -8059,11 +8064,15 @@ function KanbanTab({
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+      <div className="w-full overflow-x-auto flex-1 min-h-0">
+        <div
+          className="grid gap-4 h-full"
+          style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(260px, 1fr))` }}
+        >
         {statuses.map((status) => (
           <div
             key={status.Id}
-            className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 min-h-[500px]"
+            className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 h-full min-h-0 flex flex-col overflow-hidden"
             onDragOver={handleDragOver}
             onDrop={(e) => handleDrop(e, status.Id)}
           >
@@ -8078,7 +8087,7 @@ function KanbanTab({
               </span>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3 flex-1 overflow-y-auto pr-1">
               {getTasksByStatus(status.Id).map((task) => {
                 const subtasks = tasks.filter(t => t.ParentTaskId === task.Id);
                 const completedSubtasks = subtasks.filter(t => t.StatusIsClosed === 1).length;
@@ -8187,6 +8196,7 @@ function KanbanTab({
             </div>
           </div>
         ))}
+        </div>
       </div>
     </div>
   );
