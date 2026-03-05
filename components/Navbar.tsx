@@ -585,6 +585,16 @@ export default function Navbar() {
     }
   };
 
+  const isTypingTarget = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) return false;
+    const tagName = target.tagName.toLowerCase();
+    if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') return true;
+    if (target.isContentEditable) return true;
+    if (target.closest('[contenteditable="true"]')) return true;
+    if (target.closest('.ProseMirror')) return true;
+    return false;
+  };
+
   // Load organizations when modal opens
   const openQuickTaskModal = async () => {
     setActiveModal('task');
@@ -639,6 +649,52 @@ export default function Navbar() {
       }
     }
   };
+
+  useEffect(() => {
+    if (isCustomerUser) return;
+
+    const handleQuickActionShortcuts = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+      if (isTypingTarget(event.target)) return;
+
+      const isShortcut = event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey;
+      if (!isShortcut) return;
+
+      const key = event.key.toLowerCase();
+
+      if (key === 'q') {
+        event.preventDefault();
+        setQuickActionsOpen((prev) => !prev);
+        return;
+      }
+
+      if (key === '1' && (permissions?.canManageProjects || permissions?.canCreateProjects)) {
+        event.preventDefault();
+        void openQuickAction('project');
+        return;
+      }
+
+      if (key === '2' && (permissions?.canManageTasks || permissions?.canCreateTasks)) {
+        event.preventDefault();
+        void openQuickAction('task');
+        return;
+      }
+
+      if (key === '3' && (permissions?.canManageTasks || permissions?.canCreateTasks || permissions?.canManageTimeEntries)) {
+        event.preventDefault();
+        void openQuickAction('timeEntry');
+        return;
+      }
+
+      if (key === '4' && (user?.isSupport || permissions?.canManageTickets)) {
+        event.preventDefault();
+        void openQuickAction('callRecord');
+      }
+    };
+
+    document.addEventListener('keydown', handleQuickActionShortcuts);
+    return () => document.removeEventListener('keydown', handleQuickActionShortcuts);
+  }, [isCustomerUser, permissions, user?.isSupport]);
 
   // Load projects for a specific organization
   const loadProjectsForOrg = async (orgId: string) => {
@@ -1687,6 +1743,7 @@ export default function Navbar() {
               <div className="relative" ref={quickActionsRef}>
                 <button
                   onClick={() => setQuickActionsOpen(!quickActionsOpen)}
+                  title="Quick Actions (Ctrl+Q)"
                   className="flex items-center space-x-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1716,6 +1773,7 @@ export default function Navbar() {
                     {(permissions?.canManageProjects || permissions?.canCreateProjects) && (
                       <button
                         onClick={() => openQuickAction('project')}
+                        title="Shortcut: Ctrl+1"
                         className="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                       >
                         <span className="mr-3">📁</span> New Project
@@ -1724,6 +1782,7 @@ export default function Navbar() {
                     {(permissions?.canManageTasks || permissions?.canCreateTasks) && (
                       <button
                         onClick={() => openQuickAction('task')}
+                        title="Shortcut: Ctrl+2"
                         className="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                       >
                         <span className="mr-3">✅</span> New Task
@@ -1734,6 +1793,7 @@ export default function Navbar() {
                         <hr className="my-1 border-gray-200 dark:border-gray-700" />
                         <button
                           onClick={() => openQuickAction('timeEntry')}
+                          title="Shortcut: Ctrl+3"
                           className="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                         >
                           <span className="mr-3">⏱️</span> New Time Entry
@@ -1743,6 +1803,7 @@ export default function Navbar() {
                     {(user?.isSupport || permissions?.canManageTickets) && (
                       <button
                         onClick={() => openQuickAction('callRecord')}
+                        title="Shortcut: Ctrl+4"
                         className="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                       >
                         <span className="mr-3">📞</span> New Call Record

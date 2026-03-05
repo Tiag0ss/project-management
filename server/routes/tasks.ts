@@ -2986,7 +2986,11 @@ router.post('/utilities/sync-parent-status/:projectId', authenticateToken, async
 router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, issues, statusMapping, priorityMapping, taskTypeMapping, ticketMappings } = req.body;
+    const { projectId, issues, statusMapping, priorityMapping, taskTypeMapping, ticketMappings, importSource } = req.body;
+
+    const normalizedImportSource = importSource === 'project' || importSource === 'ticket'
+      ? importSource
+      : (statusMapping && typeof statusMapping === 'object' ? 'project' : 'ticket');
 
     if (!projectId || !issues || !Array.isArray(issues) || issues.length === 0) {
       return res.status(400).json({ success: false, message: 'Project ID and issues are required' });
@@ -3203,8 +3207,8 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
       }
 
       const [result] = await pool.execute<ResultSetHeader>(
-        `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, CustomerId, CreatedBy, JiraIssueKey)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, CustomerId, CreatedBy, JiraIssueKey, ExternalIssueId)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           projectId,
           issue.summary || issue.key,
@@ -3215,7 +3219,8 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
           mappedAssigneeId,
           mappedCustomerId,
           userId,
-          issue.key
+          normalizedImportSource === 'ticket' ? issue.key : null,
+          normalizedImportSource === 'project' ? issue.key : null
         ]
       );
 

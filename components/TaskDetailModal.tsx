@@ -22,6 +22,7 @@ interface TaskDetailModalProps {
   onSaved: () => void;
   token: string;
   jiraIntegration?: any;
+  onOpenTask?: (task: Task) => void;
   // Optional planning features
   showRemovePlanning?: boolean;
   onRemovePlanning?: () => void;
@@ -208,6 +209,7 @@ export default function TaskDetailModal({
   onSaved,
   token,
   jiraIntegration,
+  onOpenTask,
   showRemovePlanning = false,
   onRemovePlanning,
 }: TaskDetailModalProps) {
@@ -268,6 +270,7 @@ export default function TaskDetailModal({
   }>({ show: false, allocationId: null, userId: null, allocationDate: '', allocatedHours: '', mode: 'add' });
   const [users, setUsers] = useState<User[]>([]);
   const [hasChildren, setHasChildren] = useState(false);
+  const [childTasksFromProject, setChildTasksFromProject] = useState<Task[]>([]);
   
   // Application & Version state
   const [applications, setApplications] = useState<{ Id: number; Name: string }[]>([]);
@@ -283,6 +286,7 @@ export default function TaskDetailModal({
   const [uploadingFile, setUploadingFile] = useState(false);
   const [allocationsPage, setAllocationsPage] = useState(1);
   const [timeEntriesPage, setTimeEntriesPage] = useState(1);
+  const [hoursSubTab, setHoursSubTab] = useState<'planning' | 'allocations' | 'time'>('planning');
   const [showTagSelector, setShowTagSelector] = useState(false);
   const [modalMessage, setModalMessage] = useState<
     | { type: 'alert'; title: string; message: string }
@@ -308,6 +312,15 @@ export default function TaskDetailModal({
   const subtasks = task?.Id ? tasks.filter(t => t.ParentTaskId === task.Id) : [];
   const isGlobalProject = !!project?.IsGlobal;
   const hasSubtasks = subtasks.length > 0;
+  const hasAnyChildren = hasSubtasks || hasChildren;
+  const childTasks = hasSubtasks ? subtasks : childTasksFromProject;
+  const externalTicketId = task?.ExternalTicketId || null;
+  const externalIssueId = task?.ExternalIssueId || null;
+  const jiraTicketBaseUrl = task?.JiraUrl || jiraIntegration?.JiraUrl || null;
+  const jiraBoardBaseUrl = jiraIntegration?.JiraProjectsUrl || jiraIntegration?.JiraUrl || task?.JiraUrl || null;
+  const hasTicketJiraReference = Boolean(externalTicketId && jiraTicketBaseUrl);
+  const hasJiraTicketImportReference = Boolean(task?.JiraIssueKey && jiraIntegration?.JiraUrl);
+  const hasJiraBoardImportReference = Boolean(externalIssueId && jiraBoardBaseUrl);
   const subtasksTotal = hasSubtasks 
     ? subtasks.reduce((sum, st) => sum + (parseFloat(st.EstimatedHours as any) || 0), 0) 
     : 0;
@@ -597,6 +610,7 @@ export default function TaskDetailModal({
   const checkHasChildren = async () => {
     if (!task?.Id) {
       setHasChildren(false);
+      setChildTasksFromProject([]);
       return;
     }
     
@@ -608,13 +622,14 @@ export default function TaskDetailModal({
       if (response.ok) {
         const data = await response.json();
         const allTasks = data.tasks || [];
-        // Check if any task has this task as parent
-        const hasChild = allTasks.some((t: any) => t.ParentTaskId === task.Id);
-        setHasChildren(hasChild);
+        const children = allTasks.filter((t: any) => Number(t.ParentTaskId) === Number(task.Id));
+        setChildTasksFromProject(children);
+        setHasChildren(children.length > 0);
       }
     } catch (err) {
       console.error('Failed to check for children:', err);
       setHasChildren(false);
+      setChildTasksFromProject([]);
     }
   };
 
@@ -764,7 +779,7 @@ export default function TaskDetailModal({
   const handleDeleteFromModal = () => {
     if (!task?.Id) return;
 
-    if (hasSubtasks) {
+    if (hasAnyChildren) {
       setModalMessage({
         type: 'delete-choice',
         title: 'Delete Task with Subtasks?',
@@ -1343,6 +1358,7 @@ export default function TaskDetailModal({
   useEffect(() => {
     setAllocationsPage(1);
     setTimeEntriesPage(1);
+    setHoursSubTab('planning');
   }, [task?.Id]);
 
   useEffect(() => {
@@ -1435,6 +1451,26 @@ export default function TaskDetailModal({
                         ▶ Start Timer
                       </button>
                     )}
+                  </div>
+                </div>
+              )}
+              {task?.Id && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+                  <div className="px-3 py-2 rounded bg-purple-50 dark:bg-purple-900/20">
+                    <div className="text-[11px] text-gray-600 dark:text-gray-400">Estimated</div>
+                    <div className="text-sm font-bold text-purple-600 dark:text-purple-400">{parseFloat(task.EstimatedHours as any || 0).toFixed(1)}h</div>
+                  </div>
+                  <div className="px-3 py-2 rounded bg-blue-50 dark:bg-blue-900/20">
+                    <div className="text-[11px] text-gray-600 dark:text-gray-400">Allocated</div>
+                    <div className="text-sm font-bold text-blue-600 dark:text-blue-400">{totalAllocated.toFixed(1)}h</div>
+                  </div>
+                  <div className="px-3 py-2 rounded bg-green-50 dark:bg-green-900/20">
+                    <div className="text-[11px] text-gray-600 dark:text-gray-400">Worked</div>
+                    <div className="text-sm font-bold text-green-600 dark:text-green-400">{totalWorked.toFixed(1)}h</div>
+                  </div>
+                  <div className="px-3 py-2 rounded bg-gray-50 dark:bg-gray-700/40">
+                    <div className="text-[11px] text-gray-600 dark:text-gray-400">Completion</div>
+                    <div className="text-sm font-bold text-gray-900 dark:text-white">{completionPercentage}%</div>
                   </div>
                 </div>
               )}
@@ -1606,7 +1642,7 @@ export default function TaskDetailModal({
               </div>
 
               {/* Ticket Reference */}
-              {(task?.TicketNumber || (task?.ExternalTicketId && task?.JiraUrl) || (task?.JiraIssueKey && jiraIntegration?.JiraUrl)) && (
+              {(task?.TicketNumber || hasTicketJiraReference || hasJiraTicketImportReference || hasJiraBoardImportReference) && (
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
                   Linked Tickets & Jira
                 </h3>
@@ -1629,17 +1665,17 @@ export default function TaskDetailModal({
                       </a>
                       
                       {/* Jira Integration Link */}
-                      {task.ExternalTicketId && task.JiraUrl && (
+                      {hasTicketJiraReference && (
                         <div className="mt-2 flex items-center gap-2">
                           <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Jira Issue:</span>
                           <a
-                            href={`${task.JiraUrl}/browse/${task.ExternalTicketId}`}
+                            href={`${jiraTicketBaseUrl}/browse/${externalTicketId}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
-                            title={`Open in Jira: ${task.ExternalTicketId}`}
+                            title={`Open in Jira: ${externalTicketId}`}
                           >
-                            🔗 {task.ExternalTicketId}
+                            🔗 {externalTicketId}
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                             </svg>
@@ -1652,7 +1688,7 @@ export default function TaskDetailModal({
               )}
 
               {/* Jira Integration Link (Independent) */}
-              {!task?.TicketNumber && task?.ExternalTicketId && task?.JiraUrl && (
+              {!task?.TicketNumber && hasTicketJiraReference && (
                 <div className="p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
                   <div className="flex items-center gap-2">
                     <svg className="w-5 h-5 text-orange-600 dark:text-orange-400" fill="currentColor" viewBox="0 0 24 24">
@@ -1661,13 +1697,13 @@ export default function TaskDetailModal({
                     <div className="flex-1">
                       <span className="text-xs font-medium text-orange-700 dark:text-orange-300">Associated Jira Issue:</span>
                       <a
-                        href={`${task.JiraUrl}/browse/${task.ExternalTicketId}`}
+                        href={`${jiraTicketBaseUrl}/browse/${externalTicketId}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ml-2 inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors"
-                        title={`Open in Jira: ${task.ExternalTicketId}`}
+                        title={`Open in Jira: ${externalTicketId}`}
                       >
-                        🔗 {task.ExternalTicketId}
+                        🔗 {externalTicketId}
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                         </svg>
@@ -1703,9 +1739,36 @@ export default function TaskDetailModal({
                 </div>
               )}
 
+              {/* Jira Board Link (from Jira Board/Project Import) */}
+              {hasJiraBoardImportReference && (
+                <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
+                    </svg>
+                    <div className="flex-1">
+                      <span className="text-xs font-medium text-indigo-700 dark:text-indigo-300">Imported from Jira Board:</span>
+                      <a
+                        href={`${jiraBoardBaseUrl}/browse/${externalIssueId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-2 inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors"
+                        title={`Open in Jira: ${externalIssueId}`}
+                      >
+                        🧩 {externalIssueId}
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
                 Task Setup
               </h3>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -2177,50 +2240,44 @@ export default function TaskDetailModal({
               </div>
             ) : (
             <div className="space-y-6">
-              {/* Summary Cards */}
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Estimated</div>
-                  <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                    {parseFloat(task.EstimatedHours as any || 0).toFixed(1)}h
-                  </div>
-                </div>
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Allocated</div>
-                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                    {totalAllocated.toFixed(1)}h
-                  </div>
-                </div>
-                <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Worked</div>
-                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                    {totalWorked.toFixed(1)}h
-                  </div>
-                </div>
+              <div className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-700 pb-3">
+                <button
+                  type="button"
+                  onClick={() => setHoursSubTab('planning')}
+                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                    hoursSubTab === 'planning'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  Planning & Dependencies
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHoursSubTab('allocations')}
+                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                    hoursSubTab === 'allocations'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  Planned Allocations
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHoursSubTab('time')}
+                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                    hoursSubTab === 'time'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  Time Entries
+                </button>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Completion
-                  <span className="ml-2 text-blue-600 dark:text-blue-400 font-semibold">{completionPercentage}%</span>
-                  <span className="ml-2 text-xs text-gray-400 dark:text-gray-500 font-normal">(auto-calculated from time entries)</span>
-                </label>
-                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{
-                      width: `${completionPercentage}%`,
-                      backgroundColor: completionPercentage >= 100 ? '#22c55e' : completionPercentage >= 50 ? '#3b82f6' : '#f59e0b'
-                    }}
-                  />
-                </div>
-                <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 mt-1">
-                  <span>0%</span>
-                  <span>50%</span>
-                  <span>100%</span>
-                </div>
-              </div>
-
+              {hoursSubTab === 'planning' && (
+                <>
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
                 Plan & Dependencies
               </h3>
@@ -2256,58 +2313,59 @@ export default function TaskDetailModal({
                 </p>
               </div>
 
-              {/* Allocation Period */}
-              {allocationPeriod && (
-                <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg space-y-3">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Allocation Period:</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded font-medium">
-                        {new Date(allocationPeriod.start + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-                      </span>
-                      <span className="text-gray-400">→</span>
-                      <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded font-medium">
-                        {new Date(allocationPeriod.end + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-                      </span>
-                      <span className="text-gray-500 dark:text-gray-400 text-xs ml-1">
-                        ({Math.round((new Date(allocationPeriod.end).getTime() - new Date(allocationPeriod.start).getTime()) / 86400000) + 1} days)
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                      </svg>
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Baseline:</span>
-                    </div>
-                    {task?.BaselineStartDate && task?.BaselineEndDate ? (
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 rounded font-medium">
-                          {new Date(String(task.BaselineStartDate).includes('T') ? String(task.BaselineStartDate) : `${task.BaselineStartDate}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-                        </span>
-                        <span className="text-gray-400">→</span>
-                        <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 rounded font-medium">
-                          {new Date(String(task.BaselineEndDate).includes('T') ? String(task.BaselineEndDate) : `${task.BaselineEndDate}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-                        </span>
-                        <span className="text-gray-500 dark:text-gray-400 text-xs ml-1">
-                          ({Math.round((new Date(task.BaselineEndDate).getTime() - new Date(task.BaselineStartDate).getTime()) / 86400000) + 1} days)
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-400 dark:text-gray-500 italic">Not set</span>
-                    )}
-                  </div>
+              <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Child Tasks</h4>
+                  {hasAnyChildren ? (
+                    <span className="text-xs px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-medium">
+                      {childTasks.length > 0 ? childTasks.length : '1+'} child task{childTasks.length === 1 ? '' : 's'}
+                    </span>
+                  ) : (
+                    <span className="text-xs px-2 py-1 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 font-medium">
+                      No child tasks
+                    </span>
+                  )}
                 </div>
+
+                {childTasks.length > 0 ? (
+                  <div className="max-h-80 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-600 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800">
+                    {childTasks.map((child) => (
+                      <button
+                        key={child.Id}
+                        type="button"
+                        onClick={() => onOpenTask?.(child)}
+                        disabled={!onOpenTask}
+                        className={`w-full px-3 py-2 flex items-center justify-between gap-3 text-left ${onOpenTask ? 'hover:bg-gray-50 dark:hover:bg-gray-700/40 cursor-pointer' : 'cursor-default'}`}
+                        title={onOpenTask ? 'Open task details' : undefined}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{child.TaskName}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {child.EstimatedHours ? `${Number(child.EstimatedHours).toFixed(1)}h` : 'No estimate'}
+                          </p>
+                        </div>
+                        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 shrink-0">
+                          {child.StatusName || 'Unknown status'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : hasAnyChildren ? (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    This task has child tasks, but the current context has no visible child-task list.
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    No child tasks are linked to this task.
+                  </p>
+                )}
+              </div>
+
+                </>
               )}
 
               {/* Allocations */}
+              {hoursSubTab === 'allocations' && (
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Planned Allocations</h3>
@@ -2340,6 +2398,55 @@ export default function TaskDetailModal({
                     )}
                   </div>
                 </div>
+                {allocationPeriod && (
+                  <div className="px-4 py-3 mb-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg space-y-3">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Allocation Period:</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded font-medium">
+                          {new Date(allocationPeriod.start + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                        <span className="text-gray-400">→</span>
+                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded font-medium">
+                          {new Date(allocationPeriod.end + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                        <span className="text-gray-500 dark:text-gray-400 text-xs ml-1">
+                          ({Math.round((new Date(allocationPeriod.end).getTime() - new Date(allocationPeriod.start).getTime()) / 86400000) + 1} days)
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                        </svg>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Baseline:</span>
+                      </div>
+                      {task?.BaselineStartDate && task?.BaselineEndDate ? (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 rounded font-medium">
+                            {new Date(String(task.BaselineStartDate).includes('T') ? String(task.BaselineStartDate) : `${task.BaselineStartDate}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                          </span>
+                          <span className="text-gray-400">→</span>
+                          <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 rounded font-medium">
+                            {new Date(String(task.BaselineEndDate).includes('T') ? String(task.BaselineEndDate) : `${task.BaselineEndDate}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                          </span>
+                          <span className="text-gray-500 dark:text-gray-400 text-xs ml-1">
+                            ({Math.round((new Date(task.BaselineEndDate).getTime() - new Date(task.BaselineStartDate).getTime()) / 86400000) + 1} days)
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-400 dark:text-gray-500 italic">Not set</span>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {loadingData ? (
                   <p className="text-gray-500 dark:text-gray-400">Loading...</p>
                 ) : taskAllocations.length === 0 ? (
@@ -2449,8 +2556,10 @@ export default function TaskDetailModal({
                   </>
                 )}
               </div>
+              )}
 
               {/* Time Entries */}
+              {hoursSubTab === 'time' && (
               <div>
                 <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">Time Entries</h3>
                 {loadingData ? (
@@ -2516,6 +2625,7 @@ export default function TaskDetailModal({
                   </>
                 )}
               </div>
+              )}
             </div>
             )
           )}

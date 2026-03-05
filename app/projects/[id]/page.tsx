@@ -1166,6 +1166,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           },
           body: JSON.stringify({
             projectId: parseInt(projectId),
+            importSource: 'ticket',
             issues: issuesToImport,
             priorityMapping: jiraTicketPriorityMapping,
             taskTypeMapping: jiraTicketTypeMapping,
@@ -1236,6 +1237,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           },
           body: JSON.stringify({
             projectId: parseInt(projectId),
+            importSource: 'project',
             issues: issuesToImport,
             statusMapping: statusMapping,
             priorityMapping: priorityMapping,
@@ -2396,6 +2398,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           task={editingTask}
           project={project}
           tasks={tasks}
+          onOpenTask={(targetTask) => {
+            const fullTask = tasks.find((entry) => Number(entry.Id) === Number(targetTask.Id)) || targetTask;
+            setEditingTask(fullTask as Task);
+            setShowTaskModal(true);
+          }}
           onClose={() => {
             setShowTaskModal(false);
             setEditingTask(null);

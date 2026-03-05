@@ -97,6 +97,7 @@ export default function PlanningPage() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [jiraIntegrationByOrg, setJiraIntegrationByOrg] = useState<Record<number, any>>({});
   const [taskAllocations, setTaskAllocations] = useState<any[]>([]);
   const [projectMilestones, setProjectMilestones] = useState<ProjectMilestone[]>([]);
   const [allAllocations, setAllAllocations] = useState<{Id?: number; TaskId: number; UserId: number; AllocationDate: string; AllocatedHours: number; IsHobby: number; IsManual?: number; StartTime?: string; EndTime?: string}[]>([]);
@@ -774,13 +775,42 @@ export default function PlanningPage() {
   };
 
   const handleTaskClick = async (task: Task) => {
-    setSelectedTask(task);
+    const fullTask = tasks.find((entry) => Number(entry.Id) === Number(task.Id)) || task;
+    setSelectedTask(fullTask);
     setLoadingAllocations(true);
+
+    const selectedProject = projects.find((projectEntry) => Number(projectEntry.Id) === Number(fullTask.ProjectId));
+    const organizationId = selectedProject?.OrganizationId;
+
+    if (organizationId && !jiraIntegrationByOrg[organizationId]) {
+      try {
+        const jiraResponse = await fetch(`${getApiUrl()}/api/jira-integrations/organization/${organizationId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (jiraResponse.ok) {
+          const jiraData = await jiraResponse.json();
+          const integration = jiraData.integration;
+          setJiraIntegrationByOrg((prev) => ({
+            ...prev,
+            [organizationId]: integration?.IsEnabled ? integration : null,
+          }));
+        }
+      } catch {
+        setJiraIntegrationByOrg((prev) => ({
+          ...prev,
+          [organizationId]: null,
+        }));
+      }
+    }
     
     try {
       // Fetch task allocations
       const allocationsResponse = await fetch(
-        `${getApiUrl()}/api/task-allocations/task/${task.Id}`,
+        `${getApiUrl()}/api/task-allocations/task/${fullTask.Id}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -798,7 +828,7 @@ export default function PlanningPage() {
 
       // Fetch time entries
       const timeEntriesResponse = await fetch(
-        `${getApiUrl()}/api/time-entries/task/${task.Id}`,
+        `${getApiUrl()}/api/time-entries/task/${fullTask.Id}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -4111,7 +4141,13 @@ export default function PlanningPage() {
                             data-task-id={parentTask.Id}
                             draggable={permissions?.canPlanTasks && !isGanttSearchActive}
                             onDragStart={(e) => handleDragStart(e, parentTask)}
-                            onClick={() => hasSubtasks ? openSubtasksModal(parentTask) : handleTaskClick(parentTask)}
+                            onClick={(e) => {
+                              if (hasSubtasks && !e.ctrlKey && !e.metaKey) {
+                                openSubtasksModal(parentTask);
+                                return;
+                              }
+                              void handleTaskClick(parentTask);
+                            }}
                             className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(parentTask) : ''} opacity-75 hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white text-xs px-2 transition-all`}
                             style={{
                               left: position ? position.left : '0%',
@@ -4729,6 +4765,11 @@ export default function PlanningPage() {
               task={selectedTask}
               project={selectedProject}
               tasks={tasks.filter(t => t.ProjectId === selectedTask.ProjectId)}
+              onOpenTask={(targetTask) => {
+                const projectTasks = tasks.filter(t => t.ProjectId === selectedTask.ProjectId);
+                const fullTask = projectTasks.find((entry) => Number(entry.Id) === Number(targetTask.Id)) || targetTask;
+                void handleTaskClick(fullTask);
+              }}
               onClose={() => setSelectedTask(null)}
               onSaved={() => {
                 setSelectedTask(null);
@@ -4736,6 +4777,7 @@ export default function PlanningPage() {
                 loadAllAllocations();
               }}
               token={token!}
+              jiraIntegration={jiraIntegrationByOrg[selectedProject.OrganizationId]}
               showRemovePlanning={permissions?.canPlanTasks}
               onRemovePlanning={handleRemovePlanning}
             />
