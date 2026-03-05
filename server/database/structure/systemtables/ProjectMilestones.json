@@ -1,0 +1,98 @@
+{
+  "TableName": "ProjectMilestones",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "ProjectId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Projects.Id"
+    },
+    {
+      "FieldName": "MilestoneTypeId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to MilestoneTypeValues.Id"
+    },
+    {
+      "FieldName": "Name",
+      "DataType": "varchar(150)",
+      "NotNullable": true,
+      "Comment": "Milestone name"
+    },
+    {
+      "FieldName": "Description",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Milestone description"
+    },
+    {
+      "FieldName": "DueDate",
+      "DataType": "date",
+      "NotNullable": false,
+      "Comment": "Target milestone date"
+    },
+    {
+      "FieldName": "IsCompleted",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Whether milestone is completed"
+    },
+    {
+      "FieldName": "CompletedAt",
+      "DataType": "datetime",
+      "NotNullable": false,
+      "Comment": "Completion datetime"
+    },
+    {
+      "FieldName": "SortOrder",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Display order"
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    }
+  ],
+  "Relationships": [
+    {
+      "Name": "MilestoneProject",
+      "Description": "Milestone belongs to a Project",
+      "FromField": "ProjectId",
+      "ToTable": "Projects",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "MilestoneType",
+      "Description": "Milestone may have a Milestone Type",
+      "FromField": "MilestoneTypeId",
+      "ToTable": "MilestoneTypeValues",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    }
+  ]
+}

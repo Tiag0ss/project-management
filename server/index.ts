@@ -58,6 +58,7 @@ import timersRoutes from './routes/timers';
 import taskTemplatesRoutes from './routes/taskTemplates';
 import slaRulesRoutes from './routes/slaRules';
 import sprintsRoutes from './routes/sprints';
+import projectMilestonesRoutes from './routes/projectMilestones';
 import portalRoutes from './routes/portal';
 import applicationsRoutes from './routes/applications';
 import projectReportSchedulesRoutes from './routes/projectReportSchedules';
@@ -234,6 +235,7 @@ app.prepare().then(async () => {
   server.use('/api/task-templates', taskTemplatesRoutes);
   server.use('/api/sla-rules', slaRulesRoutes);
   server.use('/api/sprints', sprintsRoutes);
+  server.use('/api/project-milestones', projectMilestonesRoutes);
   server.use('/api/portal', portalRoutes);
   server.use('/api/project-report-schedules', projectReportSchedulesRoutes);
   server.use('/api/holidays', holidaysRoutes);

@@ -1108,6 +1108,13 @@ const DEFAULT_TASK_TYPES = [
   { name: 'Chore', color: '#6b7280', order: 4, isDefault: 0 },
 ];
 
+const DEFAULT_MILESTONE_TYPES = [
+  { name: 'Release', color: '#3b82f6', icon: 'rocket', order: 1, isDefault: 1 },
+  { name: 'Delivery', color: '#10b981', icon: 'flag', order: 2, isDefault: 0 },
+  { name: 'Review', color: '#f59e0b', icon: 'target', order: 3, isDefault: 0 },
+  { name: 'Approval', color: '#8b5cf6', icon: 'check-circle', order: 4, isDefault: 0 },
+];
+
 async function ensureTaskTypes(orgId: number): Promise<RowDataPacket[]> {
   const [rows] = await pool.execute<RowDataPacket[]>(
     'SELECT * FROM TaskTypeValues WHERE OrganizationId = ? ORDER BY SortOrder, TypeName',
@@ -1125,6 +1132,28 @@ async function ensureTaskTypes(orgId: number): Promise<RowDataPacket[]> {
 
   const [newRows] = await pool.execute<RowDataPacket[]>(
     'SELECT * FROM TaskTypeValues WHERE OrganizationId = ? ORDER BY SortOrder, TypeName',
+    [orgId]
+  );
+  return newRows;
+}
+
+async function ensureMilestoneTypes(orgId: number): Promise<RowDataPacket[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM MilestoneTypeValues WHERE OrganizationId = ? ORDER BY SortOrder, TypeName',
+    [orgId]
+  );
+
+  if (rows.length > 0) return rows;
+
+  for (const t of DEFAULT_MILESTONE_TYPES) {
+    await pool.execute(
+      'INSERT INTO MilestoneTypeValues (OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?, ?)',
+      [orgId, t.name, t.icon, t.color, t.order, t.isDefault]
+    );
+  }
+
+  const [newRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM MilestoneTypeValues WHERE OrganizationId = ? ORDER BY SortOrder, TypeName',
     [orgId]
   );
   return newRows;
@@ -1280,6 +1309,160 @@ router.delete('/type/:id', authenticateToken, async (req: AuthRequest, res: Resp
   } catch (error) {
     console.error('Delete task type error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete task type value' });
+  }
+});
+
+// GET milestone types (auto-creates defaults)
+router.get('/milestone-type/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = parseInt(req.params.orgId as string);
+
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+
+    if (access.length === 0) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const types = await ensureMilestoneTypes(orgId);
+    res.json({ success: true, types });
+  } catch (error) {
+    console.error('Get milestone type values error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch milestone type values' });
+  }
+});
+
+// POST milestone type
+router.post('/milestone-type', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, typeName, statusName, iconSvg, colorCode, sortOrder, isDefault } = req.body;
+    const resolvedTypeName = typeName || statusName;
+
+    if (!organizationId || !resolvedTypeName) {
+      return res.status(400).json({ success: false, message: 'Organization ID and type name are required' });
+    }
+
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [organizationId, userId]
+    );
+
+    if (member.length === 0 || (member[0].Role !== 'Owner' && member[0].Role !== 'Admin' && !member[0].CanManageSettings)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    if (isDefault) {
+      await pool.execute('UPDATE MilestoneTypeValues SET IsDefault = 0 WHERE OrganizationId = ?', [organizationId]);
+    }
+
+    const [result] = await pool.execute<ResultSetHeader>(
+      'INSERT INTO MilestoneTypeValues (OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?, ?)',
+      [organizationId, resolvedTypeName, iconSvg || 'flag', colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
+    );
+
+    res.status(201).json({ success: true, typeId: result.insertId });
+  } catch (error) {
+    console.error('Create milestone type error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create milestone type value' });
+  }
+});
+
+// PUT milestone type
+router.put('/milestone-type/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const typeId = req.params.id;
+    const { typeName, statusName, iconSvg, colorCode, sortOrder, isDefault } = req.body;
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault FROM MilestoneTypeValues WHERE Id = ?',
+      [typeId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Milestone type value not found' });
+    }
+
+    const orgId = rows[0].OrganizationId;
+    const currentType = rows[0];
+
+    const nextTypeName = typeName ?? statusName ?? currentType.TypeName;
+    const nextIconSvg = iconSvg ?? currentType.IconSvg ?? 'flag';
+    const nextColorCode = colorCode ?? currentType.ColorCode ?? '#3b82f6';
+    const nextSortOrder = sortOrder ?? currentType.SortOrder ?? 0;
+    const nextIsDefault = typeof isDefault === 'boolean'
+      ? isDefault
+      : currentType.IsDefault === 1;
+
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+
+    if (member.length === 0 || (member[0].Role !== 'Owner' && member[0].Role !== 'Admin' && !member[0].CanManageSettings)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    if (nextIsDefault) {
+      await pool.execute('UPDATE MilestoneTypeValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, typeId]);
+    }
+
+    await pool.execute(
+      'UPDATE MilestoneTypeValues SET TypeName = ?, IconSvg = ?, ColorCode = ?, SortOrder = ?, IsDefault = ? WHERE Id = ?',
+      [nextTypeName, nextIconSvg, nextColorCode, nextSortOrder, nextIsDefault ? 1 : 0, typeId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update milestone type error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update milestone type value' });
+  }
+});
+
+// DELETE milestone type
+router.delete('/milestone-type/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const typeId = req.params.id;
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM MilestoneTypeValues WHERE Id = ?',
+      [typeId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Milestone type value not found' });
+    }
+
+    const orgId = rows[0].OrganizationId;
+
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+
+    if (member.length === 0 || (member[0].Role !== 'Owner' && member[0].Role !== 'Admin' && !member[0].CanManageSettings)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    await pool.execute('DELETE FROM MilestoneTypeValues WHERE Id = ?', [typeId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete milestone type error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete milestone type value' });
   }
 });
 

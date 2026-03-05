@@ -10,6 +10,7 @@ import { tasksApi, Task } from '@/lib/api/tasks';
 import { projectsApi, Project } from '@/lib/api/projects';
 import { usersApi, User } from '@/lib/api/users';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
+import { projectMilestonesApi, ProjectMilestone } from '@/lib/api/projectMilestones';
 import Navbar from '@/components/Navbar';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
@@ -52,6 +53,28 @@ interface TimelineColumn {
   isMonthStart: boolean;
 }
 
+const renderMilestoneTypeSvg = (iconSvg: string | null | undefined, className: string = 'w-3 h-3') => {
+  switch (iconSvg) {
+    case 'target':
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" strokeWidth="2" /><circle cx="12" cy="12" r="5" strokeWidth="2" /><circle cx="12" cy="12" r="1.5" strokeWidth="2" /></svg>;
+    case 'rocket':
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 3l7 7-4 4-7-7 4-4zm-5 5l7 7-8 5 1-6-6 1 6-7z" /></svg>;
+    case 'calendar':
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2" strokeWidth="2" /><path strokeLinecap="round" strokeWidth={2} d="M16 3v4M8 3v4M3 10h18" /></svg>;
+    case 'star':
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3l2.8 5.7L21 9.6l-4.5 4.4 1.1 6.3L12 17.3 6.4 20.3 7.5 14 3 9.6l6.2-.9L12 3z" /></svg>;
+    case 'trophy':
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 4h8v3a4 4 0 01-8 0V4zm-3 1h3v1a5 5 0 01-3 4V5zm14 0h-3v1a5 5 0 003 4V5zM12 14v4m-3 3h6" /></svg>;
+    case 'check-circle':
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" strokeWidth="2" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12l2.5 2.5L16 9" /></svg>;
+    case 'milestone':
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 20V4m0 0l10 3-10 3m0-6v16" /></svg>;
+    case 'flag':
+    default:
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 20V4m0 0c4 0 4 2 8 2s4-2 8-2v8c-4 0-4 2-8 2s-4-2-8-2" /></svg>;
+  }
+};
+
 export default function PlanningPage() {
   const { user, isLoading, token } = useAuth();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
@@ -75,6 +98,7 @@ export default function PlanningPage() {
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [taskAllocations, setTaskAllocations] = useState<any[]>([]);
+  const [projectMilestones, setProjectMilestones] = useState<ProjectMilestone[]>([]);
   const [allAllocations, setAllAllocations] = useState<{Id?: number; TaskId: number; UserId: number; AllocationDate: string; AllocatedHours: number; IsHobby: number; IsManual?: number; StartTime?: string; EndTime?: string}[]>([]);
   const [childAllocations, setChildAllocations] = useState<{ParentTaskId: number; ChildTaskId: number; AllocationDate: string; AllocatedHours: number; Level: number}[]>([]);
   const [taskTimeEntries, setTaskTimeEntries] = useState<any[]>([]);
@@ -389,6 +413,8 @@ export default function PlanningPage() {
         // Load task status values FIRST so filtering works when tasks render
         await loadTaskStatusValues(projectsRes.projects);
 
+        await loadAllProjectMilestones(projectsRes.projects);
+
         // Load all tasks from all projects
         const loadedTasks = await loadAllProjectsTasks(projectsRes.projects);
         
@@ -401,10 +427,37 @@ export default function PlanningPage() {
         // Load all allocations for the visible period
         await loadAllAllocations(loadedTasks);
       }
+      if (projectsRes.projects.length === 0) {
+        setProjectMilestones([]);
+      }
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {
       setIsLoadingData(false);
+    }
+  };
+
+  const loadAllProjectMilestones = async (projectsList: Project[]) => {
+    if (!token) {
+      setProjectMilestones([]);
+      return;
+    }
+
+    try {
+      const milestoneResponses = await Promise.all(
+        projectsList.map(async (project) => {
+          try {
+            const result = await projectMilestonesApi.getByProject(project.Id, token);
+            return result.milestones || [];
+          } catch {
+            return [] as ProjectMilestone[];
+          }
+        })
+      );
+
+      setProjectMilestones(milestoneResponses.flat());
+    } catch {
+      setProjectMilestones([]);
     }
   };
 
@@ -3423,6 +3476,28 @@ export default function PlanningPage() {
   };
   const unassignedTasks = getTasksForUser(null);
   const visibleUnassignedTasks = unassignedTasks.filter(matchesGanttSearch);
+  const visibleMilestones = projectMilestones.filter((milestone) => {
+    const dueDate = normalizeDateKey(milestone.DueDate);
+    if (!dueDate) return false;
+
+    return timelineColumns.some((column) => {
+      const startKey = getDateKeyFromDate(column.start);
+      const endKey = getDateKeyFromDate(column.end);
+      return dueDate >= startKey && dueDate <= endKey;
+    });
+  });
+  const milestoneCountByDate = visibleMilestones.reduce<Record<string, number>>((acc, milestone) => {
+    const dueDate = normalizeDateKey(milestone.DueDate);
+    if (!dueDate) return acc;
+    acc[dueDate] = (acc[dueDate] || 0) + 1;
+    return acc;
+  }, {});
+  const milestoneLaneCount = Object.values(milestoneCountByDate).reduce((max, count) => Math.max(max, count), 0);
+  const milestoneLaneHeight = 16;
+  const milestoneRowPadding = 2;
+  const milestoneRowHeight = visibleMilestones.length === 0
+    ? 24
+    : Math.max(24, milestoneRowPadding * 2 + milestoneLaneCount * milestoneLaneHeight);
 
   return (
     <CustomerUserGuard>
@@ -3880,10 +3955,80 @@ export default function PlanningPage() {
                   </div>
                 </div>
 
+                {/* Milestones row */}
+                <div className="flex border-b border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-900/15">
+                  <div className="w-48 flex-shrink-0 p-3 border-r border-gray-200 dark:border-gray-700">
+                    <div className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                      🏁 Milestones
+                    </div>
+                  </div>
+                  <div className="flex-1 relative" style={useFixedPixelColumns ? { minHeight: `${milestoneRowHeight}px`, minWidth: `${timelineDaysWidthPx}px` } : { minHeight: `${milestoneRowHeight}px` }}>
+                    <div className="flex h-full" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
+                      {timelineColumns.map((column, idx) => (
+                        <div
+                          key={`milestone-col-${idx}`}
+                          className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} border-r border-gray-200 dark:border-gray-700 ${
+                            idx === todayIndex ? 'bg-blue-100/70 dark:bg-blue-800/25 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''
+                          }`}
+                          style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
+                        />
+                      ))}
+                    </div>
+                    {visibleMilestones.map((milestone, milestoneIndex) => {
+                      const dueDate = normalizeDateKey(milestone.DueDate);
+                      if (!dueDate) return null;
+
+                      const dayIndex = timelineColumns.findIndex((column) => {
+                        const startKey = getDateKeyFromDate(column.start);
+                        const endKey = getDateKeyFromDate(column.end);
+                        return dueDate >= startKey && dueDate <= endKey;
+                      });
+
+                      if (dayIndex === -1) return null;
+
+                      const projectName = projects.find((project) => Number(project.Id) === Number(milestone.ProjectId))?.ProjectName || 'Project';
+                      const milestoneColor = milestone.MilestoneTypeColor || '#059669';
+                      const isCompletedMilestone = Number(milestone.IsCompleted || 0) === 1;
+                      const sameDayOffset = visibleMilestones
+                        .slice(0, milestoneIndex)
+                        .filter((entry) => normalizeDateKey(entry.DueDate) === dueDate).length;
+
+                      const left = useFixedPixelColumns
+                        ? `${dayIndex * dayColumnWidthPx}px`
+                        : `${(dayIndex / Math.max(1, timelineColumns.length)) * 100}%`;
+                      const width = useFixedPixelColumns
+                        ? `${dayColumnWidthPx}px`
+                        : `${100 / Math.max(1, timelineColumns.length)}%`;
+
+                      return (
+                        <div
+                          key={`milestone-${milestone.Id}`}
+                          className="absolute h-4 rounded text-white text-[10px] px-1.5 flex items-center cursor-default"
+                          style={{
+                            left,
+                            width,
+                            top: `${milestoneRowPadding + sameDayOffset * milestoneLaneHeight}px`,
+                            zIndex: 2,
+                            backgroundColor: milestoneColor,
+                            opacity: isCompletedMilestone ? 0.7 : 0.9,
+                          }}
+                          title={`${projectName}\n${milestone.Name}\nType: ${milestone.MilestoneTypeName || 'No type'}\nDue: ${new Date(`${dueDate}T12:00:00`).toLocaleDateString()}${isCompletedMilestone ? '\nStatus: Completed' : '\nStatus: Open'}`}
+                        >
+                          <span className="truncate inline-flex items-center gap-1">
+                            <span className="inline-flex items-center">{renderMilestoneTypeSvg(milestone.MilestoneTypeIconSvg, 'w-3 h-3')}</span>
+                            <span>{isCompletedMilestone ? '✓ ' : ''}{milestone.Name}</span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex flex-col">
                 {/* Unassigned tasks row */}
                 {visibleUnassignedTasks.length > 0 && (
                   <div
-                    className="flex border-b-2 border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/20"
+                    className="order-last flex border-b-2 border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/20"
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDropOnUser(e, null)}
                   >
@@ -4208,8 +4353,11 @@ export default function PlanningPage() {
                   });
                   
                   // Calculate row height based on max rows (parent tasks + subtasks)
-                  // Keep compact spacing to avoid large empty areas.
-                  const rowHeight = Math.max(maxRows * 24 + 8, 44);
+                  // Reserve a dedicated lane for recurring allocations so they don't overlap task bars.
+                  const hasRecurringForUser = recurringAllocations.some((recurring) => recurring.UserId === userRow.Id);
+                  const recurringLaneHeight = hasRecurringForUser ? 18 : 0;
+                  const recurringLaneTop = hasRecurringForUser ? Math.max(maxRows * 24 + 4, 24) : 0;
+                  const rowHeight = Math.max(maxRows * 24 + 8 + recurringLaneHeight, 44 + recurringLaneHeight);
                   
                   return (
                     <React.Fragment key={userRow.Id}>
@@ -4461,9 +4609,9 @@ export default function PlanningPage() {
                                 style={{
                                   left: left,
                                   width: width,
-                                  top: '0px',
+                                  top: `${recurringLaneTop}px`,
                                   borderLeftWidth: '3px',
-                                  zIndex: 2,
+                                  zIndex: 30,
                                 }}
                                 title={`🔄 ${recurring.Title}\n${recurring.StartTime} - ${recurring.EndTime} (${recurring.AllocatedHours}h)\n${recurring.Description || ''}\nClick for details`}
                               >
@@ -4564,6 +4712,7 @@ export default function PlanningPage() {
                   </React.Fragment>
                 );
               })}
+              </div>
               </div>
             </div>
           </div>

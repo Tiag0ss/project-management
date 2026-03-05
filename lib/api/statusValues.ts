@@ -8,6 +8,7 @@ export interface StatusValue {
   StatusName: string;
   PriorityName?: string; // For task priorities
   TypeName?: string; // For task types
+  IconSvg?: string; // For milestone types
   ColorCode?: string;
   SortOrder: number;
   IsDefault: number;
@@ -21,6 +22,7 @@ export interface CreateStatusValueData {
   organizationId: number;
   statusName: string;
   typeName?: string;
+  iconSvg?: string;
   colorCode?: string;
   sortOrder?: number;
   isDefault?: boolean;
@@ -325,6 +327,81 @@ export const statusValuesApi = {
 
     if (!response.ok) {
       throw new Error(data.message || 'Failed to delete task type');
+    }
+
+    return data;
+  },
+
+  // Milestone Type Values
+  async getMilestoneTypes(orgId: number, token: string): Promise<{ success: boolean; types: StatusValue[] }> {
+    const response = await fetch(`${API_BASE_URL}/api/status-values/milestone-type/${orgId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch milestone types');
+    }
+
+    return data;
+  },
+
+  async createMilestoneType(typeData: CreateStatusValueData, token: string): Promise<{ success: boolean; typeId: number }> {
+    const response = await fetch(`${API_BASE_URL}/api/status-values/milestone-type`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(typeData),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to create milestone type');
+    }
+
+    return data;
+  },
+
+  async updateMilestoneType(id: number, typeData: Partial<CreateStatusValueData>, token: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/status-values/milestone-type/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(typeData),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to update milestone type');
+    }
+
+    return data;
+  },
+
+  async deleteMilestoneType(id: number, token: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/status-values/milestone-type/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to delete milestone type');
     }
 
     return data;

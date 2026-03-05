@@ -1694,6 +1694,39 @@ function PermissionGroupModal({ orgId, group, onClose, onSaved, token }: {
   );
 }
 
+const MILESTONE_TYPE_ICON_OPTIONS = [
+  { value: 'flag', label: 'Flag' },
+  { value: 'target', label: 'Target' },
+  { value: 'rocket', label: 'Rocket' },
+  { value: 'calendar', label: 'Calendar' },
+  { value: 'star', label: 'Star' },
+  { value: 'trophy', label: 'Trophy' },
+  { value: 'check-circle', label: 'Check Circle' },
+  { value: 'milestone', label: 'Milestone' },
+];
+
+function renderMilestoneTypeIcon(iconSvg: string | undefined, className: string = 'w-4 h-4') {
+  switch (iconSvg) {
+    case 'target':
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" strokeWidth="2" /><circle cx="12" cy="12" r="5" strokeWidth="2" /><circle cx="12" cy="12" r="1.5" strokeWidth="2" /></svg>;
+    case 'rocket':
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 3l7 7-4 4-7-7 4-4zm-5 5l7 7-8 5 1-6-6 1 6-7z" /></svg>;
+    case 'calendar':
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2" strokeWidth="2" /><path strokeLinecap="round" strokeWidth={2} d="M16 3v4M8 3v4M3 10h18" /></svg>;
+    case 'star':
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3l2.8 5.7L21 9.6l-4.5 4.4 1.1 6.3L12 17.3 6.4 20.3 7.5 14 3 9.6l6.2-.9L12 3z" /></svg>;
+    case 'trophy':
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 4h8v3a4 4 0 01-8 0V4zm-3 1h3v1a5 5 0 01-3 4V5zm14 0h-3v1a5 5 0 003 4V5zM12 14v4m-3 3h6" /></svg>;
+    case 'check-circle':
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" strokeWidth="2" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12l2.5 2.5L16 9" /></svg>;
+    case 'milestone':
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 20V4m0 0l10 3-10 3m0-6v16" /></svg>;
+    case 'flag':
+    default:
+      return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 20V4m0 0c4 0 4 2 8 2s4-2 8-2v8c-4 0-4 2-8 2s-4-2-8-2" /></svg>;
+  }
+}
+
 function StatusesTab({ 
   orgId, 
   canManage, 
@@ -1711,11 +1744,12 @@ function StatusesTab({
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
   const [taskTypes, setTaskTypes] = useState<StatusValue[]>([]);
+  const [milestoneTypes, setMilestoneTypes] = useState<StatusValue[]>([]);
   const [ticketStatuses, setTicketStatuses] = useState<any[]>([]);
   const [ticketPriorities, setTicketPriorities] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeType, setActiveType] = useState<'project' | 'task' | 'priority' | 'type' | 'ticket' | 'ticket-priority'>('project');
+  const [activeType, setActiveType] = useState<'project' | 'task' | 'priority' | 'type' | 'milestone-type' | 'ticket' | 'ticket-priority'>('project');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingStatus, setEditingStatus] = useState<StatusValue | null>(null);
 
@@ -1732,11 +1766,12 @@ function StatusesTab({
   const loadStatuses = async () => {
     try {
       setIsLoading(true);
-      const [projectRes, taskRes, priorityRes, typeRes] = await Promise.all([
+      const [projectRes, taskRes, priorityRes, typeRes, milestoneTypeRes] = await Promise.all([
         statusValuesApi.getProjectStatuses(orgId, token),
         statusValuesApi.getTaskStatuses(orgId, token),
         statusValuesApi.getTaskPriorities(orgId, token),
         statusValuesApi.getTaskTypes(orgId, token),
+        statusValuesApi.getMilestoneTypes(orgId, token),
       ]);
 
       let ticketRes: any = { statuses: [] };
@@ -1753,6 +1788,7 @@ function StatusesTab({
       setTaskStatuses(taskRes.statuses);
       setTaskPriorities(priorityRes.priorities);
       setTaskTypes(typeRes.types);
+      setMilestoneTypes(milestoneTypeRes.types);
       setTicketStatuses(ticketRes.statuses || []);
       setTicketPriorities(ticketPriRes.priorities || []);
       setError('');
@@ -1763,8 +1799,12 @@ function StatusesTab({
     }
   };
 
-  const handleDelete = async (id: number, type: 'project' | 'task' | 'priority' | 'type' | 'ticket' | 'ticket-priority') => {
-    const itemType = (type === 'priority' || type === 'ticket-priority') ? 'priority' : 'status value';
+  const handleDelete = async (id: number, type: 'project' | 'task' | 'priority' | 'type' | 'milestone-type' | 'ticket' | 'ticket-priority') => {
+    const itemType = (type === 'priority' || type === 'ticket-priority')
+      ? 'priority'
+      : (type === 'type' || type === 'milestone-type')
+        ? 'type value'
+        : 'status value';
     showConfirm(
       `Delete ${itemType.charAt(0).toUpperCase() + itemType.slice(1)}`,
       `Are you sure you want to delete this ${itemType}?`,
@@ -1778,6 +1818,8 @@ function StatusesTab({
             await statusValuesApi.deleteTaskPriority(id, token);
           } else if (type === 'type') {
             await statusValuesApi.deleteTaskType(id, token);
+          } else if (type === 'milestone-type') {
+            await statusValuesApi.deleteMilestoneType(id, token);
           } else {
             const endpoint = type === 'ticket' ? 'ticket' : 'ticket-priority';
             await fetch(`${getApiUrl()}/api/status-values/${endpoint}/${id}`, {
@@ -1799,9 +1841,10 @@ function StatusesTab({
     : activeType === 'task' ? taskStatuses
     : activeType === 'priority' ? taskPriorities
     : activeType === 'type' ? taskTypes
+    : activeType === 'milestone-type' ? milestoneTypes
     : activeType === 'ticket' ? ticketStatuses
     : ticketPriorities;
-  const buttonLabel = (activeType === 'priority' || activeType === 'ticket-priority') ? 'Add Priority' : activeType === 'type' ? 'Add Type' : 'Add Status';
+  const buttonLabel = (activeType === 'priority' || activeType === 'ticket-priority') ? 'Add Priority' : (activeType === 'type' || activeType === 'milestone-type') ? 'Add Type' : 'Add Status';
 
   return (
     <div>
@@ -1846,6 +1889,16 @@ function StatusesTab({
             }`}
           >
             Task Types
+          </button>
+          <button
+            onClick={() => setActiveType('milestone-type')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeType === 'milestone-type'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+            }`}
+          >
+            Milestone Types
           </button>
           {internalTicketsEnabled && (
             <>
@@ -1900,8 +1953,17 @@ function StatusesTab({
               )}
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-gray-900 dark:text-white">
-                    {(activeType === 'priority' || activeType === 'ticket-priority') ? status.PriorityName : activeType === 'type' ? status.TypeName : status.StatusName}
+                  <span className="font-medium text-gray-900 dark:text-white inline-flex items-center gap-1.5">
+                    {activeType === 'milestone-type' && (
+                      <span className="inline-flex items-center text-gray-600 dark:text-gray-300">
+                        {renderMilestoneTypeIcon(status.IconSvg || 'flag', 'w-4 h-4')}
+                      </span>
+                    )}
+                    {(activeType === 'priority' || activeType === 'ticket-priority')
+                      ? status.PriorityName
+                      : (activeType === 'type' || activeType === 'milestone-type')
+                        ? status.TypeName
+                        : status.StatusName}
                   </span>
                   {status.IsDefault ? <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 rounded-full">Default</span> : ''}
                   {status.IsClosed ? <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400 rounded-full">Closed</span> : ''}
@@ -1970,14 +2032,15 @@ function StatusesTab({
 
 function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
   orgId: number;
-  type: 'project' | 'task' | 'priority' | 'type' | 'ticket' | 'ticket-priority';
+  type: 'project' | 'task' | 'priority' | 'type' | 'milestone-type' | 'ticket' | 'ticket-priority';
   status?: any;
   onClose: () => void;
   onSaved: () => void;
   token: string;
 }) {
   const isPriority = type === 'priority' || type === 'ticket-priority';
-  const isTaskType = type === 'type';
+  const isTaskType = type === 'type' || type === 'milestone-type';
+  const isMilestoneType = type === 'milestone-type';
   const isTicketStatus = type === 'ticket';
   const STATUS_TYPE_OPTIONS = [
     { value: 'open',        label: 'Open — new tickets awaiting action' },
@@ -1991,6 +2054,7 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
     organizationId: orgId,
     statusName: isPriority ? (status?.PriorityName || '') : isTaskType ? (status?.TypeName || '') : (status?.StatusName || ''),
     colorCode: status?.ColorCode || status?.Color || '#3b82f6',
+    iconSvg: isMilestoneType ? (status?.IconSvg || 'flag') : undefined,
     sortOrder: status?.SortOrder || 0,
     isDefault: !!status?.IsDefault,
     isClosed: !!status?.IsClosed,
@@ -2026,6 +2090,8 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
           await statusValuesApi.updateTaskPriority(status.Id, formData, token);
         } else if (type === 'type') {
           await statusValuesApi.updateTaskType(status.Id, { ...formData, typeName: formData.statusName }, token);
+        } else if (type === 'milestone-type') {
+          await statusValuesApi.updateMilestoneType(status.Id, { ...formData, typeName: formData.statusName }, token);
         } else {
           const endpoint = type === 'ticket' ? 'ticket' : 'ticket-priority';
           const res = await fetch(`${getApiUrl()}/api/status-values/${endpoint}/${status.Id}`, {
@@ -2044,6 +2110,8 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
           await statusValuesApi.createTaskPriority(formData, token);
         } else if (type === 'type') {
           await statusValuesApi.createTaskType({ ...formData, typeName: formData.statusName }, token);
+        } else if (type === 'milestone-type') {
+          await statusValuesApi.createMilestoneType({ ...formData, typeName: formData.statusName }, token);
         } else {
           const endpoint = type === 'ticket' ? 'ticket' : 'ticket-priority';
           const res = await fetch(`${getApiUrl()}/api/status-values/${endpoint}`, {
@@ -2068,7 +2136,7 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {status ? 'Edit' : 'Create'} {type === 'ticket-priority' ? 'Ticket Priority' : type === 'ticket' ? 'Ticket Status' : type === 'priority' ? 'Task Priority' : type === 'type' ? 'Task Type' : type === 'project' ? 'Project Status' : 'Task Status'}
+              {status ? 'Edit' : 'Create'} {type === 'ticket-priority' ? 'Ticket Priority' : type === 'ticket' ? 'Ticket Status' : type === 'priority' ? 'Task Priority' : type === 'type' ? 'Task Type' : type === 'milestone-type' ? 'Milestone Type' : type === 'project' ? 'Project Status' : 'Task Status'}
             </h2>
             <button
               onClick={onClose}
@@ -2110,6 +2178,35 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
                 className="w-full h-10 px-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700"
               />
             </div>
+
+            {isMilestoneType && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  SVG Icon
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {MILESTONE_TYPE_ICON_OPTIONS.map((iconOption) => {
+                    const selected = (formData.iconSvg || 'flag') === iconOption.value;
+                    return (
+                      <button
+                        key={iconOption.value}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, iconSvg: iconOption.value })}
+                        className={`h-10 rounded-lg border inline-flex items-center justify-center transition-colors ${
+                          selected
+                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                            : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                        title={iconOption.label}
+                        aria-label={iconOption.label}
+                      >
+                        {renderMilestoneTypeIcon(iconOption.value, 'w-5 h-5')}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
