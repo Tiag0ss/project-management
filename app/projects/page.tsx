@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
+import { useToast } from '@/contexts/ToastContext';
 import { projectsApi, Project, CreateProjectData } from '@/lib/api/projects';
 import { organizationsApi, Organization } from '@/lib/api/organizations';
 import { getCustomers, Customer } from '@/lib/api/customers';
@@ -13,6 +14,7 @@ import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { downloadCsv, parseBooleanLike, parseCsv, parseNumberLike, toCsv } from '@/lib/csv';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
+import EmptyState from '@/components/EmptyState';
 import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 
@@ -76,10 +78,15 @@ function computeRAG(project: Project, canViewBudgetInfo: boolean): { status: RAG
 }
 
 export default function ProjectsPage() {
+  const { showToast } = useToast();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [error, setError] = useState('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+    if (typeof window === 'undefined') return 'list';
+    const stored = window.localStorage.getItem('projects:viewMode');
+    return stored === 'grid' || stored === 'list' ? stored : 'list';
+  });
   const [filterText, setFilterText] = useState('');
   const [filterOrg, setFilterOrg] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -168,6 +175,22 @@ export default function ProjectsPage() {
     }
   }, [canViewBudgetInfo, sortField]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setShowImportModal(false);
+      setShowCreateModal(false);
+      setModalMessage(null);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem('projects:viewMode', viewMode);
+  }, [viewMode]);
+
   const loadProjects = async () => {
     if (!token) return;
     
@@ -178,6 +201,7 @@ export default function ProjectsPage() {
       setError('');
     } catch (err: any) {
       setError(err.message || 'Failed to load projects');
+      showToast({ type: 'error', title: 'Failed to load projects', message: err.message || 'Please retry.' });
     } finally {
       setIsLoadingProjects(false);
     }
@@ -203,8 +227,10 @@ export default function ProjectsPage() {
         try {
           await projectsApi.delete(id, token);
           await loadProjects();
+          showToast({ type: 'success', title: 'Project deleted', message: 'The project was deleted successfully.' });
         } catch (err: any) {
           setError(err.message || 'Failed to delete project');
+          showToast({ type: 'error', title: 'Delete failed', message: err.message || 'Please retry.' });
         }
       }
     );
@@ -218,6 +244,7 @@ export default function ProjectsPage() {
   const handleProjectSaved = () => {
     handleModalClose();
     loadProjects();
+    showToast({ type: 'success', title: 'Project saved', message: 'Changes were saved successfully.' });
   };
 
   const handleExportProjectsCsv = () => {
@@ -605,10 +632,24 @@ export default function ProjectsPage() {
     }
   };
 
+  const getAriaSort = (field: ProjectSortField): 'none' | 'ascending' | 'descending' => {
+    if (sortField !== field) return 'none';
+    return sortDirection === 'asc' ? 'ascending' : 'descending';
+  };
+
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-xl">Loading...</div>
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+        <Navbar />
+        <div className="w-full mx-auto py-6 sm:px-6 lg:px-8">
+          <div className="px-4 py-6 sm:px-0">
+            <div className="space-y-5 animate-pulse">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-24" />
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow h-24" />
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-96" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -729,35 +770,36 @@ export default function ProjectsPage() {
 
           {/* Error ProjectsMessage */}
           {error && (
-            <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
-              {error}
+            <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-300 rounded-lg flex items-center justify-between gap-3">
+              <span>{error}</span>
+              <button
+                onClick={loadProjects}
+                className="h-9 px-3 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+              >
+                Retry
+              </button>
             </div>
           )}
 
           {/* Loading State */}
-          {isLoading ? (
-            <div className="flex justify-center items-center h-64">
-              <div className="text-xl text-gray-600 dark:text-gray-400">Loading projects...</div>
+          {isLoadingProjects ? (
+            <div className="space-y-5 animate-pulse">
+              <div className={`grid grid-cols-1 md:grid-cols-2 ${internalTicketsEnabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
+                {Array.from({ length: internalTicketsEnabled ? 5 : 4 }).map((_, idx) => (
+                  <div key={`projects-kpi-skeleton-${idx}`} className="bg-white dark:bg-gray-800 rounded-lg shadow h-24" />
+                ))}
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow h-24" />
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-96" />
             </div>
           ) : projects.length === 0 ? (
-            /* Empty State */
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
-              <div className="text-6xl mb-4">📋</div>
-              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-                No projects yet
-              </h3>
-              <p className="text-gray-600 dark:text-gray-400 mb-6">
-                Get started by creating your first project
-              </p>
-              {permissions?.canCreateProjects && (
-                <button
-                  onClick={handleCreateProject}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-                >
-                  Create Project
-                </button>
-              )}
-            </div>
+            <EmptyState
+              icon="📋"
+              title="No projects yet"
+              message="Get started by creating your first project or reload if you expected data."
+              primaryAction={permissions?.canCreateProjects ? { label: 'Create Project', onClick: handleCreateProject } : undefined}
+              secondaryAction={{ label: 'Reload', onClick: loadProjects }}
+            />
           ) : (
             /* Has projects — show filter bar + view */
             <>
@@ -814,16 +856,33 @@ export default function ProjectsPage() {
                     <input type="checkbox" checked={hideCompleted} onChange={e => setHideCompleted(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
                     Hide closed / cancelled
                   </label>
-                  <span className="text-xs text-gray-400">
-                    {filteredAndSortedProjects.length !== projects.length
-                      ? `${filteredAndSortedProjects.length} of ${projects.length} projects`
-                      : `${projects.length} project${projects.length !== 1 ? 's' : ''}`}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-gray-400">
+                      {filteredAndSortedProjects.length !== projects.length
+                        ? `${filteredAndSortedProjects.length} of ${projects.length} projects`
+                        : `${projects.length} project${projects.length !== 1 ? 's' : ''}`}
+                    </span>
+                  </div>
                 </div>
               </div>
 
               {filteredAndSortedProjects.length === 0 ? (
-                <div className="text-center py-12 text-gray-500 dark:text-gray-400">No projects match the selected filters.</div>
+                  <EmptyState
+                    icon="🔎"
+                    title="No projects match the selected filters"
+                    message="Try adjusting search, organization, status, or hidden-completed settings."
+                    primaryAction={{
+                      label: 'Clear filters',
+                      onClick: () => {
+                        setFilterText('');
+                        setFilterOrg('');
+                        setFilterStatus('');
+                        setFilterRAG('');
+                        setHideCompleted(false);
+                      }
+                    }}
+                    secondaryAction={{ label: 'Reload', onClick: loadProjects }}
+                  />
               ) : viewMode === 'grid' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                   {filteredAndSortedProjects.map(project => (
@@ -843,34 +902,34 @@ export default function ProjectsPage() {
               ) : (
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
                   <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                    <thead className="bg-gray-50 dark:bg-gray-900">
+                    <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-10">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('name')}>
+                        <th aria-sort={getAriaSort('name')} className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('name')}>
                           <div className="flex items-center">Project</div>
                         </th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('rag')}>
+                        <th aria-sort={getAriaSort('rag')} className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('rag')}>
                           <div className="flex items-center justify-center">Health</div>
                         </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('status')}>
+                        <th aria-sort={getAriaSort('status')} className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('status')}>
                           <div className="flex items-center justify-center">Status</div>
                         </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('progress')}>
+                        <th aria-sort={getAriaSort('progress')} className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('progress')}>
                           <div className="flex items-center justify-center">Progress</div>
                         </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('hours')}>
+                        <th aria-sort={getAriaSort('hours')} className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('hours')}>
                           <div className="flex items-center justify-center">Hours</div>
                         </th>
                         {canViewBudgetInfo && (
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('budget')}>
+                          <th aria-sort={getAriaSort('budget')} className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('budget')}>
                             <div className="flex items-center justify-center">Budget</div>
                           </th>
                         )}
                         {internalTicketsEnabled && (
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('tickets')}>
+                          <th aria-sort={getAriaSort('tickets')} className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('tickets')}>
                             <div className="flex items-center justify-center">Tickets</div>
                           </th>
                         )}
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('endDate')}>
+                        <th aria-sort={getAriaSort('endDate')} className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('endDate')}>
                           <div className="flex items-center justify-center">Dates</div>
                         </th>
                         {additionalProjectColumnKeys.map((columnKey) => (

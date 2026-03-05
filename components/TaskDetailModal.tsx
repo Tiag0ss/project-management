@@ -4,7 +4,7 @@ import { getApiUrl } from '@/lib/api/config';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Task, CreateTaskData, tasksApi, TaskAssignee } from '@/lib/api/tasks';
-import { Project } from '@/lib/api/projects';
+import { Project, projectsApi } from '@/lib/api/projects';
 import { Customer, getCustomersByOrganization } from '@/lib/api/customers';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { usersApi, User } from '@/lib/api/users';
@@ -289,6 +289,15 @@ export default function TaskDetailModal({
     | { type: 'delete-choice'; title: string; message: string; onDeleteOnly: () => void; onDeleteWithSubtasks: () => void }
     | null
   >(null);
+  const [showTaskActionsMenu, setShowTaskActionsMenu] = useState(false);
+  const [moveTaskModal, setMoveTaskModal] = useState<{ mode: 'existing' | 'create'; open: boolean }>({ mode: 'existing', open: false });
+  const [moveTargetProjectId, setMoveTargetProjectId] = useState<number | undefined>(undefined);
+  const [availableMoveProjects, setAvailableMoveProjects] = useState<Project[]>([]);
+  const [isMovingTask, setIsMovingTask] = useState(false);
+  const [newProjectNameForMove, setNewProjectNameForMove] = useState('');
+  const [projectStatusesForMove, setProjectStatusesForMove] = useState<StatusValue[]>([]);
+  const [loadingMoveMetadata, setLoadingMoveMetadata] = useState(false);
+  const taskActionsMenuRef = useRef<HTMLDivElement>(null);
 
   const showAlert = (title: string, message: string) => {
     setModalMessage({ type: 'alert', title, message });
@@ -329,6 +338,23 @@ export default function TaskDetailModal({
     }
     return () => { if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); };
   }, [task?.Id, isGlobalProject, organizationId]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!taskActionsMenuRef.current) return;
+      if (!taskActionsMenuRef.current.contains(event.target as Node)) {
+        setShowTaskActionsMenu(false);
+      }
+    };
+
+    if (showTaskActionsMenu) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [showTaskActionsMenu]);
 
   // Tick elapsed time when timer is for current task
   useEffect(() => {
@@ -754,6 +780,119 @@ export default function TaskDetailModal({
       message: 'Are you sure you want to delete this task?',
       onConfirm: () => executeDeleteTask(false),
     });
+  };
+
+  const loadMoveTaskMetadata = async () => {
+    setLoadingMoveMetadata(true);
+    try {
+      const [projectsResponse, projectStatusesResponse] = await Promise.all([
+        projectsApi.getAll(token),
+        statusValuesApi.getProjectStatuses(organizationId, token),
+      ]);
+
+      const organizationProjects = (projectsResponse.projects || []).filter(
+        (entry) => Number(entry.OrganizationId) === Number(organizationId) && Number(entry.Id) !== Number(projectId)
+      );
+
+      setAvailableMoveProjects(organizationProjects);
+      setProjectStatusesForMove(projectStatusesResponse.statuses || []);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load move options');
+    } finally {
+      setLoadingMoveMetadata(false);
+    }
+  };
+
+  const openMoveToExistingProjectModal = async () => {
+    setShowTaskActionsMenu(false);
+    setMoveTaskModal({ mode: 'existing', open: true });
+    await loadMoveTaskMetadata();
+  };
+
+  const openCreateProjectAndMoveModal = async () => {
+    setShowTaskActionsMenu(false);
+    setMoveTaskModal({ mode: 'create', open: true });
+    await loadMoveTaskMetadata();
+  };
+
+  const closeMoveTaskModal = () => {
+    setMoveTaskModal({ mode: 'existing', open: false });
+    setMoveTargetProjectId(undefined);
+    setNewProjectNameForMove('');
+  };
+
+  const moveTaskSubtreeToProject = async (targetProjectId: number) => {
+    if (!task?.Id) return;
+
+    setIsMovingTask(true);
+    setError('');
+    try {
+      const response = await fetch(`${getApiUrl()}/api/tasks/${task.Id}/move-project`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ targetProjectId }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to move task');
+      }
+
+      closeMoveTaskModal();
+      showAlert('Task Moved', data.message || 'Task and subtasks moved successfully.');
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to move task');
+    } finally {
+      setIsMovingTask(false);
+    }
+  };
+
+  const handleConfirmMoveToExistingProject = async () => {
+    if (!moveTargetProjectId) {
+      setError('Please select a target project');
+      return;
+    }
+
+    await moveTaskSubtreeToProject(moveTargetProjectId);
+  };
+
+  const handleCreateProjectAndMove = async () => {
+    const projectName = newProjectNameForMove.trim();
+    if (!projectName) {
+      setError('Project name is required');
+      return;
+    }
+
+    const defaultStatus = projectStatusesForMove.find((status) => Number(status.IsDefault) === 1) || projectStatusesForMove[0];
+    if (!defaultStatus?.Id) {
+      setError('No project status is available for this organization');
+      return;
+    }
+
+    setIsMovingTask(true);
+    setError('');
+    try {
+      const createResult = await projectsApi.create(
+        {
+          organizationId,
+          projectName,
+          description: `Created from task "${task?.TaskName || ''}"`,
+          status: defaultStatus.Id,
+          isGlobal: false,
+        },
+        token
+      );
+
+      await moveTaskSubtreeToProject(createResult.projectId);
+    } catch (err: any) {
+      setError(err.message || 'Failed to create project and move task');
+      setIsMovingTask(false);
+    }
   };
 
   const handleAddAssignee = (userId: number) => {
@@ -1224,6 +1363,7 @@ export default function TaskDetailModal({
 
   const canSaveTask = !!(task?.Id ? permissions?.canManageTasks : permissions?.canCreateTasks);
   const canDeleteTask = !!(task?.Id && permissions?.canDeleteTasks);
+  const headerIconButtonClass = 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl';
   const visibleTabs = (task?.Id
     ? (['details', 'checklist', 'hours', 'comments', 'attachments', 'history'] as const)
     : (['details', 'hours'] as const)
@@ -1348,12 +1488,48 @@ export default function TaskDetailModal({
                 </div>
               )}
             </div>
-            <button
-              onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl ml-4"
-            >
-              ×
-            </button>
+            <div ref={taskActionsMenuRef} className="relative ml-4 flex items-center gap-2">
+              {task?.Id && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowTaskActionsMenu((prev) => !prev)}
+                    className={headerIconButtonClass}
+                    title="Task actions"
+                    aria-label="Task actions"
+                  >
+                    ⋯
+                  </button>
+                  {showTaskActionsMenu && (
+                    <div className="absolute right-10 top-0 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20 py-1">
+                      <button
+                        type="button"
+                        onClick={openMoveToExistingProjectModal}
+                        className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        Move task to project
+                      </button>
+                      {isGlobalProject && (
+                        <button
+                          type="button"
+                          onClick={openCreateProjectAndMoveModal}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        >
+                          Create project and move task
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+              <button
+                onClick={onClose}
+                className={headerIconButtonClass}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
           </div>
 
           {/* Tabs */}
@@ -2662,6 +2838,72 @@ export default function TaskDetailModal({
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                 >
                   {manualAllocationModal.mode === 'add' ? 'Add' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {moveTaskModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
+                {moveTaskModal.mode === 'existing' ? 'Move Task to Project' : 'Create Project and Move Task'}
+              </h3>
+
+              {loadingMoveMetadata ? (
+                <div className="text-sm text-gray-500 dark:text-gray-400">Loading options...</div>
+              ) : moveTaskModal.mode === 'existing' ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    This will move the selected task and all its subtasks.
+                  </p>
+                  <SearchableSelect
+                    value={moveTargetProjectId}
+                    onChange={setMoveTargetProjectId}
+                    options={availableMoveProjects.map((entry) => ({ id: entry.Id, label: entry.ProjectName }))}
+                    placeholder="Select target project..."
+                    emptyMessage="No projects available"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    A new project will be created in this organization, then the selected task and subtasks will be moved.
+                  </p>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      New Project Name
+                    </label>
+                    <input
+                      type="text"
+                      value={newProjectNameForMove}
+                      onChange={(e) => setNewProjectNameForMove(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      placeholder="Enter project name"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 mt-6">
+                <button
+                  type="button"
+                  onClick={closeMoveTaskModal}
+                  disabled={isMovingTask}
+                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-900 dark:text-white rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={moveTaskModal.mode === 'existing' ? handleConfirmMoveToExistingProject : handleCreateProjectAndMove}
+                  disabled={isMovingTask || loadingMoveMetadata}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
+                >
+                  {isMovingTask ? 'Moving...' : 'Confirm'}
                 </button>
               </div>
             </div>

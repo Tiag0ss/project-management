@@ -1865,6 +1865,138 @@ router.put('/:id/order', authenticateToken, async (req: AuthRequest, res: Respon
   }
 });
 
+// Move task (and all descendants) to another project
+router.post('/:id/move-project', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const taskId = Number(req.params.id);
+    const targetProjectId = Number(req.body?.targetProjectId);
+
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid task id' });
+    }
+
+    if (!Number.isInteger(targetProjectId) || targetProjectId <= 0) {
+      return res.status(400).json({ success: false, message: 'targetProjectId is required' });
+    }
+
+    const [sourceRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.Id, t.ProjectId, t.ParentTaskId, t.TaskName,
+              p.OrganizationId,
+              COALESCE(pg.CanManageTasks, 0) as CanManageTasks,
+              om.Role
+       FROM Tasks t
+       JOIN Projects p ON t.ProjectId = p.Id
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE t.Id = ? AND om.UserId = ?`,
+      [taskId, userId]
+    );
+
+    if (sourceRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Task not found or access denied' });
+    }
+
+    const sourceTask = sourceRows[0];
+    const canManage = sourceTask.Role === 'Owner' || sourceTask.Role === 'Admin' || Number(sourceTask.CanManageTasks || 0) === 1;
+    if (!canManage) {
+      return res.status(403).json({ success: false, message: 'You do not have permission to move tasks' });
+    }
+
+    const [targetRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT p.Id, p.OrganizationId, COALESCE(p.IsGlobal, 0) as IsGlobal
+       FROM Projects p
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       WHERE p.Id = ? AND om.UserId = ?`,
+      [targetProjectId, userId]
+    );
+
+    if (targetRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Target project not found or access denied' });
+    }
+
+    const targetProject = targetRows[0];
+
+    if (Number(targetProject.OrganizationId) !== Number(sourceTask.OrganizationId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tasks can only be moved between projects in the same organization'
+      });
+    }
+
+    if (Number(sourceTask.ProjectId) === targetProjectId) {
+      return res.json({ success: true, message: 'Task is already in this project', movedTaskCount: 0 });
+    }
+
+    const collectDescendants = async (parentId: number): Promise<number[]> => {
+      const [children] = await pool.execute<RowDataPacket[]>(
+        'SELECT Id FROM Tasks WHERE ParentTaskId = ?',
+        [parentId]
+      );
+
+      let ids: number[] = [];
+      for (const child of children) {
+        ids.push(Number(child.Id));
+        ids = ids.concat(await collectDescendants(Number(child.Id)));
+      }
+      return ids;
+    };
+
+    const descendantIds = await collectDescendants(taskId);
+    const movedTaskIds = [taskId, ...descendantIds];
+    const taskPlaceholders = movedTaskIds.map(() => '?').join(',');
+
+    // Move all tasks in the selected subtree to target project
+    if (Number(targetProject.IsGlobal) === 1) {
+      await pool.execute(
+        `UPDATE Tasks SET ProjectId = ? WHERE Id IN (${taskPlaceholders})`,
+        [targetProjectId, ...movedTaskIds]
+      );
+    } else {
+      await pool.execute(
+        `UPDATE Tasks SET ProjectId = ?, CustomerId = NULL WHERE Id IN (${taskPlaceholders})`,
+        [targetProjectId, ...movedTaskIds]
+      );
+    }
+
+    // Root task might have a parent in the old project; detach to avoid cross-project hierarchy
+    await pool.execute('UPDATE Tasks SET ParentTaskId = NULL WHERE Id = ?', [taskId]);
+
+    // Remove dependencies pointing to tasks outside the moved subtree
+    await pool.execute(
+      `UPDATE Tasks
+       SET DependsOnTaskId = NULL
+       WHERE Id IN (${taskPlaceholders})
+         AND DependsOnTaskId IS NOT NULL
+         AND DependsOnTaskId NOT IN (${taskPlaceholders})`,
+      [...movedTaskIds, ...movedTaskIds]
+    );
+
+    await createTaskHistory(taskId, userId!, 'updated', 'ProjectId', String(sourceTask.ProjectId), String(targetProjectId));
+
+    await logActivity(
+      userId ?? null,
+      req.user?.username || null,
+      'TASK_MOVE_PROJECT',
+      'Task',
+      taskId,
+      sourceTask.TaskName,
+      `Moved task subtree "${sourceTask.TaskName}" to project ${targetProjectId} (${movedTaskIds.length} task(s))`,
+      req.ip,
+      req.get('user-agent')
+    );
+
+    res.json({
+      success: true,
+      message: `Task moved successfully (${movedTaskIds.length} task(s) moved)` ,
+      movedTaskCount: movedTaskIds.length
+    });
+  } catch (error) {
+    console.error('Move task project error:', error);
+    res.status(500).json({ success: false, message: 'Failed to move task to another project' });
+  }
+});
+
 /**
  * @swagger
  * /api/tasks/{id}:
@@ -2882,13 +3014,6 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
         if (!Number.isNaN(parsedCustomerId) && validOrganizationCustomerIds.has(parsedCustomerId)) {
           mappedCustomerId = parsedCustomerId;
         }
-      }
-
-      if (isGlobalProject && !mappedCustomerId) {
-        return res.status(400).json({
-          success: false,
-          message: `Customer is required for global project imports (missing mapping for ticket ${issue.key})`
-        });
       }
 
       const [result] = await pool.execute<ResultSetHeader>(

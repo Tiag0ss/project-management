@@ -75,3 +75,9 @@ body.nav-left-fixed-collapsed .nav-top-compensate-left-collapsed {
     width: 100%;
   }
 }
+
+table.grid-density-compact th,
+table.grid-density-compact td {
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+}

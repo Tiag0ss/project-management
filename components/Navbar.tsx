@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import RichTextEditor from './RichTextEditor';
 import SearchableSelect from './SearchableSelect';
+import NavDropdownMenu from './navbar/NavDropdownMenu';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { io, Socket } from 'socket.io-client';
 import { ThemeMode, getStoredThemeMode, setThemeMode } from '@/lib/theme';
@@ -1376,44 +1377,28 @@ export default function Navbar() {
 
                 {/* Work Dropdown (Projects & Planning) */}
                 {!isCustomerUser && (permissionsLoading || permissions?.canViewProjects || permissions?.canManageProjects || permissions?.canCreateProjects || permissions?.canViewPlanning) && (
-                  <div
-                    className="relative"
-                    ref={workMenuRef}
+                  <NavDropdownMenu
+                    menuRef={workMenuRef}
+                    isOpen={workMenuOpen}
+                    title="🗂️ Work"
+                    onToggle={() => setWorkMenuOpen(!workMenuOpen)}
                     onMouseEnter={handleWorkMenuMouseEnter}
                     onMouseLeave={handleWorkMenuMouseLeave}
-                  >
-                    <button
-                      onClick={() => setWorkMenuOpen(!workMenuOpen)}
-                      className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium flex items-center space-x-1"
-                    >
-                      <span>🗂️ Work</span>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                    {workMenuOpen && (
-                      <div className="absolute left-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg py-1 z-50 border border-gray-200 dark:border-gray-700">
-                        {(permissionsLoading || permissions?.canViewProjects || permissions?.canManageProjects || permissions?.canCreateProjects) && (
-                          <a
-                            href="/projects"
-                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                            onClick={() => setWorkMenuOpen(false)}
-                          >
-                            📁 Projects
-                          </a>
-                        )}
-                        {(permissionsLoading || permissions?.canViewPlanning) && (
-                          <a
-                            href="/planning"
-                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                            onClick={() => setWorkMenuOpen(false)}
-                          >
-                            📅 Planning
-                          </a>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                    items={[
+                      {
+                        label: '📁 Projects',
+                        href: '/projects',
+                        visible: !!(permissionsLoading || permissions?.canViewProjects || permissions?.canManageProjects || permissions?.canCreateProjects),
+                        onClick: () => setWorkMenuOpen(false),
+                      },
+                      {
+                        label: '📅 Planning',
+                        href: '/planning',
+                        visible: !!(permissionsLoading || permissions?.canViewPlanning),
+                        onClick: () => setWorkMenuOpen(false),
+                      },
+                    ]}
+                  />
                 )}
 
                 {/* Tickets */}
@@ -1438,62 +1423,40 @@ export default function Navbar() {
 
                 {/* Management Dropdown (Customers & Organizations) */}
                 {canShowManagementMenu && (
-                  <div
-                    className="relative"
-                    ref={managementMenuRef}
+                  <NavDropdownMenu
+                    menuRef={managementMenuRef}
+                    isOpen={managementMenuOpen}
+                    title="⚙️ Management"
+                    onToggle={() => setManagementMenuOpen(!managementMenuOpen)}
                     onMouseEnter={handleManagementMenuMouseEnter}
                     onMouseLeave={handleManagementMenuMouseLeave}
-                  >
-                    <button
-                      onClick={() => setManagementMenuOpen(!managementMenuOpen)}
-                      className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium flex items-center space-x-1"
-                    >
-                      <span>⚙️ Management</span>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                    {managementMenuOpen && (
-                      <div className="absolute left-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg py-1 z-50 border border-gray-200 dark:border-gray-700">
-                        {canShowCustomersOption && (
-                          <a
-                            href="/customers"
-                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                            onClick={() => setManagementMenuOpen(false)}
-                          >
-                            🏢 Customers
-                          </a>
-                        )}
-                        {canShowApplicationsOption && (
-                          <a
-                            href="/applications"
-                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                            onClick={() => setManagementMenuOpen(false)}
-                          >
-                            🧩 Applications
-                          </a>
-                        )}
-                        {canShowOrganizationsOption && (
-                          <a
-                            href="/organizations"
-                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                            onClick={() => setManagementMenuOpen(false)}
-                          >
-                            🏬 Organizations
-                          </a>
-                        )}
-                        {canShowAnyApprovalsOption && (
-                          <a
-                            href={canShowApprovalsOption ? '/approvals?tab=time' : '/approvals?tab=vacations'}
-                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                            onClick={() => setManagementMenuOpen(false)}
-                          >
-                            ✅ Approvals
-                          </a>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                    items={[
+                      {
+                        label: '🏢 Customers',
+                        href: '/customers',
+                        visible: !!canShowCustomersOption,
+                        onClick: () => setManagementMenuOpen(false),
+                      },
+                      {
+                        label: '🧩 Applications',
+                        href: '/applications',
+                        visible: !!canShowApplicationsOption,
+                        onClick: () => setManagementMenuOpen(false),
+                      },
+                      {
+                        label: '🏬 Organizations',
+                        href: '/organizations',
+                        visible: !!canShowOrganizationsOption,
+                        onClick: () => setManagementMenuOpen(false),
+                      },
+                      {
+                        label: '✅ Approvals',
+                        href: canShowApprovalsOption ? '/approvals?tab=time' : '/approvals?tab=vacations',
+                        visible: !!canShowAnyApprovalsOption,
+                        onClick: () => setManagementMenuOpen(false),
+                      },
+                    ]}
+                  />
                 )}
 
                 {/* Reports */}

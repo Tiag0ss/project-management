@@ -12,6 +12,7 @@ interface GridPreferencesPayload {
   columnSizeMode?: Record<string, 'fixed' | 'grow'>;
   sortField?: string | null;
   sortDirection?: 'asc' | 'desc' | null;
+  rowDensity?: 'compact' | 'comfortable';
 }
 
 const sanitizePreferences = (raw: any): GridPreferencesPayload => {
@@ -54,6 +55,10 @@ const sanitizePreferences = (raw: any): GridPreferencesPayload => {
     ? value.sortDirection
     : null;
 
+  const rowDensity = value.rowDensity === 'compact' || value.rowDensity === 'comfortable'
+    ? value.rowDensity
+    : 'comfortable';
+
   return {
     columnOrder,
     hiddenColumns,
@@ -61,6 +66,7 @@ const sanitizePreferences = (raw: any): GridPreferencesPayload => {
     columnSizeMode,
     sortField,
     sortDirection,
+    rowDensity,
   };
 };
 

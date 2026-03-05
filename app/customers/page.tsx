@@ -6,9 +6,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { usePermissions } from '@/contexts/PermissionsContext';
+import { useToast } from '@/contexts/ToastContext';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import SearchableSelect from '@/components/SearchableSelect';
+import EmptyState from '@/components/EmptyState';
 import { projectsApi, Project } from '@/lib/api/projects';
 import { downloadCsv, parseBooleanLike, parseCsv, toCsv } from '@/lib/csv';
 import { 
@@ -46,7 +48,11 @@ export default function CustomersPage() {
   const [supportUsers, setSupportUsers] = useState<{Id: number; FirstName: string; LastName: string; Username: string}[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+    if (typeof window === 'undefined') return 'list';
+    const stored = window.localStorage.getItem('customers:viewMode');
+    return stored === 'grid' || stored === 'list' ? stored : 'list';
+  });
   const [customerProjectStats, setCustomerProjectStats] = useState<Record<number, CustomerProjectStats>>({});
   
   // Search and sort
@@ -84,6 +90,7 @@ export default function CustomersPage() {
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
   const [isImportingCsv, setIsImportingCsv] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const { showToast } = useToast();
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -128,6 +135,33 @@ export default function CustomersPage() {
       setSortOrder('asc');
     }
   }, [internalTicketsEnabled, sortBy]);
+
+  useEffect(() => {
+    window.localStorage.setItem('customers:viewMode', viewMode);
+  }, [viewMode]);
+
+  useEffect(() => {
+    const handleEscClose = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+
+      if (confirmModal) {
+        setConfirmModal(null);
+        return;
+      }
+
+      if (showImportModal) {
+        setShowImportModal(false);
+        return;
+      }
+
+      if (showModal) {
+        closeModal();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscClose);
+    return () => window.removeEventListener('keydown', handleEscClose);
+  }, [confirmModal, showImportModal, showModal]);
 
   const additionalCustomerColumnKeys = useMemo(() => {
     const excludedKeys = new Set<string>([
@@ -302,6 +336,11 @@ export default function CustomersPage() {
     }
   };
 
+  const getAriaSort = (field: CustomerSortField): 'none' | 'ascending' | 'descending' => {
+    if (sortBy !== field) return 'none';
+    return sortOrder === 'asc' ? 'ascending' : 'descending';
+  };
+
   const loadData = async () => {
     setIsLoading(true);
     try {
@@ -360,7 +399,9 @@ export default function CustomersPage() {
         setCustomerProjectStats({});
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to load data');
+      const message = err.message || 'Failed to load data';
+      setError(message);
+      showToast({ type: 'error', message });
     } finally {
       setIsLoading(false);
     }
@@ -465,8 +506,11 @@ export default function CustomersPage() {
 
       closeModal();
       loadData();
+      showToast({ type: 'success', message: editingCustomer ? 'Customer updated successfully' : 'Customer created successfully' });
     } catch (err: any) {
-      setError(err.message || 'Failed to save customer');
+      const message = err.message || 'Failed to save customer';
+      setError(message);
+      showToast({ type: 'error', message });
     } finally {
       setIsSaving(false);
     }
@@ -482,8 +526,11 @@ export default function CustomersPage() {
           await deleteCustomer(token!, customer.Id);
           setConfirmModal(null);
           loadData();
+          showToast({ type: 'success', message: 'Customer deleted successfully' });
         } catch (err: any) {
-          setError(err.message || 'Failed to delete customer');
+          const message = err.message || 'Failed to delete customer';
+          setError(message);
+          showToast({ type: 'error', message });
           setConfirmModal(null);
         }
       }
@@ -604,12 +651,17 @@ export default function CustomersPage() {
       await loadData();
 
       if (failures.length) {
-        setError(`Imported ${successCount}/${rows.length} customers. ${failures.slice(0, 5).join(' | ')}${failures.length > 5 ? ' | ...' : ''}`);
+        const message = `Imported ${successCount}/${rows.length} customers. ${failures.slice(0, 5).join(' | ')}${failures.length > 5 ? ' | ...' : ''}`;
+        setError(message);
+        showToast({ type: 'error', message });
       } else {
         setError('');
+        showToast({ type: 'success', message: `Imported ${successCount} customers successfully` });
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to import customers CSV');
+      const message = err.message || 'Failed to import customers CSV';
+      setError(message);
+      showToast({ type: 'error', message });
     } finally {
       setIsImportingCsv(false);
     }
@@ -628,9 +680,10 @@ export default function CustomersPage() {
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Navbar />
         <div className="w-full mx-auto px-4 py-8">
-          <div className="flex items-center justify-center">
-            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <span className="ml-3 text-gray-600 dark:text-gray-400">Loading...</span>
+          <div className="space-y-5 animate-pulse">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-20" />
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-14" />
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-96" />
           </div>
         </div>
       </div>
@@ -730,27 +783,39 @@ export default function CustomersPage() {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
-            {error}
+          <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <span>{error}</span>
+            <button
+              onClick={loadData}
+              className="px-3 py-1.5 bg-red-700 hover:bg-red-800 text-white rounded text-sm font-medium"
+            >
+              Retry
+            </button>
           </div>
         )}
 
         {customers.length === 0 ? (
-          <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
-            <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No customers yet</h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-4">Get started by adding your first customer.</p>
-            {permissions?.canCreateCustomers && (
-            <button
-              onClick={openCreateModal}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-            >
-              Add Customer
-            </button>
-            )}
-          </div>
+          <EmptyState
+            icon="👥"
+            title="No customers yet"
+            message="Get started by adding your first customer."
+            primaryAction={
+              permissions?.canCreateCustomers
+                ? {
+                    label: 'Add Customer',
+                    onClick: openCreateModal,
+                  }
+                : undefined
+            }
+          />
+        ) : filteredCustomers.length === 0 ? (
+          <EmptyState
+            icon="🔎"
+            title="No customers match your search"
+            message="Try a different search term or clear current filters."
+            primaryAction={{ label: 'Clear filters', onClick: () => setSearchQuery('') }}
+            secondaryAction={{ label: 'Reload', onClick: loadData }}
+          />
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredCustomers.map((customer) => {
@@ -852,44 +917,48 @@ export default function CustomersPage() {
         ) : (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-900">
+              <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-10">
                 <tr>
                   <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                    aria-sort={getAriaSort('name')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                     onClick={() => handleSort('name')}
                   >
                     <div className="flex items-center">Name</div>
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     External Name
                   </th>
                   <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                    aria-sort={getAriaSort('email')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                     onClick={() => handleSort('email')}
                   >
                     <div className="flex items-center">Email</div>
                   </th>
                   <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                    aria-sort={getAriaSort('phone')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                     onClick={() => handleSort('phone')}
                   >
                     <div className="flex items-center">Phone</div>
                   </th>
                   {internalTicketsEnabled && (
                     <th 
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                      aria-sort={getAriaSort('tickets')}
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('tickets')}
                     >
                       <div className="flex items-center justify-center">Open Tickets</div>
                     </th>
                   )}
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Projects
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Task Progress
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Organizations
                   </th>
                   {additionalCustomerColumnKeys.map((columnKey) => (
@@ -897,7 +966,7 @@ export default function CustomersPage() {
                       key={`extra-customer-header-${columnKey}`}
                       data-column-key={`extra-${columnKey}`}
                       data-default-hidden="true"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
                     >
                       {formatExtraColumnLabel(columnKey)}
                     </th>

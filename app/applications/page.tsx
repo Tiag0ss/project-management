@@ -4,9 +4,11 @@ import { getApiUrl } from '@/lib/api/config';
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
+import { useToast } from '@/contexts/ToastContext';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
+import EmptyState from '@/components/EmptyState';
 import { downloadCsv, parseBooleanLike, parseCsv, toCsv } from '@/lib/csv';
 
 interface Application {
@@ -49,7 +51,11 @@ export default function ApplicationsPage() {
   const [error, setError] = useState('');
   
   // View and filters
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => {
+    if (typeof window === 'undefined') return 'list';
+    const stored = window.localStorage.getItem('applications:viewMode');
+    return stored === 'grid' || stored === 'list' ? stored : 'list';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [filterOrg, setFilterOrg] = useState('');
   const [filterVersions, setFilterVersions] = useState<'all' | 'with' | 'without'>('all');
@@ -77,6 +83,7 @@ export default function ApplicationsPage() {
   } | null>(null);
   const [isImportingCsv, setIsImportingCsv] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const { showToast } = useToast();
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
@@ -85,6 +92,33 @@ export default function ApplicationsPage() {
   useEffect(() => {
     if (token) loadData();
   }, [token]);
+
+  useEffect(() => {
+    window.localStorage.setItem('applications:viewMode', viewMode);
+  }, [viewMode]);
+
+  useEffect(() => {
+    const handleEscClose = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+
+      if (confirmModal) {
+        setConfirmModal(null);
+        return;
+      }
+
+      if (showImportModal) {
+        setShowImportModal(false);
+        return;
+      }
+
+      if (showModal) {
+        closeModal();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscClose);
+    return () => window.removeEventListener('keydown', handleEscClose);
+  }, [confirmModal, showImportModal, showModal]);
 
   // Get unique organizations
   const orgNames = Array.from(new Set(applications.map(a => a.OrganizationName).filter(Boolean))).sort();
@@ -280,6 +314,11 @@ export default function ApplicationsPage() {
     }
   };
 
+  const getAriaSort = (field: ApplicationSortField): 'none' | 'ascending' | 'descending' => {
+    if (sortField !== field) return 'none';
+    return sortDirection === 'asc' ? 'ascending' : 'descending';
+  };
+
   const loadData = async () => {
     setIsLoading(true);
     try {
@@ -309,7 +348,9 @@ export default function ApplicationsPage() {
         setCustomers(data.data || []);
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to load data');
+      const message = err.message || 'Failed to load data';
+      setError(message);
+      showToast({ type: 'error', message });
     } finally {
       setIsLoading(false);
     }
@@ -379,8 +420,11 @@ export default function ApplicationsPage() {
 
       closeModal();
       loadData();
+      showToast({ type: 'success', message: editingApp ? 'Application updated successfully' : 'Application created successfully' });
     } catch (err: any) {
-      setError(err.message || 'Failed to save application');
+      const message = err.message || 'Failed to save application';
+      setError(message);
+      showToast({ type: 'error', message });
     } finally {
       setIsSaving(false);
     }
@@ -398,8 +442,11 @@ export default function ApplicationsPage() {
           });
           setConfirmModal(null);
           loadData();
+          showToast({ type: 'success', message: 'Application deleted successfully' });
         } catch (err: any) {
-          setError(err.message || 'Failed to delete application');
+          const message = err.message || 'Failed to delete application';
+          setError(message);
+          showToast({ type: 'error', message });
           setConfirmModal(null);
         }
       },
@@ -510,12 +557,17 @@ export default function ApplicationsPage() {
       await loadData();
 
       if (failures.length) {
-        setError(`Imported ${successCount}/${rows.length} applications. ${failures.slice(0, 5).join(' | ')}${failures.length > 5 ? ' | ...' : ''}`);
+        const message = `Imported ${successCount}/${rows.length} applications. ${failures.slice(0, 5).join(' | ')}${failures.length > 5 ? ' | ...' : ''}`;
+        setError(message);
+        showToast({ type: 'error', message });
       } else {
         setError('');
+        showToast({ type: 'success', message: `Imported ${successCount} applications successfully` });
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to import applications CSV');
+      const message = err.message || 'Failed to import applications CSV';
+      setError(message);
+      showToast({ type: 'error', message });
     } finally {
       setIsImportingCsv(false);
     }
@@ -533,9 +585,12 @@ export default function ApplicationsPage() {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Navbar />
-        <div className="flex items-center justify-center py-20">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-          <span className="ml-3 text-gray-600 dark:text-gray-400">Loading...</span>
+        <div className="w-full mx-auto px-4 py-8">
+          <div className="space-y-5 animate-pulse">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-20" />
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-14" />
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-96" />
+          </div>
         </div>
       </div>
     );
@@ -674,47 +729,66 @@ export default function ApplicationsPage() {
         )}
 
         {error && (
-          <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
-            {error}
+          <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <span>{error}</span>
+            <button
+              onClick={loadData}
+              className="px-3 py-1.5 bg-red-700 hover:bg-red-800 text-white rounded text-sm font-medium"
+            >
+              Retry
+            </button>
           </div>
         )}
 
         {/* Applications View */}
         {filteredAndSortedApplications.length === 0 && applications.length === 0 ? (
-          <div className="text-center py-16 bg-white dark:bg-gray-800 rounded-lg shadow">
-            <div className="text-5xl mb-4">📦</div>
-            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">No applications yet</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">Get started by creating your first application</p>
-            {permissions?.canCreateApplications && (
-              <button
-                onClick={openCreateModal}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-              >
-                Create Application
-              </button>
-            )}
-          </div>
+          <EmptyState
+            icon="📦"
+            title="No applications yet"
+            message="Get started by creating your first application"
+            primaryAction={
+              permissions?.canCreateApplications
+                ? {
+                    label: 'Create Application',
+                    onClick: openCreateModal,
+                  }
+                : undefined
+            }
+          />
         ) : filteredAndSortedApplications.length === 0 ? (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">No applications match the selected filters.</div>
+          <EmptyState
+            icon="🔎"
+            title="No applications match the selected filters"
+            message="Try adjusting search, organization, or versions filter."
+            primaryAction={{
+              label: 'Clear filters',
+              onClick: () => {
+                setSearchQuery('');
+                setFilterOrg('');
+                setFilterVersions('all');
+              },
+            }}
+            secondaryAction={{ label: 'Reload', onClick: loadData }}
+          />
         ) : viewMode === 'list' ? (
           /* List View */
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-900">
+              <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-10">
                 <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('name')}>
+                  <th aria-sort={getAriaSort('name')} scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('name')}>
                     <div className="flex items-center">Application</div>
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('organization')}>
+                  <th aria-sort={getAriaSort('organization')} scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('organization')}>
                     <div className="flex items-center">Organization</div>
                   </th>
-                  <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('projects')}>
+                  <th aria-sort={getAriaSort('projects')} scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('projects')}>
                     <div className="flex items-center justify-center">Projects</div>
                   </th>
-                  <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('versions')}>
+                  <th aria-sort={getAriaSort('versions')} scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('versions')}>
                     <div className="flex items-center justify-center">Versions</div>
                   </th>
-                  <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('customers')}>
+                  <th aria-sort={getAriaSort('customers')} scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none" onClick={() => handleSort('customers')}>
                     <div className="flex items-center justify-center">Customers</div>
                   </th>
                   {additionalApplicationColumnKeys.map((columnKey) => (
@@ -722,7 +796,7 @@ export default function ApplicationsPage() {
                       key={`extra-application-header-${columnKey}`}
                       data-column-key={`extra-${columnKey}`}
                       data-default-hidden="true"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
                     >
                       {formatExtraColumnLabel(columnKey)}
                     </th>

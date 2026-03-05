@@ -12,6 +12,7 @@ interface RuntimeGridPreference {
   columnSizeMode: Record<string, 'fixed' | 'grow'>;
   sortField: string | null;
   sortDirection: 'asc' | 'desc' | null;
+  rowDensity: 'compact' | 'comfortable';
 }
 
 const normalizeHeaderKey = (value: string) =>
@@ -38,6 +39,7 @@ const defaultPreference = (columnIds: string[]): RuntimeGridPreference => ({
   columnSizeMode: Object.fromEntries(columnIds.map((columnId) => [columnId, 'grow' as const])),
   sortField: null,
   sortDirection: null,
+  rowDensity: 'comfortable',
 });
 
 const getDefaultHiddenColumns = (headerCells: HTMLTableCellElement[], columnIds: string[]) =>
@@ -83,8 +85,11 @@ const sanitizePreference = (raw: Partial<GridPreference> | null | undefined, ava
 
   const sortField = typeof raw?.sortField === 'string' && available.has(raw.sortField) ? raw.sortField : null;
   const sortDirection = raw?.sortDirection === 'asc' || raw?.sortDirection === 'desc' ? raw.sortDirection : null;
+  const rowDensity = raw?.rowDensity === 'compact' || raw?.rowDensity === 'comfortable'
+    ? raw.rowDensity
+    : 'comfortable';
 
-  return { columnOrder, hiddenColumns, columnSizing, columnSizeMode, sortField, sortDirection };
+  return { columnOrder, hiddenColumns, columnSizing, columnSizeMode, sortField, sortDirection, rowDensity };
 };
 
 const isActionHeader = (label: string) => {
@@ -126,6 +131,7 @@ export default function GlobalGridEnhancer() {
             columnSizeMode: pref.columnSizeMode && typeof pref.columnSizeMode === 'object' ? pref.columnSizeMode : {},
             sortField: pref.sortField ?? null,
             sortDirection: pref.sortDirection ?? null,
+            rowDensity: pref.rowDensity === 'compact' || pref.rowDensity === 'comfortable' ? pref.rowDensity : 'comfortable',
           });
         });
         setPreferencesMap(map);
@@ -284,6 +290,7 @@ export default function GlobalGridEnhancer() {
                 columnSizeMode: runtimePref.columnSizeMode,
                 sortField: runtimePref.sortField,
                 sortDirection: runtimePref.sortDirection,
+                rowDensity: runtimePref.rowDensity,
               });
             } catch {
               // Keep UI functional even if persistence fails
@@ -438,7 +445,15 @@ export default function GlobalGridEnhancer() {
           targetHeader.appendChild(indicator);
         };
 
+        const applyRowDensity = () => {
+          table.classList.remove('grid-density-compact');
+          if (runtimePref.rowDensity === 'compact') {
+            table.classList.add('grid-density-compact');
+          }
+        };
+
         const refreshTable = () => {
+          applyRowDensity();
           applyColumnLayout();
           applySort();
           applySortIndicators();
@@ -460,8 +475,11 @@ export default function GlobalGridEnhancer() {
 
             headerCell.dataset.gridSortBound = 'true';
             headerCell.style.cursor = 'pointer';
+            headerCell.tabIndex = 0;
+            headerCell.setAttribute('role', 'button');
+            headerCell.setAttribute('aria-label', `${label || 'Column'} sort`);
 
-            headerCell.addEventListener('click', () => {
+            const applySortForColumn = () => {
               const currentlySorted = runtimePref.sortField === columnId;
               const nextDirection: 'asc' | 'desc' = currentlySorted && runtimePref.sortDirection === 'asc' ? 'desc' : 'asc';
 
@@ -473,6 +491,24 @@ export default function GlobalGridEnhancer() {
 
               refreshTable();
               savePreferenceDebounced();
+            };
+
+            headerCell.addEventListener('click', applySortForColumn);
+
+            headerCell.addEventListener('keydown', (event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              applySortForColumn();
+            });
+
+            headerCell.addEventListener('focus', () => {
+              headerCell.style.outline = '2px solid rgb(59 130 246)';
+              headerCell.style.outlineOffset = '2px';
+            });
+
+            headerCell.addEventListener('blur', () => {
+              headerCell.style.removeProperty('outline');
+              headerCell.style.removeProperty('outline-offset');
             });
           });
         };
@@ -579,6 +615,40 @@ export default function GlobalGridEnhancer() {
           button.type = 'button';
           button.className = 'h-9 px-3 rounded-lg text-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-colors';
           button.textContent = 'Columns';
+
+          const densityGroup = document.createElement('div');
+          densityGroup.className = 'h-9 flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1';
+
+          const comfyButton = document.createElement('button');
+          comfyButton.type = 'button';
+          comfyButton.className = `h-7 px-3 text-sm rounded-md transition-colors ${runtimePref.rowDensity === 'comfortable' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`;
+          comfyButton.textContent = 'Comfy';
+          comfyButton.addEventListener('click', () => {
+            runtimePref = {
+              ...runtimePref,
+              rowDensity: 'comfortable',
+            };
+            refreshTable();
+            ensureControlPanel();
+            savePreferenceDebounced();
+          });
+
+          const compactButton = document.createElement('button');
+          compactButton.type = 'button';
+          compactButton.className = `h-7 px-3 text-sm rounded-md transition-colors ${runtimePref.rowDensity === 'compact' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`;
+          compactButton.textContent = 'Compact';
+          compactButton.addEventListener('click', () => {
+            runtimePref = {
+              ...runtimePref,
+              rowDensity: 'compact',
+            };
+            refreshTable();
+            ensureControlPanel();
+            savePreferenceDebounced();
+          });
+
+          densityGroup.appendChild(comfyButton);
+          densityGroup.appendChild(compactButton);
 
           const panel = document.createElement('div');
           panel.className = 'hidden fixed z-[2147483647] w-[28rem] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3';
@@ -771,7 +841,12 @@ export default function GlobalGridEnhancer() {
             panel.classList.toggle('hidden');
           });
 
-          toolbar.appendChild(button);
+          const toolbarControls = document.createElement('div');
+          toolbarControls.className = 'flex items-center gap-2';
+          toolbarControls.appendChild(densityGroup);
+          toolbarControls.appendChild(button);
+
+          toolbar.appendChild(toolbarControls);
           toolbar.appendChild(panel);
         };
 

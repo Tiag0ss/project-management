@@ -10,6 +10,7 @@ export interface GridPreference {
   columnSizeMode?: Record<string, 'fixed' | 'grow'>;
   sortField?: string | null;
   sortDirection?: 'asc' | 'desc' | null;
+  rowDensity?: 'compact' | 'comfortable';
 }
 
 export async function getAllGridPreferences(token: string): Promise<GridPreference[]> {

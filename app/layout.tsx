@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { PermissionsProvider } from "@/contexts/PermissionsContext";
+import { ToastProvider } from "@/contexts/ToastContext";
 import BrandingRuntime from "@/components/BrandingRuntime";
 import ThemeRuntime from "@/components/ThemeRuntime";
 import GlobalGridEnhancer from "@/components/GlobalGridEnhancer";
@@ -34,10 +35,12 @@ export default function RootLayout({
       >
         <AuthProvider>
           <PermissionsProvider>
-            <ThemeRuntime />
-            <BrandingRuntime />
-            <GlobalGridEnhancer />
-            {children}
+            <ToastProvider>
+              <ThemeRuntime />
+              <BrandingRuntime />
+              <GlobalGridEnhancer />
+              {children}
+            </ToastProvider>
           </PermissionsProvider>
         </AuthProvider>
       </body>

@@ -6,10 +6,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
+import { useToast } from '@/contexts/ToastContext';
 import { organizationsApi, Organization, CreateOrganizationData } from '@/lib/api/organizations';
 import { downloadCsv, parseCsv, toCsv } from '@/lib/csv';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
+import EmptyState from '@/components/EmptyState';
 
 type OrgSortField = 'name' | 'role' | 'members' | 'projects' | 'tickets' | 'tasks';
 type SortDirection = 'asc' | 'desc';
@@ -18,7 +20,11 @@ export default function OrganizationsPage() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+    if (typeof window === 'undefined') return 'list';
+    const stored = window.localStorage.getItem('organizations:viewMode');
+    return stored === 'grid' || stored === 'list' ? stored : 'list';
+  });
   const [filterText, setFilterText] = useState('');
   const [sortField, setSortField] = useState<OrgSortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -37,6 +43,7 @@ export default function OrganizationsPage() {
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
   const [isImportingCsv, setIsImportingCsv] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const { showToast } = useToast();
 
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setModalMessage({ type: 'confirm', title, message, onConfirm });
@@ -95,6 +102,38 @@ export default function OrganizationsPage() {
     }
   }, [internalTicketsEnabled, sortField]);
 
+  useEffect(() => {
+    window.localStorage.setItem('organizations:viewMode', viewMode);
+  }, [viewMode]);
+
+  useEffect(() => {
+    const handleEscClose = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+
+      if (modalMessage) {
+        closeConfirmModal();
+        return;
+      }
+
+      if (showImportModal) {
+        setShowImportModal(false);
+        return;
+      }
+
+      if (editingOrganization) {
+        setEditingOrganization(null);
+        return;
+      }
+
+      if (showCreateModal) {
+        setShowCreateModal(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleEscClose);
+    return () => window.removeEventListener('keydown', handleEscClose);
+  }, [editingOrganization, modalMessage, showCreateModal, showImportModal]);
+
   const loadOrganizations = async () => {
     if (!token) return;
     
@@ -104,7 +143,9 @@ export default function OrganizationsPage() {
       setOrganizations(response.organizations);
       setError('');
     } catch (err: any) {
-      setError(err.message || 'Failed to load organizations');
+      const message = err.message || 'Failed to load organizations';
+      setError(message);
+      showToast({ type: 'error', message });
     } finally {
       setIsLoading(false);
     }
@@ -120,8 +161,11 @@ export default function OrganizationsPage() {
         try {
           await organizationsApi.delete(id, token);
           await loadOrganizations();
+          showToast({ type: 'success', message: 'Organization deleted successfully' });
         } catch (err: any) {
-          setError(err.message || 'Failed to delete organization');
+          const message = err.message || 'Failed to delete organization';
+          setError(message);
+          showToast({ type: 'error', message });
         }
       }
     );
@@ -185,12 +229,17 @@ export default function OrganizationsPage() {
       await loadOrganizations();
 
       if (failures.length) {
-        setError(`Imported ${successCount}/${rows.length} organizations. ${failures.slice(0, 5).join(' | ')}${failures.length > 5 ? ' | ...' : ''}`);
+        const message = `Imported ${successCount}/${rows.length} organizations. ${failures.slice(0, 5).join(' | ')}${failures.length > 5 ? ' | ...' : ''}`;
+        setError(message);
+        showToast({ type: 'error', message });
       } else {
         setError('');
+        showToast({ type: 'success', message: `Imported ${successCount} organizations successfully` });
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to import organizations CSV');
+      const message = err.message || 'Failed to import organizations CSV';
+      setError(message);
+      showToast({ type: 'error', message });
     } finally {
       setIsImportingCsv(false);
     }
@@ -390,10 +439,22 @@ export default function OrganizationsPage() {
     }
   };
 
+  const getAriaSort = (field: OrgSortField): 'none' | 'ascending' | 'descending' => {
+    if (sortField !== field) return 'none';
+    return sortDirection === 'asc' ? 'ascending' : 'descending';
+  };
+
   if (authLoading || isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-xl">Loading...</div>
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+        <Navbar />
+        <div className="w-full mx-auto py-6 px-4 sm:px-6 lg:px-8">
+          <div className="space-y-5 animate-pulse">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-24" />
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-14" />
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-96" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -458,29 +519,39 @@ export default function OrganizationsPage() {
         </div>
 
         {error && (
-          <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
-            {error}
+          <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <span>{error}</span>
+            <button
+              onClick={loadOrganizations}
+              className="px-3 py-1.5 bg-red-700 hover:bg-red-800 text-white rounded text-sm font-medium"
+            >
+              Retry
+            </button>
           </div>
         )}
 
         {organizations.length === 0 ? (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
-            <div className="text-6xl mb-4">🏢</div>
-            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-              No organizations yet
-            </h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-              Create your first organization to get started
-            </p>
-            {(user?.isAdmin || permissions?.canManageOrganizations) && (
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-              >
-                Create Organization
-              </button>
-            )}
-          </div>
+          <EmptyState
+            icon="🏢"
+            title="No organizations yet"
+            message="Create your first organization to get started"
+            primaryAction={
+              (user?.isAdmin || permissions?.canManageOrganizations)
+                ? {
+                    label: 'Create Organization',
+                    onClick: () => setShowCreateModal(true),
+                  }
+                : undefined
+            }
+          />
+        ) : filteredAndSortedOrgs.length === 0 ? (
+          <EmptyState
+            icon="🔎"
+            title="No organizations match the current filter"
+            message="Try a different search term or clear the filter input."
+            primaryAction={{ label: 'Clear filters', onClick: () => setFilterText('') }}
+            secondaryAction={{ label: 'Reload', onClick: loadOrganizations }}
+          />
         ) : viewMode === 'grid' ? (
           <>
             {/* Filter Input */}
@@ -558,42 +629,48 @@ export default function OrganizationsPage() {
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-900">
+                <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-10">
                   <tr>
                     <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                      aria-sort={getAriaSort('name')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('name')}
                     >
                       <div className="flex items-center">Organization</div>
                     </th>
                     <th 
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                      aria-sort={getAriaSort('role')}
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('role')}
                     >
                       <div className="flex items-center justify-center">Role</div>
                     </th>
                     <th 
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                      aria-sort={getAriaSort('members')}
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('members')}
                     >
                       <div className="flex items-center justify-center">Members</div>
                     </th>
                     <th 
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                      aria-sort={getAriaSort('projects')}
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('projects')}
                     >
                       <div className="flex items-center justify-center">Projects</div>
                     </th>
                     {internalTicketsEnabled && (
                       <th 
-                        className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                        aria-sort={getAriaSort('tickets')}
+                        className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                         onClick={() => handleSort('tickets')}
                       >
                         <div className="flex items-center justify-center">Open Tickets</div>
                       </th>
                     )}
                     <th 
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                      aria-sort={getAriaSort('tasks')}
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                       onClick={() => handleSort('tasks')}
                     >
                       <div className="flex items-center justify-center">Tasks</div>
@@ -603,7 +680,7 @@ export default function OrganizationsPage() {
                         key={`extra-org-header-${columnKey}`}
                         data-column-key={`extra-${columnKey}`}
                         data-default-hidden="true"
-                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
                       >
                         {formatExtraColumnLabel(columnKey)}
                       </th>
@@ -725,6 +802,7 @@ export default function OrganizationsPage() {
           onCreated={() => {
             setShowCreateModal(false);
             loadOrganizations();
+            showToast({ type: 'success', message: 'Organization created successfully' });
           }}
           token={token!}
         />
@@ -737,6 +815,7 @@ export default function OrganizationsPage() {
           onUpdated={() => {
             setEditingOrganization(null);
             loadOrganizations();
+            showToast({ type: 'success', message: 'Organization updated successfully' });
           }}
           token={token!}
         />

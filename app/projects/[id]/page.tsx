@@ -1142,14 +1142,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     const validIssues = Array.from(selectedJiraTickets).filter(key => !existingIssueIds.has(key));
     if (validIssues.length === 0) return;
 
-    if (!!project.IsGlobal) {
-      const missingCustomerIssue = validIssues.find((key) => !jiraTicketMappings[key]?.customerId);
-      if (missingCustomerIssue) {
-        setJiraTicketsError(`Customer is required for global projects. Please select a customer for ticket ${missingCustomerIssue}.`);
-        return;
-      }
-    }
-
     setJiraTicketsImporting(true);
     setJiraTicketsError('');
 
@@ -5196,8 +5188,9 @@ function TasksTab({
         const width = Number.isFinite(taskColumnSizing[columnId])
           ? taskColumnSizing[columnId]
           : (isActionsColumn ? 120 : undefined);
-        if (mode === 'fixed' && Number.isFinite(width)) {
-          const finalWidth = `${Math.max(60, Math.min(1400, Math.round(width)))}px`;
+        const fixedWidth = typeof width === 'number' ? width : null;
+        if (mode === 'fixed' && fixedWidth !== null && Number.isFinite(fixedWidth)) {
+          const finalWidth = `${Math.max(60, Math.min(1400, Math.round(fixedWidth)))}px`;
           cell.style.width = finalWidth;
           cell.style.minWidth = finalWidth;
           cell.style.maxWidth = finalWidth;

@@ -6,9 +6,11 @@ import { useState, useEffect, useMemo, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
+import { useToast } from '@/contexts/ToastContext';
 import { usersApi, User } from '@/lib/api/users';
 import { tasksApi, Task } from '@/lib/api/tasks';
 import Navbar from '@/components/Navbar';
+import EmptyState from '@/components/EmptyState';
 import dynamic from 'next/dynamic';
 import CalendarTabComponent from './CalendarTab';
 
@@ -84,12 +86,20 @@ type AnalyticsPeriod = 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth' | 'al
 // Use CalendarTab with dynamic import wrapper
 const CalendarTab = dynamic(
   () => Promise.resolve(CalendarTabComponent),
-  { ssr: false, loading: () => <div className="text-center py-8">Loading calendar...</div> }
+  {
+    ssr: false,
+    loading: () => (
+      <div className="space-y-4 animate-pulse py-6">
+        <div className="h-8 bg-white dark:bg-gray-800 rounded-lg" />
+        <div className="h-64 bg-white dark:bg-gray-800 rounded-lg" />
+      </div>
+    ),
+  }
 );
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="text-gray-600 dark:text-gray-400">Loading dashboard...</div></div>}>
+    <Suspense fallback={<div className="min-h-screen bg-gray-100 dark:bg-gray-900"><div className="w-full mx-auto py-6 px-4 sm:px-6 lg:px-8"><div className="space-y-5 animate-pulse"><div className="bg-white dark:bg-gray-800 rounded-lg shadow h-24" /><div className="bg-white dark:bg-gray-800 rounded-lg shadow h-14" /><div className="bg-white dark:bg-gray-800 rounded-lg shadow h-96" /></div></div></div>}>
       <DashboardContent />
     </Suspense>
   );
@@ -98,6 +108,7 @@ export default function DashboardPage() {
 function DashboardContent() {
   const { user, isLoading, token, isCustomerUser } = useAuth();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
+  const { showToast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
@@ -340,6 +351,17 @@ function DashboardContent() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleEscClose = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && modalMessage) {
+        closeModal();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscClose);
+    return () => window.removeEventListener('keydown', handleEscClose);
+  }, [modalMessage]);
+
   const toDateString = (date: Date): string => date.toISOString().split('T')[0];
 
   const getPeriodLabel = (period: AnalyticsPeriod): string => {
@@ -404,7 +426,9 @@ function DashboardContent() {
       }
       setPortalData(await res.json());
     } catch (err: any) {
-      setPortalError(err.message || 'Failed to load portal data');
+      const message = err.message || 'Failed to load portal data';
+      setPortalError(message);
+      showToast({ type: 'error', message });
     } finally {
       setPortalLoading(false);
     }
@@ -862,8 +886,15 @@ function DashboardContent() {
   
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-xl">Loading...</div>
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+        <Navbar />
+        <div className="w-full mx-auto py-6 px-4 sm:px-6 lg:px-8">
+          <div className="space-y-5 animate-pulse">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-24" />
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-14" />
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-96" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -895,14 +926,18 @@ function DashboardContent() {
         <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
           <div className="px-4 py-6 sm:px-0">
             {portalLoading ? (
-              <div className="flex items-center justify-center py-24">
-                <div className="text-gray-500 dark:text-gray-400">Loading…</div>
+              <div className="space-y-5 animate-pulse">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-24" />
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-40" />
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-72" />
               </div>
             ) : portalError ? (
-              <div className="flex flex-col items-center justify-center py-24 gap-4">
-                <p className="text-red-500 font-medium">{portalError}</p>
-                <button onClick={loadPortalData} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">Retry</button>
-              </div>
+              <EmptyState
+                icon="⚠️"
+                title="Unable to load portal data"
+                message={portalError}
+                primaryAction={{ label: 'Retry', onClick: loadPortalData }}
+              />
             ) : portalData ? (
               <div className="max-w-6xl mx-auto space-y-8">
                 {/* Header */}
