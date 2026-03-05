@@ -2151,7 +2151,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 p-6">
+        <main className="flex-1 min-w-0 p-6">
           {error && (
             <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
               {error}
@@ -2209,7 +2209,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           )}
 
           {activeTab === 'reporting' && (
-            <ReportingTab projectId={parseInt(projectId)} organizationId={project.OrganizationId} token={token!} />
+            <ReportingTab
+              projectId={parseInt(projectId)}
+              organizationId={project.OrganizationId}
+              token={token!}
+              onOpenTask={(task) => {
+                const fullTask = tasks.find((entry) => Number(entry.Id) === Number(task.Id)) || task;
+                setEditingTask(fullTask as Task);
+                setShowTaskModal(true);
+              }}
+            />
           )}
 
           {activeTab === 'utilities' && (
@@ -4800,12 +4809,15 @@ function TasksTab({
   const [isSavingRootInline, setIsSavingRootInline] = useState(false);
   const [newRootTaskInputResetKey, setNewRootTaskInputResetKey] = useState(0);
   const tasksGridRef = useRef<HTMLDivElement>(null);
+  const newRootTaskInputRef = useRef<HTMLInputElement>(null);
+  const newSubtaskInputRef = useRef<HTMLInputElement>(null);
   const [showTaskColumnsPanel, setShowTaskColumnsPanel] = useState(false);
   const [taskColumnsPanelPosition, setTaskColumnsPanelPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [hiddenTaskColumns, setHiddenTaskColumns] = useState<string[]>([]);
   const [taskColumnOrder, setTaskColumnOrder] = useState<string[]>([]);
   const [taskColumnSizing, setTaskColumnSizing] = useState<Record<string, number>>({});
   const [taskColumnSizeMode, setTaskColumnSizeMode] = useState<Record<string, 'fixed' | 'grow'>>({});
+  const [taskRowDensity, setTaskRowDensity] = useState<'compact' | 'comfortable'>('comfortable');
   const [taskColumnsReady, setTaskColumnsReady] = useState(false);
 
   const additionalTaskColumnKeys = React.useMemo(() => {
@@ -4974,6 +4986,7 @@ function TasksTab({
             hiddenColumns?: string[];
             columnSizing?: Record<string, number>;
             columnSizeMode?: Record<string, 'fixed' | 'grow'>;
+            rowDensity?: 'compact' | 'comfortable';
           };
           const valid = new Set(taskSelectableColumnIds);
 
@@ -5008,6 +5021,7 @@ function TasksTab({
             setHiddenTaskColumns(cachedHidden);
             setTaskColumnSizing(cachedSizing);
             setTaskColumnSizeMode(cachedSizeMode);
+            setTaskRowDensity(parsed.rowDensity === 'compact' ? 'compact' : 'comfortable');
             setTaskColumnsReady(true);
           }
         }
@@ -5026,6 +5040,7 @@ function TasksTab({
           setHiddenTaskColumns(taskDefaultHiddenColumns);
           setTaskColumnSizing({});
           setTaskColumnSizeMode(Object.fromEntries(taskSelectableColumnIds.map((columnId) => [columnId, 'grow' as const])));
+          setTaskRowDensity('comfortable');
           setTaskColumnsReady(true);
           return;
         }
@@ -5059,12 +5074,14 @@ function TasksTab({
         setHiddenTaskColumns(Array.from(new Set([...savedHidden, ...newDefaults])));
         setTaskColumnSizing(savedSizing);
         setTaskColumnSizeMode(savedSizeMode);
+        setTaskRowDensity(current.rowDensity === 'compact' ? 'compact' : 'comfortable');
       } catch {
         if (!cancelled) {
           setTaskColumnOrder(taskSelectableColumnIds);
           setHiddenTaskColumns(taskDefaultHiddenColumns);
           setTaskColumnSizing({});
           setTaskColumnSizeMode(Object.fromEntries(taskSelectableColumnIds.map((columnId) => [columnId, 'grow' as const])));
+          setTaskRowDensity('comfortable');
           setTaskColumnsReady(true);
         }
       } finally {
@@ -5108,6 +5125,7 @@ function TasksTab({
             hiddenColumns: sanitizedHidden,
             columnSizing: sanitizedSizing,
             columnSizeMode: sanitizedSizeMode,
+              rowDensity: taskRowDensity,
           })
         );
       }
@@ -5123,6 +5141,7 @@ function TasksTab({
         columnSizeMode: sanitizedSizeMode,
         sortField: null,
         sortDirection: null,
+        rowDensity: taskRowDensity,
       }).catch(() => undefined);
     }, 250);
 
@@ -5135,9 +5154,10 @@ function TasksTab({
         columnSizeMode: sanitizedSizeMode,
         sortField: null,
         sortDirection: null,
+        rowDensity: taskRowDensity,
       }).catch(() => undefined);
     };
-  }, [taskColumnsReady, token, taskGridPreferenceKey, taskGridSessionKey, hiddenTaskColumns, taskColumnOrder, taskColumnSizing, taskColumnSizeMode, taskSelectableColumnIds.join('|')]);
+  }, [taskColumnsReady, token, taskGridPreferenceKey, taskGridSessionKey, hiddenTaskColumns, taskColumnOrder, taskColumnSizing, taskColumnSizeMode, taskRowDensity, taskSelectableColumnIds.join('|')]);
 
   useEffect(() => {
     const grid = tasksGridRef.current;
@@ -5596,6 +5616,16 @@ function TasksTab({
     }
   };
 
+  const getTaskAriaSort = (field: string): 'none' | 'ascending' | 'descending' => {
+    if (sortField !== field) return 'none';
+    return sortDirection === 'asc' ? 'ascending' : 'descending';
+  };
+
+  const getTaskSortIndicator = (field: string) => {
+    if (sortField !== field) return null;
+    return sortDirection === 'asc' ? '↑' : '↓';
+  };
+
   const visibleParentTasks = getSortedTasks(
     parentTasks.filter(parent => {
       if (!isFilterActive) return true;
@@ -5864,6 +5894,28 @@ function TasksTab({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [editingRowTaskId, creatingSubtaskParentId, creatingRootTaskInline]);
 
+  useEffect(() => {
+    if (!creatingRootTaskInline || isSavingRootInline) return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      newRootTaskInputRef.current?.focus();
+      newRootTaskInputRef.current?.select();
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [creatingRootTaskInline, newRootTaskInputResetKey, isSavingRootInline]);
+
+  useEffect(() => {
+    if (!creatingSubtaskParentId || isSavingSubtaskInline) return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      newSubtaskInputRef.current?.focus();
+      newSubtaskInputRef.current?.select();
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [creatingSubtaskParentId, newSubtaskInputResetKey, isSavingSubtaskInline]);
+
   const handleInlineEditorKeyDown = (event: React.KeyboardEvent, task: Task) => {
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -6017,11 +6069,20 @@ function TasksTab({
             </div>
           ) : <span className="text-xs text-gray-400">-</span>}
         </td>
-        <td className="px-2 py-2">
+        <td
+          className={`px-2 py-2 ${isEditingRow ? '' : 'cursor-pointer'}`}
+          onClick={() => {
+            if (isEditingRow) return;
+            onEditTask(task);
+          }}
+        >
           <div className="flex items-center gap-1.5" style={{ marginLeft: `${indentPixels}px` }}>
             {hasSubtasks ? (
               <button
-                onClick={() => toggleExpand(task.Id)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleExpand(task.Id);
+                }}
                 className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-transform flex-shrink-0"
                 style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
               >
@@ -6260,6 +6321,7 @@ function TasksTab({
                 value={newSubtaskData.taskName}
                 onChange={(e) => setNewSubtaskData((prev) => ({ ...prev, taskName: e.target.value }))}
                 onKeyDown={handleInlineSubtaskKeyDown}
+                inputRef={newSubtaskInputRef}
                 autoFocus
                 className="w-full"
                 placeholder="New subtask name"
@@ -6363,10 +6425,10 @@ function TasksTab({
   };
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
+    <div className="w-full min-w-0">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3 md:items-center">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Tasks</h1>
-        <div className="flex gap-3">
+        <div className="flex max-w-full flex-wrap gap-3">
           {canCreate && (
             <>
               {/* Import Dropdown - always visible, CSV always available */}
@@ -6642,163 +6704,189 @@ function TasksTab({
             </div>
           </div>
 
-          <div className="global-grid-controls mb-2 flex justify-end relative">
-            <button
-              type="button"
-              onClick={(event) => {
-                const buttonRect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                const panelWidth = 448;
-                const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-                const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-                const top = Math.min(viewportHeight - 20, buttonRect.bottom + 8);
-                const left = Math.max(8, Math.min(viewportWidth - panelWidth - 8, buttonRect.right - panelWidth));
-                setTaskColumnsPanelPosition({ top, left });
-                setShowTaskColumnsPanel((previous) => !previous);
-              }}
-              className="h-9 px-3 rounded-lg text-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-colors"
-            >
-              Columns
-            </button>
-            {showTaskColumnsPanel && (
-              <>
-                <div className="fixed inset-0 z-[2147483646]" onClick={() => setShowTaskColumnsPanel(false)}></div>
-                <div
-                  className="fixed z-[2147483647] w-[28rem] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3"
-                  style={{ top: `${taskColumnsPanelPosition.top}px`, left: `${taskColumnsPanelPosition.left}px` }}
-                >
-                  <div className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Table Columns</div>
-                  <div className="text-xs text-gray-600 dark:text-gray-300 mb-2">
-                    {taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length > 0
-                      ? `${taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length} fixed column${taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length > 1 ? 's' : ''}`
-                      : 'No fixed columns'}
-                  </div>
-                  <div className="space-y-2 max-h-80 overflow-y-auto">
-                    {(taskColumnOrder.length > 0 ? taskColumnOrder : taskSelectableColumnIds).map((columnId, index) => {
-                      const option = taskColumnOptions.find((entry) => entry.id === columnId);
-                      if (!option) return null;
-                      const mode = taskColumnSizeMode[option.id] === 'fixed' ? 'fixed' : 'grow';
-                      const widthValue = Number.isFinite(taskColumnSizing[option.id])
-                        ? taskColumnSizing[option.id]
-                        : getTaskColumnCurrentWidth(option.id);
-                      return (
-                        <div key={`task-column-${option.id}`} className="flex items-center gap-2 flex-wrap">
-                          <input
-                            type="checkbox"
-                            checked={isTaskColumnVisible(option.id)}
-                            onChange={() => {
-                              setHiddenTaskColumns((previous) =>
-                                previous.includes(option.id)
-                                  ? previous.filter((columnKey) => columnKey !== option.id)
-                                  : [...previous, option.id]
-                              );
-                            }}
-                            className="h-4 w-4"
-                          />
-                          <div className="flex-1 text-sm text-gray-800 dark:text-gray-200">{option.label}</div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (index === 0) return;
-                              setTaskColumnOrder((previous) => {
-                                const currentOrder = [...(previous.length > 0 ? previous : taskSelectableColumnIds)];
-                                [currentOrder[index - 1], currentOrder[index]] = [currentOrder[index], currentOrder[index - 1]];
-                                return currentOrder;
-                              });
-                            }}
-                            disabled={index === 0}
-                            className="px-2 py-1 rounded text-xs bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (index === (taskColumnOrder.length > 0 ? taskColumnOrder.length : taskSelectableColumnIds.length) - 1) return;
-                              setTaskColumnOrder((previous) => {
-                                const currentOrder = [...(previous.length > 0 ? previous : taskSelectableColumnIds)];
-                                [currentOrder[index + 1], currentOrder[index]] = [currentOrder[index], currentOrder[index + 1]];
-                                return currentOrder;
-                              });
-                            }}
-                            disabled={index === (taskColumnOrder.length > 0 ? taskColumnOrder.length : taskSelectableColumnIds.length) - 1}
-                            className="px-2 py-1 rounded text-xs bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
-                          >
-                            ↓
-                          </button>
-                          <select
-                            value={mode}
-                            onChange={(event) => {
-                              const nextMode = event.target.value === 'fixed' ? 'fixed' : 'grow';
-                              setTaskColumnSizeMode((previous) => ({
-                                ...previous,
-                                [option.id]: nextMode,
-                              }));
-                              if (nextMode === 'fixed') {
-                                setTaskColumnSizing((previous) => ({
-                                  ...previous,
-                                  [option.id]: Number.isFinite(previous[option.id]) ? previous[option.id] : getTaskColumnCurrentWidth(option.id),
-                                }));
-                              }
-                            }}
-                            className="px-2 py-1 rounded text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-100"
-                          >
-                            <option value="grow">Grow</option>
-                            <option value="fixed">Fixed</option>
-                          </select>
-                          <input
-                            type="number"
-                            min={60}
-                            max={1400}
-                            step={1}
-                            value={String(widthValue)}
-                            onChange={(event) => {
-                              const nextWidth = Math.max(60, Math.min(1400, Math.round(Number(event.target.value) || 140)));
-                              setTaskColumnSizeMode((previous) => ({
-                                ...previous,
-                                [option.id]: 'fixed',
-                              }));
-                              setTaskColumnSizing((previous) => ({
-                                ...previous,
-                                [option.id]: nextWidth,
-                              }));
-                            }}
-                            disabled={mode !== 'fixed'}
-                            className="w-20 px-2 py-1 rounded text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-100 disabled:opacity-50"
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
+          <div className="w-full min-w-0 bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700" ref={tasksGridRef} data-grid-enhancer-ignore="true">
+            <div className="global-grid-controls mb-2 flex justify-end relative p-2 pb-0">
+              <div className="flex items-center gap-2">
+                <div className="h-9 flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
                   <button
                     type="button"
-                    onClick={() => {
-                      setTaskColumnOrder(taskSelectableColumnIds);
-                      setHiddenTaskColumns(taskDefaultHiddenColumns);
-                      setTaskColumnSizing({});
-                      setTaskColumnSizeMode(Object.fromEntries(taskSelectableColumnIds.map((columnId) => [columnId, 'grow' as const])));
-                    }}
-                    className="mt-3 h-9 px-3 rounded-lg text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-colors"
+                    onClick={() => setTaskRowDensity('comfortable')}
+                    className={`h-7 px-3 text-sm rounded-md transition-colors ${taskRowDensity === 'comfortable' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
                   >
-                    Reset
+                    Comfy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTaskRowDensity('compact')}
+                    className={`h-7 px-3 text-sm rounded-md transition-colors ${taskRowDensity === 'compact' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                  >
+                    Compact
                   </button>
                 </div>
-              </>
-            )}
-          </div>
-
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-visible border border-gray-200 dark:border-gray-700" ref={tasksGridRef} data-grid-enhancer-ignore="true">
-          <table data-grid-disable-sort="true" data-grid-disable-reorder="true" data-grid-key={`project-tasks-${Number(project.Id)}-v2`} className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    const buttonRect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                    const panelWidth = 448;
+                    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+                    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+                    const top = Math.min(viewportHeight - 20, buttonRect.bottom + 8);
+                    const left = Math.max(8, Math.min(viewportWidth - panelWidth - 8, buttonRect.right - panelWidth));
+                    setTaskColumnsPanelPosition({ top, left });
+                    setShowTaskColumnsPanel((previous) => !previous);
+                  }}
+                  className="h-9 px-3 rounded-lg text-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-colors"
+                >
+                  Columns
+                </button>
+              </div>
+              {showTaskColumnsPanel && (
+                <>
+                  <div className="fixed inset-0 z-[2147483646]" onClick={() => setShowTaskColumnsPanel(false)}></div>
+                  <div
+                    className="fixed z-[2147483647] w-[28rem] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3"
+                    style={{ top: `${taskColumnsPanelPosition.top}px`, left: `${taskColumnsPanelPosition.left}px` }}
+                  >
+                    <div className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Table Columns</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-300 mb-2">
+                      {taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length > 0
+                        ? `${taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length} fixed column${taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length > 1 ? 's' : ''}`
+                        : 'No fixed columns'}
+                    </div>
+                    <div className="space-y-2 max-h-80 overflow-y-auto">
+                      {(taskColumnOrder.length > 0 ? taskColumnOrder : taskSelectableColumnIds).map((columnId, index) => {
+                        const option = taskColumnOptions.find((entry) => entry.id === columnId);
+                        if (!option) return null;
+                        const mode = taskColumnSizeMode[option.id] === 'fixed' ? 'fixed' : 'grow';
+                        const widthValue = Number.isFinite(taskColumnSizing[option.id])
+                          ? taskColumnSizing[option.id]
+                          : getTaskColumnCurrentWidth(option.id);
+                        return (
+                          <div key={`task-column-${option.id}`} className="flex items-center gap-2 flex-wrap">
+                            <input
+                              type="checkbox"
+                              checked={isTaskColumnVisible(option.id)}
+                              onChange={() => {
+                                setHiddenTaskColumns((previous) =>
+                                  previous.includes(option.id)
+                                    ? previous.filter((columnKey) => columnKey !== option.id)
+                                    : [...previous, option.id]
+                                );
+                              }}
+                              className="h-4 w-4"
+                            />
+                            <div className="flex-1 text-sm text-gray-800 dark:text-gray-200">{option.label}</div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (index === 0) return;
+                                setTaskColumnOrder((previous) => {
+                                  const currentOrder = [...(previous.length > 0 ? previous : taskSelectableColumnIds)];
+                                  [currentOrder[index - 1], currentOrder[index]] = [currentOrder[index], currentOrder[index - 1]];
+                                  return currentOrder;
+                                });
+                              }}
+                              disabled={index === 0}
+                              className="px-2 py-1 rounded text-xs bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (index === (taskColumnOrder.length > 0 ? taskColumnOrder.length : taskSelectableColumnIds.length) - 1) return;
+                                setTaskColumnOrder((previous) => {
+                                  const currentOrder = [...(previous.length > 0 ? previous : taskSelectableColumnIds)];
+                                  [currentOrder[index + 1], currentOrder[index]] = [currentOrder[index], currentOrder[index + 1]];
+                                  return currentOrder;
+                                });
+                              }}
+                              disabled={index === (taskColumnOrder.length > 0 ? taskColumnOrder.length : taskSelectableColumnIds.length) - 1}
+                              className="px-2 py-1 rounded text-xs bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
+                            >
+                              ↓
+                            </button>
+                            <select
+                              value={mode}
+                              onChange={(event) => {
+                                const nextMode = event.target.value === 'fixed' ? 'fixed' : 'grow';
+                                setTaskColumnSizeMode((previous) => ({
+                                  ...previous,
+                                  [option.id]: nextMode,
+                                }));
+                                if (nextMode === 'fixed') {
+                                  setTaskColumnSizing((previous) => ({
+                                    ...previous,
+                                    [option.id]: Number.isFinite(previous[option.id]) ? previous[option.id] : getTaskColumnCurrentWidth(option.id),
+                                  }));
+                                }
+                              }}
+                              className="px-2 py-1 rounded text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-100"
+                            >
+                              <option value="grow">Grow</option>
+                              <option value="fixed">Fixed</option>
+                            </select>
+                            <input
+                              type="number"
+                              min={60}
+                              max={1400}
+                              step={1}
+                              value={String(widthValue)}
+                              onChange={(event) => {
+                                const nextWidth = Math.max(60, Math.min(1400, Math.round(Number(event.target.value) || 140)));
+                                setTaskColumnSizeMode((previous) => ({
+                                  ...previous,
+                                  [option.id]: 'fixed',
+                                }));
+                                setTaskColumnSizing((previous) => ({
+                                  ...previous,
+                                  [option.id]: nextWidth,
+                                }));
+                              }}
+                              disabled={mode !== 'fixed'}
+                              className="w-20 px-2 py-1 rounded text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-100 disabled:opacity-50"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTaskColumnOrder(taskSelectableColumnIds);
+                        setHiddenTaskColumns(taskDefaultHiddenColumns);
+                        setTaskColumnSizing({});
+                        setTaskColumnSizeMode(Object.fromEntries(taskSelectableColumnIds.map((columnId) => [columnId, 'grow' as const])));
+                        setTaskRowDensity('comfortable');
+                      }}
+                      className="mt-3 h-9 px-3 rounded-lg text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-colors"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          <div className="w-full min-w-0 overflow-x-auto">
+          <table data-grid-disable-sort="true" data-grid-disable-reorder="true" data-grid-key={`project-tasks-${Number(project.Id)}-v2`} className={`w-full min-w-max divide-y divide-gray-200 dark:divide-gray-700 ${taskRowDensity === 'compact' ? 'grid-density-compact' : ''}`}>
             <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
-                <th data-column-key="task-type" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th
+                  data-column-key="task-type"
+                  data-grid-sort-ignore="true"
+                  aria-sort={getTaskAriaSort('TaskTypeName')}
+                  onClick={() => handleSort('TaskTypeName')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                >
                   <div className="flex items-center justify-between gap-2">
-                    <button onClick={(event) => { event.stopPropagation(); handleSort('TaskTypeName'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
-                      Task Type
-                    </button>
+                    <span className="inline-flex items-center gap-1">Task Type {getTaskSortIndicator('TaskTypeName') && <span className="text-gray-400 dark:text-gray-500">{getTaskSortIndicator('TaskTypeName')}</span>}</span>
                     {canCreate && (
                       <button
                         type="button"
-                        onClick={startInlineRootTaskCreate}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          startInlineRootTaskCreate();
+                        }}
                         title="Add level 0 task"
                         aria-label="Add level 0 task"
                         className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-semibold"
@@ -6808,47 +6896,64 @@ function TasksTab({
                     )}
                   </div>
                 </th>
-                <th data-column-key="task" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  <button onClick={(event) => { event.stopPropagation(); handleSort('task'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
-                    Task
-                  </button>
+                <th
+                  data-column-key="task"
+                  data-grid-sort-ignore="true"
+                  aria-sort={getTaskAriaSort('task')}
+                  onClick={() => handleSort('task')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                >
+                  <div className="flex items-center gap-1">Task {getTaskSortIndicator('task') && <span className="text-gray-400 dark:text-gray-500">{getTaskSortIndicator('task')}</span>}</div>
                 </th>
-                <th data-column-key="assigned-to" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  <button onClick={(event) => { event.stopPropagation(); handleSort('assignee'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
-                    Assigned To
-                  </button>
+                <th
+                  data-column-key="assigned-to"
+                  data-grid-sort-ignore="true"
+                  aria-sort={getTaskAriaSort('assignee')}
+                  onClick={() => handleSort('assignee')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                >
+                  <div className="flex items-center gap-1">Assigned To {getTaskSortIndicator('assignee') && <span className="text-gray-400 dark:text-gray-500">{getTaskSortIndicator('assignee')}</span>}</div>
                 </th>
-                <th data-column-key="status" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  <button onClick={(event) => { event.stopPropagation(); handleSort('status'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
-                    Status
-                  </button>
+                <th
+                  data-column-key="status"
+                  data-grid-sort-ignore="true"
+                  aria-sort={getTaskAriaSort('status')}
+                  onClick={() => handleSort('status')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                >
+                  <div className="flex items-center gap-1">Status {getTaskSortIndicator('status') && <span className="text-gray-400 dark:text-gray-500">{getTaskSortIndicator('status')}</span>}</div>
                 </th>
-                <th data-column-key="priority" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  <button onClick={(event) => { event.stopPropagation(); handleSort('priority'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
-                    Priority
-                  </button>
+                <th
+                  data-column-key="priority"
+                  data-grid-sort-ignore="true"
+                  aria-sort={getTaskAriaSort('priority')}
+                  onClick={() => handleSort('priority')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                >
+                  <div className="flex items-center gap-1">Priority {getTaskSortIndicator('priority') && <span className="text-gray-400 dark:text-gray-500">{getTaskSortIndicator('priority')}</span>}</div>
                 </th>
-                <th data-column-key="due-date" data-grid-sort-ignore="true" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  <button onClick={(event) => { event.stopPropagation(); handleSort('dueDate'); }} className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100">
-                    Due Date
-                  </button>
+                <th
+                  data-column-key="due-date"
+                  data-grid-sort-ignore="true"
+                  aria-sort={getTaskAriaSort('dueDate')}
+                  onClick={() => handleSort('dueDate')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                >
+                  <div className="flex items-center gap-1">Due Date {getTaskSortIndicator('dueDate') && <span className="text-gray-400 dark:text-gray-500">{getTaskSortIndicator('dueDate')}</span>}</div>
                 </th>
                 {additionalTaskColumnKeys.map((columnKey) => (
                   <th
                     key={`extra-header-${columnKey}`}
                     data-column-key={`extra-${columnKey}`}
                     data-default-hidden="true"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
+                    aria-sort={getTaskAriaSort(`extra:${columnKey}`)}
+                    onClick={() => handleSort(`extra:${columnKey}`)}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
                   >
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleSort(`extra:${columnKey}`);
-                      }}
-                      className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100"
-                    >
+                    <div className="inline-flex items-center gap-1">
                       {formatAdditionalTaskColumnLabel(columnKey)}
-                    </button>
+                      {getTaskSortIndicator(`extra:${columnKey}`) && <span className="text-gray-400 dark:text-gray-500">{getTaskSortIndicator(`extra:${columnKey}`)}</span>}
+                    </div>
                   </th>
                 ))}
                 <th data-column-key="actions" scope="col" className="relative px-6 py-3">
@@ -6882,6 +6987,7 @@ function TasksTab({
                           value={newRootTaskData.taskName}
                           onChange={(e) => setNewRootTaskData((prev) => ({ ...prev, taskName: e.target.value }))}
                           onKeyDown={handleInlineRootTaskKeyDown}
+                          inputRef={newRootTaskInputRef}
                           autoFocus
                           className="w-full"
                           placeholder="New task name"
@@ -6988,6 +7094,7 @@ function TasksTab({
               )}
             </tbody>
           </table>
+          </div>
           </div>
         </div>
       )}
@@ -8062,7 +8169,7 @@ function KanbanTab({
 }
 
 // Reporting Tab Component
-function ReportingTab({ projectId, organizationId, token }: { projectId: number; organizationId: number; token: string }) {
+function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projectId: number; organizationId: number; token: string; onOpenTask?: (task: any) => void }) {
   const [reportTab, setReportTab] = useState<'summary' | 'byUser' | 'allocations' | 'timeEntries' | 'schedules'>('summary');
   const [allocations, setAllocations] = useState<any[]>([]);
   const [timeEntries, setTimeEntries] = useState<any[]>([]);
@@ -8558,6 +8665,11 @@ function ReportingTab({ projectId, organizationId, token }: { projectId: number;
   };
 
   const handleShowTaskDetail = async (task: any) => {
+    if (onOpenTask) {
+      onOpenTask(task);
+      return;
+    }
+
     setSelectedTask(task);
     setLoadingTaskDetails(true);
     
@@ -11992,6 +12104,7 @@ function InlineTextField({
   value,
   onChange,
   onKeyDown,
+  inputRef,
   placeholder,
   autoFocus = false,
   className = '',
@@ -11999,12 +12112,14 @@ function InlineTextField({
   value: string;
   onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  inputRef?: React.RefObject<HTMLInputElement | null>;
   placeholder?: string;
   autoFocus?: boolean;
   className?: string;
 }) {
   return (
     <input
+      ref={inputRef}
       type="text"
       value={value}
       onChange={onChange}
