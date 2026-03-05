@@ -288,6 +288,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     setModalMessage(null);
   };
 
+  useEffect(() => {
+    const isKanbanWorkflowError = error.startsWith('Transition blocked by workflow policy');
+    if (activeTab !== 'kanban' && isKanbanWorkflowError) {
+      setError('');
+    }
+  }, [activeTab, error]);
+
   const handleModalConfirm = () => {
     if (modalMessage?.onConfirm) {
       modalMessage.onConfirm();
@@ -2164,8 +2171,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         {/* Main Content */}
         <main className="flex-1 min-w-0 p-6">
           {error && (
-            <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
-              {error}
+            <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg flex items-start justify-between gap-3">
+              <span>{error}</span>
+              <button
+                type="button"
+                onClick={() => setError('')}
+                className="text-red-700 dark:text-red-300 hover:text-red-900 dark:hover:text-red-100 text-lg leading-none"
+                aria-label="Close error message"
+                title="Close"
+              >
+                ×
+              </button>
             </div>
           )}
 
