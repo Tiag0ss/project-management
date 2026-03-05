@@ -226,6 +226,7 @@ export default function TaskDetailModal({
     dueDate: task?.DueDate ? task.DueDate.split('T')[0] : '',
     dueDateMandatory: task?.DueDateMandatory === 1,
     estimatedHours: task?.EstimatedHours || undefined,
+    storyPoints: task?.StoryPoints || undefined,
     parentTaskId: task?.ParentTaskId || undefined,
     plannedStartDate: task?.PlannedStartDate ? task.PlannedStartDate.split('T')[0] : '',
     plannedEndDate: task?.PlannedEndDate ? task.PlannedEndDate.split('T')[0] : '',
@@ -1291,6 +1292,7 @@ export default function TaskDetailModal({
       'PlannedStartDate': 'Planned Start',
       'PlannedEndDate': 'Planned End',
       'EstimatedHours': 'Estimated Hours',
+      'StoryPoints': 'Story Points',
     };
     return labels[fieldName] || fieldName;
   };
@@ -1922,6 +1924,21 @@ export default function TaskDetailModal({
                       hasSubtasks ? 'bg-gray-100 dark:bg-gray-700 cursor-not-allowed opacity-75' : 'bg-white dark:bg-gray-700'
                     }`}
                     placeholder="e.g., 4.5"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Story Points
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={formData.storyPoints || ''}
+                    onChange={(e) => setFormData({ ...formData, storyPoints: e.target.value ? parseFloat(e.target.value) : undefined })}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="e.g., 3"
                   />
                 </div>
               </div>

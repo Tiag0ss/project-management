@@ -43,12 +43,19 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 WHERE t.SprintId = s.Id
               ), 0) as CompletedTasks,
               COALESCE((SELECT SUM(COALESCE(t.EstimatedHours, 0)) FROM Tasks t WHERE t.SprintId = s.Id), 0) as TotalEstimatedHours,
+              COALESCE((SELECT SUM(COALESCE(t.StoryPoints, 0)) FROM Tasks t WHERE t.SprintId = s.Id), 0) as TotalStoryPoints,
               COALESCE((
                 SELECT SUM(CASE WHEN tsv.IsClosed = 1 THEN COALESCE(t.EstimatedHours, 0) ELSE 0 END)
                 FROM Tasks t
                 LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
                 WHERE t.SprintId = s.Id
-              ), 0) as CompletedHours
+              ), 0) as CompletedHours,
+              COALESCE((
+                SELECT SUM(CASE WHEN tsv.IsClosed = 1 THEN COALESCE(t.StoryPoints, 0) ELSE 0 END)
+                FROM Tasks t
+                LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+                WHERE t.SprintId = s.Id
+              ), 0) as CompletedStoryPoints
        FROM Sprints s
        LEFT JOIN Users u ON s.CreatedBy = u.Id
        WHERE s.ProjectId = ?
@@ -59,6 +66,114 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
   } catch (error) {
     console.error('Error fetching sprints:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch sprints' });
+  }
+});
+
+router.get('/project/:projectId/velocity-trend', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { projectId } = req.params;
+
+    const [access] = await pool.execute<RowDataPacket[]>(
+      `SELECT p.Id
+       FROM Projects p
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       WHERE p.Id = ? AND om.UserId = ?`,
+      [projectId, userId]
+    );
+
+    if (access.length === 0) {
+      return res.status(404).json({ success: false, message: 'Project not found or access denied' });
+    }
+
+    const [sprints] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id, Name, StartDate, EndDate, Status
+       FROM Sprints
+       WHERE ProjectId = ?
+       ORDER BY StartDate ASC, Id ASC`,
+      [projectId]
+    );
+
+    const [sprintTasks] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.SprintId,
+              t.AssignedTo,
+              COALESCE(t.StoryPoints, 0) as StoryPoints,
+              COALESCE(tsv.IsClosed, 0) as IsClosed,
+              u.Username,
+              u.FirstName,
+              u.LastName
+       FROM Tasks t
+       LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+       LEFT JOIN Users u ON t.AssignedTo = u.Id
+       WHERE t.ProjectId = ? AND t.SprintId IS NOT NULL`,
+      [projectId]
+    );
+
+    const sprintRows = sprints.map((sprint) => {
+      const rows = sprintTasks.filter((task) => Number(task.SprintId) === Number(sprint.Id));
+      const committedStoryPoints = rows.reduce((sum, task) => sum + Number(task.StoryPoints || 0), 0);
+      const completedStoryPoints = rows
+        .filter((task) => Number(task.IsClosed || 0) === 1)
+        .reduce((sum, task) => sum + Number(task.StoryPoints || 0), 0);
+
+      const teamMap = new Map<number, { userId: number; username: string; fullName: string; completedStoryPoints: number }>();
+      rows.forEach((task) => {
+        const assignedTo = task.AssignedTo ? Number(task.AssignedTo) : null;
+        if (!assignedTo || Number(task.IsClosed || 0) !== 1) return;
+
+        const existing = teamMap.get(assignedTo) || {
+          userId: assignedTo,
+          username: task.Username || 'unknown',
+          fullName: [task.FirstName, task.LastName].filter(Boolean).join(' ').trim() || task.Username || 'Unknown User',
+          completedStoryPoints: 0,
+        };
+        existing.completedStoryPoints += Number(task.StoryPoints || 0);
+        teamMap.set(assignedTo, existing);
+      });
+
+      return {
+        sprintId: Number(sprint.Id),
+        sprintName: String(sprint.Name || `Sprint ${sprint.Id}`),
+        startDate: sprint.StartDate,
+        endDate: sprint.EndDate,
+        status: sprint.Status,
+        committedStoryPoints,
+        completedStoryPoints,
+        completionRate: committedStoryPoints > 0 ? Math.round((completedStoryPoints / committedStoryPoints) * 100) : 0,
+        teamBreakdown: Array.from(teamMap.values()).sort((a, b) => b.completedStoryPoints - a.completedStoryPoints),
+      };
+    });
+
+    const completedSprints = sprintRows.filter((item) => item.status === 'completed');
+    const recentWindow = completedSprints.slice(-3);
+    const previousWindow = completedSprints.slice(-6, -3);
+
+    const average = (items: Array<{ completedStoryPoints: number }>) => (
+      items.length > 0
+        ? items.reduce((sum, item) => sum + item.completedStoryPoints, 0) / items.length
+        : 0
+    );
+
+    const recentAverage = average(recentWindow);
+    const previousAverage = average(previousWindow);
+    const trendDelta = recentAverage - previousAverage;
+    const trendDirection = trendDelta > 0 ? 'up' : trendDelta < 0 ? 'down' : 'stable';
+
+    res.json({
+      success: true,
+      data: {
+        sprints: sprintRows,
+        summary: {
+          recentAverage,
+          previousAverage,
+          trendDelta,
+          trendDirection,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching sprint velocity trend:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch sprint velocity trend' });
   }
 });
 

@@ -1,0 +1,97 @@
+{
+  "TableName": "RetrospectiveActions",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "SprintId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Sprints.Id"
+    },
+    {
+      "FieldName": "Title",
+      "DataType": "varchar(255)",
+      "NotNullable": true,
+      "Comment": "Retrospective action title"
+    },
+    {
+      "FieldName": "Description",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Optional details for the action"
+    },
+    {
+      "FieldName": "OwnerUserId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Users.Id action owner"
+    },
+    {
+      "FieldName": "DueDate",
+      "DataType": "date",
+      "NotNullable": false,
+      "Comment": "Target closure date"
+    },
+    {
+      "FieldName": "IsClosed",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Action closure status"
+    },
+    {
+      "FieldName": "ClosedAt",
+      "DataType": "datetime",
+      "NotNullable": false,
+      "Comment": "Date and time when action was closed"
+    },
+    {
+      "FieldName": "ClosedBy",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Users.Id who closed the action"
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who created this action"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    }
+  ],
+  "Relationships": [
+    {
+      "Name": "RetrospectiveActionSprint",
+      "Description": "Action belongs to a sprint",
+      "FromField": "SprintId",
+      "ToTable": "Sprints",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "RetrospectiveActionOwner",
+      "Description": "Action has an owner user",
+      "FromField": "OwnerUserId",
+      "ToTable": "Users",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    }
+  ]
+}

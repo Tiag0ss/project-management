@@ -336,6 +336,203 @@ router.get('/:id/burndown', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
+router.get('/:id/flow-metrics', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const projectId = Number(req.params.id);
+
+    const [accessCheck] = await pool.execute<RowDataPacket[]>(
+      `SELECT p.Id, p.OrganizationId
+       FROM Projects p
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId AND om.UserId = ?
+       WHERE p.Id = ?`,
+      [userId, projectId]
+    );
+
+    if (accessCheck.length === 0) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
+
+    const project = accessCheck[0];
+
+    const [closedStatuses] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id, StatusName FROM TaskStatusValues WHERE OrganizationId = ? AND COALESCE(IsClosed, 0) = 1`,
+      [project.OrganizationId]
+    );
+
+    const closedStatusValues = new Set<string>();
+    closedStatuses.forEach((status) => {
+      closedStatusValues.add(String(status.Id));
+      closedStatusValues.add(String(status.StatusName || '').trim().toLowerCase());
+    });
+
+    const [tasks] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.Id, t.TaskName, t.Status, t.CreatedAt, t.UpdatedAt, t.PlannedStartDate
+       FROM Tasks t
+       LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+       WHERE t.ProjectId = ?
+         AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0`,
+      [projectId]
+    );
+
+    const [statusHistory] = await pool.execute<RowDataPacket[]>(
+      `SELECT th.TaskId, th.NewValue, th.CreatedAt
+       FROM TaskHistory th
+       INNER JOIN Tasks t ON t.Id = th.TaskId
+       WHERE t.ProjectId = ? AND th.FieldName = 'Status'
+       ORDER BY th.TaskId ASC, th.CreatedAt ASC`,
+      [projectId]
+    );
+
+    const [firstWorkRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT te.TaskId, MIN(te.WorkDate) as FirstWorkDate
+       FROM TimeEntries te
+       INNER JOIN Tasks t ON te.TaskId = t.Id
+       WHERE t.ProjectId = ?
+       GROUP BY te.TaskId`,
+      [projectId]
+    );
+
+    const firstWorkMap = new Map<number, Date>();
+    firstWorkRows.forEach((row) => {
+      if (!row.FirstWorkDate) return;
+      firstWorkMap.set(Number(row.TaskId), new Date(row.FirstWorkDate));
+    });
+
+    const historyMap = new Map<number, Array<{ newValue: string; createdAt: Date }>>();
+    statusHistory.forEach((entry) => {
+      const taskId = Number(entry.TaskId);
+      if (!historyMap.has(taskId)) {
+        historyMap.set(taskId, []);
+      }
+      historyMap.get(taskId)!.push({
+        newValue: String(entry.NewValue || '').trim(),
+        createdAt: new Date(entry.CreatedAt),
+      });
+    });
+
+    const normalizeDay = (date: Date): string => {
+      const year = date.getFullYear();
+      const month = `${date.getMonth() + 1}`.padStart(2, '0');
+      const day = `${date.getDate()}`.padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const dayDiff = (start: Date, end: Date): number => {
+      return (new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime() - new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime()) / 86400000;
+    };
+
+    const today = new Date();
+    const todayKey = normalizeDay(today);
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+
+    let totalLeadDays = 0;
+    let totalCycleDays = 0;
+    let completedCount = 0;
+
+    const throughputByDay: Record<string, number> = {};
+    const agingWip: Array<{ taskId: number; ageDays: number; taskName: string }> = [];
+
+    const tasksWithTimeline = tasks.map((task) => {
+      const taskId = Number(task.Id);
+      const createdAt = new Date(task.CreatedAt);
+      const taskHistoryEntries = historyMap.get(taskId) || [];
+      const firstWorkDate = firstWorkMap.get(taskId);
+
+      const startedAt = firstWorkDate || (task.PlannedStartDate ? new Date(task.PlannedStartDate) : createdAt);
+
+      let closedAt: Date | null = null;
+      for (const statusEvent of taskHistoryEntries) {
+        const statusToken = String(statusEvent.newValue || '').trim().toLowerCase();
+        if (closedStatusValues.has(statusToken) || closedStatusValues.has(String(statusEvent.newValue || '').trim())) {
+          closedAt = statusEvent.createdAt;
+          break;
+        }
+      }
+
+      const currentStatusToken = String(task.Status ?? '').trim().toLowerCase();
+      const isClosedNow = closedStatusValues.has(String(task.Status ?? '').trim()) || closedStatusValues.has(currentStatusToken);
+      if (!closedAt && isClosedNow && task.UpdatedAt) {
+        closedAt = new Date(task.UpdatedAt);
+      }
+
+      if (closedAt) {
+        completedCount += 1;
+        totalLeadDays += Math.max(0, dayDiff(createdAt, closedAt));
+        totalCycleDays += Math.max(0, dayDiff(startedAt, closedAt));
+        const completionDay = normalizeDay(closedAt);
+        throughputByDay[completionDay] = (throughputByDay[completionDay] || 0) + 1;
+      } else {
+        agingWip.push({
+          taskId,
+          taskName: String(task.TaskName || `Task #${taskId}`),
+          ageDays: Math.max(0, Math.floor(dayDiff(startedAt, today))),
+        });
+      }
+
+      return {
+        taskId,
+        createdAt,
+        startedAt,
+        closedAt,
+      };
+    });
+
+    const cfdSeries: Array<{ date: string; backlog: number; inProgress: number; done: number }> = [];
+    for (let cursor = new Date(thirtyDaysAgo); cursor <= today; cursor.setDate(cursor.getDate() + 1)) {
+      const day = new Date(cursor);
+      const dayKey = normalizeDay(day);
+
+      let backlog = 0;
+      let inProgress = 0;
+      let done = 0;
+
+      tasksWithTimeline.forEach((task) => {
+        if (task.createdAt > day) return;
+        if (task.closedAt && task.closedAt <= day) {
+          done += 1;
+          return;
+        }
+        if (task.startedAt <= day) {
+          inProgress += 1;
+        } else {
+          backlog += 1;
+        }
+      });
+
+      cfdSeries.push({
+        date: dayKey,
+        backlog,
+        inProgress,
+        done,
+      });
+    }
+
+    const throughputLast30Days = cfdSeries.reduce((sum, item) => sum + (throughputByDay[item.date] || 0), 0);
+
+    res.json({
+      success: true,
+      data: {
+        summary: {
+          averageLeadTimeDays: completedCount > 0 ? Number((totalLeadDays / completedCount).toFixed(2)) : 0,
+          averageCycleTimeDays: completedCount > 0 ? Number((totalCycleDays / completedCount).toFixed(2)) : 0,
+          throughputLast30Days,
+          completedInPeriod: completedCount,
+          wipCount: agingWip.length,
+          generatedAt: todayKey,
+        },
+        cfd: cfdSeries,
+        throughputByDay,
+        agingWip: agingWip.sort((a, b) => b.ageDays - a.ageDays),
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching flow metrics data:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch flow metrics data' });
+  }
+});
+
 /**
  * @swagger
  * /api/projects/{id}/permissions:

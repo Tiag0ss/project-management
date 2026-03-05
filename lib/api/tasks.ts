@@ -33,6 +33,7 @@ export interface Task {
   DueDate?: string;
   DueDateMandatory?: number;
   EstimatedHours?: number;
+  StoryPoints?: number;
   PlannedHours?: number;
   WorkedHours?: number;
   ParentTaskId?: number;
@@ -75,6 +76,7 @@ export interface CreateTaskData {
   dueDate?: string;
   dueDateMandatory?: boolean;
   estimatedHours?: number;
+  storyPoints?: number;
   parentTaskId?: number;
   displayOrder?: number;
   plannedStartDate?: string;

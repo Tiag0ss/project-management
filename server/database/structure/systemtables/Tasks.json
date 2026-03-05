@@ -71,6 +71,12 @@
       "Comment": "Estimated work hours needed for the task"
     },
     {
+      "FieldName": "StoryPoints",
+      "DataType": "decimal(10,2)",
+      "NotNullable": false,
+      "Comment": "Agile estimation points used for velocity tracking"
+    },
+    {
       "FieldName": "ParentTaskId",
       "DataType": "int",
       "NotNullable": false,

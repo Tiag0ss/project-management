@@ -767,7 +767,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, customerId, jiraIssueKey, applicationId, releaseVersionId } = req.body;
+    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, customerId, jiraIssueKey, applicationId, releaseVersionId } = req.body;
 
     if (!taskName || !projectId) {
       return res.status(400).json({ 
@@ -843,8 +843,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, EstimatedHours, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, ApplicationId, CreatedBy) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, EstimatedHours, StoryPoints, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, ApplicationId, CreatedBy) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         projectId,
         taskName,
@@ -856,6 +856,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         toDateOnly(dueDate),
         mandatoryDueFlag,
         estimatedHours || null,
+        storyPoints === undefined || storyPoints === null || storyPoints === '' ? null : Number(storyPoints),
         parentTaskId || null,
         order,
         toDateOnly(plannedStartDate),
@@ -1006,7 +1007,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const taskId = req.params.id;
-    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, estimatedHours, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, applicationId, releaseVersionId, customerId } = req.body;
+    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, applicationId, releaseVersionId, customerId } = req.body;
 
     // Verify user has access to this task's project through organization membership and has CanManageTasks permission
     const [access] = await pool.execute<RowDataPacket[]>(
@@ -1106,6 +1107,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         (dueDate !== undefined && hasEffectiveChange(toDateOnly(oldTask.DueDate), toDateOnly(dueDate))) ||
         (dueDateMandatory !== undefined && hasEffectiveChange(toBooleanFlag(oldTask.DueDateMandatory), finalDueDateMandatory)) ||
         (estimatedHours !== undefined && hasEffectiveChange(oldTask.EstimatedHours, estimatedHours)) ||
+        (storyPoints !== undefined && hasEffectiveChange(oldTask.StoryPoints, storyPoints)) ||
         (parentTaskId !== undefined && hasEffectiveChange(oldTask.ParentTaskId, parentTaskId)) ||
         (displayOrder !== undefined && hasEffectiveChange(oldTask.DisplayOrder, displayOrder)) ||
         (dependsOnTaskId !== undefined && hasEffectiveChange(oldTask.DependsOnTaskId, dependsOnTaskId)) ||
@@ -1139,6 +1141,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const finalEstimatedHours = estimatedHours !== undefined
       ? (estimatedHours === null || estimatedHours === '' ? null : Number(estimatedHours))
       : (oldTask.EstimatedHours ?? null);
+    const finalStoryPoints = storyPoints !== undefined
+      ? (storyPoints === null || storyPoints === '' ? null : Number(storyPoints))
+      : (oldTask.StoryPoints ?? null);
     const finalParentTaskId = parentTaskId !== undefined
       ? (parentTaskId === null || parentTaskId === '' ? null : Number(parentTaskId))
       : (oldTask.ParentTaskId ?? null);
@@ -1163,7 +1168,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Tasks 
-       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, EstimatedHours = ?, ParentTaskId = ?, DisplayOrder = ?, PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, CustomerId = ?, ApplicationId = ?, ReleaseVersionId = ?
+       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, EstimatedHours = ?, StoryPoints = ?, ParentTaskId = ?, DisplayOrder = ?, PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, CustomerId = ?, ApplicationId = ?, ReleaseVersionId = ?
        WHERE Id = ?`,
       [
         finalTaskName,
@@ -1175,6 +1180,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         effectiveDueDate,
         finalDueDateMandatory,
         finalEstimatedHours,
+        finalStoryPoints,
         finalParentTaskId,
         finalDisplayOrder,
         finalPlannedStartDate,
@@ -1243,6 +1249,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     }
     if (estimatedHours !== undefined && hasChanged(oldTask.EstimatedHours, estimatedHours)) {
       changes.push({ field: 'EstimatedHours', oldVal: String(oldTask.EstimatedHours || ''), newVal: String(estimatedHours || '') });
+    }
+    if (storyPoints !== undefined && hasChanged(oldTask.StoryPoints, storyPoints)) {
+      changes.push({ field: 'StoryPoints', oldVal: String(oldTask.StoryPoints || ''), newVal: String(storyPoints || '') });
     }
     
     // Date fields - normalize for comparison
