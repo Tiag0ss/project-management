@@ -1059,6 +1059,9 @@ export default function PlanningPage() {
       
       startDate = parseDate(task.PlannedStartDate);
       endDate = parseDate(task.PlannedEndDate);
+    } else if (Number(task.UnscheduledWork || 0) === 1 && !!task.AssignedTo) {
+      startDate = new Date(today);
+      endDate = new Date(today);
     } else {
       // Use range start for unplanned tasks when requested (keeps Not Planned readable in any view window)
       startDate = options?.preferRangeStartForUnplanned ? new Date(columns[0].start) : new Date(today);
@@ -1311,20 +1314,23 @@ export default function PlanningPage() {
       // Not planned - show only parent tasks without allocations, excluding closed/cancelled
       result = tasks.filter(t => {
         const hasAllocations = allAllocations.some(a => a.TaskId === t.Id);
+        const isAssignedUnscheduled = Number(t.UnscheduledWork || 0) === 1 && !!t.AssignedTo;
         const isParent = !t.ParentTaskId;
         // Also check if ALL children are closed/cancelled (for parent tasks with children)
         const children = tasks.filter(c => c.ParentTaskId === t.Id);
         const hasChildren = children.length > 0;
         const allChildrenClosed = hasChildren && children.every(c => isTaskClosedOrCancelled(c));
-        return !hasAllocations && isParent && !isTaskClosedOrCancelled(t) && !allChildrenClosed;
+        return !hasAllocations && !isAssignedUnscheduled && isParent && !isTaskClosedOrCancelled(t) && !allChildrenClosed;
       });
     } else {
-      // Assigned to this user AND has planning dates
+      // Assigned to this user and either planned or flagged as unscheduled work
       result = tasks.filter(t => 
         !t.ParentTaskId && 
         t.AssignedTo === userId &&
-        t.PlannedStartDate &&
-        t.PlannedEndDate
+        (
+          (t.PlannedStartDate && t.PlannedEndDate) ||
+          Number(t.UnscheduledWork || 0) === 1
+        )
       );
     }
     
@@ -4176,13 +4182,13 @@ export default function PlanningPage() {
                 {/* User rows */}
                 {users.map(userRow => {
                   // Get ALL tasks for this user (parent tasks with dates)
-                  const parentTasksWithDates = tasks.filter(t => 
-                    t.AssignedTo === userRow.Id &&
-                    !t.ParentTaskId &&
-                    t.PlannedStartDate &&
-                    t.PlannedEndDate &&
-                    matchesGanttSearch(t)
-                  );
+                  const parentTasksWithDates = tasks.filter(t => {
+                    const isAssignedParent = t.AssignedTo === userRow.Id && !t.ParentTaskId;
+                    if (!isAssignedParent) return false;
+                    const hasPlannedDates = !!(t.PlannedStartDate && t.PlannedEndDate);
+                    const isAssignedUnscheduled = Number(t.UnscheduledWork || 0) === 1;
+                    return (hasPlannedDates || isAssignedUnscheduled) && matchesGanttSearch(t);
+                  });
                   
                   // Build complete subtask tree recursively for visualization
                   const getAllDescendantsRecursive = (parentId: number): Task[] => {

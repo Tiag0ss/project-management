@@ -227,6 +227,7 @@ export default function TaskDetailModal({
     assignedTo: task?.AssignedTo || undefined,
     dueDate: task?.DueDate ? task.DueDate.split('T')[0] : '',
     dueDateMandatory: task?.DueDateMandatory === 1,
+    unscheduledWork: task?.UnscheduledWork === 1,
     estimatedHours: task?.EstimatedHours || undefined,
     storyPoints: task?.StoryPoints || undefined,
     parentTaskId: task?.ParentTaskId || undefined,
@@ -1304,6 +1305,7 @@ export default function TaskDetailModal({
       'AssignedTo': 'Assignee',
       'DueDate': 'Due Date',
       'DueDateMandatory': 'Due Date Mandatory',
+      'UnscheduledWork': 'Unscheduled Work',
       'PlannedStartDate': 'Planned Start',
       'PlannedEndDate': 'Planned End',
       'EstimatedHours': 'Estimated Hours',
@@ -1966,6 +1968,15 @@ export default function TaskDetailModal({
                       className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
                     />
                     Due date is mandatory for planning
+                  </label>
+                  <label className="mt-2 inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(formData.unscheduledWork)}
+                      onChange={(e) => setFormData({ ...formData, unscheduledWork: e.target.checked })}
+                      className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                    />
+                    Unscheduled work (show in Planner today)
                   </label>
                 </div>
 

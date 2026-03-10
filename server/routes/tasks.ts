@@ -777,7 +777,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, customerId, jiraIssueKey, applicationId, releaseVersionId } = req.body;
+    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, customerId, jiraIssueKey, applicationId, releaseVersionId } = req.body;
 
     if (!taskName || !projectId) {
       return res.status(400).json({ 
@@ -853,8 +853,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, EstimatedHours, StoryPoints, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, ApplicationId, CreatedBy) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, UnscheduledWork, EstimatedHours, StoryPoints, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, ApplicationId, CreatedBy) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         projectId,
         taskName,
@@ -865,6 +865,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         assignedTo || null,
         toDateOnly(dueDate),
         mandatoryDueFlag,
+        toBooleanFlag(unscheduledWork),
         estimatedHours || null,
         storyPoints === undefined || storyPoints === null || storyPoints === '' ? null : Number(storyPoints),
         parentTaskId || null,
@@ -1017,7 +1018,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const taskId = req.params.id;
-    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, applicationId, releaseVersionId, customerId } = req.body;
+    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, applicationId, releaseVersionId, customerId } = req.body;
 
     // Verify user has access to this task's project through organization membership and has CanManageTasks permission
     const [access] = await pool.execute<RowDataPacket[]>(
@@ -1116,6 +1117,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         (taskType !== undefined && hasEffectiveChange(oldTask.TaskType, taskType)) ||
         (dueDate !== undefined && hasEffectiveChange(toDateOnly(oldTask.DueDate), toDateOnly(dueDate))) ||
         (dueDateMandatory !== undefined && hasEffectiveChange(toBooleanFlag(oldTask.DueDateMandatory), finalDueDateMandatory)) ||
+        (unscheduledWork !== undefined && hasEffectiveChange(toBooleanFlag(oldTask.UnscheduledWork), toBooleanFlag(unscheduledWork))) ||
         (estimatedHours !== undefined && hasEffectiveChange(oldTask.EstimatedHours, estimatedHours)) ||
         (storyPoints !== undefined && hasEffectiveChange(oldTask.StoryPoints, storyPoints)) ||
         (parentTaskId !== undefined && hasEffectiveChange(oldTask.ParentTaskId, parentTaskId)) ||
@@ -1151,6 +1153,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const finalEstimatedHours = estimatedHours !== undefined
       ? (estimatedHours === null || estimatedHours === '' ? null : Number(estimatedHours))
       : (oldTask.EstimatedHours ?? null);
+    const finalUnscheduledWork = unscheduledWork !== undefined
+      ? toBooleanFlag(unscheduledWork)
+      : toBooleanFlag(oldTask.UnscheduledWork);
     const finalStoryPoints = storyPoints !== undefined
       ? (storyPoints === null || storyPoints === '' ? null : Number(storyPoints))
       : (oldTask.StoryPoints ?? null);
@@ -1228,7 +1233,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Tasks 
-       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, EstimatedHours = ?, StoryPoints = ?, ParentTaskId = ?, DisplayOrder = ?, PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, CustomerId = ?, ApplicationId = ?, ReleaseVersionId = ?
+       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, UnscheduledWork = ?, EstimatedHours = ?, StoryPoints = ?, ParentTaskId = ?, DisplayOrder = ?, PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, CustomerId = ?, ApplicationId = ?, ReleaseVersionId = ?
        WHERE Id = ?`,
       [
         finalTaskName,
@@ -1239,6 +1244,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         finalAssignedTo,
         effectiveDueDate,
         finalDueDateMandatory,
+        finalUnscheduledWork,
         finalEstimatedHours,
         finalStoryPoints,
         finalParentTaskId,
@@ -1326,6 +1332,13 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         field: 'DueDateMandatory',
         oldVal: toBooleanFlag(oldTask.DueDateMandatory) === 1 ? 'Yes' : 'No',
         newVal: finalDueDateMandatory === 1 ? 'Yes' : 'No'
+      });
+    }
+    if (unscheduledWork !== undefined && hasChanged(toBooleanFlag(oldTask.UnscheduledWork), finalUnscheduledWork)) {
+      changes.push({
+        field: 'UnscheduledWork',
+        oldVal: toBooleanFlag(oldTask.UnscheduledWork) === 1 ? 'Yes' : 'No',
+        newVal: finalUnscheduledWork === 1 ? 'Yes' : 'No'
       });
     }
     

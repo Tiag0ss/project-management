@@ -65,6 +65,13 @@
       "Comment": "When true, planning must not schedule task beyond DueDate"
     },
     {
+      "FieldName": "UnscheduledWork",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "When true, task appears in planner on current day for assigned user even without planned dates"
+    },
+    {
       "FieldName": "EstimatedHours",
       "DataType": "decimal(10,2)",
       "NotNullable": false,

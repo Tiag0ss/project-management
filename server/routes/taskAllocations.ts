@@ -2674,9 +2674,9 @@ router.delete('/manual/:id', authenticateToken, async (req: AuthRequest, res: Re
       );
       await syncTaskPrimaryAssignee(Number(taskId), assignedUserId, req.user?.userId);
     } else {
-      // No more allocations - clear planned dates and assignment
+      // No more allocations - clear planned dates but keep current assignee
       await pool.execute(
-        'UPDATE Tasks SET PlannedStartDate = NULL, PlannedEndDate = NULL, AssignedTo = NULL WHERE Id = ?',
+        'UPDATE Tasks SET PlannedStartDate = NULL, PlannedEndDate = NULL WHERE Id = ?',
         [taskId]
       );
     }
