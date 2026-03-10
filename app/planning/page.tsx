@@ -3531,16 +3531,10 @@ export default function PlanningPage() {
 
   return (
     <CustomerUserGuard>
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+    <div className="h-screen bg-gray-100 dark:bg-gray-900 flex flex-col overflow-hidden">
       <Navbar />
 
-      <main className="max-w-full mx-auto py-6 px-4">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Planning & Gantt Chart</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Showing tasks from all projects you have access to
-          </p>
-        </div>
+      <main className="w-full pt-0 pb-0 flex-1 min-h-0 flex flex-col">
 
         {isGanttLoading ? (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
@@ -3567,7 +3561,7 @@ export default function PlanningPage() {
         ) : (
           <>
             {/* Tab Navigation */}
-            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+            <div className="w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center gap-4 px-4">
                 <div className="flex gap-4">
                   <button
@@ -3615,7 +3609,7 @@ export default function PlanningPage() {
             </div>
 
             {activeTab === 'gantt' && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+          <div className="w-full bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700 flex-1 min-h-0 flex flex-col">
             {/* Permission Notice */}
             {!permissions?.canPlanTasks && (
               <div className="bg-yellow-50 dark:bg-yellow-900/20 border-b-2 border-yellow-400 dark:border-yellow-600 p-4">
@@ -3849,7 +3843,7 @@ export default function PlanningPage() {
             </div>
 
             {/* Gantt Chart */}
-            <div className="overflow-x-auto">
+            <div className="flex-1 min-h-0 overflow-auto">
               <div
                 className="relative"
                 ref={ganttContainerRef}
@@ -3903,7 +3897,7 @@ export default function PlanningPage() {
                 {/* Month header */}
                 {timelineColumns.length > 0 && (
                   <div className="flex border-b-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800">
-                    <div className="w-48 flex-shrink-0 p-2 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
+                    <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[70] bg-gray-100 dark:bg-gray-800 p-2 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
                       Month
                     </div>
                     <div className="flex-1 flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
@@ -3947,7 +3941,7 @@ export default function PlanningPage() {
                 )}
                 {/* Header with dates */}
                 <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
-                  <div className="w-48 flex-shrink-0 p-3 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
+                  <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[70] bg-gray-50 dark:bg-gray-700 p-3 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
                     User
                   </div>
                   <div className="flex-1 flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
@@ -3987,7 +3981,7 @@ export default function PlanningPage() {
 
                 {/* Milestones row */}
                 <div className="flex border-b border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-900/15">
-                  <div className="w-48 flex-shrink-0 p-3 border-r border-gray-200 dark:border-gray-700">
+                  <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[60] bg-emerald-50/60 dark:bg-emerald-900/15 p-3 border-r border-gray-200 dark:border-gray-700">
                     <div className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
                       🏁 Milestones
                     </div>
@@ -4062,7 +4056,7 @@ export default function PlanningPage() {
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDropOnUser(e, null)}
                   >
-                    <div className="w-48 flex-shrink-0 p-3 border-r border-gray-200 dark:border-gray-700">
+                    <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[60] bg-red-50 dark:bg-red-900/20 p-3 border-r border-gray-200 dark:border-gray-700">
                       <div className="text-sm font-medium text-red-700 dark:text-red-400">
                         ⚠️ Not Planned ({visibleUnassignedTasks.length})
                       </div>
@@ -4403,7 +4397,7 @@ export default function PlanningPage() {
                       onDrop={(e) => handleDropOnUser(e, userRow.Id)}
                       style={{ minHeight: `${rowHeight}px` }}
                     >
-                      <div className="w-48 flex-shrink-0 p-1 border-r border-gray-200 dark:border-gray-700">
+                      <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[50] bg-white dark:bg-gray-800 p-1 border-r border-gray-200 dark:border-gray-700">
                         <div className="text-sm font-medium text-gray-900 dark:text-white">
                           👤 {userRow.Username}
                         </div>
@@ -4661,7 +4655,7 @@ export default function PlanningPage() {
                     </div>
                     {/* User Daily Totals Row */}
                     <div className="flex border-b border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-750">
-                      <div className="w-48 flex-shrink-0 px-3 py-0.5 border-r border-gray-200 dark:border-gray-700">
+                      <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[50] bg-gray-50 dark:bg-gray-750 px-3 py-0.5 border-r border-gray-200 dark:border-gray-700">
                         <div className="text-[10px] text-gray-500 dark:text-gray-400 italic">
                           {useAnnualStyleDensity ? '└ Totals (monthly)' : '└ Totals'}
                         </div>
@@ -4880,7 +4874,7 @@ export default function PlanningPage() {
 
         {/* Allocations Tab */}
         {activeTab === 'allocations' && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700" data-grid-enhancer-ignore="true">
+          <div className="w-full bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700" data-grid-enhancer-ignore="true">
             {/* Filters */}
             <div className="p-4 border-b border-gray-200 dark:border-gray-700 space-y-4">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Filters</h2>

@@ -67,6 +67,7 @@ import workflowTransitionPoliciesRoutes from './routes/workflowTransitionPolicie
 import holidaysRoutes from './routes/holidays';
 import vacationsRoutes from './routes/vacations';
 import pdfExportsRoutes from './routes/pdfExports';
+import planningImportRoutes from './routes/planningImport';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
 import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler';
 import { startPdfReportScheduler } from './utils/pdfReportScheduler';
@@ -218,6 +219,7 @@ app.prepare().then(async () => {
   server.use('/api/applications', applicationsRoutes);
   server.use('/api/statistics', statisticsRoutes);
   server.use('/api/tickets', ticketsRoutes);
+  server.use('/api/planning-import', planningImportRoutes);
   server.use('/api/task-import', taskImportRoutes);
   server.use('/api/role-permissions', rolePermissionsRoutes);
   server.use('/api/system-settings', systemSettingsRoutes);

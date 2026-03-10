@@ -1239,6 +1239,12 @@ export default function Navbar() {
         />
       )}
 
+      {navbarMenuLayout === 'left' && navbarLeftMode === 'fixed' && (
+        <div
+          className={`fixed top-0 left-0 z-[79] h-16 ${navbarLeftCollapsed ? 'w-16' : 'w-72'} bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700`}
+        />
+      )}
+
       {shouldRenderLeftSidebar && (
         <aside
           onMouseEnter={() => {
