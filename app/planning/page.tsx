@@ -181,6 +181,32 @@ export default function PlanningPage() {
     message: string;
     onConfirm?: () => void;
   } | null>(null);
+  const [taskContextMenu, setTaskContextMenu] = useState<{
+    show: boolean;
+    x: number;
+    y: number;
+    task: Task | null;
+  }>({
+    show: false,
+    x: 0,
+    y: 0,
+    task: null,
+  });
+  const [forceDatesModal, setForceDatesModal] = useState<{
+    show: boolean;
+    task: Task | null;
+    startDate: string;
+    endDate: string;
+    isSaving: boolean;
+    error: string;
+  }>({
+    show: false,
+    task: null,
+    startDate: '',
+    endDate: '',
+    isSaving: false,
+    error: '',
+  });
 
   // Conflict resolution modal state
   const [conflictModal, setConflictModal] = useState<{
@@ -290,6 +316,21 @@ export default function PlanningPage() {
 
   const closeModal = () => {
     setModalMessage(null);
+  };
+
+  const closeTaskContextMenu = () => {
+    setTaskContextMenu({ show: false, x: 0, y: 0, task: null });
+  };
+
+  const closeForceDatesModal = () => {
+    setForceDatesModal({
+      show: false,
+      task: null,
+      startDate: '',
+      endDate: '',
+      isSaving: false,
+      error: '',
+    });
   };
 
   const closeMilestoneEditor = () => {
@@ -540,6 +581,32 @@ export default function PlanningPage() {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showGanttViewOptions]);
+
+  useEffect(() => {
+    const closeMenu = () => {
+      setTaskContextMenu((prev) => (prev.show ? { show: false, x: 0, y: 0, task: null } : prev));
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeMenu();
+      }
+    };
+
+    if (taskContextMenu.show) {
+      window.addEventListener('click', closeMenu);
+      window.addEventListener('scroll', closeMenu, true);
+      window.addEventListener('resize', closeMenu);
+      window.addEventListener('keydown', handleEscape);
+    }
+
+    return () => {
+      window.removeEventListener('click', closeMenu);
+      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [taskContextMenu.show]);
 
   useEffect(() => {
     try {
@@ -1657,6 +1724,126 @@ export default function PlanningPage() {
   const handleSubtaskDraggedToGantt = () => {
     // Close modal when subtask is dragged to gantt
     closeSubtasksModal();
+  };
+
+  const handleTaskContextMenu = (e: React.MouseEvent, task: Task) => {
+    if (!permissions?.canPlanTasks) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setTaskContextMenu({
+      show: true,
+      x: e.clientX,
+      y: e.clientY,
+      task,
+    });
+  };
+
+  const handleRecalculateTaskDatesFromAllocations = async (task: Task) => {
+    if (!token) return;
+
+    try {
+      const response = await fetch(`${getApiUrl()}/api/task-allocations/task/${task.Id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load task allocations');
+      }
+
+      const data = await response.json();
+      const allocations = Array.isArray(data.allocations) ? data.allocations : [];
+      const allocationDates = allocations
+        .map((allocation: any) => normalizeDateKey(allocation.AllocationDate))
+        .filter(Boolean)
+        .sort();
+
+      let plannedStartDate = allocationDates[0] || null;
+      let plannedEndDate = allocationDates.length > 0 ? allocationDates[allocationDates.length - 1] : null;
+
+      if (!plannedStartDate || !plannedEndDate) {
+        const childDates = getChildTaskDates(task.Id);
+        if (childDates) {
+          plannedStartDate = childDates.startDate;
+          plannedEndDate = childDates.endDate;
+        }
+      }
+
+      if (!plannedStartDate || !plannedEndDate) {
+        showAlert('No Allocations', 'This task has no allocations to calculate dates from.');
+        return;
+      }
+
+      if (!validateMandatoryDueDateForPlan(task, plannedEndDate)) {
+        return;
+      }
+
+      await handleTaskUpdate(task, {
+        PlannedStartDate: plannedStartDate,
+        PlannedEndDate: plannedEndDate,
+      });
+      await loadAllAllocations();
+      showAlert('Success', 'Task dates recalculated from allocations successfully.');
+    } catch (error: any) {
+      console.error('Failed to recalculate task dates:', error);
+      showAlert('Error', error.message || 'Failed to recalculate task dates.');
+    }
+  };
+
+  const openForceDatesModal = (task: Task) => {
+    setForceDatesModal({
+      show: true,
+      task,
+      startDate: task.PlannedStartDate ? String(task.PlannedStartDate).split('T')[0] : '',
+      endDate: task.PlannedEndDate ? String(task.PlannedEndDate).split('T')[0] : '',
+      isSaving: false,
+      error: '',
+    });
+  };
+
+  const handleForceDatesSave = async () => {
+    const task = forceDatesModal.task;
+    if (!task) return;
+
+    if (!forceDatesModal.startDate || !forceDatesModal.endDate) {
+      setForceDatesModal((prev) => ({ ...prev, error: 'Start date and end date are required.' }));
+      return;
+    }
+
+    if (forceDatesModal.endDate < forceDatesModal.startDate) {
+      setForceDatesModal((prev) => ({ ...prev, error: 'End date must be after or equal to start date.' }));
+      return;
+    }
+
+    if (!validateMandatoryDueDateForPlan(task, forceDatesModal.endDate)) {
+      return;
+    }
+
+    try {
+      setForceDatesModal((prev) => ({ ...prev, isSaving: true, error: '' }));
+      await handleTaskUpdate(task, {
+        PlannedStartDate: forceDatesModal.startDate,
+        PlannedEndDate: forceDatesModal.endDate,
+      });
+      await loadAllAllocations();
+      setForceDatesModal({
+        show: false,
+        task: null,
+        startDate: '',
+        endDate: '',
+        isSaving: false,
+        error: '',
+      });
+      showAlert('Success', 'Task dates updated successfully.');
+    } catch (error: any) {
+      setForceDatesModal((prev) => ({
+        ...prev,
+        isSaving: false,
+        error: error?.message || 'Failed to update task dates.',
+      }));
+    }
   };
 
   // Calculate task depth level relative to a parent
@@ -4460,6 +4647,7 @@ export default function PlanningPage() {
                             draggable={permissions?.canPlanTasks && !isGanttSearchActive}
                             onDragStart={(e) => handleDragStart(e, parentTask)}
                             onDragEnd={handleDragEnd}
+                            onContextMenu={(e) => handleTaskContextMenu(e, parentTask)}
                             onClick={(e) => {
                               if (hasSubtasks && !e.ctrlKey && !e.metaKey) {
                                 openSubtasksModal(parentTask);
@@ -4927,6 +5115,7 @@ export default function PlanningPage() {
                               draggable={permissions?.canPlanTasks && !isGanttSearchActive}
                               onDragStart={(e) => handleDragStart(e, task)}
                               onDragEnd={handleDragEnd}
+                              onContextMenu={(e) => handleTaskContextMenu(e, task)}
                               onClick={() => handleTaskClick(task)}
                               className={`absolute ${subtaskHeight} rounded ${!statusColor ? getPriorityColor(task) : ''} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''}`}
                               style={{
@@ -5208,6 +5397,7 @@ export default function PlanningPage() {
                           <div
                             key={`grouped-task-${groupRow.id}-${task.Id}`}
                             data-task-id={task.Id}
+                            onContextMenu={(e) => handleTaskContextMenu(e, task)}
                             onClick={() => handleTaskClick(task)}
                             className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(task) : ''} opacity-80 hover:opacity-100 cursor-pointer flex items-center text-white text-xs px-2 transition-all`}
                             style={{
@@ -5235,6 +5425,104 @@ export default function PlanningPage() {
                 );
               })}
               </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {taskContextMenu.show && taskContextMenu.task && (
+          <div
+            className="fixed z-[140] min-w-[240px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden"
+            style={{ left: taskContextMenu.x, top: taskContextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => {
+                const task = taskContextMenu.task;
+                closeTaskContextMenu();
+                if (task) {
+                  void handleDeleteTaskAllocations(task.Id);
+                }
+              }}
+              className="w-full px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              Remove allocations
+            </button>
+            <button
+              onClick={() => {
+                const task = taskContextMenu.task;
+                closeTaskContextMenu();
+                if (task) {
+                  void handleRecalculateTaskDatesFromAllocations(task);
+                }
+              }}
+              className="w-full px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 border-t border-gray-200 dark:border-gray-700"
+            >
+              Recalculate start/end from allocations
+            </button>
+            <button
+              onClick={() => {
+                const task = taskContextMenu.task;
+                closeTaskContextMenu();
+                if (task) {
+                  openForceDatesModal(task);
+                }
+              }}
+              className="w-full px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 border-t border-gray-200 dark:border-gray-700"
+            >
+              Force new start/end dates
+            </button>
+          </div>
+        )}
+
+        {forceDatesModal.show && forceDatesModal.task && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[130] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Force Task Dates</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{forceDatesModal.task.TaskName}</p>
+              </div>
+              <div className="p-4 space-y-4">
+                {forceDatesModal.error && (
+                  <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 rounded-lg text-sm">
+                    {forceDatesModal.error}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Start date</label>
+                    <input
+                      type="date"
+                      value={forceDatesModal.startDate}
+                      onChange={(e) => setForceDatesModal((prev) => ({ ...prev, startDate: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">End date</label>
+                    <input
+                      type="date"
+                      value={forceDatesModal.endDate}
+                      onChange={(e) => setForceDatesModal((prev) => ({ ...prev, endDate: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 flex justify-end gap-2">
+                <button
+                  onClick={closeForceDatesModal}
+                  className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void handleForceDatesSave()}
+                  disabled={forceDatesModal.isSaving}
+                  className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white"
+                >
+                  {forceDatesModal.isSaving ? 'Saving...' : 'Save dates'}
+                </button>
               </div>
             </div>
           </div>
