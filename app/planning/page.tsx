@@ -252,6 +252,33 @@ export default function PlanningPage() {
     show: false,
     recurring: null,
   });
+  const [milestoneEditor, setMilestoneEditor] = useState<{
+    show: boolean;
+    milestone: ProjectMilestone | null;
+    projectName: string;
+    name: string;
+    description: string;
+    dueDate: string;
+    isCompleted: boolean;
+    milestoneTypeId: number | '';
+    milestoneTypes: StatusValue[];
+    error: string;
+    isSaving: boolean;
+    isDeleting: boolean;
+  }>({
+    show: false,
+    milestone: null,
+    projectName: '',
+    name: '',
+    description: '',
+    dueDate: '',
+    isCompleted: false,
+    milestoneTypeId: '',
+    milestoneTypes: [],
+    error: '',
+    isSaving: false,
+    isDeleting: false,
+  });
 
   const showAlert = (title: string, message: string) => {
     setModalMessage({ type: 'alert', title, message });
@@ -263,6 +290,104 @@ export default function PlanningPage() {
 
   const closeModal = () => {
     setModalMessage(null);
+  };
+
+  const closeMilestoneEditor = () => {
+    setMilestoneEditor({
+      show: false,
+      milestone: null,
+      projectName: '',
+      name: '',
+      description: '',
+      dueDate: '',
+      isCompleted: false,
+      milestoneTypeId: '',
+      milestoneTypes: [],
+      error: '',
+      isSaving: false,
+      isDeleting: false,
+    });
+  };
+
+  const getMilestoneTypeLabel = (type: StatusValue): string => {
+    return String(type.StatusName || type.TypeName || `Type #${type.Id}`);
+  };
+
+  const openMilestoneEditor = async (milestone: ProjectMilestone) => {
+    const project = projects.find((item) => Number(item.Id) === Number(milestone.ProjectId));
+    let milestoneTypes: StatusValue[] = [];
+
+    if (project && token) {
+      try {
+        const result = await statusValuesApi.getMilestoneTypes(project.OrganizationId, token);
+        milestoneTypes = result.types || [];
+      } catch (error) {
+        console.error('Failed to load milestone types:', error);
+      }
+    }
+
+    setMilestoneEditor({
+      show: true,
+      milestone,
+      projectName: project?.ProjectName || 'Unknown Project',
+      name: milestone.Name || '',
+      description: milestone.Description || '',
+      dueDate: milestone.DueDate ? String(milestone.DueDate).split('T')[0] : '',
+      isCompleted: Number(milestone.IsCompleted || 0) === 1,
+      milestoneTypeId: milestone.MilestoneTypeId != null ? Number(milestone.MilestoneTypeId) : '',
+      milestoneTypes,
+      error: '',
+      isSaving: false,
+      isDeleting: false,
+    });
+  };
+
+  const handleMilestoneSave = async () => {
+    if (!milestoneEditor.milestone || !token) return;
+    if (!milestoneEditor.name.trim()) {
+      setMilestoneEditor((prev) => ({ ...prev, error: 'Milestone name is required.' }));
+      return;
+    }
+
+    try {
+      setMilestoneEditor((prev) => ({ ...prev, isSaving: true, error: '' }));
+      await projectMilestonesApi.update(
+        milestoneEditor.milestone.Id,
+        {
+          name: milestoneEditor.name.trim(),
+          description: milestoneEditor.description.trim(),
+          dueDate: milestoneEditor.dueDate || undefined,
+          isCompleted: milestoneEditor.isCompleted,
+          milestoneTypeId: milestoneEditor.milestoneTypeId === '' ? null : Number(milestoneEditor.milestoneTypeId),
+        },
+        token,
+      );
+      await loadAllProjectMilestones(projects);
+      closeMilestoneEditor();
+    } catch (error: any) {
+      setMilestoneEditor((prev) => ({
+        ...prev,
+        isSaving: false,
+        error: error?.message || 'Failed to save milestone.',
+      }));
+    }
+  };
+
+  const handleMilestoneDelete = async () => {
+    if (!milestoneEditor.milestone || !token) return;
+
+    try {
+      setMilestoneEditor((prev) => ({ ...prev, isDeleting: true, error: '' }));
+      await projectMilestonesApi.delete(milestoneEditor.milestone.Id, token);
+      await loadAllProjectMilestones(projects);
+      closeMilestoneEditor();
+    } catch (error: any) {
+      setMilestoneEditor((prev) => ({
+        ...prev,
+        isDeleting: false,
+        error: error?.message || 'Failed to delete milestone.',
+      }));
+    }
   };
 
   const normalizeDateOnly = (dateValue?: string | null): string | null => {
@@ -3598,7 +3723,7 @@ export default function PlanningPage() {
   };
   const unassignedTasks = isResourceGrouping ? getTasksForUser(null) : [];
   const visibleUnassignedTasks = unassignedTasks.filter(matchesGanttSearch);
-  const groupedGanttRows = React.useMemo(() => {
+  const groupedGanttRows = (() => {
     if (isResourceGrouping) return [] as { id: string; label: string; subLabel: string; tasks: Task[] }[];
 
     const grouped = new Map<string, { id: string; label: string; subLabel: string; tasks: Task[] }>();
@@ -3650,16 +3775,7 @@ export default function PlanningPage() {
     return Array.from(grouped.values())
       .map((group) => ({ ...group, tasks: group.tasks.sort((a, b) => a.TaskName.localeCompare(b.TaskName)) }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [
-    dayColumnWidthPx,
-    ganttGroupBy,
-    isResourceGrouping,
-    matchesGanttSearch,
-    projects,
-    tasks,
-    timelineColumns,
-    useFixedPixelColumns,
-  ]);
+  })();
   const visibleMilestones = projectMilestones.filter((milestone) => {
     const dueDate = normalizeDateKey(milestone.DueDate);
     if (!dueDate) return false;
@@ -4234,7 +4350,8 @@ export default function PlanningPage() {
                       return (
                         <div
                           key={`milestone-${milestone.Id}`}
-                          className="absolute h-4 rounded text-white text-[10px] px-1.5 flex items-center cursor-default"
+                          onClick={() => openMilestoneEditor(milestone)}
+                          className="absolute h-4 rounded text-white text-[10px] px-1.5 flex items-center cursor-pointer hover:opacity-100"
                           style={{
                             left,
                             width,
@@ -4243,7 +4360,7 @@ export default function PlanningPage() {
                             backgroundColor: milestoneColor,
                             opacity: isCompletedMilestone ? 0.7 : 0.9,
                           }}
-                          title={`${projectName}\n${milestone.Name}\nType: ${milestone.MilestoneTypeName || 'No type'}\nDue: ${new Date(`${dueDate}T12:00:00`).toLocaleDateString()}${isCompletedMilestone ? '\nStatus: Completed' : '\nStatus: Open'}`}
+                          title={`Click to edit milestone\n\n${projectName}\n${milestone.Name}\nType: ${milestone.MilestoneTypeName || 'No type'}\nDue: ${new Date(`${dueDate}T12:00:00`).toLocaleDateString()}${isCompletedMilestone ? '\nStatus: Completed' : '\nStatus: Open'}`}
                         >
                           <span className="truncate inline-flex items-center gap-1">
                             <span className="inline-flex items-center">{renderMilestoneTypeSvg(milestone.MilestoneTypeIconSvg, 'w-3 h-3')}</span>
@@ -5124,6 +5241,127 @@ export default function PlanningPage() {
         )}
 
         {/* Task Detail Modal */}
+        {milestoneEditor.show && milestoneEditor.milestone && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Milestone</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{milestoneEditor.projectName}</p>
+                </div>
+                <button
+                  onClick={closeMilestoneEditor}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl"
+                  aria-label="Close milestone editor"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {milestoneEditor.error && (
+                  <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 rounded-lg text-sm">
+                    {milestoneEditor.error}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Name</label>
+                  <input
+                    type="text"
+                    value={milestoneEditor.name}
+                    onChange={(e) => setMilestoneEditor((prev) => ({ ...prev, name: e.target.value }))}
+                    disabled={!permissions?.canManageProjects}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Due Date</label>
+                    <input
+                      type="date"
+                      value={milestoneEditor.dueDate}
+                      onChange={(e) => setMilestoneEditor((prev) => ({ ...prev, dueDate: e.target.value }))}
+                      disabled={!permissions?.canManageProjects}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Type</label>
+                    <select
+                      value={milestoneEditor.milestoneTypeId}
+                      onChange={(e) => setMilestoneEditor((prev) => ({ ...prev, milestoneTypeId: e.target.value ? Number(e.target.value) : '' }))}
+                      disabled={!permissions?.canManageProjects}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+                    >
+                      <option value="">No type</option>
+                      {milestoneEditor.milestoneTypes.map((type) => (
+                        <option key={type.Id} value={type.Id}>
+                          {getMilestoneTypeLabel(type)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description</label>
+                  <textarea
+                    value={milestoneEditor.description}
+                    onChange={(e) => setMilestoneEditor((prev) => ({ ...prev, description: e.target.value }))}
+                    disabled={!permissions?.canManageProjects}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+                  />
+                </div>
+
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={milestoneEditor.isCompleted}
+                    onChange={(e) => setMilestoneEditor((prev) => ({ ...prev, isCompleted: e.target.checked }))}
+                    disabled={!permissions?.canManageProjects}
+                    className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                  />
+                  Mark milestone as completed
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30">
+                <div>
+                  {permissions?.canManageProjects && (
+                    <button
+                      onClick={handleMilestoneDelete}
+                      disabled={milestoneEditor.isDeleting || milestoneEditor.isSaving}
+                      className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white"
+                    >
+                      {milestoneEditor.isDeleting ? 'Deleting...' : 'Delete'}
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={closeMilestoneEditor}
+                    className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600"
+                  >
+                    {permissions?.canManageProjects ? 'Cancel' : 'Close'}
+                  </button>
+                  {permissions?.canManageProjects && (
+                    <button
+                      onClick={handleMilestoneSave}
+                      disabled={milestoneEditor.isSaving || milestoneEditor.isDeleting}
+                      className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white"
+                    >
+                      {milestoneEditor.isSaving ? 'Saving...' : 'Save'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {selectedTask && (() => {
           const selectedProject = projects.find(p => p.Id === selectedTask.ProjectId);
           if (!selectedProject) return null;
