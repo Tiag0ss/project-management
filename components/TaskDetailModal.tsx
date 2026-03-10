@@ -1393,14 +1393,14 @@ export default function TaskDetailModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex justify-between items-start">
             <div className="flex-1">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                 {task?.Id ? task.TaskName : 'Create New Task'}
               </h2>
               {task?.Id && (
-                <div className="flex items-center gap-3 mt-2">
+                <div className="flex items-center gap-2 mt-1.5">
                   <span className="px-2 py-1 text-xs font-semibold rounded-full" style={{ backgroundColor: task.StatusColor ? `${task.StatusColor}20` : undefined, color: task.StatusColor || undefined }}>
                     {task.StatusName || 'Unknown'}
                   </span>
@@ -1457,20 +1457,20 @@ export default function TaskDetailModal({
                 </div>
               )}
               {task?.Id && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
-                  <div className="px-3 py-2 rounded bg-purple-50 dark:bg-purple-900/20">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+                  <div className="px-3 py-1.5 rounded bg-purple-50 dark:bg-purple-900/20">
                     <div className="text-[11px] text-gray-600 dark:text-gray-400">Estimated</div>
                     <div className="text-sm font-bold text-purple-600 dark:text-purple-400">{parseFloat(task.EstimatedHours as any || 0).toFixed(1)}h</div>
                   </div>
-                  <div className="px-3 py-2 rounded bg-blue-50 dark:bg-blue-900/20">
+                  <div className="px-3 py-1.5 rounded bg-blue-50 dark:bg-blue-900/20">
                     <div className="text-[11px] text-gray-600 dark:text-gray-400">Allocated</div>
                     <div className="text-sm font-bold text-blue-600 dark:text-blue-400">{totalAllocated.toFixed(1)}h</div>
                   </div>
-                  <div className="px-3 py-2 rounded bg-green-50 dark:bg-green-900/20">
+                  <div className="px-3 py-1.5 rounded bg-green-50 dark:bg-green-900/20">
                     <div className="text-[11px] text-gray-600 dark:text-gray-400">Worked</div>
                     <div className="text-sm font-bold text-green-600 dark:text-green-400">{totalWorked.toFixed(1)}h</div>
                   </div>
-                  <div className="px-3 py-2 rounded bg-gray-50 dark:bg-gray-700/40">
+                  <div className="px-3 py-1.5 rounded bg-gray-50 dark:bg-gray-700/40">
                     <div className="text-[11px] text-gray-600 dark:text-gray-400">Completion</div>
                     <div className="text-sm font-bold text-gray-900 dark:text-white">{completionPercentage}%</div>
                   </div>
@@ -1478,7 +1478,7 @@ export default function TaskDetailModal({
               )}
               {/* Tags */}
               {task?.Id && (
-                <div className="flex flex-wrap items-center gap-2 mt-3">
+                <div className="flex flex-wrap items-center gap-2 mt-2">
                   {taskTags.map((tag) => (
                     <span
                       key={tag.Id}
@@ -1573,7 +1573,7 @@ export default function TaskDetailModal({
           </div>
 
           {/* Tabs */}
-          <div className={`grid ${task?.Id ? 'grid-cols-6' : 'grid-cols-2'} gap-1 mt-4 border-b border-gray-200 dark:border-gray-700 -mb-6 pb-0`}>
+          <div className={`grid ${task?.Id ? 'grid-cols-6' : 'grid-cols-2'} gap-1 mt-3 border-b border-gray-200 dark:border-gray-700 -mb-4 pb-0`}>
             {visibleTabs.map((tab) => (
               <button
                 key={tab}
@@ -1604,7 +1604,7 @@ export default function TaskDetailModal({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4">
           {error && (
             <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded">
               {error}
@@ -1613,7 +1613,7 @@ export default function TaskDetailModal({
 
           {/* Details Tab (Edit Form) */}
           {activeTab === 'details' && (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-3">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">
                 Basic Information
               </h3>
@@ -1767,11 +1767,11 @@ export default function TaskDetailModal({
                 </div>
               )}
 
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-1.5 pt-1">
                 Task Setup
               </h3>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Status
@@ -1846,12 +1846,12 @@ export default function TaskDetailModal({
                 </select>
               </div>
 
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-1.5 pt-1">
                 Assignment
               </h3>
               <div>
                 {isGlobalProject && (
-                  <div className="mb-4">
+                  <div className="mb-3">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Customer *
                     </label>
@@ -1869,7 +1869,7 @@ export default function TaskDetailModal({
                 )}
 
                 {/* Principal Assignee field (searchable) */}
-                <div className="mb-4">
+                <div className="mb-3">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Principal Assignee
                   </label>
@@ -1946,10 +1946,10 @@ export default function TaskDetailModal({
                 )}
               </div>
 
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-1.5 pt-1">
                 Effort & Completion
               </h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Due Date
@@ -1960,7 +1960,7 @@ export default function TaskDetailModal({
                     onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
-                  <label className="mt-2 inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <label className="mt-1.5 inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                     <input
                       type="checkbox"
                       checked={Boolean(formData.dueDateMandatory)}
@@ -1969,7 +1969,7 @@ export default function TaskDetailModal({
                     />
                     Due date is mandatory for planning
                   </label>
-                  <label className="mt-2 inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <label className="mt-1.5 inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                     <input
                       type="checkbox"
                       checked={Boolean(formData.unscheduledWork)}
@@ -2019,7 +2019,7 @@ export default function TaskDetailModal({
 
               {/* Application */}
               {(applications.length > 0 || (formData.applicationId && applicationVersions.length > 0)) && (
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-1.5 pt-1">
                   Release Tracking
                 </h3>
               )}

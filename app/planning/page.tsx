@@ -96,6 +96,7 @@ export default function PlanningPage() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
+  const [hoveredDropCell, setHoveredDropCell] = useState<{ userId: number; dateKey: string } | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [jiraIntegrationByOrg, setJiraIntegrationByOrg] = useState<Record<number, any>>({});
   const [taskAllocations, setTaskAllocations] = useState<any[]>([]);
@@ -109,6 +110,10 @@ export default function PlanningPage() {
   const [showDependencyLines, setShowDependencyLines] = useState(true);
   const [showCriticalPath, setShowCriticalPath] = useState(false);
   const [showBaseline, setShowBaseline] = useState(false);
+  const [showGanttTotals, setShowGanttTotals] = useState(true);
+  const [showTaskBarHours, setShowTaskBarHours] = useState(true);
+  const [showGanttViewOptions, setShowGanttViewOptions] = useState(false);
+  const [hasLoadedGanttViewPrefs, setHasLoadedGanttViewPrefs] = useState(false);
   const [ganttSearch, setGanttSearch] = useState('');
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'year' | 'custom'>('week');
   const [customStartDate, setCustomStartDate] = useState(() => formatDateForInput(viewStartDate));
@@ -128,6 +133,7 @@ export default function PlanningPage() {
   });
   const [expandedAllocationRows, setExpandedAllocationRows] = useState<Set<number>>(new Set());
   const ganttContainerRef = useRef<HTMLDivElement>(null);
+  const ganttViewOptionsRef = useRef<HTMLDivElement>(null);
   
   // Manual allocation modal state
   const [manualAllocationModal, setManualAllocationModal] = useState<{
@@ -392,6 +398,73 @@ export default function PlanningPage() {
       loadData();
     }
   }, [user, isLoading, router, token]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (ganttViewOptionsRef.current && !ganttViewOptionsRef.current.contains(event.target as Node)) {
+        setShowGanttViewOptions(false);
+      }
+    };
+
+    if (showGanttViewOptions) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showGanttViewOptions]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('planning:gantt:view-options');
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          showDependencyLines?: boolean;
+          showCriticalPath?: boolean;
+          showBaseline?: boolean;
+          showGanttTotals?: boolean;
+          showTaskBarHours?: boolean;
+        };
+
+        if (typeof parsed.showDependencyLines === 'boolean') setShowDependencyLines(parsed.showDependencyLines);
+        if (typeof parsed.showCriticalPath === 'boolean') setShowCriticalPath(parsed.showCriticalPath);
+        if (typeof parsed.showBaseline === 'boolean') setShowBaseline(parsed.showBaseline);
+        if (typeof parsed.showGanttTotals === 'boolean') setShowGanttTotals(parsed.showGanttTotals);
+        if (typeof parsed.showTaskBarHours === 'boolean') setShowTaskBarHours(parsed.showTaskBarHours);
+      }
+    } catch (error) {
+      console.warn('Failed to load Gantt view options from localStorage:', error);
+    } finally {
+      setHasLoadedGanttViewPrefs(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedGanttViewPrefs) return;
+
+    try {
+      localStorage.setItem(
+        'planning:gantt:view-options',
+        JSON.stringify({
+          showDependencyLines,
+          showCriticalPath,
+          showBaseline,
+          showGanttTotals,
+          showTaskBarHours,
+        })
+      );
+    } catch (error) {
+      console.warn('Failed to save Gantt view options to localStorage:', error);
+    }
+  }, [
+    hasLoadedGanttViewPrefs,
+    showDependencyLines,
+    showCriticalPath,
+    showBaseline,
+    showGanttTotals,
+    showTaskBarHours,
+  ]);
 
   // Re-apply canViewOthersPlanning filter after permissions are resolved
   useEffect(() => {
@@ -1062,6 +1135,7 @@ export default function PlanningPage() {
     } else if (Number(task.UnscheduledWork || 0) === 1 && !!task.AssignedTo) {
       startDate = new Date(today);
       endDate = new Date(today);
+      endDate.setDate(endDate.getDate() + 2); // Visualize unscheduled work across 3 days for readability
     } else {
       // Use range start for unplanned tasks when requested (keeps Not Planned readable in any view window)
       startDate = options?.preferRangeStartForUnplanned ? new Date(columns[0].start) : new Date(today);
@@ -1483,6 +1557,10 @@ export default function PlanningPage() {
     e.dataTransfer.effectAllowed = 'move';
   };
 
+  const handleDragEnd = () => {
+    setHoveredDropCell(null);
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     if (!permissions?.canPlanTasks || ganttSearch.trim().length > 0) {
       e.preventDefault();
@@ -1495,6 +1573,7 @@ export default function PlanningPage() {
 
   const handleDropOnUser = async (e: React.DragEvent, userId: number | null) => {
     e.preventDefault();
+    setHoveredDropCell(null);
     if (!draggedTask || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) return;
 
     // Check if user has access to the project
@@ -1517,6 +1596,7 @@ export default function PlanningPage() {
   const handleDropOnDay = async (e: React.DragEvent, day: Date, userId: number | null) => {
     e.preventDefault();
     e.stopPropagation();
+    setHoveredDropCell(null);
     if (!draggedTask || !permissions?.canPlanTasks || ganttSearch.trim().length > 0 || !userId) return;
 
     const droppedDateStr = getDateKeyFromDate(day);
@@ -3775,39 +3855,68 @@ export default function PlanningPage() {
               </div>
 
               <div className="flex items-center gap-2"> 
-                <button
-                  onClick={() => setShowDependencyLines(!showDependencyLines)}
-                  className={`px-4 py-2 rounded transition-colors ${
-                    showDependencyLines 
-                      ? 'bg-orange-500 hover:bg-orange-600 text-white' 
-                      : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'
-                  }`}
-                  title="Toggle dependency lines"
-                >
-                  🔗 Dependencies
-                </button>
-                <button
-                  onClick={() => setShowCriticalPath(!showCriticalPath)}
-                  className={`px-4 py-2 rounded transition-colors ${
-                    showCriticalPath
-                      ? 'bg-red-600 hover:bg-red-700 text-white'
-                      : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'
-                  }`}
-                  title="Highlight critical path"
-                >
-                  🔴 Critical Path
-                </button>
-                <button
-                  onClick={() => setShowBaseline(!showBaseline)}
-                  className={`px-4 py-2 rounded transition-colors ${
-                    showBaseline
-                      ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                      : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'
-                  }`}
-                  title="Toggle baseline comparison bars"
-                >
-                  📏 Baseline
-                </button>
+                <div className="relative" ref={ganttViewOptionsRef}>
+                  <button
+                    onClick={() => setShowGanttViewOptions((prev) => !prev)}
+                    className="px-4 py-2 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors inline-flex items-center gap-2"
+                    title="Gantt view options"
+                    aria-label="Gantt view options"
+                  >
+                    ⚙️ View Options
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {showGanttViewOptions && (
+                    <div className="absolute right-0 mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-[120] p-3 space-y-2">
+                      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showDependencyLines}
+                          onChange={(e) => setShowDependencyLines(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                        />
+                        Show dependencies
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showCriticalPath}
+                          onChange={(e) => setShowCriticalPath(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                        />
+                        Show critical path
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showBaseline}
+                          onChange={(e) => setShowBaseline(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                        />
+                        Show baseline
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showGanttTotals}
+                          onChange={(e) => setShowGanttTotals(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                        />
+                        Show daily totals
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showTaskBarHours}
+                          onChange={(e) => setShowTaskBarHours(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                        />
+                        Show task bar hours
+                      </label>
+                    </div>
+                  )}
+                </div>
                 {permissions?.canPlanTasks && projects.length > 0 && (
                   <button
                     onClick={() => {
@@ -4141,6 +4250,7 @@ export default function PlanningPage() {
                             data-task-id={parentTask.Id}
                             draggable={permissions?.canPlanTasks && !isGanttSearchActive}
                             onDragStart={(e) => handleDragStart(e, parentTask)}
+                            onDragEnd={handleDragEnd}
                             onClick={(e) => {
                               if (hasSubtasks && !e.ctrlKey && !e.metaKey) {
                                 openSubtasksModal(parentTask);
@@ -4310,6 +4420,8 @@ export default function PlanningPage() {
                       console.log(`Parent task ${task.TaskName} has no position - skipping`);
                       return;
                     }
+                    const taskStartIndex = position.startIndex;
+                    const taskEndIndex = position.startIndex + position.duration - 1;
                     
                     let row = 0;
                     
@@ -4328,23 +4440,18 @@ export default function PlanningPage() {
                         columnWidthPx: dayColumnWidthPx,
                       });
                       if (!otherPosition) continue;
-                      
-                      const taskStart = task.PlannedStartDate || '';
-                      const taskEnd = task.PlannedEndDate || '';
-                      const otherStart = otherTask.PlannedStartDate || '';
-                      const otherEnd = otherTask.PlannedEndDate || '';
-                      
-                      if (taskStart && taskEnd && otherStart && otherEnd) {
-                        const overlap = !(taskEnd < otherStart || taskStart > otherEnd);
-                        if (overlap) {
-                          const otherTaskRow = taskRows.find(tr => tr.task.Id === otherTask.Id);
-                          if (otherTaskRow) {
-                            // Count visible subtasks for the other task
-                            const otherSubtasks = subtasksMap.get(otherTask.Id) || [];
-                            const visibleSubtasks = otherSubtasks.filter(st => getTaskLevel(st.Id) <= maxVisibleLevel);
-                            const extraRows = visibleSubtasks.length;
-                            row = Math.max(row, otherTaskRow.row + 1 + extraRows);
-                          }
+                      const otherStartIndex = otherPosition.startIndex;
+                      const otherEndIndex = otherPosition.startIndex + otherPosition.duration - 1;
+                      const overlap = !(taskEndIndex < otherStartIndex || taskStartIndex > otherEndIndex);
+
+                      if (overlap) {
+                        const otherTaskRow = taskRows.find(tr => tr.task.Id === otherTask.Id);
+                        if (otherTaskRow) {
+                          // Count visible subtasks for the other task
+                          const otherSubtasks = subtasksMap.get(otherTask.Id) || [];
+                          const visibleSubtasks = otherSubtasks.filter(st => getTaskLevel(st.Id) <= maxVisibleLevel);
+                          const extraRows = visibleSubtasks.length;
+                          row = Math.max(row, otherTaskRow.row + 1 + extraRows);
                         }
                       }
                     }
@@ -4421,6 +4528,13 @@ export default function PlanningPage() {
                             const isOverAllocated = summary.isOverAllocated;
                             const holidayNames = summary.holidayNames;
                             const isHoliday = summary.isHoliday;
+                            const dateKey = getDateKeyFromDate(column.start);
+                            const showDayDropTarget = !!(
+                              draggedTask &&
+                              permissions?.canPlanTasks &&
+                              hoveredDropCell?.userId === userRow.Id &&
+                              hoveredDropCell?.dateKey === dateKey
+                            );
                             return (
                               <div
                                 key={idx}
@@ -4432,10 +4546,26 @@ export default function PlanningPage() {
                                     : ''
                                 } ${idx === todayIndex ? 'bg-blue-100/60 dark:bg-blue-800/20 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
                                 style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
+                                onDragEnter={(e) => {
+                                  if (!draggedTask || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) return;
+                                  e.preventDefault();
+                                  setHoveredDropCell({ userId: userRow.Id, dateKey });
+                                }}
+                                onDragLeave={() => {
+                                  setHoveredDropCell((prev) => (
+                                    prev?.userId === userRow.Id && prev?.dateKey === dateKey ? null : prev
+                                  ));
+                                }}
                                 onDragOver={handleDragOver}
                                 onDrop={(e) => handleDropOnDay(e, column.start, userRow.Id)}
                                 title={isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
-                              />
+                              >
+                                {showDayDropTarget && (
+                                  <div className="absolute inset-1 rounded border-2 border-dashed border-blue-500 dark:border-blue-400 bg-blue-100/40 dark:bg-blue-900/30 pointer-events-none flex items-center justify-center">
+                                    <span className="text-[10px] font-semibold text-blue-700 dark:text-blue-300">Drop here</span>
+                                  </div>
+                                )}
+                              </div>
                             );
                           })}
                         </div>
@@ -4587,6 +4717,7 @@ export default function PlanningPage() {
                               data-task-id={task.Id}
                               draggable={permissions?.canPlanTasks && !isGanttSearchActive}
                               onDragStart={(e) => handleDragStart(e, task)}
+                              onDragEnd={handleDragEnd}
                               onClick={() => handleTaskClick(task)}
                               className={`absolute ${subtaskHeight} rounded ${!statusColor ? getPriorityColor(task) : ''} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''}`}
                               style={{
@@ -4608,7 +4739,7 @@ export default function PlanningPage() {
                                 {!isSubtask && hasDependency ? '🔗 ' : ''}
                                 {task.TaskName}
                               </span>
-                              {!isSubtask && (
+                              {!isSubtask && showTaskBarHours && (
                                 <span className={`ml-1 text-[10px] whitespace-nowrap ${isOverPlanned ? 'bg-red-600 px-1 rounded font-bold' : 'opacity-80'}`}>{hoursDisplay}</span>
                               )}
                             </div>
@@ -4657,9 +4788,39 @@ export default function PlanningPage() {
                               </div>
                             );
                           })}
+
+                        {draggedTask && permissions?.canPlanTasks && ganttSearch.trim().length === 0 && (
+                          <div className="absolute inset-0 z-[60] flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
+                            {timelineColumns.map((column, idx) => {
+                              const dateKey = getDateKeyFromDate(column.start);
+                              const showDayDropTarget = hoveredDropCell?.userId === userRow.Id && hoveredDropCell?.dateKey === dateKey;
+
+                              return (
+                                <div
+                                  key={`drop-overlay-${idx}`}
+                                  className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} relative`}
+                                  style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
+                                  onDragEnter={(e) => {
+                                    e.preventDefault();
+                                    setHoveredDropCell({ userId: userRow.Id, dateKey });
+                                  }}
+                                  onDragOver={handleDragOver}
+                                  onDrop={(e) => handleDropOnDay(e, column.start, userRow.Id)}
+                                >
+                                  {showDayDropTarget && (
+                                    <div className="absolute inset-1 rounded border-2 border-dashed border-blue-500 dark:border-blue-400 bg-blue-100/50 dark:bg-blue-900/30 pointer-events-none flex items-center justify-center">
+                                      <span className="text-[10px] font-semibold text-blue-700 dark:text-blue-300">Drop here</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                     {/* User Daily Totals Row */}
+                    {showGanttTotals && (
                     <div className="flex border-b border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-750">
                       <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[50] bg-gray-50 dark:bg-gray-750 px-3 py-0.5 border-r border-gray-200 dark:border-gray-700">
                         <div className="text-[10px] text-gray-500 dark:text-gray-400 italic">
@@ -4745,6 +4906,7 @@ export default function PlanningPage() {
                         })}
                       </div>
                     </div>
+                    )}
                   </React.Fragment>
                 );
               })}
