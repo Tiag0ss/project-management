@@ -123,6 +123,7 @@ export default function PlanningPage() {
     return formatDateForInput(endDate);
   });
   const [activeTab, setActiveTab] = useState<'gantt' | 'allocations'>('gantt');
+  const [ganttGroupBy, setGanttGroupBy] = useState<'resource' | 'customer' | 'project'>('resource');
   const [maxVisibleLevel, setMaxVisibleLevel] = useState<number>(0);
   const [allocationFilters, setAllocationFilters] = useState({
     startDate: '',
@@ -1549,7 +1550,7 @@ export default function PlanningPage() {
   };
 
   const handleDragStart = (e: React.DragEvent, task: Task) => {
-    if (!permissions?.canPlanTasks || ganttSearch.trim().length > 0) {
+    if (ganttGroupBy !== 'resource' || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) {
       e.preventDefault();
       return;
     }
@@ -1562,7 +1563,7 @@ export default function PlanningPage() {
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    if (!permissions?.canPlanTasks || ganttSearch.trim().length > 0) {
+    if (ganttGroupBy !== 'resource' || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'none';
       return;
@@ -1574,7 +1575,7 @@ export default function PlanningPage() {
   const handleDropOnUser = async (e: React.DragEvent, userId: number | null) => {
     e.preventDefault();
     setHoveredDropCell(null);
-    if (!draggedTask || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) return;
+    if (ganttGroupBy !== 'resource' || !draggedTask || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) return;
 
     // Check if user has access to the project
     if (userId) {
@@ -1597,7 +1598,7 @@ export default function PlanningPage() {
     e.preventDefault();
     e.stopPropagation();
     setHoveredDropCell(null);
-    if (!draggedTask || !permissions?.canPlanTasks || ganttSearch.trim().length > 0 || !userId) return;
+    if (ganttGroupBy !== 'resource' || !draggedTask || !permissions?.canPlanTasks || ganttSearch.trim().length > 0 || !userId) return;
 
     const droppedDateStr = getDateKeyFromDate(day);
     const droppedDateHolidayNames = getUserHolidayNames(userId, droppedDateStr);
@@ -3575,6 +3576,7 @@ export default function PlanningPage() {
   });
   const normalizedGanttSearch = ganttSearch.trim().toLowerCase();
   const isGanttSearchActive = normalizedGanttSearch.length > 0;
+  const isResourceGrouping = ganttGroupBy === 'resource';
   const matchesGanttSearch = (task: Task) => {
     if (!isGanttSearchActive) return true;
     const projectName = projects.find((p) => p.Id === task.ProjectId)?.ProjectName || '';
@@ -3590,8 +3592,74 @@ export default function PlanningPage() {
       .toLowerCase();
     return searchable.includes(normalizedGanttSearch);
   };
-  const unassignedTasks = getTasksForUser(null);
+  const isProjectActive = (project: Project | undefined) => {
+    if (!project) return false;
+    return !(Number(project.StatusIsClosed || 0) === 1 || Number(project.StatusIsCancelled || 0) === 1);
+  };
+  const unassignedTasks = isResourceGrouping ? getTasksForUser(null) : [];
   const visibleUnassignedTasks = unassignedTasks.filter(matchesGanttSearch);
+  const groupedGanttRows = React.useMemo(() => {
+    if (isResourceGrouping) return [] as { id: string; label: string; subLabel: string; tasks: Task[] }[];
+
+    const grouped = new Map<string, { id: string; label: string; subLabel: string; tasks: Task[] }>();
+    const parentTasks = tasks.filter((t) => {
+      if (t.ParentTaskId) return false;
+      const hasPlannedDates = !!(t.PlannedStartDate && t.PlannedEndDate);
+      const isAssignedUnscheduled = Number(t.UnscheduledWork || 0) === 1 && !!t.AssignedTo;
+      if (!(hasPlannedDates || isAssignedUnscheduled) || !matchesGanttSearch(t)) return false;
+
+      const project = projects.find((projectItem) => projectItem.Id === t.ProjectId);
+      if (!isProjectActive(project)) return false;
+
+      return !!getTaskPosition(t, timelineColumns, {
+        useFixedPixelColumns,
+        columnWidthPx: dayColumnWidthPx,
+      });
+    });
+
+    for (const task of parentTasks) {
+      const project = projects.find((projectItem) => projectItem.Id === task.ProjectId);
+
+      if (ganttGroupBy === 'project') {
+        const projectName = project?.ProjectName || `Project #${task.ProjectId}`;
+        const key = `project-${task.ProjectId}`;
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            id: key,
+            label: projectName,
+            subLabel: project?.CustomerName ? `Customer: ${project.CustomerName}` : 'No customer',
+            tasks: [],
+          });
+        }
+        grouped.get(key)!.tasks.push(task);
+      } else {
+        const customerName = task.CustomerName || project?.CustomerName || 'No Customer';
+        const key = `customer-${customerName.toLowerCase()}`;
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            id: key,
+            label: customerName,
+            subLabel: 'Customer',
+            tasks: [],
+          });
+        }
+        grouped.get(key)!.tasks.push(task);
+      }
+    }
+
+    return Array.from(grouped.values())
+      .map((group) => ({ ...group, tasks: group.tasks.sort((a, b) => a.TaskName.localeCompare(b.TaskName)) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [
+    dayColumnWidthPx,
+    ganttGroupBy,
+    isResourceGrouping,
+    matchesGanttSearch,
+    projects,
+    tasks,
+    timelineColumns,
+    useFixedPixelColumns,
+  ]);
   const visibleMilestones = projectMilestones.filter((milestone) => {
     const dueDate = normalizeDateKey(milestone.DueDate);
     if (!dueDate) return false;
@@ -3710,6 +3778,14 @@ export default function PlanningPage() {
                 <div className="flex items-center gap-2 text-orange-800 dark:text-orange-200">
                   <span className="text-xl">🔎</span>
                   <span className="font-medium">Search filter active — planning is locked while filtering.</span>
+                </div>
+              </div>
+            )}
+            {!isResourceGrouping && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-700 p-3">
+                <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200 text-sm">
+                  <span>ℹ️</span>
+                  <span className="font-medium">Customer/Project views are visualization-only. Planning drag-and-drop is available in Resource view.</span>
                 </div>
               </div>
             )}
@@ -3851,6 +3927,22 @@ export default function PlanningPage() {
                   <option value="month">Month</option>
                   <option value="year">Year</option>
                   <option value="custom">Custom</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Group By:
+                </label>
+                <select
+                  value={ganttGroupBy}
+                  onChange={(e) => setGanttGroupBy(e.target.value as 'resource' | 'customer' | 'project')}
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  title="Choose how rows are grouped in Gantt"
+                >
+                  <option value="resource">Resource</option>
+                  <option value="customer">Customer</option>
+                  <option value="project">Project</option>
                 </select>
               </div>
 
@@ -4057,7 +4149,7 @@ export default function PlanningPage() {
                 {/* Header with dates */}
                 <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
                   <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[70] bg-gray-50 dark:bg-gray-700 p-3 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
-                    User
+                    {ganttGroupBy === 'resource' ? 'User' : ganttGroupBy === 'customer' ? 'Customer' : 'Project'}
                   </div>
                   <div className="flex-1 flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
                     {timelineColumns.map((column, idx) => {
@@ -4165,7 +4257,7 @@ export default function PlanningPage() {
 
                 <div className="flex flex-col">
                 {/* Unassigned tasks row */}
-                {visibleUnassignedTasks.length > 0 && (
+                {isResourceGrouping && visibleUnassignedTasks.length > 0 && (
                   <div
                     className="order-last flex border-b-2 border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/20"
                     onDragOver={handleDragOver}
@@ -4290,7 +4382,7 @@ export default function PlanningPage() {
                 )}
 
                 {/* User rows */}
-                {users.map(userRow => {
+                {isResourceGrouping && users.map(userRow => {
                   // Get ALL tasks for this user (parent tasks with dates)
                   const parentTasksWithDates = tasks.filter(t => {
                     const isAssignedParent = t.AssignedTo === userRow.Id && !t.ParentTaskId;
@@ -4908,6 +5000,121 @@ export default function PlanningPage() {
                     </div>
                     )}
                   </React.Fragment>
+                );
+              })}
+
+              {!isResourceGrouping && groupedGanttRows.map((groupRow) => {
+                const parentTasks = groupRow.tasks;
+                const taskRows: { task: Task; row: number }[] = [];
+                let maxRows = 1;
+
+                parentTasks.forEach((task, taskIdx) => {
+                  const position = getTaskPosition(task, timelineColumns, {
+                    useFixedPixelColumns,
+                    columnWidthPx: dayColumnWidthPx,
+                  });
+                  if (!position) return;
+
+                  const taskStartIndex = position.startIndex;
+                  const taskEndIndex = position.startIndex + position.duration - 1;
+                  let row = 0;
+
+                  for (let i = 0; i < taskIdx; i++) {
+                    const otherTask = parentTasks[i];
+                    const otherPosition = getTaskPosition(otherTask, timelineColumns, {
+                      useFixedPixelColumns,
+                      columnWidthPx: dayColumnWidthPx,
+                    });
+                    if (!otherPosition) continue;
+
+                    const otherStartIndex = otherPosition.startIndex;
+                    const otherEndIndex = otherPosition.startIndex + otherPosition.duration - 1;
+                    const overlap = !(taskEndIndex < otherStartIndex || taskStartIndex > otherEndIndex);
+
+                    if (overlap) {
+                      const otherTaskRow = taskRows.find((taskRow) => taskRow.task.Id === otherTask.Id);
+                      if (otherTaskRow) {
+                        row = Math.max(row, otherTaskRow.row + 1);
+                      }
+                    }
+                  }
+
+                  taskRows.push({ task, row });
+                  maxRows = Math.max(maxRows, row + 1);
+                });
+
+                const rowHeight = Math.max(maxRows * 24 + 8, 44);
+
+                return (
+                  <div
+                    key={groupRow.id}
+                    className="flex border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                    style={{ minHeight: `${rowHeight}px` }}
+                  >
+                    <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[50] bg-white dark:bg-gray-800 p-1 border-r border-gray-200 dark:border-gray-700">
+                      <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                        {ganttGroupBy === 'customer' ? '🏢 ' : '📁 '}{groupRow.label}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{groupRow.subLabel}</div>
+                      <div className="text-xs text-blue-600 dark:text-blue-400">
+                        {parentTasks.length} task{parentTasks.length !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+                    <div className="flex-1 relative" style={useFixedPixelColumns ? { minHeight: `${rowHeight}px`, minWidth: `${timelineDaysWidthPx}px` } : { minHeight: `${rowHeight}px` }}>
+                      <div className="flex h-full" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
+                        {timelineColumns.map((column, idx) => (
+                          <div
+                            key={idx}
+                            className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} border-r border-gray-200 dark:border-gray-700 ${idx === todayIndex ? 'bg-blue-100/60 dark:bg-blue-800/20 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
+                            style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
+                          />
+                        ))}
+                      </div>
+
+                      {taskRows.map(({ task, row }) => {
+                        const position = getTaskPosition(task, timelineColumns, {
+                          useFixedPixelColumns,
+                          columnWidthPx: dayColumnWidthPx,
+                        });
+                        if (!position) return null;
+
+                        const project = projects.find((projectItem) => projectItem.Id === task.ProjectId);
+                        const taskIsHobbyProject = isTaskHobby(task);
+                        const statusColor = getTaskStatusColor(task);
+                        const priorityBorderHex = getPriorityBorderHex(task);
+                        const estimatedHours = task.EstimatedHours || 0;
+                        const plannedHours = task.PlannedHours || 0;
+                        const workedHours = task.WorkedHours || 0;
+                        const hoursDisplay = `${workedHours}/${plannedHours}/${estimatedHours}h`;
+
+                        return (
+                          <div
+                            key={`grouped-task-${groupRow.id}-${task.Id}`}
+                            data-task-id={task.Id}
+                            onClick={() => handleTaskClick(task)}
+                            className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(task) : ''} opacity-80 hover:opacity-100 cursor-pointer flex items-center text-white text-xs px-2 transition-all`}
+                            style={{
+                              left: position.left,
+                              width: position.width,
+                              top: `${2 + row * 24}px`,
+                              ...(statusColor ? { backgroundColor: statusColor } : {}),
+                              borderLeft: `4px solid ${priorityBorderHex}`,
+                              zIndex: 21,
+                            }}
+                            title={`Project: ${project?.ProjectName || 'Unknown'}\nTask: ${task.TaskName}\nStatus: ${task.StatusName || 'Unknown'}\nPriority: ${task.PriorityName || 'Unknown'}\nDates: ${task.PlannedStartDate || 'Not planned'} → ${task.PlannedEndDate || 'Not planned'}`}
+                          >
+                            {taskIsHobbyProject && (
+                              <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0">HOBBY</span>
+                            )}
+                            <span className="truncate flex-1">{task.TaskName}</span>
+                            {showTaskBarHours && (
+                              <span className="ml-1 text-[10px] whitespace-nowrap opacity-80">{hoursDisplay}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 );
               })}
               </div>
