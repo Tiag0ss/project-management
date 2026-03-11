@@ -135,6 +135,7 @@ export default function PlanningPage() {
   const [expandedAllocationRows, setExpandedAllocationRows] = useState<Set<number>>(new Set());
   const ganttContainerRef = useRef<HTMLDivElement>(null);
   const ganttViewOptionsRef = useRef<HTMLDivElement>(null);
+  const suppressTaskClickUntilRef = useRef(0);
   
   // Manual allocation modal state
   const [manualAllocationModal, setManualAllocationModal] = useState<{
@@ -206,6 +207,27 @@ export default function PlanningPage() {
     endDate: '',
     isSaving: false,
     error: '',
+  });
+  const [taskResizeState, setTaskResizeState] = useState<{
+    task: Task | null;
+    edge: 'start' | 'end' | null;
+    startX: number;
+    initialStartIndex: number;
+    initialEndIndex: number;
+    currentStartIndex: number;
+    currentEndIndex: number;
+    columnWidthPx: number;
+    isSaving: boolean;
+  }>({
+    task: null,
+    edge: null,
+    startX: 0,
+    initialStartIndex: 0,
+    initialEndIndex: 0,
+    currentStartIndex: 0,
+    currentEndIndex: 0,
+    columnWidthPx: 1,
+    isSaving: false,
   });
 
   // Conflict resolution modal state
@@ -332,6 +354,23 @@ export default function PlanningPage() {
       error: '',
     });
   };
+
+  const closeTaskResize = () => {
+    setTaskResizeState({
+      task: null,
+      edge: null,
+      startX: 0,
+      initialStartIndex: 0,
+      initialEndIndex: 0,
+      currentStartIndex: 0,
+      currentEndIndex: 0,
+      columnWidthPx: 1,
+      isSaving: false,
+    });
+  };
+
+  const shouldSuppressTaskClick = () => Date.now() < suppressTaskClickUntilRef.current;
+  const canUseGanttPlanningActions = () => !!permissions?.canPlanTasks && ganttGroupBy === 'resource';
 
   const closeMilestoneEditor = () => {
     setMilestoneEditor({
@@ -607,6 +646,14 @@ export default function PlanningPage() {
       window.removeEventListener('keydown', handleEscape);
     };
   }, [taskContextMenu.show]);
+
+  useEffect(() => {
+    if (canUseGanttPlanningActions()) return;
+
+    closeTaskContextMenu();
+    closeForceDatesModal();
+    closeTaskResize();
+  }, [ganttGroupBy, permissions?.canPlanTasks]);
 
   useEffect(() => {
     try {
@@ -1727,7 +1774,7 @@ export default function PlanningPage() {
   };
 
   const handleTaskContextMenu = (e: React.MouseEvent, task: Task) => {
-    if (!permissions?.canPlanTasks) return;
+    if (!canUseGanttPlanningActions()) return;
     e.preventDefault();
     e.stopPropagation();
     setTaskContextMenu({
@@ -1739,7 +1786,7 @@ export default function PlanningPage() {
   };
 
   const handleRecalculateTaskDatesFromAllocations = async (task: Task) => {
-    if (!token) return;
+    if (!token || !canUseGanttPlanningActions()) return;
 
     try {
       const response = await fetch(`${getApiUrl()}/api/task-allocations/task/${task.Id}`, {
@@ -1793,6 +1840,7 @@ export default function PlanningPage() {
   };
 
   const openForceDatesModal = (task: Task) => {
+    if (!canUseGanttPlanningActions()) return;
     setForceDatesModal({
       show: true,
       task,
@@ -1804,6 +1852,11 @@ export default function PlanningPage() {
   };
 
   const handleForceDatesSave = async () => {
+    if (!canUseGanttPlanningActions()) {
+      closeForceDatesModal();
+      return;
+    }
+
     const task = forceDatesModal.task;
     if (!task) return;
 
@@ -1845,6 +1898,155 @@ export default function PlanningPage() {
       }));
     }
   };
+
+  const getResizedTaskIndices = (
+    clientX: number,
+    resizeState: {
+      edge: 'start' | 'end' | null;
+      startX: number;
+      initialStartIndex: number;
+      initialEndIndex: number;
+      columnWidthPx: number;
+    }
+  ) => {
+    const totalColumns = Math.max(1, timelineColumns.length);
+    const safeColumnWidth = Math.max(1, resizeState.columnWidthPx);
+    const deltaColumns = Math.round((clientX - resizeState.startX) / safeColumnWidth);
+
+    if (resizeState.edge === 'start') {
+      const nextStartIndex = Math.max(0, Math.min(resizeState.initialEndIndex, resizeState.initialStartIndex + deltaColumns));
+      return {
+        startIndex: nextStartIndex,
+        endIndex: resizeState.initialEndIndex,
+      };
+    }
+
+    const nextEndIndex = Math.min(totalColumns - 1, Math.max(resizeState.initialStartIndex, resizeState.initialEndIndex + deltaColumns));
+    return {
+      startIndex: resizeState.initialStartIndex,
+      endIndex: nextEndIndex,
+    };
+  };
+
+  const handleTaskResizeStart = (
+    e: React.MouseEvent<HTMLDivElement>,
+    task: Task,
+    edge: 'start' | 'end',
+    startIndex: number,
+    endIndex: number
+  ) => {
+    if (!canUseGanttPlanningActions() || isGanttSearchActive) {
+      return;
+    }
+
+    const timelineTrack = (e.currentTarget.parentElement?.parentElement as HTMLDivElement | null);
+    const timelineRect = timelineTrack?.getBoundingClientRect();
+    const fallbackWidth = useFixedPixelColumns ? dayColumnWidthPx : ganttContainerRef.current?.getBoundingClientRect().width || dayColumnWidthPx;
+    const columnWidthPx = timelineRect && timelineColumns.length > 0
+      ? timelineRect.width / timelineColumns.length
+      : fallbackWidth / Math.max(1, timelineColumns.length);
+
+    e.preventDefault();
+    e.stopPropagation();
+  suppressTaskClickUntilRef.current = Date.now() + 500;
+    closeTaskContextMenu();
+
+    setTaskResizeState({
+      task,
+      edge,
+      startX: e.clientX,
+      initialStartIndex: startIndex,
+      initialEndIndex: endIndex,
+      currentStartIndex: startIndex,
+      currentEndIndex: endIndex,
+      columnWidthPx,
+      isSaving: false,
+    });
+  };
+
+  useEffect(() => {
+    if (!taskResizeState.task || !taskResizeState.edge) return;
+
+    const resizeSnapshot = {
+      task: taskResizeState.task,
+      edge: taskResizeState.edge,
+      startX: taskResizeState.startX,
+      initialStartIndex: taskResizeState.initialStartIndex,
+      initialEndIndex: taskResizeState.initialEndIndex,
+      columnWidthPx: taskResizeState.columnWidthPx,
+    };
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const nextIndices = getResizedTaskIndices(event.clientX, resizeSnapshot);
+      setTaskResizeState((prev) => {
+        if (!prev.task || prev.task.Id !== resizeSnapshot.task.Id || prev.edge !== resizeSnapshot.edge) {
+          return prev;
+        }
+
+        if (prev.currentStartIndex === nextIndices.startIndex && prev.currentEndIndex === nextIndices.endIndex) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          currentStartIndex: nextIndices.startIndex,
+          currentEndIndex: nextIndices.endIndex,
+        };
+      });
+    };
+
+    const handleMouseUp = (event: MouseEvent) => {
+      suppressTaskClickUntilRef.current = Date.now() + 500;
+      const nextIndices = getResizedTaskIndices(event.clientX, resizeSnapshot);
+      const didChange =
+        nextIndices.startIndex !== resizeSnapshot.initialStartIndex ||
+        nextIndices.endIndex !== resizeSnapshot.initialEndIndex;
+
+      if (!didChange) {
+        closeTaskResize();
+        return;
+      }
+
+      const plannedStartDate = getDateKeyFromDate(timelineColumns[nextIndices.startIndex].start);
+      const plannedEndDate = getDateKeyFromDate(timelineColumns[nextIndices.endIndex].end);
+
+      if (!validateMandatoryDueDateForPlan(resizeSnapshot.task, plannedEndDate)) {
+        closeTaskResize();
+        return;
+      }
+
+      setTaskResizeState((prev) => ({ ...prev, isSaving: true }));
+
+      void (async () => {
+        try {
+          await handleTaskUpdate(resizeSnapshot.task, {
+            PlannedStartDate: plannedStartDate,
+            PlannedEndDate: plannedEndDate,
+          });
+        } catch (error: any) {
+          console.error('Failed to resize task dates:', error);
+          showAlert('Error', error?.message || 'Failed to update task dates.');
+        } finally {
+          closeTaskResize();
+        }
+      })();
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp, { once: true });
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [
+    taskResizeState.task,
+    taskResizeState.edge,
+    taskResizeState.startX,
+    taskResizeState.initialStartIndex,
+    taskResizeState.initialEndIndex,
+    taskResizeState.columnWidthPx,
+  ]);
 
   // Calculate task depth level relative to a parent
   const getTaskDepthLevel = (task: Task, rootParentId: number): number => {
@@ -3870,12 +4072,28 @@ export default function PlanningPage() {
       : 20;
   const fixedTimelineTotalWidthPx = 192 + timelineColumns.length * dayColumnWidthPx;
   const timelineDaysWidthPx = timelineColumns.length * dayColumnWidthPx;
+  const firstTimelineDateKey = timelineColumns.length > 0 ? getDateKeyFromDate(timelineColumns[0].start) : '';
+  const lastTimelineDateKey = timelineColumns.length > 0 ? getDateKeyFromDate(timelineColumns[timelineColumns.length - 1].end) : '';
   const timelineMinWidth =
     useFixedPixelColumns
       ? fixedTimelineTotalWidthPx
       : viewMode === 'week'
       ? Math.max(1600, 192 + timelineDaysWidthPx)
       : 1200;
+  const getBarStyleFromIndices = (startIndex: number, endIndex: number) => {
+    const clampedStart = Math.max(0, Math.min(timelineColumns.length - 1, startIndex));
+    const clampedEnd = Math.max(clampedStart, Math.min(timelineColumns.length - 1, endIndex));
+    const duration = clampedEnd - clampedStart + 1;
+
+    return {
+      left: useFixedPixelColumns
+        ? `${clampedStart * dayColumnWidthPx}px`
+        : `${(clampedStart / Math.max(1, timelineColumns.length)) * 100}%`,
+      width: useFixedPixelColumns
+        ? `${duration * dayColumnWidthPx}px`
+        : `${(duration / Math.max(1, timelineColumns.length)) * 100}%`,
+    };
+  };
   const isGanttLoading = isLoadingData || loadingAllocations;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -4596,6 +4814,21 @@ export default function PlanningPage() {
                           useFixedPixelColumns,
                           columnWidthPx: dayColumnWidthPx,
                         });
+                        const plannedStartDate = normalizeDateOnly(parentTask.PlannedStartDate);
+                        const plannedEndDate = normalizeDateOnly(parentTask.PlannedEndDate);
+                        const canResizeTask = !!(
+                          isResourceGrouping &&
+                          permissions?.canPlanTasks &&
+                          !isGanttSearchActive &&
+                          plannedStartDate &&
+                          plannedEndDate
+                        );
+                        const canResizeStart = !!(canResizeTask && plannedStartDate >= firstTimelineDateKey);
+                        const canResizeEnd = !!(canResizeTask && plannedEndDate <= lastTimelineDateKey);
+                        const isResizingTask = taskResizeState.task?.Id === parentTask.Id;
+                        const previewBarStyle = position && isResizingTask
+                          ? getBarStyleFromIndices(taskResizeState.currentStartIndex, taskResizeState.currentEndIndex)
+                          : null;
                         const row = taskIdx;
                         const taskIsHobbyProject = isTaskHobby(parentTask);
                         const hasEstimatedHours = Number(parentTask.EstimatedHours || 0) > 0;
@@ -4649,22 +4882,37 @@ export default function PlanningPage() {
                             onDragEnd={handleDragEnd}
                             onContextMenu={(e) => handleTaskContextMenu(e, parentTask)}
                             onClick={(e) => {
+                              if (shouldSuppressTaskClick()) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                return;
+                              }
                               if (hasSubtasks && !e.ctrlKey && !e.metaKey) {
                                 openSubtasksModal(parentTask);
                                 return;
                               }
                               void handleTaskClick(parentTask);
                             }}
-                            className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(parentTask) : ''} opacity-75 hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white text-xs px-2 transition-all`}
+                            className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(parentTask) : ''} opacity-75 hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white text-xs px-2 transition-all ${isResizingTask ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''}`}
                             style={{
-                              left: position ? position.left : '0%',
-                              width: position ? position.width : `${(Math.min(5, Math.max(1, timelineColumns.length)) / Math.max(1, timelineColumns.length)) * 100}%`,
+                              left: previewBarStyle?.left || (position ? position.left : '0%'),
+                              width: previewBarStyle?.width || (position ? position.width : `${(Math.min(5, Math.max(1, timelineColumns.length)) / Math.max(1, timelineColumns.length)) * 100}%`),
                               top: `${4 + row * 24}px`,
                               ...(statusColor ? { backgroundColor: statusColor } : {}),
                               borderLeft: `4px solid ${priorityBorderHex}`,
+                              zIndex: isResizingTask ? 40 : undefined,
                             }}
                             title={parentTooltip}
                           >
+                            {position && canResizeStart && (
+                              <div
+                                role="button"
+                                aria-label={`Resize start date for ${parentTask.TaskName}`}
+                                onMouseDown={(e) => handleTaskResizeStart(e, parentTask, 'start', position.startIndex, position.startIndex + position.duration - 1)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute left-0 top-0 h-full w-2 cursor-ew-resize rounded-l bg-black/20 hover:bg-black/35"
+                              />
+                            )}
                             {taskIsHobbyProject && (
                               <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0">HOBBY</span>
                             )}
@@ -4678,6 +4926,15 @@ export default function PlanningPage() {
                               <span className="ml-1 text-[10px] bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 px-1.5 py-0.5 rounded font-semibold">
                                 {subtaskCount}
                               </span>
+                            )}
+                            {position && canResizeEnd && (
+                              <div
+                                role="button"
+                                aria-label={`Resize end date for ${parentTask.TaskName}`}
+                                onMouseDown={(e) => handleTaskResizeStart(e, parentTask, 'end', position.startIndex, position.startIndex + position.duration - 1)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute right-0 top-0 h-full w-2 cursor-ew-resize rounded-r bg-black/20 hover:bg-black/35"
+                              />
                             )}
                           </div>
                         );
@@ -4969,6 +5226,9 @@ export default function PlanningPage() {
                         {taskRows.map(({ task, row, isSubtask, parentTask, subtaskIndex, totalSubtasks, level }) => {
                           // For subtasks, try to use child allocations first, then fall back to own dates
                           let position, subtaskLeft, subtaskWidth;
+                          let usesDerivedChildDates = false;
+                          let displayedStartDate: string | null = null;
+                          let displayedEndDate: string | null = null;
                           
                           if (isSubtask && parentTask) {
                             // Try to get child task dates from allocations
@@ -4976,6 +5236,9 @@ export default function PlanningPage() {
                             
                             if (childDates) {
                               // Has child allocations - use them
+                              usesDerivedChildDates = true;
+                              displayedStartDate = childDates.startDate;
+                              displayedEndDate = childDates.endDate;
                               const tempTask = {
                                 ...task,
                                 PlannedStartDate: childDates.startDate,
@@ -4988,6 +5251,8 @@ export default function PlanningPage() {
                               });
                             } else if (task.PlannedStartDate && task.PlannedEndDate) {
                               // No child allocations but has own dates - use them
+                              displayedStartDate = normalizeDateOnly(task.PlannedStartDate);
+                              displayedEndDate = normalizeDateOnly(task.PlannedEndDate);
                               position = getTaskPosition(task, timelineColumns, {
                                 useFixedPixelColumns,
                                 columnWidthPx: dayColumnWidthPx,
@@ -5001,6 +5266,8 @@ export default function PlanningPage() {
                             subtaskLeft = position.left;
                             subtaskWidth = position.width;
                           } else {
+                            displayedStartDate = normalizeDateOnly(task.PlannedStartDate);
+                            displayedEndDate = normalizeDateOnly(task.PlannedEndDate);
                             position = getTaskPosition(task, timelineColumns, {
                               useFixedPixelColumns,
                               columnWidthPx: dayColumnWidthPx,
@@ -5072,6 +5339,20 @@ export default function PlanningPage() {
                           const subtaskTextSize = isSubtask ? 'text-[10px]' : 'text-xs';
                           const subtaskPadding = isSubtask ? 'px-1' : 'px-2';
                           const indentPrefix = isSubtask && level ? '└' + '─'.repeat(level) + ' ' : '';
+                          const canResizeTask = !!(
+                            isResourceGrouping &&
+                            permissions?.canPlanTasks &&
+                            !isGanttSearchActive &&
+                            displayedStartDate &&
+                            displayedEndDate &&
+                            !usesDerivedChildDates
+                          );
+                          const canResizeStart = !!(canResizeTask && displayedStartDate && displayedStartDate >= firstTimelineDateKey);
+                          const canResizeEnd = !!(canResizeTask && displayedEndDate && displayedEndDate <= lastTimelineDateKey);
+                          const isResizingTask = taskResizeState.task?.Id === task.Id;
+                          const previewBarStyle = isResizingTask
+                            ? getBarStyleFromIndices(taskResizeState.currentStartIndex, taskResizeState.currentEndIndex)
+                            : null;
                           
                           // Compute baseline bar position if applicable
                           const baselinePosition = showBaseline && task.BaselineStartDate && task.BaselineEndDate
@@ -5116,18 +5397,34 @@ export default function PlanningPage() {
                               onDragStart={(e) => handleDragStart(e, task)}
                               onDragEnd={handleDragEnd}
                               onContextMenu={(e) => handleTaskContextMenu(e, task)}
-                              onClick={() => handleTaskClick(task)}
-                              className={`absolute ${subtaskHeight} rounded ${!statusColor ? getPriorityColor(task) : ''} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''}`}
+                              onClick={(e) => {
+                                if (shouldSuppressTaskClick()) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  return;
+                                }
+                                void handleTaskClick(task);
+                              }}
+                              className={`absolute ${subtaskHeight} rounded ${!statusColor ? getPriorityColor(task) : ''} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''} ${isResizingTask ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''}`}
                               style={{
-                                left: subtaskLeft,
-                                width: subtaskWidth,
+                                left: previewBarStyle?.left || subtaskLeft,
+                                width: previewBarStyle?.width || subtaskWidth,
                                 top: `${2 + row * 24}px`,
                                 ...(statusColor ? { backgroundColor: statusColor } : {}),
                                 borderLeft: `${isSubtask ? '3' : '4'}px solid ${priorityBorderHex}`,
-                                zIndex: isSubtask ? 20 : 21,
+                                zIndex: isResizingTask ? 40 : isSubtask ? 20 : 21,
                               }}
                               title={taskTooltip}
                             >
+                              {canResizeStart && (
+                                <div
+                                  role="button"
+                                  aria-label={`Resize start date for ${task.TaskName}`}
+                                  onMouseDown={(e) => handleTaskResizeStart(e, task, 'start', position.startIndex, position.startIndex + position.duration - 1)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="absolute left-0 top-0 h-full w-2 cursor-ew-resize rounded-l bg-black/20 hover:bg-black/35"
+                                />
+                              )}
                               {!isSubtask && isOverPlanned && <span className="mr-1">⚠️</span>}
                               {!isSubtask && taskIsHobbyProject && (
                                 <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0">HOBBY</span>
@@ -5139,6 +5436,15 @@ export default function PlanningPage() {
                               </span>
                               {!isSubtask && showTaskBarHours && (
                                 <span className={`ml-1 text-[10px] whitespace-nowrap ${isOverPlanned ? 'bg-red-600 px-1 rounded font-bold' : 'opacity-80'}`}>{hoursDisplay}</span>
+                              )}
+                              {canResizeEnd && (
+                                <div
+                                  role="button"
+                                  aria-label={`Resize end date for ${task.TaskName}`}
+                                  onMouseDown={(e) => handleTaskResizeStart(e, task, 'end', position.startIndex, position.startIndex + position.duration - 1)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="absolute right-0 top-0 h-full w-2 cursor-ew-resize rounded-r bg-black/20 hover:bg-black/35"
+                                />
                               )}
                             </div>
                             </React.Fragment>
@@ -5398,7 +5704,14 @@ export default function PlanningPage() {
                             key={`grouped-task-${groupRow.id}-${task.Id}`}
                             data-task-id={task.Id}
                             onContextMenu={(e) => handleTaskContextMenu(e, task)}
-                            onClick={() => handleTaskClick(task)}
+                            onClick={(e) => {
+                              if (shouldSuppressTaskClick()) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                return;
+                              }
+                              void handleTaskClick(task);
+                            }}
                             className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(task) : ''} opacity-80 hover:opacity-100 cursor-pointer flex items-center text-white text-xs px-2 transition-all`}
                             style={{
                               left: position.left,
@@ -5430,7 +5743,7 @@ export default function PlanningPage() {
           </div>
         )}
 
-        {taskContextMenu.show && taskContextMenu.task && (
+        {taskContextMenu.show && taskContextMenu.task && canUseGanttPlanningActions() && (
           <div
             className="fixed z-[140] min-w-[240px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden"
             style={{ left: taskContextMenu.x, top: taskContextMenu.y }}
@@ -5475,7 +5788,7 @@ export default function PlanningPage() {
           </div>
         )}
 
-        {forceDatesModal.show && forceDatesModal.task && (
+        {forceDatesModal.show && forceDatesModal.task && canUseGanttPlanningActions() && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[130] p-4">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
