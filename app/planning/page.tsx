@@ -136,6 +136,7 @@ export default function PlanningPage() {
   const ganttContainerRef = useRef<HTMLDivElement>(null);
   const ganttViewOptionsRef = useRef<HTMLDivElement>(null);
   const suppressTaskClickUntilRef = useRef(0);
+  const draggedTaskRef = useRef<Task | null>(null);
   
   // Manual allocation modal state
   const [manualAllocationModal, setManualAllocationModal] = useState<{
@@ -229,6 +230,7 @@ export default function PlanningPage() {
     columnWidthPx: 1,
     isSaving: false,
   });
+  const [isShiftResizeMode, setIsShiftResizeMode] = useState(false);
 
   // Conflict resolution modal state
   const [conflictModal, setConflictModal] = useState<{
@@ -654,6 +656,34 @@ export default function PlanningPage() {
     closeForceDatesModal();
     closeTaskResize();
   }, [ganttGroupBy, permissions?.canPlanTasks]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Shift') {
+        setIsShiftResizeMode(true);
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'Shift') {
+        setIsShiftResizeMode(false);
+      }
+    };
+
+    const handleWindowBlur = () => {
+      setIsShiftResizeMode(false);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleWindowBlur);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleWindowBlur);
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -1709,6 +1739,7 @@ export default function PlanningPage() {
   const handleSubtaskDragStart = (subtask: Task) => {
     // Set both modal state and main drag state
     setSubtasksModal(prev => ({ ...prev, draggedSubtask: subtask }));
+    draggedTaskRef.current = subtask;
     setDraggedTask(subtask); // Allow dragging to gantt
   };
 
@@ -1839,6 +1870,39 @@ export default function PlanningPage() {
     }
   };
 
+  const handleSetTaskBaseline = async (task: Task) => {
+    if (!token || !canUseGanttPlanningActions()) return;
+
+    if (!task.PlannedStartDate || !task.PlannedEndDate) {
+      showAlert('Cannot Set Baseline', 'This task must have planned start and end dates before setting a baseline.');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${getApiUrl()}/api/tasks/${task.Id}/baseline`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || 'Failed to set task baseline');
+      }
+
+      if (projects.length > 0) {
+        await loadAllProjectsTasks(projects);
+      }
+      setShowBaseline(true);
+      showAlert('Baseline Set', `Baseline snapshot saved for task "${task.TaskName}".`);
+    } catch (error: any) {
+      console.error('Set task baseline error:', error);
+      showAlert('Error', error?.message || 'Failed to set task baseline.');
+    }
+  };
+
   const openForceDatesModal = (task: Task) => {
     if (!canUseGanttPlanningActions()) return;
     setForceDatesModal({
@@ -1964,6 +2028,22 @@ export default function PlanningPage() {
     });
   };
 
+  const handleTaskResizeHandleMouseDown = (
+    e: React.MouseEvent<HTMLDivElement>,
+    task: Task,
+    edge: 'start' | 'end',
+    startIndex: number,
+    endIndex: number
+  ) => {
+    // Keep normal drag-and-drop as default interaction.
+    // Resize is opt-in to avoid conflicting with task re-planning drag.
+    if (!e.shiftKey) {
+      return;
+    }
+
+    handleTaskResizeStart(e, task, edge, startIndex, endIndex);
+  };
+
   useEffect(() => {
     if (!taskResizeState.task || !taskResizeState.edge) return;
 
@@ -2068,12 +2148,15 @@ export default function PlanningPage() {
       e.preventDefault();
       return;
     }
-    setDraggedTask(task);
+    draggedTaskRef.current = task;
+    e.dataTransfer.setData('text/plain', String(task.Id));
     e.dataTransfer.effectAllowed = 'move';
   };
 
   const handleDragEnd = () => {
     setHoveredDropCell(null);
+    draggedTaskRef.current = null;
+    setDraggedTask(null);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -2083,28 +2166,37 @@ export default function PlanningPage() {
       return;
     }
     e.preventDefault();
+    if (!draggedTask && draggedTaskRef.current) {
+      setDraggedTask(draggedTaskRef.current);
+    }
     e.dataTransfer.dropEffect = 'move';
   };
 
   const handleDropOnUser = async (e: React.DragEvent, userId: number | null) => {
     e.preventDefault();
     setHoveredDropCell(null);
-    if (ganttGroupBy !== 'resource' || !draggedTask || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) return;
+    if (ganttGroupBy !== 'resource' || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) return;
+
+    const droppedTaskId = Number(e.dataTransfer.getData('text/plain') || 0);
+    const activeDraggedTask = draggedTaskRef.current || draggedTask || tasks.find((t) => t.Id === droppedTaskId) || null;
+    if (!activeDraggedTask) return;
 
     // Check if user has access to the project
     if (userId) {
-      const taskProject = projects.find(p => p.Id === draggedTask.ProjectId);
+      const taskProject = projects.find(p => p.Id === activeDraggedTask.ProjectId);
       if (taskProject) {
         const userOrgs = userOrganizations[userId] || [];
         if (!userOrgs.includes(taskProject.OrganizationId)) {
           showAlert('No Access', 'This user does not have access to the project this task belongs to.');
+          draggedTaskRef.current = null;
           setDraggedTask(null);
           return;
         }
       }
     }
 
-    await handleTaskUpdate(draggedTask, { AssignedTo: userId || undefined });
+    await handleTaskUpdate(activeDraggedTask, { AssignedTo: userId || undefined });
+    draggedTaskRef.current = null;
     setDraggedTask(null);
   };
 
@@ -2112,7 +2204,11 @@ export default function PlanningPage() {
     e.preventDefault();
     e.stopPropagation();
     setHoveredDropCell(null);
-    if (ganttGroupBy !== 'resource' || !draggedTask || !permissions?.canPlanTasks || ganttSearch.trim().length > 0 || !userId) return;
+    if (ganttGroupBy !== 'resource' || !permissions?.canPlanTasks || ganttSearch.trim().length > 0 || !userId) return;
+
+    const droppedTaskId = Number(e.dataTransfer.getData('text/plain') || 0);
+    const activeDraggedTask = draggedTaskRef.current || draggedTask || tasks.find((t) => t.Id === droppedTaskId) || null;
+    if (!activeDraggedTask) return;
 
     const droppedDateStr = getDateKeyFromDate(day);
     const droppedDateHolidayNames = getUserHolidayNames(userId, droppedDateStr);
@@ -2121,6 +2217,7 @@ export default function PlanningPage() {
         'Unavailable Day',
         `Cannot plan on unavailable day for this user (${droppedDateStr}): ${droppedDateHolidayNames.join(', ')}`
       );
+      draggedTaskRef.current = null;
       setDraggedTask(null);
       return;
     }
@@ -2131,25 +2228,27 @@ export default function PlanningPage() {
     }
 
     // Check if user has access to the project
-    const taskProject = projects.find(p => p.Id === draggedTask.ProjectId);
+    const taskProject = projects.find(p => p.Id === activeDraggedTask.ProjectId);
     if (taskProject) {
       const userOrgs = userOrganizations[userId] || [];
       if (!userOrgs.includes(taskProject.OrganizationId)) {
         showAlert('No Access', 'This user does not have access to the project this task belongs to.');
+        draggedTaskRef.current = null;
         setDraggedTask(null);
         return;
       }
     }
 
     // Check if this is a task with children (hierarchical task)
-    const hasChildren = tasks.some(t => t.ParentTaskId === draggedTask.Id);
+    const hasChildren = tasks.some(t => t.ParentTaskId === activeDraggedTask.Id);
     
     if (hasChildren) {
       // Get all leaf tasks (tasks without children) recursively
-      const leafTasks = getAllLeafTasks(draggedTask.Id);
+      const leafTasks = getAllLeafTasks(activeDraggedTask.Id);
       
       if (leafTasks.length === 0) {
         showAlert('No Leaf Tasks', 'No leaf tasks found to plan.');
+        draggedTaskRef.current = null;
         setDraggedTask(null);
         return;
       }
@@ -2191,7 +2290,7 @@ export default function PlanningPage() {
       const totalRemainingHours = totalEstimatedHours - totalHoursWorked;
 
       console.log('Hierarchical planning:', {
-        parentTask: draggedTask.TaskName,
+        parentTask: activeDraggedTask.TaskName,
         leafTasksCount: leafTasks.length,
         totalEstimatedHours,
         totalHoursWorked,
@@ -2209,14 +2308,15 @@ export default function PlanningPage() {
 
       // Now plan the PARENT task with the total hours
       // This will create allocations for the parent, giving us the date range
-      await planTaskAsParent(draggedTask, day, userId, totalRemainingHours, leafTasks, totalEstimatedHours, totalHoursWorked);
+      await planTaskAsParent(activeDraggedTask, day, userId, totalRemainingHours, leafTasks, totalEstimatedHours, totalHoursWorked);
+      draggedTaskRef.current = null;
       setDraggedTask(null);
       return;
     }
 
     // Single task without children - check dependencies and plan normally
-    if (draggedTask.DependsOnTaskId) {
-      const dependsOnTask = tasks.find(t => t.Id === draggedTask.DependsOnTaskId);
+    if (activeDraggedTask.DependsOnTaskId) {
+      const dependsOnTask = tasks.find(t => t.Id === activeDraggedTask.DependsOnTaskId);
       if (dependsOnTask) {
         // Check if the dependency task has a planned end date
         if (dependsOnTask.PlannedEndDate) {
@@ -2254,15 +2354,16 @@ export default function PlanningPage() {
       const user = users.find(u => u.Id === userId);
       if (!user) {
         showAlert('Error', 'User not found');
+        draggedTaskRef.current = null;
         setDraggedTask(null);
         return;
       }
 
-      const estimatedHours = draggedTask.EstimatedHours || 8;
+      const estimatedHours = activeDraggedTask.EstimatedHours || 8;
       
       // Fetch time entries for this task to calculate hours already worked
       const timeEntriesRes = await fetch(
-        `${getApiUrl()}/api/time-entries/task/${draggedTask.Id}`,
+        `${getApiUrl()}/api/time-entries/task/${activeDraggedTask.Id}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -2295,7 +2396,7 @@ export default function PlanningPage() {
       }
       
       // Check if task belongs to a hobby project (must be checked BEFORE work hours validation)
-      const taskProject = projects.find(p => p.Id === draggedTask.ProjectId);
+      const taskProject = projects.find(p => p.Id === activeDraggedTask.ProjectId);
       const isHobbyTask = taskProject?.IsHobby || false;
 
       // Check if user has any working/hobby hours configured (depending on task type)
@@ -2377,7 +2478,7 @@ export default function PlanningPage() {
       if (hasExistingAllocations) {
         setConflictModal({
           show: true,
-          task: draggedTask,
+          task: activeDraggedTask,
           userId,
           startDate,
           existingTasks: existingTaskNames,
@@ -2396,10 +2497,10 @@ export default function PlanningPage() {
       // - Remaining hours are more than 50% of daily capacity
       if (hoursAlreadyWorked > 0 || remainingHoursToWork > maxDailyHours * 0.5) {
         console.log('Showing hours per day modal');
-        const taskEstimatedHours = parseFloat(String(draggedTask.EstimatedHours || 0));
+        const taskEstimatedHours = parseFloat(String(activeDraggedTask.EstimatedHours || 0));
         setHoursPerDayModal({
           show: true,
-          task: draggedTask,
+          task: activeDraggedTask,
           userId,
           startDate,
           maxDailyHours,
@@ -2413,10 +2514,12 @@ export default function PlanningPage() {
       }
 
       // Continue with allocation using full daily hours (small tasks with no worked hours)
-      await executeTaskAllocation(draggedTask, userId, startDate, remainingHoursToWork, user, maxDailyHours);
+      await executeTaskAllocation(activeDraggedTask, userId, startDate, remainingHoursToWork, user, maxDailyHours);
+      draggedTaskRef.current = null;
     } catch (err) {
       console.error('Failed to allocate task:', err);
       showAlert('Error', 'Failed to allocate task');
+      draggedTaskRef.current = null;
       setDraggedTask(null);
     }
   };
@@ -4904,36 +5007,38 @@ export default function PlanningPage() {
                             }}
                             title={parentTooltip}
                           >
-                            {position && canResizeStart && (
+                            {position && canResizeStart && isShiftResizeMode && (
                               <div
                                 role="button"
                                 aria-label={`Resize start date for ${parentTask.TaskName}`}
-                                onMouseDown={(e) => handleTaskResizeStart(e, parentTask, 'start', position.startIndex, position.startIndex + position.duration - 1)}
+                                onMouseDown={(e) => handleTaskResizeHandleMouseDown(e, parentTask, 'start', position.startIndex, position.startIndex + position.duration - 1)}
                                 onClick={(e) => e.stopPropagation()}
                                 className="absolute left-0 top-0 h-full w-2 cursor-ew-resize rounded-l bg-black/20 hover:bg-black/35"
+                                title="Hold Shift and drag to resize start"
                               />
                             )}
                             {taskIsHobbyProject && (
-                              <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0">HOBBY</span>
+                              <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0 pointer-events-none">HOBBY</span>
                             )}
-                            <span className="truncate flex-1">
+                            <span className="truncate flex-1 pointer-events-none">
                               {!hasEstimatedHours && <span className="mr-1">⚠️</span>}
                               {hasSubtasks && <span className="mr-1">📁</span>}
                               {hasDependency ? '🔗 ' : ''}
                               {parentTask.TaskName}
                             </span>
                             {hasSubtasks && (
-                              <span className="ml-1 text-[10px] bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 px-1.5 py-0.5 rounded font-semibold">
+                              <span className="ml-1 text-[10px] bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 px-1.5 py-0.5 rounded font-semibold pointer-events-none">
                                 {subtaskCount}
                               </span>
                             )}
-                            {position && canResizeEnd && (
+                            {position && canResizeEnd && isShiftResizeMode && (
                               <div
                                 role="button"
                                 aria-label={`Resize end date for ${parentTask.TaskName}`}
-                                onMouseDown={(e) => handleTaskResizeStart(e, parentTask, 'end', position.startIndex, position.startIndex + position.duration - 1)}
+                                onMouseDown={(e) => handleTaskResizeHandleMouseDown(e, parentTask, 'end', position.startIndex, position.startIndex + position.duration - 1)}
                                 onClick={(e) => e.stopPropagation()}
                                 className="absolute right-0 top-0 h-full w-2 cursor-ew-resize rounded-r bg-black/20 hover:bg-black/35"
+                                title="Hold Shift and drag to resize end"
                               />
                             )}
                           </div>
@@ -5416,34 +5521,36 @@ export default function PlanningPage() {
                               }}
                               title={taskTooltip}
                             >
-                              {canResizeStart && (
+                              {canResizeStart && isShiftResizeMode && (
                                 <div
                                   role="button"
                                   aria-label={`Resize start date for ${task.TaskName}`}
-                                  onMouseDown={(e) => handleTaskResizeStart(e, task, 'start', position.startIndex, position.startIndex + position.duration - 1)}
+                                  onMouseDown={(e) => handleTaskResizeHandleMouseDown(e, task, 'start', position.startIndex, position.startIndex + position.duration - 1)}
                                   onClick={(e) => e.stopPropagation()}
                                   className="absolute left-0 top-0 h-full w-2 cursor-ew-resize rounded-l bg-black/20 hover:bg-black/35"
+                                  title="Hold Shift and drag to resize start"
                                 />
                               )}
                               {!isSubtask && isOverPlanned && <span className="mr-1">⚠️</span>}
                               {!isSubtask && taskIsHobbyProject && (
-                                <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0">HOBBY</span>
+                                <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0 pointer-events-none">HOBBY</span>
                               )}
-                              <span className="truncate flex-1">
+                              <span className="truncate flex-1 pointer-events-none">
                                 {indentPrefix}
                                 {!isSubtask && hasDependency ? '🔗 ' : ''}
                                 {task.TaskName}
                               </span>
                               {!isSubtask && showTaskBarHours && (
-                                <span className={`ml-1 text-[10px] whitespace-nowrap ${isOverPlanned ? 'bg-red-600 px-1 rounded font-bold' : 'opacity-80'}`}>{hoursDisplay}</span>
+                                <span className={`ml-1 text-[10px] whitespace-nowrap pointer-events-none ${isOverPlanned ? 'bg-red-600 px-1 rounded font-bold' : 'opacity-80'}`}>{hoursDisplay}</span>
                               )}
-                              {canResizeEnd && (
+                              {canResizeEnd && isShiftResizeMode && (
                                 <div
                                   role="button"
                                   aria-label={`Resize end date for ${task.TaskName}`}
-                                  onMouseDown={(e) => handleTaskResizeStart(e, task, 'end', position.startIndex, position.startIndex + position.duration - 1)}
+                                  onMouseDown={(e) => handleTaskResizeHandleMouseDown(e, task, 'end', position.startIndex, position.startIndex + position.duration - 1)}
                                   onClick={(e) => e.stopPropagation()}
                                   className="absolute right-0 top-0 h-full w-2 cursor-ew-resize rounded-r bg-black/20 hover:bg-black/35"
+                                  title="Hold Shift and drag to resize end"
                                 />
                               )}
                             </div>
@@ -5724,11 +5831,11 @@ export default function PlanningPage() {
                             title={`Project: ${project?.ProjectName || 'Unknown'}\nTask: ${task.TaskName}\nStatus: ${task.StatusName || 'Unknown'}\nPriority: ${task.PriorityName || 'Unknown'}\nDates: ${task.PlannedStartDate || 'Not planned'} → ${task.PlannedEndDate || 'Not planned'}`}
                           >
                             {taskIsHobbyProject && (
-                              <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0">HOBBY</span>
+                              <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0 pointer-events-none">HOBBY</span>
                             )}
-                            <span className="truncate flex-1">{task.TaskName}</span>
+                            <span className="truncate flex-1 pointer-events-none">{task.TaskName}</span>
                             {showTaskBarHours && (
-                              <span className="ml-1 text-[10px] whitespace-nowrap opacity-80">{hoursDisplay}</span>
+                              <span className="ml-1 text-[10px] whitespace-nowrap opacity-80 pointer-events-none">{hoursDisplay}</span>
                             )}
                           </div>
                         );
@@ -5784,6 +5891,18 @@ export default function PlanningPage() {
               className="w-full px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 border-t border-gray-200 dark:border-gray-700"
             >
               Force new start/end dates
+            </button>
+            <button
+              onClick={() => {
+                const task = taskContextMenu.task;
+                closeTaskContextMenu();
+                if (task) {
+                  void handleSetTaskBaseline(task);
+                }
+              }}
+              className="w-full px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 border-t border-gray-200 dark:border-gray-700"
+            >
+              Set baseline for this task
             </button>
           </div>
         )}

@@ -3785,6 +3785,68 @@ router.post('/import-from-gitea', authenticateToken, async (req: AuthRequest, re
 });
 
 /**
+ * PUT /api/tasks/:taskId/baseline
+ * Snapshot current PlannedStartDate/PlannedEndDate into BaselineStartDate/BaselineEndDate
+ * for a single task.
+ */
+router.put('/:taskId/baseline', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const taskId = Number(req.params.taskId);
+
+    if (!userId || Number.isNaN(taskId)) {
+      return res.status(400).json({ success: false, message: 'Invalid request' });
+    }
+
+    const [accessRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.Id, t.PlannedStartDate, t.PlannedEndDate,
+              COALESCE(pg.CanManageTasks, 0) as CanManageTasks,
+              COALESCE(pg.CanPlanTasks, 0) as CanPlanTasks,
+              om.Role
+       FROM Tasks t
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE t.Id = ? AND om.UserId = ?`,
+      [taskId, userId]
+    );
+
+    if (accessRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Task not found or access denied' });
+    }
+
+    const access = accessRows[0] as any;
+    const canManageTasks = access.Role === 'Owner' || access.Role === 'Admin' || Number(access.CanManageTasks || 0) === 1;
+    const canPlanTasks = canManageTasks || Number(access.CanPlanTasks || 0) === 1;
+
+    if (!canPlanTasks) {
+      return res.status(403).json({ success: false, message: 'You do not have permission to set baseline for this task' });
+    }
+
+    if (!access.PlannedStartDate || !access.PlannedEndDate) {
+      return res.status(400).json({ success: false, message: 'Task must have planned start and end dates before setting baseline' });
+    }
+
+    const [result] = await pool.execute<ResultSetHeader>(
+      `UPDATE Tasks
+       SET BaselineStartDate = PlannedStartDate,
+           BaselineEndDate = PlannedEndDate
+       WHERE Id = ?`,
+      [taskId]
+    );
+
+    return res.json({
+      success: true,
+      message: 'Task baseline set successfully',
+      affectedRows: result.affectedRows,
+    });
+  } catch (error) {
+    console.error('Set task baseline error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to set task baseline' });
+  }
+});
+
+/**
  * PUT /api/tasks/project/:projectId/baseline
  * Snapshot current PlannedStartDate/PlannedEndDate into BaselineStartDate/BaselineEndDate
  * for all tasks in the project that have planned dates.
