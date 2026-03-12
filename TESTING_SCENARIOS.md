@@ -479,9 +479,9 @@ This document contains comprehensive test scenarios to verify all functionality 
 **Expected:**
 - **Summary**: Total estimated/allocated/worked hours (leaf tasks only)
 - **By User**: User statistics with individual hours
-- **Allocations**: All task allocations by date and user
+- **Allocations**: All task allocations by date and user, including allocation slice identity (`TaskAllocationHeaderId`/split order)
 - **Time Entries**: All logged time with descriptions
-- CSV export downloads correctly with all data
+- CSV/PDF export downloads correctly with all data (including allocation slice metadata in allocations export)
 - Hours match Overview tab (using leaf tasks only)
 
 ---
@@ -787,6 +787,30 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Push-forward algorithm skips around recurring blocks
 - Read-only modal when clicking recurring task
 - "Edit from Profile" guidance provided
+
+### TC-PLAN-007: Header-Driven Bars (No Date-Gap Merge)
+**Steps:**
+1. Create two separate allocation slices for the same task and same user (different `TaskAllocationHeaderId` values)
+2. Open Planning Gantt in resource mode
+3. Locate the task row for that user
+
+**Expected:**
+- Two separate bars are rendered (one per allocation header)
+- Bars do not merge simply because date ranges are adjacent/overlapping
+- Bar DOM identifiers remain stable for each allocation header
+
+### TC-PLAN-008: Drag Contract (Normal vs Ctrl)
+**Steps:**
+1. In Planning Gantt, drag an existing allocated bar to another user without holding `Ctrl`
+2. Confirm resulting allocations
+3. Repeat by dragging while holding `Ctrl`
+4. In the slice modal, move only part of hours and confirm
+
+**Expected:**
+- Normal drag moves the full allocation slice/header
+- `Ctrl + drag` opens partial-slice flow by hours (not date range prompts)
+- Source slice decreases by moved hours and target receives moved hours
+- Availability/capacity checks still apply in both flows
 
 ---
 

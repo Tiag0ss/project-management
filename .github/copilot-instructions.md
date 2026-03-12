@@ -179,7 +179,8 @@ OrganizationMembers (OrganizationId, UserId, Role, PermissionGroupId)
 PermissionGroups (Id, OrganizationId, GroupName, CanManageProjects, CanManageTasks, CanManageMembers, CanManageSettings)
 Projects (Id, OrganizationId, ProjectName, Description, Status, StartDate, EndDate, IsHobby)
 Tasks (Id, ProjectId, TaskName, Description, Status, Priority, EstimatedHours, AssignedTo, PlannedStartDate, PlannedEndDate, DependsOnTaskId, ParentTaskId)
-TaskAllocations (TaskId, UserId, AllocationDate DATE, AllocatedHours DECIMAL(4,2))
+TaskAllocationHeaders (Id, TaskId, UserId, AllocationMode, SplitOrder, PlannedHours, CreatedBy)
+TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate DATE, AllocatedHours DECIMAL(4,2))
 TaskChildAllocations (ParentTaskId, ChildTaskId, UserId, AllocationDate DATE, AllocatedHours DECIMAL(4,2))
 TimeEntries (Id, TaskId, UserId, WorkDate DATE, Hours DECIMAL(4,2), Description)
 ProjectStatuses, TaskStatuses, TaskPriorities (Custom status values per organization)
@@ -192,6 +193,7 @@ ProjectStatuses, TaskStatuses, TaskPriorities (Custom status values per organiza
 - Organizations have many Projects, Members, and PermissionGroups
 - Projects have many Tasks
 - Tasks can have **Parent-Child hierarchy** (ParentTaskId creates subtasks)
+- TaskAllocations belong to **TaskAllocationHeaders** (logical planning slices per task/user)
 - Tasks have TaskAllocations (resource planning) and TimeEntries (actual work)
 - **Parent tasks can have TaskChildAllocations** (allocating parent task time to specific subtasks)
 - Tasks can have dependencies (DependsOnTaskId)
@@ -470,14 +472,26 @@ className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-
 - Dynamic navigation adjusts by view mode: ±28/±90/±365 days
 - Timeline headers adapt to mode: week numbers, dates, or months
 - TaskAllocations store planned hours per day
+- **Planning bars must be header-driven**: render by `TaskAllocationHeaderId` (one bar per header slice), not by naive date-gap grouping
 - Check user availability before allocating:
   - Daily work capacity (WorkHoursMonday-Sunday)
   - **Existing TaskAllocations AND TaskChildAllocations for the user**
   - Exclude current task when checking availability
 - Calculate PlannedEndDate based on allocations
 - Support drag-and-drop to assign tasks to users
+- Drag behavior in Planning Gantt:
+  - **Normal drag**: move the full allocation slice (entire header)
+  - **Ctrl + drag**: move partial slice by **hours** (never by date prompt)
+  - Partial slice operations must preserve allocation rules (capacity/availability/holidays)
 - Show visual timeline with color-coded task bars
 - Support reliable parent expand/collapse behavior with deterministic sibling ordering
+
+### Allocation Header Rules (CRITICAL)
+- New planning inserts must always set `TaskAllocations.TaskAllocationHeaderId`.
+- Any replan/push-forward/manual flow that creates allocations must attach a header ID.
+- Deletions for slice operations should target header-aware endpoints when available (header or header+hours), not broad task/user/date deletions.
+- Task Details → Planned Allocations must group by allocation header and allow expand/collapse to inspect per-day rows.
+- On server startup, migrations must backfill headers for legacy allocations (`TaskAllocationHeaderId IS NULL`) and fix orphan header references.
 
 ### Time Tracking
 - TimeEntries record actual hours worked

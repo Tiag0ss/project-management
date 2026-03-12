@@ -16,6 +16,12 @@
       "Comment": "Foreign key - reference to Tasks.Id"
     },
     {
+      "FieldName": "TaskAllocationHeaderId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to TaskAllocationHeaders.Id"
+    },
+    {
       "FieldName": "UserId",
       "DataType": "int",
       "NotNullable": true,
@@ -69,6 +75,14 @@
       "Description": "Task Allocation belongs to a Task",
       "FromField": "TaskId",
       "ToTable": "Tasks",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "AllocationHeader",
+      "Description": "Task Allocation can belong to a Task Allocation Header",
+      "FromField": "TaskAllocationHeaderId",
+      "ToTable": "TaskAllocationHeaders",
       "ToField": "Id",
       "Type": "ManyToOne"
     },

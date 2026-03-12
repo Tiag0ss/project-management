@@ -1,0 +1,94 @@
+{
+  "TableName": "TaskAllocationHeaders",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique header identifier"
+    },
+    {
+      "FieldName": "TaskId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Tasks.Id"
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id for this plan segment"
+    },
+    {
+      "FieldName": "AllocationMode",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "parallel",
+      "Comment": "Planning mode for this user segment: parallel or sequential"
+    },
+    {
+      "FieldName": "SplitOrder",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Sequential split position when AllocationMode is sequential"
+    },
+    {
+      "FieldName": "PlannedHours",
+      "DataType": "decimal(10,2)",
+      "NotNullable": false,
+      "Comment": "Target planned hours for this user segment"
+    },
+    {
+      "FieldName": "PlannedStartDate",
+      "DataType": "date",
+      "NotNullable": false,
+      "Comment": "Planned start date for this allocation header"
+    },
+    {
+      "FieldName": "PlannedEndDate",
+      "DataType": "date",
+      "NotNullable": false,
+      "Comment": "Planned end date for this allocation header"
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Users.Id who created this header"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when this header was created"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+      "Comment": "Auto-updated timestamp of last modification"
+    }
+  ],
+  "Relationships": [
+    {
+      "Name": "TaskAllocationHeaderTask",
+      "Description": "Task allocation header belongs to a task",
+      "FromField": "TaskId",
+      "ToTable": "Tasks",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "TaskAllocationHeaderUser",
+      "Description": "Task allocation header belongs to a user",
+      "FromField": "UserId",
+      "ToTable": "Users",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    }
+  ]
+}

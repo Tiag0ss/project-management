@@ -3,10 +3,23 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { dbProvider, pool } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { createNotification } from './notifications';
+import { recordTaskHistory } from './taskHistory';
 
 const router = express.Router();
 
 const normalizeDateKey = (value: unknown): string => String(value || '').split('T')[0];
+
+const getTaskUnscheduledFlag = async (taskId: number): Promise<number | null> => {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT COALESCE(UnscheduledWork, 0) as UnscheduledWork
+     FROM Tasks
+     WHERE Id = ?`,
+    [taskId]
+  );
+
+  if (rows.length === 0) return null;
+  return Number(rows[0].UnscheduledWork || 0);
+};
 
 const getHolidayDateSetForUser = async (userId: number, startDate: string, endDate: string): Promise<Set<string>> => {
   const [rows] = await pool.execute<RowDataPacket[]>(
@@ -54,6 +67,202 @@ const syncTaskPrimaryAssignee = async (
   );
 };
 
+const normalizeAllocationMode = (value: any): 'parallel' | 'sequential' => {
+  return String(value || '').toLowerCase() === 'sequential' ? 'sequential' : 'parallel';
+};
+
+const ensureTaskAllocationHeader = async (
+  taskId: number,
+  userId: number,
+  options?: {
+    allocationMode?: string;
+    splitOrder?: number | null;
+    plannedHours?: number | null;
+    createdBy?: number | null;
+    forceCreate?: boolean;
+  }
+): Promise<number> => {
+  const allocationMode = normalizeAllocationMode(options?.allocationMode);
+  const requestedSplitOrder = Number.isFinite(Number(options?.splitOrder)) ? Number(options?.splitOrder) : null;
+  let splitOrder = requestedSplitOrder;
+  const plannedHours = Number.isFinite(Number(options?.plannedHours)) ? Number(options?.plannedHours) : null;
+
+  if (options?.forceCreate) {
+    if (splitOrder === null) {
+      const [maxOrderRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT MAX(SplitOrder) as MaxSplitOrder
+         FROM TaskAllocationHeaders
+         WHERE TaskId = ?`,
+        [taskId]
+      );
+      const maxSplitOrder = Number(maxOrderRows[0]?.MaxSplitOrder || 0);
+      splitOrder = Number.isFinite(maxSplitOrder) ? maxSplitOrder + 1 : 1;
+    }
+
+    const [insertResult] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO TaskAllocationHeaders (TaskId, UserId, AllocationMode, SplitOrder, PlannedHours, CreatedBy)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [taskId, userId, allocationMode, splitOrder, plannedHours, options?.createdBy || null]
+    );
+
+    return Number(insertResult.insertId);
+  }
+
+  const [existingRows] = await pool.execute<RowDataPacket[]>(
+    `SELECT Id FROM TaskAllocationHeaders WHERE TaskId = ? AND UserId = ? ORDER BY Id ASC`,
+    [taskId, userId]
+  );
+
+  if (existingRows.length > 0) {
+    const headerId = Number(existingRows[0].Id);
+    await pool.execute(
+      `UPDATE TaskAllocationHeaders
+       SET AllocationMode = ?, SplitOrder = ?, PlannedHours = ?
+       WHERE Id = ?`,
+      [allocationMode, splitOrder, plannedHours, headerId]
+    );
+    return headerId;
+  }
+
+  const [insertResult] = await pool.execute<ResultSetHeader>(
+    `INSERT INTO TaskAllocationHeaders (TaskId, UserId, AllocationMode, SplitOrder, PlannedHours, CreatedBy)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [taskId, userId, allocationMode, splitOrder, plannedHours, options?.createdBy || null]
+  );
+
+  return Number(insertResult.insertId);
+};
+
+const recomputeTaskPlanDatesFromAllocations = async (
+  taskId: number,
+  changedByUserId: number | null | undefined
+): Promise<{ startDate: string | null; endDate: string | null; primaryUserId: number | null }> => {
+  const [taskRows] = await pool.execute<RowDataPacket[]>(
+    `SELECT PlannedStartDate, PlannedEndDate, AssignedTo
+     FROM Tasks
+     WHERE Id = ?`,
+    [taskId]
+  );
+
+  const previousStartDate = taskRows[0]?.PlannedStartDate ? normalizeDateKey(taskRows[0].PlannedStartDate) : null;
+  const previousEndDate = taskRows[0]?.PlannedEndDate ? normalizeDateKey(taskRows[0].PlannedEndDate) : null;
+  const previousAssignedTo = taskRows[0]?.AssignedTo === null || taskRows[0]?.AssignedTo === undefined
+    ? null
+    : Number(taskRows[0].AssignedTo);
+
+  const [dateRows] = await pool.execute<RowDataPacket[]>(
+    `SELECT MIN(AllocationDate) as startDate, MAX(AllocationDate) as endDate
+     FROM TaskAllocations
+     WHERE TaskId = ?`,
+    [taskId]
+  );
+
+  const startDate = dateRows[0]?.startDate ? normalizeDateKey(dateRows[0].startDate) : null;
+  const endDate = dateRows[0]?.endDate ? normalizeDateKey(dateRows[0].endDate) : null;
+
+  const [primaryRows] = await pool.execute<RowDataPacket[]>(
+    `SELECT tah.UserId
+     FROM TaskAllocationHeaders tah
+     WHERE tah.TaskId = ?
+     ORDER BY CASE WHEN tah.SplitOrder IS NULL THEN 2147483647 ELSE tah.SplitOrder END ASC, tah.Id ASC`,
+    [taskId]
+  );
+
+  let primaryUserId = primaryRows.length > 0 ? Number(primaryRows[0].UserId) : null;
+
+  if (!primaryUserId) {
+    const [fallbackUserRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT UserId
+       FROM TaskAllocations
+       WHERE TaskId = ?
+       ORDER BY AllocationDate ASC, StartTime ASC, Id ASC`,
+      [taskId]
+    );
+
+    primaryUserId = fallbackUserRows.length > 0 ? Number(fallbackUserRows[0].UserId) : null;
+  }
+
+  await pool.execute(
+    `UPDATE Tasks
+     SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ?
+     WHERE Id = ?`,
+    [startDate, endDate, primaryUserId, taskId]
+  );
+
+  // Update each allocation header with its own date range
+  const [headerRows] = await pool.execute<RowDataPacket[]>(
+    `SELECT DISTINCT tah.Id
+     FROM TaskAllocationHeaders tah
+     WHERE tah.TaskId = ?`,
+    [taskId]
+  );
+
+  for (const headerRow of headerRows) {
+    const headerId = Number(headerRow.Id);
+    const [allocationDates] = await pool.execute<RowDataPacket[]>(
+      `SELECT MIN(AllocationDate) as startDate, MAX(AllocationDate) as endDate
+       FROM TaskAllocations
+       WHERE TaskAllocationHeaderId = ?`,
+      [headerId]
+    );
+
+    const headerStartDate = allocationDates[0]?.startDate 
+      ? normalizeDateKey(allocationDates[0].startDate)
+      : null;
+    const headerEndDate = allocationDates[0]?.endDate 
+      ? normalizeDateKey(allocationDates[0].endDate)
+      : null;
+
+    await pool.execute(
+      `UPDATE TaskAllocationHeaders
+       SET PlannedStartDate = ?, PlannedEndDate = ?
+       WHERE Id = ?`,
+      [headerStartDate, headerEndDate, headerId]
+    );
+  }
+
+  if (primaryUserId) {
+    await syncTaskPrimaryAssignee(taskId, primaryUserId, changedByUserId);
+  }
+
+  if (changedByUserId) {
+    if (previousStartDate !== startDate) {
+      await recordTaskHistory(
+        taskId,
+        changedByUserId,
+        'updated',
+        'PlannedStartDate',
+        previousStartDate || undefined,
+        startDate || undefined
+      );
+    }
+
+    if (previousEndDate !== endDate) {
+      await recordTaskHistory(
+        taskId,
+        changedByUserId,
+        'updated',
+        'PlannedEndDate',
+        previousEndDate || undefined,
+        endDate || undefined
+      );
+    }
+
+    if (previousAssignedTo !== primaryUserId) {
+      await recordTaskHistory(
+        taskId,
+        changedByUserId,
+        'updated',
+        'AssignedTo',
+        previousAssignedTo === null ? undefined : String(previousAssignedTo),
+        primaryUserId === null ? undefined : String(primaryUserId)
+      );
+    }
+  }
+
+  return { startDate, endDate, primaryUserId };
+};
+
 /**
  * @swagger
  * tags:
@@ -62,7 +271,7 @@ const syncTaskPrimaryAssignee = async (
  */
 
 // Helper function to replan dependent tasks when a task's end date changes
-async function replanDependentTasks(taskId: number, newEndDate: string): Promise<void> {
+async function replanDependentTasks(taskId: number, newEndDate: string, changedByUserId?: number | null): Promise<void> {
   // Find all tasks that depend on this task and have allocations that start on or before the new end date
   // Include IsHobby flag from Project
   const [dependentTasks] = await pool.execute<RowDataPacket[]>(
@@ -199,21 +408,22 @@ async function replanDependentTasks(taskId: number, newEndDate: string): Promise
 
     // Insert new allocations
     if (newAllocations.length > 0) {
-      const values = newAllocations.map(a => [depTask.Id, userId, a.date, a.hours, a.startTime, a.endTime, 0]);
+      const dependentHeaderId = await ensureTaskAllocationHeader(Number(depTask.Id), Number(userId), {
+        allocationMode: 'parallel',
+        plannedHours: newAllocations.reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0),
+        createdBy: null,
+      });
+      const values = newAllocations.map(a => [depTask.Id, dependentHeaderId, userId, a.date, a.hours, a.startTime, a.endTime, 0]);
       await pool.query(
-        'INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual) VALUES ?',
+        'INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual) VALUES ?',
         [values]
       );
 
-      // Update task dates
-      await pool.execute(
-        'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ? WHERE Id = ?',
-        [newStartDate, newTaskEndDate, depTask.Id]
-      );
+      await recomputeTaskPlanDatesFromAllocations(Number(depTask.Id), changedByUserId ?? null);
 
       // Recursively replan tasks that depend on this dependent task
       if (newTaskEndDate) {
-        await replanDependentTasks(depTask.Id, newTaskEndDate);
+        await replanDependentTasks(depTask.Id, newTaskEndDate, changedByUserId ?? null);
       }
     }
   }
@@ -246,12 +456,14 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     // Get allocations for all tasks the user has access to (through organization membership)
     const [allocations] = await pool.execute<RowDataPacket[]>(
-      `SELECT ta.TaskId, ta.UserId, ta.AllocationDate, ta.AllocatedHours, 
-              COALESCE(p.IsHobby, 0) as IsHobby
+      `SELECT ta.TaskId, ta.TaskAllocationHeaderId, ta.UserId, ta.AllocationDate, ta.AllocatedHours,
+              COALESCE(p.IsHobby, 0) as IsHobby,
+              tah.PlannedStartDate, tah.PlannedEndDate
        FROM TaskAllocations ta
        INNER JOIN Tasks t ON ta.TaskId = t.Id
        INNER JOIN Projects p ON t.ProjectId = p.Id
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       LEFT JOIN TaskAllocationHeaders tah ON ta.TaskAllocationHeaderId = tah.Id
        WHERE om.UserId = ?
        ORDER BY ta.AllocationDate`,
       [userId]
@@ -306,12 +518,16 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
     }
 
     const [allocations] = await pool.execute<RowDataPacket[]>(
-      `SELECT ta.*, t.TaskName, u.Username, u.FirstName, u.LastName
+      `SELECT ta.*, t.TaskName, u.Username, u.FirstName, u.LastName,
+              tah.AllocationMode, tah.SplitOrder, tah.PlannedHours
        FROM TaskAllocations ta
        INNER JOIN Tasks t ON ta.TaskId = t.Id
+       LEFT JOIN TaskAllocationHeaders tah ON ta.TaskAllocationHeaderId = tah.Id
        LEFT JOIN Users u ON ta.UserId = u.Id
        WHERE t.ProjectId = ?
-       ORDER BY ta.AllocationDate DESC, t.TaskName`,
+       ORDER BY ta.AllocationDate DESC,
+                CASE WHEN tah.SplitOrder IS NULL THEN 2147483647 ELSE tah.SplitOrder END ASC,
+                t.TaskName`,
       [projectId]
     );
 
@@ -349,18 +565,117 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
     const { taskId } = req.params;
 
     const [allocations] = await pool.execute<RowDataPacket[]>(
-      `SELECT ta.*, u.Username, u.FirstName, u.LastName
+      `SELECT ta.*, u.Username, u.FirstName, u.LastName,
+              tah.AllocationMode, tah.SplitOrder, tah.PlannedHours
        FROM TaskAllocations ta
+       LEFT JOIN TaskAllocationHeaders tah ON ta.TaskAllocationHeaderId = tah.Id
        LEFT JOIN Users u ON ta.UserId = u.Id
        WHERE ta.TaskId = ?
        ORDER BY ta.AllocationDate`,
       [taskId]
     );
 
-    res.json({ success: true, allocations });
+    const [headers] = await pool.execute<RowDataPacket[]>(
+      `SELECT tah.*, u.Username, u.FirstName, u.LastName
+       FROM TaskAllocationHeaders tah
+       LEFT JOIN Users u ON tah.UserId = u.Id
+       WHERE tah.TaskId = ?
+       ORDER BY CASE WHEN tah.SplitOrder IS NULL THEN 2147483647 ELSE tah.SplitOrder END ASC, tah.Id ASC`,
+      [taskId]
+    );
+
+    res.json({ success: true, allocations, headers });
   } catch (error) {
     console.error('Error fetching task allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch task allocations' });
+  }
+});
+
+// Update allocation headers for a task (multi-user split metadata)
+router.put('/task/:taskId/headers', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const taskId = Number(req.params.taskId);
+    const headerItems = Array.isArray(req.body?.headers) ? req.body.headers : [];
+
+    if (!Number.isFinite(taskId) || taskId <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid taskId is required' });
+    }
+
+    const [tasks] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.Id, om.Role, COALESCE(pg.CanPlanTasks, 0) as CanPlanTasks
+       FROM Tasks t
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId AND om.UserId = ?
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE t.Id = ?`,
+      [req.user?.userId, taskId]
+    );
+
+    if (tasks.length === 0) {
+      return res.status(404).json({ success: false, message: 'Task not found or access denied' });
+    }
+
+    const task = tasks[0];
+    const canPlan = task.Role === 'Owner' || task.Role === 'Admin' || task.CanPlanTasks === 1;
+    if (!canPlan) {
+      return res.status(403).json({ success: false, message: 'No permission to plan tasks' });
+    }
+
+    const targetUserIds = new Set<number>();
+    for (const item of headerItems) {
+      const targetUserId = Number(item?.userId);
+      if (!Number.isFinite(targetUserId) || targetUserId <= 0) continue;
+      targetUserIds.add(targetUserId);
+
+      await ensureTaskAllocationHeader(taskId, targetUserId, {
+        allocationMode: item?.allocationMode,
+        splitOrder: item?.splitOrder,
+        plannedHours: item?.plannedHours,
+        createdBy: req.user?.userId
+      });
+    }
+
+    const [existingHeaders] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id, UserId
+       FROM TaskAllocationHeaders
+       WHERE TaskId = ?`,
+      [taskId]
+    );
+
+    for (const existingHeader of existingHeaders) {
+      const headerUserId = Number(existingHeader.UserId);
+      if (targetUserIds.has(headerUserId)) continue;
+
+      const [userAllocRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT COUNT(*) as count
+         FROM TaskAllocations
+         WHERE TaskId = ? AND UserId = ?`,
+        [taskId, headerUserId]
+      );
+
+      if (Number(userAllocRows[0]?.count || 0) === 0) {
+        await pool.execute(
+          `DELETE FROM TaskAllocationHeaders WHERE Id = ?`,
+          [existingHeader.Id]
+        );
+      }
+    }
+
+    await recomputeTaskPlanDatesFromAllocations(taskId, req.user?.userId);
+
+    const [headers] = await pool.execute<RowDataPacket[]>(
+      `SELECT tah.*, u.Username, u.FirstName, u.LastName
+       FROM TaskAllocationHeaders tah
+       LEFT JOIN Users u ON tah.UserId = u.Id
+       WHERE tah.TaskId = ?
+       ORDER BY CASE WHEN tah.SplitOrder IS NULL THEN 2147483647 ELSE tah.SplitOrder END ASC, tah.Id ASC`,
+      [taskId]
+    );
+
+    res.json({ success: true, headers });
+  } catch (error) {
+    console.error('Error updating task allocation headers:', error);
+    res.status(500).json({ success: false, message: 'Failed to update task allocation headers' });
   }
 });
 
@@ -493,6 +808,17 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       });
     }
 
+    const newTaskUnscheduled = await getTaskUnscheduledFlag(Number(newTaskId));
+    if (newTaskUnscheduled === null) {
+      return res.status(404).json({ success: false, message: 'Task not found' });
+    }
+    if (newTaskUnscheduled === 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unscheduled work tasks cannot be planned'
+      });
+    }
+
     // Get user's work hours configuration (including hobby settings)
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT WorkHoursMonday, WorkHoursTuesday, WorkHoursWednesday, WorkHoursThursday, 
@@ -609,7 +935,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
        FROM TaskAllocations ta
        INNER JOIN Tasks t ON ta.TaskId = t.Id
        INNER JOIN Projects p ON t.ProjectId = p.Id
-       WHERE ta.UserId = ? AND ta.AllocationDate >= ?
+      WHERE ta.UserId = ? AND ta.AllocationDate >= ? AND COALESCE(t.UnscheduledWork, 0) = 0
        GROUP BY ta.TaskId, t.DueDateMandatory, p.IsHobby
        ORDER BY FirstAllocationDate ASC, FirstStartTime ASC, ta.TaskId ASC`,
       [userId, fromDate]
@@ -667,7 +993,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
            FROM TaskAllocations ta
            INNER JOIN Tasks t ON ta.TaskId = t.Id
            INNER JOIN Projects p ON t.ProjectId = p.Id
-           WHERE ta.UserId = ? AND ta.AllocationDate >= ? AND ta.TaskId IN (${placeholders})
+           WHERE ta.UserId = ? AND ta.AllocationDate >= ? AND ta.TaskId IN (${placeholders}) AND COALESCE(t.UnscheduledWork, 0) = 0
            GROUP BY ta.TaskId, t.DueDateMandatory, p.IsHobby`,
           [userId, fromDate, ...missingParentIds]
         );
@@ -828,6 +1154,11 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       let lastAllocationDate = new Date(startFromDate);
       let currentDate = new Date(startFromDate);
       let remaining = hoursToAllocate;
+      const taskHeaderId = await ensureTaskAllocationHeader(Number(taskId), Number(userId), {
+        allocationMode: 'parallel',
+        plannedHours: hoursToAllocate,
+        createdBy: req.user?.userId || null,
+      });
       
       // Select appropriate functions and slot tracker based on task type
       const getHoursForDay = isHobby ? getHobbyHoursForDay : getWorkHoursForDay;
@@ -925,9 +1256,9 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
             console.log(`  Task ${taskId} @ ${dateStr} (morning): ${formatTime(morningStart)}-${formatTime(morningEnd)} (${morningHoursToAllocate}h)`);
             
             await pool.execute(
-              `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
-               VALUES (?, ?, ?, ?, ?, ?, 0)`,
-              [taskId, userId, dateStr, morningHoursToAllocate, formatTime(morningStart), formatTime(morningEnd)]
+              `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+              [taskId, taskHeaderId, userId, dateStr, morningHoursToAllocate, formatTime(morningStart), formatTime(morningEnd)]
             );
             
             // Create afternoon allocation
@@ -944,9 +1275,9 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
             console.log(`  Task ${taskId} @ ${dateStr} (afternoon): ${formatTime(afternoonStart)}-${formatTime(afternoonEnd)} (${afternoonHoursToAllocate}h)`);
             
             await pool.execute(
-              `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
-               VALUES (?, ?, ?, ?, ?, ?, 0)`,
-              [taskId, userId, dateStr, afternoonHoursToAllocate, formatTime(afternoonStart), formatTime(afternoonEnd)]
+              `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+              [taskId, taskHeaderId, userId, dateStr, afternoonHoursToAllocate, formatTime(afternoonStart), formatTime(afternoonEnd)]
             );
             
             // Update slot position
@@ -993,9 +1324,9 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
         
         // Create allocation
         await pool.execute(
-          `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
-           VALUES (?, ?, ?, ?, ?, ?, 0)`,
-          [taskId, userId, dateStr, actualHours, formatTime(actualStart), formatTime(actualEnd)]
+          `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+          [taskId, taskHeaderId, userId, dateStr, actualHours, formatTime(actualStart), formatTime(actualEnd)]
         );
         
         // Track the last allocation date
@@ -1161,34 +1492,11 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
     }
 
 
-    // Update PlannedStartDate and PlannedEndDate for new task
-    const [newTaskAllocations] = await pool.execute<RowDataPacket[]>(
-      `SELECT MIN(AllocationDate) as StartDate, MAX(AllocationDate) as EndDate
-       FROM TaskAllocations WHERE TaskId = ?`,
-      [newTaskId]
-    );
-    if (newTaskAllocations.length > 0 && newTaskAllocations[0].StartDate) {
-      await pool.execute(
-        `UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?`,
-        [newTaskAllocations[0].StartDate, newTaskAllocations[0].EndDate, userId, newTaskId]
-      );
-      await syncTaskPrimaryAssignee(Number(newTaskId), userId, req.user?.userId);
-    }
+    await recomputeTaskPlanDatesFromAllocations(Number(newTaskId), req.user?.userId);
 
     // Update PlannedStartDate and PlannedEndDate for affected tasks
     for (const taskData of affectedTasksData) {
-      const [taskAllocations] = await pool.execute<RowDataPacket[]>(
-        `SELECT MIN(AllocationDate) as StartDate, MAX(AllocationDate) as EndDate
-         FROM TaskAllocations WHERE TaskId = ?`,
-        [taskData.TaskId]
-      );
-      if (taskAllocations.length > 0 && taskAllocations[0].StartDate) {
-        await pool.execute(
-          `UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?`,
-          [taskAllocations[0].StartDate, taskAllocations[0].EndDate, userId, taskData.TaskId]
-        );
-        await syncTaskPrimaryAssignee(Number(taskData.TaskId), userId, req.user?.userId);
-      }
+      await recomputeTaskPlanDatesFromAllocations(Number(taskData.TaskId), req.user?.userId);
     }
 
     res.json({ 
@@ -1469,7 +1777,7 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
 // Create/update task allocations
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { taskId, userId, allocations } = req.body;
+    const { taskId, userId, allocations, header, suppressDependentReplan, appendToExistingUserSlice } = req.body;
 
     if (!taskId || !userId || !Array.isArray(allocations)) {
       return res.status(400).json({ 
@@ -1481,6 +1789,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     // Verify user has permission to plan tasks
     const [tasks] = await pool.execute<RowDataPacket[]>(
       `SELECT t.Id, p.OrganizationId, om.Role,
+              COALESCE(t.UnscheduledWork, 0) as UnscheduledWork,
               COALESCE(pg.CanManageTasks, 0) as CanManageTasks,
               COALESCE(pg.CanPlanTasks, 0) as CanPlanTasks
        FROM Tasks t
@@ -1496,36 +1805,17 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const task = tasks[0];
+    if (Number(task.UnscheduledWork || 0) === 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unscheduled work tasks cannot be planned'
+      });
+    }
     const canPlan = task.Role === 'Owner' || task.Role === 'Admin' || task.CanPlanTasks === 1;
 
     if (!canPlan) {
       return res.status(403).json({ success: false, message: 'No permission to plan tasks' });
     }
-
-    const descendantsQuery = dbProvider === 'mssql'
-      ? `;WITH Descendants AS (
-           SELECT Id FROM Tasks WHERE Id = ?
-           UNION ALL
-           SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-         )
-         SELECT Id FROM Descendants`
-      : `WITH RECURSIVE Descendants AS (
-           SELECT Id FROM Tasks WHERE Id = ?
-           UNION ALL
-           SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-         )
-         SELECT Id FROM Descendants`;
-
-    const [descendantRows] = await pool.execute<RowDataPacket[]>(descendantsQuery, [taskId]);
-    const descendantTaskIds = descendantRows
-      .map((row) => Number(row.Id))
-      .filter((id) => Number.isFinite(id));
-
-    if (descendantTaskIds.length === 0) {
-      descendantTaskIds.push(Number(taskId));
-    }
-
-    const descendantPlaceholders = descendantTaskIds.map(() => '?').join(',');
 
     const normalizedDates = Array.from(
       new Set(
@@ -1546,41 +1836,55 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Delete existing allocations for this task
-    await pool.execute(
-      'DELETE FROM TaskAllocations WHERE TaskId = ?',
-      [taskId]
-    );
+    const headerId = await ensureTaskAllocationHeader(Number(taskId), Number(userId), {
+      allocationMode: header?.allocationMode,
+      splitOrder: header?.splitOrder,
+      plannedHours: header?.plannedHours ?? allocations.reduce((sum: number, allocation: any) => sum + (parseFloat(String(allocation?.hours || 0)) || 0), 0),
+      createdBy: req.user?.userId,
+      forceCreate: !!appendToExistingUserSlice,
+    });
 
-    // Delete child allocations at ALL levels (multi-level hierarchy)
-    await pool.execute('DELETE FROM TaskChildAllocations WHERE ChildTaskId = ?', [taskId]);
-    const deleteDescendantChildAllocationsQuery = dbProvider === 'mssql'
-      ? `;WITH Descendants AS (
-           SELECT Id FROM Tasks WHERE Id = ?
-           UNION ALL
-           SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-         )
-         DELETE FROM TaskChildAllocations
-         WHERE ParentTaskId IN (SELECT Id FROM Descendants)`
-      : `DELETE FROM TaskChildAllocations WHERE ParentTaskId IN (
-           WITH RECURSIVE Descendants AS (
-             SELECT Id FROM Tasks WHERE Id = ?
-             UNION ALL
-             SELECT t.Id FROM Tasks t INNER JOIN Descendants d ON t.ParentTaskId = d.Id
-           )
-           SELECT Id FROM Descendants
-         )`;
-    await pool.execute(deleteDescendantChildAllocationsQuery, [taskId]);
+    if (!appendToExistingUserSlice) {
+      // Delete only this user's allocations for this task (preserve other users' plan slices)
+      await pool.execute(
+        'DELETE FROM TaskAllocations WHERE TaskId = ? AND UserId = ?',
+        [taskId, userId]
+      );
+
+      // Delete child allocations for this parent/user slice only
+      const deleteTaskChildSliceQuery = dbProvider === 'mssql'
+        ? `DELETE FROM TaskChildAllocations
+           WHERE ParentTaskId = ?
+             AND EXISTS (
+               SELECT 1
+               FROM TaskAllocations ta
+               WHERE ta.TaskId = TaskChildAllocations.ParentTaskId
+                 AND ta.AllocationDate = TaskChildAllocations.AllocationDate
+                 AND ta.UserId = ?
+             )`
+        : `DELETE FROM TaskChildAllocations
+           WHERE ParentTaskId = ?
+             AND EXISTS (
+               SELECT 1
+               FROM TaskAllocations ta
+               WHERE ta.TaskId = TaskChildAllocations.ParentTaskId
+                 AND ta.AllocationDate = TaskChildAllocations.AllocationDate
+                 AND ta.UserId = ?
+             )`;
+
+      await pool.execute(deleteTaskChildSliceQuery, [taskId, userId]);
+    }
 
     // Insert new allocations with start and end times
     if (allocations.length > 0) {
       if (dbProvider === 'mssql') {
         for (const allocation of allocations) {
           await pool.execute(
-            `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
-             VALUES (?, ?, ?, ?, ?, ?, 0)`,
+            `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
             [
               taskId,
+              headerId,
               userId,
               allocation.date,
               allocation.hours,
@@ -1592,6 +1896,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       } else {
         const values = allocations.map((a: any) => [
           taskId,
+          headerId,
           userId,
           a.date,
           a.hours,
@@ -1600,16 +1905,16 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
           0
         ]);
         await pool.query(
-          'INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual) VALUES ?',
+          'INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual) VALUES ?',
           [values]
         );
       }
     }
 
-    // Update task's PlannedStartDate and PlannedEndDate
+    const updatedPlanRange = await recomputeTaskPlanDatesFromAllocations(Number(taskId), req.user?.userId);
+    const newEndDate = updatedPlanRange.endDate;
+
     if (allocations.length > 0) {
-      const dates = allocations.map((a: any) => a.date).sort();
-      const newEndDate = dates[dates.length - 1];
       
       // Get task info for notification
       const [taskInfo] = await pool.execute<RowDataPacket[]>(
@@ -1619,12 +1924,6 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
          WHERE t.Id = ?`,
         [taskId]
       );
-      
-      await pool.execute(
-        'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
-        [dates[0], newEndDate, userId, taskId]
-      );
-      await syncTaskPrimaryAssignee(Number(taskId), userId, req.user?.userId);
 
       // Notify user about allocation (if different from current user making the allocation)
       if (taskInfo.length > 0 && userId !== req.user?.userId) {
@@ -1640,11 +1939,13 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         );
       }
 
-      // Replan any tasks that depend on this task
-      await replanDependentTasks(Number(taskId), newEndDate);
+      // Replan dependent tasks unless explicitly suppressed (used by drag-drop slice replanning)
+      if (newEndDate && !suppressDependentReplan) {
+        await replanDependentTasks(Number(taskId), newEndDate, req.user?.userId);
+      }
     }
 
-    res.json({ success: true, message: 'Allocations saved successfully' });
+    res.json({ success: true, message: 'Allocations saved successfully', headerId });
   } catch (error) {
     console.error('Error saving task allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to save task allocations' });
@@ -1724,43 +2025,319 @@ router.delete('/delete', authenticateToken, async (req: AuthRequest, res: Respon
       [taskId, userId, allocationDate]
     );
 
-    // Also delete child allocations for this task on this date (at all levels)
+    // Also delete child allocations for this task/date and this same user slice
     await pool.execute(
-      'DELETE FROM TaskChildAllocations WHERE ParentTaskId = ? AND AllocationDate = ?',
-      [taskId, allocationDate]
+      `DELETE FROM TaskChildAllocations
+       WHERE ParentTaskId = ?
+         AND AllocationDate = ?
+         AND EXISTS (
+           SELECT 1
+           FROM TaskAllocations ta
+           WHERE ta.TaskId = TaskChildAllocations.ParentTaskId
+             AND ta.AllocationDate = TaskChildAllocations.AllocationDate
+             AND ta.UserId = ?
+         )`,
+      [taskId, allocationDate, userId]
     );
 
-    // Check if task has any remaining allocations
-    const [remaining] = await pool.execute<RowDataPacket[]>(
-      'SELECT COUNT(*) as count FROM TaskAllocations WHERE TaskId = ?',
-      [taskId]
+    const [remainingForUserRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT COUNT(*) as count
+       FROM TaskAllocations
+       WHERE TaskId = ? AND UserId = ?`,
+      [taskId, userId]
     );
 
-    // If no allocations left, clear planned dates
-    if (remaining[0].count === 0) {
+    if (Number(remainingForUserRows[0]?.count || 0) === 0) {
       await pool.execute(
-        'UPDATE Tasks SET PlannedStartDate = NULL, PlannedEndDate = NULL WHERE Id = ?',
-        [taskId]
+        `DELETE FROM TaskAllocationHeaders
+         WHERE TaskId = ? AND UserId = ?`,
+        [taskId, userId]
       );
-    } else {
-      // Update planned dates based on remaining allocations
-      const [dates] = await pool.execute<RowDataPacket[]>(
-        'SELECT MIN(AllocationDate) as startDate, MAX(AllocationDate) as endDate FROM TaskAllocations WHERE TaskId = ?',
-        [taskId]
-      );
-      
-      if (dates[0].startDate && dates[0].endDate) {
-        await pool.execute(
-          'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ? WHERE Id = ?',
-          [dates[0].startDate, dates[0].endDate, taskId]
-        );
-      }
     }
+
+    await recomputeTaskPlanDatesFromAllocations(Number(taskId), req.user?.userId);
 
     res.json({ success: true, message: 'Allocation deleted successfully' });
   } catch (error) {
     console.error('Error deleting allocation:', error);
     res.status(500).json({ success: false, message: 'Failed to delete allocation' });
+  }
+});
+
+// Delete allocations by allocation header slice
+router.delete('/header/:headerId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const headerId = Number(req.params.headerId);
+    if (!Number.isFinite(headerId) || headerId <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid headerId' });
+    }
+
+    const [headerRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT tah.Id, tah.TaskId, tah.UserId, p.OrganizationId, om.Role,
+              COALESCE(pg.CanManageTasks, 0) as CanManageTasks,
+              COALESCE(pg.CanPlanTasks, 0) as CanPlanTasks
+       FROM TaskAllocationHeaders tah
+       INNER JOIN Tasks t ON tah.TaskId = t.Id
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId AND om.UserId = ?
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE tah.Id = ?`,
+      [req.user?.userId, headerId]
+    );
+
+    if (headerRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Allocation header not found or access denied' });
+    }
+
+    const headerRow = headerRows[0];
+    const canPlan = headerRow.Role === 'Owner' || headerRow.Role === 'Admin' || headerRow.CanPlanTasks === 1;
+    if (!canPlan) {
+      return res.status(403).json({ success: false, message: 'No permission to plan tasks' });
+    }
+
+    const taskId = Number(headerRow.TaskId);
+
+    // Remove child allocations that belong to this exact parent-date slice
+    await pool.execute(
+      `DELETE FROM TaskChildAllocations
+       WHERE ParentTaskId = ?
+         AND AllocationDate IN (
+           SELECT AllocationDate
+           FROM TaskAllocations
+           WHERE TaskAllocationHeaderId = ?
+         )`,
+      [taskId, headerId]
+    );
+
+    await pool.execute(
+      `DELETE FROM TaskAllocations WHERE TaskAllocationHeaderId = ?`,
+      [headerId]
+    );
+
+    await pool.execute(
+      `DELETE FROM TaskAllocationHeaders WHERE Id = ?`,
+      [headerId]
+    );
+
+    await recomputeTaskPlanDatesFromAllocations(taskId, req.user?.userId);
+
+    res.json({ success: true, message: 'Allocation slice deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting allocation slice:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete allocation slice' });
+  }
+});
+
+// Delete selected dates from an allocation header slice
+router.delete('/header/:headerId/dates', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const headerId = Number(req.params.headerId);
+    const rawDates = Array.isArray(req.body?.dates) ? req.body.dates : [];
+    const dates = Array.from(
+      new Set(
+        rawDates
+          .map((value: any) => normalizeDateKey(value))
+          .filter((value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+      )
+    );
+
+    if (!Number.isFinite(headerId) || headerId <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid headerId' });
+    }
+
+    if (dates.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one valid date is required' });
+    }
+
+    const [headerRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT tah.Id, tah.TaskId, tah.UserId, p.OrganizationId, om.Role,
+              COALESCE(pg.CanManageTasks, 0) as CanManageTasks,
+              COALESCE(pg.CanPlanTasks, 0) as CanPlanTasks
+       FROM TaskAllocationHeaders tah
+       INNER JOIN Tasks t ON tah.TaskId = t.Id
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId AND om.UserId = ?
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE tah.Id = ?`,
+      [req.user?.userId, headerId]
+    );
+
+    if (headerRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Allocation header not found or access denied' });
+    }
+
+    const headerRow = headerRows[0];
+    const canPlan = headerRow.Role === 'Owner' || headerRow.Role === 'Admin' || headerRow.CanPlanTasks === 1;
+    if (!canPlan) {
+      return res.status(403).json({ success: false, message: 'No permission to plan tasks' });
+    }
+
+    const taskId = Number(headerRow.TaskId);
+    const placeholders = dates.map(() => '?').join(',');
+
+    await pool.execute(
+      `DELETE FROM TaskAllocations
+       WHERE TaskAllocationHeaderId = ?
+         AND AllocationDate IN (${placeholders})`,
+      [headerId, ...dates]
+    );
+
+    await pool.execute(
+      `DELETE FROM TaskChildAllocations
+       WHERE ParentTaskId = ?
+         AND AllocationDate IN (${placeholders})
+         AND NOT EXISTS (
+           SELECT 1
+           FROM TaskAllocations ta
+           WHERE ta.TaskId = TaskChildAllocations.ParentTaskId
+             AND ta.AllocationDate = TaskChildAllocations.AllocationDate
+         )`,
+      [taskId, ...dates]
+    );
+
+    const [remainingRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT COUNT(*) as count
+       FROM TaskAllocations
+       WHERE TaskAllocationHeaderId = ?`,
+      [headerId]
+    );
+
+    if (Number(remainingRows[0]?.count || 0) === 0) {
+      await pool.execute(
+        `DELETE FROM TaskAllocationHeaders WHERE Id = ?`,
+        [headerId]
+      );
+    }
+
+    await recomputeTaskPlanDatesFromAllocations(taskId, req.user?.userId);
+
+    res.json({ success: true, message: 'Allocation slice dates deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting allocation slice dates:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete allocation slice dates' });
+  }
+});
+
+// Delete a partial amount (hours) from an allocation header slice (consumes latest allocations first)
+router.delete('/header/:headerId/hours', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const headerId = Number(req.params.headerId);
+    const hoursToRemove = Number(req.body?.hours || 0);
+
+    if (!Number.isFinite(headerId) || headerId <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid headerId' });
+    }
+
+    if (!Number.isFinite(hoursToRemove) || hoursToRemove <= 0) {
+      return res.status(400).json({ success: false, message: 'A positive hours value is required' });
+    }
+
+    const [headerRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT tah.Id, tah.TaskId, tah.UserId, p.OrganizationId, om.Role,
+              COALESCE(pg.CanManageTasks, 0) as CanManageTasks,
+              COALESCE(pg.CanPlanTasks, 0) as CanPlanTasks
+       FROM TaskAllocationHeaders tah
+       INNER JOIN Tasks t ON tah.TaskId = t.Id
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId AND om.UserId = ?
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE tah.Id = ?`,
+      [req.user?.userId, headerId]
+    );
+
+    if (headerRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Allocation header not found or access denied' });
+    }
+
+    const headerRow = headerRows[0];
+    const canPlan = headerRow.Role === 'Owner' || headerRow.Role === 'Admin' || headerRow.CanPlanTasks === 1;
+    if (!canPlan) {
+      return res.status(403).json({ success: false, message: 'No permission to plan tasks' });
+    }
+
+    const taskId = Number(headerRow.TaskId);
+
+    const [allocationRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id, AllocationDate, StartTime, EndTime, AllocatedHours
+       FROM TaskAllocations
+       WHERE TaskAllocationHeaderId = ?
+       ORDER BY AllocationDate DESC, StartTime DESC, Id DESC`,
+      [headerId]
+    );
+
+    const totalHoursInHeader = allocationRows.reduce((sum, row) => sum + Number(row.AllocatedHours || 0), 0);
+    if (totalHoursInHeader <= 0) {
+      return res.status(400).json({ success: false, message: 'No allocation hours available in this header' });
+    }
+
+    let remaining = Math.min(hoursToRemove, totalHoursInHeader);
+
+    const toDeleteIds: number[] = [];
+    const toUpdate: Array<{ id: number; newHours: number; startTime: string | null }> = [];
+
+    for (const row of allocationRows) {
+      if (remaining <= 0) break;
+
+      const rowHours = Number(row.AllocatedHours || 0);
+      if (rowHours <= 0) continue;
+
+      if (remaining >= rowHours - 0.0001) {
+        toDeleteIds.push(Number(row.Id));
+        remaining -= rowHours;
+      } else {
+        const nextHours = Math.max(0, rowHours - remaining);
+        toUpdate.push({
+          id: Number(row.Id),
+          newHours: nextHours,
+          startTime: row.StartTime ? String(row.StartTime) : null,
+        });
+        remaining = 0;
+        break;
+      }
+    }
+
+    for (const allocationId of toDeleteIds) {
+      await pool.execute(`DELETE FROM TaskAllocations WHERE Id = ?`, [allocationId]);
+    }
+
+    for (const item of toUpdate) {
+      let newEndTime: string | null = null;
+      if (item.startTime && item.startTime.includes(':')) {
+        const [startHour, startMinute] = item.startTime.split(':').map(Number);
+        const startMinutes = (Number.isFinite(startHour) ? startHour : 0) * 60 + (Number.isFinite(startMinute) ? startMinute : 0);
+        const endMinutes = startMinutes + Math.round(item.newHours * 60);
+        newEndTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
+      }
+
+      await pool.execute(
+        `UPDATE TaskAllocations
+         SET AllocatedHours = ?, EndTime = COALESCE(?, EndTime)
+         WHERE Id = ?`,
+        [item.newHours, newEndTime, item.id]
+      );
+    }
+
+    const [remainingRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT COUNT(*) as count
+       FROM TaskAllocations
+       WHERE TaskAllocationHeaderId = ?`,
+      [headerId]
+    );
+
+    if (Number(remainingRows[0]?.count || 0) === 0) {
+      await pool.execute(`DELETE FROM TaskAllocationHeaders WHERE Id = ?`, [headerId]);
+    }
+
+    await recomputeTaskPlanDatesFromAllocations(taskId, req.user?.userId);
+
+    res.json({
+      success: true,
+      message: 'Allocation slice hours removed successfully',
+      removedHours: Math.min(hoursToRemove, totalHoursInHeader),
+    });
+  } catch (error) {
+    console.error('Error deleting allocation slice hours:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete allocation slice hours' });
   }
 });
 
@@ -1868,6 +2445,12 @@ router.delete('/task/:taskId', authenticateToken, async (req: AuthRequest, res: 
     // Delete direct allocations for this task and all descendants
     await pool.execute(
       `DELETE FROM TaskAllocations WHERE TaskId IN (${descendantPlaceholders})`,
+      descendantTaskIds
+    );
+
+    // Delete allocation headers for this task and all descendants
+    await pool.execute(
+      `DELETE FROM TaskAllocationHeaders WHERE TaskId IN (${descendantPlaceholders})`,
       descendantTaskIds
     );
 
@@ -2112,7 +2695,7 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
 
     // Verify task exists and get project info
     const [tasks] = await pool.execute<RowDataPacket[]>(
-      `SELECT t.Id, t.ProjectId, COALESCE(p.IsHobby, 0) as IsHobby
+      `SELECT t.Id, t.ProjectId, COALESCE(t.UnscheduledWork, 0) as UnscheduledWork, COALESCE(p.IsHobby, 0) as IsHobby
        FROM Tasks t
        INNER JOIN Projects p ON t.ProjectId = p.Id
        WHERE t.Id = ?`,
@@ -2124,6 +2707,12 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
     }
 
     const task = tasks[0];
+    if (Number(task.UnscheduledWork || 0) === 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unscheduled work tasks cannot be planned'
+      });
+    }
     const isHobby = task.IsHobby === 1;
 
     const normalizedAllocationDate = normalizeDateKey(allocationDate);
@@ -2242,6 +2831,12 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
       return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
     };
 
+    const manualHeaderId = await ensureTaskAllocationHeader(Number(taskId), Number(userId), {
+      allocationMode: 'parallel',
+      plannedHours: allocatedHours,
+      createdBy: req.user?.userId
+    });
+
     const minutesToAllocate = allocatedHours * 60;
 
     // Check if allocation crosses lunch - if so, split it (only for work)
@@ -2255,9 +2850,9 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
         const morningEnd = lunchStartMinutes;
 
         await pool.execute<ResultSetHeader>(
-          `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
-           VALUES (?, ?, ?, ?, ?, ?, 1)`,
-          [taskId, userId, normalizedAllocationDate, morningHours, formatTime(morningStart), formatTime(morningEnd)]
+          `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+          [taskId, manualHeaderId, userId, normalizedAllocationDate, morningHours, formatTime(morningStart), formatTime(morningEnd)]
         );
 
         // Create afternoon allocation
@@ -2267,25 +2862,12 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
         const afternoonEnd = afternoonStart + afternoonMinutes;
 
         await pool.execute<ResultSetHeader>(
-          `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
-           VALUES (?, ?, ?, ?, ?, ?, 1)`,
-          [taskId, userId, normalizedAllocationDate, afternoonHours, formatTime(afternoonStart), formatTime(afternoonEnd)]
+          `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+          [taskId, manualHeaderId, userId, normalizedAllocationDate, afternoonHours, formatTime(afternoonStart), formatTime(afternoonEnd)]
         );
 
-        // Update task's PlannedStartDate and PlannedEndDate
-        const [allAllocations] = await pool.execute<RowDataPacket[]>(
-          'SELECT DISTINCT AllocationDate FROM TaskAllocations WHERE TaskId = ? ORDER BY AllocationDate',
-          [taskId]
-        );
-        if (allAllocations.length > 0) {
-          const startDate = allAllocations[0].AllocationDate;
-          const endDate = allAllocations[allAllocations.length - 1].AllocationDate;
-          await pool.execute(
-            'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
-            [startDate, endDate, userId, taskId]
-          );
-          await syncTaskPrimaryAssignee(Number(taskId), userId, req.user?.userId);
-        }
+        await recomputeTaskPlanDatesFromAllocations(Number(taskId), req.user?.userId);
 
         return res.json({ success: true, message: 'Manual allocation created (split across lunch break)' });
       }
@@ -2296,25 +2878,12 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
     const endTime = formatTime(slotStart + minutesToAllocate);
 
     await pool.execute<ResultSetHeader>(
-      `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
-       VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      [taskId, userId, normalizedAllocationDate, allocatedHours, startTime, endTime]
+      `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+      [taskId, manualHeaderId, userId, normalizedAllocationDate, allocatedHours, startTime, endTime]
     );
 
-    // Update task's PlannedStartDate and PlannedEndDate
-    const [allAllocations] = await pool.execute<RowDataPacket[]>(
-      'SELECT DISTINCT AllocationDate FROM TaskAllocations WHERE TaskId = ? ORDER BY AllocationDate',
-      [taskId]
-    );
-    if (allAllocations.length > 0) {
-      const startDate = allAllocations[0].AllocationDate;
-      const endDate = allAllocations[allAllocations.length - 1].AllocationDate;
-      await pool.execute(
-        'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
-        [startDate, endDate, userId, taskId]
-      );
-      await syncTaskPrimaryAssignee(Number(taskId), userId, req.user?.userId);
-    }
+    await recomputeTaskPlanDatesFromAllocations(Number(taskId), req.user?.userId);
 
     res.json({ success: true, message: 'Manual allocation created successfully' });
   } catch (error) {
@@ -2379,6 +2948,7 @@ router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Respo
     // Get the allocation details
     const [allocations] = await pool.execute<RowDataPacket[]>(
       `SELECT ta.Id, ta.IsManual, ta.TaskId, ta.UserId, ta.AllocationDate,
+              COALESCE(t.UnscheduledWork, 0) as UnscheduledWork,
               COALESCE(p.IsHobby, 0) as IsHobby
        FROM TaskAllocations ta
        INNER JOIN Tasks t ON ta.TaskId = t.Id
@@ -2399,6 +2969,12 @@ router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Respo
     }
 
     const allocation = allocations[0];
+    if (Number(allocation.UnscheduledWork || 0) === 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unscheduled work tasks cannot be planned'
+      });
+    }
     const { TaskId, UserId, AllocationDate } = allocation;
     const allocationDateKey = normalizeDateKey(AllocationDate);
     const holidayDates = await getHolidayDateSetForUser(Number(UserId), allocationDateKey, allocationDateKey);
@@ -2521,6 +3097,12 @@ router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Respo
       return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
     };
 
+    const manualHeaderId = await ensureTaskAllocationHeader(Number(TaskId), Number(UserId), {
+      allocationMode: 'parallel',
+      plannedHours: allocatedHours,
+      createdBy: req.user?.userId
+    });
+
     const minutesToAllocate = allocatedHours * 60;
 
     if (!isHobby && effectiveLunchDuration > 0 && slotStart < lunchStartMinutes) {
@@ -2532,9 +3114,9 @@ router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Respo
         const morningEnd = lunchStartMinutes;
 
         await pool.execute<ResultSetHeader>(
-          `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
-           VALUES (?, ?, ?, ?, ?, ?, 1)`,
-          [TaskId, UserId, AllocationDate, morningHours, formatTime(morningStart), formatTime(morningEnd)]
+          `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+          [TaskId, manualHeaderId, UserId, AllocationDate, morningHours, formatTime(morningStart), formatTime(morningEnd)]
         );
 
         const afternoonMinutes = minutesToAllocate - morningAvail;
@@ -2543,25 +3125,12 @@ router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Respo
         const afternoonEnd = afternoonStart + afternoonMinutes;
 
         await pool.execute<ResultSetHeader>(
-          `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
-           VALUES (?, ?, ?, ?, ?, ?, 1)`,
-          [TaskId, UserId, AllocationDate, afternoonHours, formatTime(afternoonStart), formatTime(afternoonEnd)]
+          `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+          [TaskId, manualHeaderId, UserId, AllocationDate, afternoonHours, formatTime(afternoonStart), formatTime(afternoonEnd)]
         );
 
-        // Update task's PlannedStartDate and PlannedEndDate
-        const [allAllocations] = await pool.execute<RowDataPacket[]>(
-          'SELECT DISTINCT AllocationDate FROM TaskAllocations WHERE TaskId = ? ORDER BY AllocationDate',
-          [TaskId]
-        );
-        if (allAllocations.length > 0) {
-          const startDate = allAllocations[0].AllocationDate;
-          const endDate = allAllocations[allAllocations.length - 1].AllocationDate;
-          await pool.execute(
-            'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
-            [startDate, endDate, UserId, TaskId]
-          );
-          await syncTaskPrimaryAssignee(Number(TaskId), UserId, req.user?.userId);
-        }
+        await recomputeTaskPlanDatesFromAllocations(Number(TaskId), req.user?.userId);
 
         return res.json({ success: true, message: 'Manual allocation updated (split across lunch break)' });
       }
@@ -2571,25 +3140,12 @@ router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Respo
     const endTime = formatTime(slotStart + minutesToAllocate);
 
     await pool.execute<ResultSetHeader>(
-      `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
-       VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      [TaskId, UserId, AllocationDate, allocatedHours, startTime, endTime]
+      `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+      [TaskId, manualHeaderId, UserId, AllocationDate, allocatedHours, startTime, endTime]
     );
 
-    // Update task's PlannedStartDate and PlannedEndDate
-    const [allAllocations] = await pool.execute<RowDataPacket[]>(
-      'SELECT DISTINCT AllocationDate FROM TaskAllocations WHERE TaskId = ? ORDER BY AllocationDate',
-      [TaskId]
-    );
-    if (allAllocations.length > 0) {
-      const startDate = allAllocations[0].AllocationDate;
-      const endDate = allAllocations[allAllocations.length - 1].AllocationDate;
-      await pool.execute(
-        'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
-        [startDate, endDate, UserId, TaskId]
-      );
-      await syncTaskPrimaryAssignee(Number(TaskId), UserId, req.user?.userId);
-    }
+    await recomputeTaskPlanDatesFromAllocations(Number(TaskId), req.user?.userId);
 
     res.json({ success: true, message: 'Manual allocation updated successfully' });
   } catch (error) {
@@ -2634,7 +3190,7 @@ router.delete('/manual/:id', authenticateToken, async (req: AuthRequest, res: Re
 
     // Verify it's a manual allocation and get task ID
     const [allocations] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id, IsManual, TaskId FROM TaskAllocations WHERE Id = ?',
+      'SELECT Id, IsManual, TaskId, UserId FROM TaskAllocations WHERE Id = ?',
       [id]
     );
 
@@ -2650,6 +3206,7 @@ router.delete('/manual/:id', authenticateToken, async (req: AuthRequest, res: Re
     }
 
     const taskId = allocations[0].TaskId;
+    const userId = allocations[0].UserId;
 
     // Delete allocation
     await pool.execute<ResultSetHeader>(
@@ -2657,29 +3214,22 @@ router.delete('/manual/:id', authenticateToken, async (req: AuthRequest, res: Re
       [id]
     );
 
-    // Update task's PlannedStartDate and PlannedEndDate
-    const [remainingAllocations] = await pool.execute<RowDataPacket[]>(
-      'SELECT DISTINCT AllocationDate, UserId FROM TaskAllocations WHERE TaskId = ? ORDER BY AllocationDate',
-      [taskId]
+    const [remainingForUserRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT COUNT(*) as count
+       FROM TaskAllocations
+       WHERE TaskId = ? AND UserId = ?`,
+      [taskId, userId]
     );
 
-    if (remainingAllocations.length > 0) {
-      const startDate = remainingAllocations[0].AllocationDate;
-      const endDate = remainingAllocations[remainingAllocations.length - 1].AllocationDate;
-      // Get the most recent user from remaining allocations
-      const assignedUserId = remainingAllocations[remainingAllocations.length - 1].UserId;
+    if (Number(remainingForUserRows[0]?.count || 0) === 0) {
       await pool.execute(
-        'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ?, AssignedTo = ? WHERE Id = ?',
-        [startDate, endDate, assignedUserId, taskId]
-      );
-      await syncTaskPrimaryAssignee(Number(taskId), assignedUserId, req.user?.userId);
-    } else {
-      // No more allocations - clear planned dates but keep current assignee
-      await pool.execute(
-        'UPDATE Tasks SET PlannedStartDate = NULL, PlannedEndDate = NULL WHERE Id = ?',
-        [taskId]
+        `DELETE FROM TaskAllocationHeaders
+         WHERE TaskId = ? AND UserId = ?`,
+        [taskId, userId]
       );
     }
+
+    await recomputeTaskPlanDatesFromAllocations(Number(taskId), req.user?.userId);
 
     res.json({ success: true, message: 'Manual allocation deleted successfully' });
   } catch (error) {

@@ -22,11 +22,15 @@ interface ResourceMappingEntry {
 interface FieldMapping {
   customer: string;
   project: string;
+  projectId?: string;
   task: string;
+  taskId?: string;
   resource: string;
+  resourceId?: string;
   allocStart: string;
   allocEnd: string;
   allocHours: string;
+  locked?: string;
   hlEstimationHours?: string;
   comments?: string;
 }
@@ -35,6 +39,7 @@ interface ImportPayload {
   organizationId: number;
   rows: Record<string, any>[];
   fieldMapping: FieldMapping;
+  taskTicketNumbers?: Record<string, string>;
   entityMapping?: {
     customers?: Record<string, EntityMappingEntry>;
     projects?: Record<string, EntityMappingEntry>;
@@ -62,6 +67,22 @@ const parseOptionalDecimal = (value: any): number | null => {
   const normalized = normalizeText(value);
   if (!normalized) return null;
   return parseDecimal(value);
+};
+
+const parseOptionalInt = (value: any): number | null => {
+  const normalized = normalizeText(value);
+  if (!normalized) return null;
+  const parsed = parseInt(normalized, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const extractTicketKey = (value: any): string | null => {
+  const normalized = normalizeText(value);
+  if (!normalized) return null;
+  const jiraPattern = /\b([A-Z][A-Z0-9]+-\d+)\b/i;
+  const jiraMatch = normalized.match(jiraPattern);
+  if (jiraMatch?.[1]) return jiraMatch[1].toUpperCase();
+  return null;
 };
 
 const normalizeToHalfHour = (hours: number): number => {
@@ -215,6 +236,128 @@ const splitHoursAcrossDates = (totalHours: number, dateKeys: string[]): Array<{ 
     const unitsForDay = baseUnits + extraUnit;
     return { dateKey, hours: unitsForDay / 2 };
   }).filter((entry) => entry.hours > 0);
+};
+
+const toNoonDate = (dateKey: string): Date => new Date(`${dateKey}T12:00:00`);
+
+const areRangesContiguousOrOverlapping = (
+  currentStart: string,
+  currentEnd: string,
+  incomingStart: string,
+  incomingEnd: string
+): boolean => {
+  const currentStartDate = toNoonDate(currentStart);
+  const currentEndDate = toNoonDate(currentEnd);
+  const incomingStartDate = toNoonDate(incomingStart);
+  const incomingEndDate = toNoonDate(incomingEnd);
+
+  const currentMin = currentStartDate <= currentEndDate ? currentStartDate : currentEndDate;
+  const currentMax = currentStartDate <= currentEndDate ? currentEndDate : currentStartDate;
+  const incomingMin = incomingStartDate <= incomingEndDate ? incomingStartDate : incomingEndDate;
+  const incomingMax = incomingStartDate <= incomingEndDate ? incomingEndDate : incomingStartDate;
+
+  const currentMaxPlusOne = new Date(currentMax);
+  currentMaxPlusOne.setDate(currentMaxPlusOne.getDate() + 1);
+
+  const incomingMaxPlusOne = new Date(incomingMax);
+  incomingMaxPlusOne.setDate(incomingMaxPlusOne.getDate() + 1);
+
+  return incomingMin <= currentMaxPlusOne && currentMin <= incomingMaxPlusOne;
+};
+
+const ensureImportAllocationHeader = async (
+  connection: { execute: <T = any>(query: string, params?: any[]) => Promise<[T, any]> },
+  taskId: number,
+  userId: number,
+  createdBy: number,
+  plannedHours: number,
+  allocStart: string,
+  allocEnd: string
+): Promise<number> => {
+  const [existingRows] = await connection.execute<RowDataPacket[]>(
+    `SELECT h.Id,
+            h.PlannedStartDate,
+            h.PlannedEndDate,
+            h.PlannedHours,
+            MIN(a.AllocationDate) as AllocationMinDate,
+            MAX(a.AllocationDate) as AllocationMaxDate
+     FROM TaskAllocationHeaders h
+     LEFT JOIN TaskAllocations a ON a.TaskAllocationHeaderId = h.Id
+     WHERE h.TaskId = ? AND h.UserId = ?
+     GROUP BY h.Id, h.PlannedStartDate, h.PlannedEndDate, h.PlannedHours
+     ORDER BY h.Id ASC`,
+    [taskId, userId]
+  );
+
+  for (const row of existingRows) {
+    const rowStart = toDateKey(row.PlannedStartDate) || toDateKey(row.AllocationMinDate);
+    const rowEnd = toDateKey(row.PlannedEndDate) || toDateKey(row.AllocationMaxDate);
+    if (!rowStart || !rowEnd) continue;
+
+    if (areRangesContiguousOrOverlapping(rowStart, rowEnd, allocStart, allocEnd)) {
+      const headerId = Number(row.Id);
+      const mergedStart = rowStart <= allocStart ? rowStart : allocStart;
+      const mergedEnd = rowEnd >= allocEnd ? rowEnd : allocEnd;
+      const nextPlannedHours = normalizeToHalfHour(parseDecimal(row.PlannedHours || 0) + plannedHours);
+
+      await connection.execute(
+        `UPDATE TaskAllocationHeaders
+         SET PlannedStartDate = ?,
+             PlannedEndDate = ?,
+             PlannedHours = ?
+         WHERE Id = ?`,
+        [mergedStart, mergedEnd, nextPlannedHours, headerId]
+      );
+
+      return headerId;
+    }
+  }
+
+  const [maxOrderRows] = await connection.execute<RowDataPacket[]>(
+    `SELECT MAX(SplitOrder) as MaxSplitOrder
+     FROM TaskAllocationHeaders
+     WHERE TaskId = ?`,
+    [taskId]
+  );
+
+  const maxSplitOrder = Number(maxOrderRows[0]?.MaxSplitOrder || 0);
+  const splitOrder = Number.isFinite(maxSplitOrder) ? maxSplitOrder + 1 : 1;
+
+  const [insertResult] = await connection.execute<ResultSetHeader>(
+    `INSERT INTO TaskAllocationHeaders (TaskId, UserId, AllocationMode, SplitOrder, PlannedHours, PlannedStartDate, PlannedEndDate, CreatedBy)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [taskId, userId, 'parallel', splitOrder, plannedHours, allocStart, allocEnd, createdBy]
+  );
+
+  return Number(insertResult.insertId);
+};
+
+const recomputeImportAllocationHeader = async (
+  connection: { execute: <T = any>(query: string, params?: any[]) => Promise<[T, any]> },
+  headerId: number
+): Promise<void> => {
+  const [aggregateRows] = await connection.execute<RowDataPacket[]>(
+    `SELECT MIN(AllocationDate) as MinDate,
+            MAX(AllocationDate) as MaxDate,
+            COALESCE(SUM(AllocatedHours), 0) as TotalHours
+     FROM TaskAllocations
+     WHERE TaskAllocationHeaderId = ?`,
+    [headerId]
+  );
+
+  const row = aggregateRows[0] || {};
+  const minDate = toDateKey(row.MinDate);
+  const maxDate = toDateKey(row.MaxDate);
+  const totalHours = normalizeToHalfHour(parseDecimal(row.TotalHours || 0));
+
+  await connection.execute(
+    `UPDATE TaskAllocationHeaders
+     SET PlannedStartDate = ?,
+         PlannedEndDate = ?,
+         PlannedHours = ?
+     WHERE Id = ?`,
+    [minDate, maxDate, totalHours, headerId]
+  );
 };
 
 const canManageInOrganization = async (organizationId: number, userId: number) => {
@@ -417,26 +560,26 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
     existingCustomers.forEach((c: any) => customerByName.set(normalizeKey(c.Name), Number(c.Id)));
 
     const projectByName = new Map<string, number>();
+    const projectById = new Map<number, RowDataPacket>();
     const projectCustomerById = new Map<number, number | null>();
     existingProjects.forEach((p: any) => {
       projectByName.set(normalizeKey(p.ProjectName), Number(p.Id));
+      projectById.set(Number(p.Id), p);
       projectCustomerById.set(Number(p.Id), p.CustomerId ? Number(p.CustomerId) : null);
     });
 
-    const taskByProjectNameAndAssignee = new Map<string, number>();
+    const taskByProjectAndName = new Map<string, number>();
+    const taskByProjectAndTicketNumber = new Map<string, number>();
+    const taskById = new Map<number, RowDataPacket>();
     existingTasks.forEach((t: any) => {
+      taskById.set(Number(t.Id), t);
       const projectId = Number(t.ProjectId);
       const taskNameKey = normalizeKey(t.TaskName);
-      const assignedTo = t.AssignedTo !== null && t.AssignedTo !== undefined
-        ? Number(t.AssignedTo)
-        : null;
-      const assigneeKey = assignedTo === null ? 'unassigned' : String(assignedTo);
-      const startKey = t.PlannedStartDate ? toDateKey(t.PlannedStartDate) || 'no-start' : 'no-start';
-      const endKey = t.PlannedEndDate ? toDateKey(t.PlannedEndDate) || 'no-end' : 'no-end';
-      taskByProjectNameAndAssignee.set(
-        `${projectId}::${taskNameKey}::${assigneeKey}::${startKey}::${endKey}`,
-        Number(t.Id)
-      );
+      taskByProjectAndName.set(`${projectId}::${taskNameKey}`, Number(t.Id));
+      const ticketNumber = extractTicketKey(t.TaskName);
+      if (ticketNumber) {
+        taskByProjectAndTicketNumber.set(`${projectId}::${ticketNumber}`, Number(t.Id));
+      }
     });
 
     const userByLookup = new Map<string, number>();
@@ -451,6 +594,7 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
     const customersMapping = payload.entityMapping?.customers || {};
     const projectsMapping = payload.entityMapping?.projects || {};
     const tasksMapping = payload.entityMapping?.tasks || {};
+    const taskTicketNumbers = payload.taskTicketNumbers || {};
     const resourcesMapping = payload.entityMapping?.resources || {};
     const tasksMappingNormalized = new Map<string, EntityMappingEntry>();
     Object.entries(tasksMapping).forEach(([key, entry]) => {
@@ -487,7 +631,7 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
         const suffix = attempt === 0 ? '' : `.${attempt + 1}`;
         const candidate = `${usernameBase}${suffix}`;
         const [existingUser] = await connection.execute<RowDataPacket[]>(
-          'SELECT Id FROM Users WHERE Username = ?',
+          'SELECT Id FROM Users WHERE LOWER(Username) = LOWER(?)',
           [candidate]
         );
         if (existingUser.length === 0) {
@@ -515,6 +659,28 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
          VALUES (?, ?, 'Member')`,
         [organizationId, newUserId]
       );
+
+      const [createdUserRows] = await connection.execute<RowDataPacket[]>(
+        `SELECT Id, Username, FirstName, LastName,
+                WorkHoursMonday, WorkHoursTuesday, WorkHoursWednesday, WorkHoursThursday,
+                WorkHoursFriday, WorkHoursSaturday, WorkHoursSunday
+         FROM Users
+         WHERE Id = ?`,
+        [newUserId]
+      );
+
+      const createdUserRow = createdUserRows[0] as RowDataPacket | undefined;
+      if (createdUserRow) {
+        userRowsById.set(newUserId, createdUserRow);
+
+        const createdFullName = `${normalizeText(createdUserRow.FirstName)} ${normalizeText(createdUserRow.LastName)}`.trim();
+        if (createdFullName) {
+          userByLookup.set(normalizeKey(createdFullName), newUserId);
+        }
+        if (createdUserRow.Username) {
+          userByLookup.set(normalizeKey(createdUserRow.Username), newUserId);
+        }
+      }
 
       userByLookup.set(resourceKey, newUserId);
       createdResourceUsers.set(resourceKey, newUserId);
@@ -582,12 +748,11 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
       sourceTask: string,
       projectId: number,
       assignedTo: number | null,
-      allocStart: string,
-      allocEnd: string,
       customerId: number | null,
       estimatedHours: number | null,
       comments: string,
       projectNameRaw: string,
+      jiraIssueKey: string | null,
       explicitTaskMapping?: EntityMappingEntry,
       forceVacationFromRow?: boolean
     ): Promise<number> => {
@@ -624,32 +789,37 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
         if (currentProjectId !== projectId) {
           await connection.execute(
             `UPDATE Tasks
-             SET ProjectId = ?
+             SET ProjectId = ?,
+                 JiraIssueKey = CASE
+                   WHEN ? IS NULL OR ? = '' THEN JiraIssueKey
+                   ELSE ?
+                 END
              WHERE Id = ?`,
-            [projectId, explicitTaskId]
+            [projectId, jiraIssueKey, jiraIssueKey, jiraIssueKey, explicitTaskId]
+          );
+        } else if (jiraIssueKey) {
+          await connection.execute(
+            `UPDATE Tasks
+             SET JiraIssueKey = ?
+             WHERE Id = ?`,
+            [jiraIssueKey, explicitTaskId]
           );
         }
 
-        const explicitAssigneeKey = assignedTo === null ? 'unassigned' : String(Number(assignedTo));
-        const explicitStartKey = allocStart || 'no-start';
-        const explicitEndKey = allocEnd || 'no-end';
-        taskByProjectNameAndAssignee.set(
-          `${projectId}::${normalizedTask}::${explicitAssigneeKey}::${explicitStartKey}::${explicitEndKey}`,
-          explicitTaskId
-        );
+        taskByProjectAndName.set(`${projectId}::${normalizedTask}`, explicitTaskId);
+        if (jiraIssueKey) {
+          taskByProjectAndTicketNumber.set(`${projectId}::${jiraIssueKey.toUpperCase()}`, explicitTaskId);
+        }
         return explicitTaskId;
       }
 
-      const assigneeKey = assignedTo === null ? 'unassigned' : String(Number(assignedTo));
-      const startKey = allocStart || 'no-start';
-      const endKey = allocEnd || 'no-end';
-      const existingId = taskByProjectNameAndAssignee.get(`${projectId}::${normalizedTask}::${assigneeKey}::${startKey}::${endKey}`);
+      const existingId = taskByProjectAndName.get(`${projectId}::${normalizedTask}`);
       if (existingId) return existingId;
 
       const [created] = await connection.execute<ResultSetHeader>(
         `INSERT INTO Tasks (
-          ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, CustomerId, EstimatedHours, CreatedBy
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, CustomerId, EstimatedHours, JiraIssueKey, CreatedBy
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           projectId,
           sourceTask.trim(),
@@ -660,12 +830,16 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
           assignedTo,
           customerId,
           estimatedHours,
+          jiraIssueKey || null,
           userId,
         ]
       );
 
       const taskId = created.insertId;
-      taskByProjectNameAndAssignee.set(`${projectId}::${normalizedTask}::${assigneeKey}::${startKey}::${endKey}`, taskId);
+      taskByProjectAndName.set(`${projectId}::${normalizedTask}`, taskId);
+      if (jiraIssueKey) {
+        taskByProjectAndTicketNumber.set(`${projectId}::${jiraIssueKey.toUpperCase()}`, taskId);
+      }
       createdTaskIds.add(taskId);
       return taskId;
     };
@@ -678,10 +852,22 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
         const customerName = normalizeText(row[fieldMapping.customer]);
         const projectName = normalizeText(row[fieldMapping.project]);
         const taskName = normalizeText(row[fieldMapping.task]);
+        const rawTaskCompositeKey = `${projectName}||${taskName}`;
+        const normalizedTaskCompositeKey = `${normalizeKey(projectName)}||${normalizeKey(taskName)}`;
+        const ticketNumberFromMap = normalizeText(
+          taskTicketNumbers[rawTaskCompositeKey]
+          || taskTicketNumbers[normalizedTaskCompositeKey]
+          || taskTicketNumbers[taskName]
+          || taskTicketNumbers[normalizeKey(taskName)]
+        );
+        const ticketNumber = (ticketNumberFromMap || extractTicketKey(taskName) || '').toUpperCase();
         const resourceName = normalizeText(row[fieldMapping.resource]);
+        const resourceIdFromCsv = fieldMapping.resourceId ? parseOptionalInt(row[fieldMapping.resourceId]) : null;
         const allocStart = toDateKey(row[fieldMapping.allocStart]);
         const allocEnd = toDateKey(row[fieldMapping.allocEnd]);
         const allocHours = normalizeToHalfHour(parseDecimal(row[fieldMapping.allocHours]));
+        const projectIdFromCsv = fieldMapping.projectId ? parseOptionalInt(row[fieldMapping.projectId]) : null;
+        const taskIdFromCsv = fieldMapping.taskId ? parseOptionalInt(row[fieldMapping.taskId]) : null;
         const estimatedHours = fieldMapping.hlEstimationHours
           ? parseOptionalDecimal(row[fieldMapping.hlEstimationHours])
           : null;
@@ -694,6 +880,11 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
 
         const resourceMapEntry = resourcesMapping[resourceName] || resourcesMapping[normalizeKey(resourceName)];
         let userIdForAllocation: number | null = null;
+
+        if (resourceIdFromCsv && resourceIdFromCsv > 0 && userRowsById.has(resourceIdFromCsv)) {
+          userIdForAllocation = resourceIdFromCsv;
+        }
+
         if (resourceMapEntry?.mode === 'fictional') {
           userIdForAllocation = await ensureFictitiousUser(resourceName);
         } else if (resourceMapEntry?.userId) {
@@ -709,21 +900,33 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
         }
 
         const customerId = await ensureCustomer(customerName);
-        const projectId = await ensureProject(projectName, customerId);
+
+        let projectId: number;
+        if (projectIdFromCsv === -1) {
+          projectId = -1;
+        } else if (projectIdFromCsv && projectIdFromCsv > 0 && projectById.has(projectIdFromCsv)) {
+          projectId = projectIdFromCsv;
+        } else {
+          projectId = await ensureProject(projectName, customerId);
+        }
 
         if (projectId === -1) {
           skippedRows += 1;
           continue;
         }
 
-        const rawTaskCompositeKey = `${projectName}||${taskName}`;
-        const normalizedTaskCompositeKey = `${normalizeKey(projectName)}||${normalizeKey(taskName)}`;
+        const rawEffectiveTaskCompositeKey = `${projectName}||${taskName}`;
+        const normalizedEffectiveTaskCompositeKey = `${normalizeKey(projectName)}||${normalizeKey(taskName)}`;
         const taskMappingEntry = (tasksMapping[rawTaskCompositeKey]
           || tasksMapping[normalizedTaskCompositeKey]
+          || tasksMapping[rawEffectiveTaskCompositeKey]
+          || tasksMapping[normalizedEffectiveTaskCompositeKey]
           || tasksMapping[taskName]
           || tasksMapping[normalizeKey(taskName)]
           || tasksMappingNormalized.get(normalizeKey(rawTaskCompositeKey))
           || tasksMappingNormalized.get(normalizedTaskCompositeKey)
+          || tasksMappingNormalized.get(normalizeKey(rawEffectiveTaskCompositeKey))
+          || tasksMappingNormalized.get(normalizedEffectiveTaskCompositeKey)
           || tasksMappingNormalized.get(normalizeKey(taskName))) as EntityMappingEntry | undefined;
 
         const looksLikeVacationRow =
@@ -731,19 +934,55 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
           || isVacationLikeText(taskName)
           || isVacationLikeText(customerName);
 
-        const taskId = await ensureTask(
-          taskName,
-          projectId,
-          userIdForAllocation,
-          allocStart,
-          allocEnd,
-          customerId,
-          estimatedHours,
-          comments,
-          projectName,
-          taskMappingEntry,
-          looksLikeVacationRow
-        );
+        let taskId: number;
+        if (taskIdFromCsv && taskIdFromCsv > 0) {
+          const existingTaskByCsvId = taskById.get(taskIdFromCsv);
+          if (!existingTaskByCsvId) {
+            throw new Error(`Task ID ${taskIdFromCsv} not found in selected organization`);
+          }
+          taskId = taskIdFromCsv;
+        } else if (ticketNumber) {
+          const mappedByTicket = taskByProjectAndTicketNumber.get(`${projectId}::${ticketNumber}`);
+          if (mappedByTicket) {
+            taskId = mappedByTicket;
+          } else {
+            taskId = await ensureTask(
+              taskName,
+              projectId,
+              userIdForAllocation,
+              customerId,
+              estimatedHours,
+              comments,
+              projectName,
+              ticketNumber || null,
+              taskMappingEntry,
+              looksLikeVacationRow
+            );
+          }
+        } else {
+          taskId = await ensureTask(
+            taskName,
+            projectId,
+            userIdForAllocation,
+            customerId,
+            estimatedHours,
+            comments,
+            projectName,
+            ticketNumber || null,
+            taskMappingEntry,
+            looksLikeVacationRow
+          );
+        }
+
+        if (ticketNumber) {
+          await connection.execute(
+            `UPDATE Tasks
+             SET JiraIssueKey = ?
+             WHERE Id = ?`,
+            [ticketNumber, taskId]
+          );
+          taskByProjectAndTicketNumber.set(`${projectId}::${ticketNumber.toUpperCase()}`, taskId);
+        }
 
         if (taskId === -2) {
           const vacationDates = filterWorkingDatesForUser(
@@ -784,16 +1023,24 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
             await connection.execute(
               `UPDATE Tasks
                SET AssignedTo = ?,
-                   EstimatedHours = ?
+                   EstimatedHours = ?,
+                   JiraIssueKey = CASE
+                     WHEN ? IS NULL OR ? = '' THEN JiraIssueKey
+                     ELSE ?
+                   END
                WHERE Id = ?`,
-              [userIdForAllocation, estimatedHours, taskId]
+              [userIdForAllocation, estimatedHours, ticketNumber || null, ticketNumber || null, ticketNumber || null, taskId]
             );
           } else {
             await connection.execute(
               `UPDATE Tasks
-               SET AssignedTo = ?
+               SET AssignedTo = ?,
+                   JiraIssueKey = CASE
+                     WHEN ? IS NULL OR ? = '' THEN JiraIssueKey
+                     ELSE ?
+                   END
                WHERE Id = ?`,
-              [userIdForAllocation, taskId]
+              [userIdForAllocation, ticketNumber || null, ticketNumber || null, ticketNumber || null, taskId]
             );
           }
 
@@ -809,6 +1056,9 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
         const allocationDates = listDateKeysInclusive(allocStart, allocEnd);
         const splitAllocations = splitHoursAcrossDates(allocHours, allocationDates);
         const userRow = userRowsById.get(Number(userIdForAllocation));
+        const allocationHeaderId = splitAllocations.length > 0
+          ? await ensureImportAllocationHeader(connection, taskId, userIdForAllocation, userId, allocHours, allocStart, allocEnd)
+          : null;
 
         for (const allocation of splitAllocations) {
           if (allocation.hours <= 0) continue;
@@ -847,7 +1097,7 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
           }
 
           const [existingAllocation] = await connection.execute<RowDataPacket[]>(
-            `SELECT Id, AllocatedHours
+            `SELECT Id, AllocatedHours, TaskAllocationHeaderId
              FROM TaskAllocations
              WHERE TaskId = ? AND UserId = ? AND AllocationDate = ?`,
             [taskId, userIdForAllocation, allocation.dateKey]
@@ -867,18 +1117,23 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
           if (existingAllocation.length > 0) {
             await connection.execute(
               `UPDATE TaskAllocations
-               SET AllocatedHours = ?
+               SET AllocatedHours = ?,
+                   TaskAllocationHeaderId = COALESCE(TaskAllocationHeaderId, ?)
                WHERE Id = ?`,
-              [cappedHours, existingAllocation[0].Id]
+              [cappedHours, allocationHeaderId, existingAllocation[0].Id]
             );
           } else {
             await connection.execute(
-              `INSERT INTO TaskAllocations (TaskId, UserId, AllocationDate, AllocatedHours, IsManual)
-               VALUES (?, ?, ?, ?, 1)`,
-              [taskId, userIdForAllocation, allocation.dateKey, cappedHours]
+              `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, IsManual)
+               VALUES (?, ?, ?, ?, ?, 1)`,
+              [taskId, allocationHeaderId, userIdForAllocation, allocation.dateKey, cappedHours]
             );
             allocationRowsCreated += 1;
           }
+        }
+
+        if (allocationHeaderId) {
+          await recomputeImportAllocationHeader(connection, allocationHeaderId);
         }
 
         await connection.execute(

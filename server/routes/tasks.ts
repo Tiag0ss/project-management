@@ -1165,12 +1165,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const finalDisplayOrder = displayOrder !== undefined
       ? Number(displayOrder)
       : Number(oldTask.DisplayOrder);
-    const finalPlannedStartDate = plannedStartDate !== undefined
+    const requestedPlannedStartDate = plannedStartDate !== undefined
       ? toDateOnly(plannedStartDate)
       : toDateOnly(oldTask.PlannedStartDate);
-    const finalPlannedEndDate = plannedEndDate !== undefined
+    const requestedPlannedEndDate = plannedEndDate !== undefined
       ? toDateOnly(plannedEndDate)
       : toDateOnly(oldTask.PlannedEndDate);
+    const finalPlannedStartDate = finalUnscheduledWork === 1 ? null : requestedPlannedStartDate;
+    const finalPlannedEndDate = finalUnscheduledWork === 1 ? null : requestedPlannedEndDate;
     const finalDependsOnTaskId = dependsOnTaskId !== undefined
       ? (dependsOnTaskId === null || dependsOnTaskId === '' ? null : Number(dependsOnTaskId))
       : (oldTask.DependsOnTaskId ?? null);
@@ -1263,6 +1265,35 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       await syncTaskPrimaryAssignee(Number(taskId), assignedTo, userId);
     }
 
+    if (finalUnscheduledWork === 1) {
+      await pool.execute('DELETE FROM TaskChildAllocations WHERE ParentTaskId = ?', [taskId]);
+      await pool.execute('DELETE FROM TaskAllocations WHERE TaskId = ?', [taskId]);
+      await pool.execute('DELETE FROM TaskAllocationHeaders WHERE TaskId = ?', [taskId]);
+    }
+
+    // If parent task changed or estimated hours changed, recalculate parent(s)
+    // If planned dates changed, sync allocation header dates
+        // Helper to normalize date for comparison - define early for use in sync check
+        const normalizeDateForComparison = (date: any): string | null => {
+          if (!date) return null;
+          if (date instanceof Date) {
+            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+          }
+          if (typeof date === 'string') return date.split('T')[0];
+          return String(date);
+        };
+
+    if ((plannedStartDate !== undefined && normalizeDateForComparison(oldTask.PlannedStartDate) !== normalizeDateForComparison(plannedStartDate)) || 
+        (plannedEndDate !== undefined && normalizeDateForComparison(oldTask.PlannedEndDate) !== normalizeDateForComparison(plannedEndDate))) {
+      try {
+        const { recomputeTaskPlanDatesFromAllocations } = require('./taskAllocations');
+        await recomputeTaskPlanDatesFromAllocations(Number(taskId), userId);
+      } catch (err) {
+        console.error('Error syncing allocation header dates:', err);
+        // Don't fail the entire request if sync fails
+      }
+    }
+
     // If parent task changed or estimated hours changed, recalculate parent(s)
     if (oldParentTaskId) {
       await recalculateParentEstimatedHours(oldParentTaskId);
@@ -1273,16 +1304,6 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     // Track changes in history
     const changes: { field: string; oldVal: string | null; newVal: string | null }[] = [];
-    
-    // Helper to normalize date for comparison
-    const normalizeDateForComparison = (date: any): string | null => {
-      if (!date) return null;
-      if (date instanceof Date) {
-        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-      }
-      if (typeof date === 'string') return date.split('T')[0];
-      return String(date);
-    };
     
     // Helper to normalize string values (treat empty string and null as equal)
     const normalizeString = (val: any): string | null => {
@@ -2298,6 +2319,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     // Delete dependent data for all tasks (the task itself + all subtasks)
     for (const tid of allTaskIds) {
       await pool.execute('DELETE FROM TaskAllocations WHERE TaskId = ?', [tid]);
+      await pool.execute('DELETE FROM TaskAllocationHeaders WHERE TaskId = ?', [tid]);
       await pool.execute('DELETE FROM TaskChildAllocations WHERE ParentTaskId = ? OR ChildTaskId = ?', [tid, tid]);
       await pool.execute('DELETE FROM ApplicationVersionTasks WHERE TaskId = ?', [tid]);
       // Null out ReleaseVersionId references in other tables we can reach
@@ -2791,6 +2813,13 @@ router.post('/utilities/clear-planning/:projectId', authenticateToken, async (re
       `DELETE ta FROM TaskAllocations ta
        INNER JOIN Tasks t ON ta.TaskId = t.Id
        WHERE t.ProjectId = ?`,
+      [projectId]
+    );
+
+    // Delete all allocation headers for this project
+    await pool.execute<ResultSetHeader>(
+      `DELETE FROM TaskAllocationHeaders
+       WHERE TaskId IN (SELECT Id FROM Tasks WHERE ProjectId = ?)`,
       [projectId]
     );
 

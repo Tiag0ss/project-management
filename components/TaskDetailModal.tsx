@@ -72,6 +72,7 @@ interface Tag {
 interface TaskAllocation {
   Id: number;
   TaskId: number;
+  TaskAllocationHeaderId?: number | null;
   UserId: number;
   AllocationDate: string;
   AllocatedHours: number;
@@ -288,6 +289,7 @@ export default function TaskDetailModal({
   const [allocationsPage, setAllocationsPage] = useState(1);
   const [timeEntriesPage, setTimeEntriesPage] = useState(1);
   const [hoursSubTab, setHoursSubTab] = useState<'planning' | 'allocations' | 'time'>('planning');
+  const [expandedAllocationGroups, setExpandedAllocationGroups] = useState<Set<string>>(new Set());
   const [showTagSelector, setShowTagSelector] = useState(false);
   const [modalMessage, setModalMessage] = useState<
     | { type: 'alert'; title: string; message: string }
@@ -314,6 +316,8 @@ export default function TaskDetailModal({
   const isGlobalProject = !!project?.IsGlobal;
   const hasSubtasks = subtasks.length > 0;
   const hasAnyChildren = hasSubtasks || hasChildren;
+  const taskEstimatedHours = parseFloat(String(task?.EstimatedHours ?? 0)) || 0;
+  const canShowAddManualAllocation = taskEstimatedHours < 8;
   const childTasks = hasSubtasks ? subtasks : childTasksFromProject;
   const externalTicketId = task?.ExternalTicketId || null;
   const externalIssueId = task?.ExternalIssueId || null;
@@ -1329,13 +1333,82 @@ export default function TaskDetailModal({
     : 0;
   const itemsPerPage = 10;
 
-  const allocationsTotalPages = Math.max(1, Math.ceil(taskAllocations.length / itemsPerPage));
+  const groupedTaskAllocations = React.useMemo(() => {
+    type AllocationGroup = {
+      key: string;
+      headerId: number | null;
+      userId: number;
+      userName: string;
+      allocationMode?: string;
+      splitOrder?: number;
+      plannedHours?: number;
+      startDate: string;
+      endDate: string;
+      totalHours: number;
+      allocations: TaskAllocation[];
+    };
+
+    const groups = new Map<string, AllocationGroup>();
+
+    for (const allocation of taskAllocations) {
+      const headerId = allocation.TaskAllocationHeaderId !== null && allocation.TaskAllocationHeaderId !== undefined
+        ? Number(allocation.TaskAllocationHeaderId)
+        : null;
+      const groupKey = headerId !== null ? `header-${headerId}` : `legacy-${allocation.Id}`;
+      const allocationDate = String(allocation.AllocationDate).split('T')[0];
+      const allocatedHours = Number(allocation.AllocatedHours || 0);
+
+      const existing = groups.get(groupKey);
+      if (existing) {
+        existing.allocations.push(allocation);
+        existing.totalHours += allocatedHours;
+        if (allocationDate < existing.startDate) existing.startDate = allocationDate;
+        if (allocationDate > existing.endDate) existing.endDate = allocationDate;
+      } else {
+        groups.set(groupKey, {
+          key: groupKey,
+          headerId,
+          userId: allocation.UserId,
+          userName: allocation.Username || `User ${allocation.UserId}`,
+          allocationMode: (allocation as any).AllocationMode,
+          splitOrder: Number((allocation as any).SplitOrder || 0) || undefined,
+          plannedHours: Number((allocation as any).PlannedHours || 0) || undefined,
+          startDate: allocationDate,
+          endDate: allocationDate,
+          totalHours: allocatedHours,
+          allocations: [allocation],
+        });
+      }
+    }
+
+    const sortedGroups = Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        allocations: [...group.allocations].sort((a, b) => {
+          const dateA = String(a.AllocationDate).split('T')[0];
+          const dateB = String(b.AllocationDate).split('T')[0];
+          if (dateA !== dateB) return dateA.localeCompare(dateB);
+          return String(a.StartTime || '00:00').localeCompare(String(b.StartTime || '00:00'));
+        })
+      }))
+      .sort((a, b) => {
+        const orderA = a.splitOrder ?? Number.MAX_SAFE_INTEGER;
+        const orderB = b.splitOrder ?? Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) return orderA - orderB;
+        if (a.startDate !== b.startDate) return a.startDate.localeCompare(b.startDate);
+        return a.key.localeCompare(b.key);
+      });
+
+    return sortedGroups;
+  }, [taskAllocations]);
+
+  const allocationsTotalPages = Math.max(1, Math.ceil(groupedTaskAllocations.length / itemsPerPage));
   const timeEntriesTotalPages = Math.max(1, Math.ceil(timeEntries.length / itemsPerPage));
 
   const safeAllocationsPage = Math.min(allocationsPage, allocationsTotalPages);
   const safeTimeEntriesPage = Math.min(timeEntriesPage, timeEntriesTotalPages);
 
-  const paginatedTaskAllocations = taskAllocations.slice(
+  const paginatedAllocationGroups = groupedTaskAllocations.slice(
     (safeAllocationsPage - 1) * itemsPerPage,
     safeAllocationsPage * itemsPerPage
   );
@@ -1361,6 +1434,7 @@ export default function TaskDetailModal({
     setAllocationsPage(1);
     setTimeEntriesPage(1);
     setHoursSubTab('planning');
+    setExpandedAllocationGroups(new Set());
   }, [task?.Id]);
 
   useEffect(() => {
@@ -1557,6 +1631,21 @@ export default function TaskDetailModal({
                         >
                           Create project and move task
                         </button>
+                      )}
+                      {canDeleteTask && (
+                        <>
+                          <div className="my-1 border-t border-gray-200 dark:border-gray-700" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowTaskActionsMenu(false);
+                              handleDeleteFromModal();
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          >
+                            Delete task
+                          </button>
+                        </>
                       )}
                     </div>
                   )}
@@ -2381,7 +2470,7 @@ export default function TaskDetailModal({
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Planned Allocations</h3>
                   <div className="flex items-center gap-2">
-                    {!hasChildren && (
+                    {!hasChildren && canShowAddManualAllocation && (
                       <button
                         onClick={() => setManualAllocationModal({ 
                           show: true, 
@@ -2468,10 +2557,11 @@ export default function TaskDetailModal({
                       <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                         <thead className="bg-gray-50 dark:bg-gray-900">
                           <tr>
-                            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Date</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase"></th>
+                            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Header ID</th>
                             <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">User</th>
-                            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Start</th>
-                            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">End</th>
+                            <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Date Range</th>
+                            <th className="px-5 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Days</th>
                             <th className="px-5 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Hours</th>
                             {!hasChildren && (
                               <th scope="col" className="relative px-5 py-3">
@@ -2481,68 +2571,130 @@ export default function TaskDetailModal({
                           </tr>
                         </thead>
                         <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                          {paginatedTaskAllocations.map((allocation) => (
-                            <tr key={allocation.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                              <td className="px-5 py-3 text-sm text-gray-900 dark:text-white whitespace-nowrap">
-                                {new Date(allocation.AllocationDate).toLocaleDateString()}
-                              </td>
-                              <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-400">
-                                {allocation.Username || `User ${allocation.UserId}`}
-                              </td>
-                              <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                {allocation.StartTime || '-'}
-                              </td>
-                              <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                {allocation.EndTime || '-'}
-                              </td>
-                              <td className="px-5 py-3 text-sm text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">
-                                {parseFloat(allocation.AllocatedHours as any).toFixed(1)}h
-                              </td>
-                              {!hasChildren && (
-                                <td className="px-5 py-3 text-sm text-center whitespace-nowrap">
-                                  {allocation.IsManual === 1 ? (
-                                    <div className="flex items-center justify-center gap-1">
-                                      <button
-                                        onClick={() => setManualAllocationModal({
-                                          show: true,
-                                          allocationId: allocation.Id || null,
-                                          userId: allocation.UserId,
-                                          allocationDate: new Date(allocation.AllocationDate).toISOString().split('T')[0],
-                                          allocatedHours: String(allocation.AllocatedHours),
-                                          mode: 'edit'
-                                        })}
-                                        className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
-                                        title="Edit"
-                                        aria-label="Edit"
-                                      >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M16.5 3.5a2.121 2.121 0 113 3L12 14l-4 1 1-4 7.5-7.5z" />
-                                        </svg>
-                                      </button>
-                                      <button
-                                        onClick={() => handleDeleteManualAllocation(allocation.Id!)}
-                                        className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
-                                        title="Delete"
-                                        aria-label="Delete"
-                                      >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                        </svg>
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <span className="text-gray-400 dark:text-gray-600 text-xs">Auto</span>
+                          {paginatedAllocationGroups.map((group) => {
+                            const isExpanded = expandedAllocationGroups.has(group.key);
+                            const rangeDays = Math.max(
+                              1,
+                              Math.round(
+                                (new Date(`${group.endDate}T12:00:00`).getTime() - new Date(`${group.startDate}T12:00:00`).getTime()) / 86_400_000
+                              ) + 1
+                            );
+
+                            return (
+                              <React.Fragment key={group.key}>
+                                <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors bg-gray-50/60 dark:bg-gray-800/60">
+                                  <td className="px-3 py-3 text-sm">
+                                    <button
+                                      onClick={() => {
+                                        setExpandedAllocationGroups((prev) => {
+                                          const next = new Set(prev);
+                                          if (next.has(group.key)) {
+                                            next.delete(group.key);
+                                          } else {
+                                            next.add(group.key);
+                                          }
+                                          return next;
+                                        });
+                                      }}
+                                      className="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded"
+                                      title={isExpanded ? 'Collapse days' : 'Expand days'}
+                                      aria-label={isExpanded ? 'Collapse days' : 'Expand days'}
+                                    >
+                                      <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                      </svg>
+                                    </button>
+                                  </td>
+                                  <td className="px-5 py-3 text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap">
+                                    {group.headerId !== null ? `#${group.headerId}` : 'No header'}
+                                  </td>
+                                  <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                                    {group.userName}
+                                  </td>
+                                  <td className="px-5 py-3 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                                    {new Date(`${group.startDate}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    {' → '}
+                                    {new Date(`${group.endDate}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  </td>
+                                  <td className="px-5 py-3 text-sm text-right text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                                    {group.allocations.length}
+                                  </td>
+                                  <td className="px-5 py-3 text-sm text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">
+                                    {group.totalHours.toFixed(1)}h
+                                  </td>
+                                  {!hasChildren && (
+                                    <td className="px-5 py-3 text-sm text-center text-gray-400 dark:text-gray-600 whitespace-nowrap">
+                                      {group.allocationMode || '-'}
+                                    </td>
                                   )}
-                                </td>
-                              )}
-                            </tr>
-                          ))}
+                                </tr>
+
+                                {isExpanded && group.allocations.map((allocation) => (
+                                  <tr key={allocation.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/20 transition-colors">
+                                    <td className="px-3 py-3"></td>
+                                    <td className="px-5 py-3 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                      {new Date(String(allocation.AllocationDate).includes('T') ? String(allocation.AllocationDate) : `${allocation.AllocationDate}T12:00:00`).toLocaleDateString()}
+                                    </td>
+                                    <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                                      {allocation.Username || `User ${allocation.UserId}`}
+                                    </td>
+                                    <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                                      {allocation.StartTime || '-'} → {allocation.EndTime || '-'}
+                                    </td>
+                                    <td className="px-5 py-3 text-sm text-right text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                                      1
+                                    </td>
+                                    <td className="px-5 py-3 text-sm text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">
+                                      {parseFloat(allocation.AllocatedHours as any).toFixed(1)}h
+                                    </td>
+                                    {!hasChildren && (
+                                      <td className="px-5 py-3 text-sm text-center whitespace-nowrap">
+                                        {allocation.IsManual === 1 ? (
+                                          <div className="flex items-center justify-center gap-1">
+                                            <button
+                                              onClick={() => setManualAllocationModal({
+                                                show: true,
+                                                allocationId: allocation.Id || null,
+                                                userId: allocation.UserId,
+                                                allocationDate: new Date(allocation.AllocationDate).toISOString().split('T')[0],
+                                                allocatedHours: String(allocation.AllocatedHours),
+                                                mode: 'edit'
+                                              })}
+                                              className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+                                              title="Edit"
+                                              aria-label="Edit"
+                                            >
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M16.5 3.5a2.121 2.121 0 113 3L12 14l-4 1 1-4 7.5-7.5z" />
+                                              </svg>
+                                            </button>
+                                            <button
+                                              onClick={() => handleDeleteManualAllocation(allocation.Id!)}
+                                              className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
+                                              title="Delete"
+                                              aria-label="Delete"
+                                            >
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                              </svg>
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <span className="text-gray-400 dark:text-gray-600 text-xs">Auto</span>
+                                        )}
+                                      </td>
+                                    )}
+                                  </tr>
+                                ))}
+                              </React.Fragment>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
                     <div className="flex items-center justify-between mt-3">
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Showing {(safeAllocationsPage - 1) * itemsPerPage + 1}-{Math.min(safeAllocationsPage * itemsPerPage, taskAllocations.length)} of {taskAllocations.length}
+                        Showing {(safeAllocationsPage - 1) * itemsPerPage + 1}-{Math.min(safeAllocationsPage * itemsPerPage, groupedTaskAllocations.length)} of {groupedTaskAllocations.length} header groups
                       </p>
                       <div className="flex items-center gap-2">
                         <button
@@ -2867,26 +3019,16 @@ export default function TaskDetailModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition-colors font-medium"
+              className="flex-1 h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center justify-center bg-gray-600 hover:bg-gray-700 text-white transition-colors"
             >
               Cancel
             </button>
-            {canDeleteTask && (
-              <button
-                type="button"
-                onClick={handleDeleteFromModal}
-                disabled={isDeleting}
-                className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-              >
-                {isDeleting ? 'Deleting...' : 'Delete Task'}
-              </button>
-            )}
             {canSaveTask && (
               <button
                 type="button"
                 onClick={() => handleSubmit()}
                 disabled={isLoading}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
+                className="flex-1 h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center justify-center bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white transition-colors"
               >
                 {isLoading ? 'Saving...' : task?.Id ? 'Update Task' : 'Create Task'}
               </button>
@@ -2967,13 +3109,13 @@ export default function TaskDetailModal({
                     allocatedHours: '',
                     mode: 'add'
                   })}
-                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-900 dark:text-white rounded-lg transition-colors"
+                  className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center justify-center bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-900 dark:text-white transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSaveManualAllocation}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white transition-colors"
                 >
                   {manualAllocationModal.mode === 'add' ? 'Add' : 'Save'}
                 </button>
@@ -3031,7 +3173,7 @@ export default function TaskDetailModal({
                   type="button"
                   onClick={closeMoveTaskModal}
                   disabled={isMovingTask}
-                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-900 dark:text-white rounded-lg transition-colors"
+                  className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center justify-center bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-900 dark:text-white transition-colors"
                 >
                   Cancel
                 </button>
@@ -3039,7 +3181,7 @@ export default function TaskDetailModal({
                   type="button"
                   onClick={moveTaskModal.mode === 'existing' ? handleConfirmMoveToExistingProject : handleCreateProjectAndMove}
                   disabled={isMovingTask || loadingMoveMetadata}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
+                  className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center justify-center bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white transition-colors"
                 >
                   {isMovingTask ? 'Moving...' : 'Confirm'}
                 </button>
@@ -3063,7 +3205,7 @@ export default function TaskDetailModal({
               <div className="flex justify-end">
                 <button
                   onClick={() => setModalMessage(null)}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white transition-colors"
                 >
                   OK
                 </button>
@@ -3087,7 +3229,7 @@ export default function TaskDetailModal({
               <div className="flex justify-end gap-2">
                 <button
                   onClick={() => setModalMessage(null)}
-                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-900 dark:text-white rounded-lg transition-colors"
+                  className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center justify-center bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-900 dark:text-white transition-colors"
                 >
                   Cancel
                 </button>
@@ -3098,7 +3240,7 @@ export default function TaskDetailModal({
                     }
                   }}
                   disabled={isDeleting}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg transition-colors"
+                  className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center justify-center bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white transition-colors"
                 >
                   {isDeleting ? 'Deleting...' : 'Delete'}
                 </button>
@@ -3122,21 +3264,21 @@ export default function TaskDetailModal({
                 <button
                   onClick={() => setModalMessage(null)}
                   disabled={isDeleting}
-                  className="w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 disabled:opacity-70 text-gray-900 dark:text-white rounded-lg transition-colors"
+                  className="w-full h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center justify-center bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 disabled:opacity-70 text-gray-900 dark:text-white transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => modalMessage.onDeleteOnly()}
                   disabled={isDeleting}
-                  className="w-full px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white rounded-lg transition-colors"
+                  className="w-full h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center justify-center bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white transition-colors"
                 >
                   {isDeleting ? 'Deleting...' : 'Delete Only This Task'}
                 </button>
                 <button
                   onClick={() => modalMessage.onDeleteWithSubtasks()}
                   disabled={isDeleting}
-                  className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg transition-colors"
+                  className="w-full h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center justify-center bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white transition-colors"
                 >
                   {isDeleting ? 'Deleting...' : 'Delete Task + Subtasks'}
                 </button>

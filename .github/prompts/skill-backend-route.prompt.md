@@ -36,6 +36,11 @@ Edge cases:
 14. For period-based summaries/analytics, support explicit `allTime` mode when requested (skip date-range constraints only for that mode).
 15. Keep frontend/backend field parity for supported flags (e.g., `IsCustomerSpecific`) and preserve default false behavior unless explicitly changed.
 16. For permissions defined in both global roles and org groups, ensure route logic follows OR merge semantics and keeps both layers in sync.
+17. For planning allocation mutations, always preserve `TaskAllocationHeaderId` semantics:
+   - Create/backfill header IDs for inserted allocations.
+   - Never insert new planning allocations without a header ID.
+   - Prefer header-aware slice endpoints (`/header/:headerId`, `/header/:headerId/hours`, `/header/:headerId/dates`) for targeted slice operations.
+18. Startup-safe migrations for planning data must be idempotent and should backfill `TaskAllocationHeaderId` for legacy rows and repair orphan header references.
 
 ## Output Contract
 

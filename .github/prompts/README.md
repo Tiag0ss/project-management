@@ -35,3 +35,6 @@ Use them when asking Copilot for implementation work, so output stays consistent
   - Timesheet Resume lives in `app/timesheet/page.tsx` (not Dashboard)
   - Period-based analytics/resume flows should support `allTime` when requested
   - Customer change history remains scoped to History tab only
+  - Planning bars are header-driven (`TaskAllocationHeaderId`), not date-gap grouped
+  - Planning drag contract: normal drag moves full slice; `Ctrl + drag` moves partial slice by hours
+  - Planning allocation writes must preserve `TaskAllocationHeaderId` and use header-aware slice endpoints when applicable

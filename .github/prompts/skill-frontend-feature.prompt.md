@@ -34,6 +34,12 @@ Out of scope:
 10. For period selectors in analytics/resume contexts, include `allTime` when the requirement asks for aggregate lifetime metrics.
 11. For table/grid/list action columns, use the Applications-list action style (`app/applications/page.tsx`): icon-only SVG buttons with `title` + `aria-label`, gray base color, blue hover for edit/manage/open and red hover for delete.
 12. For top toolbar actions (`Import CSV`, `Export CSV`, `New ...`), normalize size with `h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center` (add `gap-2` only when there is a leading icon); do not alter `Quick Actions` button sizing unless explicitly requested.
+13. For Planning Gantt interactions, keep allocation slice UX consistent:
+   - Bars are header-driven (`TaskAllocationHeaderId`) not inferred by date gaps.
+   - Normal drag moves full allocation header slice.
+   - `Ctrl+drag` enables partial slice by **hours**.
+   - Avoid date-prompt slicing when partial slice mode is requested.
+14. When a user selector exists in planning split/assignment flows, prefer the existing searchable select component over a plain `<select>` when user list can be large.
 
 ## Output Contract
 

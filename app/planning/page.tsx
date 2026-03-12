@@ -101,7 +101,7 @@ export default function PlanningPage() {
   const [jiraIntegrationByOrg, setJiraIntegrationByOrg] = useState<Record<number, any>>({});
   const [taskAllocations, setTaskAllocations] = useState<any[]>([]);
   const [projectMilestones, setProjectMilestones] = useState<ProjectMilestone[]>([]);
-  const [allAllocations, setAllAllocations] = useState<{Id?: number; TaskId: number; UserId: number; AllocationDate: string; AllocatedHours: number; IsHobby: number; IsManual?: number; StartTime?: string; EndTime?: string}[]>([]);
+  const [allAllocations, setAllAllocations] = useState<{Id?: number; TaskId: number; TaskAllocationHeaderId?: number | null; UserId: number; AllocationDate: string; AllocatedHours: number; IsHobby: number; IsManual?: number; StartTime?: string; EndTime?: string; PlannedStartDate?: string | null; PlannedEndDate?: string | null}[]>([]);
   const [childAllocations, setChildAllocations] = useState<{ParentTaskId: number; ChildTaskId: number; AllocationDate: string; AllocatedHours: number; Level: number}[]>([]);
   const [taskTimeEntries, setTaskTimeEntries] = useState<any[]>([]);
   const [recurringAllocations, setRecurringAllocations] = useState<any[]>([]);
@@ -137,6 +137,9 @@ export default function PlanningPage() {
   const ganttViewOptionsRef = useRef<HTMLDivElement>(null);
   const suppressTaskClickUntilRef = useRef(0);
   const draggedTaskRef = useRef<Task | null>(null);
+  const draggedTaskSourceUserIdRef = useRef<number | null>(null);
+  const draggedTaskSourceHeaderIdRef = useRef<number | null>(null);
+  const draggedTaskSliceByHoursRef = useRef<boolean>(false);
   
   // Manual allocation modal state
   const [manualAllocationModal, setManualAllocationModal] = useState<{
@@ -244,6 +247,10 @@ export default function PlanningPage() {
     maxDailyHours: number;
     isParentTask?: boolean;
     leafTasks?: Task[];
+    sourceUserId?: number | null;
+    sourceHeaderId?: number | null;
+    sourceAllocationDates?: string[];
+    suppressDependentReplan?: boolean;
   }>({
     show: false,
     task: null,
@@ -253,6 +260,10 @@ export default function PlanningPage() {
     totalHoursToAllocate: 0,
     hoursAlreadyWorked: 0,
     maxDailyHours: 8,
+    sourceUserId: null,
+    sourceHeaderId: null,
+    sourceAllocationDates: [],
+    suppressDependentReplan: false,
   });
 
   // Hours per day modal state
@@ -269,6 +280,18 @@ export default function PlanningPage() {
     isParentTask?: boolean;
     leafTasks?: Task[];
     usePushForward?: boolean;
+    enableSplit?: boolean;
+    splitMode?: 'parallel' | 'sequential';
+    splitEntries?: Array<{
+      userId: number;
+      plannedHours: number;
+      hoursPerDay: number;
+      splitOrder: number;
+    }>;
+    sourceUserId?: number | null;
+    sourceHeaderId?: number | null;
+    sourceAllocationDates?: string[];
+    suppressDependentReplan?: boolean;
   }>({
     show: false,
     task: null,
@@ -279,6 +302,35 @@ export default function PlanningPage() {
     totalHours: 0,
     hoursAlreadyWorked: 0,
     totalEstimatedHours: 0,
+    enableSplit: false,
+    splitMode: 'parallel',
+    splitEntries: [],
+    sourceUserId: null,
+    sourceHeaderId: null,
+    sourceAllocationDates: [],
+    suppressDependentReplan: false,
+  });
+
+  const [sliceTransferModal, setSliceTransferModal] = useState<{
+    show: boolean;
+    taskId: number | null;
+    targetUserId: number | null;
+    dropDate: string;
+    sourceUserId: number | null;
+    sourceHeaderId: number | null;
+    totalHours: number;
+    moveHours: number;
+    isProcessing: boolean;
+  }>({
+    show: false,
+    taskId: null,
+    targetUserId: null,
+    dropDate: '',
+    sourceUserId: null,
+    sourceHeaderId: null,
+    totalHours: 0,
+    moveHours: 0,
+    isProcessing: false,
   });
 
   // Subtasks modal state
@@ -1220,27 +1272,6 @@ export default function PlanningPage() {
     }
   };
 
-  const persistPlannedTaskAssignment = async (
-    task: Task,
-    assignedUserId: number,
-    plannedStartDate: string | null,
-    plannedEndDate: string | null
-  ) => {
-    await tasksApi.update(task.Id, {
-      taskName: task.TaskName,
-      description: task.Description,
-      status: task.Status,
-      priority: task.Priority,
-      assignedTo: assignedUserId,
-      dueDate: task.DueDate,
-      dueDateMandatory: Number(task.DueDateMandatory || 0) === 1,
-      estimatedHours: task.EstimatedHours,
-      parentTaskId: task.ParentTaskId,
-      plannedStartDate: plannedStartDate || undefined,
-      plannedEndDate: plannedEndDate || undefined
-    }, token!);
-  };
-
   // Get all leaf tasks (tasks without children) recursively
   const getAllLeafTasks = (parentTaskId: number): Task[] => {
     const children = tasks.filter(t => t.ParentTaskId === parentTaskId);
@@ -1375,6 +1406,51 @@ export default function PlanningPage() {
     return Math.max(1, getDaysInView().length);
   };
 
+  const isTaskAssignedToUser = (task: Task, userId: number): boolean => {
+    const normalizedUserId = Number(userId);
+    if (!Number.isFinite(normalizedUserId) || normalizedUserId <= 0) return false;
+
+    if (Number(task.AssignedTo || 0) === normalizedUserId) {
+      return true;
+    }
+
+    if (Array.isArray(task.Assignees) && task.Assignees.some((assignee) => Number(assignee.UserId) === normalizedUserId)) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const hasAnyTaskAssignee = (task: Task): boolean => {
+    if (Number(task.AssignedTo || 0) > 0) return true;
+    return Array.isArray(task.Assignees) && task.Assignees.length > 0;
+  };
+
+  const hasUnscheduledAssignedDescendant = (parentTaskId: number, userId?: number): boolean => {
+    const directChildren = tasks.filter((candidate) => candidate.ParentTaskId === parentTaskId);
+    if (directChildren.length === 0) return false;
+
+    const stack = [...directChildren];
+    while (stack.length > 0) {
+      const candidate = stack.pop()!;
+      const isUnscheduled = Number(candidate.UnscheduledWork || 0) === 1;
+      const matchesAssignee = userId === undefined
+        ? hasAnyTaskAssignee(candidate)
+        : isTaskAssignedToUser(candidate, userId);
+
+      if (isUnscheduled && matchesAssignee) {
+        return true;
+      }
+
+      const nestedChildren = tasks.filter((nested) => nested.ParentTaskId === candidate.Id);
+      if (nestedChildren.length > 0) {
+        stack.push(...nestedChildren);
+      }
+    }
+
+    return false;
+  };
+
   const getTaskPosition = (
     task: Task,
     columns: TimelineColumn[],
@@ -1392,8 +1468,14 @@ export default function PlanningPage() {
 
     let startDate: Date;
     let endDate: Date;
+    const isAssignedUnscheduled = Number(task.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(task);
+    const hasUnscheduledDescendant = !task.ParentTaskId && hasUnscheduledAssignedDescendant(task.Id);
 
-    if (task.PlannedStartDate && task.PlannedEndDate) {
+    if (isAssignedUnscheduled || hasUnscheduledDescendant) {
+      startDate = new Date(today);
+      endDate = new Date(today);
+      endDate.setDate(endDate.getDate() + 2); // Visualize unscheduled work across 3 days for readability
+    } else if (task.PlannedStartDate && task.PlannedEndDate) {
       // Parse planned dates - handle both 'YYYY-MM-DD' and ISO timestamp formats
       const parseDate = (dateStr: string) => {
         const dateOnly = String(dateStr).split('T')[0];
@@ -1402,10 +1484,6 @@ export default function PlanningPage() {
       
       startDate = parseDate(task.PlannedStartDate);
       endDate = parseDate(task.PlannedEndDate);
-    } else if (Number(task.UnscheduledWork || 0) === 1 && !!task.AssignedTo) {
-      startDate = new Date(today);
-      endDate = new Date(today);
-      endDate.setDate(endDate.getDate() + 2); // Visualize unscheduled work across 3 days for readability
     } else {
       // Use range start for unplanned tasks when requested (keeps Not Planned readable in any view window)
       startDate = options?.preferRangeStartForUnplanned ? new Date(columns[0].start) : new Date(today);
@@ -1513,6 +1591,81 @@ export default function PlanningPage() {
       startDate: dates[0],
       endDate: dates[dates.length - 1]
     };
+  };
+
+  const getTaskUserAllocationDates = (taskId: number, userId: number) => {
+    const taskAllocs = allAllocations
+      .filter((allocation) => allocation.TaskId === taskId && allocation.UserId === userId)
+      .map((allocation) => normalizeDateKey(allocation.AllocationDate))
+      .sort();
+
+    if (taskAllocs.length === 0) {
+      return null;
+    }
+
+    return {
+      startDate: taskAllocs[0],
+      endDate: taskAllocs[taskAllocs.length - 1],
+    };
+  };
+
+  const getTaskUserAllocationSegments = (taskId: number, userId: number) => {
+    const taskUserAllocations = allAllocations
+      .filter((allocation) => allocation.TaskId === taskId && allocation.UserId === userId)
+      .map((allocation) => ({
+        headerId: allocation.TaskAllocationHeaderId ? Number(allocation.TaskAllocationHeaderId) : null,
+        dateKey: normalizeDateKey(allocation.AllocationDate),
+        plannedStartDate: allocation.PlannedStartDate ? normalizeDateKey(allocation.PlannedStartDate) : null,
+        plannedEndDate: allocation.PlannedEndDate ? normalizeDateKey(allocation.PlannedEndDate) : null,
+      }))
+      .filter((entry) => !!entry.dateKey);
+
+    if (taskUserAllocations.length === 0) {
+      return [] as Array<{ headerId: number | null; startDate: string; endDate: string }>;
+    }
+
+    const groupedByHeader = new Map<string, { 
+      headerId: number | null; 
+      dates: string[];
+      plannedStartDate: string | null;
+      plannedEndDate: string | null;
+    }>();
+
+    for (const entry of taskUserAllocations) {
+      const groupKey = entry.headerId !== null
+        ? `header-${entry.headerId}`
+        : `legacy-${taskId}-${userId}`;
+      const existing = groupedByHeader.get(groupKey);
+      if (existing) {
+        existing.dates.push(entry.dateKey);
+      } else {
+        groupedByHeader.set(groupKey, { 
+          headerId: entry.headerId, 
+          dates: [entry.dateKey],
+          plannedStartDate: entry.plannedStartDate,
+          plannedEndDate: entry.plannedEndDate,
+        });
+      }
+    }
+
+    return Array.from(groupedByHeader.values())
+      .map((group) => {
+        const sortedDates = Array.from(new Set(group.dates)).sort();
+        // Prefer header's PlannedStartDate/EndDate if available, else calculate from dates
+        return {
+          headerId: group.headerId,
+          startDate: group.plannedStartDate || sortedDates[0],
+          endDate: group.plannedEndDate || sortedDates[sortedDates.length - 1],
+        };
+      })
+      .sort((a, b) => {
+        if (a.startDate !== b.startDate) {
+          return a.startDate.localeCompare(b.startDate);
+        }
+        const headerA = a.headerId === null ? Number.MAX_SAFE_INTEGER : a.headerId;
+        const headerB = b.headerId === null ? Number.MAX_SAFE_INTEGER : b.headerId;
+        return headerA - headerB;
+      });
   };
 
   // Calculate dependency lines for SVG overlay
@@ -1658,24 +1811,44 @@ export default function PlanningPage() {
       // Not planned - show only parent tasks without allocations, excluding closed/cancelled
       result = tasks.filter(t => {
         const hasAllocations = allAllocations.some(a => a.TaskId === t.Id);
-        const isAssignedUnscheduled = Number(t.UnscheduledWork || 0) === 1 && !!t.AssignedTo;
+        const isAssignedUnscheduled = Number(t.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(t);
+        const hasUnscheduledDescendants = hasUnscheduledAssignedDescendant(t.Id);
         const isParent = !t.ParentTaskId;
         // Also check if ALL children are closed/cancelled (for parent tasks with children)
         const children = tasks.filter(c => c.ParentTaskId === t.Id);
         const hasChildren = children.length > 0;
         const allChildrenClosed = hasChildren && children.every(c => isTaskClosedOrCancelled(c));
-        return !hasAllocations && !isAssignedUnscheduled && isParent && !isTaskClosedOrCancelled(t) && !allChildrenClosed;
+        return !hasAllocations && !isAssignedUnscheduled && !hasUnscheduledDescendants && isParent && !isTaskClosedOrCancelled(t) && !allChildrenClosed;
       });
     } else {
-      // Assigned to this user and either planned or flagged as unscheduled work
-      result = tasks.filter(t => 
-        !t.ParentTaskId && 
-        t.AssignedTo === userId &&
-        (
-          (t.PlannedStartDate && t.PlannedEndDate) ||
-          Number(t.UnscheduledWork || 0) === 1
-        )
-      );
+      // Planned for this user through allocations (source of truth), plus unscheduled assigned parents
+      const parentTaskIdsFromAllocations = new Set<number>();
+      const tasksById = new Map(tasks.map((task) => [task.Id, task]));
+
+      allAllocations
+        .filter((allocation) => allocation.UserId === userId)
+        .forEach((allocation) => {
+          let currentTask = tasksById.get(allocation.TaskId);
+          while (currentTask?.ParentTaskId) {
+            currentTask = tasksById.get(currentTask.ParentTaskId);
+          }
+          if (currentTask && !currentTask.ParentTaskId) {
+            parentTaskIdsFromAllocations.add(currentTask.Id);
+          }
+        });
+
+      result = tasks.filter((task) => {
+        if (task.ParentTaskId) return false;
+        const isUnscheduledAssigned = Number(task.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(task);
+        if (isUnscheduledAssigned) {
+          return isTaskAssignedToUser(task, Number(userId));
+        }
+        if (hasUnscheduledAssignedDescendant(task.Id, Number(userId))) {
+          return true;
+        }
+        if (parentTaskIdsFromAllocations.has(task.Id)) return true;
+        return false;
+      });
     }
     
     // Sort: work tasks first, then hobby tasks
@@ -2143,20 +2316,166 @@ export default function PlanningPage() {
     return level;
   };
 
-  const handleDragStart = (e: React.DragEvent, task: Task) => {
+  const handleDragStart = (e: React.DragEvent, task: Task, sourceUserId?: number | null, sourceHeaderId?: number | null) => {
     if (ganttGroupBy !== 'resource' || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) {
       e.preventDefault();
       return;
     }
     draggedTaskRef.current = task;
+    draggedTaskSourceUserIdRef.current = sourceUserId ?? null;
+    draggedTaskSourceHeaderIdRef.current = sourceHeaderId ?? null;
+    draggedTaskSliceByHoursRef.current = !!e.ctrlKey;
     e.dataTransfer.setData('text/plain', String(task.Id));
+    if (sourceHeaderId) {
+      e.dataTransfer.setData('application/x-allocation-header-id', String(sourceHeaderId));
+    }
+    e.dataTransfer.setData('application/x-slice-by-hours', e.ctrlKey ? '1' : '0');
     e.dataTransfer.effectAllowed = 'move';
   };
 
   const handleDragEnd = () => {
     setHoveredDropCell(null);
     draggedTaskRef.current = null;
+    draggedTaskSourceUserIdRef.current = null;
+    draggedTaskSourceHeaderIdRef.current = null;
+    draggedTaskSliceByHoursRef.current = false;
     setDraggedTask(null);
+  };
+
+  const deleteTaskUserAllocationDates = async (taskId: number, userId: number, allocationDates: string[]) => {
+    const uniqueDates = Array.from(new Set(allocationDates.filter(Boolean)));
+    for (const allocationDate of uniqueDates) {
+      await fetch(`${getApiUrl()}/api/task-allocations/delete`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ taskId, userId, allocationDate }),
+      });
+    }
+  };
+
+  const deleteTaskAllocationHeaderSlice = async (headerId: number) => {
+    await fetch(`${getApiUrl()}/api/task-allocations/header/${headerId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+  };
+
+  const handleConfirmSliceTransfer = async () => {
+    const {
+      taskId,
+      targetUserId,
+      dropDate,
+      sourceUserId,
+      sourceHeaderId,
+      moveHours,
+    } = sliceTransferModal;
+
+    if (!taskId || !targetUserId || !sourceUserId || !sourceHeaderId || !Number.isFinite(moveHours) || moveHours <= 0) {
+      return;
+    }
+
+    setSliceTransferModal((prev) => ({ ...prev, isProcessing: true }));
+
+    try {
+      const task = tasks.find((entry) => Number(entry.Id) === Number(taskId));
+      const targetUser = users.find((entry) => Number(entry.Id) === Number(targetUserId));
+      if (!task || !targetUser) {
+        throw new Error('Task or target user not found');
+      }
+
+      const sourceAllocations = allAllocations
+        .filter((allocation) =>
+          Number(allocation.TaskId) === Number(taskId) &&
+          Number(allocation.UserId) === Number(sourceUserId) &&
+          Number(allocation.TaskAllocationHeaderId || 0) === Number(sourceHeaderId)
+        )
+        .map((allocation) => ({ ...allocation, dateKey: normalizeDateKey(allocation.AllocationDate) }));
+
+      if (sourceAllocations.length === 0) {
+        throw new Error('No allocations found in selected slice period');
+      }
+
+      const totalSliceHours = sourceAllocations.reduce(
+        (sum, allocation) => sum + Number(allocation.AllocatedHours || 0),
+        0
+      );
+      const totalHoursToMove = Math.min(Number(moveHours || 0), totalSliceHours);
+
+      if (totalHoursToMove <= 0) {
+        throw new Error('Invalid hours to move');
+      }
+
+      const dropStartDate = new Date(`${dropDate}T12:00:00`);
+      const isHobbyTask = !!projects.find((projectEntry) => projectEntry.Id === task.ProjectId)?.IsHobby;
+      const maxDailyHours = Math.max(...WEEK_DAYS.map((dayName) => {
+        const key = isHobbyTask
+          ? `HobbyHours${dayName}` as keyof User
+          : `WorkHours${dayName}` as keyof User;
+        return parseFloat(targetUser[key] as any) || 0;
+      }));
+
+      if (maxDailyHours <= 0) {
+        throw new Error('Target user has no configured daily hours for this task type');
+      }
+
+      const allocationResult = await executeTaskAllocation(
+        task,
+        targetUserId,
+        dropStartDate,
+        totalHoursToMove,
+        targetUser,
+        maxDailyHours,
+        {
+          skipReload: true,
+          suppressDependentReplan: true,
+          appendToExistingUserSlice: true, // Always true for slice operations - creates new header in parallel
+        }
+      );
+
+      if (!allocationResult) {
+        throw new Error('Failed to allocate selected slice to target user');
+      }
+
+      const deleteResponse = await fetch(`${getApiUrl()}/api/task-allocations/header/${sourceHeaderId}/hours`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ hours: totalHoursToMove }),
+      });
+
+      if (!deleteResponse.ok) {
+        throw new Error('Failed to remove selected slice from source allocation');
+      }
+
+      if (projects.length > 0) {
+        await loadAllProjectsTasks(projects);
+        await loadAllAllocations();
+      }
+
+      setSliceTransferModal({
+        show: false,
+        taskId: null,
+        targetUserId: null,
+        dropDate: '',
+        sourceUserId: null,
+        sourceHeaderId: null,
+        totalHours: 0,
+        moveHours: 0,
+        isProcessing: false,
+      });
+    } catch (error: any) {
+      console.error('Failed to transfer allocation slice:', error);
+      showAlert('Slice Transfer', error?.message || 'Failed to transfer selected slice');
+      setSliceTransferModal((prev) => ({ ...prev, isProcessing: false }));
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -2181,6 +2500,19 @@ export default function PlanningPage() {
     const activeDraggedTask = draggedTaskRef.current || draggedTask || tasks.find((t) => t.Id === droppedTaskId) || null;
     if (!activeDraggedTask) return;
 
+    const splitUserCount = new Set(
+      allAllocations
+        .filter((allocation) => allocation.TaskId === activeDraggedTask.Id)
+        .map((allocation) => allocation.UserId)
+    ).size;
+    if (splitUserCount > 1) {
+      showAlert('Split Task', 'For split tasks, drop on a specific day to replan only that user slice.');
+      draggedTaskRef.current = null;
+      draggedTaskSourceUserIdRef.current = null;
+      setDraggedTask(null);
+      return;
+    }
+
     // Check if user has access to the project
     if (userId) {
       const taskProject = projects.find(p => p.Id === activeDraggedTask.ProjectId);
@@ -2189,6 +2521,7 @@ export default function PlanningPage() {
         if (!userOrgs.includes(taskProject.OrganizationId)) {
           showAlert('No Access', 'This user does not have access to the project this task belongs to.');
           draggedTaskRef.current = null;
+          draggedTaskSourceUserIdRef.current = null;
           setDraggedTask(null);
           return;
         }
@@ -2197,6 +2530,7 @@ export default function PlanningPage() {
 
     await handleTaskUpdate(activeDraggedTask, { AssignedTo: userId || undefined });
     draggedTaskRef.current = null;
+    draggedTaskSourceUserIdRef.current = null;
     setDraggedTask(null);
   };
 
@@ -2209,6 +2543,47 @@ export default function PlanningPage() {
     const droppedTaskId = Number(e.dataTransfer.getData('text/plain') || 0);
     const activeDraggedTask = draggedTaskRef.current || draggedTask || tasks.find((t) => t.Id === droppedTaskId) || null;
     if (!activeDraggedTask) return;
+    const sourceUserId = draggedTaskSourceUserIdRef.current;
+    const sourceHeaderIdFromTransfer = Number(e.dataTransfer.getData('application/x-allocation-header-id') || 0) || null;
+    const sourceHeaderId = draggedTaskSourceHeaderIdRef.current || sourceHeaderIdFromTransfer;
+    const sliceByHours = (e.dataTransfer.getData('application/x-slice-by-hours') === '1') || draggedTaskSliceByHoursRef.current;
+    const sourceSliceAllocations = sourceUserId
+      ? allAllocations.filter((allocation) => {
+          if (allocation.TaskId !== activeDraggedTask.Id || allocation.UserId !== sourceUserId) {
+            return false;
+          }
+
+          if (sourceHeaderId) {
+            return Number(allocation.TaskAllocationHeaderId || 0) === Number(sourceHeaderId);
+          }
+
+          return true;
+        })
+      : [];
+    const sourceSliceHours = sourceSliceAllocations.reduce((sum, allocation) => sum + Number(allocation.AllocatedHours || 0), 0);
+    const sourceSliceDates = sourceSliceAllocations.map((allocation) => normalizeDateKey(allocation.AllocationDate));
+    const isSliceDrag = sourceSliceAllocations.length > 0;
+
+    if (isSliceDrag && sourceHeaderId && sourceUserId && sourceUserId !== userId && sliceByHours) {
+      const totalSliceHours = sourceSliceAllocations.reduce((sum, allocation) => sum + Number(allocation.AllocatedHours || 0), 0);
+      setSliceTransferModal({
+        show: true,
+        taskId: activeDraggedTask.Id,
+        targetUserId: userId,
+        dropDate: getDateKeyFromDate(day),
+        sourceUserId,
+        sourceHeaderId,
+        totalHours: totalSliceHours,
+        moveHours: totalSliceHours,
+        isProcessing: false,
+      });
+      draggedTaskRef.current = null;
+      draggedTaskSourceUserIdRef.current = null;
+      draggedTaskSourceHeaderIdRef.current = null;
+      draggedTaskSliceByHoursRef.current = false;
+      setDraggedTask(null);
+      return;
+    }
 
     const droppedDateStr = getDateKeyFromDate(day);
     const droppedDateHolidayNames = getUserHolidayNames(userId, droppedDateStr);
@@ -2234,6 +2609,7 @@ export default function PlanningPage() {
       if (!userOrgs.includes(taskProject.OrganizationId)) {
         showAlert('No Access', 'This user does not have access to the project this task belongs to.');
         draggedTaskRef.current = null;
+        draggedTaskSourceUserIdRef.current = null;
         setDraggedTask(null);
         return;
       }
@@ -2355,41 +2731,49 @@ export default function PlanningPage() {
       if (!user) {
         showAlert('Error', 'User not found');
         draggedTaskRef.current = null;
+        draggedTaskSourceUserIdRef.current = null;
         setDraggedTask(null);
         return;
       }
 
-      const estimatedHours = activeDraggedTask.EstimatedHours || 8;
-      
-      // Fetch time entries for this task to calculate hours already worked
-      const timeEntriesRes = await fetch(
-        `${getApiUrl()}/api/time-entries/task/${activeDraggedTask.Id}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
+      const estimatedHours = Number(activeDraggedTask.EstimatedHours || 8);
       let hoursAlreadyWorked = 0;
-      if (timeEntriesRes.ok) {
-        const timeEntriesData = await timeEntriesRes.json();
-        if (timeEntriesData.entries && timeEntriesData.entries.length > 0) {
-          hoursAlreadyWorked = timeEntriesData.entries.reduce((sum: number, entry: any) => {
-            return sum + parseFloat(entry.Hours || 0);
-          }, 0);
-        }
-      }
+      let remainingHoursToWork = 0;
 
-      // Calculate remaining hours to plan
-      const remainingHoursToWork = estimatedHours - hoursAlreadyWorked;
+      if (isSliceDrag) {
+        remainingHoursToWork = sourceSliceHours;
+      } else {
+        // Fetch time entries for this task to calculate hours already worked
+        const timeEntriesRes = await fetch(
+          `${getApiUrl()}/api/time-entries/task/${activeDraggedTask.Id}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        if (timeEntriesRes.ok) {
+          const timeEntriesData = await timeEntriesRes.json();
+          if (timeEntriesData.entries && timeEntriesData.entries.length > 0) {
+            hoursAlreadyWorked = timeEntriesData.entries.reduce((sum: number, entry: any) => {
+              return sum + parseFloat(entry.Hours || 0);
+            }, 0);
+          }
+        }
+
+        // Calculate remaining hours to plan
+        remainingHoursToWork = estimatedHours - hoursAlreadyWorked;
+      }
 
       // Check if there are remaining hours to plan
       if (remainingHoursToWork <= 0) {
         showAlert(
           'No Remaining Hours',
-          `This task has no remaining hours to plan.\n\nEstimated: ${estimatedHours}h\nAlready worked: ${hoursAlreadyWorked.toFixed(2)}h\n\nPlease update the estimated hours if more work is needed.`
+          isSliceDrag
+            ? 'This split slice has no allocated hours to replan.'
+            : `This task has no remaining hours to plan.\n\nEstimated: ${estimatedHours}h\nAlready worked: ${hoursAlreadyWorked.toFixed(2)}h\n\nPlease update the estimated hours if more work is needed.`
         );
         setDraggedTask(null);
         return;
@@ -2485,6 +2869,10 @@ export default function PlanningPage() {
           totalHoursToAllocate: remainingHoursToWork,
           hoursAlreadyWorked,
           maxDailyHours,
+          sourceUserId,
+          sourceHeaderId,
+          sourceAllocationDates: sourceSliceDates,
+          suppressDependentReplan: isSliceDrag,
         });
         setDraggedTask(null);
         return;
@@ -2508,18 +2896,54 @@ export default function PlanningPage() {
           totalHours: remainingHoursToWork,
           hoursAlreadyWorked: hoursAlreadyWorked,
           totalEstimatedHours: taskEstimatedHours,
+          enableSplit: false,
+          splitMode: 'parallel',
+          splitEntries: [{ userId, plannedHours: remainingHoursToWork, hoursPerDay: maxDailyHours, splitOrder: 1 }],
+          sourceUserId,
+          sourceHeaderId,
+          sourceAllocationDates: sourceSliceDates,
+          suppressDependentReplan: isSliceDrag,
         });
         setDraggedTask(null);
         return;
       }
 
       // Continue with allocation using full daily hours (small tasks with no worked hours)
-      await executeTaskAllocation(activeDraggedTask, userId, startDate, remainingHoursToWork, user, maxDailyHours);
+      const allocationResult = await executeTaskAllocation(
+        activeDraggedTask,
+        userId,
+        startDate,
+        remainingHoursToWork,
+        user,
+        maxDailyHours,
+        {
+          skipReload: true,
+          suppressDependentReplan: isSliceDrag,
+          appendToExistingUserSlice: !!(isSliceDrag && sourceUserId), // Always true for slice ops to preserve existing allocations
+        }
+      );
+      if (allocationResult && isSliceDrag && sourceUserId && sourceSliceDates.length > 0) {
+        if (sourceHeaderId) {
+          await deleteTaskAllocationHeaderSlice(sourceHeaderId);
+        } else {
+          await deleteTaskUserAllocationDates(activeDraggedTask.Id, sourceUserId, sourceSliceDates);
+        }
+      }
+      if (projects.length > 0) {
+        await loadAllProjectsTasks(projects);
+        await loadAllAllocations();
+      }
       draggedTaskRef.current = null;
+      draggedTaskSourceUserIdRef.current = null;
+      draggedTaskSourceHeaderIdRef.current = null;
+      draggedTaskSliceByHoursRef.current = false;
     } catch (err) {
       console.error('Failed to allocate task:', err);
       showAlert('Error', 'Failed to allocate task');
       draggedTaskRef.current = null;
+      draggedTaskSourceUserIdRef.current = null;
+      draggedTaskSourceHeaderIdRef.current = null;
+      draggedTaskSliceByHoursRef.current = false;
       setDraggedTask(null);
     }
   };
@@ -2625,7 +3049,10 @@ export default function PlanningPage() {
           hoursAlreadyWorked: totalAlreadyWorked || 0,
           totalEstimatedHours: totalEstimatedHours || totalHours,
           isParentTask: true,
-          leafTasks: leafTasks
+          leafTasks: leafTasks,
+          enableSplit: false,
+          splitMode: 'parallel',
+          splitEntries: [{ userId, plannedHours: totalHours, hoursPerDay: maxDailyHours, splitOrder: 1 }],
         });
         return;
       }
@@ -2933,7 +3360,12 @@ export default function PlanningPage() {
           body: JSON.stringify({
             taskId: parentTask.Id,
             userId: userId,
-            allocations: allocations
+            allocations: allocations,
+            header: {
+              allocationMode: 'parallel',
+              splitOrder: 1,
+              plannedHours: totalHours,
+            }
           }),
         }
       );
@@ -2945,9 +3377,6 @@ export default function PlanningPage() {
         showAlert('Error', 'Failed to allocate parent task');
         return;
       }
-
-      const parentPlannedStartDate = allocations.length > 0 ? allocations[0].date : null;
-      await persistPlannedTaskAssignment(parentTask, userId, parentPlannedStartDate, parentPlannedEndDate);
 
       setPlanningProgress(prev => ({
         ...prev,
@@ -3335,6 +3764,11 @@ export default function PlanningPage() {
     const { task, userId, startDate, totalHoursToAllocate, hoursAlreadyWorked, maxDailyHours, isParentTask, leafTasks } = conflictModal;
     if (!task || !userId || !startDate) return;
 
+    if (conflictModal.suppressDependentReplan) {
+      await handleConflictPlanAvailable();
+      return;
+    }
+
     const user = users.find(u => u.Id === userId);
     if (!user) return;
 
@@ -3357,7 +3791,14 @@ export default function PlanningPage() {
       totalEstimatedHours: taskEstimatedHours,
       isParentTask,
       leafTasks,
-      usePushForward: true // Flag to indicate we should use push-forward
+      usePushForward: true, // Flag to indicate we should use push-forward
+      enableSplit: false,
+      splitMode: 'parallel',
+      splitEntries: [{ userId, plannedHours: totalHoursToAllocate, hoursPerDay: maxDailyHours, splitOrder: 1 }],
+      sourceUserId: conflictModal.sourceUserId,
+      sourceHeaderId: conflictModal.sourceHeaderId,
+      sourceAllocationDates: conflictModal.sourceAllocationDates,
+      suppressDependentReplan: conflictModal.suppressDependentReplan,
     });
   };
 
@@ -3387,25 +3828,125 @@ export default function PlanningPage() {
         hoursAlreadyWorked,
         totalEstimatedHours: taskEstimatedHours,
         isParentTask,
-        leafTasks
+        leafTasks,
+        enableSplit: false,
+        splitMode: 'parallel',
+        splitEntries: [{ userId, plannedHours: totalHoursToAllocate, hoursPerDay: maxDailyHours, splitOrder: 1 }],
+        sourceUserId: conflictModal.sourceUserId,
+        sourceHeaderId: conflictModal.sourceHeaderId,
+        sourceAllocationDates: conflictModal.sourceAllocationDates,
+        suppressDependentReplan: conflictModal.suppressDependentReplan,
       });
     } else {
       // Directly allocate using available hours
       if (isParentTask && leafTasks) {
         await executeParentTaskAllocation(task, userId, startDate, totalHoursToAllocate, user, maxDailyHours, leafTasks);
       } else {
-        await executeTaskAllocation(task, userId, startDate, totalHoursToAllocate, user, maxDailyHours);
+        const allocationResult = await executeTaskAllocation(task, userId, startDate, totalHoursToAllocate, user, maxDailyHours, {
+          skipReload: true,
+          suppressDependentReplan: !!conflictModal.suppressDependentReplan,
+          appendToExistingUserSlice: !!conflictModal.sourceUserId, // Always true for slice ops to preserve existing allocations
+        });
+        const sourceUserId = conflictModal.sourceUserId;
+        const sourceHeaderId = conflictModal.sourceHeaderId;
+        const sourceAllocationDates = conflictModal.sourceAllocationDates || [];
+        if (allocationResult && sourceUserId && sourceAllocationDates.length > 0) {
+          if (sourceHeaderId) {
+            await deleteTaskAllocationHeaderSlice(sourceHeaderId);
+          } else {
+            await deleteTaskUserAllocationDates(task.Id, sourceUserId, sourceAllocationDates);
+          }
+        }
+        if (projects.length > 0) {
+          await loadAllProjectsTasks(projects);
+          await loadAllAllocations();
+        }
       }
     }
   };
 
   // Handle confirmation from hours per day modal
   const handleHoursPerDayConfirm = async () => {
-    const { task, userId, startDate, totalHours, hoursPerDay, maxDailyHours, isParentTask, leafTasks, usePushForward } = hoursPerDayModal;
+    const { task, userId, startDate, totalHours, hoursPerDay, maxDailyHours, isParentTask, leafTasks, usePushForward, enableSplit, splitMode, splitEntries, sourceUserId, sourceHeaderId, sourceAllocationDates, suppressDependentReplan } = hoursPerDayModal;
     if (!task || !userId || !startDate) return;
 
     const user = users.find(u => u.Id === userId);
     if (!user) return;
+
+    if (enableSplit && !isParentTask) {
+      if (usePushForward || suppressDependentReplan) {
+        showAlert('Split Planning', 'Split planning with push-forward is not supported. Choose "Plan When Available" for split allocations.');
+        return;
+      }
+
+      const entries = Array.isArray(splitEntries)
+        ? splitEntries
+            .map((entry, index) => ({
+              userId: Number(entry.userId),
+              plannedHours: Number(entry.plannedHours || 0),
+              hoursPerDay: Number(entry.hoursPerDay || 0),
+              splitOrder: Number(entry.splitOrder || index + 1),
+            }))
+            .filter((entry) => Number.isFinite(entry.userId) && entry.userId > 0 && entry.plannedHours > 0)
+        : [];
+
+      const splitTotal = entries.reduce((sum, entry) => sum + entry.plannedHours, 0);
+      if (entries.length === 0) {
+        showAlert('Split Planning', 'Add at least one user split with planned hours.');
+        return;
+      }
+      if (Math.abs(splitTotal - totalHours) > 0.01) {
+        showAlert('Split Planning', `Split total (${splitTotal.toFixed(2)}h) must match planned hours (${totalHours.toFixed(2)}h).`);
+        return;
+      }
+
+      setHoursPerDayModal(prev => ({ ...prev, show: false }));
+
+      let sequenceDate = new Date(startDate);
+      for (const entry of entries.sort((a, b) => a.splitOrder - b.splitOrder)) {
+        const targetUser = users.find((candidate) => Number(candidate.Id) === Number(entry.userId));
+        if (!targetUser) {
+          continue;
+        }
+
+        const result = await executeTaskAllocation(
+          task,
+          entry.userId,
+          sequenceDate,
+          entry.plannedHours,
+          targetUser,
+          entry.hoursPerDay > 0 ? entry.hoursPerDay : maxDailyHours,
+          {
+            silent: true,
+            skipReload: true,
+            header: {
+              allocationMode: splitMode || 'parallel',
+              splitOrder: entry.splitOrder,
+              plannedHours: entry.plannedHours,
+            },
+          }
+        );
+
+        if (!result) {
+          showAlert('Error', `Failed to allocate split for ${targetUser.FirstName || targetUser.Username || `User ${targetUser.Id}`}.`);
+          return;
+        }
+
+        if ((splitMode || 'parallel') === 'sequential' && result.endDate) {
+          const nextStart = new Date(`${result.endDate}T12:00:00`);
+          nextStart.setDate(nextStart.getDate() + 1);
+          sequenceDate = nextStart;
+        }
+      }
+
+      if (projects.length > 0) {
+        await loadAllProjectsTasks(projects);
+        await loadAllAllocations();
+      }
+
+      showAlert('Success', 'Task planned across multiple users successfully.');
+      return;
+    }
 
     // Use the parsed value, capped at the actual daily capacity (not a fixed 8h fallback)
     const parsedHours = parseFloat(hoursPerDay);
@@ -3455,7 +3996,22 @@ export default function PlanningPage() {
       if (isParentTask && leafTasks) {
         await executeParentTaskAllocation(task, userId, startDate, totalHours, user, maxHoursPerDay, leafTasks);
       } else {
-        await executeTaskAllocation(task, userId, startDate, totalHours, user, maxHoursPerDay);
+        const allocationResult = await executeTaskAllocation(task, userId, startDate, totalHours, user, maxHoursPerDay, {
+          skipReload: true,
+          suppressDependentReplan: !!suppressDependentReplan,
+          appendToExistingUserSlice: !!sourceUserId, // Always true for slice ops to preserve existing allocations
+        });
+        if (allocationResult && sourceUserId && (sourceAllocationDates || []).length > 0) {
+          if (sourceHeaderId) {
+            await deleteTaskAllocationHeaderSlice(sourceHeaderId);
+          } else {
+            await deleteTaskUserAllocationDates(task.Id, sourceUserId, sourceAllocationDates || []);
+          }
+        }
+        if (projects.length > 0) {
+          await loadAllProjectsTasks(projects);
+          await loadAllAllocations();
+        }
       }
     }
   };
@@ -3467,39 +4023,32 @@ export default function PlanningPage() {
     startDate: Date,
     remainingHoursToWork: number,
     user: User,
-    maxHoursPerDay: number
-  ) => {
+    maxHoursPerDay: number,
+    options?: {
+      silent?: boolean;
+      skipReload?: boolean;
+      suppressDependentReplan?: boolean;
+      appendToExistingUserSlice?: boolean;
+      header?: {
+        allocationMode?: 'parallel' | 'sequential';
+        splitOrder?: number;
+        plannedHours?: number;
+      };
+    }
+  ): Promise<{ startDate: string | null; endDate: string | null } | null> => {
     try {
-      // Delete existing allocations for this task before creating new ones
-      try {
-        const deleteRes = await fetch(
-          `${getApiUrl()}/api/task-allocations/task/${task.Id}`,
-          {
-            method: 'DELETE',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-        
-        if (!deleteRes.ok) {
-          console.warn('Failed to delete existing allocations, continuing anyway');
-        }
-      } catch (err) {
-        console.error('Error deleting existing allocations:', err);
-      }
-
       // Show planning progress modal
-      setPlanningProgress({
-        show: true,
-        taskName: task.TaskName,
-        progress: 0,
-        currentStep: 'Checking user availability...',
-        totalHours: remainingHoursToWork,
-        allocatedHours: 0,
-        daysProcessed: 0,
-      });
+      if (!options?.silent) {
+        setPlanningProgress({
+          show: true,
+          taskName: task.TaskName,
+          progress: 0,
+          currentStep: 'Checking user availability...',
+          totalHours: remainingHoursToWork,
+          allocatedHours: 0,
+          daysProcessed: 0,
+        });
+      }
 
       // Check if task belongs to a hobby project
       const project = projects.find(p => p.Id === task.ProjectId);
@@ -3519,8 +4068,17 @@ export default function PlanningPage() {
       const preliminaryEndDate = new Date(startDate);
       preliminaryEndDate.setDate(preliminaryEndDate.getDate() + Math.min(windowDaysForTask, 5475)); // Cap at 15 years
       
+      const availabilityQuery = new URLSearchParams({
+        startDate: startDate.toISOString().split('T')[0],
+        endDate: preliminaryEndDate.toISOString().split('T')[0],
+        isHobby: String(isHobby),
+      });
+      if (!options?.appendToExistingUserSlice) {
+        availabilityQuery.set('excludeTaskId', String(task.Id));
+      }
+
       const availabilityRes = await fetch(
-        `${getApiUrl()}/api/task-allocations/availability/${userId}?startDate=${startDate.toISOString().split('T')[0]}&endDate=${preliminaryEndDate.toISOString().split('T')[0]}&excludeTaskId=${task.Id}&isHobby=${isHobby}`,
+        `${getApiUrl()}/api/task-allocations/availability/${userId}?${availabilityQuery.toString()}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -3530,18 +4088,22 @@ export default function PlanningPage() {
       );
 
       if (!availabilityRes.ok) {
-        showAlert('Error', 'Failed to check user availability');
-        return;
+        if (!options?.silent) {
+          showAlert('Error', 'Failed to check user availability');
+        }
+        return null;
       }
 
       const availabilityData = await availabilityRes.json();
       const availability = availabilityData.availability;
 
-      setPlanningProgress(prev => ({
-        ...prev,
-        progress: 20,
-        currentStep: 'Calculating allocation schedule...',
-      }));
+      if (!options?.silent) {
+        setPlanningProgress(prev => ({
+          ...prev,
+          progress: 20,
+          currentStep: 'Calculating allocation schedule...',
+        }));
+      }
 
       // Calculate allocation across days using actual availability and REMAINING hours only
       const allocations: { date: string; hours: number; startTime: string; endTime: string }[] = [];
@@ -3701,34 +4263,44 @@ export default function PlanningPage() {
       }
 
       if (daysProcessed >= maxDaysToProcess) {
-        setPlanningProgress(prev => ({ ...prev, show: false }));
-        showAlert('Allocation Error', `Task requires too many work days (${daysProcessed}) to allocate. Please review estimated hours or user availability.`);
-        return;
+        if (!options?.silent) {
+          setPlanningProgress(prev => ({ ...prev, show: false }));
+          showAlert('Allocation Error', `Task requires too many work days (${daysProcessed}) to allocate. Please review estimated hours or user availability.`);
+        }
+        return null;
       }
 
       if (allocations.length === 0) {
-        setPlanningProgress(prev => ({ ...prev, show: false }));
-        showAlert('Allocation Error', 'Unable to allocate task - no available hours found in the next year');
-        return;
+        if (!options?.silent) {
+          setPlanningProgress(prev => ({ ...prev, show: false }));
+          showAlert('Allocation Error', 'Unable to allocate task - no available hours found in the next year');
+        }
+        return null;
       }
 
       if (remainingHours > 0) {
-        setPlanningProgress(prev => ({ ...prev, show: false }));
-        showAlert('Partial Allocation', `Unable to fully allocate task - ${remainingHours.toFixed(2)}h remaining. User doesn't have enough availability in the next year.`);
-        return;
+        if (!options?.silent) {
+          setPlanningProgress(prev => ({ ...prev, show: false }));
+          showAlert('Partial Allocation', `Unable to fully allocate task - ${remainingHours.toFixed(2)}h remaining. User doesn't have enough availability in the next year.`);
+        }
+        return null;
       }
 
       const plannedEndDate = getLatestAllocationDate(allocations);
       if (!validateMandatoryDueDateForPlan(task, plannedEndDate)) {
-        setPlanningProgress(prev => ({ ...prev, show: false }));
-        return;
+        if (!options?.silent) {
+          setPlanningProgress(prev => ({ ...prev, show: false }));
+        }
+        return null;
       }
 
-      setPlanningProgress(prev => ({
-        ...prev,
-        progress: 80,
-        currentStep: 'Saving allocations...',
-      }));
+      if (!options?.silent) {
+        setPlanningProgress(prev => ({
+          ...prev,
+          progress: 80,
+          currentStep: 'Saving allocations...',
+        }));
+      }
 
       // Save allocations
       const saveRes = await fetch(
@@ -3742,40 +4314,57 @@ export default function PlanningPage() {
           body: JSON.stringify({
             taskId: task.Id,
             userId,
-            allocations
+            allocations,
+            suppressDependentReplan: !!options?.suppressDependentReplan,
+            appendToExistingUserSlice: !!options?.appendToExistingUserSlice,
+            header: {
+              allocationMode: options?.header?.allocationMode || 'parallel',
+              splitOrder: options?.header?.splitOrder,
+              plannedHours: options?.header?.plannedHours ?? remainingHoursToWork,
+            }
           })
         }
       );
 
       if (!saveRes.ok) {
-        setPlanningProgress(prev => ({ ...prev, show: false }));
-        showAlert('Error', 'Failed to save task allocation');
-        return;
+        if (!options?.silent) {
+          setPlanningProgress(prev => ({ ...prev, show: false }));
+          showAlert('Error', 'Failed to save task allocation');
+        }
+        return null;
       }
 
       const plannedStartDate = allocations.length > 0 ? allocations[0].date : null;
-      await persistPlannedTaskAssignment(task, userId, plannedStartDate, plannedEndDate);
 
-      setPlanningProgress(prev => ({
-        ...prev,
-        progress: 100,
-        currentStep: 'Refreshing view...',
-      }));
+      if (!options?.silent) {
+        setPlanningProgress(prev => ({
+          ...prev,
+          progress: 100,
+          currentStep: 'Refreshing view...',
+        }));
+      }
 
       // Reload tasks and allocations to reflect changes
-      if (projects.length > 0) {
+      if (!options?.skipReload && projects.length > 0) {
         await loadAllProjectsTasks(projects);
         await loadAllAllocations();
       }
       
       // Close modal after short delay to show completion
-      setTimeout(() => {
-        setPlanningProgress(prev => ({ ...prev, show: false }));
-      }, 500);
+      if (!options?.silent) {
+        setTimeout(() => {
+          setPlanningProgress(prev => ({ ...prev, show: false }));
+        }, 500);
+      }
+
+      return { startDate: plannedStartDate, endDate: plannedEndDate };
     } catch (err) {
       console.error('Failed to allocate task:', err);
-      setPlanningProgress(prev => ({ ...prev, show: false }));
-      showAlert('Error', 'Failed to allocate task');
+      if (!options?.silent) {
+        setPlanningProgress(prev => ({ ...prev, show: false }));
+        showAlert('Error', 'Failed to allocate task');
+      }
+      return null;
     }
   };
 
@@ -4238,8 +4827,9 @@ export default function PlanningPage() {
     const parentTasks = tasks.filter((t) => {
       if (t.ParentTaskId) return false;
       const hasPlannedDates = !!(t.PlannedStartDate && t.PlannedEndDate);
-      const isAssignedUnscheduled = Number(t.UnscheduledWork || 0) === 1 && !!t.AssignedTo;
-      if (!(hasPlannedDates || isAssignedUnscheduled) || !matchesGanttSearch(t)) return false;
+      const isAssignedUnscheduled = Number(t.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(t);
+      const hasUnscheduledDescendants = hasUnscheduledAssignedDescendant(t.Id);
+      if (!(hasPlannedDates || isAssignedUnscheduled || hasUnscheduledDescendants) || !matchesGanttSearch(t)) return false;
 
       const project = projects.find((projectItem) => projectItem.Id === t.ProjectId);
       if (!isProjectActive(project)) return false;
@@ -4981,7 +5571,7 @@ export default function PlanningPage() {
                             key={parentTask.Id}
                             data-task-id={parentTask.Id}
                             draggable={permissions?.canPlanTasks && !isGanttSearchActive}
-                            onDragStart={(e) => handleDragStart(e, parentTask)}
+                            onDragStart={(e) => handleDragStart(e, parentTask, null)}
                             onDragEnd={handleDragEnd}
                             onContextMenu={(e) => handleTaskContextMenu(e, parentTask)}
                             onClick={(e) => {
@@ -5050,13 +5640,33 @@ export default function PlanningPage() {
 
                 {/* User rows */}
                 {isResourceGrouping && users.map(userRow => {
-                  // Get ALL tasks for this user (parent tasks with dates)
-                  const parentTasksWithDates = tasks.filter(t => {
-                    const isAssignedParent = t.AssignedTo === userRow.Id && !t.ParentTaskId;
-                    if (!isAssignedParent) return false;
-                    const hasPlannedDates = !!(t.PlannedStartDate && t.PlannedEndDate);
-                    const isAssignedUnscheduled = Number(t.UnscheduledWork || 0) === 1;
-                    return (hasPlannedDates || isAssignedUnscheduled) && matchesGanttSearch(t);
+                  const tasksById = new Map(tasks.map((task) => [task.Id, task]));
+                  const parentTaskIdsFromAllocations = new Set<number>();
+
+                  allAllocations
+                    .filter((allocation) => allocation.UserId === userRow.Id)
+                    .forEach((allocation) => {
+                      let currentTask = tasksById.get(allocation.TaskId);
+                      while (currentTask?.ParentTaskId) {
+                        currentTask = tasksById.get(currentTask.ParentTaskId);
+                      }
+                      if (currentTask && !currentTask.ParentTaskId) {
+                        parentTaskIdsFromAllocations.add(currentTask.Id);
+                      }
+                    });
+
+                  const parentTasksWithDates = tasks.filter((task) => {
+                    if (task.ParentTaskId) return false;
+                    const isUnscheduledAssigned = Number(task.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(task);
+                    const plannedForUserByAllocations = parentTaskIdsFromAllocations.has(task.Id);
+                    const unscheduledAssigned = Number(task.UnscheduledWork || 0) === 1 && isTaskAssignedToUser(task, Number(userRow.Id));
+                    if (isUnscheduledAssigned) {
+                      return unscheduledAssigned && matchesGanttSearch(task);
+                    }
+                    if (hasUnscheduledAssignedDescendant(task.Id, Number(userRow.Id))) {
+                      return matchesGanttSearch(task);
+                    }
+                    return plannedForUserByAllocations && matchesGanttSearch(task);
                   });
                   
                   // Build complete subtask tree recursively for visualization
@@ -5171,33 +5781,62 @@ export default function PlanningPage() {
                   });
                   
                   parentTasks.forEach((task, taskIdx) => {
-                    const position = getTaskPosition(task, timelineColumns, {
-                      useFixedPixelColumns,
-                      columnWidthPx: dayColumnWidthPx,
-                    });
+                    const allocationDates = getTaskUserAllocationDates(task.Id, userRow.Id);
+                    const hasAnyTaskAllocation = allAllocations.some((allocation) => allocation.TaskId === task.Id);
+                    const hasUnscheduledSelfForUser = Number(task.UnscheduledWork || 0) === 1 && isTaskAssignedToUser(task, Number(userRow.Id));
+                    const hasUnscheduledChildForUser = hasUnscheduledAssignedDescendant(task.Id, Number(userRow.Id));
+                    const taskForPosition = allocationDates
+                      ? { ...task, PlannedStartDate: allocationDates.startDate, PlannedEndDate: allocationDates.endDate }
+                      : (hasUnscheduledSelfForUser || hasUnscheduledChildForUser)
+                      ? task
+                      : !hasAnyTaskAllocation && task.PlannedStartDate && task.PlannedEndDate
+                      ? task
+                      : null;
+
+                    const position = taskForPosition
+                      ? getTaskPosition(taskForPosition, timelineColumns, {
+                          useFixedPixelColumns,
+                          columnWidthPx: dayColumnWidthPx,
+                        })
+                      : null;
+
                     if (!position) {
                       console.log(`Parent task ${task.TaskName} has no position - skipping`);
                       return;
                     }
+
                     const taskStartIndex = position.startIndex;
                     const taskEndIndex = position.startIndex + position.duration - 1;
-                    
+
                     let row = 0;
-                    
+
                     // Helper function to calculate task level
                     const getTaskLevel = (taskId: number): number => {
                       const t = tasks.find(x => x.Id === taskId);
                       if (!t || !t.ParentTaskId) return 0;
                       return 1 + getTaskLevel(t.ParentTaskId);
                     };
-                    
+
                     // Check previous tasks to find overlaps
                     for (let i = 0; i < taskIdx; i++) {
                       const otherTask = parentTasks[i];
-                      const otherPosition = getTaskPosition(otherTask, timelineColumns, {
-                        useFixedPixelColumns,
-                        columnWidthPx: dayColumnWidthPx,
-                      });
+                      const otherAllocationDates = getTaskUserAllocationDates(otherTask.Id, userRow.Id);
+                      const hasOtherTaskAllocation = allAllocations.some((allocation) => allocation.TaskId === otherTask.Id);
+                      const otherHasUnscheduledSelfForUser = Number(otherTask.UnscheduledWork || 0) === 1 && isTaskAssignedToUser(otherTask, Number(userRow.Id));
+                      const otherHasUnscheduledChildForUser = hasUnscheduledAssignedDescendant(otherTask.Id, Number(userRow.Id));
+                      const otherTaskForPosition = otherAllocationDates
+                        ? { ...otherTask, PlannedStartDate: otherAllocationDates.startDate, PlannedEndDate: otherAllocationDates.endDate }
+                        : (otherHasUnscheduledSelfForUser || otherHasUnscheduledChildForUser)
+                        ? otherTask
+                        : !hasOtherTaskAllocation && otherTask.PlannedStartDate && otherTask.PlannedEndDate
+                        ? otherTask
+                        : null;
+                      const otherPosition = otherTaskForPosition
+                        ? getTaskPosition(otherTaskForPosition, timelineColumns, {
+                            useFixedPixelColumns,
+                            columnWidthPx: dayColumnWidthPx,
+                          })
+                        : null;
                       if (!otherPosition) continue;
                       const otherStartIndex = otherPosition.startIndex;
                       const otherEndIndex = otherPosition.startIndex + otherPosition.duration - 1;
@@ -5214,9 +5853,9 @@ export default function PlanningPage() {
                         }
                       }
                     }
-                    
+
                     taskRows.push({ task, row, isSubtask: false });
-                    
+
                     // Add ALL subtasks (multi-level) each in its own row below the parent
                     const subtasks = subtasksMap.get(task.Id) || [];
                     console.log(`Parent task ${task.TaskName} (ID: ${task.Id}):`, {
@@ -5224,17 +5863,17 @@ export default function PlanningPage() {
                       subtaskCount: subtasks.length,
                       subtasks: subtasks.map(s => ({ id: s.Id, name: s.TaskName, parentId: s.ParentTaskId }))
                     });
-                    
+
                     if (subtasks.length > 0) {
                       let subtaskOffset = 0;
                       subtasks.forEach((subtask, subIdx) => {
                         const level = getTaskLevel(subtask.Id);
-                        
+
                         // Only add subtask if within max visible level
                         if (level <= maxVisibleLevel) {
                           console.log(`  Adding subtask ${subtask.TaskName} at row ${row + 1 + subtaskOffset}, level ${level}`);
-                          taskRows.push({ 
-                            task: subtask, 
+                          taskRows.push({
+                            task: subtask,
                             row: row + 1 + subtaskOffset,
                             isSubtask: true,
                             parentTask: task,
@@ -5247,7 +5886,7 @@ export default function PlanningPage() {
                           console.log(`  Skipping subtask ${subtask.TaskName} at level ${level} (max: ${maxVisibleLevel})`);
                         }
                       });
-                      
+
                       maxRows = Math.max(maxRows, row + 1 + subtaskOffset);
                     } else {
                       maxRows = Math.max(maxRows, row + 1);
@@ -5330,12 +5969,36 @@ export default function PlanningPage() {
                         </div>
                         {taskRows.map(({ task, row, isSubtask, parentTask, subtaskIndex, totalSubtasks, level }) => {
                           // For subtasks, try to use child allocations first, then fall back to own dates
-                          let position, subtaskLeft, subtaskWidth;
                           let usesDerivedChildDates = false;
                           let displayedStartDate: string | null = null;
                           let displayedEndDate: string | null = null;
-                          
-                          if (isSubtask && parentTask) {
+                          const isUnscheduledForUser = Number(task.UnscheduledWork || 0) === 1 && isTaskAssignedToUser(task, Number(userRow.Id));
+                          const hasUnscheduledAssignedChildForUser = !isSubtask && hasUnscheduledAssignedDescendant(task.Id, Number(userRow.Id));
+                          const userAllocationSegments = getTaskUserAllocationSegments(task.Id, userRow.Id);
+                          const hasAnyTaskAllocation = allAllocations.some((allocation) => allocation.TaskId === task.Id);
+                          const hasLegacyTaskDates = !!(task.PlannedStartDate && task.PlannedEndDate);
+
+                          const taskBarSegments: Array<{ headerId: number | null; startDate: string; endDate: string }> = [];
+
+                          if (userAllocationSegments.length > 0) {
+                            displayedStartDate = userAllocationSegments[0].startDate;
+                            displayedEndDate = userAllocationSegments[userAllocationSegments.length - 1].endDate;
+                            taskBarSegments.push(...userAllocationSegments);
+                          } else if (isUnscheduledForUser || hasUnscheduledAssignedChildForUser) {
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const endDate = new Date(today);
+                            endDate.setDate(endDate.getDate() + 2);
+                            displayedStartDate = getDateKeyFromDate(today);
+                            displayedEndDate = getDateKeyFromDate(endDate);
+                            taskBarSegments.push({ headerId: null, startDate: displayedStartDate, endDate: displayedEndDate });
+                          } else if (!hasAnyTaskAllocation && hasLegacyTaskDates) {
+                            displayedStartDate = normalizeDateOnly(task.PlannedStartDate);
+                            displayedEndDate = normalizeDateOnly(task.PlannedEndDate);
+                            if (displayedStartDate && displayedEndDate) {
+                              taskBarSegments.push({ headerId: null, startDate: displayedStartDate, endDate: displayedEndDate });
+                            }
+                          } else if (isSubtask && parentTask) {
                             // Try to get child task dates from allocations
                             const childDates = getChildTaskDates(task.Id);
                             
@@ -5344,42 +6007,24 @@ export default function PlanningPage() {
                               usesDerivedChildDates = true;
                               displayedStartDate = childDates.startDate;
                               displayedEndDate = childDates.endDate;
-                              const tempTask = {
-                                ...task,
-                                PlannedStartDate: childDates.startDate,
-                                PlannedEndDate: childDates.endDate
-                              };
-                              
-                              position = getTaskPosition(tempTask, timelineColumns, {
-                                useFixedPixelColumns,
-                                columnWidthPx: dayColumnWidthPx,
-                              });
+                              taskBarSegments.push({ headerId: null, startDate: childDates.startDate, endDate: childDates.endDate });
                             } else if (task.PlannedStartDate && task.PlannedEndDate) {
                               // No child allocations but has own dates - use them
                               displayedStartDate = normalizeDateOnly(task.PlannedStartDate);
                               displayedEndDate = normalizeDateOnly(task.PlannedEndDate);
-                              position = getTaskPosition(task, timelineColumns, {
-                                useFixedPixelColumns,
-                                columnWidthPx: dayColumnWidthPx,
-                              });
+                              if (displayedStartDate && displayedEndDate) {
+                                taskBarSegments.push({ headerId: null, startDate: displayedStartDate, endDate: displayedEndDate });
+                              }
                             } else {
                               // No allocations and no dates - skip
                               return null;
                             }
-                            
-                            if (!position) return null;
-                            subtaskLeft = position.left;
-                            subtaskWidth = position.width;
                           } else {
-                            displayedStartDate = normalizeDateOnly(task.PlannedStartDate);
-                            displayedEndDate = normalizeDateOnly(task.PlannedEndDate);
-                            position = getTaskPosition(task, timelineColumns, {
-                              useFixedPixelColumns,
-                              columnWidthPx: dayColumnWidthPx,
-                            });
-                            if (!position) return null;
-                            subtaskLeft = position.left;
-                            subtaskWidth = position.width;
+                            return null;
+                          }
+
+                          if (taskBarSegments.length === 0) {
+                            return null;
                           }
                           
                           const taskIsHobbyProject = isTaskHobby(task);
@@ -5407,7 +6052,7 @@ export default function PlanningPage() {
                             `Assignee: ${assigneeName}`,
                             `Status: ${task.StatusName || 'Unknown'}`,
                             `Priority: ${task.PriorityName || 'Unknown'}`,
-                            `Dates: ${task.PlannedStartDate || 'Not planned'} → ${task.PlannedEndDate || 'Not planned'}`,
+                            `Dates: ${displayedStartDate || 'Not planned'} → ${displayedEndDate || 'Not planned'}`,
                             `Hours: Est ${estimatedHours}h | Planned ${plannedHours}h | Worked ${workedHours}h | Remaining ${remainingHours}h`,
                             `Coverage: ${planningCoverage}`,
                           ];
@@ -5470,9 +6115,9 @@ export default function PlanningPage() {
                                 }
                               )
                             : null;
-                          const driftDays = (baselinePosition && subtaskLeft && subtaskWidth)
+                          const driftDays = (baselinePosition && displayedStartDate)
                             ? (() => {
-                                const curStart = new Date(task.PlannedStartDate || task.BaselineStartDate!).getTime();
+                                const curStart = new Date(displayedStartDate || task.BaselineStartDate!).getTime();
                                 const basStart = new Date(task.BaselineStartDate!).getTime();
                                 return Math.round((curStart - basStart) / 86_400_000);
                               })()
@@ -5480,80 +6125,120 @@ export default function PlanningPage() {
 
                           return (
                             <React.Fragment key={`bar-${task.Id}`}>
-                            {baselinePosition && (
-                              <div
-                                className="absolute rounded-sm pointer-events-none"
-                                style={{
-                                  left: baselinePosition.left,
-                                  width: baselinePosition.width,
-                                  top: `${4 + row * 24 + (isSubtask ? 10 : 12)}px`,
-                                  height: '4px',
-                                  backgroundColor: driftDays === 0 ? '#10b981' : driftDays > 0 ? '#f59e0b' : '#a855f7',
-                                  opacity: 0.7,
-                                  zIndex: 1,
-                                }}
-                                title={`Baseline: ${task.BaselineStartDate} → ${task.BaselineEndDate}${driftDays !== 0 ? `\nDrift: ${driftDays > 0 ? '+' : ''}${driftDays} days` : ''}`}
-                              />
-                            )}
-                            <div
-                              key={task.Id}
-                              data-task-id={task.Id}
-                              draggable={permissions?.canPlanTasks && !isGanttSearchActive}
-                              onDragStart={(e) => handleDragStart(e, task)}
-                              onDragEnd={handleDragEnd}
-                              onContextMenu={(e) => handleTaskContextMenu(e, task)}
-                              onClick={(e) => {
-                                if (shouldSuppressTaskClick()) {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  return;
+                              {baselinePosition && (
+                                <div
+                                  className="absolute rounded-sm pointer-events-none"
+                                  style={{
+                                    left: baselinePosition.left,
+                                    width: baselinePosition.width,
+                                    top: `${4 + row * 24 + (isSubtask ? 10 : 12)}px`,
+                                    height: '4px',
+                                    backgroundColor: driftDays === 0 ? '#10b981' : driftDays > 0 ? '#f59e0b' : '#a855f7',
+                                    opacity: 0.7,
+                                    zIndex: 1,
+                                  }}
+                                  title={`Baseline: ${task.BaselineStartDate} → ${task.BaselineEndDate}${driftDays !== 0 ? `\nDrift: ${driftDays > 0 ? '+' : ''}${driftDays} days` : ''}`}
+                                />
+                              )}
+                              {taskBarSegments.map((segment, segmentIndex) => {
+                                const segmentTask = {
+                                  ...task,
+                                  PlannedStartDate: segment.startDate,
+                                  PlannedEndDate: segment.endDate,
+                                };
+                                const segmentPosition = getTaskPosition(segmentTask, timelineColumns, {
+                                  useFixedPixelColumns,
+                                  columnWidthPx: dayColumnWidthPx,
+                                });
+
+                                if (!segmentPosition) {
+                                  return null;
                                 }
-                                void handleTaskClick(task);
-                              }}
-                              className={`absolute ${subtaskHeight} rounded ${!statusColor ? getPriorityColor(task) : ''} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''} ${isResizingTask ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''}`}
-                              style={{
-                                left: previewBarStyle?.left || subtaskLeft,
-                                width: previewBarStyle?.width || subtaskWidth,
-                                top: `${2 + row * 24}px`,
-                                ...(statusColor ? { backgroundColor: statusColor } : {}),
-                                borderLeft: `${isSubtask ? '3' : '4'}px solid ${priorityBorderHex}`,
-                                zIndex: isResizingTask ? 40 : isSubtask ? 20 : 21,
-                              }}
-                              title={taskTooltip}
-                            >
-                              {canResizeStart && isShiftResizeMode && (
-                                <div
-                                  role="button"
-                                  aria-label={`Resize start date for ${task.TaskName}`}
-                                  onMouseDown={(e) => handleTaskResizeHandleMouseDown(e, task, 'start', position.startIndex, position.startIndex + position.duration - 1)}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="absolute left-0 top-0 h-full w-2 cursor-ew-resize rounded-l bg-black/20 hover:bg-black/35"
-                                  title="Hold Shift and drag to resize start"
-                                />
-                              )}
-                              {!isSubtask && isOverPlanned && <span className="mr-1">⚠️</span>}
-                              {!isSubtask && taskIsHobbyProject && (
-                                <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0 pointer-events-none">HOBBY</span>
-                              )}
-                              <span className="truncate flex-1 pointer-events-none">
-                                {indentPrefix}
-                                {!isSubtask && hasDependency ? '🔗 ' : ''}
-                                {task.TaskName}
-                              </span>
-                              {!isSubtask && showTaskBarHours && (
-                                <span className={`ml-1 text-[10px] whitespace-nowrap pointer-events-none ${isOverPlanned ? 'bg-red-600 px-1 rounded font-bold' : 'opacity-80'}`}>{hoursDisplay}</span>
-                              )}
-                              {canResizeEnd && isShiftResizeMode && (
-                                <div
-                                  role="button"
-                                  aria-label={`Resize end date for ${task.TaskName}`}
-                                  onMouseDown={(e) => handleTaskResizeHandleMouseDown(e, task, 'end', position.startIndex, position.startIndex + position.duration - 1)}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="absolute right-0 top-0 h-full w-2 cursor-ew-resize rounded-r bg-black/20 hover:bg-black/35"
-                                  title="Hold Shift and drag to resize end"
-                                />
-                              )}
-                            </div>
+
+                                const segmentCanResizeStart = !!(
+                                  canResizeStart &&
+                                  segment.startDate &&
+                                  segment.startDate >= firstTimelineDateKey
+                                );
+                                const segmentCanResizeEnd = !!(
+                                  canResizeEnd &&
+                                  segment.endDate &&
+                                  segment.endDate <= lastTimelineDateKey
+                                );
+                                const segmentPreviewStyle = isResizingTask && segmentIndex === 0 ? previewBarStyle : null;
+                                const segmentTooltip = taskTooltip.replace(
+                                  `Dates: ${displayedStartDate || 'Not planned'} → ${displayedEndDate || 'Not planned'}`,
+                                  `Dates: ${segment.startDate} → ${segment.endDate}`
+                                );
+                                const segmentHeaderId = segment.headerId;
+                                const barDomId = segmentHeaderId !== null
+                                  ? `allocation-header-${segmentHeaderId}`
+                                  : undefined;
+
+                                return (
+                                  <div
+                                    key={`${task.Id}-${segmentHeaderId ?? `legacy-${segmentIndex}`}-${segment.startDate}-${segment.endDate}`}
+                                    id={barDomId}
+                                    data-task-id={segmentIndex === 0 ? task.Id : undefined}
+                                    data-allocation-header-id={segmentHeaderId !== null ? String(segmentHeaderId) : undefined}
+                                    draggable={permissions?.canPlanTasks && !isGanttSearchActive}
+                                    onDragStart={(e) => handleDragStart(e, task, userRow.Id, segmentHeaderId)}
+                                    onDragEnd={handleDragEnd}
+                                    onContextMenu={(e) => handleTaskContextMenu(e, task)}
+                                    onClick={(e) => {
+                                      if (shouldSuppressTaskClick()) {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        return;
+                                      }
+                                      void handleTaskClick(task);
+                                    }}
+                                    className={`absolute ${subtaskHeight} rounded ${!statusColor ? getPriorityColor(task) : ''} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''} ${isResizingTask && segmentIndex === 0 ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''}`}
+                                    style={{
+                                      left: segmentPreviewStyle?.left || segmentPosition.left,
+                                      width: segmentPreviewStyle?.width || segmentPosition.width,
+                                      top: `${2 + row * 24}px`,
+                                      ...(statusColor ? { backgroundColor: statusColor } : {}),
+                                      borderLeft: `${isSubtask ? '3' : '4'}px solid ${priorityBorderHex}`,
+                                      zIndex: isResizingTask && segmentIndex === 0 ? 40 : isSubtask ? 20 : 21,
+                                    }}
+                                    title={segmentTooltip}
+                                  >
+                                    {segmentCanResizeStart && isShiftResizeMode && (
+                                      <div
+                                        role="button"
+                                        aria-label={`Resize start date for ${task.TaskName}`}
+                                        onMouseDown={(e) => handleTaskResizeHandleMouseDown(e, task, 'start', segmentPosition.startIndex, segmentPosition.startIndex + segmentPosition.duration - 1)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="absolute left-0 top-0 h-full w-2 cursor-ew-resize rounded-l bg-black/20 hover:bg-black/35"
+                                        title="Hold Shift and drag to resize start"
+                                      />
+                                    )}
+                                    {!isSubtask && isOverPlanned && <span className="mr-1">⚠️</span>}
+                                    {!isSubtask && taskIsHobbyProject && (
+                                      <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0 pointer-events-none">HOBBY</span>
+                                    )}
+                                    <span className="truncate flex-1 pointer-events-none">
+                                      {indentPrefix}
+                                      {!isSubtask && hasDependency ? '🔗 ' : ''}
+                                      {task.TaskName}
+                                    </span>
+                                    {!isSubtask && showTaskBarHours && (
+                                      <span className={`ml-1 text-[10px] whitespace-nowrap pointer-events-none ${isOverPlanned ? 'bg-red-600 px-1 rounded font-bold' : 'opacity-80'}`}>{hoursDisplay}</span>
+                                    )}
+                                    {segmentCanResizeEnd && isShiftResizeMode && (
+                                      <div
+                                        role="button"
+                                        aria-label={`Resize end date for ${task.TaskName}`}
+                                        onMouseDown={(e) => handleTaskResizeHandleMouseDown(e, task, 'end', segmentPosition.startIndex, segmentPosition.startIndex + segmentPosition.duration - 1)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="absolute right-0 top-0 h-full w-2 cursor-ew-resize rounded-r bg-black/20 hover:bg-black/35"
+                                        title="Hold Shift and drag to resize end"
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </React.Fragment>
                           );
                         })}
@@ -6495,6 +7180,156 @@ export default function PlanningPage() {
                     </p>
                   )}
                 </div>
+
+                {!hoursPerDayModal.isParentTask && (
+                  <div className="p-3 bg-gray-50 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-700 rounded-lg space-y-3">
+                    <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                      <input
+                        type="checkbox"
+                        checked={!!hoursPerDayModal.enableSplit}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setHoursPerDayModal((prev) => {
+                            const baseUserId = prev.userId || 0;
+                            const baseHoursPerDay = parseFloat(prev.hoursPerDay) || prev.maxDailyHours || 8;
+                            const existingEntries = Array.isArray(prev.splitEntries) ? prev.splitEntries : [];
+                            const nextEntries = existingEntries.length > 0
+                              ? existingEntries
+                              : [{ userId: baseUserId, plannedHours: prev.totalHours, hoursPerDay: baseHoursPerDay, splitOrder: 1 }];
+                            return {
+                              ...prev,
+                              enableSplit: checked,
+                              splitMode: prev.splitMode || 'parallel',
+                              splitEntries: nextEntries,
+                            };
+                          });
+                        }}
+                        className="rounded border-gray-300 dark:border-gray-600"
+                      />
+                      Split this task across multiple users
+                    </label>
+
+                    {hoursPerDayModal.enableSplit && (
+                      <>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Allocation Mode</label>
+                          <select
+                            value={hoursPerDayModal.splitMode || 'parallel'}
+                            onChange={(e) => setHoursPerDayModal((prev) => ({ ...prev, splitMode: e.target.value === 'sequential' ? 'sequential' : 'parallel' }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          >
+                            <option value="parallel">Parallel</option>
+                            <option value="sequential">Sequential</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          {(hoursPerDayModal.splitEntries || []).map((entry, index) => (
+                            <div key={index} className="grid grid-cols-12 gap-2 items-end">
+                              <div className="col-span-5">
+                                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">User</label>
+                                <SearchableSelect
+                                  value={entry.userId || ''}
+                                  onChange={(value) => {
+                                    const parsedValue = parseInt(String(value || ''), 10) || 0;
+                                    setHoursPerDayModal((prev) => ({
+                                      ...prev,
+                                      splitEntries: (prev.splitEntries || []).map((row, rowIndex) => rowIndex === index ? { ...row, userId: parsedValue } : row)
+                                    }));
+                                  }}
+                                  options={users.map((planningUser) => ({
+                                    value: planningUser.Id,
+                                    label: planningUser.FirstName && planningUser.LastName
+                                      ? `${planningUser.FirstName} ${planningUser.LastName} (${planningUser.Username})`
+                                      : planningUser.FirstName || planningUser.Username,
+                                  }))}
+                                  placeholder="User"
+                                  emptyText="Select user"
+                                />
+                              </div>
+                              <div className="col-span-3">
+                                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Hours</label>
+                                <input
+                                  type="number"
+                                  min="0.5"
+                                  step="0.5"
+                                  value={entry.plannedHours}
+                                  onChange={(e) => {
+                                    const value = parseFloat(e.target.value) || 0;
+                                    setHoursPerDayModal((prev) => ({
+                                      ...prev,
+                                      splitEntries: (prev.splitEntries || []).map((row, rowIndex) => rowIndex === index ? { ...row, plannedHours: value } : row)
+                                    }));
+                                  }}
+                                  className="w-full px-2 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div className="col-span-3">
+                                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">h/day</label>
+                                <input
+                                  type="number"
+                                  min="0.5"
+                                  step="0.5"
+                                  value={entry.hoursPerDay}
+                                  onChange={(e) => {
+                                    const value = parseFloat(e.target.value) || 0;
+                                    setHoursPerDayModal((prev) => ({
+                                      ...prev,
+                                      splitEntries: (prev.splitEntries || []).map((row, rowIndex) => rowIndex === index ? { ...row, hoursPerDay: value } : row)
+                                    }));
+                                  }}
+                                  className="w-full px-2 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div className="col-span-1 flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setHoursPerDayModal((prev) => ({
+                                      ...prev,
+                                      splitEntries: (prev.splitEntries || []).filter((_, rowIndex) => rowIndex !== index).map((row, idx) => ({ ...row, splitOrder: idx + 1 }))
+                                    }));
+                                  }}
+                                  className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                                  title="Remove split"
+                                  aria-label="Remove split"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setHoursPerDayModal((prev) => ({
+                                ...prev,
+                                splitEntries: [
+                                  ...(prev.splitEntries || []),
+                                  {
+                                    userId: 0,
+                                    plannedHours: 0,
+                                    hoursPerDay: parseFloat(prev.hoursPerDay) || prev.maxDailyHours || 8,
+                                    splitOrder: (prev.splitEntries?.length || 0) + 1,
+                                  }
+                                ]
+                              }));
+                            }}
+                            className="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                          >
+                            Add User Split
+                          </button>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            Total split hours: {(hoursPerDayModal.splitEntries || []).reduce((sum, row) => sum + (Number(row.plannedHours) || 0), 0).toFixed(2)}h
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="mb-4">
@@ -6507,8 +7342,9 @@ export default function PlanningPage() {
                   max={hoursPerDayModal.totalEstimatedHours}
                   step="0.5"
                   value={hoursPerDayModal.totalHours}
+                  disabled={!!hoursPerDayModal.enableSplit}
                   onChange={(e) => setHoursPerDayModal(prev => ({ ...prev, totalHours: parseFloat(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-semibold"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white disabled:bg-gray-100 dark:bg-gray-700 dark:disabled:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-semibold"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Suggested: {(hoursPerDayModal.totalEstimatedHours - hoursPerDayModal.hoursAlreadyWorked).toFixed(1)}h (estimated - worked)
@@ -6525,8 +7361,9 @@ export default function PlanningPage() {
                   max={hoursPerDayModal.maxDailyHours}
                   step="0.5"
                   value={hoursPerDayModal.hoursPerDay}
+                  disabled={!!hoursPerDayModal.enableSplit}
                   onChange={(e) => setHoursPerDayModal(prev => ({ ...prev, hoursPerDay: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white disabled:bg-gray-100 dark:bg-gray-700 dark:disabled:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Your daily work capacity: {hoursPerDayModal.maxDailyHours} hours
@@ -6545,6 +7382,67 @@ export default function PlanningPage() {
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                 >
                   Plan Task
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {sliceTransferModal.show && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[110] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Move Allocation Slice</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  You used Ctrl+drag. Select how many hours to move from this allocation.
+                </p>
+              </div>
+              <div className="p-4 space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Hours to move</label>
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.5"
+                    max={sliceTransferModal.totalHours}
+                    value={sliceTransferModal.moveHours}
+                    onChange={(e) => setSliceTransferModal((prev) => ({ ...prev, moveHours: parseFloat(e.target.value) || 0 }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  />
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Total available in slice: {sliceTransferModal.totalHours.toFixed(2)}h
+                </p>
+              </div>
+              <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                <button
+                  onClick={() => setSliceTransferModal({
+                    show: false,
+                    taskId: null,
+                    targetUserId: null,
+                    dropDate: '',
+                    sourceUserId: null,
+                    sourceHeaderId: null,
+                    totalHours: 0,
+                    moveHours: 0,
+                    isProcessing: false,
+                  })}
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600"
+                  disabled={sliceTransferModal.isProcessing}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmSliceTransfer}
+                  disabled={
+                    sliceTransferModal.isProcessing ||
+                    !Number.isFinite(sliceTransferModal.moveHours) ||
+                    sliceTransferModal.moveHours <= 0 ||
+                    sliceTransferModal.moveHours > sliceTransferModal.totalHours
+                  }
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg"
+                >
+                  {sliceTransferModal.isProcessing ? 'Moving...' : 'Move Slice'}
                 </button>
               </div>
             </div>

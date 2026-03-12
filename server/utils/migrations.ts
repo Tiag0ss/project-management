@@ -293,6 +293,154 @@ async function migrateDescriptionToMediumtext(): Promise<void> {
 }
 
 /**
+ * Migration: Backfill TaskAllocationHeaders and link existing TaskAllocations to headers.
+ *
+ * This migration is idempotent:
+ * - Creates missing headers for (TaskId, UserId) pairs found in allocations.
+ * - Fixes orphaned TaskAllocationHeaderId references.
+ * - Assigns TaskAllocationHeaderId to allocations where it's null.
+ */
+async function migrateTaskAllocationHeadersBackfill(): Promise<void> {
+  logger.info('⚡ Running migration: Backfill allocation headers for existing task allocations...');
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    type HeaderRow = { Id: number; TaskId: number; UserId: number; SplitOrder: number | null };
+    const [existingHeaders] = await connection.execute<HeaderRow[]>(
+      `SELECT Id, TaskId, UserId, SplitOrder
+       FROM TaskAllocationHeaders
+       ORDER BY TaskId ASC,
+         CASE WHEN SplitOrder IS NULL THEN 2147483647 ELSE SplitOrder END ASC,
+         Id ASC`
+    );
+
+    const headerIdByPair = new Map<string, number>();
+    for (const row of existingHeaders) {
+      const key = `${Number(row.TaskId)}:${Number(row.UserId)}`;
+      if (!headerIdByPair.has(key)) {
+        headerIdByPair.set(key, Number(row.Id));
+      }
+    }
+
+    type PairHoursRow = { TaskId: number; UserId: number; PlannedHours: number | string | null };
+    const [pairHoursRows] = await connection.execute<PairHoursRow[]>(
+      `SELECT TaskId, UserId, SUM(AllocatedHours) as PlannedHours
+       FROM TaskAllocations
+       GROUP BY TaskId, UserId`
+    );
+
+    const plannedHoursByPair = new Map<string, number>();
+    for (const row of pairHoursRows) {
+      const key = `${Number(row.TaskId)}:${Number(row.UserId)}`;
+      plannedHoursByPair.set(key, Number(row.PlannedHours || 0));
+    }
+
+    type MissingPairRow = { TaskId: number; UserId: number; MissingCount: number };
+    const [missingPairs] = await connection.execute<MissingPairRow[]>(
+      `SELECT TaskId, UserId, COUNT(*) as MissingCount
+       FROM TaskAllocations
+       WHERE TaskAllocationHeaderId IS NULL
+       GROUP BY TaskId, UserId`
+    );
+
+    // Also reset orphaned header references to NULL so they can be remapped
+    type OrphanAllocationRow = { Id: number };
+    const [orphanAllocations] = await connection.execute<OrphanAllocationRow[]>(
+      `SELECT ta.Id
+       FROM TaskAllocations ta
+       LEFT JOIN TaskAllocationHeaders tah ON ta.TaskAllocationHeaderId = tah.Id
+       WHERE ta.TaskAllocationHeaderId IS NOT NULL
+         AND tah.Id IS NULL`
+    );
+
+    for (const orphan of orphanAllocations) {
+      await connection.execute(
+        `UPDATE TaskAllocations
+         SET TaskAllocationHeaderId = NULL
+         WHERE Id = ?`,
+        [Number(orphan.Id)]
+      );
+    }
+
+    // Reload missing pairs after orphan normalization
+    const [normalizedMissingPairs] = await connection.execute<MissingPairRow[]>(
+      `SELECT TaskId, UserId, COUNT(*) as MissingCount
+       FROM TaskAllocations
+       WHERE TaskAllocationHeaderId IS NULL
+       GROUP BY TaskId, UserId`
+    );
+
+    let createdHeaders = 0;
+    let linkedAllocations = 0;
+
+    const pairsToProcess = normalizedMissingPairs.length > 0 ? normalizedMissingPairs : missingPairs;
+
+    for (const pair of pairsToProcess) {
+      const taskId = Number(pair.TaskId);
+      const userId = Number(pair.UserId);
+      const key = `${taskId}:${userId}`;
+
+      let headerId = headerIdByPair.get(key);
+      if (!headerId) {
+        const plannedHours = plannedHoursByPair.get(key) ?? null;
+        const [insertResult] = await connection.execute<any>(
+          `INSERT INTO TaskAllocationHeaders (TaskId, UserId, AllocationMode, SplitOrder, PlannedHours, CreatedBy)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [taskId, userId, 'parallel', null, plannedHours, null]
+        );
+
+        headerId = Number(insertResult?.insertId || 0);
+
+        if (!headerId) {
+          const [refetchRows] = await connection.execute<HeaderRow[]>(
+            `SELECT Id, TaskId, UserId, SplitOrder
+             FROM TaskAllocationHeaders
+             WHERE TaskId = ? AND UserId = ?
+             ORDER BY CASE WHEN SplitOrder IS NULL THEN 2147483647 ELSE SplitOrder END ASC, Id ASC`,
+            [taskId, userId]
+          );
+          headerId = refetchRows.length > 0 ? Number(refetchRows[0].Id) : 0;
+        }
+
+        if (headerId) {
+          headerIdByPair.set(key, headerId);
+          createdHeaders += 1;
+        }
+      }
+
+      if (!headerId) continue;
+
+      const [updateResult] = await connection.execute<any>(
+        `UPDATE TaskAllocations
+         SET TaskAllocationHeaderId = ?
+         WHERE TaskId = ? AND UserId = ? AND TaskAllocationHeaderId IS NULL`,
+        [headerId, taskId, userId]
+      );
+
+      const affected = Number(updateResult?.affectedRows || updateResult?.rowsAffected?.[0] || 0);
+      linkedAllocations += affected;
+    }
+
+    await connection.commit();
+    logger.info(`  ✓ Headers created: ${createdHeaders}`);
+    logger.info(`  ✓ Allocations linked to headers: ${linkedAllocations}`);
+    logger.info('✓ Migration complete: Task allocation headers backfilled');
+  } catch (error: any) {
+    await connection.rollback();
+    if (isMissingTableError(error)) {
+      logger.info('  ℹ Tables not yet created, migration will run on next startup');
+      return;
+    }
+    logger.error('✗ Migration failed:', error);
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+/**
  * Run all pending database migrations.
  * Called during server startup after buildAllTables.
  * All migrations must be idempotent (safe to run multiple times).
@@ -304,6 +452,7 @@ export async function runMigrations(): Promise<void> {
     await migrateStatusPriorityToIds();
     await migrateTicketNumberToNullable();
     await migrateDescriptionToMediumtext();
+    await migrateTaskAllocationHeadersBackfill();
     logger.info('=== Migrations Complete ===');
   } catch (error) {
     logger.error('Migration error:', error);

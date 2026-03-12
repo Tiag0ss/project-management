@@ -9259,11 +9259,13 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
       Date: new Date(a.AllocationDate).toLocaleDateString(),
       Task: a.TaskName || '',
       User: a.Username || '',
+      AllocationHeaderId: a.TaskAllocationHeaderId || '',
+      SplitOrder: a.SplitOrder ?? '',
       AllocatedHours: parseFloat(a.AllocatedHours || 0).toFixed(2),
       StartTime: a.StartTime || '',
       EndTime: a.EndTime || ''
     }));
-    exportToCSV(data, 'project_allocations', ['Date', 'Task', 'User', 'AllocatedHours', 'StartTime', 'EndTime']);
+    exportToCSV(data, 'project_allocations', ['Date', 'Task', 'User', 'AllocationHeaderId', 'SplitOrder', 'AllocatedHours', 'StartTime', 'EndTime']);
   };
 
   const handleExportAllocationsPDF = async () => {
@@ -9271,11 +9273,13 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
       Date: new Date(a.AllocationDate).toLocaleDateString(),
       Task: a.TaskName || '',
       User: a.Username || '',
+      AllocationHeaderId: a.TaskAllocationHeaderId || '',
+      SplitOrder: a.SplitOrder ?? '',
       AllocatedHours: parseFloat(a.AllocatedHours || 0).toFixed(2),
       StartTime: a.StartTime || '',
       EndTime: a.EndTime || ''
     }));
-    await exportToPDF(data, 'project_allocations', ['Date', 'Task', 'User', 'AllocatedHours', 'StartTime', 'EndTime'], 'Project Report - Allocations');
+    await exportToPDF(data, 'project_allocations', ['Date', 'Task', 'User', 'AllocationHeaderId', 'SplitOrder', 'AllocatedHours', 'StartTime', 'EndTime'], 'Project Report - Allocations');
   };
 
   const handleExportTimeEntries = () => {
@@ -9752,6 +9756,9 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                         Date
                       </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Slice
+                      </th>
                       <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                         Time
                       </th>
@@ -9765,9 +9772,13 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                       const date = new Date(allocation.AllocationDate);
                       const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
                       const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                      const headerId = Number(allocation.TaskAllocationHeaderId || 0);
+                      const splitOrder = allocation.SplitOrder === null || allocation.SplitOrder === undefined
+                        ? null
+                        : Number(allocation.SplitOrder);
                       
                       return (
-                        <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <tr key={`${allocation.TaskId}-${allocation.UserId}-${allocation.AllocationDate}-${headerId}-${idx}`} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                           <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
                             {allocation.TaskName}
                           </td>
@@ -9776,6 +9787,13 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
                             {dayName}, {dateStr}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                            {headerId > 0 ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium">
+                                H#{headerId}{splitOrder !== null ? ` · S${splitOrder}` : ''}
+                              </span>
+                            ) : '-'}
                           </td>
                           <td className="px-4 py-3 text-sm text-center text-gray-700 dark:text-gray-300">
                             {allocation.StartTime || '-'} - {allocation.EndTime || '-'}
@@ -9789,7 +9807,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                   </tbody>
                   <tfoot className="bg-gray-50 dark:bg-gray-700">
                     <tr>
-                      <td colSpan={4} className="px-4 py-3 text-sm font-bold text-gray-900 dark:text-gray-100 text-right">
+                      <td colSpan={5} className="px-4 py-3 text-sm font-bold text-gray-900 dark:text-gray-100 text-right">
                         Total:
                       </td>
                       <td className="px-4 py-3 text-sm font-bold text-right text-gray-900 dark:text-gray-100">

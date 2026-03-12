@@ -39,11 +39,15 @@ interface ImportUser {
 interface FieldMapping {
   customer: string;
   project: string;
+  projectId: string;
   task: string;
+  taskId: string;
   resource: string;
+  resourceId: string;
   allocStart: string;
   allocEnd: string;
   allocHours: string;
+  locked: string;
   hlEstimationHours: string;
   comments: string;
 }
@@ -55,14 +59,28 @@ interface ImportOptionsResponse {
   users: ImportUser[];
 }
 
+const JIRA_KEY_REGEX = /\b([A-Z][A-Z0-9]+-\d+)\b/i;
+
+const extractTicketKey = (value: string): string => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const jiraMatch = raw.match(JIRA_KEY_REGEX);
+  if (jiraMatch?.[1]) return jiraMatch[1].toUpperCase();
+  return '';
+};
+
 const FIELD_LABELS: Array<{ key: keyof FieldMapping; label: string; required?: boolean }> = [
   { key: 'customer', label: 'Customer → Customers.Name', required: true },
   { key: 'project', label: 'Project → Projects.ProjectName', required: true },
+  { key: 'projectId', label: 'Project ID → Projects.Id (optional)' },
   { key: 'task', label: 'Task/Scenario → Tasks.TaskName', required: true },
+  { key: 'taskId', label: 'Task ID → Tasks.Id (optional)' },
   { key: 'resource', label: 'Resource → Tasks.AssignedTo (Users.Id)', required: true },
+  { key: 'resourceId', label: 'Resource ID → Users.Id (optional)' },
   { key: 'allocStart', label: 'Allocation Start → TaskAllocations.AllocationDate (start)', required: true },
   { key: 'allocEnd', label: 'Allocation End → TaskAllocations.AllocationDate (end)', required: true },
   { key: 'allocHours', label: 'Allocation Hours → TaskAllocations.AllocatedHours', required: true },
+  { key: 'locked', label: 'Locked flag (optional)' },
   { key: 'hlEstimationHours', label: 'HL Estimation Hours → Tasks.EstimatedHours' },
   { key: 'comments', label: 'Comments → Tasks.Description / UserVacations.Notes' },
 ];
@@ -82,11 +100,15 @@ const detectDefaultHeader = (headers: string[], key: keyof FieldMapping) => {
 
   if (key === 'customer') return pick(['customer']);
   if (key === 'project') return pick(['project']);
+  if (key === 'projectId') return pick(['project id']);
   if (key === 'task') return pick(['scenario', 'task']);
+  if (key === 'taskId') return pick(['task id']);
   if (key === 'resource') return pick(['resource', 'assignee']);
+  if (key === 'resourceId') return pick(['resource id']);
   if (key === 'allocStart') return pick(['alloc. start', 'allocation start', 'start']);
   if (key === 'allocEnd') return pick(['alloc. end', 'allocation end', 'end']);
   if (key === 'allocHours') return pick(['alloc. hours', 'allocation hours', 'hours']);
+  if (key === 'locked') return pick(['locked']);
   if (key === 'hlEstimationHours') return pick(['hl estimation hours', 'estimation hours']);
   if (key === 'comments') return pick(['alloc. comments', 'comments', 'description']);
 
@@ -159,11 +181,15 @@ export default function PlanningImportPage() {
   const [fieldMapping, setFieldMapping] = useState<FieldMapping>({
     customer: '',
     project: '',
+    projectId: '',
     task: '',
+    taskId: '',
     resource: '',
+    resourceId: '',
     allocStart: '',
     allocEnd: '',
     allocHours: '',
+    locked: '',
     hlEstimationHours: '',
     comments: '',
   });
@@ -171,6 +197,7 @@ export default function PlanningImportPage() {
   const [customerMap, setCustomerMap] = useState<Record<string, string>>({});
   const [projectMap, setProjectMap] = useState<Record<string, string>>({});
   const [taskMap, setTaskMap] = useState<Record<string, string>>({});
+  const [taskTicketNumberMap, setTaskTicketNumberMap] = useState<Record<string, string>>({});
   const [resourceMap, setResourceMap] = useState<Record<string, string>>({});
 
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
@@ -300,6 +327,18 @@ export default function PlanningImportPage() {
   }, [uniqueTaskKeys, options.tasks]);
 
   useEffect(() => {
+    setTaskTicketNumberMap((prev) => {
+      const next = { ...prev };
+      uniqueTaskKeys.forEach((key) => {
+        if (typeof next[key] === 'string') return;
+        const [, taskName] = key.split('||');
+        next[key] = extractTicketKey(taskName || '');
+      });
+      return next;
+    });
+  }, [uniqueTaskKeys]);
+
+  useEffect(() => {
     setResourceMap((prev) => {
       const next = { ...prev };
       uniqueResources.forEach((name) => {
@@ -329,11 +368,15 @@ export default function PlanningImportPage() {
       const detected: FieldMapping = {
         customer: detectDefaultHeader(parsed.headers, 'customer'),
         project: detectDefaultHeader(parsed.headers, 'project'),
+        projectId: detectDefaultHeader(parsed.headers, 'projectId'),
         task: detectDefaultHeader(parsed.headers, 'task'),
+        taskId: detectDefaultHeader(parsed.headers, 'taskId'),
         resource: detectDefaultHeader(parsed.headers, 'resource'),
+        resourceId: detectDefaultHeader(parsed.headers, 'resourceId'),
         allocStart: detectDefaultHeader(parsed.headers, 'allocStart'),
         allocEnd: detectDefaultHeader(parsed.headers, 'allocEnd'),
         allocHours: detectDefaultHeader(parsed.headers, 'allocHours'),
+        locked: detectDefaultHeader(parsed.headers, 'locked'),
         hlEstimationHours: detectDefaultHeader(parsed.headers, 'hlEstimationHours'),
         comments: detectDefaultHeader(parsed.headers, 'comments'),
       };
@@ -365,6 +408,9 @@ export default function PlanningImportPage() {
         organizationId,
         rows,
         fieldMapping,
+        taskTicketNumbers: Object.fromEntries(
+          Object.entries(taskTicketNumberMap).map(([key, value]) => [key, (value || '').trim()])
+        ),
         entityMapping: {
           customers: Object.fromEntries(
             Object.entries(customerMap).map(([source, value]) => {
@@ -542,9 +588,28 @@ export default function PlanningImportPage() {
                 <div className="border border-gray-200 dark:border-gray-700 rounded">
                   {uniqueTaskKeys.map((key) => {
                     const [projectName, taskName] = key.split('||');
+                    const ticketNumber = taskTicketNumberMap[key] ?? extractTicketKey(taskName || '');
+                    const hasJiraKey = JIRA_KEY_REGEX.test(taskName || '');
                     return (
                       <div key={key} className="p-2 border-b border-gray-200 dark:border-gray-700 last:border-b-0">
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{projectName} → {taskName}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-2">
+                          <span>{projectName} → {taskName}</span>
+                          {hasJiraKey && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">Jira key detected</span>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          value={ticketNumber || ''}
+                          onChange={(e) => {
+                            const normalized = e.target.value
+                              .replace(/[^a-zA-Z0-9-]/g, '')
+                              .toUpperCase();
+                            setTaskTicketNumberMap((prev) => ({ ...prev, [key]: normalized }));
+                          }}
+                          placeholder="Jira ticket key (e.g. BE1SAMERICAS-7275)"
+                          className="w-full mb-2 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        />
                         <SearchableSelect
                           value={taskMap[key] || 'create'}
                           onChange={(value) => setTaskMap((prev) => ({ ...prev, [key]: value }))}
