@@ -9,8 +9,10 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
 import { usersApi, User } from '@/lib/api/users';
 import { tasksApi, Task } from '@/lib/api/tasks';
+import { projectsApi, Project } from '@/lib/api/projects';
 import Navbar from '@/components/Navbar';
 import EmptyState from '@/components/EmptyState';
+import TaskDetailModal from '@/components/TaskDetailModal';
 import dynamic from 'next/dynamic';
 import CalendarTabComponent from './CalendarTab';
 
@@ -82,6 +84,7 @@ interface CalendarTabProps {
 
 type DashboardTab = 'overview' | 'calendar' | 'analytics';
 type AnalyticsPeriod = 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth' | 'allTime';
+type TaskSortOption = 'dueDate' | 'priority' | 'project';
 
 // Use CalendarTab with dynamic import wrapper
 const CalendarTab = dynamic(
@@ -195,6 +198,12 @@ function DashboardContent() {
   const [pendingTasks, setPendingTasks] = useState<TaskWithProject[]>([]);
   const [isPrintMode, setIsPrintMode] = useState(false);
   const [showAllPendingTasks, setShowAllPendingTasks] = useState(false);
+  const [showTaskDetailsModal, setShowTaskDetailsModal] = useState(false);
+  const [detailsTask, setDetailsTask] = useState<Task | null>(null);
+  const [detailsProject, setDetailsProject] = useState<Project | null>(null);
+  const [detailsProjectTasks, setDetailsProjectTasks] = useState<Task[]>([]);
+  const [pendingSortBy, setPendingSortBy] = useState<TaskSortOption>('dueDate');
+  const [unscheduledSortBy, setUnscheduledSortBy] = useState<TaskSortOption>('dueDate');
   const [globalStats, setGlobalStats] = useState<{
     organizations: { total: number };
     customers: { total: number };
@@ -412,6 +421,94 @@ function DashboardContent() {
     }
     return String(dateValue).split('T')[0];
   };
+
+  const openUnscheduledTasks = useMemo(() => {
+    return myTasks
+      .filter((task) => {
+        const isUnscheduled = Number(task.UnscheduledWork || 0) === 1;
+        const isClosed = Number(task.StatusIsClosed || 0) === 1;
+        const isCancelled = Number(task.StatusIsCancelled || 0) === 1;
+        return isUnscheduled && !isClosed && !isCancelled;
+      });
+  }, [myTasks]);
+
+  const getPriorityRank = useCallback((task: TaskWithProject) => {
+    const priorityName = String(task.PriorityName || '').toLowerCase().trim();
+    if (priorityName.includes('critical')) return 0;
+    if (priorityName.includes('urgent')) return 1;
+    if (priorityName.includes('high')) return 2;
+    if (priorityName.includes('medium')) return 3;
+    if (priorityName.includes('normal')) return 4;
+    if (priorityName.includes('low')) return 5;
+
+    const numericPriority = Number(task.Priority);
+    if (!Number.isNaN(numericPriority)) {
+      return numericPriority;
+    }
+
+    return 999;
+  }, []);
+
+  const sortTasks = useCallback((tasks: TaskWithProject[], sortBy: TaskSortOption) => {
+    const sorted = [...tasks];
+
+    sorted.sort((a, b) => {
+      if (sortBy === 'project') {
+        const projectCompare = String(a.ProjectName || '').localeCompare(String(b.ProjectName || ''));
+        if (projectCompare !== 0) return projectCompare;
+      }
+
+      if (sortBy === 'priority') {
+        const rankA = getPriorityRank(a);
+        const rankB = getPriorityRank(b);
+        if (rankA !== rankB) return rankA - rankB;
+      }
+
+      const dueA = a.DueDate ? new Date(a.DueDate).getTime() : Number.MAX_SAFE_INTEGER;
+      const dueB = b.DueDate ? new Date(b.DueDate).getTime() : Number.MAX_SAFE_INTEGER;
+      if (dueA !== dueB) return dueA - dueB;
+
+      return String(a.TaskName || '').localeCompare(String(b.TaskName || ''));
+    });
+
+    return sorted;
+  }, [getPriorityRank]);
+
+  const sortedPendingTasks = useMemo(() => {
+    return sortTasks(pendingTasks, pendingSortBy);
+  }, [pendingTasks, pendingSortBy, sortTasks]);
+
+  const sortedOpenUnscheduledTasks = useMemo(() => {
+    return sortTasks(openUnscheduledTasks, unscheduledSortBy);
+  }, [openUnscheduledTasks, unscheduledSortBy, sortTasks]);
+
+  const openTaskDetails = useCallback(async (taskRef: Pick<Task, 'Id' | 'ProjectId'>) => {
+    if (!token) return;
+
+    try {
+      const [projectResponse, tasksResponse] = await Promise.all([
+        projectsApi.getById(Number(taskRef.ProjectId), token),
+        tasksApi.getByProject(Number(taskRef.ProjectId), token),
+      ]);
+
+      const project = projectResponse.project;
+      const projectTasks = tasksResponse.tasks || [];
+      const selectedTask = projectTasks.find((task) => Number(task.Id) === Number(taskRef.Id));
+
+      if (!project || !selectedTask) {
+        showToast({ type: 'error', message: 'Task details could not be loaded.' });
+        return;
+      }
+
+      setDetailsProject(project);
+      setDetailsProjectTasks(projectTasks);
+      setDetailsTask(selectedTask);
+      setShowTaskDetailsModal(true);
+    } catch (error) {
+      console.error('Failed to open task details modal:', error);
+      showToast({ type: 'error', message: 'Failed to open task details.' });
+    }
+  }, [token, showToast]);
 
   const loadPortalData = async () => {
     setPortalLoading(true);
@@ -1159,57 +1256,6 @@ function DashboardContent() {
                 </div>
               </div>
 
-              {/* Today's Schedule */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white flex items-center gap-2">
-                  <span className="text-2xl">📅</span> Today&apos;s Schedule
-                </h3>
-                {summaryStats.tasksToday.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-gray-500 dark:text-gray-400">No tasks scheduled for today</p>
-                    <button
-                      onClick={() => router.push('/planning')}
-                      className="mt-3 text-blue-600 dark:text-blue-400 hover:underline text-sm"
-                    >
-                      Go to Planning →
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {summaryStats.tasksToday.map((task, idx) => (
-                      <div 
-                        key={idx}
-                        className="flex items-center justify-between border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="flex flex-col items-center text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-lg">
-                            <span className="font-medium">{task.startTime || '—'}</span>
-                            <span className="text-xs">to</span>
-                            <span className="font-medium">{task.endTime || '—'}</span>
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-medium text-gray-900 dark:text-white">{task.taskName}</h4>
-                              {task.isHobby && (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                                  Hobby
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">{task.projectName}</p>
-                          </div>
-                        </div>
-                        <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{Number(task.hours).toFixed(1)}h</span>
-                      </div>
-                    ))}
-                    <div className="pt-3 border-t dark:border-gray-700 flex justify-between items-center">
-                      <span className="text-sm text-gray-500 dark:text-gray-400">Total allocated today</span>
-                      <span className="text-lg font-bold text-gray-900 dark:text-white">{summaryStats.allocatedToday.toFixed(1)}h</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
               {/* Summary Stats Grid */}
               <div className={`grid grid-cols-1 md:grid-cols-2 ${internalTicketsEnabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 border-blue-500">
@@ -1270,6 +1316,112 @@ function DashboardContent() {
                     <div className="text-3xl text-orange-500 opacity-60">📊</div>
                   </div>
                 </div>
+              </div>
+
+              {/* Today's Schedule */}
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white flex items-center gap-2">
+                  <span className="text-2xl">📅</span> Today&apos;s Schedule
+                </h3>
+                {summaryStats.tasksToday.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500 dark:text-gray-400">No tasks scheduled for today</p>
+                    <button
+                      onClick={() => router.push('/planning')}
+                      className="mt-3 text-blue-600 dark:text-blue-400 hover:underline text-sm"
+                    >
+                      Go to Planning →
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {summaryStats.tasksToday.map((task, idx) => (
+                      <div 
+                        key={idx}
+                        className="flex items-center justify-between border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="flex flex-col items-center text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-lg">
+                            <span className="font-medium">{task.startTime || '—'}</span>
+                            <span className="text-xs">to</span>
+                            <span className="font-medium">{task.endTime || '—'}</span>
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-medium text-gray-900 dark:text-white">{task.taskName}</h4>
+                              {task.isHobby && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                  Hobby
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">{task.projectName}</p>
+                          </div>
+                        </div>
+                        <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{Number(task.hours).toFixed(1)}h</span>
+                      </div>
+                    ))}
+                    <div className="pt-3 border-t dark:border-gray-700 flex justify-between items-center">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">Total allocated today</span>
+                      <span className="text-lg font-bold text-gray-900 dark:text-white">{summaryStats.allocatedToday.toFixed(1)}h</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <span className="text-2xl">📝</span> Unscheduled Work
+                  </h3>
+                  <select
+                    value={unscheduledSortBy}
+                    onChange={(event) => setUnscheduledSortBy(event.target.value as TaskSortOption)}
+                    className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  >
+                    <option value="dueDate">Sort: Due date</option>
+                    <option value="priority">Sort: Priority</option>
+                    <option value="project">Sort: Project</option>
+                  </select>
+                </div>
+                {sortedOpenUnscheduledTasks.length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No open unscheduled work tasks</p>
+                ) : (
+                  <div className="space-y-3">
+                    {sortedOpenUnscheduledTasks.map((task) => (
+                      <div
+                        key={task.Id}
+                        className="flex items-center justify-between border border-gray-200 dark:border-gray-700 rounded-lg p-4"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-medium text-gray-900 dark:text-white">{task.TaskName}</h4>
+                            {!!task.IsHobby && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                Hobby
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">{task.ProjectName || 'No project'}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => openTaskDetails(task)}
+                            className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                          >
+                            Task Details
+                          </button>
+                          <button
+                            onClick={() => router.push(`/projects/${task.ProjectId}`)}
+                            className="text-sm text-gray-600 dark:text-gray-300 hover:underline"
+                          >
+                            Go to Project →
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Progress Overview */}
@@ -1424,27 +1576,37 @@ function DashboardContent() {
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                     <span className="text-2xl">📋</span> My Pending Tasks
                   </h3>
-                  <span className="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full text-sm font-medium text-gray-600 dark:text-gray-300">
-                    {pendingTasks.length} task{pendingTasks.length !== 1 ? 's' : ''}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full text-sm font-medium text-gray-600 dark:text-gray-300">
+                      {sortedPendingTasks.length} task{sortedPendingTasks.length !== 1 ? 's' : ''}
+                    </span>
+                    <select
+                      value={pendingSortBy}
+                      onChange={(event) => setPendingSortBy(event.target.value as TaskSortOption)}
+                      className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="dueDate">Sort: Due date</option>
+                      <option value="priority">Sort: Priority</option>
+                      <option value="project">Sort: Project</option>
+                    </select>
+                  </div>
                 </div>
-                {pendingTasks.length === 0 ? (
+                {sortedPendingTasks.length === 0 ? (
                   <div className="text-center py-8">
                     <p className="text-gray-500 dark:text-gray-400">🎉 No pending tasks! Great job!</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {pendingTasks.slice(0, (isPrintMode || showAllPendingTasks) ? pendingTasks.length : 5).map(task => {
+                    {sortedPendingTasks.slice(0, (isPrintMode || showAllPendingTasks) ? sortedPendingTasks.length : 5).map(task => {
                       const isOverdue = isTaskOverdue(task.DueDate ? String(task.DueDate) : null);
                       return (
                         <div 
                           key={task.Id}
-                          className={`border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer ${
+                          className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${
                             isOverdue 
                               ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/10' 
                               : 'border-gray-200 dark:border-gray-700'
                           }`}
-                          onClick={() => router.push(`/projects/${task.ProjectId}`)}
                         >
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
@@ -1490,12 +1652,25 @@ function DashboardContent() {
                                 )}
                               </div>
                             </div>
-                            <span className="text-blue-600 dark:text-blue-400 text-xl">→</span>
+                            <div className="ml-4 flex items-center gap-3">
+                              <button
+                                onClick={() => openTaskDetails(task)}
+                                className="text-sm text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
+                              >
+                                Task Details
+                              </button>
+                              <button
+                                onClick={() => router.push(`/projects/${task.ProjectId}`)}
+                                className="text-sm text-gray-600 dark:text-gray-300 hover:underline whitespace-nowrap"
+                              >
+                                Go to Project →
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
                     })}
-                    {!isPrintMode && pendingTasks.length > 5 && (
+                    {!isPrintMode && sortedPendingTasks.length > 5 && (
                       <div className="text-center pt-2">
                         <button
                           onClick={() => setShowAllPendingTasks((previous) => !previous)}
@@ -1503,7 +1678,7 @@ function DashboardContent() {
                         >
                           {showAllPendingTasks
                             ? 'Show less tasks'
-                            : `View all ${pendingTasks.length} tasks →`}
+                            : `View all ${sortedPendingTasks.length} tasks →`}
                         </button>
                       </div>
                     )}
@@ -1943,6 +2118,30 @@ function DashboardContent() {
             </div>
           </div>
         )}
+
+      {showTaskDetailsModal && detailsTask && detailsProject && (
+        <TaskDetailModal
+          projectId={detailsProject.Id}
+          organizationId={detailsProject.OrganizationId}
+          task={detailsTask}
+          project={detailsProject}
+          tasks={detailsProjectTasks}
+          onOpenTask={(targetTask) => {
+            openTaskDetails(targetTask);
+          }}
+          onClose={() => {
+            setShowTaskDetailsModal(false);
+            setDetailsTask(null);
+          }}
+          onSaved={async () => {
+            await loadSummaryStats();
+            if (detailsTask) {
+              await openTaskDetails(detailsTask);
+            }
+          }}
+          token={token || ''}
+        />
+      )}
     </div>
   );
 }

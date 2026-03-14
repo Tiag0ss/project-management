@@ -1247,7 +1247,11 @@ export default function PlanningPage() {
     }
   };
 
-  const handleTaskUpdate = async (task: Task, updates: Partial<Task>) => {
+  const handleTaskUpdate = async (
+    task: Task,
+    updates: Partial<Task>,
+    options?: { syncAllocationHeaderDates?: boolean }
+  ) => {
     try {
       await tasksApi.update(task.Id, {
         taskName: updates.TaskName || task.TaskName,
@@ -1260,12 +1264,14 @@ export default function PlanningPage() {
         estimatedHours: task.EstimatedHours,
         parentTaskId: task.ParentTaskId,
         plannedStartDate: updates.PlannedStartDate !== undefined ? updates.PlannedStartDate : task.PlannedStartDate,
-        plannedEndDate: updates.PlannedEndDate !== undefined ? updates.PlannedEndDate : task.PlannedEndDate
+        plannedEndDate: updates.PlannedEndDate !== undefined ? updates.PlannedEndDate : task.PlannedEndDate,
+        syncAllocationHeaderDates: options?.syncAllocationHeaderDates === true,
       }, token!);
       
-      // Reload all tasks
+      // Reload tasks and allocations used by Gantt rendering
       if (projects.length > 0) {
-        await loadAllProjectsTasks(projects);
+        const refreshedTasks = await loadAllProjectsTasks(projects);
+        await loadAllAllocations(refreshedTasks);
       }
     } catch (err) {
       console.error('Failed to update task:', err);
@@ -2331,7 +2337,7 @@ export default function PlanningPage() {
           await handleTaskUpdate(resizeSnapshot.task, {
             PlannedStartDate: plannedStartDate,
             PlannedEndDate: plannedEndDate,
-          });
+          }, { syncAllocationHeaderDates: true });
         } catch (error: any) {
           console.error('Failed to resize task dates:', error);
           showAlert('Error', error?.message || 'Failed to update task dates.');

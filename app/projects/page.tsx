@@ -1589,6 +1589,7 @@ function ProjectModal({
                 placeholder="Select Organization"
                 emptyText="Select organization"
                 disabled={!!project}
+                autoSelectSingleOption={!project}
               />
               {!!project && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -1608,6 +1609,7 @@ function ProjectModal({
                 placeholder="Select Customer"
                 emptyText="No customer"
                 disabled={!formData.organizationId || formData.organizationId === 0 || !!formData.isGlobal}
+                autoSelectSingleOption={!project}
               />
               {formData.isGlobal && (
                 <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">

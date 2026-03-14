@@ -963,6 +963,7 @@ export default function TimesheetPage() {
                             }))}
                             placeholder="Select a task"
                             emptyText="No tasks assigned to you"
+                            autoSelectSingleOption
                           />
                         </div>
 

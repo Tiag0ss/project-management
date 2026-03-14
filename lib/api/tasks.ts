@@ -90,6 +90,7 @@ export interface CreateTaskData {
   jiraIssueKey?: string;
   applicationId?: number | null;
   releaseVersionId?: number | null;
+  syncAllocationHeaderDates?: boolean;
 }
 
 export const tasksApi = {

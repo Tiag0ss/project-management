@@ -100,6 +100,7 @@ function SearchableSelect({
   placeholder = 'Select...',
   emptyMessage = 'No options available',
   className = '',
+  autoSelectSingleOption = false,
 }: {
   value: number | undefined;
   onChange: (value: number | undefined) => void;
@@ -107,6 +108,7 @@ function SearchableSelect({
   placeholder?: string;
   emptyMessage?: string;
   className?: string;
+  autoSelectSingleOption?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -131,6 +133,17 @@ function SearchableSelect({
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!autoSelectSingleOption) return;
+    if (value !== undefined && value !== null) return;
+    if (options.length !== 1) return;
+
+    const onlyOption = options[0];
+    if (!onlyOption || !Number.isFinite(Number(onlyOption.id))) return;
+
+    onChange(onlyOption.id);
+  }, [autoSelectSingleOption, value, options, onChange]);
 
   return (
     <div ref={dropdownRef} className={`relative ${className}`}>
@@ -1953,6 +1966,7 @@ export default function TaskDetailModal({
                       onChange={(val: number | undefined) => setFormData({ ...formData, customerId: val ?? null })}
                       placeholder="Select customer..."
                       emptyMessage="No customers found in this organization"
+                      autoSelectSingleOption={!task?.Id}
                     />
                   </div>
                 )}
@@ -1983,6 +1997,7 @@ export default function TaskDetailModal({
                       }
                     }}
                     placeholder="Select principal assignee..."
+                    autoSelectSingleOption={!task?.Id}
                   />
                 </div>
 

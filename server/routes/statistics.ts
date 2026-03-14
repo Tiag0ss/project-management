@@ -165,6 +165,7 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
       LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
       WHERE t.ParentTaskId IS NULL
         AND ta.TaskId IS NULL
+        AND COALESCE(t.UnscheduledWork, 0) = 0
         AND COALESCE(tsv.IsClosed, 0) = 0
         AND COALESCE(tsv.IsCancelled, 0) = 0
         AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0

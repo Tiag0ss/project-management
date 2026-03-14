@@ -2,14 +2,16 @@
 
 import { getApiUrl } from '@/lib/api/config';
 import { RecurringAllocationOccurrence } from '@/lib/api/recurringAllocations';
+import { tasksApi, Task as ApiTask } from '@/lib/api/tasks';
+import { projectsApi, Project as ApiProject } from '@/lib/api/projects';
 
 import { useMemo, useState, useCallback, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { Calendar, dateFnsLocalizer, Views } from 'react-big-calendar';
 import { format, parse, startOfWeek, endOfWeek, startOfMonth, endOfMonth, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
 import SearchableSelect from '@/components/SearchableSelect';
 import RichTextEditor from '@/components/RichTextEditor';
+import TaskDetailModal from '@/components/TaskDetailModal';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
 const locales = {
@@ -152,11 +154,14 @@ interface SlotInfo {
 }
 
 export default function CalendarTab({ tasks, timeEntries, callRecords, taskAllocations, recurringAllocations, workStartTimes, lunchTime, lunchDuration, token, onDataChanged }: CalendarTabProps) {
-  const router = useRouter();
   const [currentView, setCurrentView] = useState<'week' | 'month'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
   const [vacations, setVacations] = useState<VacationCalendarItem[]>([]);
+  const [showTaskDetailsModal, setShowTaskDetailsModal] = useState(false);
+  const [detailsTask, setDetailsTask] = useState<ApiTask | null>(null);
+  const [detailsProject, setDetailsProject] = useState<ApiProject | null>(null);
+  const [detailsProjectTasks, setDetailsProjectTasks] = useState<ApiTask[]>([]);
   
   // Slot selection modal state
   const [showSlotModal, setShowSlotModal] = useState(false);
@@ -700,13 +705,62 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     });
   }, [taskAllocations, timeEntries, callRecords, recurringAllocations, holidays, vacations, workStartTimes, lunchTime, lunchDuration]);
 
-  const handleSelectEvent = useCallback((event: CalendarEvent) => {
+  const calendarScrollToTime = useMemo(() => {
+    const dayNames: Array<keyof typeof workStartTimes> = [
+      'sunday',
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+    ];
+
+    const dayName = dayNames[currentDate.getDay()] || 'monday';
+    const startTime = workStartTimes[dayName] || '09:00';
+    const [hourRaw, minuteRaw] = String(startTime).split(':');
+    const startHour = Number(hourRaw);
+    const startMinute = Number(minuteRaw);
+
+    const totalStartMinutes = (Number.isFinite(startHour) ? startHour : 9) * 60 + (Number.isFinite(startMinute) ? startMinute : 0);
+    const targetMinutes = Math.max(0, totalStartMinutes - 60);
+
+    const scrollDate = new Date(currentDate);
+    scrollDate.setHours(Math.floor(targetMinutes / 60), targetMinutes % 60, 0, 0);
+    return scrollDate;
+  }, [currentDate, workStartTimes]);
+
+  const openTaskDetails = useCallback(async (projectId: number, taskId: number) => {
+    try {
+      const [projectResponse, tasksResponse] = await Promise.all([
+        projectsApi.getById(projectId, token),
+        tasksApi.getByProject(projectId, token),
+      ]);
+
+      const project = projectResponse.project;
+      const projectTasks = tasksResponse.tasks || [];
+      const selectedTask = projectTasks.find((task) => Number(task.Id) === Number(taskId));
+
+      if (!project || !selectedTask) {
+        return;
+      }
+
+      setDetailsProject(project);
+      setDetailsProjectTasks(projectTasks);
+      setDetailsTask(selectedTask);
+      setShowTaskDetailsModal(true);
+    } catch (error) {
+      console.error('Failed to open task details modal:', error);
+    }
+  }, [token]);
+
+  const handleSelectEvent = useCallback(async (event: CalendarEvent) => {
     if (event.resource.type === 'holiday' || event.resource.type === 'vacation') {
       return;
     }
 
-    if (event.resource.type === 'task' && event.resource.projectId) {
-      router.push(`/projects/${event.resource.projectId}`);
+    if (event.resource.type === 'task' && event.resource.projectId && event.resource.taskId) {
+      await openTaskDetails(Number(event.resource.projectId), Number(event.resource.taskId));
     } else if (event.resource.type === 'timeEntry' && event.resource.entryId) {
       // Open edit modal for time entry
       const entry = timeEntries.find(e => e.Id === event.resource.entryId);
@@ -724,7 +778,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
         setShowEditEntryModal(true);
       }
     }
-  }, [router, timeEntries]);
+  }, [openTaskDetails, timeEntries]);
 
   const handleNavigate = useCallback((date: Date) => {
     setCurrentDate(date);
@@ -1176,6 +1230,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
             views={[Views.WEEK, Views.MONTH]}
             min={new Date(2024, 0, 1, 0, 0, 0)}
             max={new Date(2024, 0, 1, 23, 59, 59)}
+            scrollToTime={calendarScrollToTime}
             popup
             selectable
             toolbar={false}
@@ -1762,6 +1817,37 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
             </div>
           </div>
         </div>
+      )}
+
+      {showTaskDetailsModal && detailsTask && detailsProject && (
+        <TaskDetailModal
+          projectId={detailsProject.Id}
+          organizationId={detailsProject.OrganizationId}
+          task={detailsTask}
+          project={detailsProject}
+          tasks={detailsProjectTasks}
+          onOpenTask={(targetTask) => {
+            if (Number(targetTask.ProjectId) !== Number(detailsProject.Id)) {
+              openTaskDetails(Number(targetTask.ProjectId), Number(targetTask.Id));
+              return;
+            }
+
+            const fullTask = detailsProjectTasks.find((task) => Number(task.Id) === Number(targetTask.Id)) || targetTask;
+            setDetailsTask(fullTask as ApiTask);
+            setShowTaskDetailsModal(true);
+          }}
+          onClose={() => {
+            setShowTaskDetailsModal(false);
+            setDetailsTask(null);
+          }}
+          onSaved={async () => {
+            onDataChanged();
+            if (detailsProject?.Id && detailsTask?.Id) {
+              await openTaskDetails(Number(detailsProject.Id), Number(detailsTask.Id));
+            }
+          }}
+          token={token}
+        />
       )}
     </div>
   );

@@ -2129,6 +2129,7 @@ export default function Navbar() {
                     placeholder="Select Organization"
                     emptyText="Select Organization"
                     disabled={isLoadingData}
+                    autoSelectSingleOption
                   />
                 </div>
 
@@ -2144,6 +2145,7 @@ export default function Navbar() {
                     placeholder="Select Project"
                     emptyText="Select Project"
                     disabled={!selectedOrgId || isLoadingData}
+                    autoSelectSingleOption
                   />
                 </div>
 
@@ -2232,21 +2234,20 @@ export default function Navbar() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Assigned To
                   </label>
-                  <select
+                  <SearchableSelect
                     value={taskForm.assignedTo}
-                    onChange={(e) => setTaskForm(prev => ({ ...prev, assignedTo: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    onChange={(value) => setTaskForm(prev => ({ ...prev, assignedTo: value }))}
+                    options={orgMembers.map(member => ({
+                      value: member.Id,
+                      label: member.FirstName && member.LastName
+                        ? `${member.FirstName} ${member.LastName}`
+                        : member.Username,
+                    }))}
+                    placeholder="Select Assignee"
+                    emptyText="Unassigned"
                     disabled={!selectedOrgId}
-                  >
-                    <option value="">Unassigned</option>
-                    {orgMembers.map(member => (
-                      <option key={member.Id} value={member.Id}>
-                        {member.FirstName && member.LastName 
-                          ? `${member.FirstName} ${member.LastName}` 
-                          : member.Username}
-                      </option>
-                    ))}
-                  </select>
+                    autoSelectSingleOption
+                  />
                 </div>
 
                 {/* Due Date and Estimated Hours Row */}
@@ -2451,6 +2452,7 @@ export default function Navbar() {
                     placeholder="Select Organization"
                     emptyText="Select Organization"
                     disabled={isLoadingData}
+                    autoSelectSingleOption
                   />
                 </div>
                 <div>
@@ -2464,6 +2466,7 @@ export default function Navbar() {
                     placeholder="Select Customer"
                     emptyText="No customer"
                     disabled={!projectForm.organizationId}
+                    autoSelectSingleOption
                   />
                   {projectForm.organizationId && projectCustomers.length === 0 && (
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -2603,6 +2606,7 @@ export default function Navbar() {
                     placeholder="Select Organization"
                     emptyText="Select Organization"
                     disabled={isLoadingData}
+                    autoSelectSingleOption
                   />
                 </div>
                 <div>
@@ -2619,6 +2623,7 @@ export default function Navbar() {
                     placeholder="Select Project"
                     emptyText="Select Project"
                     disabled={!timeEntryForm.organizationId}
+                    autoSelectSingleOption
                   />
                 </div>
                 <div>
@@ -2632,6 +2637,7 @@ export default function Navbar() {
                     placeholder="Select Task"
                     emptyText="Select Task"
                     disabled={!timeEntryForm.projectId}
+                    autoSelectSingleOption
                   />
                 </div>
                 <div>

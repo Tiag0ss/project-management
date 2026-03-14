@@ -15,6 +15,7 @@ interface SearchableSelectProps {
   emptyText?: string;
   className?: string;
   disabled?: boolean;
+  autoSelectSingleOption?: boolean;
 }
 
 export default function SearchableSelect({
@@ -25,6 +26,7 @@ export default function SearchableSelect({
   emptyText = 'None',
   className = '',
   disabled = false,
+  autoSelectSingleOption = false,
 }: SearchableSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -59,6 +61,18 @@ export default function SearchableSelect({
       inputRef.current.focus();
     }
   }, [isOpen]);
+
+  // Auto-select when there is exactly one valid option (create flows)
+  useEffect(() => {
+    if (!autoSelectSingleOption || disabled) return;
+    if (value !== '' && value !== null && value !== undefined) return;
+    if (options.length !== 1) return;
+
+    const singleOptionValue = String(options[0].value ?? '').trim();
+    if (!singleOptionValue) return;
+
+    onChange(String(options[0].value));
+  }, [autoSelectSingleOption, disabled, value, options, onChange]);
 
   const handleSelect = (optionValue: string | number) => {
     onChange(String(optionValue));

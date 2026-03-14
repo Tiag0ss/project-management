@@ -1075,7 +1075,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const taskId = req.params.id;
-    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, applicationId, releaseVersionId, customerId } = req.body;
+    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, applicationId, releaseVersionId, customerId, syncAllocationHeaderDates } = req.body;
 
     // Verify user has access to this task's project through organization membership and has CanManageTasks permission
     const [access] = await pool.execute<RowDataPacket[]>(
@@ -1340,11 +1340,20 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
           return String(date);
         };
 
-    if ((plannedStartDate !== undefined && normalizeDateForComparison(oldTask.PlannedStartDate) !== normalizeDateForComparison(plannedStartDate)) || 
-        (plannedEndDate !== undefined && normalizeDateForComparison(oldTask.PlannedEndDate) !== normalizeDateForComparison(plannedEndDate))) {
+    const hasExplicitPlannedDateUpdate = plannedStartDate !== undefined || plannedEndDate !== undefined;
+    const hasPlannedDateChanged =
+      (plannedStartDate !== undefined && normalizeDateForComparison(oldTask.PlannedStartDate) !== normalizeDateForComparison(plannedStartDate)) ||
+      (plannedEndDate !== undefined && normalizeDateForComparison(oldTask.PlannedEndDate) !== normalizeDateForComparison(plannedEndDate));
+    const shouldSyncAllocationHeaderDates = toBooleanFlag(syncAllocationHeaderDates) === 1;
+
+    if (shouldSyncAllocationHeaderDates || hasPlannedDateChanged) {
       try {
-        const { recomputeTaskPlanDatesFromAllocations } = require('./taskAllocations');
-        await recomputeTaskPlanDatesFromAllocations(Number(taskId), userId);
+        await pool.execute(
+          `UPDATE TaskAllocationHeaders
+           SET PlannedStartDate = ?, PlannedEndDate = ?
+           WHERE TaskId = ?`,
+          [finalPlannedStartDate, finalPlannedEndDate, taskId]
+        );
       } catch (err) {
         console.error('Error syncing allocation header dates:', err);
         // Don't fail the entire request if sync fails

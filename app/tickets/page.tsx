@@ -1227,6 +1227,7 @@ export default function TicketsPage() {
                         options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
                         placeholder="Select Organization"
                         emptyText="Select Organization"
+                        autoSelectSingleOption
                       />
                     </div>
                   )}
@@ -1243,6 +1244,7 @@ export default function TicketsPage() {
                         options={customers.map(c => ({ value: c.Id.toString(), label: c.Name }))}
                         placeholder="Select Customer"
                         emptyText="Select Customer"
+                        autoSelectSingleOption
                       />
                     </div>
                   )}
@@ -1385,6 +1387,7 @@ export default function TicketsPage() {
                         options={createModalProjects.map(project => ({ value: project.Id.toString(), label: project.ProjectName }))}
                         placeholder="Select Project"
                         emptyText={createForm.customerId ? "No Project for selected customer" : "No Project"}
+                        autoSelectSingleOption
                       />
                     </div>
                   )}
