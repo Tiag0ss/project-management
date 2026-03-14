@@ -852,6 +852,130 @@ router.put('/:id/transfer', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
+router.put('/:id/task-mappings', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const projectId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+    const { integrationType, statusMapping, priorityMapping, taskTypeMapping } = req.body;
+
+    if (!projectId || !userId) {
+      return res.status(400).json({ success: false, message: 'Invalid request' });
+    }
+
+    const normalizedIntegrationType = String(integrationType || 'jira-board').toLowerCase();
+    if (normalizedIntegrationType !== 'jira-board') {
+      return res.status(400).json({ success: false, message: 'Unsupported mapping type. Use jira-board.' });
+    }
+
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM Projects WHERE Id = ?',
+      [projectId]
+    );
+
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Project not found or access denied' });
+    }
+
+    const oldProject = existing[0];
+
+    const [accessRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT
+         COALESCE(u.isAdmin, 0) as IsAdmin,
+         COALESCE(u.IsManager, 0) as IsManager,
+         om.Role,
+         COALESCE(pg.CanManageProjects, 0) as CanManageProjects
+       FROM Users u
+       LEFT JOIN OrganizationMembers om ON om.UserId = u.Id AND om.OrganizationId = ?
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE u.Id = ?`,
+      [oldProject.OrganizationId, userId]
+    );
+
+    const access = accessRows[0];
+    const canUpdateProject =
+      Number(oldProject.CreatedBy) === Number(userId) ||
+      Number(access?.IsAdmin || 0) === 1 ||
+      Number(access?.IsManager || 0) === 1 ||
+      access?.Role === 'Owner' ||
+      access?.Role === 'Admin' ||
+      Number(access?.CanManageProjects || 0) === 1;
+
+    if (!canUpdateProject) {
+      return res.status(403).json({ success: false, message: 'You do not have permission to update this project' });
+    }
+
+    const normalizeMapping = (value: any, fallback: string | null): string | null => {
+      if (value === undefined) {
+        return fallback;
+      }
+      if (value === null) {
+        return null;
+      }
+      if (typeof value === 'object' && !Array.isArray(value)) {
+        return JSON.stringify(value);
+      }
+      return fallback;
+    };
+
+    const normalizedStatusMapping = normalizeMapping(statusMapping, oldProject.JiraTaskStatusMappingJson || null);
+    const normalizedPriorityMapping = normalizeMapping(priorityMapping, oldProject.JiraTaskPriorityMappingJson || null);
+    const normalizedTaskTypeMapping = normalizeMapping(taskTypeMapping, oldProject.JiraTaskTypeMappingJson || null);
+
+    await pool.execute(
+      `UPDATE Projects
+       SET JiraTaskStatusMappingJson = ?,
+           JiraTaskPriorityMappingJson = ?,
+           JiraTaskTypeMappingJson = ?
+       WHERE Id = ?`,
+      [normalizedStatusMapping, normalizedPriorityMapping, normalizedTaskTypeMapping, projectId]
+    );
+
+    const changes: { field: string; oldVal: string; newVal: string }[] = [];
+    if (String(oldProject.JiraTaskStatusMappingJson || '') !== String(normalizedStatusMapping || '')) {
+      changes.push({
+        field: 'JiraTaskStatusMappingJson',
+        oldVal: String(oldProject.JiraTaskStatusMappingJson || ''),
+        newVal: String(normalizedStatusMapping || ''),
+      });
+    }
+    if (String(oldProject.JiraTaskPriorityMappingJson || '') !== String(normalizedPriorityMapping || '')) {
+      changes.push({
+        field: 'JiraTaskPriorityMappingJson',
+        oldVal: String(oldProject.JiraTaskPriorityMappingJson || ''),
+        newVal: String(normalizedPriorityMapping || ''),
+      });
+    }
+    if (String(oldProject.JiraTaskTypeMappingJson || '') !== String(normalizedTaskTypeMapping || '')) {
+      changes.push({
+        field: 'JiraTaskTypeMappingJson',
+        oldVal: String(oldProject.JiraTaskTypeMappingJson || ''),
+        newVal: String(normalizedTaskTypeMapping || ''),
+      });
+    }
+
+    for (const change of changes) {
+      await logProjectHistory(Number(projectId), userId, 'updated', change.field, change.oldVal, change.newVal);
+    }
+
+    await logActivity(
+      userId ?? null,
+      req.user?.username || null,
+      'PROJECT_UPDATE_TASK_MAPPINGS',
+      'Project',
+      Number(projectId),
+      oldProject.ProjectName,
+      `Updated Jira task mappings for project: ${oldProject.ProjectName}`,
+      req.ip,
+      req.get('user-agent')
+    );
+
+    res.json({ success: true, message: 'Task mappings updated successfully' });
+  } catch (error) {
+    console.error('Update task mappings error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update task mappings' });
+  }
+});
+
 // Update project
 /**
  * @swagger
