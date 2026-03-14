@@ -64,6 +64,5 @@ ecosystem.config.js
 
 # backups
 /backups
-*.sql
 *.sql.gz
 templates/export.csv

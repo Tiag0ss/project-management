@@ -527,7 +527,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
 
     // Verify user has access to this project and check permissions
     const [access] = await pool.execute<RowDataPacket[]>(
-      `SELECT p.Id, COALESCE(pg.CanManageTasks, 0) as CanManageTasks, COALESCE(pg.CanPlanTasks, 0) as CanPlanTasks, om.Role
+      `SELECT p.Id, p.OrganizationId, COALESCE(pg.CanManageTasks, 0) as CanManageTasks, COALESCE(pg.CanPlanTasks, 0) as CanPlanTasks, om.Role
        FROM Projects p
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
        LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
@@ -640,6 +640,63 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
       );
       tasks = myTasks;
     }
+
+    const organizationId = Number(access[0].OrganizationId);
+    const [closedStatuses] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id, StatusName
+       FROM TaskStatusValues
+       WHERE OrganizationId = ?
+         AND (COALESCE(IsClosed, 0) = 1 OR COALESCE(IsCancelled, 0) = 1)`,
+      [organizationId]
+    );
+
+    const closedStatusValues = new Set<string>();
+    closedStatuses.forEach((status) => {
+      closedStatusValues.add(String(status.Id));
+      closedStatusValues.add(String(status.StatusName || '').trim().toLowerCase());
+    });
+
+    const closedAtByTaskId = new Map<number, string>();
+    if (tasks.length > 0 && closedStatusValues.size > 0) {
+      const [statusHistory] = await pool.execute<RowDataPacket[]>(
+        `SELECT th.TaskId, th.NewValue, th.CreatedAt
+         FROM TaskHistory th
+         INNER JOIN Tasks t ON t.Id = th.TaskId
+         WHERE t.ProjectId = ?
+           AND th.FieldName = 'Status'
+         ORDER BY th.TaskId ASC, th.CreatedAt ASC`,
+        [projectId]
+      );
+
+      statusHistory.forEach((entry) => {
+        const taskId = Number(entry.TaskId);
+        if (closedAtByTaskId.has(taskId)) return;
+
+        const statusToken = String(entry.NewValue || '').trim();
+        if (!closedStatusValues.has(statusToken) && !closedStatusValues.has(statusToken.toLowerCase())) {
+          return;
+        }
+
+        const closedDate = toDateOnly(entry.CreatedAt);
+        if (closedDate) {
+          closedAtByTaskId.set(taskId, closedDate);
+        }
+      });
+    }
+
+    tasks = tasks.map((task) => {
+      const currentStatusToken = String(task.Status ?? '').trim();
+      const isClosedNow =
+        Number(task.StatusIsClosed || 0) === 1 ||
+        Number(task.StatusIsCancelled || 0) === 1 ||
+        closedStatusValues.has(currentStatusToken) ||
+        closedStatusValues.has(currentStatusToken.toLowerCase());
+
+      return {
+        ...task,
+        ClosedAt: closedAtByTaskId.get(Number(task.Id)) || (isClosedNow ? toDateOnly(task.UpdatedAt) : null),
+      };
+    });
 
     await populateAssigneesJson(tasks);
 

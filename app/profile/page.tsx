@@ -975,6 +975,21 @@ export default function ProfilePage() {
               <span className="font-medium">Profile Info</span>
             </button>
 
+            <button
+              onClick={() => {
+                setActiveTab('vacations');
+                loadVacationData();
+              }}
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                activeTab === 'vacations'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <span className="text-xl">🏖️</span>
+              <span className="font-medium">Vacations</span>
+            </button>
+
             {!isCustomerUser && (
               <button
                 onClick={() => setActiveTab('workHours')}
@@ -1048,20 +1063,6 @@ export default function ProfilePage() {
               <span className="font-medium">Email Alerts</span>
             </button>
 
-            <button
-              onClick={() => {
-                setActiveTab('vacations');
-                loadVacationData();
-              }}
-              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                activeTab === 'vacations'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              <span className="text-xl">🏖️</span>
-              <span className="font-medium">Vacations</span>
-            </button>
           </nav>
         </aside>
 
@@ -1332,7 +1333,7 @@ export default function ProfilePage() {
                     </p>
 
                     {/* Grid Table */}
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto" data-grid-enhancer-ignore="true">
                       <table className="w-full border-collapse">
                         <thead>
                           <tr className="bg-gray-50 dark:bg-gray-700">

@@ -127,6 +127,7 @@ export default function Navbar() {
     assignedTo: '',
     dueDate: '',
     estimatedHours: '',
+    unscheduledWork: false,
   });
 
   // Organization form
@@ -602,6 +603,10 @@ export default function Navbar() {
     setShowQuickTaskModal(true);
     setError('');
     setIsLoadingData(true);
+    setTaskForm(prev => ({
+      ...prev,
+      unscheduledWork: false,
+    }));
     
     try {
       const res = await fetch(`${getApiUrl()}/api/organizations`, {
@@ -630,7 +635,7 @@ export default function Navbar() {
       openQuickTaskModal();
       return;
     }
-    
+
     // Load organizations for modals that need them
     if (type === 'project' || type === 'timeEntry' || type === 'callRecord') {
       setIsLoadingData(true);
@@ -1091,6 +1096,7 @@ export default function Navbar() {
           taskType: taskForm.taskType ? parseInt(taskForm.taskType) : null,
           assignedTo: taskForm.assignedTo ? parseInt(taskForm.assignedTo) : null,
           dueDate: taskForm.dueDate || null,
+          unscheduledWork: taskForm.unscheduledWork,
           estimatedHours: taskForm.estimatedHours ? parseFloat(taskForm.estimatedHours) : null,
         }),
       });
@@ -1111,6 +1117,7 @@ export default function Navbar() {
         assignedTo: '',
         dueDate: '',
         estimatedHours: '',
+        unscheduledWork: false,
       });
       setSelectedOrgId(null);
       setShowQuickTaskModal(false);
@@ -1780,18 +1787,22 @@ export default function Navbar() {
                       <button
                         onClick={() => openQuickAction('project')}
                         title="Shortcut: Ctrl+1"
-                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        className="flex items-center w-full gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                       >
-                        <span className="mr-3">📁</span> New Project
+                        <span>📁</span>
+                        <span>New Project</span>
+                        <span className="ml-auto text-xs text-gray-400 dark:text-gray-500">Ctrl+1</span>
                       </button>
                     )}
                     {(permissions?.canManageTasks || permissions?.canCreateTasks) && (
                       <button
                         onClick={() => openQuickAction('task')}
                         title="Shortcut: Ctrl+2"
-                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        className="flex items-center w-full gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                       >
-                        <span className="mr-3">✅</span> New Task
+                        <span>✅</span>
+                        <span>New Task</span>
+                        <span className="ml-auto text-xs text-gray-400 dark:text-gray-500">Ctrl+2</span>
                       </button>
                     )}
                     {(permissions?.canManageTasks || permissions?.canCreateTasks || permissions?.canManageTimeEntries) && (
@@ -1800,9 +1811,11 @@ export default function Navbar() {
                         <button
                           onClick={() => openQuickAction('timeEntry')}
                           title="Shortcut: Ctrl+3"
-                          className="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          className="flex items-center w-full gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                         >
-                          <span className="mr-3">⏱️</span> New Time Entry
+                          <span>⏱️</span>
+                          <span>New Time Entry</span>
+                          <span className="ml-auto text-xs text-gray-400 dark:text-gray-500">Ctrl+3</span>
                         </button>
                       </>
                     )}
@@ -1810,9 +1823,11 @@ export default function Navbar() {
                       <button
                         onClick={() => openQuickAction('callRecord')}
                         title="Shortcut: Ctrl+4"
-                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        className="flex items-center w-full gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                       >
-                        <span className="mr-3">📞</span> New Call Record
+                        <span>📞</span>
+                        <span>New Call Record</span>
+                        <span className="ml-auto text-xs text-gray-400 dark:text-gray-500">Ctrl+4</span>
                       </button>
                     )}
                   </div>
@@ -2261,6 +2276,19 @@ export default function Navbar() {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/40 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">Unscheduled Work</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Show this task in Planner as unscheduled work.</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(taskForm.unscheduledWork)}
+                    onChange={(e) => setTaskForm(prev => ({ ...prev, unscheduledWork: e.target.checked }))}
+                    className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
                 </div>
               </div>
 

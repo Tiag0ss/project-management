@@ -1451,6 +1451,60 @@ export default function PlanningPage() {
     return false;
   };
 
+  const getTaskClosedAnchorDate = (task: Task): Date | null => {
+    const rawDate = task.ClosedAt || (isTaskClosedOrCancelled(task) ? task.UpdatedAt : null);
+    if (!rawDate) return null;
+
+    const dateOnly = String(rawDate).split('T')[0];
+    const parsedDate = new Date(`${dateOnly}T12:00:00`);
+    return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+  };
+
+  const getRelevantUnscheduledTasks = (task: Task, userId?: number): Task[] => {
+    const relevantTasks: Task[] = [];
+    const stack: Task[] = [task];
+
+    while (stack.length > 0) {
+      const candidate = stack.pop()!;
+      const isUnscheduled = Number(candidate.UnscheduledWork || 0) === 1;
+      const matchesAssignee = userId === undefined
+        ? hasAnyTaskAssignee(candidate)
+        : isTaskAssignedToUser(candidate, userId);
+
+      if (isUnscheduled && matchesAssignee) {
+        relevantTasks.push(candidate);
+      }
+
+      const nestedChildren = tasks.filter((nested) => nested.ParentTaskId === candidate.Id);
+      if (nestedChildren.length > 0) {
+        stack.push(...nestedChildren);
+      }
+    }
+
+    return relevantTasks;
+  };
+
+  const getUnscheduledAnchorDate = (task: Task, userId?: number): Date => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const relevantTasks = getRelevantUnscheduledTasks(task, userId);
+    if (relevantTasks.length === 0) {
+      return today;
+    }
+
+    if (relevantTasks.some((candidate) => !isTaskClosedOrCancelled(candidate))) {
+      return today;
+    }
+
+    const closedDates = relevantTasks
+      .map((candidate) => getTaskClosedAnchorDate(candidate))
+      .filter((date): date is Date => date !== null)
+      .sort((a, b) => b.getTime() - a.getTime());
+
+    return closedDates[0] ? new Date(closedDates[0]) : today;
+  };
+
   const getTaskPosition = (
     task: Task,
     columns: TimelineColumn[],
@@ -1459,6 +1513,7 @@ export default function PlanningPage() {
       preferRangeStartForUnplanned?: boolean;
       useFixedPixelColumns?: boolean;
       columnWidthPx?: number;
+      unscheduledUserId?: number;
     }
   ) => {
     if (columns.length === 0) return null;
@@ -1472,8 +1527,9 @@ export default function PlanningPage() {
     const hasUnscheduledDescendant = !task.ParentTaskId && hasUnscheduledAssignedDescendant(task.Id);
 
     if (isAssignedUnscheduled || hasUnscheduledDescendant) {
-      startDate = new Date(today);
-      endDate = new Date(today);
+      const unscheduledAnchorDate = getUnscheduledAnchorDate(task, options?.unscheduledUserId);
+      startDate = new Date(unscheduledAnchorDate);
+      endDate = new Date(unscheduledAnchorDate);
       endDate.setDate(endDate.getDate() + 2); // Visualize unscheduled work across 3 days for readability
     } else if (task.PlannedStartDate && task.PlannedEndDate) {
       // Parse planned dates - handle both 'YYYY-MM-DD' and ISO timestamp formats
@@ -5797,6 +5853,7 @@ export default function PlanningPage() {
                       ? getTaskPosition(taskForPosition, timelineColumns, {
                           useFixedPixelColumns,
                           columnWidthPx: dayColumnWidthPx,
+                          unscheduledUserId: Number(userRow.Id),
                         })
                       : null;
 
@@ -5835,6 +5892,7 @@ export default function PlanningPage() {
                         ? getTaskPosition(otherTaskForPosition, timelineColumns, {
                             useFixedPixelColumns,
                             columnWidthPx: dayColumnWidthPx,
+                            unscheduledUserId: Number(userRow.Id),
                           })
                         : null;
                       if (!otherPosition) continue;
@@ -5985,11 +6043,10 @@ export default function PlanningPage() {
                             displayedEndDate = userAllocationSegments[userAllocationSegments.length - 1].endDate;
                             taskBarSegments.push(...userAllocationSegments);
                           } else if (isUnscheduledForUser || hasUnscheduledAssignedChildForUser) {
-                            const today = new Date();
-                            today.setHours(0, 0, 0, 0);
-                            const endDate = new Date(today);
+                            const anchorDate = getUnscheduledAnchorDate(task, Number(userRow.Id));
+                            const endDate = new Date(anchorDate);
                             endDate.setDate(endDate.getDate() + 2);
-                            displayedStartDate = getDateKeyFromDate(today);
+                            displayedStartDate = getDateKeyFromDate(anchorDate);
                             displayedEndDate = getDateKeyFromDate(endDate);
                             taskBarSegments.push({ headerId: null, startDate: displayedStartDate, endDate: displayedEndDate });
                           } else if (!hasAnyTaskAllocation && hasLegacyTaskDates) {

@@ -64,6 +64,7 @@ export interface Task {
   CompletionPercentage?: number;
   CreatedAt: string;
   UpdatedAt: string;
+  ClosedAt?: string | null;
 }
 
 export interface CreateTaskData {
