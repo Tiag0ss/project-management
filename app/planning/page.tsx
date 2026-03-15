@@ -191,12 +191,41 @@ export default function PlanningPage() {
     show: boolean;
     x: number;
     y: number;
+    openUpward: boolean;
     task: Task | null;
+    userId: number | null;
+    headerId: number | null;
   }>({
     show: false,
     x: 0,
     y: 0,
+    openUpward: false,
     task: null,
+    userId: null,
+    headerId: null,
+  });
+
+  // Extra time modal state
+  const [extraTimeModal, setExtraTimeModal] = useState<{
+    show: boolean;
+    task: Task | null;
+    userId: number | null;
+    extraHours: string;
+    hoursPerDay: string;
+    isProcessing: boolean;
+    error: string;
+    leafTasks: Task[];
+    selectedSubtaskIds: number[];
+  }>({
+    show: false,
+    task: null,
+    userId: null,
+    extraHours: '',
+    hoursPerDay: '8',
+    isProcessing: false,
+    error: '',
+    leafTasks: [],
+    selectedSubtaskIds: [],
   });
   const [forceDatesModal, setForceDatesModal] = useState<{
     show: boolean;
@@ -406,7 +435,7 @@ export default function PlanningPage() {
   };
 
   const closeTaskContextMenu = () => {
-    setTaskContextMenu({ show: false, x: 0, y: 0, task: null });
+    setTaskContextMenu({ show: false, x: 0, y: 0, openUpward: false, task: null, userId: null, headerId: null });
   };
 
   const closeForceDatesModal = () => {
@@ -688,7 +717,7 @@ export default function PlanningPage() {
 
   useEffect(() => {
     const closeMenu = () => {
-      setTaskContextMenu((prev) => (prev.show ? { show: false, x: 0, y: 0, task: null } : prev));
+      setTaskContextMenu((prev) => (prev.show ? { show: false, x: 0, y: 0, openUpward: false, task: null, userId: null, headerId: null } : prev));
     };
 
     const handleEscape = (event: KeyboardEvent) => {
@@ -2160,15 +2189,32 @@ export default function PlanningPage() {
     closeSubtasksModal();
   };
 
-  const handleTaskContextMenu = (e: React.MouseEvent, task: Task) => {
+  const handleTaskContextMenu = (e: React.MouseEvent, task: Task, userId?: number | null, headerId?: number | null) => {
     if (!canUseGanttPlanningActions()) return;
     e.preventDefault();
     e.stopPropagation();
+
+    const viewportHalf = window.innerHeight / 2;
+    const openUpward = e.clientY > viewportHalf;
+    const menuWidth = 240;
+    const viewportPadding = 12;
+    const clampedX = Math.min(
+      Math.max(e.clientX, viewportPadding),
+      Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding),
+    );
+    const clampedY = Math.min(
+      Math.max(e.clientY, viewportPadding),
+      Math.max(viewportPadding, window.innerHeight - viewportPadding),
+    );
+
     setTaskContextMenu({
       show: true,
-      x: e.clientX,
-      y: e.clientY,
+      x: clampedX,
+      y: clampedY,
+      openUpward,
       task,
+      userId: userId ?? null,
+      headerId: headerId ?? null,
     });
   };
 
@@ -2256,6 +2302,321 @@ export default function PlanningPage() {
     } catch (error: any) {
       console.error('Set task baseline error:', error);
       showAlert('Error', error?.message || 'Failed to set task baseline.');
+    }
+  };
+
+  const closeExtraTimeModal = () => {
+    setExtraTimeModal({ show: false, task: null, userId: null, extraHours: '', hoursPerDay: '8', isProcessing: false, error: '', leafTasks: [], selectedSubtaskIds: [] });
+  };
+
+  const openExtraTimeModal = (task: Task, userId: number | null, headerId?: number | null) => {
+    if (!canUseGanttPlanningActions()) return;
+
+    // Default hoursPerDay from user config
+    const targetUser = userId ? users.find(u => u.Id === userId) : null;
+    const project = projects.find(p => p.Id === task.ProjectId);
+    const isHobby = project?.IsHobby || false;
+    let defaultHpd = 8;
+    if (targetUser) {
+      const maxHpd = Math.max(...WEEK_DAYS.map(d => {
+        const k = isHobby ? `HobbyHours${d}` as keyof User : `WorkHours${d}` as keyof User;
+        return parseFloat((targetUser as any)[k]) || 0;
+      }));
+      if (maxHpd > 0) defaultHpd = maxHpd;
+    }
+
+    // Detect parent task and collect only the leaf tasks that belong to this specific allocation header
+    const isParent = tasks.some(t => t.ParentTaskId === task.Id);
+    let leafTasks: Task[] = [];
+    if (isParent) {
+      if (headerId) {
+        // Dates that belong to this specific allocation header
+        const headerDates = new Set(
+          allAllocations
+            .filter(a => a.TaskAllocationHeaderId === headerId)
+            .map(a => normalizeDateKey(a.AllocationDate))
+            .filter(Boolean)
+        );
+        // Child tasks that appear on those dates in TaskChildAllocations
+        const childIdsInSlice = new Set(
+          childAllocations
+            .filter(ca => ca.ParentTaskId === task.Id && headerDates.has(normalizeDateKey(ca.AllocationDate)))
+            .map(ca => ca.ChildTaskId)
+        );
+        if (childIdsInSlice.size > 0) {
+          // Only show the leaf tasks that are part of this allocation header
+          leafTasks = getAllLeafTasks(task.Id).filter(t => childIdsInSlice.has(t.Id));
+        } else {
+          // Fallback: no child allocation data yet for this header — show all leaf tasks
+          leafTasks = getAllLeafTasks(task.Id);
+        }
+      } else {
+        leafTasks = getAllLeafTasks(task.Id);
+      }
+    }
+    const selectedSubtaskIds = leafTasks.map(t => t.Id);
+
+    setExtraTimeModal({
+      show: true,
+      task,
+      userId,
+      extraHours: '',
+      hoursPerDay: String(defaultHpd),
+      isProcessing: false,
+      error: '',
+      leafTasks,
+      selectedSubtaskIds,
+    });
+  };
+
+  const handleExecuteAddExtraTime = async () => {
+    const { task, userId, extraHours, hoursPerDay, leafTasks, selectedSubtaskIds } = extraTimeModal;
+    if (!task || !token) return;
+
+    const parsedExtra = parseFloat(extraHours);
+    const parsedHpd = parseFloat(hoursPerDay);
+
+    if (!parsedExtra || parsedExtra <= 0) {
+      setExtraTimeModal(prev => ({ ...prev, error: 'Enter a valid number of extra hours (> 0).' }));
+      return;
+    }
+    if (!parsedHpd || parsedHpd <= 0) {
+      setExtraTimeModal(prev => ({ ...prev, error: 'Enter a valid max hours per day (> 0).' }));
+      return;
+    }
+
+    const isParentTask = leafTasks.length > 0;
+
+    if (isParentTask && selectedSubtaskIds.length === 0) {
+      setExtraTimeModal(prev => ({ ...prev, error: 'Select at least one subtask to distribute the extra time to.' }));
+      return;
+    }
+
+    // Resolve userId
+    const resolvedUserId = userId ?? (task.AssignedTo ? Number(task.AssignedTo) : null);
+    if (!resolvedUserId) {
+      setExtraTimeModal(prev => ({ ...prev, error: 'No user associated with this task allocation.' }));
+      return;
+    }
+
+    const targetUser = users.find(u => u.Id === resolvedUserId);
+    if (!targetUser) {
+      setExtraTimeModal(prev => ({ ...prev, error: 'User not found.' }));
+      return;
+    }
+
+    setExtraTimeModal(prev => ({ ...prev, isProcessing: true, error: '' }));
+
+    // Helpers for time math (used in parent path)
+    const parseTimeToMinutes = (time: string): number => {
+      const [h, m] = String(time || '09:00').split(':').map(Number);
+      return (h || 0) * 60 + (m || 0);
+    };
+    const formatMinutesToTime = (minutes: number): string => {
+      const safe = Math.max(0, Math.round(minutes));
+      return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`;
+    };
+
+    try {
+      // Find start date: day after last alloc for this task+user (or today)
+      const taskUserAllocs = allAllocations
+        .filter(a => a.TaskId === task.Id && a.UserId === resolvedUserId)
+        .map(a => normalizeDateKey(a.AllocationDate))
+        .filter(Boolean)
+        .sort();
+      let startDate: Date;
+      if (taskUserAllocs.length > 0) {
+        const lastDate = new Date(taskUserAllocs[taskUserAllocs.length - 1] + 'T12:00:00');
+        lastDate.setDate(lastDate.getDate() + 1);
+        startDate = lastDate;
+      } else {
+        const today = new Date();
+        startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0);
+      }
+
+      // ── PARENT TASK PATH ────────────────────────────────────────────────────
+      if (isParentTask) {
+        const selectedLeafTasks = leafTasks
+          .filter(t => selectedSubtaskIds.includes(t.Id))
+          .sort((a, b) => {
+            const oa = Number.isFinite(Number(a.DisplayOrder)) ? Number(a.DisplayOrder) : 0;
+            const ob = Number.isFinite(Number(b.DisplayOrder)) ? Number(b.DisplayOrder) : 0;
+            return oa !== ob ? oa - ob : a.Id - b.Id;
+          });
+
+        const parentSliceResult = await executeTaskAllocation(
+          task,
+          resolvedUserId,
+          startDate,
+          parsedExtra,
+          targetUser,
+          parsedHpd,
+          { silent: true, skipReload: true, appendToExistingUserSlice: true }
+        );
+
+        if (!parentSliceResult || !Array.isArray(parentSliceResult.allocations) || parentSliceResult.allocations.length === 0) {
+          setExtraTimeModal(prev => ({ ...prev, isProcessing: false, error: 'Failed to allocate parent extra time. Check user availability.' }));
+          return;
+        }
+
+        // Distribute to selected leaf tasks proportionally by remaining hours
+        const leafWithRemaining = await Promise.all(
+          selectedLeafTasks.map(async lt => ({
+            leafTask: lt,
+            remainingHours: await getTaskRemainingHours(lt),
+          }))
+        );
+        const positiveLeafs = leafWithRemaining.filter(lwr => lwr.remainingHours > 0);
+
+  let leafQuotas: { leafTask: Task; quotaHours: number }[] = [];
+
+        if (positiveLeafs.length > 0) {
+          const totalLeafRemaining = positiveLeafs.reduce((s, lwr) => s + lwr.remainingHours, 0);
+          const totalParentHours = parentSliceResult.allocations.reduce((s, a) => s + Number(a.hours || 0), 0);
+          const toDistribute = Math.min(parsedExtra, totalParentHours);
+
+          const quotas = positiveLeafs.map((lwr, idx) => {
+            if (idx === positiveLeafs.length - 1) return { leafTask: lwr.leafTask, quotaHours: 0 };
+            const proportional = totalLeafRemaining > 0 ? (toDistribute * lwr.remainingHours) / totalLeafRemaining : 0;
+            return { leafTask: lwr.leafTask, quotaHours: Number(proportional.toFixed(2)) };
+          });
+          const allocatedBeforeLast = quotas.reduce((s, q) => s + q.quotaHours, 0);
+          if (quotas.length > 0) {
+            quotas[quotas.length - 1].quotaHours = Number(Math.max(0, toDistribute - allocatedBeforeLast).toFixed(2));
+          }
+          leafQuotas = quotas;
+
+          const allocationSlots = parentSliceResult.allocations
+            .map(a => ({
+              date: a.date,
+              remainingHours: Number(a.hours || 0),
+              cursorMinutes: parseTimeToMinutes(a.startTime || '09:00'),
+            }))
+            .filter(s => s.remainingHours > 0.0001);
+
+          let slotIndex = 0;
+          const childPayload: Array<{
+            ParentTaskId: number; ChildTaskId: number; AllocationDate: string;
+            AllocatedHours: number; Level: number; StartTime: string; EndTime: string;
+          }> = [];
+
+          for (const quota of quotas) {
+            let remaining = quota.quotaHours;
+            while (remaining > 0.0001 && slotIndex < allocationSlots.length) {
+              const slot = allocationSlots[slotIndex];
+              const hrs = Math.min(remaining, slot.remainingHours);
+              if (hrs <= 0.0001) { slotIndex++; continue; }
+              const mins = Math.max(1, Math.round(hrs * 60));
+              const allocated = Number((mins / 60).toFixed(2));
+              const startMin = slot.cursorMinutes;
+              const endMin = startMin + mins;
+              childPayload.push({
+                ParentTaskId: task.Id,
+                ChildTaskId: quota.leafTask.Id,
+                AllocationDate: slot.date,
+                AllocatedHours: allocated,
+                Level: Math.max(1, getTaskDepthLevel(quota.leafTask, task.Id) + 1),
+                StartTime: formatMinutesToTime(startMin),
+                EndTime: formatMinutesToTime(endMin),
+              });
+              remaining = Math.max(0, remaining - allocated);
+              slot.remainingHours = Math.max(0, slot.remainingHours - allocated);
+              slot.cursorMinutes = endMin;
+              if (slot.remainingHours <= 0.0001) slotIndex++;
+            }
+          }
+
+          if (childPayload.length > 0) {
+            const childSaveRes = await fetch(`${getApiUrl()}/api/task-child-allocations/batch`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ allocations: childPayload, replaceParent: false }),
+            });
+            if (!childSaveRes.ok) {
+              setExtraTimeModal(prev => ({ ...prev, isProcessing: false, error: 'Extra time allocated to parent but failed to distribute to subtasks.' }));
+              return;
+            }
+          }
+        }
+
+        if (projects.length > 0) { await loadAllProjectsTasks(projects); await loadAllAllocations(); }
+        closeExtraTimeModal();
+
+        const leafUpdates = leafQuotas.filter(q => q.quotaHours > 0);
+        if (leafUpdates.length > 0) {
+          let confirmMsg: string;
+          if (leafUpdates.length === 1) {
+            const lt = leafUpdates[0];
+            const curEst = parseFloat(String(lt.leafTask.EstimatedHours || 0));
+            const newEst = Number((curEst + lt.quotaHours).toFixed(2));
+            confirmMsg = `Extra ${parsedExtra}h allocated and distributed to "${lt.leafTask.TaskName}".\n\nUpdate estimated hours from ${curEst}h to ${newEst}h?`;
+          } else {
+            const lines = leafUpdates.map(q => {
+              const curEst = parseFloat(String(q.leafTask.EstimatedHours || 0));
+              const newEst = Number((curEst + q.quotaHours).toFixed(2));
+              return `\u2022 ${q.leafTask.TaskName}: ${curEst}h \u2192 ${newEst}h (+${q.quotaHours}h)`;
+            }).join('\n');
+            confirmMsg = `Extra ${parsedExtra}h distributed across ${leafUpdates.length} subtask(s):\n\n${lines}\n\nUpdate estimated hours for the above subtasks?`;
+          }
+          showConfirm(
+            'Update Estimated Hours?',
+            confirmMsg,
+            async () => {
+              try {
+                await Promise.all(leafUpdates.map(async (q) => {
+                  const curEst = parseFloat(String(q.leafTask.EstimatedHours || 0));
+                  await tasksApi.update(q.leafTask.Id, {
+                    taskName: q.leafTask.TaskName, description: q.leafTask.Description,
+                    status: q.leafTask.Status, priority: q.leafTask.Priority,
+                    assignedTo: q.leafTask.AssignedTo, dueDate: q.leafTask.DueDate,
+                    dueDateMandatory: Number(q.leafTask.DueDateMandatory || 0) === 1,
+                    estimatedHours: Number((curEst + q.quotaHours).toFixed(2)),
+                    parentTaskId: q.leafTask.ParentTaskId,
+                    plannedStartDate: q.leafTask.PlannedStartDate, plannedEndDate: q.leafTask.PlannedEndDate,
+                  }, token!);
+                }));
+                if (projects.length > 0) await loadAllProjectsTasks(projects);
+              } catch (err: any) { showAlert('Error', err?.message || 'Failed to update estimated hours.'); }
+            }
+          );
+        }
+        return;
+      }
+
+      // ── LEAF / STANDALONE TASK PATH ─────────────────────────────────────────
+      const result = await executeTaskAllocation(
+        task, resolvedUserId, startDate, parsedExtra, targetUser, parsedHpd,
+        { appendToExistingUserSlice: true, skipReload: true }
+      );
+
+      if (!result) {
+        setExtraTimeModal(prev => ({ ...prev, isProcessing: false, error: 'Failed to allocate extra time. Check user availability.' }));
+        return;
+      }
+
+      if (projects.length > 0) { await loadAllProjectsTasks(projects); await loadAllAllocations(); }
+      closeExtraTimeModal();
+
+      const currentEstimated = parseFloat(String(task.EstimatedHours || 0));
+      const newEstimated = currentEstimated + parsedExtra;
+      showConfirm(
+        'Update Estimated Hours?',
+        `Extra time of ${parsedExtra}h was added successfully.\n\nDo you want to update the estimated hours for "${task.TaskName}" from ${currentEstimated}h to ${newEstimated}h?`,
+        async () => {
+          try {
+            await tasksApi.update(task.Id, {
+              taskName: task.TaskName, description: task.Description, status: task.Status, priority: task.Priority,
+              assignedTo: task.AssignedTo, dueDate: task.DueDate, dueDateMandatory: Number(task.DueDateMandatory || 0) === 1,
+              estimatedHours: newEstimated, parentTaskId: task.ParentTaskId,
+              plannedStartDate: task.PlannedStartDate, plannedEndDate: task.PlannedEndDate,
+            }, token!);
+            if (projects.length > 0) await loadAllProjectsTasks(projects);
+          } catch (err: any) { showAlert('Error', err?.message || 'Failed to update estimated hours.'); }
+        }
+      );
+    } catch (err: any) {
+      console.error('Add extra time error:', err);
+      setExtraTimeModal(prev => ({ ...prev, isProcessing: false, error: err?.message || 'Failed to add extra time.' }));
     }
   };
 
@@ -6113,7 +6474,7 @@ export default function PlanningPage() {
                             draggable={permissions?.canPlanTasks && !isGanttSearchActive}
                             onDragStart={(e) => handleDragStart(e, parentTask, null)}
                             onDragEnd={handleDragEnd}
-                            onContextMenu={(e) => handleTaskContextMenu(e, parentTask)}
+                            onContextMenu={(e) => handleTaskContextMenu(e, parentTask, null)}
                             onClick={(e) => {
                               if (shouldSuppressTaskClick()) {
                                 e.preventDefault();
@@ -6738,7 +7099,7 @@ export default function PlanningPage() {
                                     draggable={permissions?.canPlanTasks && !isGanttSearchActive}
                                     onDragStart={(e) => handleDragStart(e, task, userRow.Id, segmentHeaderId)}
                                     onDragEnd={handleDragEnd}
-                                    onContextMenu={(e) => handleTaskContextMenu(e, task)}
+                                    onContextMenu={(e) => handleTaskContextMenu(e, task, userRow.Id, segmentHeaderId)}
                                     onClick={(e) => {
                                       if (shouldSuppressTaskClick()) {
                                         e.preventDefault();
@@ -7091,8 +7452,12 @@ export default function PlanningPage() {
 
         {taskContextMenu.show && taskContextMenu.task && canUseGanttPlanningActions() && (
           <div
-            className="fixed z-[140] min-w-[240px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden"
-            style={{ left: taskContextMenu.x, top: taskContextMenu.y }}
+            className="fixed z-[140] min-w-[240px] max-h-[70vh] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-y-auto"
+            style={{
+              left: taskContextMenu.x,
+              top: taskContextMenu.y,
+              transform: taskContextMenu.openUpward ? 'translateY(calc(-100% - 8px))' : 'translateY(8px)',
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -7143,6 +7508,165 @@ export default function PlanningPage() {
             >
               Set baseline for this task
             </button>
+            <button
+              onClick={() => {
+                const task = taskContextMenu.task;
+                const userId = taskContextMenu.userId;
+                const headerId = taskContextMenu.headerId;
+                closeTaskContextMenu();
+                if (task) {
+                  openExtraTimeModal(task, userId, headerId);
+                }
+              }}
+              className="w-full px-4 py-3 text-left text-sm text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 border-t border-gray-200 dark:border-gray-700"
+            >
+              Add extra time
+            </button>
+          </div>
+        )}
+
+        {extraTimeModal.show && extraTimeModal.task && canUseGanttPlanningActions() && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[130] p-4">
+            <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full ${extraTimeModal.leafTasks.length > 0 ? 'max-w-md' : 'max-w-sm'} border border-gray-200 dark:border-gray-700 overflow-hidden`}>
+              <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white">Add extra time</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{extraTimeModal.task.TaskName}</p>
+                {extraTimeModal.userId && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
+                    {users.find(u => u.Id === extraTimeModal.userId)?.FirstName || ''} {users.find(u => u.Id === extraTimeModal.userId)?.LastName || ''}
+                  </p>
+                )}
+              </div>
+              <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+                {extraTimeModal.error && (
+                  <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 rounded-lg text-sm">
+                    {extraTimeModal.error}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Extra hours to add
+                    </label>
+                    <input
+                      type="number"
+                      min="0.5"
+                      step="0.5"
+                      value={extraTimeModal.extraHours}
+                      onChange={(e) => setExtraTimeModal(prev => ({ ...prev, extraHours: e.target.value, error: '' }))}
+                      placeholder="e.g. 4"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      disabled={extraTimeModal.isProcessing}
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Max hours per day
+                    </label>
+                    <input
+                      type="number"
+                      min="0.5"
+                      step="0.5"
+                      value={extraTimeModal.hoursPerDay}
+                      onChange={(e) => setExtraTimeModal(prev => ({ ...prev, hoursPerDay: e.target.value, error: '' }))}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      disabled={extraTimeModal.isProcessing}
+                    />
+                  </div>
+                </div>
+
+                {/* Subtask picker — shown only for parent tasks */}
+                {extraTimeModal.leafTasks.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Distribute extra time to subtasks
+                      </label>
+                      <div className="flex gap-2 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setExtraTimeModal(prev => ({ ...prev, selectedSubtaskIds: prev.leafTasks.map(t => t.Id) }))}
+                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                          disabled={extraTimeModal.isProcessing}
+                        >
+                          All
+                        </button>
+                        <span className="text-gray-400">|</span>
+                        <button
+                          type="button"
+                          onClick={() => setExtraTimeModal(prev => ({ ...prev, selectedSubtaskIds: [] }))}
+                          className="text-gray-500 dark:text-gray-400 hover:underline"
+                          disabled={extraTimeModal.isProcessing}
+                        >
+                          None
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-1 max-h-40 overflow-y-auto border border-gray-200 dark:border-gray-600 rounded-lg p-2">
+                      {extraTimeModal.leafTasks.map(lt => {
+                        const isChecked = extraTimeModal.selectedSubtaskIds.includes(lt.Id);
+                        return (
+                          <label
+                            key={lt.Id}
+                            className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setExtraTimeModal(prev => ({
+                                  ...prev,
+                                  selectedSubtaskIds: isChecked
+                                    ? prev.selectedSubtaskIds.filter(id => id !== lt.Id)
+                                    : [...prev.selectedSubtaskIds, lt.Id],
+                                  error: '',
+                                }));
+                              }}
+                              disabled={extraTimeModal.isProcessing}
+                              className="rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500"
+                            />
+                            <span className="text-sm text-gray-700 dark:text-gray-300 truncate flex-1">{lt.TaskName}</span>
+                            <span className="text-xs text-gray-400 whitespace-nowrap">{Number(lt.EstimatedHours || 0)}h</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Extra hours are distributed proportionally based on each subtask's remaining hours.
+                    </p>
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Extra time will be scheduled starting from the day after the last existing allocation for this task, following normal availability rules.
+                </p>
+              </div>
+              <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+                <button
+                  onClick={closeExtraTimeModal}
+                  disabled={extraTimeModal.isProcessing}
+                  className="h-9 px-4 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleExecuteAddExtraTime}
+                  disabled={extraTimeModal.isProcessing || !extraTimeModal.extraHours || (extraTimeModal.leafTasks.length > 0 && extraTimeModal.selectedSubtaskIds.length === 0)}
+                  className="h-9 px-4 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white transition-colors disabled:opacity-50 inline-flex items-center gap-2"
+                >
+                  {extraTimeModal.isProcessing ? (
+                    <>
+                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Scheduling...
+                    </>
+                  ) : 'Add extra time'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
