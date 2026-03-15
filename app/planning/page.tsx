@@ -6217,11 +6217,11 @@ export default function PlanningPage() {
                     })}
                   </svg>
                 )}
-                <div className="sticky top-0 z-[70]">
+                <div className="sticky top-0 z-[30]">
                   {/* Month header */}
                   {timelineColumns.length > 0 && (
                     <div className="flex border-b-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800">
-                      <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[80] bg-gray-100 dark:bg-gray-800 p-2 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
+                      <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[40] bg-gray-100 dark:bg-gray-800 p-2 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
                         Month
                       </div>
                       <div className="flex-1 flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
@@ -6265,7 +6265,7 @@ export default function PlanningPage() {
                   )}
                   {/* Header with dates */}
                   <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
-                    <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[80] bg-gray-50 dark:bg-gray-700 p-3 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
+                    <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[40] bg-gray-50 dark:bg-gray-700 p-3 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
                       {ganttGroupBy === 'resource' ? 'User' : ganttGroupBy === 'customer' ? 'Customer' : 'Project'}
                     </div>
                     <div className="flex-1 flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
