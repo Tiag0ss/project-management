@@ -20,6 +20,7 @@ export default function MemosPage() {
   const [enableDateFilter, setEnableDateFilter] = useState(false);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [filterVisibility, setFilterVisibility] = useState<'all' | 'private' | 'organizations' | 'public'>('all');
+  const [filterText, setFilterText] = useState('');
 
   // Form state
   const [memoForm, setMemoForm] = useState({
@@ -187,10 +188,23 @@ export default function MemosPage() {
     setEnableDateFilter(false);
     setFilterTag(null);
     setFilterVisibility('all');
+    setFilterText('');
   };
 
   // Filter memos
   const filteredMemos = memos.filter(memo => {
+    const normalizedFilterText = filterText.trim().toLowerCase();
+
+    if (normalizedFilterText) {
+      const searchableText = [memo.Title, memo.Content || '', memo.Tags || '']
+        .join(' ')
+        .toLowerCase();
+
+      if (!searchableText.includes(normalizedFilterText)) {
+        return false;
+      }
+    }
+
     // Filter by visibility
     if (filterVisibility !== 'all' && memo.Visibility !== filterVisibility) {
       return false;
@@ -336,6 +350,18 @@ export default function MemosPage() {
 
               {/* Visibility Filter */}
               <div className="mt-6">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Search</h3>
+                <input
+                  type="text"
+                  value={filterText}
+                  onChange={(e) => setFilterText(e.target.value)}
+                  placeholder="Search title, content, tags..."
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Visibility Filter */}
+              <div className="mt-6">
                 <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Visibility</h3>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -422,7 +448,7 @@ export default function MemosPage() {
                       📅 Clear Date Filter
                     </button>
                   )}
-                  {(enableDateFilter || filterTag || filterVisibility !== 'all') && (
+                  {(enableDateFilter || filterTag || filterVisibility !== 'all' || filterText.trim().length > 0) && (
                     <button
                       onClick={handleClearAllFilters}
                       className="px-3 py-2 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center gap-2"

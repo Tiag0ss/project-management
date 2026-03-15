@@ -552,6 +552,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
       const [allTasks] = await pool.execute<RowDataPacket[]>(
         `SELECT t.*, 
                 p.ProjectName,
+          COALESCE(c.ExternalName, c.Name) as CustomerName,
                 u1.Username as CreatorName,
                 u2.Username as AssigneeName,
                 depTask.TaskName as DependsOnTaskName,
@@ -572,6 +573,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
          INNER JOIN Projects p ON t.ProjectId = p.Id
          LEFT JOIN Users u1 ON t.CreatedBy = u1.Id
          LEFT JOIN Users u2 ON t.AssignedTo = u2.Id
+         LEFT JOIN Customers c ON t.CustomerId = c.Id
          LEFT JOIN Tasks depTask ON t.DependsOnTaskId = depTask.Id
          LEFT JOIN Tickets tk ON t.TicketId = tk.Id
          LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1
@@ -598,6 +600,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
       const [myTasks] = await pool.execute<RowDataPacket[]>(
         `SELECT t.*, 
                 p.ProjectName,
+          COALESCE(c.ExternalName, c.Name) as CustomerName,
                 u1.Username as CreatorName,
                 u2.Username as AssigneeName,
                 depTask.TaskName as DependsOnTaskName,
@@ -618,6 +621,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
          INNER JOIN Projects p ON t.ProjectId = p.Id
          LEFT JOIN Users u1 ON t.CreatedBy = u1.Id
          LEFT JOIN Users u2 ON t.AssignedTo = u2.Id
+         LEFT JOIN Customers c ON t.CustomerId = c.Id
          LEFT JOIN Tasks depTask ON t.DependsOnTaskId = depTask.Id
          LEFT JOIN Tickets tk ON t.TicketId = tk.Id
          LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1
