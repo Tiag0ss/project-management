@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
-import SearchableSelect from '@/components/SearchableSelect';
+import CallRecordFormModal, { CallRecordFormValues } from '@/components/CallRecordFormModal';
 
 interface CallRecord {
   Id: number;
@@ -25,21 +25,14 @@ interface CallRecord {
   TaskName?: string;
 }
 
-interface Organization {
-  Id: number;
-  Name: string;
-}
-
-interface Project {
-  Id: number;
-  ProjectName: string;
-  OrganizationId: number;
-}
-
-interface Task {
-  Id: number;
-  TaskName: string;
-  ProjectId: number;
+interface ImportCallRecordRow {
+  callDate: string;
+  startTime: string;
+  durationMinutes: number;
+  callType: string;
+  participants: string;
+  subject: string;
+  notes: string;
 }
 
 export default function CallRecordsPage() {
@@ -48,22 +41,15 @@ export default function CallRecordsPage() {
   const [callRecords, setCallRecords] = useState<CallRecord[]>([]);
   const [isLoadingRecords, setIsLoadingRecords] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [isSavingForm, setIsSavingForm] = useState(false);
   const [editingRecord, setEditingRecord] = useState<CallRecord | null>(null);
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [formData, setFormData] = useState({
-    callDate: new Date().toISOString().split('T')[0],
-    startTime: '09:00',
-    durationMinutes: 30,
-    callType: 'Teams',
-    participants: '',
-    subject: '',
-    notes: '',
-    organizationId: '',
-    projectId: '',
-    taskId: '',
-  });
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFileName, setImportFileName] = useState('');
+  const [importPreview, setImportPreview] = useState<ImportCallRecordRow[]>([]);
+  const [importRecords, setImportRecords] = useState<ImportCallRecordRow[]>([]);
+  const [importProgress, setImportProgress] = useState('');
+  const [importResult, setImportResult] = useState<{ imported: number } | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [confirmModal, setConfirmModal] = useState<{
@@ -82,61 +68,8 @@ export default function CallRecordsPage() {
   useEffect(() => {
     if (token) {
       loadCallRecords();
-      loadOrganizations();
     }
   }, [token]);
-
-  const loadOrganizations = async () => {
-    try {
-      const response = await fetch(`${getApiUrl()}/api/organizations`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setOrganizations(data.organizations || []);
-      }
-    } catch (err) {
-      console.error('Error loading organizations:', err);
-    }
-  };
-
-  const loadProjectsForOrg = async (orgId: string) => {
-    if (!orgId) {
-      setProjects([]);
-      setTasks([]);
-      return;
-    }
-    try {
-      const response = await fetch(`${getApiUrl()}/api/projects?organizationId=${orgId}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setProjects(data.projects || []);
-        setTasks([]);
-      }
-    } catch (err) {
-      console.error('Error loading projects:', err);
-    }
-  };
-
-  const loadTasksForProject = async (projectId: string) => {
-    if (!projectId) {
-      setTasks([]);
-      return;
-    }
-    try {
-      const response = await fetch(`${getApiUrl()}/api/tasks/project/${projectId}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setTasks(data.tasks || []);
-      }
-    } catch (err) {
-      console.error('Error loading tasks:', err);
-    }
-  };
 
   const loadCallRecords = async () => {
     try {
@@ -157,12 +90,8 @@ export default function CallRecordsPage() {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!formData.callDate || !formData.startTime) {
-      setError('Date and Time are required');
-      return;
-    }
-
+  const handleSubmit = async (formData: CallRecordFormValues) => {
+    setIsSavingForm(true);
     try {
       const url = editingRecord
         ? `${getApiUrl()}/api/call-records/${editingRecord.Id}`
@@ -176,6 +105,7 @@ export default function CallRecordsPage() {
         },
         body: JSON.stringify({
           ...formData,
+          organizationId: formData.organizationId || null,
           projectId: formData.projectId || null,
           taskId: formData.taskId || null,
         }),
@@ -185,39 +115,20 @@ export default function CallRecordsPage() {
         setMessage(editingRecord ? 'Call record updated!' : 'Call record created!');
         setTimeout(() => setMessage(''), 3000);
         resetForm();
-        loadCallRecords();
+        await loadCallRecords();
       } else {
         const data = await response.json();
-        setError(data.message || 'Failed to save call record');
+        throw new Error(data.message || 'Failed to save call record');
       }
     } catch (err) {
-      setError('Error saving call record');
+      throw err instanceof Error ? err : new Error('Error saving call record');
+    } finally {
+      setIsSavingForm(false);
     }
   };
 
-  const handleEdit = async (record: CallRecord) => {
+  const handleEdit = (record: CallRecord) => {
     setEditingRecord(record);
-    
-    // Load cascade data if organization/project are set
-    if (record.OrganizationId) {
-      await loadProjectsForOrg(String(record.OrganizationId));
-      if (record.ProjectId) {
-        await loadTasksForProject(String(record.ProjectId));
-      }
-    }
-    
-    setFormData({
-      callDate: record.CallDate ? record.CallDate.split('T')[0] : '',
-      startTime: record.StartTime ? record.StartTime.substring(0, 5) : '09:00',
-      durationMinutes: record.DurationMinutes || 30,
-      callType: record.CallType || 'Teams',
-      participants: record.Participants || '',
-      subject: record.Subject || '',
-      notes: record.Notes || '',
-      organizationId: record.OrganizationId ? String(record.OrganizationId) : '',
-      projectId: record.ProjectId ? String(record.ProjectId) : '',
-      taskId: record.TaskId ? String(record.TaskId) : '',
-    });
     setShowForm(true);
     setError('');
   };
@@ -252,26 +163,29 @@ export default function CallRecordsPage() {
   const resetForm = () => {
     setShowForm(false);
     setEditingRecord(null);
-    setFormData({
-      callDate: new Date().toISOString().split('T')[0],
-      startTime: '09:00',
-      durationMinutes: 30,
-      callType: 'Teams',
-      participants: '',
-      subject: '',
-      notes: '',
-      organizationId: '',
-      projectId: '',
-      taskId: '',
-    });
-    setProjects([]);
-    setTasks([]);
-    setError('');
+    setIsSavingForm(false);
   };
 
-  const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const closeImportModal = () => {
+    setShowImportModal(false);
+    setImportFileName('');
+    setImportPreview([]);
+    setImportRecords([]);
+    setImportProgress('');
+    setImportResult(null);
+    setIsImporting(false);
+  };
+
+  const handleImportCSVFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    setImportFileName(file.name);
+    setImportPreview([]);
+    setImportRecords([]);
+    setImportProgress('Reading CSV file...');
+    setImportResult(null);
+    setError('');
 
     const reader = new FileReader();
     reader.onload = async (event) => {
@@ -279,16 +193,17 @@ export default function CallRecordsPage() {
       const lines = text.split('\n').filter(line => line.trim());
       
       if (lines.length < 2) {
+        setImportProgress('');
         setError('CSV file must have a header row and at least one data row');
         return;
       }
 
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      const records = [];
+      const records: ImportCallRecordRow[] = [];
 
       for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-        const record: any = {};
+        const record: Partial<ImportCallRecordRow> = {};
 
         headers.forEach((header, index) => {
           const value = values[index] || '';
@@ -307,35 +222,55 @@ export default function CallRecordsPage() {
       }
 
       if (records.length === 0) {
+        setImportProgress('');
         setError('No valid records found in CSV');
         return;
       }
 
-      try {
-        const response = await fetch(`${getApiUrl()}/api/call-records/import`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ records }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setMessage(`Imported ${data.imported} call records`);
-          setTimeout(() => setMessage(''), 3000);
-          loadCallRecords();
-        } else {
-          setError('Failed to import CSV');
-        }
-      } catch (err) {
-        setError('Error importing CSV');
-      }
+      setImportRecords(records);
+      setImportPreview(records.slice(0, 5));
+      setImportProgress(`Loaded ${records.length} call record(s) from CSV.`);
     };
 
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  const handleImportCSV = async () => {
+    if (!importRecords.length) {
+      setError('Select a CSV file first.');
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      setImportProgress(`Importing ${importRecords.length} call record(s)...`);
+      const response = await fetch(`${getApiUrl()}/api/call-records/import`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ records: importRecords }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.message || 'Failed to import CSV');
+      }
+
+      const data = await response.json();
+      setImportResult({ imported: Number(data.imported || importRecords.length || 0) });
+      setImportProgress(`Success: imported ${Number(data.imported || importRecords.length || 0)} call record(s).`);
+      setMessage(`Imported ${Number(data.imported || importRecords.length || 0)} call records`);
+      setTimeout(() => setMessage(''), 3000);
+      await loadCallRecords();
+    } catch (err) {
+      setImportProgress('');
+      setError(err instanceof Error ? err.message : 'Error importing CSV');
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   if (isLoading || !user) {
@@ -356,15 +291,15 @@ export default function CallRecordsPage() {
             📞 Call Records
           </h1>
           <div className="flex gap-2">
-            <label className="h-10 px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg cursor-pointer transition-colors text-sm font-medium inline-flex items-center">
+            <button
+              onClick={() => {
+                setError('');
+                setShowImportModal(true);
+              }}
+              className="h-10 px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
+            >
               📥 Import CSV
-              <input
-                type="file"
-                accept=".csv"
-                onChange={handleImportCSV}
-                className="hidden"
-              />
-            </label>
+            </button>
             <button
               onClick={() => {
                 resetForm();
@@ -390,152 +325,142 @@ export default function CallRecordsPage() {
           </div>
         )}
 
-        {/* Form */}
-        {showForm && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-              {editingRecord ? 'Edit Call Record' : 'Add Call Record'}
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date *</label>
-                <input
-                  type="date"
-                  value={formData.callDate}
-                  onChange={(e) => setFormData({...formData, callDate: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                />
+        <CallRecordFormModal
+          isOpen={showForm && !!token}
+          token={token || ''}
+          title={editingRecord ? '📞 Edit Call Record' : '📞 Add Call Record'}
+          submitLabel={editingRecord ? 'Update Call' : 'Add Call'}
+          isSubmitting={isSavingForm}
+          initialData={editingRecord ? {
+            callDate: editingRecord.CallDate ? editingRecord.CallDate.split('T')[0] : '',
+            startTime: editingRecord.StartTime ? editingRecord.StartTime.substring(0, 5) : '09:00',
+            durationMinutes: editingRecord.DurationMinutes || 30,
+            callType: editingRecord.CallType || 'Teams',
+            participants: editingRecord.Participants || '',
+            subject: editingRecord.Subject || '',
+            notes: editingRecord.Notes || '',
+            organizationId: editingRecord.OrganizationId ? String(editingRecord.OrganizationId) : '',
+            projectId: editingRecord.ProjectId ? String(editingRecord.ProjectId) : '',
+            taskId: editingRecord.TaskId ? String(editingRecord.TaskId) : '',
+          } : undefined}
+          onClose={resetForm}
+          onSubmit={handleSubmit}
+        />
+
+        {showImportModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4 gap-4">
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Import Call Records from CSV</h2>
+                  <button
+                    onClick={closeImportModal}
+                    className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">📄 CSV Format</h3>
+                  <p className="text-sm text-blue-800 dark:text-blue-400 mb-2">
+                    Your CSV should have the following columns (header required):
+                  </p>
+                  <code className="text-xs bg-blue-100 dark:bg-blue-900/40 px-2 py-1 rounded block overflow-x-auto">
+                    callDate,startTime,durationMinutes,callType,participants,subject,notes
+                  </code>
+                  <p className="text-xs text-blue-800 dark:text-blue-400 mt-2">
+                    Example: 2026-02-03,14:30,45,Teams,"John, Mary",Project Meeting,Discussed requirements
+                  </p>
+                  <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
+                    <a href="/templates/call_records_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
+                  </p>
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select CSV File</label>
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleImportCSVFileChange}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  />
+                  {importFileName && (
+                    <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">Selected file: {importFileName}</p>
+                  )}
+                </div>
+
+                {importProgress && (
+                  <div className={`mb-4 p-3 rounded-lg ${
+                    importProgress.startsWith('Success')
+                      ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400'
+                      : 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400'
+                  }`}>
+                    {importProgress}
+                  </div>
+                )}
+
+                {importPreview.length > 0 && (
+                  <div className="mb-5">
+                    <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Preview (first 5 rows)</h3>
+                    <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+                      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-900">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Date</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Start Time</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Duration</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Type</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Participants</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Subject</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                          {importPreview.map((row, idx) => (
+                            <tr key={idx} className="bg-white dark:bg-gray-800">
+                              <td className="px-3 py-2 text-sm text-gray-900 dark:text-white">{row.callDate}</td>
+                              <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.startTime || '-'}</td>
+                              <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.durationMinutes} min</td>
+                              <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.callType || '-'}</td>
+                              <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.participants || '-'}</td>
+                              <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.subject || '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {importResult && (
+                  <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                    <h3 className="font-semibold text-green-900 dark:text-green-300">
+                      ✅ Successfully imported {importResult.imported} call record(s)
+                    </h3>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-3 mt-6">
+                  <button
+                    onClick={closeImportModal}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={handleImportCSV}
+                    disabled={isImporting || importRecords.length === 0}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-lg transition-colors"
+                  >
+                    {isImporting ? 'Importing...' : 'Import CSV'}
+                  </button>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Time *</label>
-                <input
-                  type="time"
-                  value={formData.startTime}
-                  onChange={(e) => setFormData({...formData, startTime: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Duration (min)</label>
-                <input
-                  type="number"
-                  value={formData.durationMinutes}
-                  onChange={(e) => setFormData({...formData, durationMinutes: parseInt(e.target.value) || 0})}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
-                <select
-                  value={formData.callType}
-                  onChange={(e) => setFormData({...formData, callType: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="Teams">Teams</option>
-                  <option value="Phone">Phone</option>
-                  <option value="Zoom">Zoom</option>
-                  <option value="Meet">Google Meet</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Participants</label>
-                <input
-                  type="text"
-                  value={formData.participants}
-                  onChange={(e) => setFormData({...formData, participants: e.target.value})}
-                  placeholder="John, Mary, Bob"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
-                <input
-                  type="text"
-                  value={formData.subject}
-                  onChange={(e) => setFormData({...formData, subject: e.target.value})}
-                  placeholder="Meeting topic"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Organization</label>
-                <SearchableSelect
-                  value={formData.organizationId}
-                  onChange={(value) => {
-                    setFormData({...formData, organizationId: value, projectId: '', taskId: ''});
-                    loadProjectsForOrg(value);
-                  }}
-                  options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
-                  placeholder="Select Organization"
-                  emptyText="-- None --"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Project</label>
-                <SearchableSelect
-                  value={formData.projectId}
-                  onChange={(value) => {
-                    setFormData({...formData, projectId: value, taskId: ''});
-                    loadTasksForProject(value);
-                  }}
-                  options={projects.map(project => ({ value: project.Id, label: project.ProjectName }))}
-                  placeholder="Select Project"
-                  emptyText="-- None --"
-                  disabled={!formData.organizationId}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Task</label>
-                <SearchableSelect
-                  value={formData.taskId}
-                  onChange={(value) => setFormData({...formData, taskId: value})}
-                  options={tasks.map(task => ({ value: task.Id, label: task.TaskName }))}
-                  placeholder="Select Task"
-                  emptyText="-- None --"
-                  disabled={!formData.projectId}
-                />
-              </div>
-              <div className="md:col-span-3">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                  rows={3}
-                  placeholder="Additional notes..."
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-4">
-              <button
-                onClick={resetForm}
-                className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                {editingRecord ? 'Update' : 'Save'}
-              </button>
             </div>
           </div>
         )}
-
-        {/* CSV Import Help */}
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
-          <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-2">
-            📋 CSV Format for Import:
-          </h4>
-          <p className="text-sm text-blue-800 dark:text-blue-400 font-mono">
-            callDate,startTime,durationMinutes,callType,participants,subject,notes
-          </p>
-          <p className="text-xs text-blue-700 dark:text-blue-500 mt-1">
-            Example: 2026-02-03,14:30,45,Teams,"John, Mary",Project Meeting,Discussed requirements
-          </p>
-        </div>
 
         {/* Call Records Table */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden border border-gray-200 dark:border-gray-700">

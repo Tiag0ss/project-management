@@ -12,6 +12,8 @@ import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import SearchableSelect from '@/components/SearchableSelect';
 import RichTextEditor from '@/components/RichTextEditor';
+import ConfirmAlertModal from '@/components/ConfirmAlertModal';
+import TimeEntryFormModal, { TimeEntryFormValues } from '@/components/TimeEntryFormModal';
 
 interface TaskWithProject extends Task {
   ProjectName?: string;
@@ -107,6 +109,7 @@ export default function TimesheetPage() {
   });
   const [editingEntry, setEditingEntry] = useState<number | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showCreateTimeEntryModal, setShowCreateTimeEntryModal] = useState(false);
   const [editEntry, setEditEntry] = useState({
     taskId: '',
     workDate: '',
@@ -466,16 +469,22 @@ export default function TimesheetPage() {
     return Math.max(0, (endMinutes - startMinutes) / 60);
   };
 
-  const handleCreateTimeEntry = async () => {
+  const handleCreateTimeEntry = async (entryValues?: TimeEntryFormValues) => {
+    const entry = entryValues || newEntry;
+
     // Calculate hours from times if not manually set
-    let hours = newEntry.hours ? parseFloat(newEntry.hours) : 0;
-    if (!hours && newEntry.startTime && newEntry.endTime) {
-      hours = calculateHoursFromTimes(newEntry.startTime, newEntry.endTime);
+    let hours = entry.hours ? parseFloat(entry.hours) : 0;
+    if (!hours && entry.startTime && entry.endTime) {
+      hours = calculateHoursFromTimes(entry.startTime, entry.endTime);
     }
 
-    if (!newEntry.taskId || !newEntry.workDate || hours <= 0) {
-      setMessage('Please fill all required fields (hours must be greater than 0)');
+    if (!entry.taskId || !entry.workDate || hours <= 0) {
+      const validationMessage = 'Please fill all required fields (hours must be greater than 0)';
+      setMessage(validationMessage);
       setTimeout(() => setMessage(''), 3000);
+      if (entryValues) {
+        throw new Error(validationMessage);
+      }
       return;
     }
 
@@ -489,12 +498,12 @@ export default function TimesheetPage() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            taskId: parseInt(newEntry.taskId),
-            workDate: newEntry.workDate,
-            startTime: newEntry.startTime || null,
-            endTime: newEntry.endTime || null,
+            taskId: parseInt(entry.taskId),
+            workDate: entry.workDate,
+            startTime: entry.startTime || null,
+            endTime: entry.endTime || null,
             hours: hours,
-            description: newEntry.description
+            description: entry.description
           })
         }
       );
@@ -509,14 +518,24 @@ export default function TimesheetPage() {
           hours: '',
           description: ''
         });
+        setShowCreateTimeEntryModal(false);
         loadTimeEntries();
         setTimeout(() => setMessage(''), 3000);
       } else {
-        setMessage('Failed to create time entry');
+        const data = await response.json();
+        const errorMessage = data.message || 'Failed to create time entry';
+        setMessage(errorMessage);
+        if (entryValues) {
+          throw new Error(errorMessage);
+        }
       }
     } catch (err) {
       console.error('Failed to create time entry:', err);
-      setMessage('Failed to create time entry');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create time entry';
+      setMessage(errorMessage);
+      if (entryValues) {
+        throw err instanceof Error ? err : new Error(errorMessage);
+      }
     }
   };
 
@@ -873,183 +892,91 @@ export default function TimesheetPage() {
             <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow p-6 text-white mb-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h1 className="text-3xl font-bold">⏱️ My Timesheet</h1>
-                  <p className="text-blue-100 mt-1">Track and manage your time entries</p>
+                  <h1 className="text-3xl font-bold">Timesheet</h1>
+                  <p className="text-blue-100 mt-1">Track your hours and review your time entries</p>
                 </div>
-                <div className="text-5xl opacity-80">📝</div>
               </div>
             </div>
 
-            {/* Timesheet Content */}
-            <div className="space-y-6">
-              {/* Timesheet Sub-Tabs */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-                <div className="border-b border-gray-200 dark:border-gray-700">
-                  <nav className="flex space-x-8 px-6">
-                    <button
-                      onClick={() => setTimesheetView('daily')}
-                      className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                        timesheetView === 'daily'
-                          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-                      }`}
-                    >
-                      📝 Daily Entry
-                    </button>
-                    <button
-                      onClick={() => setTimesheetView('weekly')}
-                      className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                        timesheetView === 'weekly'
-                          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-                      }`}
-                    >
-                      📅 Weekly Grid
-                    </button>
-                    <button
-                      onClick={() => setTimesheetView('history')}
-                      className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                        timesheetView === 'history'
-                          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-                      }`}
-                    >
-                      📊 All Entries
-                    </button>
-                    <button
-                      onClick={() => setTimesheetView('resume')}
-                      className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                        timesheetView === 'resume'
-                          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-                      }`}
-                    >
-                      📋 Resume
-                    </button>
-                  </nav>
-                </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+              <div className="border-b border-gray-200 dark:border-gray-700 px-6">
+                <nav className="flex space-x-8">
+                  <button
+                    onClick={() => setTimesheetView('daily')}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                      timesheetView === 'daily'
+                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    📅 Daily Entry
+                  </button>
+                  <button
+                    onClick={() => setTimesheetView('weekly')}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                      timesheetView === 'weekly'
+                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    🗓️ Weekly Grid
+                  </button>
+                  <button
+                    onClick={() => setTimesheetView('history')}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                      timesheetView === 'history'
+                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    📊 All Entries
+                  </button>
+                  <button
+                    onClick={() => setTimesheetView('resume')}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                      timesheetView === 'resume'
+                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    📋 Resume
+                  </button>
+                </nav>
+              </div>
 
                 {/* Daily Entry View */}
                 {timesheetView === 'daily' && (
                   <div className="p-6 space-y-6">
-                    {/* Add New Time Entry */}
-                    {permissions?.canManageTimeEntries && (
+                    {/* Time Entries List - Last 8 days */}
                     <div>
-                      <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">
-                        Add Time Entry
-                      </h2>
-                      
+                      <div className="mb-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                            My Time Entries
+                          </h2>
+                          {permissions?.canManageTimeEntries && (
+                            <button
+                              onClick={() => setShowCreateTimeEntryModal(true)}
+                              className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                            >
+                              + Add Entry
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                          Showing entries from the last 8 days
+                        </p>
+                      </div>
+
                       {message && (
                         <div className={`mb-4 px-4 py-3 rounded-lg ${
-                          message.includes('success') 
+                          message.includes('success')
                             ? 'bg-green-100 dark:bg-green-900/30 border border-green-400 text-green-700 dark:text-green-400'
                             : 'bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400'
                         }`}>
                           {message}
                         </div>
                       )}
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Task *
-                          </label>
-                          <SearchableSelect
-                            value={newEntry.taskId}
-                            onChange={(value) => setNewEntry({ ...newEntry, taskId: value })}
-                            options={myTasks.map(task => ({
-                              value: task.Id,
-                              label: `${task.ProjectName} - ${task.TaskName} (${task.StatusName || 'Unknown'})`
-                            }))}
-                            placeholder="Select a task"
-                            emptyText="No tasks assigned to you"
-                            autoSelectSingleOption
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Date *
-                          </label>
-                          <input
-                            type="date"
-                            value={newEntry.workDate}
-                            onChange={(e) => setNewEntry({ ...newEntry, workDate: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Start Time
-                          </label>
-                          <input
-                            type="time"
-                            value={newEntry.startTime}
-                            onChange={(e) => setNewEntry({ ...newEntry, startTime: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            End Time
-                          </label>
-                          <input
-                            type="time"
-                            value={newEntry.endTime}
-                            onChange={(e) => setNewEntry({ ...newEntry, endTime: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Hours {newEntry.startTime && newEntry.endTime && !newEntry.hours && `(calculated: ${calculateHoursFromTimes(newEntry.startTime, newEntry.endTime).toFixed(2)}h)`}
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            max="24"
-                            step="0.25"
-                            value={newEntry.hours}
-                            onChange={(e) => setNewEntry({ ...newEntry, hours: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                            placeholder={newEntry.startTime && newEntry.endTime ? calculateHoursFromTimes(newEntry.startTime, newEntry.endTime).toFixed(2) : "0.00"}
-                          />
-                        </div>
-
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Description
-                          </label>
-                          <RichTextEditor
-                            content={newEntry.description}
-                            onChange={(html) => setNewEntry({ ...newEntry, description: html })}
-                            placeholder="What did you work on?"
-                          />
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={handleCreateTimeEntry}
-                        className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors font-medium"
-                      >
-                        Add Entry
-                      </button>
-                    </div>
-                    )}
-
-                    {/* Time Entries List - Last 8 days */}
-                    <div>
-                      <div className="mb-4">
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                          My Time Entries
-                        </h2>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                          Showing entries from the last 8 days
-                        </p>
-                      </div>
 
                       {(() => {
                         const eightDaysAgo = new Date();
@@ -2258,8 +2185,19 @@ export default function TimesheetPage() {
                 )}
               </div>
             </div>
-          </div>
         </main>
+
+        <TimeEntryFormModal
+          isOpen={showCreateTimeEntryModal}
+          title="Add Time Entry"
+          submitLabel="Add Entry"
+          onClose={() => setShowCreateTimeEntryModal(false)}
+          onSubmit={handleCreateTimeEntry}
+          taskOptions={myTasks.map((task) => ({
+            value: task.Id,
+            label: `${task.ProjectName} - ${task.TaskName} (${task.StatusName || 'Unknown'})`,
+          }))}
+        />
 
         {/* Edit Time Entry Modal */}
         {showEditModal && editingEntry && (
@@ -2343,44 +2281,16 @@ export default function TimesheetPage() {
           </div>
         )}
 
-        {/* Confirm Modal */}
-        {modalMessage && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
-              <div className="p-6">
-                <div className="flex items-start mb-4">
-                  <div className="flex-shrink-0">
-                    <svg className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                  </div>
-                  <div className="ml-3 flex-1">
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                      {modalMessage.title}
-                    </h3>
-                    <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-                      {modalMessage.message}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex justify-end space-x-3 mt-6">
-                  <button
-                    onClick={closeModal}
-                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleModalConfirm}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        <ConfirmAlertModal
+          isOpen={!!modalMessage}
+          type={modalMessage?.type || 'confirm'}
+          title={modalMessage?.title || ''}
+          message={modalMessage?.message || ''}
+          onClose={closeModal}
+          onConfirm={handleModalConfirm}
+          confirmLabel="Delete"
+          confirmVariant="danger"
+        />
       </div>
     </CustomerUserGuard>
   );

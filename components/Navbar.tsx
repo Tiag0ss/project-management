@@ -7,8 +7,13 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { tasksApi, Task as ApiTask } from '@/lib/api/tasks';
+import { projectsApi, Project as ApiProject } from '@/lib/api/projects';
 import RichTextEditor from './RichTextEditor';
 import SearchableSelect from './SearchableSelect';
+import CallRecordFormModal, { CallRecordFormValues } from './CallRecordFormModal';
+import TimeEntryFormModal, { TimeEntryFormValues } from './TimeEntryFormModal';
+import ProjectFormModal from './ProjectFormModal';
 import NavDropdownMenu from './navbar/NavDropdownMenu';
 import TaskDetailModal from './TaskDetailModal';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
@@ -40,12 +45,6 @@ interface OrgMember {
   FirstName: string;
   LastName: string;
   Username: string;
-}
-
-interface Task {
-  Id: number;
-  TaskName: string;
-  ProjectId: number;
 }
 
 export default function Navbar() {
@@ -121,6 +120,19 @@ export default function Navbar() {
 
   // Quick Task Add state
   const [showQuickTaskModal, setShowQuickTaskModal] = useState(false);
+  const [quickTaskCreateModalState, setQuickTaskCreateModalState] = useState<{
+    show: boolean;
+    isLoading: boolean;
+    project: ApiProject | null;
+    tasks: ApiTask[];
+    error: string;
+  }>({
+    show: false,
+    isLoading: false,
+    project: null,
+    tasks: [],
+    error: '',
+  });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
@@ -150,49 +162,6 @@ export default function Navbar() {
   const [orgForm, setOrgForm] = useState({
     name: '',
     description: '',
-  });
-
-  // Project form
-  const [projectForm, setProjectForm] = useState({
-    organizationId: '',
-    projectName: '',
-    description: '',
-    startDate: '',
-    endDate: '',
-    customerId: '',
-    status: '',
-  });
-
-  // Customers state for quick project modal
-  const [projectCustomers, setProjectCustomers] = useState<{ Id: number; Name: string }[]>([]);
-  const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
-
-  // Time Entry form
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [timeEntryForm, setTimeEntryForm] = useState({
-    organizationId: '',
-    projectId: '',
-    taskId: '',
-    workDate: new Date().toISOString().split('T')[0],
-    startTime: '09:00',
-    endTime: '17:00',
-    hours: '',
-    description: '',
-  });
-
-  // Call Record form
-  const [callRecordForm, setCallRecordForm] = useState({
-    organizationId: '',
-    projectId: '',
-    taskId: '',
-    callDate: new Date().toISOString().split('T')[0],
-    startTime: '',
-    endTime: '',
-    durationMinutes: 30,
-    participants: '',
-    callType: 'Teams',
-    subject: '',
-    notes: '',
   });
 
   useEffect(() => {
@@ -719,23 +688,6 @@ export default function Navbar() {
       return;
     }
 
-    // Load organizations for modals that need them
-    if (type === 'project' || type === 'timeEntry' || type === 'callRecord') {
-      setIsLoadingData(true);
-      try {
-        const res = await fetch(`${getApiUrl()}/api/organizations`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setOrganizations(data.organizations || []);
-        }
-      } catch (err) {
-        console.error('Failed to load organizations:', err);
-      } finally {
-        setIsLoadingData(false);
-      }
-    }
   };
 
   useEffect(() => {
@@ -784,74 +736,6 @@ export default function Navbar() {
     return () => document.removeEventListener('keydown', handleQuickActionShortcuts);
   }, [isCustomerUser, permissions, user?.isSupport]);
 
-  // Load projects for a specific organization
-  const loadProjectsForOrg = async (orgId: string) => {
-    if (!orgId) {
-      setProjects([]);
-      return;
-    }
-    try {
-      const res = await fetch(`${getApiUrl()}/api/projects?organizationId=${orgId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setProjects(data.projects || []);
-      }
-    } catch (err) {
-      console.error('Failed to load projects:', err);
-    }
-  };
-
-  // Load tasks for a specific project
-  const loadTasksForProject = async (projectId: string) => {
-    if (!projectId) {
-      setTasks([]);
-      return;
-    }
-    try {
-      const res = await fetch(`${getApiUrl()}/api/tasks/project/${projectId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setTasks(data.tasks || []);
-      }
-    } catch (err) {
-      console.error('Failed to load tasks:', err);
-    }
-  };
-
-  // Calculate hours from start/end time
-  const calculateHours = (startTime: string, endTime: string): number => {
-    if (!startTime || !endTime) return 0;
-    const [startH, startM] = startTime.split(':').map(Number);
-    const [endH, endM] = endTime.split(':').map(Number);
-    const startMinutes = startH * 60 + startM;
-    const endMinutes = endH * 60 + endM;
-    return Math.max(0, (endMinutes - startMinutes) / 60);
-  };
-  
-  // Calculate end time from start time + hours
-  const calculateEndTimeFromHours = (startTime: string, hours: number): string => {
-    if (!startTime) return '';
-    const [startH, startM] = startTime.split(':').map(Number);
-    const totalMinutes = startH * 60 + startM + (hours * 60);
-    const endHour = Math.floor(totalMinutes / 60) % 24;
-    const endMin = Math.floor(totalMinutes % 60);
-    return `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
-  };
-  
-  // Calculate end time from start time + duration in minutes
-  const calculateEndTimeFromMinutes = (startTime: string, minutes: number): string => {
-    if (!startTime) return '';
-    const [startH, startM] = startTime.split(':').map(Number);
-    const totalMinutes = startH * 60 + startM + minutes;
-    const endHour = Math.floor(totalMinutes / 60) % 24;
-    const endMin = Math.floor(totalMinutes % 60);
-    return `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
-  };
-
   // Save Organization
   const handleSaveOrganization = async () => {
     if (!orgForm.name.trim()) {
@@ -887,60 +771,24 @@ export default function Navbar() {
     }
   };
 
-  // Save Project
-  const handleSaveProject = async () => {
-    if (!projectForm.organizationId || !projectForm.projectName.trim()) {
-      setError('Organization and Project name are required');
-      return;
-    }
-    setIsSaving(true);
-    setError('');
-    try {
-      const res = await fetch(`${getApiUrl()}/api/projects`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          organizationId: parseInt(projectForm.organizationId),
-          projectName: projectForm.projectName.trim(),
-          description: projectForm.description || null,
-          startDate: projectForm.startDate || null,
-          endDate: projectForm.endDate || null,
-          customerId: projectForm.customerId ? parseInt(projectForm.customerId) : null,
-          status: projectForm.status ? parseInt(projectForm.status) : null,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || 'Failed to create project');
-      }
-      closeAllModals();
-      if (window.location.pathname.includes('/projects')) {
-        window.location.reload();
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to create project');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   // Save Time Entry
-  const handleSaveTimeEntry = async () => {
+  const handleSaveTimeEntry = async (timeEntryForm: TimeEntryFormValues) => {
     if (!timeEntryForm.taskId || !timeEntryForm.workDate) {
       setError('Task and Work Date are required');
-      return;
+      throw new Error('Task and Work Date are required');
     }
     
     let hours = timeEntryForm.hours ? parseFloat(timeEntryForm.hours) : 0;
     if (!hours && timeEntryForm.startTime && timeEntryForm.endTime) {
-      hours = calculateHours(timeEntryForm.startTime, timeEntryForm.endTime);
+      const [startH, startM] = timeEntryForm.startTime.split(':').map(Number);
+      const [endH, endM] = timeEntryForm.endTime.split(':').map(Number);
+      const startMinutes = startH * 60 + startM;
+      const endMinutes = endH * 60 + endM;
+      hours = Math.max(0, (endMinutes - startMinutes) / 60);
     }
     if (hours <= 0) {
       setError('Hours must be greater than 0');
-      return;
+      throw new Error('Hours must be greater than 0');
     }
 
     setIsSaving(true);
@@ -970,19 +818,16 @@ export default function Navbar() {
         window.location.reload();
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to create time entry');
+      const message = err.message || 'Failed to create time entry';
+      setError(message);
+      throw new Error(message);
     } finally {
       setIsSaving(false);
     }
   };
 
   // Save Call Record
-  const handleSaveCallRecord = async () => {
-    if (!callRecordForm.callDate || !callRecordForm.startTime) {
-      setError('Date and start time are required');
-      return;
-    }
-
+  const handleSaveCallRecord = async (callRecordForm: CallRecordFormValues) => {
     setIsSaving(true);
     setError('');
     try {
@@ -993,6 +838,7 @@ export default function Navbar() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          organizationId: callRecordForm.organizationId ? parseInt(callRecordForm.organizationId) : null,
           taskId: callRecordForm.taskId ? parseInt(callRecordForm.taskId) : null,
           projectId: callRecordForm.projectId ? parseInt(callRecordForm.projectId) : null,
           callDate: callRecordForm.callDate,
@@ -1013,7 +859,9 @@ export default function Navbar() {
         window.location.reload();
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to create call record');
+      const message = err.message || 'Failed to create call record';
+      setError(message);
+      throw new Error(message);
     } finally {
       setIsSaving(false);
     }
@@ -1023,11 +871,11 @@ export default function Navbar() {
   const closeAllModals = () => {
     setActiveModal(null);
     setShowQuickTaskModal(false);
+    setQuickTaskCreateModalState({ show: false, isLoading: false, project: null, tasks: [], error: '' });
     setError('');
     setSelectedOrgId(null);
     setOrganizations([]);
     setProjects([]);
-    setTasks([]);
     setTaskStatuses([]);
     setTaskPriorities([]);
     setTaskTypes([]);
@@ -1042,34 +890,9 @@ export default function Navbar() {
       assignedTo: '',
       dueDate: '',
       estimatedHours: '',
+      unscheduledWork: false,
     });
     setOrgForm({ name: '', description: '' });
-    setProjectForm({ organizationId: '', projectName: '', description: '', startDate: '', endDate: '', customerId: '', status: '' });
-    setProjectCustomers([]);
-    setProjectStatuses([]);
-    setTimeEntryForm({
-      organizationId: '',
-      projectId: '',
-      taskId: '',
-      workDate: new Date().toISOString().split('T')[0],
-      startTime: '09:00',
-      endTime: '17:00',
-      hours: '',
-      description: '',
-    });
-    setCallRecordForm({
-      organizationId: '',
-      projectId: '',
-      taskId: '',
-      callDate: new Date().toISOString().split('T')[0],
-      startTime: '',
-      endTime: '',
-      durationMinutes: 30,
-      participants: '',
-      callType: 'Teams',
-      subject: '',
-      notes: '',
-    });
   };
 
   // Load projects and settings when organization changes
@@ -1218,6 +1041,54 @@ export default function Navbar() {
 
   const closeQuickTaskModal = () => {
     closeAllModals();
+  };
+
+  const openQuickTaskCreateDetails = async (projectId: number) => {
+    if (!token || !projectId) return;
+
+    setQuickTaskCreateModalState({ show: true, isLoading: true, project: null, tasks: [], error: '' });
+    setShowQuickTaskModal(false);
+    setError('');
+
+    try {
+      const [projectResult, tasksResult] = await Promise.all([
+        projectsApi.getById(projectId, token),
+        tasksApi.getByProject(projectId, token),
+      ]);
+
+      setQuickTaskCreateModalState({
+        show: true,
+        isLoading: false,
+        project: projectResult.project,
+        tasks: tasksResult.tasks || [],
+        error: '',
+      });
+    } catch (err: any) {
+      setQuickTaskCreateModalState({
+        show: true,
+        isLoading: false,
+        project: null,
+        tasks: [],
+        error: err?.message || 'Failed to load project details',
+      });
+    }
+  };
+
+  const handleCloseQuickTaskCreateDetails = () => {
+    setQuickTaskCreateModalState({ show: false, isLoading: false, project: null, tasks: [], error: '' });
+    closeAllModals();
+  };
+
+  const handleQuickTaskCreateSaved = async () => {
+    setQuickTaskCreateModalState({ show: false, isLoading: false, project: null, tasks: [], error: '' });
+    closeAllModals();
+    if (
+      window.location.pathname.includes('/projects') ||
+      window.location.pathname.includes('/planning') ||
+      window.location.pathname.includes('/dashboard')
+    ) {
+      window.location.reload();
+    }
   };
 
   // Debug permissions
@@ -2225,7 +2096,7 @@ export default function Navbar() {
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  Quick Task Add
+                  Select Project for New Task
                 </h2>
                 <button
                   onClick={closeQuickTaskModal}
@@ -2244,7 +2115,10 @@ export default function Navbar() {
               )}
 
               <div className="space-y-4">
-                {/* Organization */}
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Choose the organization and project first. The task details will open in the standard task modal.
+                </p>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Organization <span className="text-red-500">*</span>
@@ -2267,7 +2141,13 @@ export default function Navbar() {
                   </label>
                   <SearchableSelect
                     value={taskForm.projectId}
-                    onChange={(value) => setTaskForm(prev => ({ ...prev, projectId: value }))}
+                    onChange={(value) => {
+                      setTaskForm(prev => ({ ...prev, projectId: value }));
+                      const projectId = parseInt(value, 10);
+                      if (projectId > 0) {
+                        void openQuickTaskCreateDetails(projectId);
+                      }
+                    }}
                     options={projects.map(project => ({ value: project.Id, label: project.ProjectName }))}
                     placeholder="Select Project"
                     emptyText="Select Project"
@@ -2275,152 +2155,8 @@ export default function Navbar() {
                     autoSelectSingleOption
                   />
                 </div>
-
-                {/* Task Name */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Task Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={taskForm.taskName}
-                    onChange={(e) => setTaskForm(prev => ({ ...prev, taskName: e.target.value }))}
-                    placeholder="Enter task name"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                {/* Description */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Description
-                  </label>
-                  <RichTextEditor
-                    content={taskForm.description}
-                    onChange={(html) => setTaskForm(prev => ({ ...prev, description: html }))}
-                    placeholder="Enter task description"
-                  />
-                </div>
-
-                {/* Status, Priority and Task Type Row */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Status
-                    </label>
-                    <select
-                      value={taskForm.status}
-                      onChange={(e) => setTaskForm(prev => ({ ...prev, status: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      disabled={!selectedOrgId}
-                    >
-                      <option value="">Select Status</option>
-                      {taskStatuses.map(status => (
-                        <option key={status.Id} value={status.Id}>{status.StatusName}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Priority
-                    </label>
-                    <select
-                      value={taskForm.priority}
-                      onChange={(e) => setTaskForm(prev => ({ ...prev, priority: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      disabled={!selectedOrgId}
-                    >
-                      <option value="">Select Priority</option>
-                      {taskPriorities.map(priority => (
-                        <option key={priority.Id} value={priority.Id}>{priority.PriorityName}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Task Type <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={taskForm.taskType}
-                      onChange={(e) => setTaskForm(prev => ({ ...prev, taskType: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      disabled={!selectedOrgId}
-                      required
-                    >
-                      <option value="">Select Task Type</option>
-                      {taskTypes.map(type => (
-                        <option key={type.Id} value={type.Id}>{type.TypeName || type.StatusName}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Assigned To */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Assigned To
-                  </label>
-                  <SearchableSelect
-                    value={taskForm.assignedTo}
-                    onChange={(value) => setTaskForm(prev => ({ ...prev, assignedTo: value }))}
-                    options={orgMembers.map(member => ({
-                      value: member.Id,
-                      label: member.FirstName && member.LastName
-                        ? `${member.FirstName} ${member.LastName}`
-                        : member.Username,
-                    }))}
-                    placeholder="Select Assignee"
-                    emptyText="Unassigned"
-                    disabled={!selectedOrgId}
-                    autoSelectSingleOption
-                  />
-                </div>
-
-                {/* Due Date and Estimated Hours Row */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Due Date
-                    </label>
-                    <input
-                      type="date"
-                      value={taskForm.dueDate}
-                      onChange={(e) => setTaskForm(prev => ({ ...prev, dueDate: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Estimated Hours
-                    </label>
-                    <input
-                      type="number"
-                      value={taskForm.estimatedHours}
-                      onChange={(e) => setTaskForm(prev => ({ ...prev, estimatedHours: e.target.value }))}
-                      placeholder="0"
-                      min="0"
-                      step="0.5"
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/40 px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">Unscheduled Work</p>
-                    <p className="text-xs text-gray-600 dark:text-gray-400">Show this task in Planner as unscheduled work.</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(taskForm.unscheduledWork)}
-                    onChange={(e) => setTaskForm(prev => ({ ...prev, unscheduledWork: e.target.checked }))}
-                    className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                </div>
               </div>
 
-              {/* Actions */}
               <div className="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={closeQuickTaskModal}
@@ -2428,27 +2164,51 @@ export default function Navbar() {
                 >
                   Cancel
                 </button>
-                <button
-                  onClick={handleSaveTask}
-                  disabled={isSaving || !taskForm.projectId || !taskForm.taskName.trim() || !taskForm.taskType}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors flex items-center space-x-2"
-                >
-                  {isSaving ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      <span>Creating...</span>
-                    </>
-                  ) : (
-                    <span>Create Task</span>
-                  )}
-                </button>
               </div>
             </div>
           </div>
         </div>
+      )}
+
+      {quickTaskCreateModalState.show && (
+        <>
+          {quickTaskCreateModalState.isLoading && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 text-gray-700 dark:text-gray-300">
+                Loading task details...
+              </div>
+            </div>
+          )}
+
+          {!quickTaskCreateModalState.isLoading && quickTaskCreateModalState.error && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+                <div className="text-sm text-red-600 dark:text-red-400 mb-4">{quickTaskCreateModalState.error}</div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleCloseQuickTaskCreateDetails}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!quickTaskCreateModalState.isLoading && !quickTaskCreateModalState.error && quickTaskCreateModalState.project && token && (
+            <TaskDetailModal
+              projectId={Number(quickTaskCreateModalState.project.Id)}
+              organizationId={Number(quickTaskCreateModalState.project.OrganizationId)}
+              task={null}
+              project={quickTaskCreateModalState.project}
+              tasks={quickTaskCreateModalState.tasks}
+              onClose={handleCloseQuickTaskCreateDetails}
+              onSaved={handleQuickTaskCreateSaved}
+              token={token}
+            />
+          )}
+        </>
       )}
 
       {/* Organization Modal */}
@@ -2523,564 +2283,40 @@ export default function Navbar() {
 
       {/* Project Modal */}
       {activeModal === 'project' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  New Project
-                </h2>
-                <button
-                  onClick={closeAllModals}
-                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {error && (
-                <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
-                  {error}
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Organization <span className="text-red-500">*</span>
-                  </label>
-                  <SearchableSelect
-                    value={projectForm.organizationId}
-                    onChange={async (value) => {
-                      setProjectForm(prev => ({ ...prev, organizationId: value, customerId: '', status: '' }));
-                      if (value) {
-                        try {
-                          const res = await fetch(`${getApiUrl()}/api/customers?organizationId=${value}`, {
-                            headers: { 'Authorization': `Bearer ${token}` }
-                          });
-                          if (res.ok) {
-                            const data = await res.json();
-                            setProjectCustomers(data.data || []);
-                          }
-                          
-                          const statusRes = await statusValuesApi.getProjectStatuses(parseInt(value), token!);
-                          setProjectStatuses(statusRes.statuses);
-                        } catch (err) {
-                          console.error('Failed to load customers/statuses:', err);
-                        }
-                      } else {
-                        setProjectCustomers([]);
-                        setProjectStatuses([]);
-                      }
-                    }}
-                    options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
-                    placeholder="Select Organization"
-                    emptyText="Select Organization"
-                    disabled={isLoadingData}
-                    autoSelectSingleOption
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Customer
-                  </label>
-                  <SearchableSelect
-                    value={projectForm.customerId}
-                    onChange={(value) => setProjectForm(prev => ({ ...prev, customerId: value }))}
-                    options={projectCustomers.map(customer => ({ value: customer.Id, label: customer.Name }))}
-                    placeholder="Select Customer"
-                    emptyText="No customer"
-                    disabled={!projectForm.organizationId}
-                    autoSelectSingleOption
-                  />
-                  {projectForm.organizationId && projectCustomers.length === 0 && (
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      No customers available for this organization
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Project Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={projectForm.projectName}
-                    onChange={(e) => setProjectForm(prev => ({ ...prev, projectName: e.target.value }))}
-                    placeholder="Enter project name"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Description
-                  </label>
-                  <RichTextEditor
-                    content={projectForm.description}
-                    onChange={(html) => setProjectForm(prev => ({ ...prev, description: html }))}
-                    placeholder="Enter description"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Status
-                  </label>
-                  <select
-                    value={projectForm.status}
-                    onChange={(e) => setProjectForm(prev => ({ ...prev, status: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    disabled={!projectForm.organizationId}
-                  >
-                    <option value="">Select Status</option>
-                    {projectStatuses.map(status => (
-                      <option key={status.Id} value={status.Id}>
-                        {status.StatusName}
-                      </option>
-                    ))}
-                  </select>
-                  {projectForm.organizationId && projectStatuses.length === 0 && (
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      No project statuses available for this organization
-                    </p>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Start Date
-                    </label>
-                    <input
-                      type="date"
-                      value={projectForm.startDate}
-                      onChange={(e) => setProjectForm(prev => ({ ...prev, startDate: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      End Date
-                    </label>
-                    <input
-                      type="date"
-                      value={projectForm.endDate}
-                      onChange={(e) => setProjectForm(prev => ({ ...prev, endDate: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <button
-                  onClick={closeAllModals}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveProject}
-                  disabled={isSaving || !projectForm.organizationId || !projectForm.projectName.trim()}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
-                >
-                  {isSaving ? 'Creating...' : 'Create Project'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ProjectFormModal
+          project={null}
+          onClose={closeAllModals}
+          onSaved={() => {
+            closeAllModals();
+            if (window.location.pathname.includes('/projects')) {
+              window.location.reload();
+            }
+          }}
+          token={token || ''}
+          canViewBudgetInfo={Boolean(permissions?.canViewBudgetInfo)}
+        />
       )}
 
-      {/* Time Entry Modal */}
-      {activeModal === 'timeEntry' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  New Time Entry
-                </h2>
-                <button
-                  onClick={closeAllModals}
-                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+      <TimeEntryFormModal
+        isOpen={activeModal === 'timeEntry'}
+        token={token || ''}
+        title="New Time Entry"
+        submitLabel="Create Time Entry"
+        isSubmitting={isSaving}
+        useOrganizationProjectTaskFlow
+        onClose={closeAllModals}
+        onSubmit={handleSaveTimeEntry}
+      />
 
-              {error && (
-                <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
-                  {error}
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Organization <span className="text-red-500">*</span>
-                  </label>
-                  <SearchableSelect
-                    value={timeEntryForm.organizationId}
-                    onChange={async (value) => {
-                      setTimeEntryForm(prev => ({ ...prev, organizationId: value, projectId: '', taskId: '' }));
-                      setTasks([]);
-                      await loadProjectsForOrg(value);
-                    }}
-                    options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
-                    placeholder="Select Organization"
-                    emptyText="Select Organization"
-                    disabled={isLoadingData}
-                    autoSelectSingleOption
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Project <span className="text-red-500">*</span>
-                  </label>
-                  <SearchableSelect
-                    value={timeEntryForm.projectId}
-                    onChange={async (value) => {
-                      setTimeEntryForm(prev => ({ ...prev, projectId: value, taskId: '' }));
-                      await loadTasksForProject(value);
-                    }}
-                    options={projects.map(proj => ({ value: proj.Id, label: proj.ProjectName }))}
-                    placeholder="Select Project"
-                    emptyText="Select Project"
-                    disabled={!timeEntryForm.organizationId}
-                    autoSelectSingleOption
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Task <span className="text-red-500">*</span>
-                  </label>
-                  <SearchableSelect
-                    value={timeEntryForm.taskId}
-                    onChange={(value) => setTimeEntryForm(prev => ({ ...prev, taskId: value }))}
-                    options={tasks.map(task => ({ value: task.Id, label: task.TaskName }))}
-                    placeholder="Select Task"
-                    emptyText="Select Task"
-                    disabled={!timeEntryForm.projectId}
-                    autoSelectSingleOption
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Work Date <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={timeEntryForm.workDate}
-                    onChange={(e) => setTimeEntryForm(prev => ({ ...prev, workDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Start Time
-                    </label>
-                    <input
-                      type="time"
-                      value={timeEntryForm.startTime}
-                      onChange={(e) => {
-                        const newStartTime = e.target.value;
-                        // Recalculate hours based on new start time and current end time
-                        const hours = calculateHours(newStartTime, timeEntryForm.endTime);
-                        setTimeEntryForm(prev => ({ ...prev, startTime: newStartTime, hours: hours > 0 ? hours.toFixed(2) : '' }));
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      End Time
-                    </label>
-                    <input
-                      type="time"
-                      value={timeEntryForm.endTime}
-                      onChange={(e) => {
-                        const newEndTime = e.target.value;
-                        // Recalculate hours based on start time and new end time
-                        const hours = calculateHours(timeEntryForm.startTime, newEndTime);
-                        setTimeEntryForm(prev => ({ ...prev, endTime: newEndTime, hours: hours > 0 ? hours.toFixed(2) : '' }));
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Hours {timeEntryForm.startTime && timeEntryForm.endTime && `(calculated: ${calculateHours(timeEntryForm.startTime, timeEntryForm.endTime).toFixed(2)}h)`}
-                  </label>
-                  <input
-                    type="number"
-                    value={timeEntryForm.hours}
-                    onChange={(e) => {
-                      const hours = parseFloat(e.target.value) || 0;
-                      // Recalculate end time based on start time + hours
-                      const newEndTime = hours > 0 ? calculateEndTimeFromHours(timeEntryForm.startTime, hours) : timeEntryForm.endTime;
-                      setTimeEntryForm(prev => ({ ...prev, hours: e.target.value, endTime: newEndTime }));
-                    }}
-                    placeholder={timeEntryForm.startTime && timeEntryForm.endTime ? `${calculateHours(timeEntryForm.startTime, timeEntryForm.endTime).toFixed(2)}` : "0"}
-                    min="0"
-                    step="0.25"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Description
-                  </label>
-                  <RichTextEditor
-                    content={timeEntryForm.description}
-                    onChange={(html) => setTimeEntryForm(prev => ({ ...prev, description: html }))}
-                    placeholder="What did you work on?"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <button
-                  onClick={closeAllModals}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveTimeEntry}
-                  disabled={isSaving || !timeEntryForm.taskId || !timeEntryForm.workDate}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
-                >
-                  {isSaving ? 'Creating...' : 'Create Time Entry'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Call Record Modal */}
-      {activeModal === 'callRecord' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  New Call Record
-                </h2>
-                <button
-                  onClick={closeAllModals}
-                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {error && (
-                <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
-                  {error}
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Organization (optional - to link to task)
-                  </label>
-                  <SearchableSelect
-                    value={callRecordForm.organizationId}
-                    onChange={async (value) => {
-                      setCallRecordForm(prev => ({ ...prev, organizationId: value, projectId: '', taskId: '' }));
-                      setTasks([]);
-                      await loadProjectsForOrg(value);
-                    }}
-                    options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
-                    placeholder="No Organization"
-                    emptyText="No Organization"
-                    disabled={isLoadingData}
-                  />
-                </div>
-
-                {callRecordForm.organizationId && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Project
-                      </label>
-                      <SearchableSelect
-                        value={callRecordForm.projectId}
-                        onChange={async (value) => {
-                          setCallRecordForm(prev => ({ ...prev, projectId: value, taskId: '' }));
-                          await loadTasksForProject(value);
-                        }}
-                        options={projects.map(proj => ({ value: proj.Id, label: proj.ProjectName }))}
-                        placeholder="No Project"
-                        emptyText="No Project"
-                      />
-                    </div>
-
-                    {callRecordForm.projectId && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Task
-                        </label>
-                        <SearchableSelect
-                          value={callRecordForm.taskId}
-                          onChange={(value) => setCallRecordForm(prev => ({ ...prev, taskId: value }))}
-                          options={tasks.map(task => ({ value: task.Id, label: task.TaskName }))}
-                          placeholder="No Task"
-                          emptyText="No Task"
-                        />
-                      </div>
-                    )}
-                  </>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Call Date <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={callRecordForm.callDate}
-                    onChange={(e) => setCallRecordForm(prev => ({ ...prev, callDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Start Time *
-                    </label>
-                    <input
-                      type="time"
-                      value={callRecordForm.startTime}
-                      onChange={(e) => {
-                        const newStartTime = e.target.value;
-                        const hours = calculateHours(newStartTime, callRecordForm.endTime);
-                        const durationMin = Math.round(hours * 60);
-                        setCallRecordForm(prev => ({ ...prev, startTime: newStartTime, durationMinutes: durationMin > 0 ? durationMin : 30 }));
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      End Time *
-                    </label>
-                    <input
-                      type="time"
-                      value={callRecordForm.endTime}
-                      onChange={(e) => {
-                        const newEndTime = e.target.value;
-                        const hours = calculateHours(callRecordForm.startTime, newEndTime);
-                        const durationMin = Math.round(hours * 60);
-                        setCallRecordForm(prev => ({ ...prev, endTime: newEndTime, durationMinutes: durationMin > 0 ? durationMin : 30 }));
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Duration (min)
-                    </label>
-                    <input
-                      type="number"
-                      value={callRecordForm.durationMinutes}
-                      onChange={(e) => {
-                        const duration = parseInt(e.target.value) || 30;
-                        const newEndTime = duration > 0 ? calculateEndTimeFromMinutes(callRecordForm.startTime, duration) : callRecordForm.endTime;
-                        setCallRecordForm(prev => ({ ...prev, durationMinutes: duration, endTime: newEndTime }));
-                      }}
-                      min="1"
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Participants
-                    </label>
-                    <input
-                      type="text"
-                      value={callRecordForm.participants}
-                      onChange={(e) => setCallRecordForm(prev => ({ ...prev, participants: e.target.value }))}
-                      placeholder="Names or emails (optional)"
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Call Type
-                  </label>
-                  <select
-                    value={callRecordForm.callType}
-                    onChange={(e) => setCallRecordForm(prev => ({ ...prev, callType: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="Teams">Teams</option>
-                    <option value="Phone">Phone</option>
-                    <option value="Zoom">Zoom</option>
-                    <option value="Meet">Google Meet</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Subject
-                  </label>
-                  <input
-                    type="text"
-                    value={callRecordForm.subject}
-                    onChange={(e) => setCallRecordForm(prev => ({ ...prev, subject: e.target.value }))}
-                    placeholder="Call subject"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Notes
-                  </label>
-                  <RichTextEditor
-                    content={callRecordForm.notes}
-                    onChange={(html) => setCallRecordForm(prev => ({ ...prev, notes: html }))}
-                    placeholder="Call notes..."
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <button
-                  onClick={closeAllModals}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveCallRecord}
-                  disabled={isSaving || !callRecordForm.callDate}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
-                >
-                  {isSaving ? 'Creating...' : 'Create Call Record'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <CallRecordFormModal
+        isOpen={activeModal === 'callRecord'}
+        token={token || ''}
+        title="📞 New Call Record"
+        submitLabel="Create Call Record"
+        isSubmitting={isSaving}
+        onClose={closeAllModals}
+        onSubmit={handleSaveCallRecord}
+      />
     </>
   );
 }

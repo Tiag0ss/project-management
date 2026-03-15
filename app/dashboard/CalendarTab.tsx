@@ -9,7 +9,8 @@ import { useMemo, useState, useCallback, useEffect } from 'react';
 import { Calendar, dateFnsLocalizer, Views } from 'react-big-calendar';
 import { format, parse, startOfWeek, endOfWeek, startOfMonth, endOfMonth, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
-import SearchableSelect from '@/components/SearchableSelect';
+import CallRecordFormModal, { CallRecordFormValues } from '@/components/CallRecordFormModal';
+import TimeEntryFormModal, { TimeEntryFormValues } from '@/components/TimeEntryFormModal';
 import RichTextEditor from '@/components/RichTextEditor';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
@@ -25,17 +26,6 @@ const localizer = dateFnsLocalizer({
   getDay,
   locales,
 });
-
-interface Organization {
-  Id: number;
-  Name: string;
-}
-
-interface Project {
-  Id: number;
-  ProjectName: string;
-  OrganizationId: number;
-}
 
 interface Task {
   Id: number;
@@ -167,29 +157,9 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   const [showSlotModal, setShowSlotModal] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<SlotInfo | null>(null);
   const [slotAction, setSlotAction] = useState<'choice' | 'timeEntry' | 'call' | 'vacation'>('choice');
-  const [selectedTaskId, setSelectedTaskId] = useState<string>('');
-  const [entryHours, setEntryHours] = useState<string>('1');
-  const [entryDescription, setEntryDescription] = useState('');
-  const [entryStartTime, setEntryStartTime] = useState<string>('09:00');
-  const [entryEndTime, setEntryEndTime] = useState<string>('10:00');
   const [vacationStartDate, setVacationStartDate] = useState<string>('');
   const [vacationEndDate, setVacationEndDate] = useState<string>('');
   const [vacationNotes, setVacationNotes] = useState('');
-  const [callData, setCallData] = useState({
-    startTime: '09:00',
-    endTime: '09:30',
-    durationMinutes: 30,
-    callType: 'Teams',
-    participants: '',
-    subject: '',
-    notes: '',
-    organizationId: '',
-    projectId: '',
-    taskId: '',
-  });
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [availableTasks, setAvailableTasks] = useState<Task[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -288,65 +258,6 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     loadVacations();
   }, [token, currentDate, currentView]);
   
-  // Load organizations on mount
-  useEffect(() => {
-    const loadOrganizations = async () => {
-      try {
-        const response = await fetch(`${getApiUrl()}/api/organizations`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setOrganizations(data.organizations || []);
-        }
-      } catch (err) {
-        console.error('Error loading organizations:', err);
-      }
-    };
-    loadOrganizations();
-  }, [token]);
-
-  // Load projects for selected organization
-  const loadProjectsForOrg = async (orgId: string) => {
-    if (!orgId) {
-      setProjects([]);
-      setAvailableTasks([]);
-      return;
-    }
-    try {
-      const response = await fetch(
-        `${getApiUrl()}/api/projects?organizationId=${orgId}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setProjects(data.projects || []);
-      }
-    } catch (err) {
-      console.error('Error loading projects:', err);
-    }
-  };
-
-  // Load tasks for selected project
-  const loadTasksForProject = async (projectId: string) => {
-    if (!projectId) {
-      setAvailableTasks([]);
-      return;
-    }
-    try {
-      const response = await fetch(
-        `${getApiUrl()}/api/tasks/project/${projectId}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setAvailableTasks(data.tasks || []);
-      }
-    } catch (err) {
-      console.error('Error loading tasks:', err);
-    }
-  };
-
   // Helper functions for time calculations
   const calculateHoursDifference = (startTime: string, endTime: string): number => {
     const [startHour, startMin] = startTime.split(':').map(Number);
@@ -855,22 +766,6 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   const handleSelectSlot = useCallback((slotInfo: SlotInfo) => {
     setSelectedSlot(slotInfo);
     setSlotAction('choice');
-    setSelectedTaskId('');
-    
-    // Use actual slot times for both time entry and call record
-    const startTimeStr = format(slotInfo.start, 'HH:mm');
-    const endTimeStr = format(slotInfo.end, 'HH:mm');
-    
-    // Calculate hours from slot duration
-    const slotDurationMs = slotInfo.end.getTime() - slotInfo.start.getTime();
-    const slotHours = slotDurationMs / (1000 * 60 * 60);
-    const slotMinutes = Math.round(slotDurationMs / (1000 * 60));
-    
-    // Set time entry with slot times
-    setEntryStartTime(startTimeStr);
-    setEntryEndTime(endTimeStr);
-    setEntryHours(slotHours.toString());
-    setEntryDescription('');
 
     const slotStartDate = format(slotInfo.start, 'yyyy-MM-dd');
     const slotEndDate = new Date(slotInfo.end);
@@ -884,21 +779,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     setVacationStartDate(slotStartDate);
     setVacationEndDate(slotEndDateString);
     setVacationNotes('');
-    
-    // Set call data with slot times
-    setCallData({
-      startTime: startTimeStr,
-      endTime: endTimeStr,
-      durationMinutes: slotMinutes,
-      callType: 'Teams',
-      participants: '',
-      subject: '',
-      notes: '',
-      organizationId: '',
-      projectId: '',
-      taskId: '',
-    });
-    
+
     setShowSlotModal(true);
   }, []);
 
@@ -914,8 +795,10 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     setEditingEntry(null);
   };
 
-  const handleCreateTimeEntry = async () => {
-    if (!selectedTaskId || !selectedSlot) return;
+  const handleCreateTimeEntry = async (entryData: TimeEntryFormValues) => {
+    if (!entryData.taskId || !selectedSlot) {
+      throw new Error('Task is required');
+    }
     
     setIsSaving(true);
     try {
@@ -928,12 +811,12 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            taskId: parseInt(selectedTaskId),
-            workDate: format(selectedSlot.start, 'yyyy-MM-dd'),
-            hours: parseFloat(entryHours),
-            description: entryDescription,
-            startTime: entryStartTime,
-            endTime: entryEndTime,
+            taskId: parseInt(entryData.taskId),
+            workDate: entryData.workDate || format(selectedSlot.start, 'yyyy-MM-dd'),
+            hours: parseFloat(entryData.hours),
+            description: entryData.description,
+            startTime: entryData.startTime,
+            endTime: entryData.endTime,
           }),
         }
       );
@@ -941,9 +824,13 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       if (response.ok) {
         closeSlotModal();
         onDataChanged();
+      } else {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to create time entry');
       }
     } catch (err) {
       console.error('Failed to create time entry:', err);
+      throw err instanceof Error ? err : new Error('Failed to create time entry');
     } finally {
       setIsSaving(false);
     }
@@ -1009,7 +896,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     }
   };
 
-  const handleCreateCallRecord = async () => {
+  const handleCreateCallRecord = async (callData: CallRecordFormValues) => {
     if (!selectedSlot) return;
     
     setIsSaving(true);
@@ -1023,13 +910,14 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            callDate: format(selectedSlot.start, 'yyyy-MM-dd'),
+            callDate: callData.callDate,
             startTime: callData.startTime,
             durationMinutes: callData.durationMinutes,
             callType: callData.callType,
             participants: callData.participants,
             subject: callData.subject,
             notes: callData.notes,
+            organizationId: callData.organizationId || null,
             projectId: callData.projectId || null,
             taskId: callData.taskId || null,
           }),
@@ -1039,9 +927,13 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       if (response.ok) {
         closeSlotModal();
         onDataChanged();
+      } else {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.message || 'Failed to create call record');
       }
     } catch (err) {
       console.error('Failed to create call record:', err);
+      throw err instanceof Error ? err : new Error('Failed to create call record');
     } finally {
       setIsSaving(false);
     }
@@ -1264,7 +1156,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       </div>
 
       {/* Slot Selection Modal */}
-      {showSlotModal && selectedSlot && (
+      {showSlotModal && selectedSlot && slotAction !== 'call' && slotAction !== 'timeEntry' && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
@@ -1272,8 +1164,6 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                   {slotAction === 'choice' && '📅 Add Entry'}
-                  {slotAction === 'timeEntry' && '⏱️ Add Time Entry'}
-                  {slotAction === 'call' && '📞 Add Call Record'}
                   {slotAction === 'vacation' && '🏖️ Add Vacation'}
                 </h3>
                 <button
@@ -1330,302 +1220,6 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                       <p className="text-sm text-gray-500 dark:text-gray-400">Request vacation for selected range</p>
                     </div>
                   </button>
-                </div>
-              )}
-
-              {/* Time Entry Form */}
-              {slotAction === 'timeEntry' && (
-                <div className="space-y-4">
-                  <button
-                    onClick={() => setSlotAction('choice')}
-                    className="text-sm text-blue-600 hover:text-blue-700 mb-2"
-                  >
-                    ← Back to options
-                  </button>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Task *
-                    </label>
-                    <SearchableSelect
-                      value={selectedTaskId}
-                      onChange={(value) => setSelectedTaskId(value)}
-                      options={tasks.map(task => ({
-                        value: task.Id,
-                        label: task.ProjectName ? `${task.ProjectName} - ${task.TaskName}` : task.TaskName
-                      }))}
-                      placeholder="Select a task..."
-                      emptyText="Select a task..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Hours *
-                    </label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0.5"
-                      value={entryHours}
-                      onChange={(e) => {
-                        const hours = parseFloat(e.target.value) || 0.5;
-                        setEntryHours(e.target.value);
-                        // Recalculate end time based on start time + hours
-                        const newEndTime = calculateEndTime(entryStartTime, hours);
-                        setEntryEndTime(newEndTime);
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Start Time *
-                      </label>
-                      <input
-                        type="time"
-                        value={entryStartTime}
-                        onChange={(e) => {
-                          setEntryStartTime(e.target.value);
-                          // Recalculate hours based on new start time and current end time
-                          const hours = calculateHoursDifference(e.target.value, entryEndTime);
-                          setEntryHours(hours.toFixed(2));
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        End Time *
-                      </label>
-                      <input
-                        type="time"
-                        value={entryEndTime}
-                        onChange={(e) => {
-                          setEntryEndTime(e.target.value);
-                          // Recalculate hours based on start time and new end time
-                          const hours = calculateHoursDifference(entryStartTime, e.target.value);
-                          setEntryHours(hours.toFixed(2));
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Description
-                    </label>
-                    <RichTextEditor
-                      content={entryDescription}
-                      onChange={(html) => setEntryDescription(html)}
-                      placeholder="What did you work on?"
-                    />
-                  </div>
-
-                  <div className="flex gap-2 pt-2">
-                    <button
-                      onClick={closeSlotModal}
-                      className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleCreateTimeEntry}
-                      disabled={!selectedTaskId || isSaving}
-                      className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-lg transition-colors"
-                    >
-                      {isSaving ? 'Saving...' : 'Add Entry'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Call Record Form */}
-              {slotAction === 'call' && (
-                <div className="space-y-4">
-                  <button
-                    onClick={() => setSlotAction('choice')}
-                    className="text-sm text-blue-600 hover:text-blue-700 mb-2"
-                  >
-                    ← Back to options
-                  </button>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Start Time *
-                      </label>
-                      <input
-                        type="time"
-                        value={callData.startTime}
-                        onChange={(e) => {
-                          const newStartTime = e.target.value;
-                          // Recalculate duration based on new start time and current end time
-                          const hours = calculateHoursDifference(newStartTime, callData.endTime);
-                          const durationMin = Math.round(hours * 60);
-                          setCallData({...callData, startTime: newStartTime, durationMinutes: durationMin > 0 ? durationMin : 30});
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        End Time *
-                      </label>
-                      <input
-                        type="time"
-                        value={callData.endTime}
-                        onChange={(e) => {
-                          const newEndTime = e.target.value;
-                          // Recalculate duration based on start time and new end time
-                          const hours = calculateHoursDifference(callData.startTime, newEndTime);
-                          const durationMin = Math.round(hours * 60);
-                          setCallData({...callData, endTime: newEndTime, durationMinutes: durationMin > 0 ? durationMin : 30});
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Duration (min)
-                      </label>
-                      <input
-                        type="number"
-                        value={callData.durationMinutes}
-                        onChange={(e) => {
-                          const duration = parseInt(e.target.value) || 30;
-                          // Recalculate end time based on start time + duration
-                          const newEndTime = calculateEndTime(callData.startTime, duration / 60);
-                          setCallData({...callData, durationMinutes: duration, endTime: newEndTime});
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Type
-                      </label>
-                      <select
-                        value={callData.callType}
-                        onChange={(e) => setCallData({...callData, callType: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="Teams">Teams</option>
-                        <option value="Phone">Phone</option>
-                        <option value="Zoom">Zoom</option>
-                        <option value="Meet">Google Meet</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Subject
-                    </label>
-                    <input
-                      type="text"
-                      value={callData.subject}
-                      onChange={(e) => setCallData({...callData, subject: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      placeholder="Meeting topic"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Organization
-                    </label>
-                    <SearchableSelect
-                      options={organizations.map(org => ({ value: String(org.Id), label: org.Name }))}
-                      value={callData.organizationId}
-                      onChange={(value) => {
-                        setCallData({...callData, organizationId: value, projectId: '', taskId: ''});
-                        setProjects([]);
-                        setAvailableTasks([]);
-                        if (value) loadProjectsForOrg(value);
-                      }}
-                      placeholder="Select organization (optional)"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Project
-                    </label>
-                    <SearchableSelect
-                      options={projects.map(proj => ({ value: String(proj.Id), label: proj.ProjectName }))}
-                      value={callData.projectId}
-                      onChange={(value) => {
-                        setCallData({...callData, projectId: value, taskId: ''});
-                        setAvailableTasks([]);
-                        if (value) loadTasksForProject(value);
-                      }}
-                      placeholder="Select project (optional)"
-                      disabled={!callData.organizationId}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Task
-                    </label>
-                    <SearchableSelect
-                      options={availableTasks.map(task => ({ value: String(task.Id), label: task.ProjectName ? `${task.ProjectName} - ${task.TaskName}` : task.TaskName }))}
-                      value={callData.taskId}
-                      onChange={(value) => setCallData({...callData, taskId: value})}
-                      placeholder="Select task (optional)"
-                      disabled={!callData.projectId}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Participants
-                    </label>
-                    <input
-                      type="text"
-                      value={callData.participants}
-                      onChange={(e) => setCallData({...callData, participants: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      placeholder="John, Mary, Bob"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Notes
-                    </label>
-                    <textarea
-                      value={callData.notes}
-                      onChange={(e) => setCallData({...callData, notes: e.target.value})}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      placeholder="Meeting notes..."
-                    />
-                  </div>
-
-                  <div className="flex gap-2 pt-2">
-                    <button
-                      onClick={closeSlotModal}
-                      className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleCreateCallRecord}
-                      disabled={isSaving}
-                      className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white rounded-lg transition-colors"
-                    >
-                      {isSaving ? 'Saving...' : 'Add Call'}
-                    </button>
-                  </div>
                 </div>
               )}
 
@@ -1701,6 +1295,61 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
           </div>
         </div>
       )}
+
+      <TimeEntryFormModal
+        isOpen={showSlotModal && !!selectedSlot && slotAction === 'timeEntry'}
+        title="⏱️ Add Time Entry"
+        submitLabel="Add Entry"
+        isSubmitting={isSaving}
+        initialData={selectedSlot ? {
+          workDate: format(selectedSlot.start, 'yyyy-MM-dd'),
+          startTime: format(selectedSlot.start, 'HH:mm'),
+          endTime: format(selectedSlot.end, 'HH:mm'),
+          hours: ((selectedSlot.end.getTime() - selectedSlot.start.getTime()) / (1000 * 60 * 60)).toFixed(2),
+          description: '',
+          taskId: '',
+        } : undefined}
+        dateInfo={selectedSlot ? {
+          dateLabel: format(selectedSlot.start, 'EEEE, MMMM d, yyyy'),
+          timeLabel: `${format(selectedSlot.start, 'HH:mm')} - ${format(selectedSlot.end, 'HH:mm')}`,
+        } : undefined}
+        showDateField={false}
+        onBack={() => setSlotAction('choice')}
+        onClose={closeSlotModal}
+        onSubmit={handleCreateTimeEntry}
+        taskOptions={tasks.map((task) => ({
+          value: task.Id,
+          label: task.ProjectName ? `${task.ProjectName} - ${task.TaskName}` : task.TaskName,
+        }))}
+      />
+
+      <CallRecordFormModal
+        isOpen={showSlotModal && !!selectedSlot && slotAction === 'call'}
+        token={token}
+        title="📞 Add Call Record"
+        submitLabel="Add Call"
+        isSubmitting={isSaving}
+        initialData={selectedSlot ? {
+          callDate: format(selectedSlot.start, 'yyyy-MM-dd'),
+          startTime: format(selectedSlot.start, 'HH:mm'),
+          durationMinutes: Math.max(1, Math.round((selectedSlot.end.getTime() - selectedSlot.start.getTime()) / 60000)),
+          callType: 'Teams',
+          participants: '',
+          subject: '',
+          notes: '',
+          organizationId: '',
+          projectId: '',
+          taskId: '',
+        } : undefined}
+        dateInfo={selectedSlot ? {
+          dateLabel: format(selectedSlot.start, 'EEEE, MMMM d, yyyy'),
+          timeLabel: `${format(selectedSlot.start, 'HH:mm')} - ${format(selectedSlot.end, 'HH:mm')}`,
+        } : undefined}
+        showDateField={false}
+        onBack={() => setSlotAction('choice')}
+        onClose={closeSlotModal}
+        onSubmit={handleCreateCallRecord}
+      />
 
       {/* Edit Time Entry Modal */}
       {showEditEntryModal && editingEntry && (

@@ -1,0 +1,3 @@
+callDate,startTime,durationMinutes,callType,participants,subject,notes
+2026-02-03,14:30,45,Teams,"John, Mary",Project Meeting,Discussed requirements
+2026-02-04,09:00,30,Phone,"Client A",Follow-up Call,Reviewed next steps
