@@ -416,13 +416,10 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
     }
 
     const orderByClause = configuredOrderBy || 'ORDER BY created DESC';
-    let jql = '';
-
-    if (jqlParts.length > 0) {
-      jql = `${jqlParts.join(' AND ')} ${orderByClause}`;
-    } else {
-      jql = orderByClause;
-    }
+    const baseQuery = jqlParts.length > 0
+      ? jqlParts.join(' AND ')
+      : 'created IS NOT EMPTY';
+    const jql = `${baseQuery} ${orderByClause}`;
 
     // Search Jira
     const authHeader = 'Basic ' + Buffer.from(`${JiraEmail}:${JiraApiToken}`).toString('base64');
@@ -480,7 +477,7 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
       },
       body: JSON.stringify({
         jql,
-        maxResults: 50,
+        maxResults: 200,
         fields: requestedFields
       })
     });

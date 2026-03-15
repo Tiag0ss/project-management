@@ -712,6 +712,53 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
     });
   }
 });
+
+// Get organization-wide integrated Jira issue IDs (for import dedupe/hide)
+router.get('/project/:projectId/integrated-issue-ids', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const projectId = Number(req.params.projectId);
+
+    if (Number.isNaN(projectId)) {
+      return res.status(400).json({ success: false, message: 'Invalid project ID' });
+    }
+
+    const [access] = await pool.execute<RowDataPacket[]>(
+      `SELECT p.OrganizationId
+       FROM Projects p
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       WHERE p.Id = ? AND om.UserId = ?`,
+      [projectId, userId]
+    );
+
+    if (access.length === 0) {
+      return res.status(404).json({ success: false, message: 'Project not found or access denied' });
+    }
+
+    const organizationId = Number(access[0].OrganizationId);
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.JiraIssueKey, t.ExternalIssueId
+       FROM Tasks t
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       WHERE p.OrganizationId = ?
+         AND (t.JiraIssueKey IS NOT NULL OR t.ExternalIssueId IS NOT NULL)`,
+      [organizationId]
+    );
+
+    const issueIds = Array.from(new Set(
+      rows
+        .flatMap((row: any) => [row.JiraIssueKey, row.ExternalIssueId])
+        .filter((value: any) => value !== null && value !== undefined && String(value).trim() !== '')
+        .map((value: any) => String(value).trim())
+    ));
+
+    res.json({ success: true, issueIds });
+  } catch (error) {
+    console.error('Get integrated issue IDs error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch integrated issue IDs' });
+  }
+});
 /**
  * @swagger
  * /api/tasks/ticket/{ticketId}:
@@ -834,7 +881,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, customerId, jiraIssueKey, applicationId, releaseVersionId } = req.body;
+    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, customerId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId } = req.body;
 
     if (!taskName || !projectId) {
       return res.status(400).json({ 
@@ -915,14 +962,20 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const normalizedStoryPoints = storyPoints === undefined || storyPoints === null || storyPoints === ''
       ? null
       : Number(storyPoints);
+    const normalizedGitHubIssueNumber = gitHubIssueNumber === undefined || gitHubIssueNumber === null || gitHubIssueNumber === ''
+      ? null
+      : Number(gitHubIssueNumber);
+    const normalizedGiteaIssueNumber = giteaIssueNumber === undefined || giteaIssueNumber === null || giteaIssueNumber === ''
+      ? null
+      : Number(giteaIssueNumber);
     const finalStoryPointsForInsert =
       (normalizedStoryPoints === null || normalizedStoryPoints === 0) && normalizedEstimatedHours !== null
         ? normalizedEstimatedHours
         : normalizedStoryPoints;
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, UnscheduledWork, EstimatedHours, StoryPoints, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, ApplicationId, CreatedBy) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, UnscheduledWork, EstimatedHours, StoryPoints, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, GitHubIssueNumber, GiteaIssueNumber, ApplicationId, CreatedBy) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         projectId,
         taskName,
@@ -944,6 +997,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         ticketId || null,
         isGlobalProject ? normalizedCustomerId : null,
         jiraIssueKey || null,
+        normalizedGitHubIssueNumber,
+        normalizedGiteaIssueNumber,
         applicationId || null,
         userId
       ]
@@ -1086,7 +1141,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const taskId = req.params.id;
-    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, applicationId, releaseVersionId, customerId, syncAllocationHeaderDates } = req.body;
+    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, customerId, syncAllocationHeaderDates } = req.body;
 
     // Verify user has access to this task's project through organization membership and has CanManageTasks permission
     const [access] = await pool.execute<RowDataPacket[]>(
@@ -1191,6 +1246,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         (parentTaskId !== undefined && hasEffectiveChange(oldTask.ParentTaskId, parentTaskId)) ||
         (displayOrder !== undefined && hasEffectiveChange(oldTask.DisplayOrder, displayOrder)) ||
         (dependsOnTaskId !== undefined && hasEffectiveChange(oldTask.DependsOnTaskId, dependsOnTaskId)) ||
+        (jiraIssueKey !== undefined && hasEffectiveChange(oldTask.JiraIssueKey, jiraIssueKey)) ||
+        (gitHubIssueNumber !== undefined && hasEffectiveChange(oldTask.GitHubIssueNumber, gitHubIssueNumber)) ||
+        (giteaIssueNumber !== undefined && hasEffectiveChange(oldTask.GiteaIssueNumber, giteaIssueNumber)) ||
         (customerId !== undefined && hasEffectiveChange(oldTask.CustomerId, finalCustomerId)) ||
         (applicationId !== undefined && hasEffectiveChange(oldTask.ApplicationId, applicationId)) ||
         (releaseVersionId !== undefined && hasEffectiveChange(oldTask.ReleaseVersionId, releaseVersionId));
@@ -1248,6 +1306,15 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const finalDependsOnTaskId = dependsOnTaskId !== undefined
       ? (dependsOnTaskId === null || dependsOnTaskId === '' ? null : Number(dependsOnTaskId))
       : (oldTask.DependsOnTaskId ?? null);
+    const finalJiraIssueKey = jiraIssueKey !== undefined
+      ? (jiraIssueKey === null || String(jiraIssueKey).trim() === '' ? null : String(jiraIssueKey).trim())
+      : (oldTask.JiraIssueKey ?? null);
+    const finalGitHubIssueNumber = gitHubIssueNumber !== undefined
+      ? (gitHubIssueNumber === null || gitHubIssueNumber === '' ? null : Number(gitHubIssueNumber))
+      : (oldTask.GitHubIssueNumber ?? null);
+    const finalGiteaIssueNumber = giteaIssueNumber !== undefined
+      ? (giteaIssueNumber === null || giteaIssueNumber === '' ? null : Number(giteaIssueNumber))
+      : (oldTask.GiteaIssueNumber ?? null);
     const finalApplicationId = applicationId !== undefined
       ? (applicationId === null || applicationId === '' ? null : Number(applicationId))
       : (oldTask.ApplicationId ?? null);
@@ -1307,7 +1374,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Tasks 
-       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, UnscheduledWork = ?, EstimatedHours = ?, StoryPoints = ?, ParentTaskId = ?, DisplayOrder = ?, PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, CustomerId = ?, ApplicationId = ?, ReleaseVersionId = ?
+       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, UnscheduledWork = ?, EstimatedHours = ?, StoryPoints = ?, ParentTaskId = ?, DisplayOrder = ?, PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, JiraIssueKey = ?, GitHubIssueNumber = ?, GiteaIssueNumber = ?, CustomerId = ?, ApplicationId = ?, ReleaseVersionId = ?
        WHERE Id = ?`,
       [
         finalTaskName,
@@ -1326,6 +1393,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         finalPlannedStartDate,
         finalPlannedEndDate,
         finalDependsOnTaskId,
+        finalJiraIssueKey,
+        finalGitHubIssueNumber,
+        finalGiteaIssueNumber,
         finalCustomerId,
         finalApplicationId,
         finalReleaseVersionId,
@@ -1458,6 +1528,15 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     
     if (dependsOnTaskId !== undefined && hasChanged(oldTask.DependsOnTaskId, dependsOnTaskId)) {
       changes.push({ field: 'DependsOnTaskId', oldVal: String(oldTask.DependsOnTaskId || ''), newVal: String(dependsOnTaskId || '') });
+    }
+    if (jiraIssueKey !== undefined && hasChanged(oldTask.JiraIssueKey, finalJiraIssueKey)) {
+      changes.push({ field: 'JiraIssueKey', oldVal: String(oldTask.JiraIssueKey || ''), newVal: String(finalJiraIssueKey || '') });
+    }
+    if (gitHubIssueNumber !== undefined && hasChanged(oldTask.GitHubIssueNumber, finalGitHubIssueNumber)) {
+      changes.push({ field: 'GitHubIssueNumber', oldVal: String(oldTask.GitHubIssueNumber || ''), newVal: String(finalGitHubIssueNumber || '') });
+    }
+    if (giteaIssueNumber !== undefined && hasChanged(oldTask.GiteaIssueNumber, finalGiteaIssueNumber)) {
+      changes.push({ field: 'GiteaIssueNumber', oldVal: String(oldTask.GiteaIssueNumber || ''), newVal: String(finalGiteaIssueNumber || '') });
     }
     if (parentTaskId !== undefined && hasChanged(oldTask.ParentTaskId, parentTaskId)) {
       changes.push({ field: 'ParentTaskId', oldVal: String(oldTask.ParentTaskId || ''), newVal: String(parentTaskId || '') });
@@ -3198,13 +3277,14 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
       });
     }
 
-    // Get existing tasks with Jira issue identifiers to avoid duplicates
+    // Get existing tasks with Jira issue identifiers to avoid duplicates (organization-wide)
     const [existingTasks] = await pool.execute<RowDataPacket[]>(
-      `SELECT JiraIssueKey, ExternalIssueId
-       FROM Tasks
-       WHERE ProjectId = ?
-         AND (JiraIssueKey IS NOT NULL OR ExternalIssueId IS NOT NULL)`,
-      [projectId]
+      `SELECT t.JiraIssueKey, t.ExternalIssueId
+       FROM Tasks t
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       WHERE p.OrganizationId = ?
+         AND (t.JiraIssueKey IS NOT NULL OR t.ExternalIssueId IS NOT NULL)`,
+      [project.OrganizationId]
     );
 
     const existingIssueIds = new Set(
@@ -3222,7 +3302,7 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
     if (newIssues.length === 0) {
       return res.json({
         success: true,
-        message: `No new tasks to import. All ${issues.length} issues already exist in the project.`,
+        message: `No new tasks to import. All ${issues.length} issues already exist in this organization.`,
         data: {
           imported: 0,
           hierarchyLinked: 0,
@@ -3305,6 +3385,9 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
       return directMatch?.Id || null;
     };
 
+    // Cache for customers auto-created from Jira organization names (avoid duplicates)
+    const createdCustomersCache: Record<string, number> = {};
+
     // First pass: Create all tasks without parent relationships
     for (const issue of newIssues) {
       const statusId = resolveMappedStatusId(issue.status);
@@ -3322,7 +3405,38 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
       }
 
       let mappedCustomerId: number | null = null;
-      if (issueMapping && issueMapping.customerId !== undefined && issueMapping.customerId !== null && issueMapping.customerId !== '') {
+      const autoCreateCustomerName: string | null = issueMapping?.autoCreateCustomerName || null;
+      if (autoCreateCustomerName) {
+        // Use cached result if we already created/found this customer within this import batch
+        if (createdCustomersCache[autoCreateCustomerName] !== undefined) {
+          mappedCustomerId = createdCustomersCache[autoCreateCustomerName];
+        } else {
+          // Check if customer already exists in the organization
+          const [existingCustomers] = await pool.execute<RowDataPacket[]>(
+            `SELECT c.Id FROM Customers c
+             INNER JOIN CustomerOrganizations co ON co.CustomerId = c.Id
+             WHERE co.OrganizationId = ? AND (c.Name = ? OR c.ExternalName = ?) AND c.IsActive = 1
+             LIMIT 1`,
+            [project.OrganizationId, autoCreateCustomerName, autoCreateCustomerName]
+          );
+          if (existingCustomers.length > 0) {
+            mappedCustomerId = existingCustomers[0].Id;
+          } else {
+            const [insertCustomer] = await pool.execute<ResultSetHeader>(
+              'INSERT INTO Customers (Name, ExternalName, IsActive, CreatedBy) VALUES (?, ?, 1, ?)',
+              [autoCreateCustomerName, autoCreateCustomerName, userId]
+            );
+            mappedCustomerId = insertCustomer.insertId;
+            await pool.execute(
+              'INSERT INTO CustomerOrganizations (CustomerId, OrganizationId) VALUES (?, ?)',
+              [mappedCustomerId, project.OrganizationId]
+            );
+            // Refresh valid customer IDs set so later issues in the same batch can use this new customer normally
+            validOrganizationCustomerIds.add(mappedCustomerId);
+          }
+          createdCustomersCache[autoCreateCustomerName] = mappedCustomerId!;
+        }
+      } else if (issueMapping && issueMapping.customerId !== undefined && issueMapping.customerId !== null && issueMapping.customerId !== '') {
         const parsedCustomerId = Number(issueMapping.customerId);
         if (!Number.isNaN(parsedCustomerId) && validOrganizationCustomerIds.has(parsedCustomerId)) {
           mappedCustomerId = parsedCustomerId;
@@ -3330,8 +3444,8 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
       }
 
       const [result] = await pool.execute<ResultSetHeader>(
-        `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, CustomerId, CreatedBy, JiraIssueKey, ExternalIssueId)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, CustomerId, CreatedBy, JiraIssueKey, ExternalIssueId, UnscheduledWork)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           projectId,
           issue.summary || issue.key,
@@ -3343,7 +3457,8 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
           mappedCustomerId,
           userId,
           normalizedImportSource === 'ticket' ? issue.key : null,
-          normalizedImportSource === 'project' ? issue.key : null
+          normalizedImportSource === 'project' ? issue.key : null,
+          normalizedImportSource === 'ticket' ? 1 : 0
         ]
       );
 

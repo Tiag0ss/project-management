@@ -250,6 +250,8 @@ export default function TaskDetailModal({
     dependsOnTaskId: task?.DependsOnTaskId || undefined,
     customerId: task?.CustomerId ?? null,
     jiraIssueKey: task?.JiraIssueKey || undefined,
+    gitHubIssueNumber: task?.GitHubIssueNumber ?? null,
+    giteaIssueNumber: task?.GiteaIssueNumber ?? null,
     applicationId: task?.ApplicationId ?? null,
     releaseVersionId: task?.ReleaseVersionId ?? null,
   });
@@ -334,11 +336,19 @@ export default function TaskDetailModal({
   const childTasks = hasSubtasks ? subtasks : childTasksFromProject;
   const externalTicketId = task?.ExternalTicketId || null;
   const externalIssueId = task?.ExternalIssueId || null;
+  const jiraIssueKeyValue = formData.jiraIssueKey ? String(formData.jiraIssueKey).trim() : '';
+  const gitHubIssueNumberValue = formData.gitHubIssueNumber ?? null;
+  const giteaIssueNumberValue = formData.giteaIssueNumber ?? null;
   const jiraTicketBaseUrl = task?.JiraUrl || jiraIntegration?.JiraUrl || null;
   const jiraBoardBaseUrl = jiraIntegration?.JiraProjectsUrl || jiraIntegration?.JiraUrl || task?.JiraUrl || null;
   const hasTicketJiraReference = Boolean(externalTicketId && jiraTicketBaseUrl);
-  const hasJiraTicketImportReference = Boolean(task?.JiraIssueKey && jiraIntegration?.JiraUrl);
+  const hasJiraTicketImportReference = Boolean(jiraIssueKeyValue && jiraIntegration?.JiraUrl);
   const hasJiraBoardImportReference = Boolean(externalIssueId && jiraBoardBaseUrl);
+  const hasGitHubIssueReference = Boolean(gitHubIssueNumberValue);
+  const hasGiteaIssueReference = Boolean(giteaIssueNumberValue);
+  const githubIssueUrl = hasGitHubIssueReference && project?.GitHubOwner && project?.GitHubRepo
+    ? `https://github.com/${project.GitHubOwner}/${project.GitHubRepo}/issues/${gitHubIssueNumberValue}`
+    : null;
   const subtasksTotal = hasSubtasks 
     ? subtasks.reduce((sum, st) => sum + (parseFloat(st.EstimatedHours as any) || 0), 0) 
     : 0;
@@ -1746,7 +1756,7 @@ export default function TaskDetailModal({
               </div>
 
               {/* Ticket Reference */}
-              {(task?.TicketNumber || hasTicketJiraReference || hasJiraTicketImportReference || hasJiraBoardImportReference) && (
+              {(task?.TicketNumber || hasTicketJiraReference || hasJiraTicketImportReference || hasJiraBoardImportReference || hasGitHubIssueReference || hasGiteaIssueReference) && (
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
                   Linked Tickets & Jira
                 </h3>
@@ -1818,7 +1828,7 @@ export default function TaskDetailModal({
               )}
 
               {/* Jira Ticket Link (from Jira Ticket Import) */}
-              {task?.JiraIssueKey && jiraIntegration?.JiraUrl && (
+              {(jiraIssueKeyValue || jiraIntegration?.JiraUrl) && (
                 <div className="p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
                   <div className="flex items-center gap-2">
                     <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="currentColor" viewBox="0 0 24 24">
@@ -1826,18 +1836,29 @@ export default function TaskDetailModal({
                     </svg>
                     <div className="flex-1">
                       <span className="text-xs font-medium text-purple-700 dark:text-purple-300">Imported from Jira Ticket:</span>
-                      <a
-                        href={`${jiraIntegration.JiraUrl}/browse/${task.JiraIssueKey}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ml-2 inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
-                        title={`Open in Jira: ${task.JiraIssueKey}`}
-                      >
-                        🎫 {task.JiraIssueKey}
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                      </a>
+                      {jiraIssueKeyValue && jiraIntegration?.JiraUrl && (
+                        <a
+                          href={`${jiraIntegration.JiraUrl}/browse/${jiraIssueKeyValue}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="ml-2 inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
+                          title={`Open in Jira: ${jiraIssueKeyValue}`}
+                        >
+                          🎫 {jiraIssueKeyValue}
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </a>
+                      )}
+                      <div className="mt-2">
+                        <input
+                          type="text"
+                          value={formData.jiraIssueKey || ''}
+                          onChange={(e) => setFormData({ ...formData, jiraIssueKey: e.target.value || undefined })}
+                          className="w-full max-w-xs px-3 py-1.5 text-sm border border-purple-300 dark:border-purple-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500"
+                          placeholder="Edit Jira issue ID"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1868,6 +1889,55 @@ export default function TaskDetailModal({
                   </div>
                 </div>
               )}
+
+              <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      GitHub Issue ID
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={formData.gitHubIssueNumber ?? ''}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        gitHubIssueNumber: e.target.value ? parseInt(e.target.value, 10) : null,
+                      })}
+                      className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      placeholder="e.g., 456"
+                    />
+                    {githubIssueUrl && (
+                      <a
+                        href={githubIssueUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 mt-1 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                        title={`Open GitHub issue #${gitHubIssueNumberValue}`}
+                      >
+                        Open issue #{gitHubIssueNumberValue}
+                      </a>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Gitea Issue ID
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={formData.giteaIssueNumber ?? ''}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        giteaIssueNumber: e.target.value ? parseInt(e.target.value, 10) : null,
+                      })}
+                      className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      placeholder="e.g., 789"
+                    />
+                  </div>
+                </div>
+              </div>
 
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-1.5 pt-1">
                 Task Setup

@@ -607,7 +607,7 @@ export default function PlanningImportPage() {
                               .toUpperCase();
                             setTaskTicketNumberMap((prev) => ({ ...prev, [key]: normalized }));
                           }}
-                          placeholder="Jira ticket key (e.g. BE1SAMERICAS-7275)"
+                          placeholder="Jira ticket key (e.g. TICKET-7275)"
                           className="w-full mb-2 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                         />
                         <SearchableSelect

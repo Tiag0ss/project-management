@@ -867,7 +867,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     
     try {
       const response = await fetch(
-        `${getApiUrl()}/api/tasks/project/${projectId}`,
+        `${getApiUrl()}/api/tasks/project/${projectId}/integrated-issue-ids`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -878,14 +878,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       if (response.ok) {
         const data = await response.json();
         const existingIds = new Set<string>(
-          data.tasks
-            .filter((task: any) => {
-              const hasJiraIssueKey = task.JiraIssueKey;
-              const hasExternalIssueId = task.ExternalIssueId;
-              return hasJiraIssueKey || hasExternalIssueId;
-            })
-            .map((task: any) => String(task.JiraIssueKey || task.ExternalIssueId).trim())
-            .filter((value: string) => value.length > 0)
+          Array.isArray(data.issueIds)
+            ? data.issueIds
+                .map((value: any) => String(value || '').trim())
+                .filter((value: string) => value.length > 0)
+            : []
         );
         setExistingIssueIds(existingIds);
       }
@@ -1057,7 +1054,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         params.append('query', trimmedQuery);
       }
 
-      const shouldIgnoreConfiguredJql = ignoreConfiguredJql && trimmedQuery.length > 0;
+      const shouldIgnoreConfiguredJql = ignoreConfiguredJql;
       if (shouldIgnoreConfiguredJql) {
         params.append('ignoreConfiguredJql', 'true');
       }
@@ -1151,6 +1148,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   };
 
+  const shouldIgnoreConfiguredJqlForJiraTickets = (searchText: string) => {
+    return searchText.trim().length > 0;
+  };
+
   const handleImportJiraTickets = async () => {
     if (!token || !project) return;
 
@@ -1178,13 +1179,24 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             priorityMapping: jiraTicketPriorityMapping,
             taskTypeMapping: jiraTicketTypeMapping,
             ticketMappings: Object.fromEntries(
-              validIssues.map((key) => [
-                key,
-                {
-                  customerId: jiraTicketMappings[key]?.customerId || null,
-                  assigneeId: jiraTicketMappings[key]?.assigneeId || null,
-                },
-              ])
+              validIssues.map((key) => {
+                const rawCustomerId = jiraTicketMappings[key]?.customerId;
+                const isAutoCreate = rawCustomerId !== undefined && rawCustomerId !== null && Number(rawCustomerId) < 0;
+                let autoCreateCustomerName: string | null = null;
+                if (isAutoCreate) {
+                  const orgIndex = -(Number(rawCustomerId)) - 1;
+                  const ticket = jiraTickets.find((t) => t.key === key);
+                  autoCreateCustomerName = Array.isArray(ticket?.organizations) ? (ticket.organizations[orgIndex] || null) : null;
+                }
+                return [
+                  key,
+                  {
+                    customerId: isAutoCreate ? null : (rawCustomerId || null),
+                    assigneeId: jiraTicketMappings[key]?.assigneeId || null,
+                    autoCreateCustomerName,
+                  },
+                ];
+              })
             ),
           }),
         }
@@ -1939,7 +1951,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           loadTaskTypes(),
           loadExistingJiraIssues(),
         ]);
-        await loadJiraTickets('', false);
+        await loadJiraTickets('', shouldIgnoreConfiguredJqlForJiraTickets(''));
       };
 
       initializeJiraTicketImport();
@@ -3918,14 +3930,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     onChange={(e) => setJiraSearchQuery(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
-                        loadJiraTickets(jiraSearchQuery, jiraSearchQuery.trim().length > 0);
+                        loadJiraTickets(
+                          jiraSearchQuery,
+                          shouldIgnoreConfiguredJqlForJiraTickets(jiraSearchQuery)
+                        );
                       }
                     }}
                     disabled={jiraTicketsLoading}
                     className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
                   />
                   <button
-                    onClick={() => loadJiraTickets(jiraSearchQuery, jiraSearchQuery.trim().length > 0)}
+                    onClick={() => loadJiraTickets(
+                      jiraSearchQuery,
+                      shouldIgnoreConfiguredJqlForJiraTickets(jiraSearchQuery)
+                    )}
                     disabled={jiraTicketsLoading}
                     className="px-6 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white rounded-lg transition-colors font-medium"
                   >
@@ -4066,10 +4084,18 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                                       },
                                     }));
                                   }}
-                                  options={jiraImportCustomers.map((customer) => ({
-                                    id: customer.Id,
-                                    label: customer.ExternalName?.trim() || customer.Name,
-                                  }))}
+                                  options={[
+                                    ...(Array.isArray(ticket.organizations) && ticket.organizations.length > 0
+                                      ? ticket.organizations.map((orgName: string, idx: number) => ({
+                                          id: -(idx + 1),
+                                          label: `➕ Create: ${orgName}`,
+                                        }))
+                                      : []),
+                                    ...jiraImportCustomers.map((customer) => ({
+                                      id: customer.Id,
+                                      label: customer.ExternalName?.trim() || customer.Name,
+                                    })),
+                                  ]}
                                   placeholder="Select customer..."
                                   emptyMessage="No customers available"
                                 />

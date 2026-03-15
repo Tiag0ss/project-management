@@ -6217,88 +6217,90 @@ export default function PlanningPage() {
                     })}
                   </svg>
                 )}
-                {/* Month header */}
-                {timelineColumns.length > 0 && (
-                  <div className="flex border-b-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800">
-                    <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[60] bg-gray-100 dark:bg-gray-800 p-2 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
-                      Month
+                <div className="sticky top-0 z-[70]">
+                  {/* Month header */}
+                  {timelineColumns.length > 0 && (
+                    <div className="flex border-b-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800">
+                      <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[80] bg-gray-100 dark:bg-gray-800 p-2 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
+                        Month
+                      </div>
+                      <div className="flex-1 flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
+                        {(() => {
+                          const monthGroups: { month: string; year: string; count: number }[] = [];
+                          let currentMonth = -1;
+                          let currentYear = -1;
+                          
+                          days.forEach(day => {
+                            const month = day.getMonth();
+                            const year = day.getFullYear();
+                            if (month !== currentMonth || year !== currentYear) {
+                              currentMonth = month;
+                              currentYear = year;
+                              monthGroups.push({
+                                month: day.toLocaleDateString('en-US', { month: 'long' }),
+                                year: year.toString(),
+                                count: 1
+                              });
+                            } else {
+                              monthGroups[monthGroups.length - 1].count++;
+                            }
+                          });
+                          
+                          return monthGroups.map((group, idx) => (
+                            <div
+                              key={idx}
+                              className="border-r border-gray-300 dark:border-gray-600 p-2 text-center font-semibold text-gray-900 dark:text-white text-sm truncate"
+                              style={
+                                useFixedPixelColumns
+                                  ? { width: `${group.count * dayColumnWidthPx}px` }
+                                  : { width: `${(group.count / Math.max(1, timelineColumns.length)) * 100}%` }
+                              }
+                            >
+                              {group.month} {group.year}
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                  {/* Header with dates */}
+                  <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
+                    <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[80] bg-gray-50 dark:bg-gray-700 p-3 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
+                      {ganttGroupBy === 'resource' ? 'User' : ganttGroupBy === 'customer' ? 'Customer' : 'Project'}
                     </div>
                     <div className="flex-1 flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
-                      {(() => {
-                        const monthGroups: { month: string; year: string; count: number }[] = [];
-                        let currentMonth = -1;
-                        let currentYear = -1;
-                        
-                        days.forEach(day => {
-                          const month = day.getMonth();
-                          const year = day.getFullYear();
-                          if (month !== currentMonth || year !== currentYear) {
-                            currentMonth = month;
-                            currentYear = year;
-                            monthGroups.push({
-                              month: day.toLocaleDateString('en-US', { month: 'long' }),
-                              year: year.toString(),
-                              count: 1
-                            });
-                          } else {
-                            monthGroups[monthGroups.length - 1].count++;
-                          }
-                        });
-                        
-                        return monthGroups.map((group, idx) => (
+                      {timelineColumns.map((column, idx) => {
+                        return (
                           <div
                             key={idx}
-                            className="border-r border-gray-300 dark:border-gray-600 p-2 text-center font-semibold text-gray-900 dark:text-white text-sm truncate"
-                            style={
-                              useFixedPixelColumns
-                                ? { width: `${group.count * dayColumnWidthPx}px` }
-                                : { width: `${(group.count / Math.max(1, timelineColumns.length)) * 100}%` }
-                            }
+                            className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} p-1 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
+                              column.isWeekend
+                                ? 'bg-gray-100 dark:bg-gray-600'
+                                : ''
+                            } ${useAnnualStyleDensity && column.isMonthStart ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                            style={useFixedPixelColumns ? { overflow: 'hidden', width: `${dayColumnWidthPx}px` } : { overflow: 'hidden' }}
                           >
-                            {group.month} {group.year}
-                          </div>
-                        ));
-                      })()}
-                    </div>
-                  </div>
-                )}
-                {/* Header with dates */}
-                <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
-                  <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[60] bg-gray-50 dark:bg-gray-700 p-3 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
-                    {ganttGroupBy === 'resource' ? 'User' : ganttGroupBy === 'customer' ? 'Customer' : 'Project'}
-                  </div>
-                  <div className="flex-1 flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
-                    {timelineColumns.map((column, idx) => {
-                      return (
-                        <div
-                          key={idx}
-                          className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} p-1 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
-                            column.isWeekend
-                              ? 'bg-gray-100 dark:bg-gray-600'
-                              : ''
-                          } ${useAnnualStyleDensity && column.isMonthStart ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                          style={useFixedPixelColumns ? { overflow: 'hidden', width: `${dayColumnWidthPx}px` } : { overflow: 'hidden' }}
-                        >
-                          {idx === todayIndex && (
-                            <div className="text-[9px] font-semibold text-blue-700 dark:text-blue-300 leading-tight mb-0.5 truncate">
-                              Today
-                            </div>
-                          )}
-                          {column.header && (
-                            <>
-                              <div className="font-semibold text-gray-900 dark:text-white leading-tight truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>
-                                {column.header}
+                            {idx === todayIndex && (
+                              <div className="text-[9px] font-semibold text-blue-700 dark:text-blue-300 leading-tight mb-0.5 truncate">
+                                Today
                               </div>
-                              {column.subheader && (
-                                <div className="text-gray-600 dark:text-gray-400 leading-tight truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>
-                                  {column.subheader}
+                            )}
+                            {column.header && (
+                              <>
+                                <div className="font-semibold text-gray-900 dark:text-white leading-tight truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>
+                                  {column.header}
                                 </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
+                                {column.subheader && (
+                                  <div className="text-gray-600 dark:text-gray-400 leading-tight truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>
+                                    {column.subheader}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
@@ -6959,6 +6961,11 @@ export default function PlanningPage() {
                               : 'No remaining hours';
                           const taskCustomerName = task.CustomerName || project?.CustomerName || null;
                           const taskJiraRef = task.ExternalTicketId || task.JiraIssueKey || null;
+                          const taskIssueRef = task.JiraIssueKey || task.ExternalTicketId || task.ExternalIssueId
+                            || (task.TicketNumber ? `#${task.TicketNumber}` : null)
+                            || (task.GitHubIssueNumber ? `#${task.GitHubIssueNumber}` : null)
+                            || (task.GiteaIssueNumber ? `#${task.GiteaIssueNumber}` : null)
+                            || null;
                           const assigneeName = userRow.FirstName && userRow.LastName
                             ? `${userRow.FirstName} ${userRow.LastName}`
                             : userRow.Username;
@@ -7133,6 +7140,9 @@ export default function PlanningPage() {
                                     {!isSubtask && isOverPlanned && <span className="mr-1">⚠️</span>}
                                     {!isSubtask && taskIsHobbyProject && (
                                       <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0 pointer-events-none">HOBBY</span>
+                                    )}
+                                    {taskIssueRef && (
+                                      <span className="mr-1 bg-black/30 text-white text-[9px] px-1 py-0.5 rounded font-bold flex-shrink-0 pointer-events-none">{taskIssueRef}</span>
                                     )}
                                     <span className="truncate flex-1 pointer-events-none">
                                       {indentPrefix}
@@ -7406,6 +7416,11 @@ export default function PlanningPage() {
                         const plannedHours = task.PlannedHours || 0;
                         const workedHours = task.WorkedHours || 0;
                         const hoursDisplay = `${workedHours}/${plannedHours}/${estimatedHours}h`;
+                        const groupedIssueRef = task.JiraIssueKey || task.ExternalTicketId || task.ExternalIssueId
+                          || (task.TicketNumber ? `#${task.TicketNumber}` : null)
+                          || (task.GitHubIssueNumber ? `#${task.GitHubIssueNumber}` : null)
+                          || (task.GiteaIssueNumber ? `#${task.GiteaIssueNumber}` : null)
+                          || null;
 
                         return (
                           <div
@@ -7433,6 +7448,9 @@ export default function PlanningPage() {
                           >
                             {taskIsHobbyProject && (
                               <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0 pointer-events-none">HOBBY</span>
+                            )}
+                            {groupedIssueRef && (
+                              <span className="mr-1 bg-black/30 text-white text-[9px] px-1 py-0.5 rounded font-bold flex-shrink-0 pointer-events-none">{groupedIssueRef}</span>
                             )}
                             <span className="truncate flex-1 pointer-events-none">{task.TaskName}</span>
                             {showTaskBarHours && (

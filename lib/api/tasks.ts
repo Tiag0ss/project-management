@@ -55,6 +55,8 @@ export interface Task {
   JiraUrl?: string | null;
   ExternalIssueId?: string | null;
   JiraIssueKey?: string | null;
+  GitHubIssueNumber?: number | null;
+  GiteaIssueNumber?: number | null;
   ApplicationId?: number | null;
   ApplicationName?: string | null;
   ReleaseVersionId?: number | null;
@@ -88,6 +90,8 @@ export interface CreateTaskData {
   ticketId?: number;
   customerId?: number | null;
   jiraIssueKey?: string;
+  gitHubIssueNumber?: number | null;
+  giteaIssueNumber?: number | null;
   applicationId?: number | null;
   releaseVersionId?: number | null;
   syncAllocationHeaderDates?: boolean;
