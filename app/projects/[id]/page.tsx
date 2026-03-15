@@ -12646,8 +12646,8 @@ function TaskModal({
     taskType: task?.TaskType ?? null,
     assignedTo: task?.AssignedTo || undefined,
     dueDate: task?.DueDate ? task.DueDate.split('T')[0] : '',
-    estimatedHours: task?.EstimatedHours || undefined,
-    storyPoints: task?.StoryPoints || undefined,
+    estimatedHours: task?.EstimatedHours ?? undefined,
+    storyPoints: task?.StoryPoints ?? undefined,
     parentTaskId: task?.ParentTaskId || undefined,
     dependsOnTaskId: task?.DependsOnTaskId || undefined,
   });
@@ -13004,7 +13004,7 @@ function TaskModal({
                 type="number"
                 step="0.5"
                 min="0"
-                value={formData.estimatedHours || ''}
+                value={formData.estimatedHours ?? ''}
                 onChange={(e) => setFormData({ ...formData, estimatedHours: e.target.value ? parseFloat(e.target.value) : undefined })}
                 disabled={hasSubtasks}
                 className={`w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white ${
@@ -13029,7 +13029,7 @@ function TaskModal({
                 type="number"
                 step="0.5"
                 min="0"
-                value={formData.storyPoints || ''}
+                value={formData.storyPoints ?? ''}
                 onChange={(e) => setFormData({ ...formData, storyPoints: e.target.value ? parseFloat(e.target.value) : undefined })}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 placeholder="e.g., 3"

@@ -15,6 +15,7 @@ import Navbar from '@/components/Navbar';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import SearchableSelect from '@/components/SearchableSelect';
+import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 
 // Week days constant - reused throughout the component
 const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -287,6 +288,7 @@ export default function PlanningPage() {
       plannedHours: number;
       hoursPerDay: number;
       splitOrder: number;
+      selectedLeafTaskIds?: number[];
     }>;
     sourceUserId?: number | null;
     sourceHeaderId?: number | null;
@@ -310,6 +312,7 @@ export default function PlanningPage() {
     sourceAllocationDates: [],
     suppressDependentReplan: false,
   });
+  const [leafTaskRemainingHoursById, setLeafTaskRemainingHoursById] = useState<Record<number, number>>({});
 
   const [sliceTransferModal, setSliceTransferModal] = useState<{
     show: boolean;
@@ -318,8 +321,12 @@ export default function PlanningPage() {
     dropDate: string;
     sourceUserId: number | null;
     sourceHeaderId: number | null;
+    sourceAllocationDates: string[];
+    sourceTotalHours: number;
     totalHours: number;
     moveHours: number;
+    availableChildTaskIds: number[];
+    selectedChildTaskIds: number[];
     isProcessing: boolean;
   }>({
     show: false,
@@ -328,8 +335,12 @@ export default function PlanningPage() {
     dropDate: '',
     sourceUserId: null,
     sourceHeaderId: null,
+    sourceAllocationDates: [],
+    sourceTotalHours: 0,
     totalHours: 0,
     moveHours: 0,
+    availableChildTaskIds: [],
+    selectedChildTaskIds: [],
     isProcessing: false,
   });
 
@@ -1295,6 +1306,72 @@ export default function PlanningPage() {
     return leafTasks;
   };
 
+  const getTaskRemainingHours = useCallback(async (task: Task): Promise<number> => {
+    const estimatedHours = parseFloat(String(task.EstimatedHours || 0));
+    if (estimatedHours <= 0) {
+      return 0;
+    }
+
+    try {
+      const timeEntriesRes = await fetch(
+        `${getApiUrl()}/api/time-entries/task/${task.Id}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!timeEntriesRes.ok) {
+        return estimatedHours;
+      }
+
+      const timeEntriesData = await timeEntriesRes.json();
+      const workedHours = Array.isArray(timeEntriesData.entries)
+        ? timeEntriesData.entries.reduce((sum: number, entry: any) => sum + parseFloat(String(entry.Hours || 0)), 0)
+        : 0;
+
+      return Math.max(0, estimatedHours - workedHours);
+    } catch {
+      return estimatedHours;
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (!hoursPerDayModal.show || !hoursPerDayModal.isParentTask || !Array.isArray(hoursPerDayModal.leafTasks)) {
+      setLeafTaskRemainingHoursById({});
+      return;
+    }
+
+    let isCancelled = false;
+    const loadRemainingHours = async () => {
+      const leafTasks = hoursPerDayModal.leafTasks || [];
+      const results = await Promise.all(
+        leafTasks.map(async (leafTask) => ({
+          taskId: leafTask.Id,
+          remainingHours: await getTaskRemainingHours(leafTask),
+        }))
+      );
+
+      if (isCancelled) {
+        return;
+      }
+
+      const nextMap: Record<number, number> = {};
+      for (const result of results) {
+        nextMap[result.taskId] = Number(result.remainingHours.toFixed(2));
+      }
+      setLeafTaskRemainingHoursById(nextMap);
+    };
+
+    loadRemainingHours();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [hoursPerDayModal.show, hoursPerDayModal.isParentTask, hoursPerDayModal.leafTasks, getTaskRemainingHours]);
+
   const getDaysInView = () => {
     const days = [];
     let daysToShow = 30; // default for week view
@@ -1432,6 +1509,10 @@ export default function PlanningPage() {
     return Array.isArray(task.Assignees) && task.Assignees.length > 0;
   };
 
+  const isLeafTask = (taskId: number): boolean => {
+    return !tasks.some((candidate) => candidate.ParentTaskId === taskId);
+  };
+
   const hasUnscheduledAssignedDescendant = (parentTaskId: number, userId?: number): boolean => {
     const directChildren = tasks.filter((candidate) => candidate.ParentTaskId === parentTaskId);
     if (directChildren.length === 0) return false;
@@ -1439,12 +1520,13 @@ export default function PlanningPage() {
     const stack = [...directChildren];
     while (stack.length > 0) {
       const candidate = stack.pop()!;
+      const candidateIsLeaf = isLeafTask(candidate.Id);
       const isUnscheduled = Number(candidate.UnscheduledWork || 0) === 1;
       const matchesAssignee = userId === undefined
         ? hasAnyTaskAssignee(candidate)
         : isTaskAssignedToUser(candidate, userId);
 
-      if (isUnscheduled && matchesAssignee) {
+      if (candidateIsLeaf && isUnscheduled && matchesAssignee) {
         return true;
       }
 
@@ -1472,12 +1554,13 @@ export default function PlanningPage() {
 
     while (stack.length > 0) {
       const candidate = stack.pop()!;
+      const candidateIsLeaf = isLeafTask(candidate.Id);
       const isUnscheduled = Number(candidate.UnscheduledWork || 0) === 1;
       const matchesAssignee = userId === undefined
         ? hasAnyTaskAssignee(candidate)
         : isTaskAssignedToUser(candidate, userId);
 
-      if (isUnscheduled && matchesAssignee) {
+      if (candidateIsLeaf && isUnscheduled && matchesAssignee) {
         relevantTasks.push(candidate);
       }
 
@@ -1529,7 +1612,7 @@ export default function PlanningPage() {
 
     let startDate: Date;
     let endDate: Date;
-    const isAssignedUnscheduled = Number(task.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(task);
+    const isAssignedUnscheduled = isLeafTask(task.Id) && Number(task.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(task);
     const hasUnscheduledDescendant = !task.ParentTaskId && hasUnscheduledAssignedDescendant(task.Id);
 
     if (isAssignedUnscheduled || hasUnscheduledDescendant) {
@@ -1668,6 +1751,40 @@ export default function PlanningPage() {
     return {
       startDate: taskAllocs[0],
       endDate: taskAllocs[taskAllocs.length - 1],
+    };
+  };
+
+  const getAllDescendantsRecursive = (parentId: number): Task[] => {
+    const directChildren = tasks.filter((candidate) => candidate.ParentTaskId === parentId);
+    let descendants: Task[] = [];
+
+    for (const child of directChildren) {
+      descendants.push(child);
+      descendants = descendants.concat(getAllDescendantsRecursive(child.Id));
+    }
+
+    return descendants;
+  };
+
+  const getParentUserDescendantAllocationDates = (parentTaskId: number, userId: number) => {
+    const descendants = getAllDescendantsRecursive(parentTaskId);
+    if (descendants.length === 0) {
+      return null;
+    }
+
+    const descendantIds = new Set(descendants.map((descendant) => descendant.Id));
+    const descendantAllocDates = allAllocations
+      .filter((allocation) => allocation.UserId === userId && descendantIds.has(allocation.TaskId))
+      .map((allocation) => normalizeDateKey(allocation.AllocationDate))
+      .sort();
+
+    if (descendantAllocDates.length === 0) {
+      return null;
+    }
+
+    return {
+      startDate: descendantAllocDates[0],
+      endDate: descendantAllocDates[descendantAllocDates.length - 1],
     };
   };
 
@@ -1872,7 +1989,11 @@ export default function PlanningPage() {
     if (userId === null) {
       // Not planned - show only parent tasks without allocations, excluding closed/cancelled
       result = tasks.filter(t => {
-        const hasAllocations = allAllocations.some(a => a.TaskId === t.Id);
+        const descendantTasks = getAllDescendantsRecursive(t.Id);
+        const descendantTaskIds = new Set(descendantTasks.map((descendant) => descendant.Id));
+        const hasOwnAllocations = allAllocations.some((allocation) => allocation.TaskId === t.Id);
+        const hasDescendantAllocations = allAllocations.some((allocation) => descendantTaskIds.has(allocation.TaskId));
+        const hasAllocations = hasOwnAllocations || hasDescendantAllocations;
         const isAssignedUnscheduled = Number(t.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(t);
         const hasUnscheduledDescendants = hasUnscheduledAssignedDescendant(t.Id);
         const isParent = !t.ParentTaskId;
@@ -2428,6 +2549,42 @@ export default function PlanningPage() {
     });
   };
 
+  const calculateSliceHoursFromSelectedSubtasks = (
+    parentTaskId: number,
+    selectedChildTaskIds: number[],
+    sourceAllocationDates: string[],
+    sourceTotalHours: number,
+    availableChildTaskIdsCount: number
+  ): number => {
+    if (!Number.isFinite(sourceTotalHours) || sourceTotalHours <= 0) {
+      return 0;
+    }
+
+    if (!Array.isArray(selectedChildTaskIds) || selectedChildTaskIds.length === 0) {
+      return 0;
+    }
+
+    const selectedSet = new Set(selectedChildTaskIds.map((taskId) => Number(taskId)).filter((taskId) => Number.isFinite(taskId) && taskId > 0));
+    const sourceDateSet = new Set((sourceAllocationDates || []).map((date) => normalizeDateKey(date)).filter(Boolean));
+
+    const selectedHours = childAllocations
+      .filter((allocation) => Number(allocation.ParentTaskId) === Number(parentTaskId))
+      .filter((allocation) => selectedSet.has(Number(allocation.ChildTaskId)))
+      .filter((allocation) => sourceDateSet.size === 0 || sourceDateSet.has(normalizeDateKey(allocation.AllocationDate)))
+      .reduce((sum, allocation) => sum + Number(allocation.AllocatedHours || 0), 0);
+
+    if (selectedHours > 0) {
+      return Number(Math.min(sourceTotalHours, selectedHours).toFixed(2));
+    }
+
+    if (availableChildTaskIdsCount > 0) {
+      const ratio = Math.min(1, selectedSet.size / availableChildTaskIdsCount);
+      return Number((sourceTotalHours * ratio).toFixed(2));
+    }
+
+    return Number(sourceTotalHours.toFixed(2));
+  };
+
   const handleConfirmSliceTransfer = async () => {
     const {
       taskId,
@@ -2436,9 +2593,16 @@ export default function PlanningPage() {
       sourceUserId,
       sourceHeaderId,
       moveHours,
+      availableChildTaskIds,
+      selectedChildTaskIds,
     } = sliceTransferModal;
 
     if (!taskId || !targetUserId || !sourceUserId || !sourceHeaderId || !Number.isFinite(moveHours) || moveHours <= 0) {
+      return;
+    }
+
+    if (availableChildTaskIds.length > 0 && selectedChildTaskIds.length === 0) {
+      showAlert('Slice Transfer', 'Select at least one subtask to move.');
       return;
     }
 
@@ -2529,8 +2693,12 @@ export default function PlanningPage() {
         dropDate: '',
         sourceUserId: null,
         sourceHeaderId: null,
+        sourceAllocationDates: [],
+        sourceTotalHours: 0,
         totalHours: 0,
         moveHours: 0,
+        availableChildTaskIds: [],
+        selectedChildTaskIds: [],
         isProcessing: false,
       });
     } catch (error: any) {
@@ -2611,7 +2779,7 @@ export default function PlanningPage() {
     const sliceByHours = (e.dataTransfer.getData('application/x-slice-by-hours') === '1') || draggedTaskSliceByHoursRef.current;
     const sourceSliceAllocations = sourceUserId
       ? allAllocations.filter((allocation) => {
-          if (allocation.TaskId !== activeDraggedTask.Id || allocation.UserId !== sourceUserId) {
+          if (allocation.UserId !== sourceUserId) {
             return false;
           }
 
@@ -2619,24 +2787,60 @@ export default function PlanningPage() {
             return Number(allocation.TaskAllocationHeaderId || 0) === Number(sourceHeaderId);
           }
 
-          return true;
+          return allocation.TaskId === activeDraggedTask.Id;
         })
       : [];
+    const sourceSliceTaskIds = Array.from(new Set(sourceSliceAllocations.map((allocation) => Number(allocation.TaskId)).filter((taskId) => Number.isFinite(taskId) && taskId > 0)));
     const sourceSliceHours = sourceSliceAllocations.reduce((sum, allocation) => sum + Number(allocation.AllocatedHours || 0), 0);
     const sourceSliceDates = sourceSliceAllocations.map((allocation) => normalizeDateKey(allocation.AllocationDate));
     const isSliceDrag = sourceSliceAllocations.length > 0;
 
-    if (isSliceDrag && sourceHeaderId && sourceUserId && sourceUserId !== userId && sliceByHours) {
+    if (isSliceDrag && sliceByHours) {
+      if (!sourceHeaderId || !sourceUserId) {
+        showAlert(
+          'Slice Transfer',
+          'This allocation cannot be partially moved because it has no allocation header. Replan normally or recreate this slice first.'
+        );
+        draggedTaskRef.current = null;
+        draggedTaskSourceUserIdRef.current = null;
+        draggedTaskSourceHeaderIdRef.current = null;
+        draggedTaskSliceByHoursRef.current = false;
+        setDraggedTask(null);
+        return;
+      }
+
       const totalSliceHours = sourceSliceAllocations.reduce((sum, allocation) => sum + Number(allocation.AllocatedHours || 0), 0);
+      const sliceTaskId = sourceSliceTaskIds.length === 1 ? sourceSliceTaskIds[0] : activeDraggedTask.Id;
+      const sourceSliceDateSet = new Set(sourceSliceDates);
+      const availableChildTaskIds = Array.from(new Set(
+        childAllocations
+          .filter((childAllocation) => Number(childAllocation.ParentTaskId) === Number(sliceTaskId))
+          .filter((childAllocation) => sourceSliceDateSet.has(normalizeDateKey(childAllocation.AllocationDate)))
+          .map((childAllocation) => Number(childAllocation.ChildTaskId))
+          .filter((childTaskId) => Number.isFinite(childTaskId) && childTaskId > 0)
+      ));
+      const selectedSliceHours = availableChildTaskIds.length > 0
+        ? calculateSliceHoursFromSelectedSubtasks(
+            sliceTaskId,
+            availableChildTaskIds,
+            sourceSliceDates,
+            totalSliceHours,
+            availableChildTaskIds.length
+          )
+        : totalSliceHours;
       setSliceTransferModal({
         show: true,
-        taskId: activeDraggedTask.Id,
+        taskId: sliceTaskId,
         targetUserId: userId,
         dropDate: getDateKeyFromDate(day),
         sourceUserId,
         sourceHeaderId,
-        totalHours: totalSliceHours,
-        moveHours: totalSliceHours,
+        sourceAllocationDates: sourceSliceDates,
+        sourceTotalHours: totalSliceHours,
+        totalHours: selectedSliceHours,
+        moveHours: selectedSliceHours,
+        availableChildTaskIds,
+        selectedChildTaskIds: availableChildTaskIds,
         isProcessing: false,
       });
       draggedTaskRef.current = null;
@@ -3114,7 +3318,7 @@ export default function PlanningPage() {
           leafTasks: leafTasks,
           enableSplit: false,
           splitMode: 'parallel',
-          splitEntries: [{ userId, plannedHours: totalHours, hoursPerDay: maxDailyHours, splitOrder: 1 }],
+          splitEntries: [{ userId, plannedHours: totalHours, hoursPerDay: maxDailyHours, splitOrder: 1, selectedLeafTaskIds: leafTasks.map(t => t.Id) }],
         });
         return;
       }
@@ -3856,7 +4060,13 @@ export default function PlanningPage() {
       usePushForward: true, // Flag to indicate we should use push-forward
       enableSplit: false,
       splitMode: 'parallel',
-      splitEntries: [{ userId, plannedHours: totalHoursToAllocate, hoursPerDay: maxDailyHours, splitOrder: 1 }],
+      splitEntries: [{
+        userId,
+        plannedHours: totalHoursToAllocate,
+        hoursPerDay: maxDailyHours,
+        splitOrder: 1,
+        selectedLeafTaskIds: isParentTask && Array.isArray(leafTasks) ? leafTasks.map(t => t.Id) : [],
+      }],
       sourceUserId: conflictModal.sourceUserId,
       sourceHeaderId: conflictModal.sourceHeaderId,
       sourceAllocationDates: conflictModal.sourceAllocationDates,
@@ -3893,7 +4103,13 @@ export default function PlanningPage() {
         leafTasks,
         enableSplit: false,
         splitMode: 'parallel',
-        splitEntries: [{ userId, plannedHours: totalHoursToAllocate, hoursPerDay: maxDailyHours, splitOrder: 1 }],
+        splitEntries: [{
+          userId,
+          plannedHours: totalHoursToAllocate,
+          hoursPerDay: maxDailyHours,
+          splitOrder: 1,
+          selectedLeafTaskIds: isParentTask && Array.isArray(leafTasks) ? leafTasks.map(t => t.Id) : [],
+        }],
         sourceUserId: conflictModal.sourceUserId,
         sourceHeaderId: conflictModal.sourceHeaderId,
         sourceAllocationDates: conflictModal.sourceAllocationDates,
@@ -3935,7 +4151,7 @@ export default function PlanningPage() {
     const user = users.find(u => u.Id === userId);
     if (!user) return;
 
-    if (enableSplit && !isParentTask) {
+    if (enableSplit) {
       if (usePushForward || suppressDependentReplan) {
         showAlert('Split Planning', 'Split planning with push-forward is not supported. Choose "Plan When Available" for split allocations.');
         return;
@@ -3948,21 +4164,276 @@ export default function PlanningPage() {
               plannedHours: Number(entry.plannedHours || 0),
               hoursPerDay: Number(entry.hoursPerDay || 0),
               splitOrder: Number(entry.splitOrder || index + 1),
+              selectedLeafTaskIds: Array.isArray(entry.selectedLeafTaskIds)
+                ? entry.selectedLeafTaskIds.map((taskId) => Number(taskId)).filter((taskId) => Number.isFinite(taskId) && taskId > 0)
+                : [],
             }))
             .filter((entry) => Number.isFinite(entry.userId) && entry.userId > 0 && entry.plannedHours > 0)
         : [];
 
-      const splitTotal = entries.reduce((sum, entry) => sum + entry.plannedHours, 0);
       if (entries.length === 0) {
         showAlert('Split Planning', 'Add at least one user split with planned hours.');
         return;
       }
-      if (Math.abs(splitTotal - totalHours) > 0.01) {
-        showAlert('Split Planning', `Split total (${splitTotal.toFixed(2)}h) must match planned hours (${totalHours.toFixed(2)}h).`);
-        return;
+
+      if (!isParentTask) {
+        const splitTotal = entries.reduce((sum, entry) => sum + entry.plannedHours, 0);
+        if (Math.abs(splitTotal - totalHours) > 0.01) {
+          showAlert('Split Planning', `Split total (${splitTotal.toFixed(2)}h) must match planned hours (${totalHours.toFixed(2)}h).`);
+          return;
+        }
+      }
+
+      if (isParentTask) {
+        if (!Array.isArray(leafTasks) || leafTasks.length === 0) {
+          showAlert('Split Planning', 'No subtasks found for this parent task.');
+          return;
+        }
+
+        const validLeafIds = new Set(leafTasks.map((leafTask) => leafTask.Id));
+        const selectedTaskOwner = new Map<number, number>();
+
+        for (const entry of entries) {
+          if (!entry.selectedLeafTaskIds || entry.selectedLeafTaskIds.length === 0) {
+            showAlert('Split Planning', 'Select at least one subtask for each split user entry.');
+            return;
+          }
+
+          for (const leafTaskId of entry.selectedLeafTaskIds) {
+            if (!validLeafIds.has(leafTaskId)) {
+              showAlert('Split Planning', `Invalid subtask selected (ID: ${leafTaskId}).`);
+              return;
+            }
+
+            if (selectedTaskOwner.has(leafTaskId) && selectedTaskOwner.get(leafTaskId) !== entry.userId) {
+              const leafTaskName = leafTasks.find((leafTask) => leafTask.Id === leafTaskId)?.TaskName || `Task #${leafTaskId}`;
+              showAlert('Split Planning', `Subtask "${leafTaskName}" is assigned to multiple users. Assign each subtask to only one user.`);
+              return;
+            }
+
+            selectedTaskOwner.set(leafTaskId, entry.userId);
+          }
+        }
+
+        const unassignedLeafTasks = leafTasks.filter((leafTask) => !selectedTaskOwner.has(leafTask.Id));
+        if (unassignedLeafTasks.length > 0) {
+          showAlert(
+            'Split Planning',
+            `Assign all subtasks before planning. Unassigned: ${unassignedLeafTasks.map((leafTask) => leafTask.TaskName).join(', ')}`
+          );
+          return;
+        }
       }
 
       setHoursPerDayModal(prev => ({ ...prev, show: false }));
+
+      if (isParentTask && Array.isArray(leafTasks) && leafTasks.length > 0) {
+        try {
+          // Clean previous parent + child allocations before rebuilding split plan
+          await fetch(`${getApiUrl()}/api/task-allocations/task/${task.Id}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          await fetch(`${getApiUrl()}/api/task-child-allocations/parent/${task.Id}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+        } catch (error) {
+          console.error('Failed to clear previous parent split allocations:', error);
+        }
+
+        const mode = splitMode || 'parallel';
+        let sequenceDate = new Date(startDate);
+
+        const parseTimeToMinutes = (time: string): number => {
+          const [hours, minutes] = String(time || '09:00').split(':').map(Number);
+          return (hours || 0) * 60 + (minutes || 0);
+        };
+
+        const formatMinutesToTime = (minutes: number): string => {
+          const safeMinutes = Math.max(0, Math.round(minutes));
+          const hours = Math.floor(safeMinutes / 60);
+          const mins = safeMinutes % 60;
+          return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+        };
+
+        for (const entry of entries.sort((a, b) => a.splitOrder - b.splitOrder)) {
+          const targetUser = users.find((candidate) => Number(candidate.Id) === Number(entry.userId));
+          if (!targetUser) {
+            continue;
+          }
+
+          const taskIds = Array.isArray(entry.selectedLeafTaskIds) ? entry.selectedLeafTaskIds : [];
+          const selectedLeafTasks = leafTasks
+            .filter((leafTask) => taskIds.includes(leafTask.Id))
+            .sort((a, b) => {
+              const orderA = Number(a.DisplayOrder);
+              const orderB = Number(b.DisplayOrder);
+              const safeOrderA = Number.isFinite(orderA) ? orderA : 0;
+              const safeOrderB = Number.isFinite(orderB) ? orderB : 0;
+              if (safeOrderA !== safeOrderB) {
+                return safeOrderA - safeOrderB;
+              }
+              return a.Id - b.Id;
+            });
+
+          const entryStartDate = mode === 'sequential' ? new Date(sequenceDate) : new Date(startDate);
+          const parentSliceResult = await executeTaskAllocation(
+            task,
+            entry.userId,
+            new Date(entryStartDate),
+            entry.plannedHours,
+            targetUser,
+            entry.hoursPerDay > 0 ? entry.hoursPerDay : maxDailyHours,
+            {
+              silent: true,
+              skipReload: true,
+              appendToExistingUserSlice: true,
+              header: {
+                allocationMode: mode,
+                splitOrder: entry.splitOrder,
+                plannedHours: entry.plannedHours,
+              },
+            }
+          );
+
+          if (!parentSliceResult || !Array.isArray(parentSliceResult.allocations) || parentSliceResult.allocations.length === 0) {
+            showAlert('Error', `Failed to allocate parent slice for ${targetUser.FirstName || targetUser.Username || `User ${targetUser.Id}`}.`);
+            return;
+          }
+
+          const leafWithRemainingHours = await Promise.all(
+            selectedLeafTasks.map(async (selectedLeafTask) => ({
+              leafTask: selectedLeafTask,
+              remainingHours: await getTaskRemainingHours(selectedLeafTask),
+            }))
+          );
+
+          const positiveLeafWithRemainingHours = leafWithRemainingHours.filter((entryLeaf) => entryLeaf.remainingHours > 0);
+          if (positiveLeafWithRemainingHours.length > 0) {
+            const totalLeafRemainingHours = positiveLeafWithRemainingHours.reduce((sum, entryLeaf) => sum + entryLeaf.remainingHours, 0);
+            const totalParentSliceHours = parentSliceResult.allocations.reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
+            const hoursToDistribute = Math.max(0, Math.min(entry.plannedHours, totalParentSliceHours));
+
+            const quotas = positiveLeafWithRemainingHours.map((entryLeaf, index) => {
+              if (index === positiveLeafWithRemainingHours.length - 1) {
+                return {
+                  leafTask: entryLeaf.leafTask,
+                  quotaHours: 0,
+                };
+              }
+
+              const proportionalHours = totalLeafRemainingHours > 0
+                ? (hoursToDistribute * entryLeaf.remainingHours) / totalLeafRemainingHours
+                : 0;
+
+              return {
+                leafTask: entryLeaf.leafTask,
+                quotaHours: Number(proportionalHours.toFixed(2)),
+              };
+            });
+
+            const allocatedBeforeLast = quotas.reduce((sum, quota) => sum + quota.quotaHours, 0);
+            if (quotas.length > 0) {
+              const lastIndex = quotas.length - 1;
+              quotas[lastIndex] = {
+                ...quotas[lastIndex],
+                quotaHours: Number(Math.max(0, hoursToDistribute - allocatedBeforeLast).toFixed(2)),
+              };
+            }
+
+            const allocationSlots = parentSliceResult.allocations
+              .map((allocation) => ({
+                date: allocation.date,
+                remainingHours: Number(allocation.hours || 0),
+                cursorMinutes: parseTimeToMinutes(allocation.startTime || '09:00'),
+              }))
+              .filter((slot) => slot.remainingHours > 0.0001);
+
+            let slotIndex = 0;
+            const childAllocationsPayload: Array<{
+              ParentTaskId: number;
+              ChildTaskId: number;
+              AllocationDate: string;
+              AllocatedHours: number;
+              Level: number;
+              StartTime: string;
+              EndTime: string;
+            }> = [];
+
+            for (const quota of quotas) {
+              let remainingQuota = quota.quotaHours;
+              while (remainingQuota > 0.0001 && slotIndex < allocationSlots.length) {
+                const slot = allocationSlots[slotIndex];
+                const hoursToAllocate = Math.min(remainingQuota, slot.remainingHours);
+                if (hoursToAllocate <= 0.0001) {
+                  slotIndex++;
+                  continue;
+                }
+
+                const allocationMinutes = Math.max(1, Math.round(hoursToAllocate * 60));
+                const allocatedHours = Number((allocationMinutes / 60).toFixed(2));
+                const startMinutes = slot.cursorMinutes;
+                const endMinutes = startMinutes + allocationMinutes;
+
+                childAllocationsPayload.push({
+                  ParentTaskId: task.Id,
+                  ChildTaskId: quota.leafTask.Id,
+                  AllocationDate: slot.date,
+                  AllocatedHours: allocatedHours,
+                  Level: Math.max(1, getTaskDepthLevel(quota.leafTask, task.Id) + 1),
+                  StartTime: formatMinutesToTime(startMinutes),
+                  EndTime: formatMinutesToTime(endMinutes),
+                });
+
+                remainingQuota = Math.max(0, remainingQuota - allocatedHours);
+                slot.remainingHours = Math.max(0, slot.remainingHours - allocatedHours);
+                slot.cursorMinutes = endMinutes;
+
+                if (slot.remainingHours <= 0.0001) {
+                  slotIndex++;
+                }
+              }
+            }
+
+            if (childAllocationsPayload.length > 0) {
+              const childAllocationsSaveRes = await fetch(`${getApiUrl()}/api/task-child-allocations/batch`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ allocations: childAllocationsPayload, replaceParent: false }),
+              });
+
+              if (!childAllocationsSaveRes.ok) {
+                showAlert('Error', `Failed to distribute selected subtasks for ${targetUser.FirstName || targetUser.Username || `User ${targetUser.Id}`}.`);
+                return;
+              }
+            }
+          }
+
+          if (mode === 'sequential' && parentSliceResult.endDate) {
+            const nextStartDate = new Date(`${parentSliceResult.endDate}T12:00:00`);
+            nextStartDate.setDate(nextStartDate.getDate() + 1);
+            sequenceDate = nextStartDate;
+          }
+        }
+
+        if (projects.length > 0) {
+          await loadAllProjectsTasks(projects);
+          await loadAllAllocations();
+        }
+
+        showAlert('Success', 'Parent task subtasks planned across selected users successfully.');
+        return;
+      }
 
       let sequenceDate = new Date(startDate);
       for (const entry of entries.sort((a, b) => a.splitOrder - b.splitOrder)) {
@@ -4097,7 +4568,7 @@ export default function PlanningPage() {
         plannedHours?: number;
       };
     }
-  ): Promise<{ startDate: string | null; endDate: string | null } | null> => {
+  ): Promise<{ startDate: string | null; endDate: string | null; headerId?: number | null; allocations?: { date: string; hours: number; startTime: string; endTime: string }[] } | null> => {
     try {
       // Show planning progress modal
       if (!options?.silent) {
@@ -4396,6 +4867,8 @@ export default function PlanningPage() {
         return null;
       }
 
+      const saveData = await saveRes.json();
+
       const plannedStartDate = allocations.length > 0 ? allocations[0].date : null;
 
       if (!options?.silent) {
@@ -4419,7 +4892,12 @@ export default function PlanningPage() {
         }, 500);
       }
 
-      return { startDate: plannedStartDate, endDate: plannedEndDate };
+      return {
+        startDate: plannedStartDate,
+        endDate: plannedEndDate,
+        headerId: Number(saveData?.headerId || 0) || null,
+        allocations,
+      };
     } catch (err) {
       console.error('Failed to allocate task:', err);
       if (!options?.silent) {
@@ -5731,28 +6209,36 @@ export default function PlanningPage() {
                     return plannedForUserByAllocations && matchesGanttSearch(task);
                   });
                   
-                  // Build complete subtask tree recursively for visualization
-                  const getAllDescendantsRecursive = (parentId: number): Task[] => {
-                    const directChildren = tasks.filter(t => t.ParentTaskId === parentId);
-                    let allDescendants: Task[] = [];
-                    
-                    for (const child of directChildren) {
-                      allDescendants.push(child);
-                      // Recursively get grandchildren
-                      const grandchildren = getAllDescendantsRecursive(child.Id);
-                      allDescendants = allDescendants.concat(grandchildren);
-                    }
-                    
-                    return allDescendants;
-                  };
-                  
                   // Build subtasks map with ALL descendants (multi-level)
                   const subtasksMap = new Map<number, Task[]>();
                   
                   parentTasksWithDates.forEach(parentTask => {
-                    const allDescendants = getAllDescendantsRecursive(parentTask.Id).filter(matchesGanttSearch);
-                    if (allDescendants.length > 0) {
-                      subtasksMap.set(parentTask.Id, allDescendants);
+                    const parentUserSegments = getTaskUserAllocationSegments(parentTask.Id, userRow.Id);
+                    const plannedLeafDescendants = getAllDescendantsRecursive(parentTask.Id)
+                      .filter((descendant) => isLeafTask(descendant.Id))
+                      .filter((descendant) => {
+                        const hasUserAllocations = getTaskUserAllocationSegments(descendant.Id, userRow.Id).length > 0;
+                        const hasMatchingChildAllocations = childAllocations.some((childAllocation) => {
+                          if (Number(childAllocation.ParentTaskId) !== Number(parentTask.Id)) {
+                            return false;
+                          }
+                          if (Number(childAllocation.ChildTaskId) !== Number(descendant.Id)) {
+                            return false;
+                          }
+
+                          const allocationDate = normalizeDateKey(childAllocation.AllocationDate);
+                          if (!allocationDate) {
+                            return false;
+                          }
+
+                          return parentUserSegments.some((segment) => allocationDate >= segment.startDate && allocationDate <= segment.endDate);
+                        });
+                        const isUserUnscheduled = Number(descendant.UnscheduledWork || 0) === 1 && isTaskAssignedToUser(descendant, Number(userRow.Id));
+                        return (hasUserAllocations || hasMatchingChildAllocations || isUserUnscheduled) && matchesGanttSearch(descendant);
+                      });
+
+                    if (plannedLeafDescendants.length > 0) {
+                      subtasksMap.set(parentTask.Id, plannedLeafDescendants);
                     }
                   });
                   
@@ -5843,7 +6329,7 @@ export default function PlanningPage() {
                   });
                   
                   parentTasks.forEach((task, taskIdx) => {
-                    const allocationDates = getTaskUserAllocationDates(task.Id, userRow.Id);
+                    const allocationDates = getTaskUserAllocationDates(task.Id, userRow.Id) || getParentUserDescendantAllocationDates(task.Id, userRow.Id);
                     const hasAnyTaskAllocation = allAllocations.some((allocation) => allocation.TaskId === task.Id);
                     const hasUnscheduledSelfForUser = Number(task.UnscheduledWork || 0) === 1 && isTaskAssignedToUser(task, Number(userRow.Id));
                     const hasUnscheduledChildForUser = hasUnscheduledAssignedDescendant(task.Id, Number(userRow.Id));
@@ -5883,7 +6369,7 @@ export default function PlanningPage() {
                     // Check previous tasks to find overlaps
                     for (let i = 0; i < taskIdx; i++) {
                       const otherTask = parentTasks[i];
-                      const otherAllocationDates = getTaskUserAllocationDates(otherTask.Id, userRow.Id);
+                      const otherAllocationDates = getTaskUserAllocationDates(otherTask.Id, userRow.Id) || getParentUserDescendantAllocationDates(otherTask.Id, userRow.Id);
                       const hasOtherTaskAllocation = allAllocations.some((allocation) => allocation.TaskId === otherTask.Id);
                       const otherHasUnscheduledSelfForUser = Number(otherTask.UnscheduledWork || 0) === 1 && isTaskAssignedToUser(otherTask, Number(userRow.Id));
                       const otherHasUnscheduledChildForUser = hasUnscheduledAssignedDescendant(otherTask.Id, Number(userRow.Id));
@@ -6039,6 +6525,7 @@ export default function PlanningPage() {
                           const isUnscheduledForUser = Number(task.UnscheduledWork || 0) === 1 && isTaskAssignedToUser(task, Number(userRow.Id));
                           const hasUnscheduledAssignedChildForUser = !isSubtask && hasUnscheduledAssignedDescendant(task.Id, Number(userRow.Id));
                           const userAllocationSegments = getTaskUserAllocationSegments(task.Id, userRow.Id);
+                          const descendantDatesForParent = !isSubtask ? getParentUserDescendantAllocationDates(task.Id, userRow.Id) : null;
                           const hasAnyTaskAllocation = allAllocations.some((allocation) => allocation.TaskId === task.Id);
                           const hasLegacyTaskDates = !!(task.PlannedStartDate && task.PlannedEndDate);
 
@@ -6061,6 +6548,10 @@ export default function PlanningPage() {
                             if (displayedStartDate && displayedEndDate) {
                               taskBarSegments.push({ headerId: null, startDate: displayedStartDate, endDate: displayedEndDate });
                             }
+                          } else if (!isSubtask && descendantDatesForParent) {
+                            displayedStartDate = descendantDatesForParent.startDate;
+                            displayedEndDate = descendantDatesForParent.endDate;
+                            taskBarSegments.push({ headerId: null, startDate: descendantDatesForParent.startDate, endDate: descendantDatesForParent.endDate });
                           } else if (isSubtask && parentTask) {
                             // Try to get child task dates from allocations
                             const childDates = getChildTaskDates(task.Id);
@@ -7208,20 +7699,24 @@ export default function PlanningPage() {
 
         {/* Hours Per Day Modal */}
         {hoursPerDayModal.show && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-              <div className="flex items-start mb-4">
-                <div className="flex-shrink-0">
-                  <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div className="ml-3 flex-1">
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                    Plan Task: {hoursPerDayModal.task?.TaskName}
-                  </h3>
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+              <div className="p-6 pb-4 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div className="ml-3 flex-1">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                      Plan Task: {hoursPerDayModal.task?.TaskName}
+                    </h3>
+                  </div>
                 </div>
               </div>
+
+              <div className="flex-1 overflow-y-auto p-6">
               
               <div className="text-sm text-gray-700 dark:text-gray-300 mb-4 space-y-3">
                 {/* Task Info */}
@@ -7244,8 +7739,7 @@ export default function PlanningPage() {
                   )}
                 </div>
 
-                {!hoursPerDayModal.isParentTask && (
-                  <div className="p-3 bg-gray-50 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-700 rounded-lg space-y-3">
+                <div className="p-3 bg-gray-50 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-700 rounded-lg space-y-3">
                     <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
                       <input
                         type="checkbox"
@@ -7256,9 +7750,23 @@ export default function PlanningPage() {
                             const baseUserId = prev.userId || 0;
                             const baseHoursPerDay = parseFloat(prev.hoursPerDay) || prev.maxDailyHours || 8;
                             const existingEntries = Array.isArray(prev.splitEntries) ? prev.splitEntries : [];
+                            const leafTaskIds = Array.isArray(prev.leafTasks) ? prev.leafTasks.map((leafTask) => leafTask.Id) : [];
+                            const leafTasksById = new Map((prev.leafTasks || []).map((leafTask) => [leafTask.Id, leafTask]));
+                            const autoPlannedHours = prev.isParentTask
+                              ? Number(leafTaskIds.reduce((sum, leafTaskId) => {
+                                  const fallbackEstimated = parseFloat(String(leafTasksById.get(leafTaskId)?.EstimatedHours || 0));
+                                  return sum + (leafTaskRemainingHoursById[leafTaskId] ?? fallbackEstimated);
+                                }, 0).toFixed(2))
+                              : prev.totalHours;
                             const nextEntries = existingEntries.length > 0
                               ? existingEntries
-                              : [{ userId: baseUserId, plannedHours: prev.totalHours, hoursPerDay: baseHoursPerDay, splitOrder: 1 }];
+                              : [{
+                                  userId: baseUserId,
+                                  plannedHours: autoPlannedHours,
+                                  hoursPerDay: baseHoursPerDay,
+                                  splitOrder: 1,
+                                  selectedLeafTaskIds: prev.isParentTask ? leafTaskIds : [],
+                                }];
                             return {
                               ...prev,
                               enableSplit: checked,
@@ -7271,6 +7779,11 @@ export default function PlanningPage() {
                       />
                       Split this task across multiple users
                     </label>
+                    {hoursPerDayModal.isParentTask && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        For parent tasks, select which subtasks each user will own.
+                      </p>
+                    )}
 
                     {hoursPerDayModal.enableSplit && (
                       <>
@@ -7288,8 +7801,9 @@ export default function PlanningPage() {
 
                         <div className="space-y-2">
                           {(hoursPerDayModal.splitEntries || []).map((entry, index) => (
-                            <div key={index} className="grid grid-cols-12 gap-2 items-end">
-                              <div className="col-span-5">
+                            <div key={index} className="space-y-3 p-3 border border-gray-200 dark:border-gray-700 rounded">
+                              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_40px] gap-3 items-start">
+                              <div className="min-w-0">
                                 <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">User</label>
                                 <SearchableSelect
                                   value={entry.userId || ''}
@@ -7310,7 +7824,7 @@ export default function PlanningPage() {
                                   emptyText="Select user"
                                 />
                               </div>
-                              <div className="col-span-3">
+                              <div className="min-w-0">
                                 <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Hours</label>
                                 <input
                                   type="number"
@@ -7326,8 +7840,11 @@ export default function PlanningPage() {
                                   }}
                                   className="w-full px-2 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                                 />
+                                <p className={`mt-1 text-[11px] min-h-[16px] ${hoursPerDayModal.isParentTask ? 'text-gray-500 dark:text-gray-400' : 'invisible'}`}>
+                                  Auto from subtasks (editable)
+                                </p>
                               </div>
-                              <div className="col-span-3">
+                              <div className="min-w-0">
                                 <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">h/day</label>
                                 <input
                                   type="number"
@@ -7344,7 +7861,7 @@ export default function PlanningPage() {
                                   className="w-full px-2 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                                 />
                               </div>
-                              <div className="col-span-1 flex justify-end">
+                              <div className="flex md:items-end justify-end h-full md:pb-1">
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -7360,6 +7877,72 @@ export default function PlanningPage() {
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                 </button>
                               </div>
+                              </div>
+
+                              {hoursPerDayModal.isParentTask && (
+                                <div>
+                                  <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Subtasks</label>
+                                  <SearchableMultiSelect
+                                    values={Array.isArray(entry.selectedLeafTaskIds) ? entry.selectedLeafTaskIds : []}
+                                    onChange={(values) => {
+                                      const parsedValues = values
+                                        .map((value) => Number(value))
+                                        .filter((value) => Number.isFinite(value) && value > 0);
+                                      setHoursPerDayModal((prev) => ({
+                                        ...prev,
+                                        splitEntries: (prev.splitEntries || []).map((row, rowIndex) => {
+                                          if (rowIndex !== index) {
+                                            return row;
+                                          }
+
+                                          const leafTasksById = new Map((prev.leafTasks || []).map((leafTask) => [leafTask.Id, leafTask]));
+                                          const suggestedHours = Number(parsedValues.reduce((sum, leafTaskId) => {
+                                            const fallbackEstimated = parseFloat(String(leafTasksById.get(leafTaskId)?.EstimatedHours || 0));
+                                            return sum + (leafTaskRemainingHoursById[leafTaskId] ?? fallbackEstimated);
+                                          }, 0).toFixed(2));
+
+                                          return {
+                                            ...row,
+                                            selectedLeafTaskIds: parsedValues,
+                                            plannedHours: suggestedHours,
+                                          };
+                                        })
+                                      }));
+                                    }}
+                                    options={(hoursPerDayModal.leafTasks || []).map((leafTask) => ({
+                                      value: leafTask.Id,
+                                      label: leafTask.TaskName,
+                                      subtitle: `${(leafTaskRemainingHoursById[leafTask.Id] ?? parseFloat(String(leafTask.EstimatedHours || 0))).toFixed(1)}h remaining`
+                                    }))}
+                                    placeholder="Select subtasks"
+                                  />
+
+                                  <div className="mt-2">
+                                    {Array.isArray(entry.selectedLeafTaskIds) && entry.selectedLeafTaskIds.length > 0 ? (
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {entry.selectedLeafTaskIds
+                                          .map((taskId) => (hoursPerDayModal.leafTasks || []).find((leafTask) => leafTask.Id === taskId))
+                                          .filter((leafTask): leafTask is Task => Boolean(leafTask))
+                                          .map((leafTask) => {
+                                            const remainingHours = leafTaskRemainingHoursById[leafTask.Id] ?? parseFloat(String(leafTask.EstimatedHours || 0));
+                                            return (
+                                              <span
+                                                key={leafTask.Id}
+                                                className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300"
+                                                title={`${leafTask.TaskName} (${remainingHours.toFixed(1)}h remaining)`}
+                                              >
+                                                <span className="font-medium">{leafTask.TaskName}</span>
+                                                <span className="opacity-80">({remainingHours.toFixed(1)}h)</span>
+                                              </span>
+                                            );
+                                          })}
+                                      </div>
+                                    ) : (
+                                      <p className="text-[11px] text-gray-500 dark:text-gray-400">No subtasks selected.</p>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -7377,6 +7960,7 @@ export default function PlanningPage() {
                                     plannedHours: 0,
                                     hoursPerDay: parseFloat(prev.hoursPerDay) || prev.maxDailyHours || 8,
                                     splitOrder: (prev.splitEntries?.length || 0) + 1,
+                                    selectedLeafTaskIds: prev.isParentTask ? [] : undefined,
                                   }
                                 ]
                               }));
@@ -7391,8 +7975,7 @@ export default function PlanningPage() {
                         </div>
                       </>
                     )}
-                  </div>
-                )}
+                </div>
               </div>
 
               <div className="mb-4">
@@ -7432,8 +8015,9 @@ export default function PlanningPage() {
                   Your daily work capacity: {hoursPerDayModal.maxDailyHours} hours
                 </p>
               </div>
+              </div>
 
-              <div className="flex justify-end space-x-3">
+              <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3 bg-white dark:bg-gray-800">
                 <button
                   onClick={() => setHoursPerDayModal(prev => ({ ...prev, show: false }))}
                   className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
@@ -7476,6 +8060,54 @@ export default function PlanningPage() {
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   Total available in slice: {sliceTransferModal.totalHours.toFixed(2)}h
                 </p>
+
+                {sliceTransferModal.availableChildTaskIds.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Subtasks to move</label>
+                    <SearchableMultiSelect
+                      values={sliceTransferModal.selectedChildTaskIds}
+                      onChange={(values) => {
+                        const parsed = values
+                          .map((value) => Number(value))
+                          .filter((value) => Number.isFinite(value) && value > 0);
+                        setSliceTransferModal((prev) => ({
+                          ...prev,
+                          selectedChildTaskIds: parsed,
+                          totalHours: prev.taskId
+                            ? calculateSliceHoursFromSelectedSubtasks(
+                                prev.taskId,
+                                parsed,
+                                prev.sourceAllocationDates,
+                                prev.sourceTotalHours,
+                                prev.availableChildTaskIds.length
+                              )
+                            : 0,
+                          moveHours: prev.taskId
+                            ? calculateSliceHoursFromSelectedSubtasks(
+                                prev.taskId,
+                                parsed,
+                                prev.sourceAllocationDates,
+                                prev.sourceTotalHours,
+                                prev.availableChildTaskIds.length
+                              )
+                            : 0,
+                        }));
+                      }}
+                      options={sliceTransferModal.availableChildTaskIds
+                        .map((taskId) => tasks.find((taskEntry) => Number(taskEntry.Id) === Number(taskId)))
+                        .filter((taskEntry): taskEntry is Task => Boolean(taskEntry))
+                        .map((taskEntry) => ({
+                          value: taskEntry.Id,
+                          label: taskEntry.TaskName,
+                          subtitle: `${parseFloat(String(taskEntry.EstimatedHours || 0)).toFixed(1)}h`,
+                        }))}
+                      placeholder="Select subtasks"
+                    />
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Select only the subtasks that should move with this slice.
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
                 <button
@@ -7486,8 +8118,12 @@ export default function PlanningPage() {
                     dropDate: '',
                     sourceUserId: null,
                     sourceHeaderId: null,
+                    sourceAllocationDates: [],
+                    sourceTotalHours: 0,
                     totalHours: 0,
                     moveHours: 0,
+                    availableChildTaskIds: [],
+                    selectedChildTaskIds: [],
                     isProcessing: false,
                   })}
                   className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600"
@@ -7501,7 +8137,8 @@ export default function PlanningPage() {
                     sliceTransferModal.isProcessing ||
                     !Number.isFinite(sliceTransferModal.moveHours) ||
                     sliceTransferModal.moveHours <= 0 ||
-                    sliceTransferModal.moveHours > sliceTransferModal.totalHours
+                    sliceTransferModal.moveHours > sliceTransferModal.totalHours ||
+                    (sliceTransferModal.availableChildTaskIds.length > 0 && sliceTransferModal.selectedChildTaskIds.length === 0)
                   }
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg"
                 >

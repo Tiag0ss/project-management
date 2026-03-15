@@ -74,7 +74,7 @@ const getHolidayDateSetForUser = async (userId: number, startDate: string, endDa
 // Save child allocations in batch
 router.post('/batch', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { allocations } = req.body;
+    const { allocations, replaceParent } = req.body;
 
     if (!Array.isArray(allocations) || allocations.length === 0) {
       return res.status(400).json({ success: false, message: 'Allocations array is required' });
@@ -111,10 +111,13 @@ router.post('/batch', authenticateToken, async (req: AuthRequest, res: Response)
       }
     }
 
-    await pool.execute(
-      'DELETE FROM TaskChildAllocations WHERE ParentTaskId = ?',
-      [parentTaskId]
-    );
+    const shouldReplaceParent = replaceParent !== false;
+    if (shouldReplaceParent) {
+      await pool.execute(
+        'DELETE FROM TaskChildAllocations WHERE ParentTaskId = ?',
+        [parentTaskId]
+      );
+    }
 
     // Insert new child allocations
     const values: any[] = [];
@@ -145,13 +148,24 @@ router.post('/batch', authenticateToken, async (req: AuthRequest, res: Response)
     const childTaskIds = [...new Set(allocations.map((a: any) => a.ChildTaskId))];
     
     for (const childTaskId of childTaskIds) {
-      const childAllocs = allocations.filter((a: any) => a.ChildTaskId === childTaskId);
-      const dates = childAllocs.map((a: any) => a.AllocationDate).sort();
-      
-      if (dates.length > 0) {
+      const [childDateRange] = await pool.execute<RowDataPacket[]>(
+        `SELECT MIN(AllocationDate) as PlannedStartDate, MAX(AllocationDate) as PlannedEndDate
+         FROM TaskChildAllocations
+         WHERE ChildTaskId = ?`,
+        [childTaskId]
+      );
+
+      const plannedStartDate = childDateRange[0]?.PlannedStartDate
+        ? normalizeDateKey(childDateRange[0].PlannedStartDate)
+        : null;
+      const plannedEndDate = childDateRange[0]?.PlannedEndDate
+        ? normalizeDateKey(childDateRange[0].PlannedEndDate)
+        : null;
+
+      if (plannedStartDate && plannedEndDate) {
         await pool.execute(
           'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ? WHERE Id = ?',
-          [dates[0], dates[dates.length - 1], childTaskId]
+          [plannedStartDate, plannedEndDate, childTaskId]
         );
       }
     }

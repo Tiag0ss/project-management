@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import RichTextEditor from './RichTextEditor';
 import SearchableSelect from './SearchableSelect';
 import NavDropdownMenu from './navbar/NavDropdownMenu';
+import TaskDetailModal from './TaskDetailModal';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { io, Socket } from 'socket.io-client';
 import { ThemeMode, getStoredThemeMode, setThemeMode } from '@/lib/theme';
@@ -96,6 +97,21 @@ export default function Navbar() {
   const [navTimerSeconds, setNavTimerSeconds] = useState(0);
   const navTimerTickRef = useRef<NodeJS.Timeout | null>(null);
   const navTimerPollRef = useRef<NodeJS.Timeout | null>(null);
+  const [navTaskModalState, setNavTaskModalState] = useState<{
+    show: boolean;
+    isLoading: boolean;
+    project: any | null;
+    task: any | null;
+    tasks: any[];
+    error: string;
+  }>({
+    show: false,
+    isLoading: false,
+    project: null,
+    task: null,
+    tasks: [],
+    error: '',
+  });
 
   // Quick Actions dropdown state
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
@@ -453,6 +469,73 @@ export default function Navbar() {
       setNavTimer(null);
       window.dispatchEvent(new CustomEvent('timer-changed'));
     } catch {}
+  };
+
+  const handleOpenNavTimerTaskDetail = async () => {
+    if (!navTimer || !token) return;
+
+    setNavTaskModalState({
+      show: true,
+      isLoading: true,
+      project: null,
+      task: null,
+      tasks: [],
+      error: '',
+    });
+
+    try {
+      const [projectRes, tasksRes] = await Promise.all([
+        fetch(`${getApiUrl()}/api/projects/${navTimer.ProjectId}`, {
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        }),
+        fetch(`${getApiUrl()}/api/tasks/project/${navTimer.ProjectId}`, {
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        }),
+      ]);
+
+      if (!projectRes.ok) {
+        throw new Error('Failed to load project for task detail');
+      }
+
+      const projectData = await projectRes.json();
+      const project = projectData?.project || null;
+      const tasksData = tasksRes.ok ? await tasksRes.json() : { tasks: [] };
+      const projectTasks = Array.isArray(tasksData?.tasks) ? tasksData.tasks : [];
+      const activeTask = projectTasks.find((taskItem: any) => Number(taskItem.Id) === Number(navTimer.TaskId)) || null;
+
+      if (!project || !activeTask) {
+        throw new Error('Active timer task no longer exists in this project');
+      }
+
+      setNavTaskModalState({
+        show: true,
+        isLoading: false,
+        project,
+        task: activeTask,
+        tasks: projectTasks,
+        error: '',
+      });
+    } catch (error: any) {
+      setNavTaskModalState({
+        show: true,
+        isLoading: false,
+        project: null,
+        task: null,
+        tasks: [],
+        error: error?.message || 'Failed to open task detail',
+      });
+    }
+  };
+
+  const handleCloseNavTaskModal = () => {
+    setNavTaskModalState({
+      show: false,
+      isLoading: false,
+      project: null,
+      task: null,
+      tasks: [],
+      error: '',
+    });
   };
 
   const loadNotificationCount = async () => {
@@ -1838,15 +1921,16 @@ export default function Navbar() {
               {/* Active Timer indicator */}
               {!isCustomerUser && navTimer && (
                 <div className="flex items-center gap-1">
-                  <a
-                    href={`/projects/${navTimer.ProjectId}`}
+                  <button
+                    type="button"
+                    onClick={handleOpenNavTimerTaskDetail}
                     className="flex items-center gap-1.5 text-xs font-mono bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2.5 py-1.5 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors animate-pulse"
                     title={`Timer running: ${navTimer.TaskName} — ${navTimer.ProjectName}`}
                   >
                     <span>⏱</span>
                     <span className="hidden sm:inline max-w-[120px] truncate">{navTimer.TaskName}</span>
                     <span className="font-bold">{navFormatElapsed(navTimerSeconds)}</span>
-                  </a>
+                  </button>
                   <button
                     onClick={handleNavStopTimer}
                     title="Stop timer and save time entry"
@@ -2092,6 +2176,49 @@ export default function Navbar() {
       </nav>
 
       {/* Quick Task Add Modal */}
+      {navTaskModalState.show && (
+        <>
+          {navTaskModalState.isLoading && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 text-gray-700 dark:text-gray-300">
+                Loading task details...
+              </div>
+            </div>
+          )}
+
+          {!navTaskModalState.isLoading && navTaskModalState.error && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+                <div className="text-sm text-red-600 dark:text-red-400 mb-4">{navTaskModalState.error}</div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleCloseNavTaskModal}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!navTaskModalState.isLoading && !navTaskModalState.error && navTaskModalState.project && navTaskModalState.task && token && (
+            <TaskDetailModal
+              projectId={Number(navTaskModalState.project.Id)}
+              organizationId={Number(navTaskModalState.project.OrganizationId)}
+              task={navTaskModalState.task}
+              project={navTaskModalState.project}
+              tasks={navTaskModalState.tasks}
+              onClose={handleCloseNavTaskModal}
+              onSaved={async () => {
+                await handleOpenNavTimerTaskDetail();
+              }}
+              token={token}
+            />
+          )}
+        </>
+      )}
+
       {showQuickTaskModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">

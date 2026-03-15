@@ -909,6 +909,17 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       order = (maxOrder[0]?.maxOrder || 0) + 1;
     }
 
+    const normalizedEstimatedHours = estimatedHours === undefined || estimatedHours === null || estimatedHours === ''
+      ? null
+      : Number(estimatedHours);
+    const normalizedStoryPoints = storyPoints === undefined || storyPoints === null || storyPoints === ''
+      ? null
+      : Number(storyPoints);
+    const finalStoryPointsForInsert =
+      (normalizedStoryPoints === null || normalizedStoryPoints === 0) && normalizedEstimatedHours !== null
+        ? normalizedEstimatedHours
+        : normalizedStoryPoints;
+
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, UnscheduledWork, EstimatedHours, StoryPoints, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, ApplicationId, CreatedBy) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -923,8 +934,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         toDateOnly(dueDate),
         mandatoryDueFlag,
         toBooleanFlag(unscheduledWork),
-        estimatedHours || null,
-        storyPoints === undefined || storyPoints === null || storyPoints === '' ? null : Number(storyPoints),
+        normalizedEstimatedHours,
+        finalStoryPointsForInsert,
         parentTaskId || null,
         order,
         toDateOnly(plannedStartDate),
@@ -1213,9 +1224,13 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const finalUnscheduledWork = unscheduledWork !== undefined
       ? toBooleanFlag(unscheduledWork)
       : toBooleanFlag(oldTask.UnscheduledWork);
-    const finalStoryPoints = storyPoints !== undefined
+    const finalStoryPointsRaw = storyPoints !== undefined
       ? (storyPoints === null || storyPoints === '' ? null : Number(storyPoints))
       : (oldTask.StoryPoints ?? null);
+    const finalStoryPoints =
+      (finalStoryPointsRaw === null || finalStoryPointsRaw === 0) && finalEstimatedHours !== null
+        ? finalEstimatedHours
+        : finalStoryPointsRaw;
     const finalParentTaskId = parentTaskId !== undefined
       ? (parentTaskId === null || parentTaskId === '' ? null : Number(parentTaskId))
       : (oldTask.ParentTaskId ?? null);
