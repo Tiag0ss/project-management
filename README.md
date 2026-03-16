@@ -9,8 +9,8 @@ This project is a work in progress, can be still found bugs, report the bugs in 
 
 ## Features
 
-- 📋 **Project & Task Management** — Kanban boards, task hierarchy (parent/subtasks), dependencies, custom statuses and priorities
-- 📊 **Resource Planning** — Gantt chart with drag-and-drop allocation, user availability tracking, intelligent replanning
+- 📋 **Project & Task Management** — Kanban boards, task hierarchy (parent/subtasks), dependencies, custom statuses/priorities, clear project/customer context in task details, and quick navigation from tasks to projects
+- 📊 **Resource Planning** — Gantt chart with drag-and-drop allocation, user availability tracking, intelligent replanning, better split planning, clearer timeline visualization, and flexible planning even when tasks start with no remaining planned hours
 - ⏱️ **Time Tracking** — Daily and weekly timesheet views, per-task time entries, CSV export
 - ✅ **Approvals Center** — Team-lead/admin approval flows for time entries and vacations with batch actions
 - 🏖️ **Vacations & Holidays** — Annual vacation management, non-working-day-aware requests, and country holiday calendars
@@ -21,7 +21,7 @@ This project is a work in progress, can be still found bugs, report the bugs in 
 - 👤 **Customer Management** — Customer database with organization associations and default support user assignment
 - 📞 **Call Records** — Structured call logging with time, participants, notes, and optional task/project linkage
 - 🛠️ **Application Lifecycle Management** — Application registry, version control, release management with PDF exports, task-to-release linking
-- 🔗 **Jira Integration** — Two-tier Jira system connecting tickets and project boards with external linking and encrypted credentials
+- 🔗 **Jira Integration** — Two-tier Jira system connecting tickets and project boards with external linking and encrypted credentials; linked issue fields are shown only when each integration is enabled
 - 📝 **Rich Text Editor** — Tiptap-based editor with formatting, images (inline base64), and markdown support for descriptions and comments
 - 📔 **Memos System** — Calendar-based note-taking with visibility controls (Private, Organizations, Public), tags, and rich content
 - 🔄 **Recurring Tasks** — Outlook-style recurring time blocks for meetings, standups, and fixed schedules that planning respects
