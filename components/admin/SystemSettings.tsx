@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { getApiUrl } from '@/lib/api/config';
 
@@ -112,6 +112,13 @@ interface SystemSettings {
   defaultTimezone?: string;
   internalTicketsEnabled?: string;
   memosEnabled?: string;
+  aiAssistantEnabled?: string;
+  openAIApiKey?: string;
+  aiViewsAutoCreate?: string;
+  aiViewSql_vAI_ProjectOpenTasks?: string;
+  aiViewSql_vAI_UserOpenTasks?: string;
+  aiViewSql_vAI_UserWorkloadBase?: string;
+  aiViewSql_vAI_UserAllocations?: string;
 }
 
 interface Organization {
@@ -124,8 +131,11 @@ interface Customer {
   Name: string;
 }
 
+type SettingsTab = 'branding' | 'email' | 'access' | 'features' | 'maintenance';
+
 export default function SystemSettings() {
   const { token } = useAuth();
+  const [activeTab, setActiveTab] = useState<SettingsTab>('branding');
   const [settings, setSettings] = useState<SystemSettings>({
     companyName: 'Project Management',
     companyLogoUrl: '',
@@ -143,6 +153,13 @@ export default function SystemSettings() {
     defaultTimezone: '',
     internalTicketsEnabled: 'true',
     memosEnabled: 'true',
+    aiAssistantEnabled: 'false',
+    openAIApiKey: '',
+    aiViewsAutoCreate: 'true',
+    aiViewSql_vAI_ProjectOpenTasks: '',
+    aiViewSql_vAI_UserOpenTasks: '',
+    aiViewSql_vAI_UserWorkloadBase: '',
+    aiViewSql_vAI_UserAllocations: '',
   });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -153,6 +170,9 @@ export default function SystemSettings() {
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrationResult, setMigrationResult] = useState<{ created: number; skipped: number } | null>(null);
   const [migrationError, setMigrationError] = useState('');
+  const [isSyncingAiViews, setIsSyncingAiViews] = useState(false);
+  const [aiViewsSyncMessage, setAiViewsSyncMessage] = useState('');
+  const [aiViewsSyncError, setAiViewsSyncError] = useState('');
 
   useEffect(() => {
     if (token) {
@@ -195,6 +215,13 @@ export default function SystemSettings() {
           defaultTimezone: data.settings.defaultTimezone || '',
           internalTicketsEnabled: data.settings.internalTicketsEnabled || 'true',
           memosEnabled: data.settings.memosEnabled || 'true',
+          aiAssistantEnabled: data.settings.aiAssistantEnabled || 'false',
+          openAIApiKey: data.settings.openAIApiKey || '',
+          aiViewsAutoCreate: data.settings.aiViewsAutoCreate || 'true',
+          aiViewSql_vAI_ProjectOpenTasks: data.settings.aiViewSql_vAI_ProjectOpenTasks || '',
+          aiViewSql_vAI_UserOpenTasks: data.settings.aiViewSql_vAI_UserOpenTasks || '',
+          aiViewSql_vAI_UserWorkloadBase: data.settings.aiViewSql_vAI_UserWorkloadBase || '',
+          aiViewSql_vAI_UserAllocations: data.settings.aiViewSql_vAI_UserAllocations || '',
         });
       }
     } catch (err) {
@@ -275,6 +302,32 @@ export default function SystemSettings() {
     }
   };
 
+  const handleSyncAiViews = async () => {
+    if (!token) return;
+    setIsSyncingAiViews(true);
+    setAiViewsSyncMessage('');
+    setAiViewsSyncError('');
+    try {
+      const response = await fetch(`${getApiUrl()}/api/system-settings/ai-assistant-views/sync`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to sync AI views');
+      }
+
+      setAiViewsSyncMessage(`AI views synced (${data.synced || 0} view(s)).`);
+    } catch (err: any) {
+      setAiViewsSyncError(err.message || 'Failed to sync AI views');
+    } finally {
+      setIsSyncingAiViews(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -320,6 +373,14 @@ export default function SystemSettings() {
     );
   }
 
+  const TABS: { id: SettingsTab; label: string; icon: string }[] = [
+    { id: 'branding',     label: 'Branding',       icon: '🏷️' },
+    { id: 'email',        label: 'Email (SMTP)',    icon: '📧' },
+    { id: 'access',       label: 'Access & Auth',   icon: '🔐' },
+    { id: 'features',     label: 'Features & AI',   icon: '🤖' },
+    { id: 'maintenance',  label: 'Maintenance',     icon: '🔧' },
+  ];
+
   return (
     <div className="p-6">
       <div className="mb-6">
@@ -343,374 +404,516 @@ export default function SystemSettings() {
         </div>
       )}
 
+      {/* Tab bar */}
+      <div className="border-b border-gray-200 dark:border-gray-700 mb-6">
+        <nav className="-mb-px flex gap-1 overflow-x-auto">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`whitespace-nowrap flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === tab.id
+                  ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+              }`}
+            >
+              <span>{tab.icon}</span>
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
       <form onSubmit={handleSubmit} className="space-y-8">
-        <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            🏷️ Branding
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Company Name
-              </label>
-              <input
-                type="text"
-                value={settings.companyName || ''}
-                onChange={(e) => handleChange('companyName', e.target.value)}
-                placeholder="Project Management"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Company Logo URL
-              </label>
-              <input
-                type="url"
-                value={settings.companyLogoUrl || ''}
-                onChange={(e) => handleChange('companyLogoUrl', e.target.value)}
-                placeholder="https://example.com/logo.png"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Favicon URL
-              </label>
-              <input
-                type="url"
-                value={settings.faviconUrl || ''}
-                onChange={(e) => handleChange('faviconUrl', e.target.value)}
-                placeholder="https://example.com/favicon.ico"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* SMTP Configuration */}
-        <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            📧 SMTP Configuration
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                SMTP Host
-              </label>
-              <input
-                type="text"
-                value={settings.smtpHost}
-                onChange={(e) => handleChange('smtpHost', e.target.value)}
-                placeholder="smtp.example.com"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                SMTP Port
-              </label>
-              <input
-                type="number"
-                value={settings.smtpPort}
-                onChange={(e) => handleChange('smtpPort', e.target.value)}
-                placeholder="587"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                SMTP User
-              </label>
-              <input
-                type="text"
-                value={settings.smtpUser}
-                onChange={(e) => handleChange('smtpUser', e.target.value)}
-                placeholder="user@example.com"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                SMTP Password
-              </label>
-              <input
-                type="password"
-                value={settings.smtpPassword}
-                onChange={(e) => handleChange('smtpPassword', e.target.value)}
-                placeholder=""
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Leave empty and save to clear the stored SMTP password.
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                From Email
-              </label>
-              <input
-                type="email"
-                value={settings.smtpFrom}
-                onChange={(e) => handleChange('smtpFrom', e.target.value)}
-                placeholder="noreply@example.com"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                From Name
-              </label>
-              <input
-                type="text"
-                value={settings.smtpFromName}
-                onChange={(e) => handleChange('smtpFromName', e.target.value)}
-                placeholder="Project Management System"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Use TLS/SSL
-              </label>
-              <select
-                value={settings.smtpSecure}
-                onChange={(e) => handleChange('smtpSecure', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              >
-                <option value="true">Yes (TLS/SSL)</option>
-                <option value="false">No (Plain)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Registration Settings */}
-        <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            🔐 Registration Settings
-          </h3>
-          <div className="space-y-4">
-            <div>
-              <label className="flex items-center gap-3 cursor-pointer">
+        {/* â”€â”€ BRANDING â”€â”€ */}
+        {activeTab === 'branding' && (
+          <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+              🏷️ Branding
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Company Name
+                </label>
                 <input
-                  type="checkbox"
-                  checked={settings.allowPublicRegistration === 'true'}
-                  onChange={(e) => handleChange('allowPublicRegistration', e.target.checked ? 'true' : 'false')}
-                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  type="text"
+                  value={settings.companyName || ''}
+                  onChange={(e) => handleChange('companyName', e.target.value)}
+                  placeholder="Project Management"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Company Logo URL
+                </label>
+                <input
+                  type="url"
+                  value={settings.companyLogoUrl || ''}
+                  onChange={(e) => handleChange('companyLogoUrl', e.target.value)}
+                  placeholder="https://example.com/logo.png"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Favicon URL
+                </label>
+                <input
+                  type="url"
+                  value={settings.faviconUrl || ''}
+                  onChange={(e) => handleChange('faviconUrl', e.target.value)}
+                  placeholder="https://example.com/favicon.ico"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* â”€â”€ EMAIL / SMTP â”€â”€ */}
+        {activeTab === 'email' && (
+          <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+              📧 SMTP Configuration
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  SMTP Host
+                </label>
+                <input
+                  type="text"
+                  value={settings.smtpHost}
+                  onChange={(e) => handleChange('smtpHost', e.target.value)}
+                  placeholder="smtp.example.com"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  SMTP Port
+                </label>
+                <input
+                  type="number"
+                  value={settings.smtpPort}
+                  onChange={(e) => handleChange('smtpPort', e.target.value)}
+                  placeholder="587"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  SMTP User
+                </label>
+                <input
+                  type="text"
+                  value={settings.smtpUser}
+                  onChange={(e) => handleChange('smtpUser', e.target.value)}
+                  placeholder="user@example.com"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  SMTP Password
+                </label>
+                <input
+                  type="password"
+                  value={settings.smtpPassword}
+                  onChange={(e) => handleChange('smtpPassword', e.target.value)}
+                  placeholder=""
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Leave empty and save to clear the stored SMTP password.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  From Email
+                </label>
+                <input
+                  type="email"
+                  value={settings.smtpFrom}
+                  onChange={(e) => handleChange('smtpFrom', e.target.value)}
+                  placeholder="noreply@example.com"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  From Name
+                </label>
+                <input
+                  type="text"
+                  value={settings.smtpFromName}
+                  onChange={(e) => handleChange('smtpFromName', e.target.value)}
+                  placeholder="Project Management System"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Use TLS/SSL
+                </label>
+                <select
+                  value={settings.smtpSecure}
+                  onChange={(e) => handleChange('smtpSecure', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="true">Yes (TLS/SSL)</option>
+                  <option value="false">No (Plain)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* â”€â”€ ACCESS & AUTH â”€â”€ */}
+        {activeTab === 'access' && (
+          <div className="space-y-6">
+            <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                🔐 Registration Settings
+              </h3>
+              <div className="space-y-4">
                 <div>
-                  <div className="text-sm font-medium text-gray-900 dark:text-white">
-                    Allow Public Registration
-                  </div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Allow users to register from the frontpage without an invitation
-                  </div>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.allowPublicRegistration === 'true'}
+                      onChange={(e) => handleChange('allowPublicRegistration', e.target.checked ? 'true' : 'false')}
+                      className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-white">
+                        Allow Public Registration
+                      </div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                        Allow users to register from the frontpage without an invitation
+                      </div>
+                    </div>
+                  </label>
                 </div>
-              </label>
+
+                {settings.allowPublicRegistration === 'true' && (
+                  <div className="ml-8 mt-4 space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Registration Type *
+                      </label>
+                      <select
+                        value={settings.publicRegistrationType}
+                        onChange={(e) => handleChange('publicRegistrationType', e.target.value)}
+                        required={settings.allowPublicRegistration === 'true'}
+                        className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      >
+                        <option value="internal">Internal User</option>
+                        <option value="customer">Customer User</option>
+                      </select>
+                      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                        {settings.publicRegistrationType === 'internal'
+                          ? 'New users will be created as internal users'
+                          : 'New users will be created as customer users (linked to a specific customer)'}
+                      </p>
+                    </div>
+
+                    {settings.publicRegistrationType === 'customer' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Default Customer *
+                        </label>
+                        <select
+                          value={settings.defaultCustomerId}
+                          onChange={(e) => handleChange('defaultCustomerId', e.target.value)}
+                          required={settings.publicRegistrationType === 'customer'}
+                          className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        >
+                          <option value="">Select a customer...</option>
+                          {customers.map((customer) => (
+                            <option key={customer.Id} value={customer.Id}>
+                              {customer.Name}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                          New users will be linked to this customer
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
-            {settings.allowPublicRegistration === 'true' && (
-              <div className="ml-8 mt-4 space-y-4">
+            <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                🌍 Timezone Settings
+              </h3>
+              <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Registration Type *
+                    Default System Timezone
                   </label>
                   <select
-                    value={settings.publicRegistrationType}
-                    onChange={(e) => handleChange('publicRegistrationType', e.target.value)}
-                    required={settings.allowPublicRegistration === 'true'}
+                    value={settings.defaultTimezone}
+                    onChange={(e) => handleChange('defaultTimezone', e.target.value)}
                     className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   >
-                    <option value="internal">Internal User</option>
-                    <option value="customer">Customer User</option>
+                    {TIMEZONES.map(tz => (
+                      <option key={tz.value} value={tz.value}>{tz.label}</option>
+                    ))}
                   </select>
                   <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                    {settings.publicRegistrationType === 'internal' 
-                      ? 'New users will be created as internal users'
-                      : 'New users will be created as customer users (linked to a specific customer)'}
+                    This timezone will be used as the default for all users who have not set their own timezone preference.
                   </p>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
 
-                {settings.publicRegistrationType === 'customer' && (
+        {/* â”€â”€ FEATURES & AI â”€â”€ */}
+        {activeTab === 'features' && (
+          <div className="space-y-6">
+            <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                🧩 Feature Toggles
+              </h3>
+              <div className="space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.internalTicketsEnabled === 'true'}
+                    onChange={(e) => handleChange('internalTicketsEnabled', e.target.checked ? 'true' : 'false')}
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Default Customer *
-                    </label>
-                    <select
-                      value={settings.defaultCustomerId}
-                      onChange={(e) => handleChange('defaultCustomerId', e.target.value)}
-                      required={settings.publicRegistrationType === 'customer'}
-                      className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    >
-                      <option value="">Select a customer...</option>
-                      {customers.map((customer) => (
-                        <option key={customer.Id} value={customer.Id}>
-                          {customer.Name}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                      New users will be linked to this customer
-                    </p>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      Enable Internal Ticket System
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      Shows/hides internal tickets module globally. Does not disable ticket integration used in tasks.
+                    </div>
                   </div>
-                )}
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.memosEnabled === 'true'}
+                    onChange={(e) => handleChange('memosEnabled', e.target.checked ? 'true' : 'false')}
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      Enable Memos Menu
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      Only controls visibility of Memos in the navbar.
+                    </div>
+                  </div>
+                </label>
               </div>
-            )}
-          </div>
-        </div>
-
-        {/* Timezone Settings */}
-        <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            🌍 Timezone Settings
-          </h3>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Default System Timezone
-              </label>
-              <select
-                value={settings.defaultTimezone}
-                onChange={(e) => handleChange('defaultTimezone', e.target.value)}
-                className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              >
-                {TIMEZONES.map(tz => (
-                  <option key={tz.value} value={tz.value}>{tz.label}</option>
-                ))}
-              </select>
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                This timezone will be used as the default for all users who have not set their own timezone preference.
-              </p>
             </div>
-          </div>
-        </div>
 
-        {/* Maintenance / Migration */}
-        <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            🧩 Feature Toggles
-          </h3>
-          <div className="space-y-4">
-            <div>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={settings.internalTicketsEnabled === 'true'}
-                  onChange={(e) => handleChange('internalTicketsEnabled', e.target.checked ? 'true' : 'false')}
-                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
+            <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                🤖 AI Assistant
+              </h3>
+              <div className="space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.aiAssistantEnabled === 'true'}
+                    onChange={(e) => handleChange('aiAssistantEnabled', e.target.checked ? 'true' : 'false')}
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      Enable AI Assistant
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      Shows/hides AI assistant globally. Requires OpenAI API key configured below.
+                    </div>
+                  </div>
+                </label>
+
                 <div>
-                  <div className="text-sm font-medium text-gray-900 dark:text-white">
-                    Enable Internal Ticket System
-                  </div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Shows/hides internal tickets module globally. Does not disable ticket integration used in tasks.
-                  </div>
-                </div>
-              </label>
-            </div>
-
-            <div>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={settings.memosEnabled === 'true'}
-                  onChange={(e) => handleChange('memosEnabled', e.target.checked ? 'true' : 'false')}
-                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <div>
-                  <div className="text-sm font-medium text-gray-900 dark:text-white">
-                    Enable Memos Menu
-                  </div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Only controls visibility of Memos in the navbar.
-                  </div>
-                </div>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        {/* Maintenance / Migration */}
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 p-6 rounded-lg border border-yellow-200 dark:border-yellow-800">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
-            🔧 Maintenance
-          </h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            Administrative utilities for data consistency and migrations.
-          </p>
-
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-start gap-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-              <div className="flex-1">
-                <h4 className="font-medium text-gray-900 dark:text-white mb-1">Create System Permission Groups</h4>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Creates the default Developer, Support, and Manager permission groups for any organization that is missing them.
-                  Safe to run multiple times — existing groups are not modified.
-                </p>
-                {migrationResult && (
-                  <p className="mt-2 text-sm text-green-600 dark:text-green-400">
-                    ✅ Done: {migrationResult.created} groups created, {migrationResult.skipped} already existed.
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    OpenAI API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={settings.openAIApiKey || ''}
+                    onChange={(e) => handleChange('openAIApiKey', e.target.value)}
+                    placeholder="sk-..."
+                    className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Leave empty and save to clear the stored API key.
                   </p>
-                )}
-                {migrationError && (
-                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">❌ {migrationError}</p>
-                )}
+                </div>
+
+                <div className="border-t border-gray-200 dark:border-gray-600 pt-4">
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">AI Data Views</h4>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                    The AI assistant reads data exclusively from these database views. You can customise the SELECT body for each view below (leave empty to use the built-in default).
+                  </p>
+
+                  <label className="flex items-center gap-3 cursor-pointer mb-4">
+                    <input
+                      type="checkbox"
+                      checked={settings.aiViewsAutoCreate === 'true'}
+                      onChange={(e) => handleChange('aiViewsAutoCreate', e.target.checked ? 'true' : 'false')}
+                      className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-white">
+                        Auto-create/sync AI Views on Server Startup
+                      </div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                        When enabled, startup ensures AI views exist and applies the SQL definitions below.
+                      </div>
+                    </div>
+                  </label>
+
+                  <div className="grid grid-cols-1 gap-4">
+                    {(
+                      [
+                        { key: 'aiViewSql_vAI_ProjectOpenTasks', label: 'vAI_ProjectOpenTasks' },
+                        { key: 'aiViewSql_vAI_UserOpenTasks',    label: 'vAI_UserOpenTasks' },
+                        { key: 'aiViewSql_vAI_UserWorkloadBase', label: 'vAI_UserWorkloadBase' },
+                        { key: 'aiViewSql_vAI_UserAllocations',  label: 'vAI_UserAllocations' },
+                      ] as { key: keyof SystemSettings; label: string }[]
+                    ).map(({ key, label }) => (
+                      <div key={key}>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          SQL for <code className="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">{label}</code>
+                        </label>
+                        <textarea
+                          value={(settings[key] as string) || ''}
+                          onChange={(e) => handleChange(key, e.target.value)}
+                          rows={5}
+                          placeholder="Leave empty to use the built-in default SELECTâ€¦"
+                          className="w-full px-4 py-2 font-mono text-xs border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 mt-4">
+                    <button
+                      type="button"
+                      onClick={handleSyncAiViews}
+                      disabled={isSyncingAiViews}
+                      className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white"
+                    >
+                      {isSyncingAiViews ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          Syncing...
+                        </>
+                      ) : '🔄 Sync AI Views Now'}
+                    </button>
+                    {aiViewsSyncMessage && <span className="text-sm text-green-600 dark:text-green-400">{aiViewsSyncMessage}</span>}
+                    {aiViewsSyncError   && <span className="text-sm text-red-600 dark:text-red-400">{aiViewsSyncError}</span>}
+                  </div>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={handleMigrateSystemGroups}
-                disabled={isMigrating}
-                className="flex-shrink-0 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-400 text-white rounded-lg transition-colors font-medium flex items-center gap-2"
-              >
-                {isMigrating ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Running...
-                  </>
-                ) : (
-                  '🔄 Run Migration'
-                )}
-              </button>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Save Button */}
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            disabled={isSaving}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors font-medium flex items-center gap-2"
-          >
-            {isSaving ? (
-              <>
-                <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Saving...
-              </>
-            ) : (
-              <>
-                💾 Save Settings
-              </>
-            )}
-          </button>
-        </div>
+        {/* â”€â”€ MAINTENANCE â”€â”€ */}
+        {activeTab === 'maintenance' && (
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 p-6 rounded-lg border border-yellow-200 dark:border-yellow-800">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+              🔧 Maintenance
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Administrative utilities for data consistency and migrations.
+            </p>
+
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-start gap-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="flex-1">
+                  <h4 className="font-medium text-gray-900 dark:text-white mb-1">Create System Permission Groups</h4>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Creates the default Developer, Support, and Manager permission groups for any organization that is missing them.
+                    Safe to run multiple times â€” existing groups are not modified.
+                  </p>
+                  {migrationResult && (
+                    <p className="mt-2 text-sm text-green-600 dark:text-green-400">
+                      âœ… Done: {migrationResult.created} groups created, {migrationResult.skipped} already existed.
+                    </p>
+                  )}
+                  {migrationError && (
+                    <p className="mt-2 text-sm text-red-600 dark:text-red-400">âŒ {migrationError}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleMigrateSystemGroups}
+                  disabled={isMigrating}
+                  className="flex-shrink-0 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-400 text-white rounded-lg transition-colors font-medium flex items-center gap-2"
+                >
+                  {isMigrating ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Running...
+                    </>
+                  ) : (
+                    '🔄 Run Migration'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Save Button â€” hidden on Maintenance tab (no form fields there) */}
+        {activeTab !== 'maintenance' && (
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors font-medium flex items-center gap-2"
+            >
+              {isSaving ? (
+                <>
+                  <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Saving...
+                </>
+              ) : (
+                <>💾 Save Settings</>
+              )}
+            </button>
+          </div>
+        )}
       </form>
     </div>
   );
 }
+

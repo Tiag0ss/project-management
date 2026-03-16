@@ -3,12 +3,13 @@ import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { encrypt, isEncrypted } from '../utils/encryption';
+import { ensureAiAssistantViews } from '../utils/aiAssistantViews';
 
 // Keys that should be encrypted in the database
-const ENCRYPTED_KEYS = ['smtpPassword'];
+const ENCRYPTED_KEYS = ['smtpPassword', 'openAIApiKey'];
 
 // Keys that should be masked in GET responses
-const MASKED_KEYS = ['smtpPassword'];
+const MASKED_KEYS = ['smtpPassword', 'openAIApiKey'];
 
 const router = Router();
 
@@ -58,7 +59,6 @@ router.get('/public', async (req, res: Response) => {
     const companyName = settingsObj.companyName || 'Project Management';
     const companyLogoUrl = settingsObj.companyLogoUrl || '';
     const faviconUrl = settingsObj.faviconUrl || '';
-
     res.json({
       success: true,
       allowPublicRegistration,
@@ -370,6 +370,31 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       success: false, 
       message: 'Failed to update system settings' 
     });
+  }
+});
+
+// Sync AI assistant views immediately (admin only)
+router.post('/ai-assistant-views/sync', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    const [users] = await pool.execute<RowDataPacket[]>(
+      'SELECT IsAdmin FROM Users WHERE Id = ?',
+      [userId]
+    );
+
+    if (!users.length || !users[0].IsAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required'
+      });
+    }
+
+    const result = await ensureAiAssistantViews();
+    return res.json(result);
+  } catch (error) {
+    console.error('Sync AI assistant views error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to sync AI assistant views' });
   }
 });
 

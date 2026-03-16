@@ -7,6 +7,7 @@ import { ToastProvider } from "@/contexts/ToastContext";
 import BrandingRuntime from "@/components/BrandingRuntime";
 import ThemeRuntime from "@/components/ThemeRuntime";
 import GlobalGridEnhancer from "@/components/GlobalGridEnhancer";
+import AIAssistantWidget from "@/components/AIAssistantWidget";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -40,6 +41,7 @@ export default function RootLayout({
               <BrandingRuntime />
               <GlobalGridEnhancer />
               {children}
+              <AIAssistantWidget />
             </ToastProvider>
           </PermissionsProvider>
         </AuthProvider>

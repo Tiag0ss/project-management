@@ -68,6 +68,8 @@ import holidaysRoutes from './routes/holidays';
 import vacationsRoutes from './routes/vacations';
 import pdfExportsRoutes from './routes/pdfExports';
 import planningImportRoutes from './routes/planningImport';
+import aiAssistantRoutes from './routes/aiAssistant';
+import { ensureAiAssistantViews } from './utils/aiAssistantViews';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
 import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler';
 import { startPdfReportScheduler } from './utils/pdfReportScheduler';
@@ -98,6 +100,16 @@ async function initializeDatabase() {
   
   // Seed default role permissions if needed
   await seedRolePermissions();
+
+  // Ensure AI assistant views exist (and apply admin-custom SQL if configured)
+  try {
+    const aiViewsResult = await ensureAiAssistantViews();
+    logger.info('AI assistant views ensured', aiViewsResult as any);
+  } catch (aiViewsError) {
+    logger.warn('Failed to ensure AI assistant views; assistant will use SQL fallback queries', {
+      error: aiViewsError instanceof Error ? aiViewsError.message : String(aiViewsError),
+    });
+  }
   
   logger.info('=== Database Ready ===');
 }
@@ -247,6 +259,7 @@ app.prepare().then(async () => {
   server.use('/api/holidays', holidaysRoutes);
   server.use('/api/vacations', vacationsRoutes);
   server.use('/api/pdf-exports', pdfExportsRoutes);
+  server.use('/api/ai-assistant', aiAssistantRoutes);
 
   // Error handling middleware
   server.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
