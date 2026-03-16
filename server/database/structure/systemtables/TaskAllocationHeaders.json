@@ -41,6 +41,12 @@
       "Comment": "Target planned hours for this user segment"
     },
     {
+      "FieldName": "HoursPerDay",
+      "DataType": "decimal(10,2)",
+      "NotNullable": false,
+      "Comment": "Planned hours per day cap for this allocation segment"
+    },
+    {
       "FieldName": "PlannedStartDate",
       "DataType": "date",
       "NotNullable": false,

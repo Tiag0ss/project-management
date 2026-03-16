@@ -924,6 +924,8 @@ router.post('/chat', authenticateToken, async (req: AuthRequest, res: Response) 
       const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
       const systemPrompt = [
         'You are an internal project analytics assistant.',
+        'Language rule (mandatory): ALWAYS respond in English (EN), regardless of the user input language.',
+        'Never answer in Portuguese. If the user writes in Portuguese, still answer in English.',
         'Use ONLY the provided business context data.',
         'Security rule: only use data from AI views (vAI_ProjectOpenTasks, vAI_UserOpenTasks, vAI_UserWorkloadBase, vAI_UserAllocations).',
         'If data is insufficient, say what is missing.',

@@ -80,12 +80,14 @@ const ensureTaskAllocationHeader = async (
     plannedHours?: number | null;
     createdBy?: number | null;
     forceCreate?: boolean;
+    hoursPerDay?: number | null;
   }
 ): Promise<number> => {
   const allocationMode = normalizeAllocationMode(options?.allocationMode);
   const requestedSplitOrder = Number.isFinite(Number(options?.splitOrder)) ? Number(options?.splitOrder) : null;
   let splitOrder = requestedSplitOrder;
   const plannedHours = Number.isFinite(Number(options?.plannedHours)) ? Number(options?.plannedHours) : null;
+  const hoursPerDay = Number.isFinite(Number(options?.hoursPerDay)) && Number(options?.hoursPerDay) > 0 ? Number(options?.hoursPerDay) : null;
 
   if (options?.forceCreate) {
     if (splitOrder === null) {
@@ -100,9 +102,9 @@ const ensureTaskAllocationHeader = async (
     }
 
     const [insertResult] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO TaskAllocationHeaders (TaskId, UserId, AllocationMode, SplitOrder, PlannedHours, CreatedBy)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [taskId, userId, allocationMode, splitOrder, plannedHours, options?.createdBy || null]
+      `INSERT INTO TaskAllocationHeaders (TaskId, UserId, AllocationMode, SplitOrder, PlannedHours, HoursPerDay, CreatedBy)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [taskId, userId, allocationMode, splitOrder, plannedHours, hoursPerDay, options?.createdBy || null]
     );
 
     return Number(insertResult.insertId);
@@ -117,17 +119,17 @@ const ensureTaskAllocationHeader = async (
     const headerId = Number(existingRows[0].Id);
     await pool.execute(
       `UPDATE TaskAllocationHeaders
-       SET AllocationMode = ?, SplitOrder = ?, PlannedHours = ?
+       SET AllocationMode = ?, SplitOrder = ?, PlannedHours = ?, HoursPerDay = ?
        WHERE Id = ?`,
-      [allocationMode, splitOrder, plannedHours, headerId]
+      [allocationMode, splitOrder, plannedHours, hoursPerDay, headerId]
     );
     return headerId;
   }
 
   const [insertResult] = await pool.execute<ResultSetHeader>(
-    `INSERT INTO TaskAllocationHeaders (TaskId, UserId, AllocationMode, SplitOrder, PlannedHours, CreatedBy)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [taskId, userId, allocationMode, splitOrder, plannedHours, options?.createdBy || null]
+    `INSERT INTO TaskAllocationHeaders (TaskId, UserId, AllocationMode, SplitOrder, PlannedHours, HoursPerDay, CreatedBy)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [taskId, userId, allocationMode, splitOrder, plannedHours, hoursPerDay, options?.createdBy || null]
   );
 
   return Number(insertResult.insertId);
@@ -459,6 +461,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       `SELECT ta.TaskId, ta.TaskAllocationHeaderId, ta.UserId, ta.AllocationDate, ta.AllocatedHours,
               COALESCE(p.IsHobby, 0) as IsHobby,
               tah.PlannedStartDate, tah.PlannedEndDate
+                    , tah.HoursPerDay
        FROM TaskAllocations ta
        INNER JOIN Tasks t ON ta.TaskId = t.Id
        INNER JOIN Projects p ON t.ProjectId = p.Id
@@ -1556,7 +1559,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
 router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
-    const { startDate, endDate, excludeTaskId, isHobby } = req.query;
+    const { startDate, endDate, excludeTaskId, excludeHeaderId, isHobby } = req.query;
 
     if (!startDate || !endDate) {
       return res.status(400).json({ success: false, message: 'Start and end dates required' });
@@ -1598,6 +1601,10 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
     if (excludeTaskId) {
       directQuery += ` AND ta.TaskId != ?`;
       directParams.push(excludeTaskId);
+    }
+    if (excludeHeaderId) {
+      directQuery += ` AND (ta.TaskAllocationHeaderId IS NULL OR ta.TaskAllocationHeaderId != ?)`;
+      directParams.push(excludeHeaderId);
     }
     
     directQuery += ` GROUP BY ta.AllocationDate`;
@@ -1842,6 +1849,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       plannedHours: header?.plannedHours ?? allocations.reduce((sum: number, allocation: any) => sum + (parseFloat(String(allocation?.hours || 0)) || 0), 0),
       createdBy: req.user?.userId,
       forceCreate: !!appendToExistingUserSlice,
+      hoursPerDay: header?.hoursPerDay,
     });
 
     if (!appendToExistingUserSlice) {

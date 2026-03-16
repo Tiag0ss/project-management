@@ -26,6 +26,7 @@ Use them when asking Copilot for implementation work, so output stays consistent
 ## Notes
 
 - All prompts assume:
+  - Assistant responses are always in English (EN)
   - TypeScript strict mode
   - Parameterized SQL only
   - No `alert()` / `confirm()`

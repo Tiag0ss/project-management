@@ -357,6 +357,8 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
     const [tasks] = await pool.execute<RowDataPacket[]>(
       `SELECT DISTINCT t.*, 
               p.ProjectName,
+              COALESCE(tc.ExternalName, tc.Name) as CustomerName,
+              COALESCE(pc.ExternalName, pc.Name) as ProjectCustomerName,
               p.IsHobby,
               u1.Username as CreatorName,
               u2.Username as AssigneeName,
@@ -379,6 +381,8 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
        LEFT JOIN Users u1 ON t.CreatedBy = u1.Id
        LEFT JOIN Users u2 ON t.AssignedTo = u2.Id
+      LEFT JOIN Customers tc ON t.CustomerId = tc.Id
+      LEFT JOIN Customers pc ON p.CustomerId = pc.Id
        LEFT JOIN Tasks depTask ON t.DependsOnTaskId = depTask.Id
        LEFT JOIN TaskAllocations ta ON t.Id = ta.TaskId
        LEFT JOIN Tickets tk ON t.TicketId = tk.Id

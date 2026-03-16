@@ -19,6 +19,7 @@ import CalendarTabComponent from './CalendarTab';
 
 interface TaskWithProject extends Task {
   ProjectName?: string;
+  ProjectCustomerName?: string | null;
   IsHobby?: boolean;
   SubtaskCount?: number;
   StatusHideFromPlanningAndStatistics?: number | boolean;
@@ -120,6 +121,15 @@ function DashboardContent() {
     if (tabParam === 'calendar' || tabParam === 'analytics') return tabParam;
     return 'overview';
   });
+
+  // ...existing state declarations...
+
+  // ...existing state declarations...
+  // (keep only one set of these state declarations)
+
+  // --- Integration state for TaskDetailModal ---
+  // (removed duplicate detailsJiraIntegration declaration)
+
   const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>('thisMonth');
   const [userProfile, setUserProfile] = useState<User | null>(null);
   const [workHours, setWorkHours] = useState({
@@ -202,6 +212,35 @@ function DashboardContent() {
   const [showTaskDetailsModal, setShowTaskDetailsModal] = useState(false);
   const [detailsTask, setDetailsTask] = useState<Task | null>(null);
   const [detailsProject, setDetailsProject] = useState<Project | null>(null);
+  // --- Integration state for TaskDetailModal ---
+  const [detailsJiraIntegration, setDetailsJiraIntegration] = useState<any>(null);
+
+  useEffect(() => {
+    if (showTaskDetailsModal && detailsProject) {
+      const loadJiraIntegration = async () => {
+        try {
+          const response = await fetch(`${getApiUrl()}/api/jira-integrations/organization/${detailsProject.OrganizationId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data.integration?.IsEnabled) {
+              setDetailsJiraIntegration(data.integration);
+            } else {
+              setDetailsJiraIntegration(null);
+            }
+          } else {
+            setDetailsJiraIntegration(null);
+          }
+        } catch (err) {
+          setDetailsJiraIntegration(null);
+        }
+      };
+      loadJiraIntegration();
+    } else {
+      setDetailsJiraIntegration(null);
+    }
+  }, [showTaskDetailsModal, detailsProject, token]);
   const [detailsProjectTasks, setDetailsProjectTasks] = useState<Task[]>([]);
   const [pendingSortBy, setPendingSortBy] = useState<TaskSortOption>('dueDate');
   const [unscheduledSortBy, setUnscheduledSortBy] = useState<TaskSortOption>('dueDate');
@@ -1389,38 +1428,103 @@ function DashboardContent() {
                   <p className="text-sm text-gray-500 dark:text-gray-400">No open unscheduled work tasks</p>
                 ) : (
                   <div className="space-y-3">
-                    {sortedOpenUnscheduledTasks.map((task) => (
-                      <div
-                        key={task.Id}
-                        className="flex items-center justify-between border border-gray-200 dark:border-gray-700 rounded-lg p-4"
-                      >
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-medium text-gray-900 dark:text-white">{task.TaskName}</h4>
-                            {!!task.IsHobby && (
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                                Hobby
-                              </span>
-                            )}
+                    {sortedOpenUnscheduledTasks.map((task) => {
+                      const isOverdue = isTaskOverdue(task.DueDate ? String(task.DueDate) : null);
+
+                      return (
+                        <div
+                          key={task.Id}
+                          className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${
+                            isOverdue
+                              ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/10'
+                              : 'border-gray-200 dark:border-gray-700'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className="font-medium text-gray-900 dark:text-white">{task.TaskName}</h4>
+                                {!!task.IsHobby && (
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                    Hobby
+                                  </span>
+                                )}
+                                {isOverdue && (
+                                  <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-full">
+                                    Overdue
+                                  </span>
+                                )}  
+                                {/* Unscheduled chip removed */}
+                              </div>
+                              <div className="flex items-center gap-2 mt-1 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
+                                <span>{task.ProjectName || 'No project'}</span>
+                                {/* Show client: prefer task.CustomerName, else project.CustomerName */}
+                                {task.CustomerName && (
+                                  <span className="ml-2 text-blue-500">• {task.CustomerName}</span>
+                                )}
+                                {!task.CustomerName && task.ProjectCustomerName && (
+                                  <span className="ml-2 text-blue-500">• {task.ProjectCustomerName}</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 mt-2 flex-wrap">
+                                <span
+                                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                  style={task.PriorityColor ? {
+                                    backgroundColor: task.PriorityColor + '20',
+                                    color: task.PriorityColor,
+                                  } : undefined}
+                                >
+                                  {task.PriorityName || 'Normal'}
+                                </span>
+                                <span
+                                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                  style={task.StatusColor ? {
+                                    backgroundColor: task.StatusColor + '20',
+                                    color: task.StatusColor,
+                                  } : undefined}
+                                >
+                                  {task.StatusName || 'Unknown'}
+                                </span>
+                                {task.DueDate && (
+                                  <span className={`text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
+                                    📅 Due: {new Date(task.DueDate).toLocaleDateString()}
+                                  </span>
+                                )}
+                                {typeof task.EstimatedHours === 'number' && (
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    ⏱️ {task.EstimatedHours}h estimated
+                                  </span>
+                                )}
+                                {typeof task.PlannedHours === 'number' && task.PlannedHours > 0 && (
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    🗓️ {task.PlannedHours}h planned
+                                  </span>
+                                )}
+                                {typeof task.WorkedHours === 'number' && task.WorkedHours > 0 && (
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    ✅ {task.WorkedHours}h worked
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <button
+                                onClick={() => openTaskDetails(task)}
+                                className="text-sm text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
+                              >
+                                Task Details
+                              </button>
+                              <button
+                                onClick={() => router.push(`/projects/${task.ProjectId}`)}
+                                className="text-sm text-gray-600 dark:text-gray-300 hover:underline whitespace-nowrap"
+                              >
+                                Go to Project →
+                              </button>
+                            </div>
                           </div>
-                          <p className="text-sm text-gray-500 dark:text-gray-400">{task.ProjectName || 'No project'}</p>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => openTaskDetails(task)}
-                            className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                          >
-                            Task Details
-                          </button>
-                          <button
-                            onClick={() => router.push(`/projects/${task.ProjectId}`)}
-                            className="text-sm text-gray-600 dark:text-gray-300 hover:underline"
-                          >
-                            Go to Project →
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -2113,6 +2217,7 @@ function DashboardContent() {
             }
           }}
           token={token || ''}
+          // jiraIntegration prop removed; now handled internally in modal
         />
       )}
     </div>

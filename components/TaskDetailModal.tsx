@@ -3,6 +3,7 @@
 import { getApiUrl } from '@/lib/api/config';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Task, CreateTaskData, tasksApi, TaskAssignee } from '@/lib/api/tasks';
 import { Project, projectsApi } from '@/lib/api/projects';
 import { Customer, getCustomersByOrganization } from '@/lib/api/customers';
@@ -21,7 +22,7 @@ interface TaskDetailModalProps {
   onClose: () => void;
   onSaved: () => void;
   token: string;
-  jiraIntegration?: any;
+  // jiraIntegration prop removed; integration is fetched internally
   onOpenTask?: (task: Task) => void;
   // Optional planning features
   showRemovePlanning?: boolean;
@@ -222,11 +223,42 @@ export default function TaskDetailModal({
   onClose,
   onSaved,
   token,
-  jiraIntegration,
+  // jiraIntegration removed from props
   onOpenTask,
   showRemovePlanning = false,
   onRemovePlanning,
 }: TaskDetailModalProps) {
+  const router = useRouter();
+  // Integration state
+  const [jiraIntegration, setJiraIntegration] = useState<any>(null);
+
+  // Fetch Jira integration when organizationId or token changes
+  useEffect(() => {
+    if (organizationId && token) {
+      const fetchIntegration = async () => {
+        try {
+          const response = await fetch(`${getApiUrl()}/api/jira-integrations/organization/${organizationId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data.integration?.IsEnabled) {
+              setJiraIntegration(data.integration);
+            } else {
+              setJiraIntegration(null);
+            }
+          } else {
+            setJiraIntegration(null);
+          }
+        } catch {
+          setJiraIntegration(null);
+        }
+      };
+      fetchIntegration();
+    } else {
+      setJiraIntegration(null);
+    }
+  }, [organizationId, token]);
   const { permissions } = usePermissions();
   const [activeTab, setActiveTab] = useState<'details' | 'history' | 'comments' | 'attachments' | 'hours' | 'checklist'>('details');
   
@@ -341,11 +373,17 @@ export default function TaskDetailModal({
   const giteaIssueNumberValue = formData.giteaIssueNumber ?? null;
   const jiraTicketBaseUrl = task?.JiraUrl || jiraIntegration?.JiraUrl || null;
   const jiraBoardBaseUrl = jiraIntegration?.JiraProjectsUrl || jiraIntegration?.JiraUrl || task?.JiraUrl || null;
+  const hasJiraTicketIntegrationConfigured = Boolean(jiraIntegration?.JiraUrl);
+  const hasGitHubIntegrationConfigured = Boolean(project?.GitHubOwner && project?.GitHubRepo);
+  const hasGiteaIntegrationConfigured = Boolean(project?.GiteaOwner && project?.GiteaRepo);
   const hasTicketJiraReference = Boolean(externalTicketId && jiraTicketBaseUrl);
   const hasJiraTicketImportReference = Boolean(jiraIssueKeyValue && jiraIntegration?.JiraUrl);
   const hasJiraBoardImportReference = Boolean(externalIssueId && jiraBoardBaseUrl);
   const hasGitHubIssueReference = Boolean(gitHubIssueNumberValue);
   const hasGiteaIssueReference = Boolean(giteaIssueNumberValue);
+  const showGitHubIssueSection = hasGitHubIntegrationConfigured;
+  const showGiteaIssueSection = hasGiteaIntegrationConfigured;
+  const showAnySourceControlIssueSection = showGitHubIssueSection || showGiteaIssueSection;
   const githubIssueUrl = hasGitHubIssueReference && project?.GitHubOwner && project?.GitHubRepo
     ? `https://github.com/${project.GitHubOwner}/${project.GitHubRepo}/issues/${gitHubIssueNumberValue}`
     : null;
@@ -1481,6 +1519,7 @@ export default function TaskDetailModal({
   const canSaveTask = !!(task?.Id ? permissions?.canManageTasks : permissions?.canCreateTasks);
   const canDeleteTask = !!(task?.Id && permissions?.canDeleteTasks);
   const headerIconButtonClass = 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl';
+  const projectCustomerName = task?.CustomerName || task?.ProjectCustomerName || project?.CustomerName || null;
   const visibleTabs = (task?.Id
     ? (['details', 'checklist', 'hours', 'comments', 'attachments', 'history'] as const)
     : (['details', 'hours'] as const)
@@ -1496,6 +1535,30 @@ export default function TaskDetailModal({
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                 {task?.Id ? task.TaskName : 'Create New Task'}
               </h2>
+              {task?.Id && project?.Id && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/projects/${project.Id}`)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 transition-colors"
+                    title={`Open project ${project.ProjectName}`}
+                  >
+                    <span>📁</span>
+                    <span>{project.ProjectName}</span>
+                    <span aria-hidden="true">↗</span>
+                  </button>
+
+                  {!isGlobalProject && projectCustomerName && (
+                    <span
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300"
+                      title={`Customer: ${projectCustomerName}`}
+                    >
+                      <span>🏢</span>
+                      <span>{projectCustomerName}</span>
+                    </span>
+                  )}
+                </div>
+              )}
               {task?.Id && (
                 <div className="flex items-center gap-2 mt-1.5">
                   <span className="px-2 py-1 text-xs font-semibold rounded-full" style={{ backgroundColor: task.StatusColor ? `${task.StatusColor}20` : undefined, color: task.StatusColor || undefined }}>
@@ -1744,19 +1807,23 @@ export default function TaskDetailModal({
                 />
               </div>
 
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Description
                 </label>
-                <RichTextEditor
-                  content={formData.description || ''}
-                  onChange={(html) => setFormData({ ...formData, description: html })}
-                  placeholder="Enter task description..."
-                />
+                <div className="max-h-56 min-h-[120px] overflow-y-auto rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700">
+                  <RichTextEditor
+                    content={formData.description || ''}
+                    onChange={(html) => setFormData({ ...formData, description: html })}
+                    placeholder="Enter task description..."
+                    className="min-h-[120px] max-h-56"
+                  />
+                </div>
               </div>
 
               {/* Ticket Reference */}
-              {(task?.TicketNumber || hasTicketJiraReference || hasJiraTicketImportReference || hasJiraBoardImportReference || hasGitHubIssueReference || hasGiteaIssueReference) && (
+              {(task?.TicketNumber || hasTicketJiraReference || hasJiraTicketImportReference || hasJiraBoardImportReference || (hasGitHubIssueReference && showGitHubIssueSection) || (hasGiteaIssueReference && showGiteaIssueSection)) && (
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
                   Linked Tickets & Jira
                 </h3>
@@ -1828,7 +1895,7 @@ export default function TaskDetailModal({
               )}
 
               {/* Jira Ticket Link (from Jira Ticket Import) */}
-              {(jiraIssueKeyValue || jiraIntegration?.JiraUrl) && (
+              {hasJiraTicketIntegrationConfigured && (jiraIssueKeyValue || jiraIntegration?.JiraUrl) && (
                 <div className="p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
                   <div className="flex items-center gap-2">
                     <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="currentColor" viewBox="0 0 24 24">
@@ -1890,8 +1957,10 @@ export default function TaskDetailModal({
                 </div>
               )}
 
+              {showAnySourceControlIssueSection && (
               <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {showGitHubIssueSection && (
                   <div>
                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                       GitHub Issue ID
@@ -1919,7 +1988,9 @@ export default function TaskDetailModal({
                       </a>
                     )}
                   </div>
+                  )}
 
+                  {showGiteaIssueSection && (
                   <div>
                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Gitea Issue ID
@@ -1936,8 +2007,10 @@ export default function TaskDetailModal({
                       placeholder="e.g., 789"
                     />
                   </div>
+                  )}
                 </div>
               </div>
+              )}
 
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-1.5 pt-1">
                 Task Setup

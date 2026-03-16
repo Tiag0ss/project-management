@@ -103,7 +103,7 @@ export default function PlanningPage() {
   const [jiraIntegrationByOrg, setJiraIntegrationByOrg] = useState<Record<number, any>>({});
   const [taskAllocations, setTaskAllocations] = useState<any[]>([]);
   const [projectMilestones, setProjectMilestones] = useState<ProjectMilestone[]>([]);
-  const [allAllocations, setAllAllocations] = useState<{Id?: number; TaskId: number; TaskAllocationHeaderId?: number | null; UserId: number; AllocationDate: string; AllocatedHours: number; IsHobby: number; IsManual?: number; StartTime?: string; EndTime?: string; PlannedStartDate?: string | null; PlannedEndDate?: string | null}[]>([]);
+  const [allAllocations, setAllAllocations] = useState<{Id?: number; TaskId: number; TaskAllocationHeaderId?: number | null; UserId: number; AllocationDate: string; AllocatedHours: number; IsHobby: number; IsManual?: number; StartTime?: string; EndTime?: string; PlannedStartDate?: string | null; PlannedEndDate?: string | null; HoursPerDay?: number | null}[]>([]);
   const [childAllocations, setChildAllocations] = useState<{ParentTaskId: number; ChildTaskId: number; AllocationDate: string; AllocatedHours: number; Level: number}[]>([]);
   const [taskTimeEntries, setTaskTimeEntries] = useState<any[]>([]);
   const [recurringAllocations, setRecurringAllocations] = useState<any[]>([]);
@@ -2104,7 +2104,7 @@ export default function PlanningPage() {
       }
       return (a.DisplayOrder || 0) - (b.DisplayOrder || 0);
     });
-    
+
     setSubtasksModal({
       show: true,
       parentTask,
@@ -3301,7 +3301,7 @@ export default function PlanningPage() {
         totalRemainingHours
       });
 
-      if (totalRemainingHours <= 0) {
+      if (totalRemainingHours < 0) {
         showAlert(
           'No Remaining Hours',
           `All leaf tasks have no remaining hours.\n\nTotal Estimated: ${totalEstimatedHours}h\nAlready worked: ${totalHoursWorked}h`
@@ -3396,7 +3396,7 @@ export default function PlanningPage() {
       }
 
       // Check if there are remaining hours to plan
-      if (remainingHoursToWork <= 0) {
+      if (remainingHoursToWork < 0) {
         showAlert(
           'No Remaining Hours',
           isSliceDrag
@@ -3406,7 +3406,7 @@ export default function PlanningPage() {
         setDraggedTask(null);
         return;
       }
-      
+
       // Check if task belongs to a hobby project (must be checked BEFORE work hours validation)
       const taskProject = projects.find(p => p.Id === activeDraggedTask.ProjectId);
       const isHobbyTask = taskProject?.IsHobby || false;
@@ -3511,22 +3511,30 @@ export default function PlanningPage() {
       // Show modal to ask for hours per day if:
       // - There are hours already worked (user needs to confirm), OR
       // - Remaining hours are more than 50% of daily capacity
-      if (hoursAlreadyWorked > 0 || remainingHoursToWork > maxDailyHours * 0.5) {
+      if (hoursAlreadyWorked > 0 || remainingHoursToWork <= 0 || remainingHoursToWork > maxDailyHours * 0.5) {
         console.log('Showing hours per day modal');
         const taskEstimatedHours = parseFloat(String(activeDraggedTask.EstimatedHours || 0));
+                // For slice drags, read the stored HoursPerDay from the source header so the user
+                // sees the same daily cap that was originally configured for this slice.
+                const storedHeaderHoursPerDay = isSliceDrag && sourceHeaderId
+                  ? (allAllocations.find(a => Number(a.TaskAllocationHeaderId) === Number(sourceHeaderId))?.HoursPerDay ?? null)
+                  : null;
+                const effectiveHoursPerDay = (storedHeaderHoursPerDay && storedHeaderHoursPerDay > 0)
+                  ? storedHeaderHoursPerDay
+                  : maxDailyHours;
         setHoursPerDayModal({
           show: true,
           task: activeDraggedTask,
           userId,
           startDate,
           maxDailyHours,
-          hoursPerDay: maxDailyHours.toString(),
+          hoursPerDay: effectiveHoursPerDay.toString(),
           totalHours: remainingHoursToWork,
           hoursAlreadyWorked: hoursAlreadyWorked,
           totalEstimatedHours: taskEstimatedHours,
           enableSplit: false,
           splitMode: 'parallel',
-          splitEntries: [{ userId, plannedHours: remainingHoursToWork, hoursPerDay: maxDailyHours, splitOrder: 1 }],
+          splitEntries: [{ userId, plannedHours: remainingHoursToWork, hoursPerDay: effectiveHoursPerDay, splitOrder: 1 }],
           sourceUserId,
           sourceHeaderId,
           sourceAllocationDates: sourceSliceDates,
@@ -3548,6 +3556,7 @@ export default function PlanningPage() {
           skipReload: true,
           suppressDependentReplan: isSliceDrag,
           appendToExistingUserSlice: !!(isSliceDrag && sourceUserId), // Always true for slice ops to preserve existing allocations
+                  excludeHeaderId: isSliceDrag && sourceHeaderId ? sourceHeaderId : undefined,
         }
       );
       if (allocationResult && isSliceDrag && sourceUserId && sourceSliceDates.length > 0) {
@@ -3664,8 +3673,8 @@ export default function PlanningPage() {
         return;
       }
 
-      // Show modal to ask for hours per day if task requires more than 50% of daily capacity
-      if (totalHours > maxDailyHours * 0.5) {
+      // Show modal to ask for hours per day when needed, including zero-hour tasks
+      if (totalHours <= 0 || totalHours > maxDailyHours * 0.5) {
         setHoursPerDayModal({
           show: true,
           task: parentTask,
@@ -4448,6 +4457,13 @@ export default function PlanningPage() {
 
     // Show hours per day modal if needed
     if (hoursAlreadyWorked > 0 || totalHoursToAllocate > maxDailyHours * 0.5) {
+            const sourceHeaderIdForConflict = conflictModal.sourceHeaderId;
+            const storedConflictHoursPerDay = sourceHeaderIdForConflict
+              ? (allAllocations.find(a => Number(a.TaskAllocationHeaderId) === Number(sourceHeaderIdForConflict))?.HoursPerDay ?? null)
+              : null;
+            const effectiveConflictHoursPerDay = (storedConflictHoursPerDay && storedConflictHoursPerDay > 0)
+              ? storedConflictHoursPerDay
+              : maxDailyHours;
       const taskEstimatedHours = isParentTask && leafTasks 
         ? leafTasks.reduce((sum, t) => sum + parseFloat(String(t.EstimatedHours || 0)), 0)
         : parseFloat(String(task.EstimatedHours || 0));
@@ -4457,7 +4473,7 @@ export default function PlanningPage() {
         userId,
         startDate,
         maxDailyHours,
-        hoursPerDay: maxDailyHours.toString(),
+        hoursPerDay: effectiveConflictHoursPerDay.toString(),
         totalHours: totalHoursToAllocate,
         hoursAlreadyWorked,
         totalEstimatedHours: taskEstimatedHours,
@@ -4468,7 +4484,7 @@ export default function PlanningPage() {
         splitEntries: [{
           userId,
           plannedHours: totalHoursToAllocate,
-          hoursPerDay: maxDailyHours,
+          hoursPerDay: effectiveConflictHoursPerDay,
           splitOrder: 1,
           selectedLeafTaskIds: isParentTask && Array.isArray(leafTasks) ? leafTasks.map(t => t.Id) : [],
         }],
@@ -4486,6 +4502,7 @@ export default function PlanningPage() {
           skipReload: true,
           suppressDependentReplan: !!conflictModal.suppressDependentReplan,
           appendToExistingUserSlice: !!conflictModal.sourceUserId, // Always true for slice ops to preserve existing allocations
+          excludeHeaderId: conflictModal.sourceHeaderId ?? undefined,
         });
         const sourceUserId = conflictModal.sourceUserId;
         const sourceHeaderId = conflictModal.sourceHeaderId;
@@ -4797,6 +4814,18 @@ export default function PlanningPage() {
         return;
       }
 
+      try {
+        await fetch(`${getApiUrl()}/api/task-allocations/task/${task.Id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+      } catch (error) {
+        console.error('Failed to clear previous split allocations:', error);
+      }
+
       let sequenceDate = new Date(startDate);
       for (const entry of entries.sort((a, b) => a.splitOrder - b.splitOrder)) {
         const targetUser = users.find((candidate) => Number(candidate.Id) === Number(entry.userId));
@@ -4814,10 +4843,12 @@ export default function PlanningPage() {
           {
             silent: true,
             skipReload: true,
+            appendToExistingUserSlice: true,
             header: {
               allocationMode: splitMode || 'parallel',
               splitOrder: entry.splitOrder,
               plannedHours: entry.plannedHours,
+              hoursPerDay: entry.hoursPerDay > 0 ? entry.hoursPerDay : maxDailyHours,
             },
           }
         );
@@ -4844,6 +4875,11 @@ export default function PlanningPage() {
     }
 
     // Use the parsed value, capped at the actual daily capacity (not a fixed 8h fallback)
+    if (!enableSplit && (!Number.isFinite(totalHours) || totalHours <= 0)) {
+      showAlert('Planning Hours', 'Enter planned hours greater than 0.');
+      return;
+    }
+
     const parsedHours = parseFloat(hoursPerDay);
     const maxHoursPerDay = (isNaN(parsedHours) || parsedHours <= 0) ? maxDailyHours : Math.min(parsedHours, maxDailyHours);
     
@@ -4895,6 +4931,10 @@ export default function PlanningPage() {
           skipReload: true,
           suppressDependentReplan: !!suppressDependentReplan,
           appendToExistingUserSlice: !!sourceUserId, // Always true for slice ops to preserve existing allocations
+          excludeHeaderId: sourceHeaderId ?? undefined,
+          header: {
+            hoursPerDay: maxHoursPerDay,
+          },
         });
         if (allocationResult && sourceUserId && (sourceAllocationDates || []).length > 0) {
           if (sourceHeaderId) {
@@ -4924,10 +4964,12 @@ export default function PlanningPage() {
       skipReload?: boolean;
       suppressDependentReplan?: boolean;
       appendToExistingUserSlice?: boolean;
+      excludeHeaderId?: number | null;
       header?: {
         allocationMode?: 'parallel' | 'sequential';
         splitOrder?: number;
         plannedHours?: number;
+        hoursPerDay?: number;
       };
     }
   ): Promise<{ startDate: string | null; endDate: string | null; headerId?: number | null; allocations?: { date: string; hours: number; startTime: string; endTime: string }[] } | null> => {
@@ -4968,7 +5010,12 @@ export default function PlanningPage() {
         endDate: preliminaryEndDate.toISOString().split('T')[0],
         isHobby: String(isHobby),
       });
-      if (!options?.appendToExistingUserSlice) {
+      if (options?.excludeHeaderId) {
+        // Slice drag: exclude only this specific header's allocations from availability calculation.
+        // This correctly handles moving a slice to an earlier date where the source dates would
+        // otherwise appear as "already booked" and block the new placement.
+        availabilityQuery.set('excludeHeaderId', String(options.excludeHeaderId));
+      } else if (!options?.appendToExistingUserSlice) {
         availabilityQuery.set('excludeTaskId', String(task.Id));
       }
 
@@ -5216,6 +5263,7 @@ export default function PlanningPage() {
               allocationMode: options?.header?.allocationMode || 'parallel',
               splitOrder: options?.header?.splitOrder,
               plannedHours: options?.header?.plannedHours ?? remainingHoursToWork,
+              hoursPerDay: options?.header?.hoursPerDay ?? maxHoursPerDay,
             }
           })
         }
@@ -6679,7 +6727,15 @@ export default function PlanningPage() {
                   
                   // Calculate maximum number of rows needed for this user's tasks
                   let maxRows = 1;
-                  const taskRows: { task: Task; row: number; isSubtask: boolean; parentTask?: Task; subtaskIndex?: number; totalSubtasks?: number; level?: number }[] = [];
+                  const taskRows: { task: Task; row: number; rowSpan: number; isSubtask: boolean; parentTask?: Task; subtaskIndex?: number; totalSubtasks?: number; level?: number }[] = [];
+                  const taskRowSpanCache = new Map<number, number>();
+                  const getTaskVisualRowSpan = (taskId: number): number => {
+                    const cached = taskRowSpanCache.get(taskId);
+                    if (cached) return cached;
+                    const span = Math.max(1, getTaskUserAllocationSegments(taskId, userRow.Id).length);
+                    taskRowSpanCache.set(taskId, span);
+                    return span;
+                  };
                   
                   // DEBUG: Log subtasks
                   console.log(`User ${userRow.Username}:`, {
@@ -6693,6 +6749,7 @@ export default function PlanningPage() {
                   });
                   
                   parentTasks.forEach((task, taskIdx) => {
+                    const parentRowSpan = getTaskVisualRowSpan(task.Id);
                     const allocationDates = getTaskUserAllocationDates(task.Id, userRow.Id) || getParentUserDescendantAllocationDates(task.Id, userRow.Id);
                     const hasAnyTaskAllocation = allAllocations.some((allocation) => allocation.TaskId === task.Id);
                     const hasUnscheduledSelfForUser = Number(task.UnscheduledWork || 0) === 1 && isTaskAssignedToUser(task, Number(userRow.Id));
@@ -6762,13 +6819,13 @@ export default function PlanningPage() {
                           // Count visible subtasks for the other task
                           const otherSubtasks = subtasksMap.get(otherTask.Id) || [];
                           const visibleSubtasks = otherSubtasks.filter(st => getTaskLevel(st.Id) <= maxVisibleLevel);
-                          const extraRows = visibleSubtasks.length;
-                          row = Math.max(row, otherTaskRow.row + 1 + extraRows);
+                          const extraRows = visibleSubtasks.reduce((sum, st) => sum + getTaskVisualRowSpan(st.Id), 0);
+                          row = Math.max(row, otherTaskRow.row + (otherTaskRow.rowSpan || 1) + extraRows);
                         }
                       }
                     }
 
-                    taskRows.push({ task, row, isSubtask: false });
+                    taskRows.push({ task, row, rowSpan: parentRowSpan, isSubtask: false });
 
                     // Add ALL subtasks (multi-level) each in its own row below the parent
                     const subtasks = subtasksMap.get(task.Id) || [];
@@ -6782,28 +6839,30 @@ export default function PlanningPage() {
                       let subtaskOffset = 0;
                       subtasks.forEach((subtask, subIdx) => {
                         const level = getTaskLevel(subtask.Id);
+                        const subtaskRowSpan = getTaskVisualRowSpan(subtask.Id);
 
                         // Only add subtask if within max visible level
                         if (level <= maxVisibleLevel) {
-                          console.log(`  Adding subtask ${subtask.TaskName} at row ${row + 1 + subtaskOffset}, level ${level}`);
+                          console.log(`  Adding subtask ${subtask.TaskName} at row ${row + parentRowSpan + subtaskOffset}, level ${level}`);
                           taskRows.push({
                             task: subtask,
-                            row: row + 1 + subtaskOffset,
+                            row: row + parentRowSpan + subtaskOffset,
+                            rowSpan: subtaskRowSpan,
                             isSubtask: true,
                             parentTask: task,
                             subtaskIndex: subIdx,
                             totalSubtasks: subtasks.length,
                             level: level
                           });
-                          subtaskOffset++;
+                          subtaskOffset += subtaskRowSpan;
                         } else {
                           console.log(`  Skipping subtask ${subtask.TaskName} at level ${level} (max: ${maxVisibleLevel})`);
                         }
                       });
 
-                      maxRows = Math.max(maxRows, row + 1 + subtaskOffset);
+                      maxRows = Math.max(maxRows, row + parentRowSpan + subtaskOffset);
                     } else {
-                      maxRows = Math.max(maxRows, row + 1);
+                      maxRows = Math.max(maxRows, row + parentRowSpan);
                     }
                   });
                   
@@ -7120,10 +7179,11 @@ export default function PlanningPage() {
                                     style={{
                                       left: segmentPreviewStyle?.left || segmentPosition.left,
                                       width: segmentPreviewStyle?.width || segmentPosition.width,
-                                      top: `${2 + row * 24}px`,
+                                      top: `${2 + (row + segmentIndex) * 24}px`,
+                                      height: '24px',
                                       ...(statusColor ? { backgroundColor: statusColor } : {}),
                                       borderLeft: `${isSubtask ? '3' : '4'}px solid ${priorityBorderHex}`,
-                                      zIndex: isResizingTask && segmentIndex === 0 ? 40 : isSubtask ? 20 : 21,
+                                      zIndex: isResizingTask && segmentIndex === 0 ? 40 : isSubtask ? 20 + segmentIndex : 21 + segmentIndex,
                                     }}
                                     title={segmentTooltip}
                                   >
@@ -7886,7 +7946,7 @@ export default function PlanningPage() {
                 loadAllAllocations();
               }}
               token={token!}
-              jiraIntegration={jiraIntegrationByOrg[selectedProject.OrganizationId]}
+              // jiraIntegration prop removed; now handled internally in modal
               showRemovePlanning={permissions?.canPlanTasks}
               onRemovePlanning={handleRemovePlanning}
             />
@@ -8528,7 +8588,7 @@ export default function PlanningPage() {
                 <input
                   type="number"
                   min="0.5"
-                  max={hoursPerDayModal.totalEstimatedHours}
+                  max={hoursPerDayModal.totalEstimatedHours > 0 ? hoursPerDayModal.totalEstimatedHours : undefined}
                   step="0.5"
                   value={hoursPerDayModal.totalHours}
                   disabled={!!hoursPerDayModal.enableSplit}
@@ -8817,7 +8877,7 @@ export default function PlanningPage() {
                                     <span>{subtask.EstimatedHours}h</span>
                                   </div>
                                 )}
-                                
+
                                 {subtask.DueDate && (
                                   <div className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
                                     <span>📅</span>

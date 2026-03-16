@@ -2450,7 +2450,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           }}
           onSaved={handleTaskSaved}
           token={token!}
-          jiraIntegration={jiraIntegration}
+          // ...existing code... (prop removed)
         />
       )}
 

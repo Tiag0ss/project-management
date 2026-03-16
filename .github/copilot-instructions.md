@@ -2,7 +2,12 @@
 
 ## Language Guidelines
 
-**IMPORTANT:** Respond ONLY in **English (EN)** 
+**IMPORTANT:** Respond ONLY in **English (EN)**.
+
+Language policy (mandatory):
+- All assistant responses must be in English, including confirmations, error messages, summaries, and follow-up questions.
+- Do not switch to Portuguese even if the user writes in Portuguese; keep understanding requests, but always answer in English.
+- If mixed-language content is required in generated app UI/text, ask explicitly before adding non-English strings.
 
 ## Prompt Library (Skills-like)
 
