@@ -1,0 +1,244 @@
+import { Router, Response } from 'express';
+import { AuthRequest, authenticateToken } from '../middleware/auth';
+import { pool } from '../config/database';
+import { RowDataPacket } from '../config/database';
+import { decrypt } from '../utils/encryption';
+
+const router = Router();
+
+interface OutlookTargetUser {
+  Id: number;
+  Email: string;
+  Username?: string;
+  FirstName?: string;
+  LastName?: string;
+}
+
+const toDateKey = (value: Date): string => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+router.get('/events', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = Number(req.user?.userId || 0);
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const [settingsRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT SettingKey, SettingValue
+       FROM SystemSettings
+       WHERE SettingKey IN (?, ?, ?, ?, ?)` ,
+      [
+        'outlookCalendarEnabled',
+        'outlookTenantId',
+        'outlookClientId',
+        'outlookClientSecret',
+        'outlookIncludeTeamEventsForManagers',
+      ]
+    );
+
+    const settings = new Map<string, string>();
+    settingsRows.forEach((row) => settings.set(String(row.SettingKey), String(row.SettingValue ?? '')));
+
+    const enabled = settings.get('outlookCalendarEnabled') === 'true';
+    if (!enabled) {
+      return res.json({ success: true, enabled: false, events: [] });
+    }
+
+    const tenantId = decrypt(settings.get('outlookTenantId') || '').trim();
+    const clientId = decrypt(settings.get('outlookClientId') || '').trim();
+    const clientSecretEncrypted = settings.get('outlookClientSecret') || '';
+    const clientSecret = decrypt(clientSecretEncrypted).trim();
+    const includeTeamForManagers = (settings.get('outlookIncludeTeamEventsForManagers') || 'true') === 'true';
+
+    if (!tenantId || !clientId || !clientSecret) {
+      return res.status(400).json({
+        success: false,
+        message: 'Outlook calendar integration is enabled but not fully configured in System Settings.',
+      });
+    }
+
+    const [currentUserRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id, Email, Username, FirstName, LastName,
+              COALESCE(IsAdmin, 0) as IsAdmin,
+              COALESCE(IsManager, 0) as IsManager
+       FROM Users
+       WHERE Id = ?`,
+      [userId]
+    );
+
+    if (!currentUserRows.length) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const currentUser = currentUserRows[0];
+    const isAdmin = Number(currentUser.IsAdmin || 0) === 1;
+    const isManager = Number(currentUser.IsManager || 0) === 1;
+
+    const targetUsersMap = new Map<number, OutlookTargetUser>();
+    if (currentUser.Email && String(currentUser.Email).trim()) {
+      targetUsersMap.set(Number(currentUser.Id), {
+        Id: Number(currentUser.Id),
+        Email: String(currentUser.Email).trim(),
+        Username: currentUser.Username,
+        FirstName: currentUser.FirstName,
+        LastName: currentUser.LastName,
+      });
+    }
+
+    if (includeTeamForManagers && (isAdmin || isManager)) {
+      const [teamRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT DISTINCT u.Id, u.Email, u.Username, u.FirstName, u.LastName
+         FROM OrganizationMembers omSelf
+         INNER JOIN OrganizationMembers omTeam ON omTeam.OrganizationId = omSelf.OrganizationId
+         INNER JOIN Users u ON u.Id = omTeam.UserId
+         WHERE omSelf.UserId = ?
+           AND u.Email IS NOT NULL
+           AND u.Email <> ''`,
+        [userId]
+      );
+
+      teamRows.forEach((row) => {
+        const rowId = Number(row.Id || 0);
+        const rowEmail = String(row.Email || '').trim();
+        if (!rowId || !rowEmail) return;
+        targetUsersMap.set(rowId, {
+          Id: rowId,
+          Email: rowEmail,
+          Username: row.Username,
+          FirstName: row.FirstName,
+          LastName: row.LastName,
+        });
+      });
+    }
+
+    const targetUsers = Array.from(targetUsersMap.values());
+    if (targetUsers.length === 0) {
+      return res.json({
+        success: true,
+        enabled: true,
+        events: [],
+        warnings: ['No users with valid email found for Outlook calendar sync.'],
+      });
+    }
+
+    const queryStart = typeof req.query.startDate === 'string' ? req.query.startDate : '';
+    const queryEnd = typeof req.query.endDate === 'string' ? req.query.endDate : '';
+
+    const now = new Date();
+    const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const defaultEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    const startDate = /^\d{4}-\d{2}-\d{2}$/.test(queryStart) ? queryStart : toDateKey(defaultStart);
+    const endDate = /^\d{4}-\d{2}-\d{2}$/.test(queryEnd) ? queryEnd : toDateKey(defaultEnd);
+
+    const startDateTime = `${startDate}T00:00:00Z`;
+    const endDateTime = `${endDate}T23:59:59Z`;
+
+    const tokenParams = new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: clientId,
+      client_secret: clientSecret,
+      scope: 'https://graph.microsoft.com/.default',
+    });
+
+    const tokenResponse = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: tokenParams.toString(),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      return res.status(502).json({
+        success: false,
+        message: 'Failed to authenticate with Microsoft Graph.',
+        details: errorText,
+      });
+    }
+
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token as string;
+    if (!accessToken) {
+      return res.status(502).json({ success: false, message: 'Microsoft Graph token was not returned.' });
+    }
+
+    const warnings: string[] = [];
+    const events: any[] = [];
+
+    await Promise.all(targetUsers.map(async (targetUser) => {
+      try {
+        const graphUrl = new URL(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(targetUser.Email)}/calendarView`);
+        graphUrl.searchParams.set('startDateTime', startDateTime);
+        graphUrl.searchParams.set('endDateTime', endDateTime);
+        graphUrl.searchParams.set('$select', 'id,subject,start,end,isAllDay,showAs,webLink,organizer');
+        graphUrl.searchParams.set('$top', '500');
+
+        const eventsResponse = await fetch(graphUrl.toString(), {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Prefer: 'outlook.timezone="UTC"',
+          },
+        });
+
+        if (!eventsResponse.ok) {
+          const bodyText = await eventsResponse.text();
+          warnings.push(`Failed to fetch Outlook events for ${targetUser.Email}: ${bodyText}`);
+          return;
+        }
+
+        const eventsData = await eventsResponse.json();
+        const values = Array.isArray(eventsData.value) ? eventsData.value : [];
+
+        const ownerName = targetUser.FirstName || targetUser.LastName
+          ? `${String(targetUser.FirstName || '').trim()} ${String(targetUser.LastName || '').trim()}`.trim()
+          : (targetUser.Username || targetUser.Email);
+
+        values.forEach((eventItem: any) => {
+          const start = eventItem?.start?.dateTime || eventItem?.start?.date;
+          const end = eventItem?.end?.dateTime || eventItem?.end?.date;
+          if (!start || !end) return;
+
+          events.push({
+            id: `${targetUser.Id}-${String(eventItem.id || '')}`,
+            outlookEventId: eventItem.id,
+            subject: eventItem.subject || '(No subject)',
+            start,
+            end,
+            isAllDay: !!eventItem.isAllDay,
+            showAs: eventItem.showAs || null,
+            webLink: eventItem.webLink || null,
+            organizer: eventItem?.organizer?.emailAddress?.address || null,
+            userId: targetUser.Id,
+            userEmail: targetUser.Email,
+            userName: ownerName,
+          });
+        });
+      } catch (error) {
+        warnings.push(`Failed to fetch Outlook events for ${targetUser.Email}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }));
+
+    return res.json({
+      success: true,
+      enabled: true,
+      events,
+      warnings,
+    });
+  } catch (error) {
+    console.error('Outlook calendar events error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch Outlook calendar events',
+    });
+  }
+});
+
+export default router;

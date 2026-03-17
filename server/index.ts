@@ -69,6 +69,7 @@ import vacationsRoutes from './routes/vacations';
 import pdfExportsRoutes from './routes/pdfExports';
 import planningImportRoutes from './routes/planningImport';
 import aiAssistantRoutes from './routes/aiAssistant';
+import outlookCalendarRoutes from './routes/outlookCalendar';
 import { ensureAiAssistantViews } from './utils/aiAssistantViews';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
 import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler';
@@ -235,6 +236,7 @@ app.prepare().then(async () => {
   server.use('/api/task-import', taskImportRoutes);
   server.use('/api/role-permissions', rolePermissionsRoutes);
   server.use('/api/system-settings', systemSettingsRoutes);
+  server.use('/api/outlook-calendar', outlookCalendarRoutes);
   server.use('/api/activity-logs', activityLogsRoutes);
   server.use('/api/change-history', changeHistoryRoutes);
   server.use('/api/email-preferences', emailPreferencesRoutes);

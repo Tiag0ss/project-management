@@ -6,10 +6,10 @@ import { encrypt, isEncrypted } from '../utils/encryption';
 import { ensureAiAssistantViews } from '../utils/aiAssistantViews';
 
 // Keys that should be encrypted in the database
-const ENCRYPTED_KEYS = ['smtpPassword', 'openAIApiKey'];
+const ENCRYPTED_KEYS = ['smtpPassword', 'openAIApiKey', 'outlookTenantId', 'outlookClientId', 'outlookClientSecret'];
 
 // Keys that should be masked in GET responses
-const MASKED_KEYS = ['smtpPassword', 'openAIApiKey'];
+const MASKED_KEYS = ['smtpPassword', 'openAIApiKey', 'outlookTenantId', 'outlookClientId', 'outlookClientSecret'];
 
 const router = Router();
 

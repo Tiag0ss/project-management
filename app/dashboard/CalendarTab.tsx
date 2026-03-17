@@ -101,7 +101,7 @@ interface CalendarEvent {
   end: Date;
   allDay?: boolean;
   resource: {
-    type: 'task' | 'timeEntry' | 'call' | 'lunch' | 'recurring' | 'holiday' | 'vacation';
+    type: 'task' | 'timeEntry' | 'call' | 'lunch' | 'recurring' | 'holiday' | 'vacation' | 'outlook';
     projectId?: number;
     taskId?: number;
     entryId?: number;
@@ -114,7 +114,21 @@ interface CalendarEvent {
     vacationId?: number;
     vacationStatus?: string;
     source?: string;
+    webLink?: string;
+    userName?: string;
+    userEmail?: string;
   };
+}
+
+interface OutlookCalendarEvent {
+  id: string;
+  subject: string;
+  start: string;
+  end: string;
+  isAllDay?: boolean;
+  webLink?: string | null;
+  userName?: string;
+  userEmail?: string;
 }
 
 interface CalendarTabProps {
@@ -148,6 +162,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   const [currentDate, setCurrentDate] = useState(new Date());
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
   const [vacations, setVacations] = useState<VacationCalendarItem[]>([]);
+  const [outlookEvents, setOutlookEvents] = useState<OutlookCalendarEvent[]>([]);
   const [showTaskDetailsModal, setShowTaskDetailsModal] = useState(false);
   const [detailsTask, setDetailsTask] = useState<ApiTask | null>(null);
   const [detailsProject, setDetailsProject] = useState<ApiProject | null>(null);
@@ -208,6 +223,51 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     };
 
     loadHolidays();
+  }, [token, currentDate, currentView]);
+
+  useEffect(() => {
+    if (!token) {
+      setOutlookEvents([]);
+      return;
+    }
+
+    const loadOutlookEvents = async () => {
+      try {
+        const visibleStart = currentView === 'month'
+          ? startOfMonth(currentDate)
+          : startOfWeek(currentDate);
+        const visibleEnd = currentView === 'month'
+          ? endOfMonth(currentDate)
+          : endOfWeek(currentDate);
+
+        const startDate = format(visibleStart, 'yyyy-MM-dd');
+        const endDate = format(visibleEnd, 'yyyy-MM-dd');
+
+        const response = await fetch(
+          `${getApiUrl()}/api/outlook-calendar/events?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (!response.ok) {
+          setOutlookEvents([]);
+          return;
+        }
+
+        const data = await response.json();
+        if (data?.success && data?.enabled && Array.isArray(data.events)) {
+          setOutlookEvents(data.events as OutlookCalendarEvent[]);
+        } else {
+          setOutlookEvents([]);
+        }
+      } catch (error) {
+        console.error('Error loading Outlook calendar events:', error);
+        setOutlookEvents([]);
+      }
+    };
+
+    loadOutlookEvents();
   }, [token, currentDate, currentView]);
 
   useEffect(() => {
@@ -599,6 +659,30 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       });
     });
 
+    outlookEvents.forEach((outlookEvent, index) => {
+      const startDate = new Date(outlookEvent.start);
+      const endDate = new Date(outlookEvent.end);
+
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        return;
+      }
+
+      const ownerSuffix = outlookEvent.userName ? ` • ${outlookEvent.userName}` : '';
+      calendarEvents.push({
+        id: `outlook-${outlookEvent.id || index}`,
+        title: `📅 ${outlookEvent.subject}${ownerSuffix}`,
+        start: startDate,
+        end: endDate,
+        allDay: !!outlookEvent.isAllDay,
+        resource: {
+          type: 'outlook',
+          webLink: outlookEvent.webLink || undefined,
+          userName: outlookEvent.userName,
+          userEmail: outlookEvent.userEmail,
+        },
+      });
+    });
+
     const seenEventIds = new Map<string, number>();
     return calendarEvents.map((event) => {
       const baseId = String(event.id);
@@ -614,7 +698,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
         id: `${baseId}__${count}`,
       };
     });
-  }, [taskAllocations, timeEntries, callRecords, recurringAllocations, holidays, vacations, workStartTimes, lunchTime, lunchDuration]);
+  }, [taskAllocations, timeEntries, callRecords, recurringAllocations, holidays, vacations, outlookEvents, workStartTimes, lunchTime, lunchDuration]);
 
   const calendarScrollToTime = useMemo(() => {
     const dayNames: Array<keyof typeof workStartTimes> = [
@@ -670,6 +754,13 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       return;
     }
 
+    if (event.resource.type === 'outlook') {
+      if (event.resource.webLink) {
+        window.open(event.resource.webLink, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
+
     if (event.resource.type === 'task' && event.resource.projectId && event.resource.taskId) {
       await openTaskDetails(Number(event.resource.projectId), Number(event.resource.taskId));
     } else if (event.resource.type === 'timeEntry' && event.resource.entryId) {
@@ -703,6 +794,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     const isRecurring = event.resource.type === 'recurring';
     const isHoliday = event.resource.type === 'holiday';
     const isVacation = event.resource.type === 'vacation';
+    const isOutlook = event.resource.type === 'outlook';
     
     let bgColor = '#10b981'; // green for time entries
     let borderColor = '#059669';
@@ -725,6 +817,9 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     } else if (isVacation) {
       bgColor = '#06b6d4'; // cyan for vacations
       borderColor = '#0891b2';
+    } else if (isOutlook) {
+      bgColor = '#0ea5e9'; // sky-blue for outlook events
+      borderColor = '#0284c7';
     }
     
     return {

@@ -46,6 +46,18 @@ interface PlannerVacationDay {
   Notes?: string;
 }
 
+interface PlannerOutlookEvent {
+  id: string;
+  subject: string;
+  start: string;
+  end: string;
+  isAllDay?: boolean;
+  webLink?: string | null;
+  userId: number;
+  userName?: string;
+  userEmail?: string;
+}
+
 interface TimelineColumn {
   start: Date;
   end: Date;
@@ -107,6 +119,7 @@ export default function PlanningPage() {
   const [childAllocations, setChildAllocations] = useState<{ParentTaskId: number; ChildTaskId: number; AllocationDate: string; AllocatedHours: number; Level: number}[]>([]);
   const [taskTimeEntries, setTaskTimeEntries] = useState<any[]>([]);
   const [recurringAllocations, setRecurringAllocations] = useState<any[]>([]);
+  const [outlookTimelineEvents, setOutlookTimelineEvents] = useState<PlannerOutlookEvent[]>([]);
   const [holidayNamesByUserDate, setHolidayNamesByUserDate] = useState<Record<number, Record<string, string[]>>>({});
   const [loadingAllocations, setLoadingAllocations] = useState(false);
   const [showDependencyLines, setShowDependencyLines] = useState(true);
@@ -860,6 +873,9 @@ export default function PlanningPage() {
         
         // Load recurring allocations (after users are loaded)
         await loadRecurringAllocations();
+
+        // Load Outlook events for visible timeline range
+        await loadOutlookTimelineEvents();
         
         // Load all allocations for the visible period
         await loadAllAllocations(loadedTasks);
@@ -1070,6 +1086,63 @@ export default function PlanningPage() {
       console.log(`Loaded ${allRecurringOccurrences.length} recurring allocation occurrences for ${users.length} users in date range ${startDate} to ${endDate}`);
     } catch (err) {
       console.error('Failed to load recurring allocations:', err);
+    }
+  };
+
+  const loadOutlookTimelineEvents = async () => {
+    if (!token) {
+      setOutlookTimelineEvents([]);
+      return;
+    }
+
+    try {
+      const visibleDays = getDaysInView();
+      if (visibleDays.length === 0) {
+        setOutlookTimelineEvents([]);
+        return;
+      }
+
+      const startDate = getDateKeyFromDate(visibleDays[0]);
+      const endDate = getDateKeyFromDate(visibleDays[visibleDays.length - 1]);
+
+      const response = await fetch(
+        `${getApiUrl()}/api/outlook-calendar/events?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        setOutlookTimelineEvents([]);
+        return;
+      }
+
+      const data = await response.json();
+      if (data?.success && data?.enabled && Array.isArray(data.events)) {
+        const normalizedEvents: PlannerOutlookEvent[] = data.events
+          .map((eventItem: any) => ({
+            id: String(eventItem.id || ''),
+            subject: String(eventItem.subject || '(No subject)'),
+            start: String(eventItem.start || ''),
+            end: String(eventItem.end || ''),
+            isAllDay: !!eventItem.isAllDay,
+            webLink: eventItem.webLink || null,
+            userId: Number(eventItem.userId || 0),
+            userName: eventItem.userName || undefined,
+            userEmail: eventItem.userEmail || undefined,
+          }))
+          .filter((eventItem: PlannerOutlookEvent) => !!eventItem.id && !!eventItem.start && !!eventItem.end && eventItem.userId > 0);
+
+        setOutlookTimelineEvents(normalizedEvents);
+      } else {
+        setOutlookTimelineEvents([]);
+      }
+    } catch (err) {
+      console.error('Failed to load Outlook timeline events:', err);
+      setOutlookTimelineEvents([]);
     }
   };
 
@@ -2015,6 +2088,14 @@ export default function PlanningPage() {
       loadRecurringAllocations();
     }
   }, [viewStartDate, viewMode, customStartDate, customEndDate, users.length]);
+
+  useEffect(() => {
+    if (token) {
+      loadOutlookTimelineEvents();
+    } else {
+      setOutlookTimelineEvents([]);
+    }
+  }, [viewStartDate, viewMode, customStartDate, customEndDate, token]);
 
   useEffect(() => {
     if (users.length > 0 && token) {
@@ -6910,9 +6991,15 @@ export default function PlanningPage() {
                   // Calculate row height based on max rows (parent tasks + subtasks)
                   // Reserve a dedicated lane for recurring allocations so they don't overlap task bars.
                   const hasRecurringForUser = recurringAllocations.some((recurring) => recurring.UserId === userRow.Id);
+                  const hasOutlookForUser = outlookTimelineEvents.some((outlookEvent) => Number(outlookEvent.userId) === Number(userRow.Id));
                   const recurringLaneHeight = hasRecurringForUser ? 18 : 0;
+                  const outlookLaneHeight = hasOutlookForUser ? 18 : 0;
                   const recurringLaneTop = hasRecurringForUser ? Math.max(maxRows * 24 + 4, 24) : 0;
-                  const rowHeight = Math.max(maxRows * 24 + 8 + recurringLaneHeight, 44 + recurringLaneHeight);
+                  const outlookLaneTop = hasOutlookForUser
+                    ? Math.max(maxRows * 24 + 4 + recurringLaneHeight, 24 + recurringLaneHeight)
+                    : 0;
+                  const extraLanesHeight = recurringLaneHeight + outlookLaneHeight;
+                  const rowHeight = Math.max(maxRows * 24 + 8 + extraLanesHeight, 44 + extraLanesHeight);
                   
                   return (
                     <React.Fragment key={userRow.Id}>
@@ -7308,6 +7395,66 @@ export default function PlanningPage() {
                                 <span className="truncate">
                                   🔄 {recurring.Title} ({recurring.AllocatedHours}h)
                                 </span>
+                              </div>
+                            );
+                          })}
+
+                        {outlookTimelineEvents
+                          .filter((outlookEvent) => Number(outlookEvent.userId) === Number(userRow.Id))
+                          .map((outlookEvent, outlookIdx) => {
+                            const startDateStr = normalizeDateKey(outlookEvent.start);
+                            const endDateStr = normalizeDateKey(outlookEvent.end);
+                            if (!startDateStr || !endDateStr) return null;
+
+                            const eventStart = startDateStr <= endDateStr ? startDateStr : endDateStr;
+                            const eventEnd = startDateStr <= endDateStr ? endDateStr : startDateStr;
+
+                            const startIndex = timelineColumns.findIndex((column) => {
+                              const startKey = getDateKeyFromDate(column.start);
+                              const endKey = getDateKeyFromDate(column.end);
+                              return eventStart <= endKey && eventEnd >= startKey;
+                            });
+
+                            if (startIndex === -1) return null;
+
+                            let endIndex = startIndex;
+                            for (let i = startIndex; i < timelineColumns.length; i++) {
+                              const startKey = getDateKeyFromDate(timelineColumns[i].start);
+                              const endKey = getDateKeyFromDate(timelineColumns[i].end);
+                              if (eventStart <= endKey && eventEnd >= startKey) {
+                                endIndex = i;
+                              }
+                            }
+
+                            const duration = Math.max(1, endIndex - startIndex + 1);
+                            const left = useFixedPixelColumns
+                              ? `${startIndex * dayColumnWidthPx}px`
+                              : `${(startIndex / timelineColumns.length) * 100}%`;
+                            const width = useFixedPixelColumns
+                              ? `${duration * dayColumnWidthPx}px`
+                              : `${(duration / timelineColumns.length) * 100}%`;
+
+                            const ownerLabel = outlookEvent.userName || outlookEvent.userEmail || userRow.Username;
+
+                            return (
+                              <div
+                                key={`outlook-${outlookEvent.id}-${outlookIdx}`}
+                                onClick={() => {
+                                  if (outlookEvent.webLink) {
+                                    window.open(outlookEvent.webLink, '_blank', 'noopener,noreferrer');
+                                  }
+                                }}
+                                className={`absolute h-6 rounded bg-sky-500 dark:bg-sky-600 opacity-45 hover:opacity-75 flex items-center text-white text-[10px] px-1 border-l-3 border-sky-700 dark:border-sky-800 ${outlookEvent.webLink ? 'cursor-pointer' : 'cursor-default'}`}
+                                style={{
+                                  left,
+                                  width,
+                                  top: `${outlookLaneTop}px`,
+                                  borderLeftWidth: '3px',
+                                  zIndex: 29,
+                                }}
+                                title={`📅 ${outlookEvent.subject}\n${ownerLabel}\n${eventStart} → ${eventEnd}${outlookEvent.webLink ? '\nClick to open in Outlook' : ''}`}
+                              >
+                                <span className="truncate">📅 {outlookEvent.subject}</span>
                               </div>
                             );
                           })}

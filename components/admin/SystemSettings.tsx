@@ -106,6 +106,11 @@ interface SystemSettings {
   smtpFrom?: string;
   smtpFromName?: string;
   smtpSecure?: string;
+  outlookCalendarEnabled?: string;
+  outlookTenantId?: string;
+  outlookClientId?: string;
+  outlookClientSecret?: string;
+  outlookIncludeTeamEventsForManagers?: string;
   allowPublicRegistration?: string;
   publicRegistrationType?: string;
   defaultCustomerId?: string;
@@ -147,6 +152,11 @@ export default function SystemSettings() {
     smtpFrom: '',
     smtpFromName: '',
     smtpSecure: 'true',
+    outlookCalendarEnabled: 'false',
+    outlookTenantId: '',
+    outlookClientId: '',
+    outlookClientSecret: '',
+    outlookIncludeTeamEventsForManagers: 'true',
     allowPublicRegistration: 'false',
     publicRegistrationType: 'internal',
     defaultCustomerId: '',
@@ -209,6 +219,11 @@ export default function SystemSettings() {
           smtpFrom: data.settings.smtpFrom || '',
           smtpFromName: data.settings.smtpFromName || '',
           smtpSecure: data.settings.smtpSecure || 'true',
+          outlookCalendarEnabled: data.settings.outlookCalendarEnabled || 'false',
+          outlookTenantId: data.settings.outlookTenantId || '',
+          outlookClientId: data.settings.outlookClientId || '',
+          outlookClientSecret: data.settings.outlookClientSecret || '',
+          outlookIncludeTeamEventsForManagers: data.settings.outlookIncludeTeamEventsForManagers || 'true',
           allowPublicRegistration: data.settings.allowPublicRegistration || 'false',
           publicRegistrationType: data.settings.publicRegistrationType || 'internal',
           defaultCustomerId: data.settings.defaultCustomerId || '',
@@ -576,6 +591,92 @@ export default function SystemSettings() {
                   <option value="true">Yes (TLS/SSL)</option>
                   <option value="false">No (Plain)</option>
                 </select>
+              </div>
+            </div>
+
+            <div className="mt-8 border-t border-gray-200 dark:border-gray-600 pt-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                📅 Outlook Calendar Integration
+              </h3>
+
+              <div className="space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.outlookCalendarEnabled === 'true'}
+                    onChange={(e) => handleChange('outlookCalendarEnabled', e.target.checked ? 'true' : 'false')}
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">Enable Outlook Calendar Sync</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      Adds Outlook events to the in-app calendar. Managers/admins can include team members in the same organization.
+                    </div>
+                  </div>
+                </label>
+
+                {settings.outlookCalendarEnabled === 'true' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-0 md:ml-8">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Azure Tenant ID
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.outlookTenantId || ''}
+                        onChange={(e) => handleChange('outlookTenantId', e.target.value)}
+                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Azure Client ID
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.outlookClientId || ''}
+                        onChange={(e) => handleChange('outlookClientId', e.target.value)}
+                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Azure Client Secret
+                      </label>
+                      <input
+                        type="password"
+                        value={settings.outlookClientSecret || ''}
+                        onChange={(e) => handleChange('outlookClientSecret', e.target.value)}
+                        placeholder=""
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      />
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Leave empty and save to clear the stored Outlook client secret.
+                      </p>
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={settings.outlookIncludeTeamEventsForManagers !== 'false'}
+                          onChange={(e) => handleChange('outlookIncludeTeamEventsForManagers', e.target.checked ? 'true' : 'false')}
+                          className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <div>
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">Managers/Admins see team Outlook events</div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                            Uses users in the same organization with valid email addresses.
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

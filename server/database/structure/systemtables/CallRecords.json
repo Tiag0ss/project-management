@@ -71,6 +71,18 @@
       "Comment": "Foreign key - reference to Tasks.Id if related to a task"
     },
     {
+      "FieldName": "ExternalSource",
+      "DataType": "varchar(50)",
+      "NotNullable": false,
+      "Comment": "External source identifier (e.g., teams, csv)"
+    },
+    {
+      "FieldName": "ExternalCallId",
+      "DataType": "varchar(255)",
+      "NotNullable": false,
+      "Comment": "External provider call identifier for deduplication"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

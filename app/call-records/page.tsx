@@ -35,6 +35,8 @@ interface ImportCallRecordRow {
   notes: string;
 }
 
+type TeamsImportPeriod = '7d' | '30d' | '90d' | 'custom';
+
 export default function CallRecordsPage() {
   const { user, isLoading, token } = useAuth();
   const router = useRouter();
@@ -50,6 +52,13 @@ export default function CallRecordsPage() {
   const [importProgress, setImportProgress] = useState('');
   const [importResult, setImportResult] = useState<{ imported: number } | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [showTeamsImportModal, setShowTeamsImportModal] = useState(false);
+  const [teamsImportPeriod, setTeamsImportPeriod] = useState<TeamsImportPeriod>('30d');
+  const [teamsCustomStartDate, setTeamsCustomStartDate] = useState('');
+  const [teamsCustomEndDate, setTeamsCustomEndDate] = useState('');
+  const [teamsImportProgress, setTeamsImportProgress] = useState('');
+  const [teamsImportResult, setTeamsImportResult] = useState<{ imported: number; skipped: number; failed: number } | null>(null);
+  const [isImportingTeams, setIsImportingTeams] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [confirmModal, setConfirmModal] = useState<{
@@ -176,6 +185,76 @@ export default function CallRecordsPage() {
     setIsImporting(false);
   };
 
+  const closeTeamsImportModal = () => {
+    setShowTeamsImportModal(false);
+    setTeamsImportPeriod('30d');
+    setTeamsCustomStartDate('');
+    setTeamsCustomEndDate('');
+    setTeamsImportProgress('');
+    setTeamsImportResult(null);
+    setIsImportingTeams(false);
+  };
+
+  const handleImportTeamsRecentCalls = async () => {
+    if (!token) return;
+
+    if (teamsImportPeriod === 'custom') {
+      if (!teamsCustomStartDate || !teamsCustomEndDate) {
+        setError('Please select both start and end dates for custom period.');
+        return;
+      }
+      if (teamsCustomEndDate < teamsCustomStartDate) {
+        setError('End date must be after or equal to start date.');
+        return;
+      }
+    }
+
+    try {
+      setIsImportingTeams(true);
+      setTeamsImportResult(null);
+      setError('');
+      setTeamsImportProgress('Importing recent Teams calls...');
+
+      const payload: Record<string, string> = {
+        periodType: teamsImportPeriod,
+      };
+
+      if (teamsImportPeriod === 'custom') {
+        payload.startDate = teamsCustomStartDate;
+        payload.endDate = teamsCustomEndDate;
+      }
+
+      const response = await fetch(`${getApiUrl()}/api/call-records/import/teams-recent`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || 'Failed to import Teams calls');
+      }
+
+      const imported = Number(data.imported || 0);
+      const skipped = Number(data.skipped || 0);
+      const failed = Number(data.failed || 0);
+
+      setTeamsImportResult({ imported, skipped, failed });
+      setTeamsImportProgress(`Done: imported ${imported}, skipped ${skipped}, failed ${failed}.`);
+      setMessage(`Teams import finished: ${imported} imported, ${skipped} skipped, ${failed} failed.`);
+      setTimeout(() => setMessage(''), 4000);
+      await loadCallRecords();
+    } catch (err: any) {
+      setTeamsImportProgress('');
+      setError(err?.message || 'Error importing Teams calls');
+    } finally {
+      setIsImportingTeams(false);
+    }
+  };
+
   const handleImportCSVFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -291,6 +370,15 @@ export default function CallRecordsPage() {
             📞 Call Records
           </h1>
           <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setError('');
+                setShowTeamsImportModal(true);
+              }}
+              className="h-10 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
+            >
+              📅 Import Teams Calls
+            </button>
             <button
               onClick={() => {
                 setError('');
@@ -456,6 +544,99 @@ export default function CallRecordsPage() {
                   >
                     {isImporting ? 'Importing...' : 'Import CSV'}
                   </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showTeamsImportModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 border border-gray-200 dark:border-gray-700">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4 gap-4">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">Import Recent Teams Calls</h2>
+                  <button
+                    onClick={closeTeamsImportModal}
+                    className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Period</label>
+                    <select
+                      value={teamsImportPeriod}
+                      onChange={(e) => setTeamsImportPeriod(e.target.value as TeamsImportPeriod)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="7d">Last 7 days</option>
+                      <option value="30d">Last 30 days</option>
+                      <option value="90d">Last 90 days</option>
+                      <option value="custom">Custom range</option>
+                    </select>
+                  </div>
+
+                  {teamsImportPeriod === 'custom' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Start Date</label>
+                        <input
+                          type="date"
+                          value={teamsCustomStartDate}
+                          onChange={(e) => setTeamsCustomStartDate(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">End Date</label>
+                        <input
+                          type="date"
+                          value={teamsCustomEndDate}
+                          onChange={(e) => setTeamsCustomEndDate(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg text-sm text-indigo-700 dark:text-indigo-300">
+                    Re-importing the same period is safe. Existing Teams calls are detected and skipped automatically.
+                  </div>
+
+                  {teamsImportProgress && (
+                    <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 text-sm">
+                      {teamsImportProgress}
+                    </div>
+                  )}
+
+                  {teamsImportResult && (
+                    <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 text-sm">
+                      Imported: {teamsImportResult.imported} • Skipped: {teamsImportResult.skipped} • Failed: {teamsImportResult.failed}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={closeTeamsImportModal}
+                      className="h-10 px-4 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
+                    >
+                      Close
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleImportTeamsRecentCalls}
+                      disabled={isImportingTeams}
+                      className="h-10 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
+                    >
+                      {isImportingTeams ? 'Importing...' : 'Import'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
