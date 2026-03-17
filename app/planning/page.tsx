@@ -1556,7 +1556,7 @@ export default function PlanningPage() {
         ? hasAnyTaskAssignee(candidate)
         : isTaskAssignedToUser(candidate, userId);
 
-      if (candidateIsLeaf && isUnscheduled && matchesAssignee) {
+      if (candidateIsLeaf && isUnscheduled && matchesAssignee && !isTaskClosedOrCancelled(candidate)) {
         return true;
       }
 
@@ -1590,7 +1590,7 @@ export default function PlanningPage() {
         ? hasAnyTaskAssignee(candidate)
         : isTaskAssignedToUser(candidate, userId);
 
-      if (candidateIsLeaf && isUnscheduled && matchesAssignee) {
+      if (candidateIsLeaf && isUnscheduled && matchesAssignee && !isTaskClosedOrCancelled(candidate)) {
         relevantTasks.push(candidate);
       }
 
@@ -1642,7 +1642,10 @@ export default function PlanningPage() {
 
     let startDate: Date;
     let endDate: Date;
-    const isAssignedUnscheduled = isLeafTask(task.Id) && Number(task.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(task);
+    const isAssignedUnscheduled = isLeafTask(task.Id)
+      && Number(task.UnscheduledWork || 0) === 1
+      && hasAnyTaskAssignee(task)
+      && !isTaskClosedOrCancelled(task);
     const hasUnscheduledDescendant = !task.ParentTaskId && hasUnscheduledAssignedDescendant(task.Id);
 
     if (isAssignedUnscheduled || hasUnscheduledDescendant) {
@@ -1735,16 +1738,23 @@ export default function PlanningPage() {
     if (!project) return undefined;
     const statuses = statusMap[project.OrganizationId];
     if (!statuses || statuses.length === 0) return undefined;
-    return statuses.find(s => s.Id === task.Status);
+
+    const taskStatusId = Number(task.Status);
+    if (!Number.isFinite(taskStatusId)) return undefined;
+
+    return statuses.find((status) => Number(status.Id) === taskStatusId);
   };
 
   // Helper to check if a task should be excluded from planning (closed, cancelled, or hidden-by-status)
   const isTaskClosedOrCancelled = (task: Task): boolean => {
     const statusValue = getTaskStatusValue(task);
+    const hiddenFromPlanning = Number(task.StatusHideFromPlanningAndStatistics || 0) === 1
+      || (statusValue && Number(statusValue.HideFromPlanningAndStatistics || 0) === 1);
+
     return !!(
       task.StatusIsClosed ||
       task.StatusIsCancelled ||
-      (statusValue && Number(statusValue.HideFromPlanningAndStatistics || 0) === 1)
+      hiddenFromPlanning
     );
   };
 
@@ -1797,7 +1807,8 @@ export default function PlanningPage() {
   };
 
   const getParentUserDescendantAllocationDates = (parentTaskId: number, userId: number) => {
-    const descendants = getAllDescendantsRecursive(parentTaskId);
+    const descendants = getAllDescendantsRecursive(parentTaskId)
+      .filter((descendant) => !isTaskClosedOrCancelled(descendant));
     if (descendants.length === 0) {
       return null;
     }
@@ -2041,7 +2052,12 @@ export default function PlanningPage() {
       allAllocations
         .filter((allocation) => allocation.UserId === userId)
         .forEach((allocation) => {
-          let currentTask = tasksById.get(allocation.TaskId);
+          const allocationTask = tasksById.get(allocation.TaskId);
+          if (!allocationTask || isTaskClosedOrCancelled(allocationTask)) {
+            return;
+          }
+
+          let currentTask: Task | undefined = allocationTask;
           while (currentTask?.ParentTaskId) {
             currentTask = tasksById.get(currentTask.ParentTaskId);
           }
@@ -2052,7 +2068,11 @@ export default function PlanningPage() {
 
       result = tasks.filter((task) => {
         if (task.ParentTaskId) return false;
-        const isUnscheduledAssigned = Number(task.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(task);
+        if (isTaskClosedOrCancelled(task)) return false;
+
+        const isUnscheduledAssigned = Number(task.UnscheduledWork || 0) === 1
+          && hasAnyTaskAssignee(task)
+          && !isTaskClosedOrCancelled(task);
         if (isUnscheduledAssigned) {
           return isTaskAssignedToUser(task, Number(userId));
         }
@@ -5776,8 +5796,9 @@ export default function PlanningPage() {
     const grouped = new Map<string, { id: string; label: string; subLabel: string; tasks: Task[] }>();
     const parentTasks = tasks.filter((t) => {
       if (t.ParentTaskId) return false;
+      if (isTaskClosedOrCancelled(t)) return false;
       const hasPlannedDates = !!(t.PlannedStartDate && t.PlannedEndDate);
-      const isAssignedUnscheduled = Number(t.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(t);
+      const isAssignedUnscheduled = Number(t.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(t) && !isTaskClosedOrCancelled(t);
       const hasUnscheduledDescendants = hasUnscheduledAssignedDescendant(t.Id);
       if (!(hasPlannedDates || isAssignedUnscheduled || hasUnscheduledDescendants) || !matchesGanttSearch(t)) return false;
 
@@ -6485,6 +6506,11 @@ export default function PlanningPage() {
                         const priorityBorderHex = getPriorityBorderHex(parentTask);
                         const parentCustomerName = parentTask.CustomerName || project?.CustomerName || null;
                         const parentJiraRef = parentTask.ExternalTicketId || parentTask.JiraIssueKey || null;
+                        const parentIssueRef = parentTask.JiraIssueKey || parentTask.ExternalTicketId || parentTask.ExternalIssueId
+                          || (parentTask.TicketNumber ? `#${parentTask.TicketNumber}` : null)
+                          || (parentTask.GitHubIssueNumber ? `#${parentTask.GitHubIssueNumber}` : null)
+                          || (parentTask.GiteaIssueNumber ? `#${parentTask.GiteaIssueNumber}` : null)
+                          || null;
                         const parentTooltipLines = [
                           `Project: ${project?.ProjectName || 'Unknown'}`,
                           `Task: ${parentTask.TaskName}`,
@@ -6562,6 +6588,9 @@ export default function PlanningPage() {
                             {taskIsHobbyProject && (
                               <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0 pointer-events-none">HOBBY</span>
                             )}
+                            {parentIssueRef && (
+                              <span className="mr-1 bg-black/30 text-white text-[9px] px-1 py-0.5 rounded font-bold flex-shrink-0 pointer-events-none">{parentIssueRef}</span>
+                            )}
                             <span className="truncate flex-1 pointer-events-none">
                               {!hasEstimatedHours && <span className="mr-1">⚠️</span>}
                               {hasSubtasks && <span className="mr-1">📁</span>}
@@ -6598,7 +6627,12 @@ export default function PlanningPage() {
                   allAllocations
                     .filter((allocation) => allocation.UserId === userRow.Id)
                     .forEach((allocation) => {
-                      let currentTask = tasksById.get(allocation.TaskId);
+                      const allocationTask = tasksById.get(allocation.TaskId);
+                      if (!allocationTask || isTaskClosedOrCancelled(allocationTask)) {
+                        return;
+                      }
+
+                      let currentTask: Task | undefined = allocationTask;
                       while (currentTask?.ParentTaskId) {
                         currentTask = tasksById.get(currentTask.ParentTaskId);
                       }
@@ -6609,9 +6643,15 @@ export default function PlanningPage() {
 
                   const parentTasksWithDates = tasks.filter((task) => {
                     if (task.ParentTaskId) return false;
-                    const isUnscheduledAssigned = Number(task.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(task);
+                    if (isTaskClosedOrCancelled(task)) return false;
+
+                    const isUnscheduledAssigned = Number(task.UnscheduledWork || 0) === 1
+                      && hasAnyTaskAssignee(task)
+                      && !isTaskClosedOrCancelled(task);
                     const plannedForUserByAllocations = parentTaskIdsFromAllocations.has(task.Id);
-                    const unscheduledAssigned = Number(task.UnscheduledWork || 0) === 1 && isTaskAssignedToUser(task, Number(userRow.Id));
+                    const unscheduledAssigned = Number(task.UnscheduledWork || 0) === 1
+                      && isTaskAssignedToUser(task, Number(userRow.Id))
+                      && !isTaskClosedOrCancelled(task);
                     if (isUnscheduledAssigned) {
                       return unscheduledAssigned && matchesGanttSearch(task);
                     }
@@ -6628,6 +6668,7 @@ export default function PlanningPage() {
                     const parentUserSegments = getTaskUserAllocationSegments(parentTask.Id, userRow.Id);
                     const plannedLeafDescendants = getAllDescendantsRecursive(parentTask.Id)
                       .filter((descendant) => isLeafTask(descendant.Id))
+                      .filter((descendant) => !isTaskClosedOrCancelled(descendant))
                       .filter((descendant) => {
                         const hasUserAllocations = getTaskUserAllocationSegments(descendant.Id, userRow.Id).length > 0;
                         const hasMatchingChildAllocations = childAllocations.some((childAllocation) => {

@@ -21,6 +21,7 @@ export interface Task {
   StatusColor?: string;
   StatusIsClosed?: number;
   StatusIsCancelled?: number;
+  StatusHideFromPlanningAndStatistics?: number | boolean;
   Priority: number | null;
   PriorityName?: string;
   PriorityColor?: string;

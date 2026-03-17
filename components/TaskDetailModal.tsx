@@ -797,8 +797,51 @@ export default function TaskDetailModal({
     setIsLoading(true);
 
     try {
+      const normalizedJiraIssueKey = formData.jiraIssueKey === undefined
+        ? undefined
+        : (formData.jiraIssueKey === null || String(formData.jiraIssueKey).trim() === ''
+          ? ''
+          : String(formData.jiraIssueKey).trim());
+
+      const normalizedGitHubIssueNumber = formData.gitHubIssueNumber === undefined
+        ? undefined
+        : (formData.gitHubIssueNumber === null || String(formData.gitHubIssueNumber).trim() === ''
+          ? null
+          : Number(formData.gitHubIssueNumber));
+
+      const normalizedGiteaIssueNumber = formData.giteaIssueNumber === undefined
+        ? undefined
+        : (formData.giteaIssueNumber === null || String(formData.giteaIssueNumber).trim() === ''
+          ? null
+          : Number(formData.giteaIssueNumber));
+
+      const payload: CreateTaskData = {
+        projectId: formData.projectId,
+        taskName: formData.taskName,
+        description: formData.description || '',
+        status: formData.status ?? null,
+        priority: formData.priority ?? null,
+        taskType: formData.taskType ?? null,
+        assignedTo: formData.assignedTo ?? undefined,
+        dueDate: formData.dueDate || '',
+        dueDateMandatory: !!formData.dueDateMandatory,
+        unscheduledWork: !!formData.unscheduledWork,
+        estimatedHours: formData.estimatedHours ?? undefined,
+        storyPoints: formData.storyPoints ?? undefined,
+        parentTaskId: formData.parentTaskId ?? undefined,
+        plannedStartDate: formData.plannedStartDate || '',
+        plannedEndDate: formData.plannedEndDate || '',
+        dependsOnTaskId: formData.dependsOnTaskId ?? undefined,
+        customerId: formData.customerId ?? null,
+        jiraIssueKey: normalizedJiraIssueKey ?? '',
+        gitHubIssueNumber: normalizedGitHubIssueNumber ?? null,
+        giteaIssueNumber: normalizedGiteaIssueNumber ?? null,
+        applicationId: formData.applicationId ?? null,
+        releaseVersionId: formData.releaseVersionId ?? null,
+      };
+
       if (task?.Id) {
-        await tasksApi.update(task.Id, formData, token);
+        await tasksApi.update(task.Id, payload, token);
 
         // Sync assignees: add newly added ones, remove removed ones
         const originalIds = new Set((task.Assignees || []).map((a) => a.UserId));
@@ -810,7 +853,7 @@ export default function TaskDetailModal({
           ...toRemove.map((a) => tasksApi.removeAssignee(task.Id, a.UserId, token)),
         ]);
       } else {
-        const result = await tasksApi.create(formData, token);
+        const result = await tasksApi.create(payload, token);
         // Add assignees to the newly created task
         const newTaskId = result.taskId;
         await Promise.all(taskAssignees.map((a) => tasksApi.addAssignee(newTaskId, a.UserId, token)));
