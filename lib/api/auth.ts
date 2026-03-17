@@ -22,6 +22,18 @@ let cachedEncryptionSession: {
   expiresAt: number;
 } | null = null;
 
+const supportsAuthEncryption = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const subtle = window.crypto?.subtle as SubtleCrypto | undefined;
+  return Boolean(
+    subtle &&
+    typeof subtle.importKey === 'function' &&
+    typeof subtle.generateKey === 'function' &&
+    typeof subtle.encrypt === 'function' &&
+    typeof subtle.exportKey === 'function'
+  );
+};
+
 const stringToUint8Array = (value: string): Uint8Array => new TextEncoder().encode(value);
 
 const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
@@ -50,6 +62,11 @@ const pemToArrayBuffer = (pem: string): ArrayBuffer => {
 };
 
 export const prepareAuthEncryptionSession = async (forceRefresh = false): Promise<void> => {
+  if (!supportsAuthEncryption()) {
+    cachedEncryptionSession = null;
+    return;
+  }
+
   const now = Date.now();
   if (!forceRefresh && cachedEncryptionSession && cachedEncryptionSession.expiresAt - 10000 > now) {
     return;
@@ -75,6 +92,10 @@ export const prepareAuthEncryptionSession = async (forceRefresh = false): Promis
 };
 
 const encryptAuthPayload = async (payload: object): Promise<EncryptedAuthPayload> => {
+  if (!supportsAuthEncryption()) {
+    throw new Error('Auth encryption is not supported in this browser context');
+  }
+
   await prepareAuthEncryptionSession();
 
   if (!cachedEncryptionSession) {
@@ -111,7 +132,7 @@ const encryptAuthPayload = async (payload: object): Promise<EncryptedAuthPayload
       iv,
     },
     aesKey,
-    payloadBytes
+    payloadBytes as BufferSource
   );
 
   const rawAesKey = await window.crypto.subtle.exportKey('raw', aesKey);
@@ -120,7 +141,7 @@ const encryptAuthPayload = async (payload: object): Promise<EncryptedAuthPayload
       name: 'RSA-OAEP',
     },
     importedPublicKey,
-    rawAesKey
+    rawAesKey as BufferSource
   );
 
   const encryptedPayload: EncryptedAuthPayload = {
@@ -186,14 +207,21 @@ export interface ValidateResetTokenResponse {
 
 export const authApi = {
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
-    const encryptedPayload = await encryptAuthPayload(credentials);
+    let encryptedPayload: EncryptedAuthPayload | null = null;
+    if (supportsAuthEncryption()) {
+      try {
+        encryptedPayload = await encryptAuthPayload(credentials);
+      } catch {
+        encryptedPayload = null;
+      }
+    }
 
     const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ encryptedPayload }),
+      body: JSON.stringify(encryptedPayload ? { encryptedPayload } : credentials),
     });
 
     const data = await response.json();
@@ -206,14 +234,21 @@ export const authApi = {
   },
 
   async register(userData: RegisterData): Promise<AuthResponse> {
-    const encryptedPayload = await encryptAuthPayload(userData);
+    let encryptedPayload: EncryptedAuthPayload | null = null;
+    if (supportsAuthEncryption()) {
+      try {
+        encryptedPayload = await encryptAuthPayload(userData);
+      } catch {
+        encryptedPayload = null;
+      }
+    }
 
     const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ encryptedPayload }),
+      body: JSON.stringify(encryptedPayload ? { encryptedPayload } : userData),
     });
 
     const data = await response.json();

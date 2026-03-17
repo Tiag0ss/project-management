@@ -296,7 +296,15 @@ export default function CallRecordsPage() {
         });
 
         if (record.callDate) {
-          records.push(record);
+          records.push({
+            callDate: record.callDate,
+            startTime: record.startTime || '09:00',
+            durationMinutes: record.durationMinutes || 30,
+            callType: record.callType || 'Teams',
+            participants: record.participants || '',
+            subject: record.subject || '',
+            notes: record.notes || '',
+          });
         }
       }
 
