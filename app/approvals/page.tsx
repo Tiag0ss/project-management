@@ -131,6 +131,7 @@ export default function ApprovalsPage() {
   const [vacationYear, setVacationYear] = useState<number>(new Date().getFullYear());
   const [vacationStatusFilter, setVacationStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
   const [selectedMemberId, setSelectedMemberId] = useState('');
+  const [vacationGroupByUser, setVacationGroupByUser] = useState(true);
   const [vacationSortField, setVacationSortField] = useState<'user' | 'date' | 'status'>('date');
   const [vacationSortDirection, setVacationSortDirection] = useState<'asc' | 'desc'>('desc');
   const [configStartDate, setConfigStartDate] = useState(new Date().toISOString().split('T')[0]);
@@ -576,11 +577,24 @@ export default function ApprovalsPage() {
     return vacationSortDirection === 'asc' ? compare : -compare;
   });
 
+  const vacationGroupedByUser = vacationGroupByUser
+    ? sortedVacationRequests.reduce((acc, r) => {
+        const key = String(r.UserId);
+        if (!acc[key]) acc[key] = { user: r, requests: [] };
+        acc[key].requests.push(r);
+        return acc;
+      }, {} as Record<string, { user: VacationRequest; requests: VacationRequest[] }>)
+    : null;
+
   if (!user) return null;
 
   const selectedVacationMember = vacationMembers.find((m) => String(m.Id) === selectedMemberId);
   const selectedMemberNotApproved = (selectedVacationMember?.PendingDays || 0) + (selectedVacationMember?.RejectedDays || 0);
   const pendingVisibleVacationCount = sortedVacationRequests.filter((request) => String(request.Status).toLowerCase() === 'pending').length;
+  const approvedVacationCount = sortedVacationRequests.filter((request) => String(request.Status).toLowerCase() === 'approved').length;
+  const rejectedVacationCount = sortedVacationRequests.filter((request) => String(request.Status).toLowerCase() === 'rejected').length;
+  const totalVacationDays = sortedVacationRequests.length;
+  const uniqueVacationUsers = new Set(sortedVacationRequests.map((r) => r.UserId)).size;
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
@@ -1127,174 +1141,281 @@ export default function ApprovalsPage() {
               </div>
             )}
 
-            {vacationIsLoading ? (
-              <div className="text-gray-600 dark:text-gray-300">Loading vacations…</div>
-            ) : (
-              <div className="space-y-6">
-                {canApproveVacations && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5">
-                    <div className="flex items-center justify-between gap-3 mb-4">
-                      <div className="space-y-2">
-                        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Team Vacation Requests</h2>
-                        {selectedVacationMember && (
-                          <div className="flex flex-wrap gap-2 text-xs">
-                            <span className="px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
-                              Allowed: {selectedVacationMember.AnnualVacationDays}
-                            </span>
-                            <span className="px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300">
-                              Approved: {selectedVacationMember.ApprovedDays}
-                            </span>
-                            <span className="px-2 py-1 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300">
-                              Not Approved: {selectedMemberNotApproved}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={handleApproveAllVisibleVacations}
-                          disabled={pendingVisibleVacationCount === 0 || vacationIsLoading}
-                          className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded text-sm"
-                        >
-                          Approve All ({pendingVisibleVacationCount})
-                        </button>
-                        <button
-                          onClick={() => setShowVacationConfigModal(true)}
-                          className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm"
-                        >
-                          Add Vacation
-                        </button>
-                      </div>
-                    </div>
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-                        <input
-                          type="number"
-                          min="2000"
-                          max="2100"
-                          value={vacationYear}
-                          onChange={(e) => setVacationYear(parseInt(e.target.value || String(new Date().getFullYear()), 10))}
-                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                          placeholder="Year"
-                        />
-                        <select
-                          value={selectedMemberId}
-                          onChange={(e) => setSelectedMemberId(e.target.value)}
-                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                        >
-                          <option value="">All users</option>
-                          {vacationMembers.map((member) => (
-                            <option key={member.Id} value={member.Id}>
-                              {(member.FirstName && member.LastName) ? `${member.FirstName} ${member.LastName}` : member.Username}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          value={vacationStatusFilter}
-                          onChange={(e) => setVacationStatusFilter(e.target.value as 'all' | 'pending' | 'approved' | 'rejected')}
-                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                        >
-                          <option value="all">All statuses</option>
-                          <option value="pending">Pending</option>
-                          <option value="approved">Approved</option>
-                          <option value="rejected">Rejected</option>
-                        </select>
-                        <button
-                          onClick={loadVacationData}
-                          className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
-                        >
-                          Apply
-                        </button>
-                      </div>
-
-                      <div className="h-[calc(100vh-340px)] min-h-[420px] overflow-y-auto border border-gray-200 dark:border-gray-700 rounded">
-                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                          <thead className="bg-gray-50 dark:bg-gray-900">
-                            <tr>
-                              <th
-                                className="px-3 py-2 text-left text-xs text-gray-500 dark:text-gray-300 uppercase cursor-pointer"
-                                onClick={() => handleVacationSort('user')}
-                              >
-                                User {vacationSortField === 'user' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
-                              </th>
-                              <th
-                                className="px-3 py-2 text-left text-xs text-gray-500 dark:text-gray-300 uppercase cursor-pointer"
-                                onClick={() => handleVacationSort('date')}
-                              >
-                                Date {vacationSortField === 'date' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
-                              </th>
-                              <th
-                                className="px-3 py-2 text-left text-xs text-gray-500 dark:text-gray-300 uppercase cursor-pointer"
-                                onClick={() => handleVacationSort('status')}
-                              >
-                                Status {vacationSortField === 'status' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
-                              </th>
-                              <th className="px-3 py-2 text-left text-xs text-gray-500 dark:text-gray-300 uppercase">Notes</th>
-                              <th scope="col" className="relative px-3 py-2">
-                                <span className="sr-only">Actions</span>
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700">
-                            {sortedVacationRequests.map((request) => (
-                              <tr key={request.Id}>
-                                <td className="px-3 py-2 text-sm text-gray-900 dark:text-white">
-                                  {(request.FirstName && request.LastName) ? `${request.FirstName} ${request.LastName}` : request.Username}
-                                </td>
-                                <td className="px-3 py-2 text-sm text-gray-900 dark:text-white">{String(request.VacationDate).split('T')[0]}</td>
-                                <td className="px-3 py-2 text-sm text-gray-900 dark:text-white capitalize">{request.Status}</td>
-                                <td className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">{request.Notes || '—'}</td>
-                                <td className="px-3 py-2 text-sm text-gray-900 dark:text-white">
-                                  <div className="flex items-center justify-end gap-1">
-                                    {String(request.Status).toLowerCase() === 'pending' && (
-                                      <>
-                                        <button
-                                          onClick={() => handleVacationApproval(request.Id, 'approved')}
-                                          className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
-                                          title="Approve"
-                                          aria-label="Approve"
-                                        >
-                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                          </svg>
-                                        </button>
-                                        <button
-                                          onClick={() => handleVacationApproval(request.Id, 'rejected')}
-                                          className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
-                                          title="Reject"
-                                          aria-label="Reject"
-                                        >
-                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                          </svg>
-                                        </button>
-                                      </>
-                                    )}
-                                    <button
-                                      onClick={() => setVacationDeleteTarget(request)}
-                                      className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
-                                      title="Delete request"
-                                      aria-label="Delete request"
-                                    >
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                      </svg>
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                            {sortedVacationRequests.length === 0 && (
-                              <tr>
-                                <td className="px-3 py-3 text-sm text-gray-500 dark:text-gray-400" colSpan={5}>No requests found for this filter.</td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                  </div>
-                )}
+            {/* Vacation Stats Cards */}
+            {!vacationIsLoading && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                  <div className="text-sm text-yellow-600 dark:text-yellow-400 font-medium">⏳ Pending</div>
+                  <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{pendingVisibleVacationCount}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">days awaiting approval</div>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                  <div className="text-sm text-green-600 dark:text-green-400 font-medium">✓ Approved</div>
+                  <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{approvedVacationCount}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">days in current view</div>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                  <div className="text-sm text-red-600 dark:text-red-400 font-medium">✕ Rejected</div>
+                  <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{rejectedVacationCount}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">days in current view</div>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                  <div className="text-sm text-blue-600 dark:text-blue-400 font-medium">📅 Total Days</div>
+                  <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{totalVacationDays}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">across {uniqueVacationUsers} member{uniqueVacationUsers !== 1 ? 's' : ''}</div>
+                </div>
               </div>
             )}
+
+            {vacationIsLoading ? (
+              <div className="text-gray-600 dark:text-gray-300">Loading vacations…</div>
+            ) : canApproveVacations ? (
+              <>
+                {/* Filters */}
+                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Year</label>
+                      <input
+                        type="number"
+                        min="2000"
+                        max="2100"
+                        value={vacationYear}
+                        onChange={(e) => setVacationYear(parseInt(e.target.value || String(new Date().getFullYear()), 10))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Team Member</label>
+                      <select
+                        value={selectedMemberId}
+                        onChange={(e) => setSelectedMemberId(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">All users</option>
+                        {vacationMembers.map((member) => (
+                          <option key={member.Id} value={member.Id}>
+                            {(member.FirstName && member.LastName) ? `${member.FirstName} ${member.LastName}` : member.Username}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Status</label>
+                      <select
+                        value={vacationStatusFilter}
+                        onChange={(e) => setVacationStatusFilter(e.target.value as 'all' | 'pending' | 'approved' | 'rejected')}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="all">All statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <button
+                        onClick={loadVacationData}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                      >
+                        Apply Filters
+                      </button>
+                      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={vacationGroupByUser}
+                          onChange={(e) => setVacationGroupByUser(e.target.checked)}
+                          className="w-4 h-4 text-blue-600 rounded"
+                        />
+                        Group by user
+                      </label>
+                      {selectedVacationMember && (
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          <span className="px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
+                            Allowed: {selectedVacationMember.AnnualVacationDays}
+                          </span>
+                          <span className="px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300">
+                            Approved: {selectedVacationMember.ApprovedDays}
+                          </span>
+                          <span className="px-2 py-1 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300">
+                            Not Approved: {selectedMemberNotApproved}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Table — top action bar */}
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h2 className="text-base font-semibold text-gray-900 dark:text-white">Team Vacation Requests</h2>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleApproveAllVisibleVacations}
+                      disabled={pendingVisibleVacationCount === 0 || vacationIsLoading}
+                      className="h-9 px-4 inline-flex items-center rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white transition-colors"
+                    >
+                      Approve All ({pendingVisibleVacationCount})
+                    </button>
+                    <button
+                      onClick={() => setShowVacationConfigModal(true)}
+                      className="h-9 px-4 inline-flex items-center rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white transition-colors"
+                    >
+                      Add Vacation
+                    </button>
+                  </div>
+                </div>
+
+                {sortedVacationRequests.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500 dark:text-gray-400">No requests found for this filter.</div>
+                ) : vacationGroupByUser && vacationGroupedByUser ? (
+                  <div className="space-y-4">
+                    {Object.values(vacationGroupedByUser).map(({ user: reqUser, requests: userRequests }) => {
+                      const userPending = userRequests.filter(r => String(r.Status).toLowerCase() === 'pending');
+                      const userName = (reqUser.FirstName && reqUser.LastName) ? `${reqUser.FirstName} ${reqUser.LastName}` : reqUser.Username;
+                      return (
+                        <div key={reqUser.UserId} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                          {/* User header */}
+                          <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700/50 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-sm font-bold text-blue-700 dark:text-blue-300">
+                                {(reqUser.FirstName?.[0] || reqUser.Username[0]).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-semibold text-gray-900 dark:text-white">{userName}</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">@{reqUser.Username} · {userRequests.length} day{userRequests.length !== 1 ? 's' : ''}</div>
+                              </div>
+                            </div>
+                            {userPending.length > 0 && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">{userPending.length} pending</span>
+                                <button
+                                  onClick={() => Promise.all(userPending.map(r => handleVacationApproval(r.Id, 'approved')))}
+                                  className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-colors"
+                                >
+                                  ✓ Approve All
+                                </button>
+                                <button
+                                  onClick={() => Promise.all(userPending.map(r => handleVacationApproval(r.Id, 'rejected')))}
+                                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-colors"
+                                >
+                                  ✗ Reject All
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          {/* User rows table */}
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                              <thead className="bg-gray-50 dark:bg-gray-900">
+                                <tr>
+                                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800" onClick={() => handleVacationSort('date')}>
+                                    Date {vacationSortField === 'date' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
+                                  </th>
+                                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800" onClick={() => handleVacationSort('status')}>
+                                    Status {vacationSortField === 'status' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
+                                  </th>
+                                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Notes</th>
+                                  <th scope="col" className="relative px-4 py-2"><span className="sr-only">Actions</span></th>
+                                </tr>
+                              </thead>
+                              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                {userRequests.map((request) => (
+                                  <tr key={request.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{String(request.VacationDate).split('T')[0]}</td>
+                                    <td className="px-4 py-3 text-sm">
+                                      {String(request.Status).toLowerCase() === 'approved' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">✓ Approved</span>}
+                                      {String(request.Status).toLowerCase() === 'pending' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">⏳ Pending</span>}
+                                      {String(request.Status).toLowerCase() === 'rejected' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">✕ Rejected</span>}
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{request.Notes || '—'}</td>
+                                    <td className="px-4 py-3">
+                                      <div className="flex items-center justify-end gap-1">
+                                        {String(request.Status).toLowerCase() === 'pending' && (
+                                          <>
+                                            <button onClick={() => handleVacationApproval(request.Id, 'approved')} className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400" title="Approve" aria-label="Approve">
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                            </button>
+                                            <button onClick={() => handleVacationApproval(request.Id, 'rejected')} className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400" title="Reject" aria-label="Reject">
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                            </button>
+                                          </>
+                                        )}
+                                        <button onClick={() => setVacationDeleteTarget(request)} className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400" title="Delete request" aria-label="Delete request">
+                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* Flat table */
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-900">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800" onClick={() => handleVacationSort('user')}>
+                              User {vacationSortField === 'user' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800" onClick={() => handleVacationSort('date')}>
+                              Date {vacationSortField === 'date' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800" onClick={() => handleVacationSort('status')}>
+                              Status {vacationSortField === 'status' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Notes</th>
+                            <th scope="col" className="relative px-4 py-3"><span className="sr-only">Actions</span></th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                          {sortedVacationRequests.map((request) => (
+                            <tr key={request.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                              <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                                {(request.FirstName && request.LastName) ? `${request.FirstName} ${request.LastName}` : request.Username}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{String(request.VacationDate).split('T')[0]}</td>
+                              <td className="px-4 py-3 text-sm">
+                                {String(request.Status).toLowerCase() === 'approved' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">✓ Approved</span>}
+                                {String(request.Status).toLowerCase() === 'pending' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">⏳ Pending</span>}
+                                {String(request.Status).toLowerCase() === 'rejected' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">✕ Rejected</span>}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{request.Notes || '—'}</td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center justify-end gap-1">
+                                  {String(request.Status).toLowerCase() === 'pending' && (
+                                    <>
+                                      <button onClick={() => handleVacationApproval(request.Id, 'approved')} className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400" title="Approve" aria-label="Approve">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                      </button>
+                                      <button onClick={() => handleVacationApproval(request.Id, 'rejected')} className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400" title="Reject" aria-label="Reject">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                      </button>
+                                    </>
+                                  )}
+                                  <button onClick={() => setVacationDeleteTarget(request)} className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400" title="Delete request" aria-label="Delete request">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : null}
 
             {showVacationConfigModal && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">

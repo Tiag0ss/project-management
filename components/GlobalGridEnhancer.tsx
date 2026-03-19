@@ -119,6 +119,7 @@ export default function GlobalGridEnhancer() {
   const shouldEnhance = useMemo(() => {
     if (!pathname) return false;
     if (pathname.startsWith('/web-reports')) return false;
+    if (pathname.startsWith('/approvals')) return false;
     return true;
   }, [pathname]);
 
