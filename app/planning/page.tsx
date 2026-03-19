@@ -2049,7 +2049,7 @@ export default function PlanningPage() {
 
   const getParentUserDescendantAllocationDates = (parentTaskId: number, userId: number) => {
     const descendants = getAllDescendantsRecursive(parentTaskId)
-      .filter((descendant) => !isTaskClosedOrCancelled(descendant));
+      .filter((descendant) => allAllocations.some((allocation) => allocation.UserId === userId && allocation.TaskId === descendant.Id) || !isTaskClosedOrCancelled(descendant));
     if (descendants.length === 0) {
       return null;
     }
@@ -2302,7 +2302,7 @@ export default function PlanningPage() {
         .filter((allocation) => allocation.UserId === userId)
         .forEach((allocation) => {
           const allocationTask = tasksById.get(allocation.TaskId);
-          if (!allocationTask || isTaskClosedOrCancelled(allocationTask)) {
+          if (!allocationTask) {
             return;
           }
 
@@ -7621,7 +7621,7 @@ export default function PlanningPage() {
                     .filter((allocation) => allocation.UserId === userRow.Id)
                     .forEach((allocation) => {
                       const allocationTask = tasksById.get(allocation.TaskId);
-                      if (!allocationTask || isTaskClosedOrCancelled(allocationTask)) {
+                      if (!allocationTask) {
                         return;
                       }
 
@@ -7661,7 +7661,6 @@ export default function PlanningPage() {
                     const parentUserSegments = getTaskUserAllocationSegments(parentTask.Id, userRow.Id);
                     const plannedLeafDescendants = getAllDescendantsRecursive(parentTask.Id)
                       .filter((descendant) => isLeafTask(descendant.Id))
-                      .filter((descendant) => !isTaskClosedOrCancelled(descendant))
                       .filter((descendant) => {
                         const hasUserAllocations = getTaskUserAllocationSegments(descendant.Id, userRow.Id).length > 0;
                         const hasMatchingChildAllocations = childAllocations.some((childAllocation) => {
@@ -7680,7 +7679,13 @@ export default function PlanningPage() {
                           return parentUserSegments.some((segment) => allocationDate >= segment.startDate && allocationDate <= segment.endDate);
                         });
                         const isUserUnscheduled = Number(descendant.UnscheduledWork || 0) === 1 && isTaskAssignedToUser(descendant, Number(userRow.Id));
-                        return (hasUserAllocations || hasMatchingChildAllocations || isUserUnscheduled) && matchesGanttSearch(descendant);
+                        const hasPlanning = hasUserAllocations || hasMatchingChildAllocations;
+
+                        if (isTaskClosedOrCancelled(descendant) && !hasPlanning) {
+                          return false;
+                        }
+
+                        return (hasPlanning || isUserUnscheduled) && matchesGanttSearch(descendant);
                       });
 
                     if (plannedLeafDescendants.length > 0) {
