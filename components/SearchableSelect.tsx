@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 
 interface Option {
   value: string | number;
@@ -16,6 +17,7 @@ interface SearchableSelectProps {
   className?: string;
   disabled?: boolean;
   autoSelectSingleOption?: boolean;
+  dropdownMode?: 'inline' | 'portal';
 }
 
 export default function SearchableSelect({
@@ -27,10 +29,13 @@ export default function SearchableSelect({
   className = '',
   disabled = false,
   autoSelectSingleOption = false,
+  dropdownMode = 'inline',
 }: SearchableSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Filter options based on search
@@ -45,7 +50,10 @@ export default function SearchableSelect({
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const targetNode = event.target as Node;
+      const clickedInsideTrigger = !!containerRef.current?.contains(targetNode);
+      const clickedInsideDropdown = !!dropdownRef.current?.contains(targetNode);
+      if (!clickedInsideTrigger && !clickedInsideDropdown) {
         setIsOpen(false);
         setSearch('');
       }
@@ -54,6 +62,38 @@ export default function SearchableSelect({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!isOpen || dropdownMode !== 'portal') {
+      return;
+    }
+
+    const updatePosition = () => {
+      const triggerRect = containerRef.current?.getBoundingClientRect();
+      if (!triggerRect) return;
+
+      const menuEstimatedHeight = 280;
+      const shouldOpenUpward = triggerRect.bottom + menuEstimatedHeight > window.innerHeight && triggerRect.top > menuEstimatedHeight;
+
+      setMenuStyle({
+        position: 'fixed',
+        left: triggerRect.left,
+        width: triggerRect.width,
+        top: shouldOpenUpward ? triggerRect.top - 6 : triggerRect.bottom + 6,
+        transform: shouldOpenUpward ? 'translateY(-100%)' : undefined,
+        zIndex: 2147483000,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen, dropdownMode]);
 
   // Focus input when dropdown opens
   useEffect(() => {
@@ -124,7 +164,56 @@ export default function SearchableSelect({
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute z-[9999] w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-64 overflow-hidden flex flex-col">
+        <>
+        {dropdownMode === 'portal' ? createPortal(
+          <div ref={dropdownRef} style={menuStyle} className="bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-64 overflow-hidden flex flex-col">
+            {/* Search input */}
+            <div className="p-2 border-b border-gray-200 dark:border-gray-600">
+              <input
+                ref={inputRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={`Search ${placeholder.toLowerCase()}...`}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+
+            {/* Options list */}
+            <div className="overflow-y-auto max-h-48">
+              {emptyText && (
+                <div
+                  onClick={() => handleSelect('')}
+                  className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer text-gray-500 dark:text-gray-400 italic"
+                >
+                  {emptyText}
+                </div>
+              )}
+              {filteredOptions.length === 0 ? (
+                <div className="px-4 py-2 text-gray-500 dark:text-gray-400 italic text-sm">
+                  {search ? 'No results found' : 'No options available'}
+                </div>
+              ) : (
+                filteredOptions.map((option) => (
+                  <div
+                    key={option.value}
+                    onClick={() => handleSelect(option.value)}
+                    className={`px-4 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 ${
+                      String(option.value) === String(value)
+                        ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
+                        : 'text-gray-900 dark:text-white'
+                    }`}
+                  >
+                    {option.label}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>,
+          document.body
+        ) : (
+          <div ref={dropdownRef} className="absolute z-[9999] w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-64 overflow-hidden flex flex-col">
           {/* Search input */}
           <div className="p-2 border-b border-gray-200 dark:border-gray-600">
             <input
@@ -168,7 +257,9 @@ export default function SearchableSelect({
               ))
             )}
           </div>
-        </div>
+          </div>
+        )}
+        </>
       )}
     </div>
   );

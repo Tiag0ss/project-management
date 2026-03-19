@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 
 interface Option {
   value: string | number;
@@ -15,6 +16,7 @@ interface SearchableMultiSelectProps {
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  dropdownMode?: 'inline' | 'portal';
 }
 
 export default function SearchableMultiSelect({
@@ -24,10 +26,13 @@ export default function SearchableMultiSelect({
   placeholder = 'Select...',
   className = '',
   disabled = false,
+  dropdownMode = 'inline',
 }: SearchableMultiSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Filter options based on search
@@ -45,7 +50,10 @@ export default function SearchableMultiSelect({
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const targetNode = event.target as Node;
+      const clickedInsideTrigger = !!containerRef.current?.contains(targetNode);
+      const clickedInsideDropdown = !!dropdownRef.current?.contains(targetNode);
+      if (!clickedInsideTrigger && !clickedInsideDropdown) {
         setIsOpen(false);
         setSearch('');
       }
@@ -54,6 +62,38 @@ export default function SearchableMultiSelect({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!isOpen || dropdownMode !== 'portal') {
+      return;
+    }
+
+    const updatePosition = () => {
+      const triggerRect = containerRef.current?.getBoundingClientRect();
+      if (!triggerRect) return;
+
+      const menuEstimatedHeight = 320;
+      const shouldOpenUpward = triggerRect.bottom + menuEstimatedHeight > window.innerHeight && triggerRect.top > menuEstimatedHeight;
+
+      setMenuStyle({
+        position: 'fixed',
+        left: triggerRect.left,
+        width: triggerRect.width,
+        top: shouldOpenUpward ? triggerRect.top - 6 : triggerRect.bottom + 6,
+        transform: shouldOpenUpward ? 'translateY(-100%)' : undefined,
+        zIndex: 2147483000,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen, dropdownMode]);
 
   // Focus input when dropdown opens
   useEffect(() => {
@@ -111,7 +151,69 @@ export default function SearchableMultiSelect({
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-80 overflow-hidden flex flex-col">
+        <>
+        {dropdownMode === 'portal' ? createPortal(
+        <div ref={dropdownRef} style={menuStyle} className="bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-80 overflow-hidden flex flex-col">
+          {/* Search input */}
+          <div className="p-2 border-b border-gray-200 dark:border-gray-600">
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={`Search...`}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+
+          {/* Options list */}
+          <div className="overflow-y-auto flex-1">
+            {filteredOptions.length === 0 ? (
+              <div className="px-4 py-2 text-gray-500 dark:text-gray-400 italic text-sm">
+                {search ? 'No results found' : 'No options available'}
+              </div>
+            ) : (
+              filteredOptions.map((option) => {
+                const isSelected = values.includes(option.value);
+                return (
+                  <div
+                    key={option.value}
+                    onClick={() => handleToggle(option.value)}
+                    className={`px-4 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center gap-3 ${
+                      isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {}}
+                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                    />
+                    <div className="flex-1">
+                      <div className={`text-sm ${isSelected ? 'font-medium text-blue-600 dark:text-blue-400' : 'text-gray-900 dark:text-white'}`}>
+                        {option.label}
+                      </div>
+                      {option.subtitle && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{option.subtitle}</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Selected count footer */}
+          {values.length > 0 && (
+            <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-400">
+              {values.length} item{values.length !== 1 ? 's' : ''} selected
+            </div>
+          )}
+        </div>,
+        document.body
+        ) : (
+        <div ref={dropdownRef} className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-80 overflow-hidden flex flex-col">
           {/* Search input */}
           <div className="p-2 border-b border-gray-200 dark:border-gray-600">
             <input
@@ -169,6 +271,8 @@ export default function SearchableMultiSelect({
             </div>
           )}
         </div>
+        )}
+        </>
       )}
     </div>
   );

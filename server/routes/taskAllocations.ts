@@ -8,6 +8,19 @@ import { recordTaskHistory } from './taskHistory';
 const router = express.Router();
 
 const normalizeDateKey = (value: unknown): string => String(value || '').split('T')[0];
+const PLANNING_HOUR_STEP = 0.5;
+
+const roundToPlanningStep = (value: number): number => {
+  if (!Number.isFinite(value)) return 0;
+  const scaled = Math.round((value / PLANNING_HOUR_STEP) + Number.EPSILON);
+  return Number((scaled * PLANNING_HOUR_STEP).toFixed(2));
+};
+
+const isPlanningStepValue = (value: number): boolean => {
+  if (!Number.isFinite(value) || value <= 0) return false;
+  const scaled = value / PLANNING_HOUR_STEP;
+  return Math.abs(scaled - Math.round(scaled)) < 1e-9;
+};
 
 const getTaskUnscheduledFlag = async (taskId: number): Promise<number | null> => {
   const [rows] = await pool.execute<RowDataPacket[]>(
@@ -86,8 +99,9 @@ const ensureTaskAllocationHeader = async (
   const allocationMode = normalizeAllocationMode(options?.allocationMode);
   const requestedSplitOrder = Number.isFinite(Number(options?.splitOrder)) ? Number(options?.splitOrder) : null;
   let splitOrder = requestedSplitOrder;
-  const plannedHours = Number.isFinite(Number(options?.plannedHours)) ? Number(options?.plannedHours) : null;
-  const hoursPerDay = Number.isFinite(Number(options?.hoursPerDay)) && Number(options?.hoursPerDay) > 0 ? Number(options?.hoursPerDay) : null;
+  const plannedHours = Number.isFinite(Number(options?.plannedHours)) ? roundToPlanningStep(Number(options?.plannedHours)) : null;
+  const rawHoursPerDay = Number(options?.hoursPerDay);
+  const hoursPerDay = Number.isFinite(rawHoursPerDay) && rawHoursPerDay > 0 ? roundToPlanningStep(rawHoursPerDay) : null;
 
   if (options?.forceCreate) {
     if (splitOrder === null) {
@@ -1711,8 +1725,12 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
       let availableHours = isHoliday ? 0 : Math.max(0, maxHours - allocatedHours);
       
       // If there are existing allocations with an end time, cap available hours
-      // by the remaining time in the configured window
-      if (!isHoliday && latestEndTime && maxHours > 0) {
+      // by the remaining time in the configured window.
+      // EXCEPTION: When excludeHeaderId is provided (slice drag/replan), the new allocation
+      // is an independent header that can start at the beginning of the work day, so the
+      // latestEndTime from other slices must NOT restrict the window — only raw capacity matters.
+      const skipLatestEndTimeCap = !!excludeHeaderId;
+      if (!isHoliday && latestEndTime && maxHours > 0 && !skipLatestEndTimeCap) {
         const [slotStartH, slotStartM] = slotStartTime.split(':').map(Number);
         const slotStartMinutes = slotStartH * 60 + slotStartM;
         const slotEndMinutes = slotStartMinutes + maxHours * 60;
@@ -1735,7 +1753,9 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
         allocatedHours,
         availableHours,
         workStartTime: slotStartTime,
-        latestEndTime,
+        // When placing an independent new slice (excludeHeaderId), the caller should start from
+        // work-day start, not after existing slices — signal this by omitting latestEndTime.
+        latestEndTime: skipLatestEndTimeCap ? null : latestEndTime,
         isHobby: forHobby,
         isHoliday
       });
@@ -1824,9 +1844,26 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ success: false, message: 'No permission to plan tasks' });
     }
 
+    const normalizedAllocations = allocations
+      .map((allocation: any) => {
+        const normalizedHours = roundToPlanningStep(Number(allocation?.hours || 0));
+        return {
+          date: normalizeDateKey(allocation?.date),
+          hours: normalizedHours,
+          startTime: allocation?.startTime || '09:00',
+          endTime: allocation?.endTime || '17:00',
+        };
+      })
+      .filter((allocation: { date: string; hours: number }) => /^\d{4}-\d{2}-\d{2}$/.test(allocation.date) && allocation.hours > 0);
+
+    const hasInvalidStepHours = normalizedAllocations.some((allocation: { hours: number }) => !isPlanningStepValue(allocation.hours));
+    if (normalizedAllocations.length > 0 && hasInvalidStepHours) {
+      return res.status(400).json({ success: false, message: 'Planning supports 30-minute steps only (0.5h)' });
+    }
+
     const normalizedDates = Array.from(
       new Set(
-        allocations
+        normalizedAllocations
           .map((a: any) => normalizeDateKey(a.date))
           .filter((date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date))
       )
@@ -1846,10 +1883,12 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const headerId = await ensureTaskAllocationHeader(Number(taskId), Number(userId), {
       allocationMode: header?.allocationMode,
       splitOrder: header?.splitOrder,
-      plannedHours: header?.plannedHours ?? allocations.reduce((sum: number, allocation: any) => sum + (parseFloat(String(allocation?.hours || 0)) || 0), 0),
+      plannedHours: roundToPlanningStep(
+        Number(header?.plannedHours || normalizedAllocations.reduce((sum: number, allocation: any) => sum + (Number(allocation?.hours || 0)), 0))
+      ),
       createdBy: req.user?.userId,
       forceCreate: !!appendToExistingUserSlice,
-      hoursPerDay: header?.hoursPerDay,
+      hoursPerDay: roundToPlanningStep(Number(header?.hoursPerDay || 0)),
     });
 
     if (!appendToExistingUserSlice) {
@@ -1884,9 +1923,9 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     // Insert new allocations with start and end times
-    if (allocations.length > 0) {
+    if (normalizedAllocations.length > 0) {
       if (dbProvider === 'mssql') {
-        for (const allocation of allocations) {
+        for (const allocation of normalizedAllocations) {
           await pool.execute(
             `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
              VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
@@ -1902,7 +1941,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
           );
         }
       } else {
-        const values = allocations.map((a: any) => [
+        const values = normalizedAllocations.map((a: any) => [
           taskId,
           headerId,
           userId,
@@ -1922,7 +1961,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const updatedPlanRange = await recomputeTaskPlanDatesFromAllocations(Number(taskId), req.user?.userId);
     const newEndDate = updatedPlanRange.endDate;
 
-    if (allocations.length > 0) {
+    if (normalizedAllocations.length > 0) {
       
       // Get task info for notification
       const [taskInfo] = await pool.execute<RowDataPacket[]>(
@@ -1935,7 +1974,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
       // Notify user about allocation (if different from current user making the allocation)
       if (taskInfo.length > 0 && userId !== req.user?.userId) {
-        const totalHours = allocations.reduce((sum: number, a: any) => sum + parseFloat(a.hours || 0), 0);
+        const totalHours = normalizedAllocations.reduce((sum: number, a: any) => sum + Number(a.hours || 0), 0);
         await createNotification(
           userId,
           'task_allocated',
@@ -2073,6 +2112,270 @@ router.delete('/delete', authenticateToken, async (req: AuthRequest, res: Respon
 });
 
 // Delete allocations by allocation header slice
+router.get('/header/:headerId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const headerId = Number(req.params.headerId);
+    if (!Number.isFinite(headerId) || headerId <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid headerId' });
+    }
+
+    const [headerRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT tah.Id, tah.TaskId, tah.UserId, tah.AllocationMode, tah.SplitOrder, tah.PlannedHours,
+              tah.HoursPerDay, tah.PlannedStartDate, tah.PlannedEndDate,
+              t.TaskName, t.ProjectId, p.ProjectName, p.OrganizationId,
+              u.Username, u.FirstName, u.LastName,
+              om.Role,
+              COALESCE(pg.CanPlanTasks, 0) as CanPlanTasks
+       FROM TaskAllocationHeaders tah
+       INNER JOIN Tasks t ON tah.TaskId = t.Id
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       INNER JOIN Users u ON tah.UserId = u.Id
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId AND om.UserId = ?
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE tah.Id = ?`,
+      [req.user?.userId, headerId]
+    );
+
+    if (headerRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Allocation header not found or access denied' });
+    }
+
+    const headerRow = headerRows[0];
+    const canView =
+      headerRow.Role === 'Owner' ||
+      headerRow.Role === 'Admin' ||
+      Number(headerRow.CanPlanTasks || 0) === 1;
+
+    if (!canView) {
+      return res.status(403).json({ success: false, message: 'No permission to view this allocation slice' });
+    }
+
+    const [allocations] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id, TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual
+       FROM TaskAllocations
+       WHERE TaskAllocationHeaderId = ?
+       ORDER BY AllocationDate ASC, StartTime ASC, Id ASC`,
+      [headerId]
+    );
+
+    res.json({
+      success: true,
+      header: {
+        Id: Number(headerRow.Id),
+        TaskId: Number(headerRow.TaskId),
+        UserId: Number(headerRow.UserId),
+        AllocationMode: headerRow.AllocationMode,
+        SplitOrder: headerRow.SplitOrder === null || headerRow.SplitOrder === undefined ? null : Number(headerRow.SplitOrder),
+        PlannedHours: headerRow.PlannedHours === null || headerRow.PlannedHours === undefined ? null : Number(headerRow.PlannedHours),
+        HoursPerDay: headerRow.HoursPerDay === null || headerRow.HoursPerDay === undefined ? null : Number(headerRow.HoursPerDay),
+        PlannedStartDate: headerRow.PlannedStartDate ? normalizeDateKey(headerRow.PlannedStartDate) : null,
+        PlannedEndDate: headerRow.PlannedEndDate ? normalizeDateKey(headerRow.PlannedEndDate) : null,
+      },
+      task: {
+        Id: Number(headerRow.TaskId),
+        TaskName: String(headerRow.TaskName || ''),
+        ProjectId: Number(headerRow.ProjectId),
+        ProjectName: String(headerRow.ProjectName || ''),
+        OrganizationId: Number(headerRow.OrganizationId),
+      },
+      user: {
+        Id: Number(headerRow.UserId),
+        Username: String(headerRow.Username || ''),
+        FirstName: String(headerRow.FirstName || ''),
+        LastName: String(headerRow.LastName || ''),
+      },
+      allocations: allocations.map((allocation) => ({
+        Id: Number(allocation.Id),
+        TaskId: Number(allocation.TaskId),
+        TaskAllocationHeaderId: allocation.TaskAllocationHeaderId === null || allocation.TaskAllocationHeaderId === undefined
+          ? null
+          : Number(allocation.TaskAllocationHeaderId),
+        UserId: Number(allocation.UserId),
+        AllocationDate: normalizeDateKey(allocation.AllocationDate),
+        AllocatedHours: Number(allocation.AllocatedHours || 0),
+        StartTime: allocation.StartTime ? String(allocation.StartTime).slice(0, 5) : '09:00',
+        EndTime: allocation.EndTime ? String(allocation.EndTime).slice(0, 5) : '17:00',
+        IsManual: Number(allocation.IsManual || 0),
+      })),
+    });
+  } catch (error) {
+    console.error('Error loading allocation header detail:', error);
+    res.status(500).json({ success: false, message: 'Failed to load allocation header detail' });
+  }
+});
+
+router.put('/header/:headerId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const headerId = Number(req.params.headerId);
+    const requestedStartDate = normalizeDateKey(req.body?.startDate);
+    const requestedTotalHours = roundToPlanningStep(Number(req.body?.totalHours || 0));
+    const requestedHoursPerDay = roundToPlanningStep(Number(req.body?.hoursPerDay || 0));
+    const rawAllocations = Array.isArray(req.body?.allocations) ? req.body.allocations : [];
+
+    if (!Number.isFinite(headerId) || headerId <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid headerId' });
+    }
+
+    const [headerRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT tah.Id, tah.TaskId, tah.UserId,
+              om.Role,
+              COALESCE(pg.CanManageTasks, 0) as CanManageTasks,
+              COALESCE(pg.CanPlanTasks, 0) as CanPlanTasks
+       FROM TaskAllocationHeaders tah
+       INNER JOIN Tasks t ON tah.TaskId = t.Id
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId AND om.UserId = ?
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE tah.Id = ?`,
+      [req.user?.userId, headerId]
+    );
+
+    if (headerRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Allocation header not found or access denied' });
+    }
+
+    const headerRow = headerRows[0];
+    const canPlan = headerRow.Role === 'Owner' || headerRow.Role === 'Admin' || Number(headerRow.CanPlanTasks || 0) === 1;
+    if (!canPlan) {
+      return res.status(403).json({ success: false, message: 'No permission to plan tasks' });
+    }
+
+    const taskId = Number(headerRow.TaskId);
+    const userId = Number(headerRow.UserId);
+
+    const isValidTime = (value: string): boolean => /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
+
+    const normalizedAllocations = rawAllocations
+      .map((item: any) => {
+        const date = normalizeDateKey(item?.date || item?.AllocationDate);
+        const hours = roundToPlanningStep(Number(item?.hours ?? item?.AllocatedHours ?? 0));
+        const startTime = String(item?.startTime || item?.StartTime || '09:00').slice(0, 5);
+        const endTime = String(item?.endTime || item?.EndTime || '17:00').slice(0, 5);
+        return { date, hours, startTime, endTime };
+      })
+      .filter((item: { date: string; hours: number }) => /^\d{4}-\d{2}-\d{2}$/.test(item.date) && Number.isFinite(item.hours) && item.hours > 0)
+      .sort((a: { date: string }, b: { date: string }) => a.date.localeCompare(b.date));
+
+    if (normalizedAllocations.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one allocation day with positive hours is required' });
+    }
+
+    const hasInvalidStepHours = normalizedAllocations.some((item: { hours: number }) => !isPlanningStepValue(item.hours));
+    if (hasInvalidStepHours) {
+      return res.status(400).json({ success: false, message: 'Planning supports 30-minute steps only (0.5h)' });
+    }
+
+    if (requestedHoursPerDay > 0 && !isPlanningStepValue(requestedHoursPerDay)) {
+      return res.status(400).json({ success: false, message: 'Hours per day must use 30-minute steps (0.5h)' });
+    }
+
+    const hasInvalidTimes = normalizedAllocations.some((item: { startTime: string; endTime: string }) => !isValidTime(item.startTime) || !isValidTime(item.endTime));
+    if (hasInvalidTimes) {
+      return res.status(400).json({ success: false, message: 'StartTime and EndTime must use HH:MM format' });
+    }
+
+    const allocationDates = normalizedAllocations.map((item: { date: string }) => item.date);
+    const firstDate = allocationDates[0];
+    const lastDate = allocationDates[allocationDates.length - 1];
+
+    const holidayDateSet = await getHolidayDateSetForUser(userId, firstDate, lastDate);
+    const blockedDates = Array.from(new Set(allocationDates.filter((date: string) => holidayDateSet.has(date))));
+    if (blockedDates.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot allocate on holidays for this user: ${blockedDates.join(', ')}`
+      });
+    }
+
+    const [existingRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT AllocationDate
+       FROM TaskAllocations
+       WHERE TaskAllocationHeaderId = ?`,
+      [headerId]
+    );
+
+    const previousDateSet = new Set(
+      existingRows
+        .map((row) => normalizeDateKey(row.AllocationDate))
+        .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+    );
+    const newDateSet = new Set(allocationDates);
+
+    await pool.execute(
+      `DELETE FROM TaskAllocations WHERE TaskAllocationHeaderId = ?`,
+      [headerId]
+    );
+
+    if (dbProvider === 'mssql') {
+      for (const allocation of normalizedAllocations) {
+        await pool.execute(
+          `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+          [taskId, headerId, userId, allocation.date, allocation.hours, allocation.startTime, allocation.endTime]
+        );
+      }
+    } else {
+      const values = normalizedAllocations.map((allocation: { date: string; hours: number; startTime: string; endTime: string }) => [
+        taskId,
+        headerId,
+        userId,
+        allocation.date,
+        allocation.hours,
+        allocation.startTime,
+        allocation.endTime,
+        0,
+      ]);
+
+      await pool.query(
+        'INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual) VALUES ?',
+        [values]
+      );
+    }
+
+    const removedDates = Array.from(previousDateSet).filter((date) => !newDateSet.has(date));
+    if (removedDates.length > 0) {
+      const removedPlaceholders = removedDates.map(() => '?').join(',');
+      await pool.execute(
+        `DELETE FROM TaskChildAllocations
+         WHERE TaskAllocationHeaderId = ?
+           AND AllocationDate IN (${removedPlaceholders})
+           AND NOT EXISTS (
+             SELECT 1
+             FROM TaskAllocations ta
+             WHERE ta.TaskAllocationHeaderId = TaskChildAllocations.TaskAllocationHeaderId
+               AND ta.AllocationDate = TaskChildAllocations.AllocationDate
+           )`,
+        [headerId, ...removedDates]
+      );
+    }
+
+    const computedTotalHours = roundToPlanningStep(normalizedAllocations.reduce((sum: number, item: { hours: number }) => sum + item.hours, 0));
+    const plannedHours = Number.isFinite(requestedTotalHours) && requestedTotalHours > 0 ? requestedTotalHours : computedTotalHours;
+    const hoursPerDay = Number.isFinite(requestedHoursPerDay) && requestedHoursPerDay > 0 ? requestedHoursPerDay : null;
+
+    await pool.execute(
+      `UPDATE TaskAllocationHeaders
+       SET PlannedHours = ?, HoursPerDay = ?
+       WHERE Id = ?`,
+      [plannedHours, hoursPerDay, headerId]
+    );
+
+    await recomputeTaskPlanDatesFromAllocations(taskId, req.user?.userId);
+
+    res.json({
+      success: true,
+      message: 'Allocation slice updated successfully',
+      headerId,
+      startDate: /^\d{4}-\d{2}-\d{2}$/.test(requestedStartDate) ? requestedStartDate : firstDate,
+      endDate: lastDate,
+      totalHours: computedTotalHours,
+    });
+  } catch (error) {
+    console.error('Error updating allocation slice:', error);
+    res.status(500).json({ success: false, message: 'Failed to update allocation slice' });
+  }
+});
+
 router.delete('/header/:headerId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const headerId = Number(req.params.headerId);
@@ -2105,16 +2408,11 @@ router.delete('/header/:headerId', authenticateToken, async (req: AuthRequest, r
 
     const taskId = Number(headerRow.TaskId);
 
-    // Remove child allocations that belong to this exact parent-date slice
+    // Remove child allocations that belong to this exact slice header
     await pool.execute(
       `DELETE FROM TaskChildAllocations
-       WHERE ParentTaskId = ?
-         AND AllocationDate IN (
-           SELECT AllocationDate
-           FROM TaskAllocations
-           WHERE TaskAllocationHeaderId = ?
-         )`,
-      [taskId, headerId]
+       WHERE TaskAllocationHeaderId = ?`,
+      [headerId]
     );
 
     await pool.execute(
@@ -2192,15 +2490,15 @@ router.delete('/header/:headerId/dates', authenticateToken, async (req: AuthRequ
 
     await pool.execute(
       `DELETE FROM TaskChildAllocations
-       WHERE ParentTaskId = ?
+       WHERE TaskAllocationHeaderId = ?
          AND AllocationDate IN (${placeholders})
          AND NOT EXISTS (
            SELECT 1
            FROM TaskAllocations ta
-           WHERE ta.TaskId = TaskChildAllocations.ParentTaskId
+           WHERE ta.TaskAllocationHeaderId = TaskChildAllocations.TaskAllocationHeaderId
              AND ta.AllocationDate = TaskChildAllocations.AllocationDate
          )`,
-      [taskId, ...dates]
+      [headerId, ...dates]
     );
 
     const [remainingRows] = await pool.execute<RowDataPacket[]>(
@@ -2692,12 +2990,20 @@ router.get('/my-allocations', authenticateToken, async (req: AuthRequest, res: R
  */
 router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { taskId, userId, allocationDate, allocatedHours } = req.body;
+    const { taskId, userId, allocationDate } = req.body;
+    const allocatedHours = roundToPlanningStep(Number(req.body?.allocatedHours || 0));
 
     if (!taskId || !userId || !allocationDate || !allocatedHours) {
       return res.status(400).json({
         success: false,
         message: 'TaskId, UserId, AllocationDate, and AllocatedHours are required'
+      });
+    }
+
+    if (!isPlanningStepValue(allocatedHours)) {
+      return res.status(400).json({
+        success: false,
+        message: 'AllocatedHours must use 30-minute steps (0.5h)'
       });
     }
 
@@ -2944,12 +3250,19 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
 router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { allocatedHours } = req.body;
+    const allocatedHours = roundToPlanningStep(Number(req.body?.allocatedHours || 0));
 
     if (!allocatedHours) {
       return res.status(400).json({
         success: false,
         message: 'AllocatedHours is required'
+      });
+    }
+
+    if (!isPlanningStepValue(allocatedHours)) {
+      return res.status(400).json({
+        success: false,
+        message: 'AllocatedHours must use 30-minute steps (0.5h)'
       });
     }
 

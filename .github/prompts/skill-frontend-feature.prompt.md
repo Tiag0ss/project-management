@@ -39,6 +39,7 @@ Out of scope:
    - Normal drag moves full allocation header slice.
    - `Ctrl+drag` enables partial slice by **hours**.
    - Avoid date-prompt slicing when partial slice mode is requested.
+   - For parent task slices, child rows are also header-driven via `TaskChildAllocations.TaskAllocationHeaderId`; never infer slice membership from dates alone.
 14. When a user selector exists in planning split/assignment flows, prefer the existing searchable select component over a plain `<select>` when user list can be large.
 
 ## Output Contract

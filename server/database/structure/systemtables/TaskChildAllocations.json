@@ -16,6 +16,12 @@
       "Comment": "Foreign key - reference to parent Tasks.Id"
     },
     {
+      "FieldName": "TaskAllocationHeaderId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Optional reference to TaskAllocationHeaders.Id for slice-aware child allocations"
+    },
+    {
       "FieldName": "ChildTaskId",
       "DataType": "int",
       "NotNullable": true,

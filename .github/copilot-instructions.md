@@ -186,7 +186,7 @@ Projects (Id, OrganizationId, ProjectName, Description, Status, StartDate, EndDa
 Tasks (Id, ProjectId, TaskName, Description, Status, Priority, EstimatedHours, AssignedTo, PlannedStartDate, PlannedEndDate, DependsOnTaskId, ParentTaskId)
 TaskAllocationHeaders (Id, TaskId, UserId, AllocationMode, SplitOrder, PlannedHours, CreatedBy)
 TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate DATE, AllocatedHours DECIMAL(4,2))
-TaskChildAllocations (ParentTaskId, ChildTaskId, UserId, AllocationDate DATE, AllocatedHours DECIMAL(4,2))
+TaskChildAllocations (ParentTaskId, TaskAllocationHeaderId, ChildTaskId, UserId, AllocationDate DATE, AllocatedHours DECIMAL(4,2))
 TimeEntries (Id, TaskId, UserId, WorkDate DATE, Hours DECIMAL(4,2), Description)
 ProjectStatuses, TaskStatuses, TaskPriorities (Custom status values per organization)
 ```
@@ -201,6 +201,7 @@ ProjectStatuses, TaskStatuses, TaskPriorities (Custom status values per organiza
 - TaskAllocations belong to **TaskAllocationHeaders** (logical planning slices per task/user)
 - Tasks have TaskAllocations (resource planning) and TimeEntries (actual work)
 - **Parent tasks can have TaskChildAllocations** (allocating parent task time to specific subtasks)
+- **TaskChildAllocations are slice-aware via `TaskAllocationHeaderId`**; when moving/replanning a slice, always filter, recalculate, insert, and delete child allocations by the same header ID so other slices are untouched
 - Tasks can have dependencies (DependsOnTaskId)
 - Users have daily work capacity (WorkHoursMonday through WorkHoursSunday)
 
@@ -494,6 +495,8 @@ className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-
 ### Allocation Header Rules (CRITICAL)
 - New planning inserts must always set `TaskAllocations.TaskAllocationHeaderId`.
 - Any replan/push-forward/manual flow that creates allocations must attach a header ID.
+- New child planning inserts must always set `TaskChildAllocations.TaskAllocationHeaderId` to the parent slice header.
+- Any parent slice move/replan must filter child allocations by `TaskChildAllocations.TaskAllocationHeaderId`, not by date alone.
 - Deletions for slice operations should target header-aware endpoints when available (header or header+hours), not broad task/user/date deletions.
 - Task Details → Planned Allocations must group by allocation header and allow expand/collapse to inspect per-day rows.
 - On server startup, migrations must backfill headers for legacy allocations (`TaskAllocationHeaderId IS NULL`) and fix orphan header references.

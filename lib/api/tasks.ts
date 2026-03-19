@@ -25,6 +25,7 @@ export interface Task {
   Priority: number | null;
   PriorityName?: string;
   PriorityColor?: string;
+  PrioritySortOrder?: number | null;
   TaskType?: number | null;
   TaskTypeName?: string;
   TaskTypeColor?: string;

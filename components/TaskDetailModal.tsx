@@ -1439,6 +1439,14 @@ export default function TaskDetailModal({
 
   const groupedTaskAllocations = React.useMemo(() => {
     type AllocationGroup = {
+      dailySummaries: Array<{
+        date: string;
+        totalHours: number;
+        startTime: string;
+        endTime: string;
+        slotCount: number;
+        allocations: TaskAllocation[];
+      }>;
       key: string;
       headerId: number | null;
       userId: number;
@@ -1470,6 +1478,7 @@ export default function TaskDetailModal({
         if (allocationDate > existing.endDate) existing.endDate = allocationDate;
       } else {
         groups.set(groupKey, {
+          dailySummaries: [],
           key: groupKey,
           headerId,
           userId: allocation.UserId,
@@ -1495,6 +1504,45 @@ export default function TaskDetailModal({
           return String(a.StartTime || '00:00').localeCompare(String(b.StartTime || '00:00'));
         })
       }))
+      .map((group) => {
+        const dailyMap = new Map<string, {
+          date: string;
+          totalHours: number;
+          startTime: string;
+          endTime: string;
+          slotCount: number;
+          allocations: TaskAllocation[];
+        }>();
+
+        for (const allocation of group.allocations) {
+          const date = String(allocation.AllocationDate).split('T')[0];
+          const startTime = String(allocation.StartTime || '00:00');
+          const endTime = String(allocation.EndTime || '00:00');
+          const existing = dailyMap.get(date);
+
+          if (existing) {
+            existing.totalHours += Number(allocation.AllocatedHours || 0);
+            existing.startTime = existing.startTime < startTime ? existing.startTime : startTime;
+            existing.endTime = existing.endTime > endTime ? existing.endTime : endTime;
+            existing.slotCount += 1;
+            existing.allocations.push(allocation);
+          } else {
+            dailyMap.set(date, {
+              date,
+              totalHours: Number(allocation.AllocatedHours || 0),
+              startTime,
+              endTime,
+              slotCount: 1,
+              allocations: [allocation],
+            });
+          }
+        }
+
+        return {
+          ...group,
+          dailySummaries: Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+        };
+      })
       .sort((a, b) => {
         const orderA = a.splitOrder ?? Number.MAX_SAFE_INTEGER;
         const orderB = b.splitOrder ?? Number.MAX_SAFE_INTEGER;
@@ -2818,7 +2866,7 @@ export default function TaskDetailModal({
                                     {new Date(`${group.endDate}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                   </td>
                                   <td className="px-5 py-3 text-sm text-right text-gray-700 dark:text-gray-300 whitespace-nowrap">
-                                    {group.allocations.length}
+                                    {group.dailySummaries.length}
                                   </td>
                                   <td className="px-5 py-3 text-sm text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">
                                     {group.totalHours.toFixed(1)}h
@@ -2830,35 +2878,43 @@ export default function TaskDetailModal({
                                   )}
                                 </tr>
 
-                                {isExpanded && group.allocations.map((allocation) => (
-                                  <tr key={allocation.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/20 transition-colors">
+                                {isExpanded && group.dailySummaries.map((summary) => {
+                                  const singleManualAllocation = summary.allocations.length === 1 && summary.allocations[0].IsManual === 1
+                                    ? summary.allocations[0]
+                                    : null;
+
+                                  return (
+                                  <tr key={`${group.key}-${summary.date}`} className="hover:bg-gray-50 dark:hover:bg-gray-700/20 transition-colors">
                                     <td className="px-3 py-3"></td>
                                     <td className="px-5 py-3 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                                      {new Date(String(allocation.AllocationDate).includes('T') ? String(allocation.AllocationDate) : `${allocation.AllocationDate}T12:00:00`).toLocaleDateString()}
+                                      {new Date(`${summary.date}T12:00:00`).toLocaleDateString()}
                                     </td>
                                     <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                      {allocation.Username || `User ${allocation.UserId}`}
+                                      {group.userName}
                                     </td>
                                     <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                      {allocation.StartTime || '-'} → {allocation.EndTime || '-'}
+                                      {summary.startTime || '-'} → {summary.endTime || '-'}
+                                      {summary.slotCount > 1 && (
+                                        <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">({summary.slotCount} blocks)</span>
+                                      )}
                                     </td>
                                     <td className="px-5 py-3 text-sm text-right text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                      1
+                                      {summary.slotCount}
                                     </td>
                                     <td className="px-5 py-3 text-sm text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">
-                                      {parseFloat(allocation.AllocatedHours as any).toFixed(1)}h
+                                      {summary.totalHours.toFixed(1)}h
                                     </td>
                                     {!hasChildren && (
                                       <td className="px-5 py-3 text-sm text-center whitespace-nowrap">
-                                        {allocation.IsManual === 1 ? (
+                                        {singleManualAllocation ? (
                                           <div className="flex items-center justify-center gap-1">
                                             <button
                                               onClick={() => setManualAllocationModal({
                                                 show: true,
-                                                allocationId: allocation.Id || null,
-                                                userId: allocation.UserId,
-                                                allocationDate: new Date(allocation.AllocationDate).toISOString().split('T')[0],
-                                                allocatedHours: String(allocation.AllocatedHours),
+                                                allocationId: singleManualAllocation.Id || null,
+                                                userId: singleManualAllocation.UserId,
+                                                allocationDate: new Date(singleManualAllocation.AllocationDate).toISOString().split('T')[0],
+                                                allocatedHours: String(singleManualAllocation.AllocatedHours),
                                                 mode: 'edit'
                                               })}
                                               className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
@@ -2870,7 +2926,7 @@ export default function TaskDetailModal({
                                               </svg>
                                             </button>
                                             <button
-                                              onClick={() => handleDeleteManualAllocation(allocation.Id!)}
+                                              onClick={() => handleDeleteManualAllocation(singleManualAllocation.Id!)}
                                               className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
                                               title="Delete"
                                               aria-label="Delete"
@@ -2880,13 +2936,15 @@ export default function TaskDetailModal({
                                               </svg>
                                             </button>
                                           </div>
+                                        ) : summary.allocations.some((allocation) => allocation.IsManual === 1) ? (
+                                          <span className="text-gray-400 dark:text-gray-600 text-xs">Grouped</span>
                                         ) : (
                                           <span className="text-gray-400 dark:text-gray-600 text-xs">Auto</span>
                                         )}
                                       </td>
                                     )}
                                   </tr>
-                                ))}
+                                )})}
                               </React.Fragment>
                             );
                           })}

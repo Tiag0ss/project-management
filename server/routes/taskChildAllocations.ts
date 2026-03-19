@@ -73,6 +73,7 @@ const getHolidayDateSetForUser = async (userId: number, startDate: string, endDa
  */
 // Save child allocations in batch
 router.post('/batch', authenticateToken, async (req: AuthRequest, res: Response) => {
+  let connection: Awaited<ReturnType<typeof pool.getConnection>> | null = null;
   try {
     const { allocations, replaceParent } = req.body;
 
@@ -111,9 +112,12 @@ router.post('/batch', authenticateToken, async (req: AuthRequest, res: Response)
       }
     }
 
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
     const shouldReplaceParent = replaceParent !== false;
     if (shouldReplaceParent) {
-      await pool.execute(
+      await connection.execute(
         'DELETE FROM TaskChildAllocations WHERE ParentTaskId = ?',
         [parentTaskId]
       );
@@ -124,9 +128,10 @@ router.post('/batch', authenticateToken, async (req: AuthRequest, res: Response)
     const placeholders: string[] = [];
 
     for (const alloc of allocations) {
-      placeholders.push('(?, ?, ?, ?, ?, ?, ?)');
+      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?)');
       values.push(
         alloc.ParentTaskId,
+        alloc.TaskAllocationHeaderId || null,
         alloc.ChildTaskId,
         alloc.AllocationDate,
         alloc.AllocatedHours,
@@ -138,17 +143,17 @@ router.post('/batch', authenticateToken, async (req: AuthRequest, res: Response)
 
     const query = `
       INSERT INTO TaskChildAllocations 
-      (ParentTaskId, ChildTaskId, AllocationDate, AllocatedHours, Level, StartTime, EndTime)
+      (ParentTaskId, TaskAllocationHeaderId, ChildTaskId, AllocationDate, AllocatedHours, Level, StartTime, EndTime)
       VALUES ${placeholders.join(', ')}
     `;
 
-    await pool.execute(query, values);
+    await connection.execute(query, values);
 
     // Update PlannedStartDate and PlannedEndDate for each child task
     const childTaskIds = [...new Set(allocations.map((a: any) => a.ChildTaskId))];
     
     for (const childTaskId of childTaskIds) {
-      const [childDateRange] = await pool.execute<RowDataPacket[]>(
+      const [childDateRange] = await connection.execute<RowDataPacket[]>(
         `SELECT MIN(AllocationDate) as PlannedStartDate, MAX(AllocationDate) as PlannedEndDate
          FROM TaskChildAllocations
          WHERE ChildTaskId = ?`,
@@ -163,12 +168,14 @@ router.post('/batch', authenticateToken, async (req: AuthRequest, res: Response)
         : null;
 
       if (plannedStartDate && plannedEndDate) {
-        await pool.execute(
+        await connection.execute(
           'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ? WHERE Id = ?',
           [plannedStartDate, plannedEndDate, childTaskId]
         );
       }
     }
+
+    await connection.commit();
 
     res.json({ 
       success: true, 
@@ -177,8 +184,17 @@ router.post('/batch', authenticateToken, async (req: AuthRequest, res: Response)
     });
 
   } catch (error) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        console.error('Error rolling back child allocations transaction:', rollbackError);
+      }
+    }
     console.error('Error saving child allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to save child allocations' });
+  } finally {
+    connection?.release();
   }
 });
 
@@ -337,6 +353,199 @@ router.get('/user/:userId/date/:date', authenticateToken, async (req: AuthReques
   } catch (error) {
     console.error('Error fetching user child allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch child allocations' });
+  }
+});
+
+// Delete child allocations for a specific slice header
+router.delete('/header/:headerId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const headerId = Number(req.params.headerId || 0);
+
+    if (!Number.isFinite(headerId) || headerId <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid headerId is required' });
+    }
+
+    const [affectedChildren] = await pool.execute<RowDataPacket[]>(
+      `SELECT DISTINCT ChildTaskId
+       FROM TaskChildAllocations
+       WHERE TaskAllocationHeaderId = ?`,
+      [headerId]
+    );
+
+    const [deleteResult] = await pool.execute<ResultSetHeader>(
+      `DELETE FROM TaskChildAllocations
+       WHERE TaskAllocationHeaderId = ?`,
+      [headerId]
+    );
+
+    const affectedChildIds = affectedChildren
+      .map((row) => Number(row.ChildTaskId))
+      .filter((id) => Number.isFinite(id) && id > 0);
+
+    for (const childTaskId of affectedChildIds) {
+      const [childDateRange] = await pool.execute<RowDataPacket[]>(
+        `SELECT MIN(AllocationDate) as PlannedStartDate, MAX(AllocationDate) as PlannedEndDate
+         FROM TaskChildAllocations
+         WHERE ChildTaskId = ?`,
+        [childTaskId]
+      );
+
+      const plannedStartDate = childDateRange[0]?.PlannedStartDate
+        ? normalizeDateKey(childDateRange[0].PlannedStartDate)
+        : null;
+      const plannedEndDate = childDateRange[0]?.PlannedEndDate
+        ? normalizeDateKey(childDateRange[0].PlannedEndDate)
+        : null;
+
+      if (plannedStartDate && plannedEndDate) {
+        await pool.execute(
+          'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ? WHERE Id = ?',
+          [plannedStartDate, plannedEndDate, childTaskId]
+        );
+      } else {
+        const [directAllocs] = await pool.execute<RowDataPacket[]>(
+          'SELECT COUNT(*) as count FROM TaskAllocations WHERE TaskId = ?',
+          [childTaskId]
+        );
+        const hasDirectAllocs = Number(directAllocs[0]?.count || 0) > 0;
+        if (!hasDirectAllocs) {
+          await pool.execute(
+            'UPDATE Tasks SET PlannedStartDate = NULL, PlannedEndDate = NULL WHERE Id = ?',
+            [childTaskId]
+          );
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Child allocation slice deleted successfully',
+      deletedCount: Number((deleteResult as any)?.affectedRows || 0),
+      headerId,
+    });
+  } catch (error) {
+    console.error('Error deleting child allocation slice:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete child allocation slice' });
+  }
+});
+
+// Delete child allocations for a parent task limited to specific dates
+router.delete('/parent/:parentTaskId/dates', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const parentTaskId = Number(req.params.parentTaskId || 0);
+    const rawDates = Array.isArray(req.body?.dates) ? req.body.dates : [];
+    const sourceHeaderId = Number(req.body?.sourceHeaderId || 0);
+    const rawChildTaskIds = Array.isArray(req.body?.childTaskIds) ? req.body.childTaskIds : [];
+
+    if (!Number.isFinite(parentTaskId) || parentTaskId <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid parentTaskId is required' });
+    }
+
+    const dates = Array.from(
+      new Set(
+        rawDates
+          .map((value: unknown) => normalizeDateKey(value))
+          .filter((date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+      )
+    );
+
+    if (dates.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one valid date is required' });
+    }
+
+    const childTaskIds = Array.from(
+      new Set(
+        rawChildTaskIds
+          .map((value: unknown) => Number(value))
+          .filter((id: number) => Number.isFinite(id) && id > 0)
+      )
+    );
+
+    const datePlaceholders = dates.map(() => '?').join(', ');
+
+    const scopedByHeaderClause = sourceHeaderId > 0
+      ? ` AND TaskChildAllocations.TaskAllocationHeaderId = ?`
+      : '';
+
+    const childTaskFilterClause = childTaskIds.length > 0
+      ? ` AND ChildTaskId IN (${childTaskIds.map(() => '?').join(', ')})`
+      : '';
+
+    const scopedParams = sourceHeaderId > 0
+      ? [parentTaskId, ...dates, ...childTaskIds, sourceHeaderId]
+      : [parentTaskId, ...dates, ...childTaskIds];
+
+    const [affectedChildren] = await pool.execute<RowDataPacket[]>(
+      `SELECT DISTINCT ChildTaskId
+       FROM TaskChildAllocations
+       WHERE ParentTaskId = ?
+         AND AllocationDate IN (${datePlaceholders})
+        ${childTaskFilterClause}
+         ${scopedByHeaderClause}`,
+      scopedParams
+    );
+
+    const [deleteResult] = await pool.execute<ResultSetHeader>(
+      `DELETE FROM TaskChildAllocations
+       WHERE ParentTaskId = ?
+         AND AllocationDate IN (${datePlaceholders})
+        ${childTaskFilterClause}
+         ${scopedByHeaderClause}`,
+      scopedParams
+    );
+
+    const affectedChildIds = affectedChildren
+      .map((row) => Number(row.ChildTaskId))
+      .filter((id) => Number.isFinite(id) && id > 0);
+
+    for (const childTaskId of affectedChildIds) {
+      const [childDateRange] = await pool.execute<RowDataPacket[]>(
+        `SELECT MIN(AllocationDate) as PlannedStartDate, MAX(AllocationDate) as PlannedEndDate
+         FROM TaskChildAllocations
+         WHERE ChildTaskId = ?`,
+        [childTaskId]
+      );
+
+      const plannedStartDate = childDateRange[0]?.PlannedStartDate
+        ? normalizeDateKey(childDateRange[0].PlannedStartDate)
+        : null;
+      const plannedEndDate = childDateRange[0]?.PlannedEndDate
+        ? normalizeDateKey(childDateRange[0].PlannedEndDate)
+        : null;
+
+      if (plannedStartDate && plannedEndDate) {
+        await pool.execute(
+          'UPDATE Tasks SET PlannedStartDate = ?, PlannedEndDate = ? WHERE Id = ?',
+          [plannedStartDate, plannedEndDate, childTaskId]
+        );
+      } else {
+        const [directAllocs] = await pool.execute<RowDataPacket[]>(
+          'SELECT COUNT(*) as count FROM TaskAllocations WHERE TaskId = ?',
+          [childTaskId]
+        );
+        const hasDirectAllocs = Number(directAllocs[0]?.count || 0) > 0;
+        if (!hasDirectAllocs) {
+          await pool.execute(
+            'UPDATE Tasks SET PlannedStartDate = NULL, PlannedEndDate = NULL WHERE Id = ?',
+            [childTaskId]
+          );
+        }
+      }
+    }
+
+    const deletedCount = Number((deleteResult as any)?.affectedRows || 0);
+
+    res.json({
+      success: true,
+      message: 'Child allocations deleted for selected dates',
+      deletedCount,
+      dates,
+      childTaskIds,
+      sourceHeaderId: sourceHeaderId > 0 ? sourceHeaderId : null,
+    });
+  } catch (error) {
+    console.error('Error deleting child allocations by dates:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete child allocations for selected dates' });
   }
 });
 

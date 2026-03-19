@@ -2,7 +2,7 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -12,6 +12,7 @@ import { usersApi, User } from '@/lib/api/users';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { projectMilestonesApi, ProjectMilestone } from '@/lib/api/projectMilestones';
 import Navbar from '@/components/Navbar';
+import AllocationHeaderDetailModal from '@/components/AllocationHeaderDetailModal';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
@@ -20,6 +21,28 @@ import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 
 // Week days constant - reused throughout the component
 const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const PLANNING_HOUR_STEP = 0.5;
+
+const roundToPlanningStep = (value: number | string | null | undefined): number => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return 0;
+  const scaled = Math.round((numericValue / PLANNING_HOUR_STEP) + Number.EPSILON);
+  return Number((scaled * PLANNING_HOUR_STEP).toFixed(2));
+};
+
+const floorToPlanningStep = (value: number | string | null | undefined): number => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return 0;
+  const scaled = Math.floor((numericValue / PLANNING_HOUR_STEP) + 1e-9);
+  return Number((scaled * PLANNING_HOUR_STEP).toFixed(2));
+};
+
+const isPlanningStepValue = (value: number | string | null | undefined): boolean => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return false;
+  const scaled = numericValue / PLANNING_HOUR_STEP;
+  return Math.abs(scaled - Math.round(scaled)) < 1e-9;
+};
 
 const formatDateForInput = (date: Date): string => {
   const year = date.getFullYear();
@@ -116,7 +139,7 @@ export default function PlanningPage() {
   const [taskAllocations, setTaskAllocations] = useState<any[]>([]);
   const [projectMilestones, setProjectMilestones] = useState<ProjectMilestone[]>([]);
   const [allAllocations, setAllAllocations] = useState<{Id?: number; TaskId: number; TaskAllocationHeaderId?: number | null; UserId: number; AllocationDate: string; AllocatedHours: number; IsHobby: number; IsManual?: number; StartTime?: string; EndTime?: string; PlannedStartDate?: string | null; PlannedEndDate?: string | null; HoursPerDay?: number | null}[]>([]);
-  const [childAllocations, setChildAllocations] = useState<{ParentTaskId: number; ChildTaskId: number; AllocationDate: string; AllocatedHours: number; Level: number}[]>([]);
+  const [childAllocations, setChildAllocations] = useState<{ParentTaskId: number; ChildTaskId: number; TaskAllocationHeaderId?: number | null; AllocationDate: string; AllocatedHours: number; Level: number}[]>([]);
   const [taskTimeEntries, setTaskTimeEntries] = useState<any[]>([]);
   const [recurringAllocations, setRecurringAllocations] = useState<any[]>([]);
   const [outlookTimelineEvents, setOutlookTimelineEvents] = useState<PlannerOutlookEvent[]>([]);
@@ -218,6 +241,13 @@ export default function PlanningPage() {
     userId: null,
     headerId: null,
   });
+  const [allocationHeaderModal, setAllocationHeaderModal] = useState<{
+    show: boolean;
+    headerId: number | null;
+  }>({
+    show: false,
+    headerId: null,
+  });
 
   // Extra time modal state
   const [extraTimeModal, setExtraTimeModal] = useState<{
@@ -265,6 +295,8 @@ export default function PlanningPage() {
     currentStartIndex: number;
     currentEndIndex: number;
     columnWidthPx: number;
+    resizeUserId: number | null;
+    resizeHeaderId: number | null;
     isSaving: boolean;
   }>({
     task: null,
@@ -275,9 +307,41 @@ export default function PlanningPage() {
     currentStartIndex: 0,
     currentEndIndex: 0,
     columnWidthPx: 1,
+    resizeUserId: null,
+    resizeHeaderId: null,
     isSaving: false,
   });
   const [isShiftResizeMode, setIsShiftResizeMode] = useState(false);
+  const [shiftResizeSuggestionModal, setShiftResizeSuggestionModal] = useState<{
+    show: boolean;
+    task: Task | null;
+    headerId: number | null;
+    userId: number | null;
+    plannedStartDate: string;
+    plannedEndDate: string;
+    totalHours: number;
+    suggestedHoursPerDay: number;
+    hoursPerDayInput: string;
+    headerMeta: {
+      AllocationMode?: string;
+      SplitOrder?: number | null;
+    };
+    isSubmitting: boolean;
+    error: string;
+  }>({
+    show: false,
+    task: null,
+    headerId: null,
+    userId: null,
+    plannedStartDate: '',
+    plannedEndDate: '',
+    totalHours: 0,
+    suggestedHoursPerDay: 0,
+    hoursPerDayInput: '',
+    headerMeta: {},
+    isSubmitting: false,
+    error: '',
+  });
 
   // Conflict resolution modal state
   const [conflictModal, setConflictModal] = useState<{
@@ -452,6 +516,14 @@ export default function PlanningPage() {
     setTaskContextMenu({ show: false, x: 0, y: 0, openUpward: false, task: null, userId: null, headerId: null });
   };
 
+  const openAllocationHeaderModal = (headerId: number) => {
+    setAllocationHeaderModal({ show: true, headerId });
+  };
+
+  const closeAllocationHeaderModal = () => {
+    setAllocationHeaderModal({ show: false, headerId: null });
+  };
+
   const closeForceDatesModal = () => {
     setForceDatesModal({
       show: false,
@@ -473,9 +545,53 @@ export default function PlanningPage() {
       currentStartIndex: 0,
       currentEndIndex: 0,
       columnWidthPx: 1,
+      resizeUserId: null,
+      resizeHeaderId: null,
       isSaving: false,
     });
   };
+
+  const closeShiftResizeSuggestionModal = () => {
+    setShiftResizeSuggestionModal({
+      show: false,
+      task: null,
+      headerId: null,
+      userId: null,
+      plannedStartDate: '',
+      plannedEndDate: '',
+      totalHours: 0,
+      suggestedHoursPerDay: 0,
+      hoursPerDayInput: '',
+      headerMeta: {},
+      isSubmitting: false,
+      error: '',
+    });
+  };
+
+  const calculateSuggestedHoursPerDay = useCallback((totalHours: number, plannedStartDate: string, plannedEndDate: string): number => {
+    if (!plannedStartDate || !plannedEndDate || !Number.isFinite(totalHours) || totalHours <= 0) {
+      return 0;
+    }
+
+    const startDateObj = new Date(`${plannedStartDate}T12:00:00`);
+    const endDateObj = new Date(`${plannedEndDate}T12:00:00`);
+    const rangeDays = Math.max(1, Math.round((endDateObj.getTime() - startDateObj.getTime()) / 86_400_000) + 1);
+    return roundToPlanningStep(totalHours / rangeDays);
+  }, []);
+
+  const allocationHoursByHeaderId = useMemo(() => {
+    const totals = new Map<number, number>();
+    for (const allocation of allAllocations) {
+      const headerId = Number(allocation.TaskAllocationHeaderId || 0);
+      if (!Number.isFinite(headerId) || headerId <= 0) {
+        continue;
+      }
+      const hours = Number(allocation.AllocatedHours || 0);
+      const previous = totals.get(headerId) || 0;
+      totals.set(headerId, roundToPlanningStep(previous + hours));
+    }
+    return totals;
+  }, [allAllocations]);
 
   const shouldSuppressTaskClick = () => Date.now() < suppressTaskClickUntilRef.current;
   const canUseGanttPlanningActions = () => !!permissions?.canPlanTasks && ganttGroupBy === 'resource';
@@ -1697,6 +1813,58 @@ export default function PlanningPage() {
     return closedDates[0] ? new Date(closedDates[0]) : today;
   };
 
+  const getPrioritySortOrder = (task: Task): number | null => {
+    const configuredOrder = Number(task.PrioritySortOrder);
+    if (Number.isFinite(configuredOrder)) {
+      return configuredOrder;
+    }
+
+    return null;
+  };
+
+  const isTaskUnscheduledForUser = (task: Task, userId?: number | null): boolean => {
+    const selfUnscheduled = Number(task.UnscheduledWork || 0) === 1;
+
+    if (userId === null || userId === undefined) {
+      return selfUnscheduled || hasUnscheduledAssignedDescendant(task.Id);
+    }
+
+    if (selfUnscheduled && isTaskAssignedToUser(task, Number(userId))) {
+      return true;
+    }
+
+    return hasUnscheduledAssignedDescendant(task.Id, Number(userId));
+  };
+
+  const compareTasksForPlanningOrder = (a: Task, b: Task, userId?: number | null): number => {
+    const aIsHobby = isTaskHobby(a);
+    const bIsHobby = isTaskHobby(b);
+    if (aIsHobby !== bIsHobby) {
+      return aIsHobby ? 1 : -1;
+    }
+
+    const aIsUnscheduled = isTaskUnscheduledForUser(a, userId);
+    const bIsUnscheduled = isTaskUnscheduledForUser(b, userId);
+
+    if (aIsUnscheduled && bIsUnscheduled) {
+      const aPriorityOrder = getPrioritySortOrder(a);
+      const bPriorityOrder = getPrioritySortOrder(b);
+      const safePriorityA = aPriorityOrder ?? Number.NEGATIVE_INFINITY;
+      const safePriorityB = bPriorityOrder ?? Number.NEGATIVE_INFINITY;
+      const priorityDiff = safePriorityB - safePriorityA;
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+    }
+
+    const displayOrderDiff = Number(a.DisplayOrder || 0) - Number(b.DisplayOrder || 0);
+    if (displayOrderDiff !== 0) {
+      return displayOrderDiff;
+    }
+
+    return Number(a.Id || 0) - Number(b.Id || 0);
+  };
+
   const getTaskPosition = (
     task: Task,
     columns: TimelineColumn[],
@@ -2165,13 +2333,7 @@ export default function PlanningPage() {
       });
     }
     
-    // Sort: work tasks first, then hobby tasks
-    return result.sort((a, b) => {
-      const aIsHobby = isTaskHobby(a);
-      const bIsHobby = isTaskHobby(b);
-      if (aIsHobby === bIsHobby) return 0;
-      return aIsHobby ? 1 : -1;
-    });
+    return result.sort((a, b) => compareTasksForPlanningOrder(a, b, userId));
   };
 
   const openSubtasksModal = (parentTask: Task) => {
@@ -2442,7 +2604,9 @@ export default function PlanningPage() {
         // Child tasks that appear on those dates in TaskChildAllocations
         const childIdsInSlice = new Set(
           childAllocations
-            .filter(ca => ca.ParentTaskId === task.Id && headerDates.has(normalizeDateKey(ca.AllocationDate)))
+            .filter(ca => ca.ParentTaskId === task.Id)
+            .filter(ca => Number(ca.TaskAllocationHeaderId || 0) === Number(headerId))
+            .filter(ca => headerDates.has(normalizeDateKey(ca.AllocationDate)))
             .map(ca => ca.ChildTaskId)
         );
         if (childIdsInSlice.size > 0) {
@@ -2475,8 +2639,8 @@ export default function PlanningPage() {
     const { task, userId, extraHours, hoursPerDay, leafTasks, selectedSubtaskIds } = extraTimeModal;
     if (!task || !token) return;
 
-    const parsedExtra = parseFloat(extraHours);
-    const parsedHpd = parseFloat(hoursPerDay);
+    const parsedExtra = roundToPlanningStep(parseFloat(extraHours));
+    const parsedHpd = roundToPlanningStep(parseFloat(hoursPerDay));
 
     if (!parsedExtra || parsedExtra <= 0) {
       setExtraTimeModal(prev => ({ ...prev, error: 'Enter a valid number of extra hours (> 0).' }));
@@ -2484,6 +2648,10 @@ export default function PlanningPage() {
     }
     if (!parsedHpd || parsedHpd <= 0) {
       setExtraTimeModal(prev => ({ ...prev, error: 'Enter a valid max hours per day (> 0).' }));
+      return;
+    }
+    if (!isPlanningStepValue(parsedExtra) || !isPlanningStepValue(parsedHpd)) {
+      setExtraTimeModal(prev => ({ ...prev, error: 'Planning supports 30-minute steps only (0.5h).' }));
       return;
     }
 
@@ -2600,6 +2768,7 @@ export default function PlanningPage() {
           const childPayload: Array<{
             ParentTaskId: number; ChildTaskId: number; AllocationDate: string;
             AllocatedHours: number; Level: number; StartTime: string; EndTime: string;
+            TaskAllocationHeaderId?: number | null;
           }> = [];
 
           for (const quota of quotas) {
@@ -2615,6 +2784,7 @@ export default function PlanningPage() {
               childPayload.push({
                 ParentTaskId: task.Id,
                 ChildTaskId: quota.leafTask.Id,
+                TaskAllocationHeaderId: parentSliceResult.headerId ?? null,
                 AllocationDate: slot.date,
                 AllocatedHours: allocated,
                 Level: Math.max(1, getTaskDepthLevel(quota.leafTask, task.Id) + 1),
@@ -2816,7 +2986,9 @@ export default function PlanningPage() {
     task: Task,
     edge: 'start' | 'end',
     startIndex: number,
-    endIndex: number
+    endIndex: number,
+    resizeUserId?: number | null,
+    resizeHeaderId?: number | null,
   ) => {
     if (!canUseGanttPlanningActions() || isGanttSearchActive) {
       return;
@@ -2843,6 +3015,8 @@ export default function PlanningPage() {
       currentStartIndex: startIndex,
       currentEndIndex: endIndex,
       columnWidthPx,
+      resizeUserId: resizeUserId ?? null,
+      resizeHeaderId: resizeHeaderId ?? null,
       isSaving: false,
     });
   };
@@ -2852,7 +3026,9 @@ export default function PlanningPage() {
     task: Task,
     edge: 'start' | 'end',
     startIndex: number,
-    endIndex: number
+    endIndex: number,
+    resizeUserId?: number | null,
+    resizeHeaderId?: number | null,
   ) => {
     // Keep normal drag-and-drop as default interaction.
     // Resize is opt-in to avoid conflicting with task re-planning drag.
@@ -2860,7 +3036,7 @@ export default function PlanningPage() {
       return;
     }
 
-    handleTaskResizeStart(e, task, edge, startIndex, endIndex);
+    handleTaskResizeStart(e, task, edge, startIndex, endIndex, resizeUserId, resizeHeaderId);
   };
 
   useEffect(() => {
@@ -2873,6 +3049,8 @@ export default function PlanningPage() {
       initialStartIndex: taskResizeState.initialStartIndex,
       initialEndIndex: taskResizeState.initialEndIndex,
       columnWidthPx: taskResizeState.columnWidthPx,
+      resizeUserId: taskResizeState.resizeUserId,
+      resizeHeaderId: taskResizeState.resizeHeaderId,
     };
 
     const handleMouseMove = (event: MouseEvent) => {
@@ -2914,6 +3092,42 @@ export default function PlanningPage() {
         return;
       }
 
+      if (resizeSnapshot.resizeHeaderId && resizeSnapshot.resizeUserId) {
+        const headerId = Number(resizeSnapshot.resizeHeaderId);
+        const userId = Number(resizeSnapshot.resizeUserId);
+        const sourceSliceAllocations = allAllocations.filter((allocation) =>
+          Number(allocation.TaskAllocationHeaderId || 0) === headerId &&
+          Number(allocation.UserId || 0) === userId
+        );
+
+        const totalHours = sourceSliceAllocations.reduce((sum, allocation) => sum + Number(allocation.AllocatedHours || 0), 0);
+        if (!Number.isFinite(totalHours) || totalHours <= 0) {
+          closeTaskResize();
+          showAlert('Resize Planning', 'Could not determine total hours for this allocation slice.');
+          return;
+        }
+
+        const suggestedHoursPerDay = calculateSuggestedHoursPerDay(totalHours, plannedStartDate, plannedEndDate);
+
+        closeTaskResize();
+
+        setShiftResizeSuggestionModal({
+          show: true,
+          task: resizeSnapshot.task,
+          headerId,
+          userId,
+          plannedStartDate,
+          plannedEndDate,
+          totalHours: Number(totalHours.toFixed(2)),
+          suggestedHoursPerDay,
+          hoursPerDayInput: String(suggestedHoursPerDay),
+          headerMeta: {},
+          isSubmitting: false,
+          error: '',
+        });
+        return;
+      }
+
       setTaskResizeState((prev) => ({ ...prev, isSaving: true }));
 
       void (async () => {
@@ -2945,7 +3159,74 @@ export default function PlanningPage() {
     taskResizeState.initialStartIndex,
     taskResizeState.initialEndIndex,
     taskResizeState.columnWidthPx,
+    taskResizeState.resizeUserId,
+    taskResizeState.resizeHeaderId,
+    allAllocations,
+    calculateSuggestedHoursPerDay,
   ]);
+
+  const handleConfirmShiftResizeSuggestion = async () => {
+    const {
+      task,
+      headerId,
+      userId,
+      plannedStartDate,
+      totalHours,
+      hoursPerDayInput,
+      headerMeta,
+    } = shiftResizeSuggestionModal;
+
+    if (!task || !headerId || !userId) {
+      return;
+    }
+
+    const parsedTotalHours = roundToPlanningStep(Number(totalHours || 0));
+    const parsedHoursPerDay = roundToPlanningStep(Number(hoursPerDayInput || 0));
+    if (!Number.isFinite(parsedTotalHours) || parsedTotalHours <= 0) {
+      setShiftResizeSuggestionModal((prev) => ({
+        ...prev,
+        error: 'Total hours must be greater than 0 and use 30-minute steps.',
+      }));
+      return;
+    }
+    if (!Number.isFinite(parsedHoursPerDay) || parsedHoursPerDay <= 0) {
+      setShiftResizeSuggestionModal((prev) => ({
+        ...prev,
+        error: 'Hours per day must be greater than 0 and use 30-minute steps.',
+      }));
+      return;
+    }
+
+    setShiftResizeSuggestionModal((prev) => ({
+      ...prev,
+      isSubmitting: true,
+      error: '',
+    }));
+
+    try {
+      await handleReplanAllocationHeader({
+        headerId,
+        taskId: task.Id,
+        userId,
+        startDate: plannedStartDate,
+        totalHours: parsedTotalHours,
+        hoursPerDay: parsedHoursPerDay,
+        header: {
+          AllocationMode: headerMeta.AllocationMode,
+          SplitOrder: headerMeta.SplitOrder,
+        },
+      });
+
+      closeShiftResizeSuggestionModal();
+      showAlert('Resize Planning', 'Allocation slice replanned successfully with the selected hours/day.');
+    } catch (error: any) {
+      setShiftResizeSuggestionModal((prev) => ({
+        ...prev,
+        isSubmitting: false,
+        error: error?.message || 'Failed to replan allocation slice.',
+      }));
+    }
+  };
 
   // Calculate task depth level relative to a parent
   const getTaskDepthLevel = (task: Task, rootParentId: number): number => {
@@ -2967,6 +3248,12 @@ export default function PlanningPage() {
       e.preventDefault();
       return;
     }
+
+    if (Number(task.ParentTaskId || 0) > 0) {
+      e.preventDefault();
+      return;
+    }
+
     draggedTaskRef.current = task;
     draggedTaskSourceUserIdRef.current = sourceUserId ?? null;
     draggedTaskSourceHeaderIdRef.current = sourceHeaderId ?? null;
@@ -3003,13 +3290,62 @@ export default function PlanningPage() {
   };
 
   const deleteTaskAllocationHeaderSlice = async (headerId: number) => {
-    await fetch(`${getApiUrl()}/api/task-allocations/header/${headerId}`, {
+    const response = await fetch(`${getApiUrl()}/api/task-allocations/header/${headerId}`, {
       method: 'DELETE',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
     });
+
+    if (!response.ok) {
+      throw new Error('Failed to delete allocation slice');
+    }
+  };
+
+  const deleteChildAllocationHeaderSlice = async (headerId: number) => {
+    const response = await fetch(`${getApiUrl()}/api/task-child-allocations/header/${headerId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to delete child allocation slice');
+    }
+  };
+
+  const deleteParentChildAllocationDates = async (
+    parentTaskId: number,
+    allocationDates: string[],
+    sourceHeaderId?: number | null,
+    childTaskIds?: number[]
+  ) => {
+    const uniqueDates = Array.from(new Set((allocationDates || []).map((date) => normalizeDateKey(date)).filter(Boolean)));
+    if (uniqueDates.length === 0) {
+      return;
+    }
+
+    const response = await fetch(`${getApiUrl()}/api/task-child-allocations/parent/${parentTaskId}/dates`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        dates: uniqueDates,
+        sourceHeaderId: Number(sourceHeaderId || 0) || undefined,
+        childTaskIds: Array.isArray(childTaskIds)
+          ? Array.from(new Set(childTaskIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)))
+          : undefined,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to delete child allocations for selected slice dates');
+    }
   };
 
   const calculateSliceHoursFromSelectedSubtasks = (
@@ -3017,7 +3353,8 @@ export default function PlanningPage() {
     selectedChildTaskIds: number[],
     sourceAllocationDates: string[],
     sourceTotalHours: number,
-    availableChildTaskIdsCount: number
+    availableChildTaskIdsCount: number,
+    sourceHeaderId?: number | null
   ): number => {
     if (!Number.isFinite(sourceTotalHours) || sourceTotalHours <= 0) {
       return 0;
@@ -3032,6 +3369,7 @@ export default function PlanningPage() {
 
     const selectedHours = childAllocations
       .filter((allocation) => Number(allocation.ParentTaskId) === Number(parentTaskId))
+      .filter((allocation) => !sourceHeaderId || Number(allocation.TaskAllocationHeaderId || 0) === Number(sourceHeaderId))
       .filter((allocation) => selectedSet.has(Number(allocation.ChildTaskId)))
       .filter((allocation) => sourceDateSet.size === 0 || sourceDateSet.has(normalizeDateKey(allocation.AllocationDate)))
       .reduce((sum, allocation) => sum + Number(allocation.AllocatedHours || 0), 0);
@@ -3048,6 +3386,169 @@ export default function PlanningPage() {
     return Number(sourceTotalHours.toFixed(2));
   };
 
+  const buildChildAllocationPayloadFromSourceSlice = (
+    rootParentTaskId: number,
+    sourceHeaderId: number,
+    targetHeaderId: number | null | undefined,
+    targetParentAllocations: Array<{ date: string; hours: number; startTime: string; endTime: string }>,
+    sourceAllocationDates: string[]
+  ) => {
+    const sourceDateSet = new Set((sourceAllocationDates || []).map((date) => normalizeDateKey(date)).filter(Boolean));
+    const scopedRows = childAllocations
+      .filter((allocation) => Number(allocation.TaskAllocationHeaderId || 0) === Number(sourceHeaderId))
+      .filter((allocation) => sourceDateSet.size === 0 || sourceDateSet.has(normalizeDateKey(allocation.AllocationDate)));
+
+    const rowsByParentId = new Map<number, typeof scopedRows>();
+    for (const row of scopedRows) {
+      const parentId = Number(row.ParentTaskId);
+      const existingRows = rowsByParentId.get(parentId) || [];
+      existingRows.push(row);
+      rowsByParentId.set(parentId, existingRows);
+    }
+
+    const parseTimeToMinutes = (time: string): number => {
+      const [hours, minutes] = String(time || '09:00').split(':').map(Number);
+      return (hours || 0) * 60 + (minutes || 0);
+    };
+
+    const formatMinutesToTime = (minutes: number): string => {
+      const safeMinutes = Math.max(0, Math.round(minutes));
+      const hours = Math.floor(safeMinutes / 60);
+      const mins = safeMinutes % 60;
+      return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+    };
+
+    const payload: Array<{
+      ParentTaskId: number;
+      ChildTaskId: number;
+      TaskAllocationHeaderId?: number | null;
+      AllocationDate: string;
+      AllocatedHours: number;
+      Level: number;
+      StartTime: string;
+      EndTime: string;
+    }> = [];
+
+    const distributeForParent = (
+      parentTaskId: number,
+      parentAllocations: Array<{ date: string; hours: number; startTime: string; endTime: string }>
+    ) => {
+      const sourceRowsForParent = rowsByParentId.get(parentTaskId) || [];
+      if (sourceRowsForParent.length === 0 || parentAllocations.length === 0) {
+        return;
+      }
+
+      const childSummaries = Array.from(
+        sourceRowsForParent.reduce((acc, row) => {
+          const childTaskId = Number(row.ChildTaskId);
+          const existing = acc.get(childTaskId) || {
+            childTaskId,
+            hours: 0,
+            level: Number(row.Level || 1),
+          };
+          existing.hours += Number(row.AllocatedHours || 0);
+          acc.set(childTaskId, existing);
+          return acc;
+        }, new Map<number, { childTaskId: number; hours: number; level: number }>())
+        .values()
+      ).sort((a, b) => {
+        const taskA = tasks.find((taskEntry) => Number(taskEntry.Id) === a.childTaskId);
+        const taskB = tasks.find((taskEntry) => Number(taskEntry.Id) === b.childTaskId);
+        const orderA = Number(taskA?.DisplayOrder || 0);
+        const orderB = Number(taskB?.DisplayOrder || 0);
+        return orderA !== orderB ? orderA - orderB : a.childTaskId - b.childTaskId;
+      });
+
+      const totalWeight = childSummaries.reduce((sum, childSummary) => sum + Number(childSummary.hours || 0), 0);
+      const totalParentHours = parentAllocations.reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
+      if (totalWeight <= 0 || totalParentHours <= 0) {
+        return;
+      }
+
+      const quotas = childSummaries.map((childSummary, index) => {
+        if (index === childSummaries.length - 1) {
+          return { ...childSummary, quotaHours: 0 };
+        }
+        const proportionalHours = (totalParentHours * childSummary.hours) / totalWeight;
+        return {
+          ...childSummary,
+          quotaHours: Number(proportionalHours.toFixed(2)),
+        };
+      });
+
+      const allocatedBeforeLast = quotas.reduce((sum, quota) => sum + quota.quotaHours, 0);
+      if (quotas.length > 0) {
+        quotas[quotas.length - 1].quotaHours = Number(Math.max(0, totalParentHours - allocatedBeforeLast).toFixed(2));
+      }
+
+      const allocationSlots = parentAllocations
+        .map((allocation) => ({
+          date: allocation.date,
+          remainingHours: Number(allocation.hours || 0),
+          cursorMinutes: parseTimeToMinutes(allocation.startTime || '09:00'),
+        }))
+        .filter((slot) => slot.remainingHours > 0.0001);
+
+      let slotIndex = 0;
+      const childAllocationsByChild = new Map<number, Array<{ date: string; hours: number; startTime: string; endTime: string }>>();
+
+      for (const quota of quotas) {
+        let remainingQuota = quota.quotaHours;
+        while (remainingQuota > 0.0001 && slotIndex < allocationSlots.length) {
+          const slot = allocationSlots[slotIndex];
+          const hoursToAllocate = Math.min(remainingQuota, slot.remainingHours);
+          if (hoursToAllocate <= 0.0001) {
+            slotIndex++;
+            continue;
+          }
+
+          const allocationMinutes = Math.max(1, Math.round(hoursToAllocate * 60));
+          const allocatedHours = Number((allocationMinutes / 60).toFixed(2));
+          const startMinutes = slot.cursorMinutes;
+          const endMinutes = startMinutes + allocationMinutes;
+          const childAllocation = {
+            date: slot.date,
+            hours: allocatedHours,
+            startTime: formatMinutesToTime(startMinutes),
+            endTime: formatMinutesToTime(endMinutes),
+          };
+
+          payload.push({
+            ParentTaskId: parentTaskId,
+            ChildTaskId: quota.childTaskId,
+            TaskAllocationHeaderId: targetHeaderId ?? null,
+            AllocationDate: slot.date,
+            AllocatedHours: allocatedHours,
+            Level: quota.level,
+            StartTime: childAllocation.startTime,
+            EndTime: childAllocation.endTime,
+          });
+
+          const existingChildAllocations = childAllocationsByChild.get(quota.childTaskId) || [];
+          existingChildAllocations.push(childAllocation);
+          childAllocationsByChild.set(quota.childTaskId, existingChildAllocations);
+
+          remainingQuota = Math.max(0, remainingQuota - allocatedHours);
+          slot.remainingHours = Math.max(0, slot.remainingHours - allocatedHours);
+          slot.cursorMinutes = endMinutes;
+
+          if (slot.remainingHours <= 0.0001) {
+            slotIndex++;
+          }
+        }
+      }
+
+      for (const [childTaskId, childTaskAllocations] of childAllocationsByChild.entries()) {
+        if (rowsByParentId.has(childTaskId) && childTaskAllocations.length > 0) {
+          distributeForParent(childTaskId, childTaskAllocations);
+        }
+      }
+    };
+
+    distributeForParent(rootParentTaskId, targetParentAllocations);
+    return payload;
+  };
+
   const handleConfirmSliceTransfer = async () => {
     const {
       taskId,
@@ -3060,7 +3561,8 @@ export default function PlanningPage() {
       selectedChildTaskIds,
     } = sliceTransferModal;
 
-    if (!taskId || !targetUserId || !sourceUserId || !sourceHeaderId || !Number.isFinite(moveHours) || moveHours <= 0) {
+    const normalizedMoveHours = roundToPlanningStep(Number(moveHours || 0));
+    if (!taskId || !targetUserId || !sourceUserId || !sourceHeaderId || !Number.isFinite(normalizedMoveHours) || normalizedMoveHours <= 0) {
       return;
     }
 
@@ -3094,7 +3596,7 @@ export default function PlanningPage() {
         (sum, allocation) => sum + Number(allocation.AllocatedHours || 0),
         0
       );
-      const totalHoursToMove = Math.min(Number(moveHours || 0), totalSliceHours);
+      const totalHoursToMove = roundToPlanningStep(Math.min(normalizedMoveHours, totalSliceHours));
 
       if (totalHoursToMove <= 0) {
         throw new Error('Invalid hours to move');
@@ -3124,11 +3626,142 @@ export default function PlanningPage() {
           skipReload: true,
           suppressDependentReplan: true,
           appendToExistingUserSlice: true, // Always true for slice operations - creates new header in parallel
+          // Important: when moving within the same user, keep source header in availability
+          // so existing same-day slice hours are still counted and we don't over-plan that day.
+          excludeHeaderId: targetUserId !== sourceUserId ? sourceHeaderId : undefined,
         }
       );
 
       if (!allocationResult) {
         throw new Error('Failed to allocate selected slice to target user');
+      }
+
+      if (availableChildTaskIds.length > 0 && selectedChildTaskIds.length > 0) {
+        const sourceDateSet = new Set(sourceAllocations.map((allocation) => allocation.dateKey));
+        const selectedChildSet = new Set(selectedChildTaskIds.map((childTaskId) => Number(childTaskId)).filter((childTaskId) => Number.isFinite(childTaskId) && childTaskId > 0));
+
+        const sourceChildRows = childAllocations
+          .filter((allocation) => Number(allocation.ParentTaskId) === Number(taskId))
+          .filter((allocation) => Number(allocation.TaskAllocationHeaderId || 0) === Number(sourceHeaderId))
+          .filter((allocation) => selectedChildSet.has(Number(allocation.ChildTaskId)))
+          .filter((allocation) => sourceDateSet.has(normalizeDateKey(allocation.AllocationDate)));
+
+        const sourceChildHoursByTask = sourceChildRows.reduce((acc, allocation) => {
+          const childTaskId = Number(allocation.ChildTaskId);
+          acc[childTaskId] = (acc[childTaskId] || 0) + Number(allocation.AllocatedHours || 0);
+          return acc;
+        }, {} as Record<number, number>);
+
+        const totalSelectedChildHours = Object.values(sourceChildHoursByTask).reduce((sum, hours) => sum + Number(hours || 0), 0);
+        const totalParentMovedHours = allocationResult.allocations?.reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0) || 0;
+        const childHoursToMove = Math.min(totalHoursToMove, totalSelectedChildHours, totalParentMovedHours);
+
+        if (childHoursToMove > 0.0001 && Array.isArray(allocationResult.allocations) && allocationResult.allocations.length > 0) {
+          const weightedChildren = Object.entries(sourceChildHoursByTask)
+            .map(([childTaskId, hours]) => ({ childTaskId: Number(childTaskId), weight: Number(hours || 0) }))
+            .filter((entry) => entry.weight > 0);
+
+          if (weightedChildren.length > 0) {
+            const totalWeight = weightedChildren.reduce((sum, entry) => sum + entry.weight, 0);
+            const quotas = weightedChildren.map((entry, index) => {
+              if (index === weightedChildren.length - 1) {
+                return { childTaskId: entry.childTaskId, quotaHours: 0 };
+              }
+              const proportional = totalWeight > 0 ? (childHoursToMove * entry.weight) / totalWeight : 0;
+              return { childTaskId: entry.childTaskId, quotaHours: Number(proportional.toFixed(2)) };
+            });
+            const allocatedBeforeLast = quotas.reduce((sum, quota) => sum + quota.quotaHours, 0);
+            if (quotas.length > 0) {
+              quotas[quotas.length - 1].quotaHours = Number(Math.max(0, childHoursToMove - allocatedBeforeLast).toFixed(2));
+            }
+
+            const parseTimeToMinutes = (time: string): number => {
+              const [hours, minutes] = String(time || '09:00').split(':').map(Number);
+              return (hours || 0) * 60 + (minutes || 0);
+            };
+
+            const formatMinutesToTime = (minutes: number): string => {
+              const safeMinutes = Math.max(0, Math.round(minutes));
+              const hours = Math.floor(safeMinutes / 60);
+              const mins = safeMinutes % 60;
+              return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+            };
+
+            const allocationSlots = allocationResult.allocations
+              .map((allocation) => ({
+                date: allocation.date,
+                remainingHours: Number(allocation.hours || 0),
+                cursorMinutes: parseTimeToMinutes(allocation.startTime || '09:00'),
+              }))
+              .filter((slot) => slot.remainingHours > 0.0001);
+
+            let slotIndex = 0;
+            const movedChildPayload: Array<{
+              ParentTaskId: number;
+              ChildTaskId: number;
+              TaskAllocationHeaderId?: number | null;
+              AllocationDate: string;
+              AllocatedHours: number;
+              Level: number;
+              StartTime: string;
+              EndTime: string;
+            }> = [];
+
+            for (const quota of quotas) {
+              let remainingQuota = quota.quotaHours;
+              while (remainingQuota > 0.0001 && slotIndex < allocationSlots.length) {
+                const slot = allocationSlots[slotIndex];
+                const hoursToAllocate = Math.min(remainingQuota, slot.remainingHours);
+                if (hoursToAllocate <= 0.0001) {
+                  slotIndex++;
+                  continue;
+                }
+
+                const allocationMinutes = Math.max(1, Math.round(hoursToAllocate * 60));
+                const allocatedHours = Number((allocationMinutes / 60).toFixed(2));
+                const startMinutes = slot.cursorMinutes;
+                const endMinutes = startMinutes + allocationMinutes;
+
+                const sourceChildTask = tasks.find((taskEntry) => Number(taskEntry.Id) === Number(quota.childTaskId));
+                movedChildPayload.push({
+                  ParentTaskId: Number(taskId),
+                  ChildTaskId: quota.childTaskId,
+                  TaskAllocationHeaderId: allocationResult.headerId ?? null,
+                  AllocationDate: slot.date,
+                  AllocatedHours: allocatedHours,
+                  Level: Math.max(1, getTaskDepthLevel(sourceChildTask || task, Number(taskId)) + 1),
+                  StartTime: formatMinutesToTime(startMinutes),
+                  EndTime: formatMinutesToTime(endMinutes),
+                });
+
+                remainingQuota = Math.max(0, remainingQuota - allocatedHours);
+                slot.remainingHours = Math.max(0, slot.remainingHours - allocatedHours);
+                slot.cursorMinutes = endMinutes;
+
+                if (slot.remainingHours <= 0.0001) {
+                  slotIndex++;
+                }
+              }
+            }
+
+            if (movedChildPayload.length > 0) {
+              const childSaveRes = await fetch(`${getApiUrl()}/api/task-child-allocations/batch`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ allocations: movedChildPayload, replaceParent: false }),
+              });
+
+              if (!childSaveRes.ok) {
+                throw new Error('Failed to replan moved subtasks for selected slice');
+              }
+
+              await deleteParentChildAllocationDates(Number(taskId), sourceAllocations.map((allocation) => allocation.dateKey), sourceHeaderId, selectedChildTaskIds);
+            }
+          }
+        }
       }
 
       const deleteResponse = await fetch(`${getApiUrl()}/api/task-allocations/header/${sourceHeaderId}/hours`, {
@@ -3278,6 +3911,7 @@ export default function PlanningPage() {
       const availableChildTaskIds = Array.from(new Set(
         childAllocations
           .filter((childAllocation) => Number(childAllocation.ParentTaskId) === Number(sliceTaskId))
+          .filter((childAllocation) => Number(childAllocation.TaskAllocationHeaderId || 0) === Number(sourceHeaderId))
           .filter((childAllocation) => sourceSliceDateSet.has(normalizeDateKey(childAllocation.AllocationDate)))
           .map((childAllocation) => Number(childAllocation.ChildTaskId))
           .filter((childTaskId) => Number.isFinite(childTaskId) && childTaskId > 0)
@@ -3288,9 +3922,11 @@ export default function PlanningPage() {
             availableChildTaskIds,
             sourceSliceDates,
             totalSliceHours,
-            availableChildTaskIds.length
+            availableChildTaskIds.length,
+            sourceHeaderId
           )
         : totalSliceHours;
+      const normalizedSelectedSliceHours = roundToPlanningStep(selectedSliceHours);
       setSliceTransferModal({
         show: true,
         taskId: sliceTaskId,
@@ -3300,8 +3936,8 @@ export default function PlanningPage() {
         sourceHeaderId,
         sourceAllocationDates: sourceSliceDates,
         sourceTotalHours: totalSliceHours,
-        totalHours: selectedSliceHours,
-        moveHours: selectedSliceHours,
+        totalHours: normalizedSelectedSliceHours,
+        moveHours: normalizedSelectedSliceHours,
         availableChildTaskIds,
         selectedChildTaskIds: availableChildTaskIds,
         isProcessing: false,
@@ -3349,7 +3985,21 @@ export default function PlanningPage() {
     
     if (hasChildren) {
       // Get all leaf tasks (tasks without children) recursively
-      const leafTasks = getAllLeafTasks(activeDraggedTask.Id);
+      const allLeafTasks = getAllLeafTasks(activeDraggedTask.Id);
+      const sourceSliceDateSet = new Set(sourceSliceDates);
+      const sliceLeafTaskIds = isSliceDrag && sourceSliceDateSet.size > 0
+        ? new Set(
+            childAllocations
+              .filter((childAllocation) => Number(childAllocation.ParentTaskId) === Number(activeDraggedTask.Id))
+              .filter((childAllocation) => !sourceHeaderId || Number(childAllocation.TaskAllocationHeaderId || 0) === Number(sourceHeaderId))
+              .filter((childAllocation) => sourceSliceDateSet.has(normalizeDateKey(childAllocation.AllocationDate)))
+              .map((childAllocation) => Number(childAllocation.ChildTaskId))
+              .filter((childTaskId) => Number.isFinite(childTaskId) && childTaskId > 0)
+          )
+        : null;
+      const leafTasks = sliceLeafTaskIds && sliceLeafTaskIds.size > 0
+        ? allLeafTasks.filter((leafTask) => sliceLeafTaskIds.has(leafTask.Id))
+        : allLeafTasks;
       
       if (leafTasks.length === 0) {
         showAlert('No Leaf Tasks', 'No leaf tasks found to plan.');
@@ -3392,17 +4042,27 @@ export default function PlanningPage() {
         }
       }
 
-      const totalRemainingHours = totalEstimatedHours - totalHoursWorked;
+      const calculatedRemainingHours = totalEstimatedHours - totalHoursWorked;
+      const totalRemainingHours = isSliceDrag && sourceSliceHours > 0
+        ? roundToPlanningStep(sourceSliceHours)
+        : calculatedRemainingHours;
+      const modalEstimatedHours = isSliceDrag && sourceSliceHours > 0
+        ? roundToPlanningStep(sourceSliceHours)
+        : totalEstimatedHours;
 
       console.log('Hierarchical planning:', {
         parentTask: activeDraggedTask.TaskName,
         leafTasksCount: leafTasks.length,
         totalEstimatedHours,
         totalHoursWorked,
-        totalRemainingHours
+        totalRemainingHours,
+        isSliceDrag,
+        sourceHeaderId,
+        sourceSliceHours,
+        sliceLeafTasksCount: sliceLeafTaskIds?.size || 0,
       });
 
-      if (totalRemainingHours < 0) {
+      if (!isSliceDrag && totalRemainingHours < 0) {
         showAlert(
           'No Remaining Hours',
           `All leaf tasks have no remaining hours.\n\nTotal Estimated: ${totalEstimatedHours}h\nAlready worked: ${totalHoursWorked}h`
@@ -3413,7 +4073,18 @@ export default function PlanningPage() {
 
       // Now plan the PARENT task with the total hours
       // This will create allocations for the parent, giving us the date range
-      await planTaskAsParent(activeDraggedTask, day, userId, totalRemainingHours, leafTasks, totalEstimatedHours, totalHoursWorked);
+      await planTaskAsParent(
+        activeDraggedTask,
+        day,
+        userId,
+        totalRemainingHours,
+        leafTasks,
+        modalEstimatedHours,
+        totalHoursWorked,
+        sourceUserId,
+        sourceHeaderId,
+        sourceSliceDates
+      );
       draggedTaskRef.current = null;
       setDraggedTask(null);
       return;
@@ -3623,19 +4294,21 @@ export default function PlanningPage() {
                 const effectiveHoursPerDay = (storedHeaderHoursPerDay && storedHeaderHoursPerDay > 0)
                   ? storedHeaderHoursPerDay
                   : maxDailyHours;
+        const normalizedEffectiveHoursPerDay = floorToPlanningStep(effectiveHoursPerDay);
+        const normalizedRemainingHoursToWork = roundToPlanningStep(remainingHoursToWork);
         setHoursPerDayModal({
           show: true,
           task: activeDraggedTask,
           userId,
           startDate,
           maxDailyHours,
-          hoursPerDay: effectiveHoursPerDay.toString(),
-          totalHours: remainingHoursToWork,
+          hoursPerDay: normalizedEffectiveHoursPerDay.toString(),
+          totalHours: normalizedRemainingHoursToWork,
           hoursAlreadyWorked: hoursAlreadyWorked,
           totalEstimatedHours: taskEstimatedHours,
           enableSplit: false,
           splitMode: 'parallel',
-          splitEntries: [{ userId, plannedHours: remainingHoursToWork, hoursPerDay: effectiveHoursPerDay, splitOrder: 1 }],
+          splitEntries: [{ userId, plannedHours: normalizedRemainingHoursToWork, hoursPerDay: normalizedEffectiveHoursPerDay, splitOrder: 1 }],
           sourceUserId,
           sourceHeaderId,
           sourceAllocationDates: sourceSliceDates,
@@ -3694,7 +4367,10 @@ export default function PlanningPage() {
     totalHours: number,
     leafTasks: Task[],
     totalEstimatedHours?: number,
-    totalAlreadyWorked?: number
+    totalAlreadyWorked?: number,
+    sourceUserId?: number | null,
+    sourceHeaderId?: number | null,
+    sourceAllocationDates: string[] = []
   ) => {
     try {
       const startDate = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12, 0, 0);
@@ -3769,34 +4445,46 @@ export default function PlanningPage() {
           hoursAlreadyWorked: totalAlreadyWorked || 0,
           maxDailyHours,
           isParentTask: true,
-          leafTasks: leafTasks
-        });
-        return;
-      }
-
-      // Show modal to ask for hours per day when needed, including zero-hour tasks
-      if (totalHours <= 0 || totalHours > maxDailyHours * 0.5) {
-        setHoursPerDayModal({
-          show: true,
-          task: parentTask,
-          userId,
-          startDate,
-          maxDailyHours,
-          hoursPerDay: maxDailyHours.toString(),
-          totalHours: totalHours,
-          hoursAlreadyWorked: totalAlreadyWorked || 0,
-          totalEstimatedHours: totalEstimatedHours || totalHours,
-          isParentTask: true,
           leafTasks: leafTasks,
-          enableSplit: false,
-          splitMode: 'parallel',
-          splitEntries: [{ userId, plannedHours: totalHours, hoursPerDay: maxDailyHours, splitOrder: 1, selectedLeafTaskIds: leafTasks.map(t => t.Id) }],
+          sourceUserId: sourceUserId ?? null,
+          sourceHeaderId: sourceHeaderId ?? null,
+          sourceAllocationDates,
+          suppressDependentReplan: !!sourceHeaderId,
         });
         return;
       }
 
-      // Continue with full daily hours allocation
-      await executeParentTaskAllocation(parentTask, userId, startDate, totalHours, user, maxDailyHours, leafTasks);
+      // For parent tasks, ALWAYS show the hoursPerDay modal so the user can configure
+      // total hours, hours/day, and split planning — even when estimated hours are 0.
+      const normalizedTotalHours = roundToPlanningStep(totalHours);
+      const normalizedMaxDailyHours = floorToPlanningStep(maxDailyHours);
+      const storedHeaderHoursPerDay = sourceHeaderId
+        ? Number(allAllocations.find(a => Number(a.TaskAllocationHeaderId) === Number(sourceHeaderId))?.HoursPerDay ?? 0)
+        : 0;
+      const effectiveHoursPerDay = storedHeaderHoursPerDay > 0
+        ? storedHeaderHoursPerDay
+        : normalizedMaxDailyHours;
+      const normalizedHoursPerDay = floorToPlanningStep(effectiveHoursPerDay);
+      setHoursPerDayModal({
+        show: true,
+        task: parentTask,
+        userId,
+        startDate,
+        maxDailyHours,
+        hoursPerDay: normalizedHoursPerDay.toString(),
+        totalHours: normalizedTotalHours,
+        hoursAlreadyWorked: totalAlreadyWorked || 0,
+        totalEstimatedHours: totalEstimatedHours || totalHours,
+        isParentTask: true,
+        leafTasks: leafTasks,
+        enableSplit: false,
+        splitMode: 'parallel',
+        splitEntries: [{ userId, plannedHours: normalizedTotalHours, hoursPerDay: normalizedHoursPerDay, splitOrder: 1, selectedLeafTaskIds: leafTasks.map(t => t.Id) }],
+        sourceUserId: sourceUserId ?? null,
+        sourceHeaderId: sourceHeaderId ?? null,
+        sourceAllocationDates,
+        suppressDependentReplan: !!sourceHeaderId,
+      });
     } catch (err) {
       console.error('Failed to plan parent task:', err);
       showAlert('Error', 'Failed to plan parent task');
@@ -4116,6 +4804,9 @@ export default function PlanningPage() {
         return;
       }
 
+      const responseData = await response.json();
+      const parentHeaderId = Number(responseData?.headerId || 0) || null;
+
       setPlanningProgress(prev => ({
         ...prev,
         progress: 50,
@@ -4142,7 +4833,8 @@ export default function PlanningPage() {
         allocations,
         1, // level 1 (direct children of parent)
         userId,
-        isHobbyTask
+        isHobbyTask,
+        parentHeaderId
       );
 
       setPlanningProgress(prev => ({
@@ -4181,7 +4873,8 @@ export default function PlanningPage() {
     parentAllocations: any[], // array of {date, hours, startTime, endTime}
     level: number,
     plannedUserId: number,
-    isHobbyTask: boolean
+    isHobbyTask: boolean,
+    parentHeaderId?: number | null
   ) => {
     const getTaskOrder = (task: Task): number => {
       const order = Number(task.DisplayOrder);
@@ -4204,9 +4897,23 @@ export default function PlanningPage() {
 
     console.log(`Distributing to ${directChildren.length} direct children of parent ${parentTaskId} at level ${level}`);
 
+    const getChildPlanningHours = (childTask: Task): number => {
+      const childEstimatedHours = parseFloat(String(childTask.EstimatedHours || 0));
+      const descendantLeafTasks = getAllLeafTasks(childTask.Id).filter((leafTask) => Number(leafTask.Id) !== Number(childTask.Id));
+      const descendantLeafHours = descendantLeafTasks.reduce((sum, leafTask) => {
+        return sum + parseFloat(String(leafTask.EstimatedHours || 0));
+      }, 0);
+
+      if (descendantLeafHours > 0) {
+        return descendantLeafHours;
+      }
+
+      return childEstimatedHours;
+    };
+
     // Calculate total parent hours and total children estimated hours
     const totalParentHours = parentAllocations.reduce((sum, alloc) => sum + parseFloat(alloc.hours), 0);
-    const totalChildrenHours = directChildren.reduce((sum, child) => sum + parseFloat(String(child.EstimatedHours || 0)), 0);
+    const totalChildrenHours = directChildren.reduce((sum, child) => sum + getChildPlanningHours(child), 0);
     
     console.log(`Parent has ${totalParentHours.toFixed(2)}h allocated, children need ${totalChildrenHours.toFixed(2)}h total`);
     
@@ -4311,7 +5018,7 @@ export default function PlanningPage() {
     let currentSlotIndex = 0;
     
     for (const child of directChildren) {
-      const childHours = parseFloat(String(child.EstimatedHours || 0));
+      const childHours = getChildPlanningHours(child);
       
       if (childHours <= 0) {
         console.log(`Skipping child ${child.TaskName} - no estimated hours`);
@@ -4340,6 +5047,7 @@ export default function PlanningPage() {
           const allocation = {
             ParentTaskId: parentTaskId,
             ChildTaskId: child.Id,
+            TaskAllocationHeaderId: parentHeaderId ?? null,
             AllocationDate: slot.date,
             AllocatedHours: roundedHours,
             Level: level,
@@ -4381,7 +5089,7 @@ export default function PlanningPage() {
       const hasChildren = tasks.some(t => t.ParentTaskId === child.Id);
       if (hasChildren && childAllocs.length > 0) {
         console.log(`Child "${child.TaskName}" has children, distributing recursively...`);
-        await distributeToDirectChildren(child.Id, childAllocs, level + 1, plannedUserId, isHobbyTask);
+        await distributeToDirectChildren(child.Id, childAllocs, level + 1, plannedUserId, isHobbyTask, parentHeaderId);
       }
     }
 
@@ -4517,14 +5225,24 @@ export default function PlanningPage() {
       ? leafTasks.reduce((sum, t) => sum + parseFloat(String(t.EstimatedHours || 0)), 0)
       : parseFloat(String(task.EstimatedHours || 0));
     
+    const normalizedTotalHoursToAllocate = roundToPlanningStep(totalHoursToAllocate);
+    const normalizedMaxDailyHours = floorToPlanningStep(maxDailyHours);
+    const sourceHeaderIdForConflict = conflictModal.sourceHeaderId;
+    const storedConflictHoursPerDay = sourceHeaderIdForConflict
+      ? Number(allAllocations.find(a => Number(a.TaskAllocationHeaderId) === Number(sourceHeaderIdForConflict))?.HoursPerDay ?? 0)
+      : 0;
+    const effectiveConflictHoursPerDay = storedConflictHoursPerDay > 0
+      ? storedConflictHoursPerDay
+      : normalizedMaxDailyHours;
+    const normalizedConflictHoursPerDay = floorToPlanningStep(effectiveConflictHoursPerDay);
     setHoursPerDayModal({
       show: true,
       task,
       userId,
       startDate,
       maxDailyHours,
-      hoursPerDay: maxDailyHours.toString(),
-      totalHours: totalHoursToAllocate,
+      hoursPerDay: normalizedConflictHoursPerDay.toString(),
+      totalHours: normalizedTotalHoursToAllocate,
       hoursAlreadyWorked,
       totalEstimatedHours: taskEstimatedHours,
       isParentTask,
@@ -4534,8 +5252,8 @@ export default function PlanningPage() {
       splitMode: 'parallel',
       splitEntries: [{
         userId,
-        plannedHours: totalHoursToAllocate,
-        hoursPerDay: maxDailyHours,
+        plannedHours: normalizedTotalHoursToAllocate,
+        hoursPerDay: normalizedConflictHoursPerDay,
         splitOrder: 1,
         selectedLeafTaskIds: isParentTask && Array.isArray(leafTasks) ? leafTasks.map(t => t.Id) : [],
       }],
@@ -4556,8 +5274,11 @@ export default function PlanningPage() {
 
     setConflictModal(prev => ({ ...prev, show: false }));
 
-    // Show hours per day modal if needed
-    if (hoursAlreadyWorked > 0 || totalHoursToAllocate > maxDailyHours * 0.5) {
+    // Show hours per day modal:
+    // – always for parent tasks (user must confirm hours, split, leaf assignments)
+    // – always when totalHoursToAllocate is 0 (no estimated hours set — user must specify)
+    // – when hours already worked or remaining hours exceed 50% of daily capacity
+    if (isParentTask || totalHoursToAllocate <= 0 || hoursAlreadyWorked > 0 || totalHoursToAllocate > maxDailyHours * 0.5) {
             const sourceHeaderIdForConflict = conflictModal.sourceHeaderId;
             const storedConflictHoursPerDay = sourceHeaderIdForConflict
               ? (allAllocations.find(a => Number(a.TaskAllocationHeaderId) === Number(sourceHeaderIdForConflict))?.HoursPerDay ?? null)
@@ -4565,6 +5286,8 @@ export default function PlanningPage() {
             const effectiveConflictHoursPerDay = (storedConflictHoursPerDay && storedConflictHoursPerDay > 0)
               ? storedConflictHoursPerDay
               : maxDailyHours;
+      const normalizedConflictHoursPerDay = floorToPlanningStep(effectiveConflictHoursPerDay);
+      const normalizedConflictTotalHours = roundToPlanningStep(totalHoursToAllocate);
       const taskEstimatedHours = isParentTask && leafTasks 
         ? leafTasks.reduce((sum, t) => sum + parseFloat(String(t.EstimatedHours || 0)), 0)
         : parseFloat(String(task.EstimatedHours || 0));
@@ -4574,8 +5297,8 @@ export default function PlanningPage() {
         userId,
         startDate,
         maxDailyHours,
-        hoursPerDay: effectiveConflictHoursPerDay.toString(),
-        totalHours: totalHoursToAllocate,
+        hoursPerDay: normalizedConflictHoursPerDay.toString(),
+        totalHours: normalizedConflictTotalHours,
         hoursAlreadyWorked,
         totalEstimatedHours: taskEstimatedHours,
         isParentTask,
@@ -4584,8 +5307,8 @@ export default function PlanningPage() {
         splitMode: 'parallel',
         splitEntries: [{
           userId,
-          plannedHours: totalHoursToAllocate,
-          hoursPerDay: effectiveConflictHoursPerDay,
+          plannedHours: normalizedConflictTotalHours,
+          hoursPerDay: normalizedConflictHoursPerDay,
           splitOrder: 1,
           selectedLeafTaskIds: isParentTask && Array.isArray(leafTasks) ? leafTasks.map(t => t.Id) : [],
         }],
@@ -4631,18 +5354,18 @@ export default function PlanningPage() {
     const user = users.find(u => u.Id === userId);
     if (!user) return;
 
-    if (enableSplit) {
-      if (usePushForward || suppressDependentReplan) {
-        showAlert('Split Planning', 'Split planning with push-forward is not supported. Choose "Plan When Available" for split allocations.');
-        return;
-      }
+    const normalizedTotalHours = roundToPlanningStep(Number(totalHours || 0));
+    const normalizedHoursPerDayInput = roundToPlanningStep(Number(hoursPerDay || 0));
+    const canUseSplitPlanning = !!enableSplit && !usePushForward && !sourceUserId && !sourceHeaderId && !suppressDependentReplan;
+
+    if (canUseSplitPlanning) {
 
       const entries = Array.isArray(splitEntries)
         ? splitEntries
             .map((entry, index) => ({
               userId: Number(entry.userId),
-              plannedHours: Number(entry.plannedHours || 0),
-              hoursPerDay: Number(entry.hoursPerDay || 0),
+              plannedHours: roundToPlanningStep(Number(entry.plannedHours || 0)),
+              hoursPerDay: roundToPlanningStep(Number(entry.hoursPerDay || 0)),
               splitOrder: Number(entry.splitOrder || index + 1),
               selectedLeafTaskIds: Array.isArray(entry.selectedLeafTaskIds)
                 ? entry.selectedLeafTaskIds.map((taskId) => Number(taskId)).filter((taskId) => Number.isFinite(taskId) && taskId > 0)
@@ -4654,14 +5377,6 @@ export default function PlanningPage() {
       if (entries.length === 0) {
         showAlert('Split Planning', 'Add at least one user split with planned hours.');
         return;
-      }
-
-      if (!isParentTask) {
-        const splitTotal = entries.reduce((sum, entry) => sum + entry.plannedHours, 0);
-        if (Math.abs(splitTotal - totalHours) > 0.01) {
-          showAlert('Split Planning', `Split total (${splitTotal.toFixed(2)}h) must match planned hours (${totalHours.toFixed(2)}h).`);
-          return;
-        }
       }
 
       if (isParentTask) {
@@ -4768,9 +5483,9 @@ export default function PlanningPage() {
             task,
             entry.userId,
             new Date(entryStartDate),
-            entry.plannedHours,
+            roundToPlanningStep(entry.plannedHours),
             targetUser,
-            entry.hoursPerDay > 0 ? entry.hoursPerDay : maxDailyHours,
+            entry.hoursPerDay > 0 ? roundToPlanningStep(entry.hoursPerDay) : floorToPlanningStep(maxDailyHours),
             {
               silent: true,
               skipReload: true,
@@ -4779,6 +5494,7 @@ export default function PlanningPage() {
                 allocationMode: mode,
                 splitOrder: entry.splitOrder,
                 plannedHours: entry.plannedHours,
+                hoursPerDay: entry.hoursPerDay > 0 ? roundToPlanningStep(entry.hoursPerDay) : floorToPlanningStep(maxDailyHours),
               },
             }
           );
@@ -4795,22 +5511,46 @@ export default function PlanningPage() {
             }))
           );
 
-          const positiveLeafWithRemainingHours = leafWithRemainingHours.filter((entryLeaf) => entryLeaf.remainingHours > 0);
-          if (positiveLeafWithRemainingHours.length > 0) {
-            const totalLeafRemainingHours = positiveLeafWithRemainingHours.reduce((sum, entryLeaf) => sum + entryLeaf.remainingHours, 0);
-            const totalParentSliceHours = parentSliceResult.allocations.reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
-            const hoursToDistribute = Math.max(0, Math.min(entry.plannedHours, totalParentSliceHours));
+          const totalParentSliceHours = parentSliceResult.allocations.reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
+          const hoursToDistribute = Math.max(0, Math.min(entry.plannedHours, totalParentSliceHours));
 
-            const quotas = positiveLeafWithRemainingHours.map((entryLeaf, index) => {
-              if (index === positiveLeafWithRemainingHours.length - 1) {
+          const weightedLeafTasks = (() => {
+            const positiveByRemaining = leafWithRemainingHours
+              .filter((entryLeaf) => entryLeaf.remainingHours > 0)
+              .map((entryLeaf) => ({ leafTask: entryLeaf.leafTask, weight: entryLeaf.remainingHours }));
+            if (positiveByRemaining.length > 0) {
+              return positiveByRemaining;
+            }
+
+            const positiveByEstimated = leafWithRemainingHours
+              .map((entryLeaf) => ({
+                leafTask: entryLeaf.leafTask,
+                weight: parseFloat(String(entryLeaf.leafTask.EstimatedHours || 0)),
+              }))
+              .filter((entryLeaf) => entryLeaf.weight > 0);
+            if (positiveByEstimated.length > 0) {
+              return positiveByEstimated;
+            }
+
+            return leafWithRemainingHours.map((entryLeaf) => ({
+              leafTask: entryLeaf.leafTask,
+              weight: 1,
+            }));
+          })();
+
+          if (weightedLeafTasks.length > 0 && hoursToDistribute > 0.0001) {
+            const totalWeight = weightedLeafTasks.reduce((sum, entryLeaf) => sum + entryLeaf.weight, 0);
+
+            const quotas = weightedLeafTasks.map((entryLeaf, index) => {
+              if (index === weightedLeafTasks.length - 1) {
                 return {
                   leafTask: entryLeaf.leafTask,
                   quotaHours: 0,
                 };
               }
 
-              const proportionalHours = totalLeafRemainingHours > 0
-                ? (hoursToDistribute * entryLeaf.remainingHours) / totalLeafRemainingHours
+              const proportionalHours = totalWeight > 0
+                ? (hoursToDistribute * entryLeaf.weight) / totalWeight
                 : 0;
 
               return {
@@ -4840,6 +5580,7 @@ export default function PlanningPage() {
             const childAllocationsPayload: Array<{
               ParentTaskId: number;
               ChildTaskId: number;
+              TaskAllocationHeaderId?: number | null;
               AllocationDate: string;
               AllocatedHours: number;
               Level: number;
@@ -4865,6 +5606,7 @@ export default function PlanningPage() {
                 childAllocationsPayload.push({
                   ParentTaskId: task.Id,
                   ChildTaskId: quota.leafTask.Id,
+                  TaskAllocationHeaderId: parentSliceResult.headerId ?? null,
                   AllocationDate: slot.date,
                   AllocatedHours: allocatedHours,
                   Level: Math.max(1, getTaskDepthLevel(quota.leafTask, task.Id) + 1),
@@ -4938,9 +5680,9 @@ export default function PlanningPage() {
           task,
           entry.userId,
           sequenceDate,
-          entry.plannedHours,
+          roundToPlanningStep(entry.plannedHours),
           targetUser,
-          entry.hoursPerDay > 0 ? entry.hoursPerDay : maxDailyHours,
+          entry.hoursPerDay > 0 ? roundToPlanningStep(entry.hoursPerDay) : floorToPlanningStep(maxDailyHours),
           {
             silent: true,
             skipReload: true,
@@ -4949,7 +5691,7 @@ export default function PlanningPage() {
               allocationMode: splitMode || 'parallel',
               splitOrder: entry.splitOrder,
               plannedHours: entry.plannedHours,
-              hoursPerDay: entry.hoursPerDay > 0 ? entry.hoursPerDay : maxDailyHours,
+              hoursPerDay: entry.hoursPerDay > 0 ? roundToPlanningStep(entry.hoursPerDay) : floorToPlanningStep(maxDailyHours),
             },
           }
         );
@@ -4976,13 +5718,16 @@ export default function PlanningPage() {
     }
 
     // Use the parsed value, capped at the actual daily capacity (not a fixed 8h fallback)
-    if (!enableSplit && (!Number.isFinite(totalHours) || totalHours <= 0)) {
+    if (!canUseSplitPlanning && (!Number.isFinite(normalizedTotalHours) || normalizedTotalHours <= 0)) {
       showAlert('Planning Hours', 'Enter planned hours greater than 0.');
       return;
     }
 
-    const parsedHours = parseFloat(hoursPerDay);
-    const maxHoursPerDay = (isNaN(parsedHours) || parsedHours <= 0) ? maxDailyHours : Math.min(parsedHours, maxDailyHours);
+    const cappedHoursPerDay = floorToPlanningStep(Math.min(
+      normalizedHoursPerDayInput > 0 ? normalizedHoursPerDayInput : maxDailyHours,
+      maxDailyHours
+    ));
+    const maxHoursPerDay = cappedHoursPerDay > 0 ? cappedHoursPerDay : PLANNING_HOUR_STEP;
     
     setHoursPerDayModal(prev => ({ ...prev, show: false }));
     
@@ -5004,7 +5749,7 @@ export default function PlanningPage() {
               userId,
               fromDate: dateStr,
               newTaskId: task.Id,
-              newTaskHours: totalHours,
+              newTaskHours: normalizedTotalHours,
             }),
           }
         );
@@ -5026,9 +5771,61 @@ export default function PlanningPage() {
     } else {
       // Normal allocation (plan when available)
       if (isParentTask && leafTasks) {
-        await executeParentTaskAllocation(task, userId, startDate, totalHours, user, maxHoursPerDay, leafTasks);
+        const isParentSliceReplan = !!sourceHeaderId && !!sourceUserId && (sourceAllocationDates || []).length > 0;
+
+        if (isParentSliceReplan) {
+          const parentSliceResult = await executeTaskAllocation(task, userId, startDate, normalizedTotalHours, user, maxHoursPerDay, {
+            skipReload: true,
+            suppressDependentReplan: !!suppressDependentReplan,
+            appendToExistingUserSlice: true,
+            excludeHeaderId: sourceHeaderId,
+            header: {
+              hoursPerDay: maxHoursPerDay,
+            },
+          });
+
+          if (!parentSliceResult || !Array.isArray(parentSliceResult.allocations) || parentSliceResult.allocations.length === 0) {
+            showAlert('Error', 'Failed to replan selected parent slice.');
+            return;
+          }
+
+          const childAllocationsPayload = buildChildAllocationPayloadFromSourceSlice(
+            task.Id,
+            Number(sourceHeaderId),
+            parentSliceResult.headerId ?? null,
+            parentSliceResult.allocations,
+            sourceAllocationDates || []
+          );
+
+          if (childAllocationsPayload.length > 0) {
+            const childAllocationsSaveRes = await fetch(`${getApiUrl()}/api/task-child-allocations/batch`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ allocations: childAllocationsPayload, replaceParent: false }),
+            });
+
+            if (!childAllocationsSaveRes.ok) {
+              showAlert('Error', 'Failed to distribute subtasks for selected slice.');
+              return;
+            }
+          }
+
+          await deleteChildAllocationHeaderSlice(Number(sourceHeaderId));
+
+          await deleteTaskAllocationHeaderSlice(sourceHeaderId!);
+
+          if (projects.length > 0) {
+            await loadAllProjectsTasks(projects);
+            await loadAllAllocations();
+          }
+        } else {
+          await executeParentTaskAllocation(task, userId, startDate, normalizedTotalHours, user, maxHoursPerDay, leafTasks);
+        }
       } else {
-        const allocationResult = await executeTaskAllocation(task, userId, startDate, totalHours, user, maxHoursPerDay, {
+        const allocationResult = await executeTaskAllocation(task, userId, startDate, normalizedTotalHours, user, maxHoursPerDay, {
           skipReload: true,
           suppressDependentReplan: !!suppressDependentReplan,
           appendToExistingUserSlice: !!sourceUserId, // Always true for slice ops to preserve existing allocations
@@ -5075,6 +5872,21 @@ export default function PlanningPage() {
     }
   ): Promise<{ startDate: string | null; endDate: string | null; headerId?: number | null; allocations?: { date: string; hours: number; startTime: string; endTime: string }[] } | null> => {
     try {
+      const normalizedRemainingHoursToWork = roundToPlanningStep(remainingHoursToWork);
+      const normalizedMaxHoursPerDay = floorToPlanningStep(maxHoursPerDay);
+      if (!Number.isFinite(normalizedRemainingHoursToWork) || normalizedRemainingHoursToWork <= 0) {
+        if (!options?.silent) {
+          showAlert('Allocation Error', 'Planned hours must use 30-minute steps and be greater than 0.');
+        }
+        return null;
+      }
+      if (!Number.isFinite(normalizedMaxHoursPerDay) || normalizedMaxHoursPerDay <= 0) {
+        if (!options?.silent) {
+          showAlert('Allocation Error', 'Hours per day must use 30-minute steps and be greater than 0.');
+        }
+        return null;
+      }
+
       // Show planning progress modal
       if (!options?.silent) {
         setPlanningProgress({
@@ -5082,7 +5894,7 @@ export default function PlanningPage() {
           taskName: task.TaskName,
           progress: 0,
           currentStep: 'Checking user availability...',
-          totalHours: remainingHoursToWork,
+          totalHours: normalizedRemainingHoursToWork,
           allocatedHours: 0,
           daysProcessed: 0,
         });
@@ -5100,7 +5912,7 @@ export default function PlanningPage() {
       }, 0);
       const avgDailyHoursForTask = weeklyHoursForTask / 7;
       const effectiveAvgForTask = Math.max(avgDailyHoursForTask, 0.5); // minimum 0.5h/day to avoid huge windows
-      const estimatedDays = Math.ceil(remainingHoursToWork / effectiveAvgForTask);
+      const estimatedDays = Math.ceil(normalizedRemainingHoursToWork / effectiveAvgForTask);
       // Use 5x multiplier to account for existing allocations consuming availability
       const windowDaysForTask = Math.max(Math.ceil(estimatedDays * 5), 365); // At least 1 year
       const preliminaryEndDate = new Date(startDate);
@@ -5186,9 +5998,12 @@ export default function PlanningPage() {
           const startKey = isHobby ? `HobbyStart${dayName}` as keyof User : `WorkStart${dayName}` as keyof User;
           const defaultStartTime = (user[startKey] as string) || (isHobby ? '19:00' : '09:00');
           
-          // If there are existing allocations, start from their end time
+          // If there are existing allocations, start from their end time.
+          // Exception: when placing an independent new slice (excludeHeaderId is set), the
+          // allocation header owns its own time window and should start from work-day start
+          // so it uses full remaining capacity rather than appending after existing slices.
           let effectiveStartTime = defaultStartTime;
-          if (dayAvailability.latestEndTime) {
+          if (dayAvailability.latestEndTime && !options?.excludeHeaderId) {
             effectiveStartTime = dayAvailability.latestEndTime;
           }
           
@@ -5209,7 +6024,8 @@ export default function PlanningPage() {
           
           // Limit hours to: remaining hours, available hours, max hours per day (from modal), day's type capacity, and remaining window
           const dayMaxHours = dayAvailability.maxHours || 0;
-          const hoursToAllocate = Math.min(remainingHours, dayAvailability.availableHours, maxHoursPerDay, dayMaxHours, remainingWindowHours);
+          const rawHoursToAllocate = Math.min(remainingHours, dayAvailability.availableHours, normalizedMaxHoursPerDay, dayMaxHours, remainingWindowHours);
+          const hoursToAllocate = floorToPlanningStep(rawHoursToAllocate);
           
           console.log(`Day ${dateStr}: available=${dayAvailability.availableHours}, maxPerDay=${maxHoursPerDay}, dayMax=${dayMaxHours}, window=${remainingWindowHours.toFixed(2)}, allocating=${hoursToAllocate}`);
           
@@ -5247,7 +6063,7 @@ export default function PlanningPage() {
               
               allocations.push({
                 date: dateStr,
-                hours: hoursBeforeLunch,
+                hours: roundToPlanningStep(hoursBeforeLunch),
                 startTime: effectiveStartTime,
                 endTime: endBeforeLunchTime
               });
@@ -5265,7 +6081,7 @@ export default function PlanningPage() {
               
               allocations.push({
                 date: dateStr,
-                hours: hoursAfterLunch,
+                hours: roundToPlanningStep(hoursAfterLunch),
                 startTime: startAfterLunchTime,
                 endTime: endAfterLunchTime
               });
@@ -5278,7 +6094,7 @@ export default function PlanningPage() {
               
               allocations.push({
                 date: dateStr,
-                hours: hoursToAllocate,
+                hours: roundToPlanningStep(hoursToAllocate),
                 startTime: effectiveStartTime,
                 endTime: endTime
               });
@@ -5292,7 +6108,7 @@ export default function PlanningPage() {
             
             allocations.push({
               date: dateStr,
-              hours: hoursToAllocate,
+              hours: roundToPlanningStep(hoursToAllocate),
               startTime: effectiveStartTime,
               endTime: endTime
             });
@@ -5363,8 +6179,8 @@ export default function PlanningPage() {
             header: {
               allocationMode: options?.header?.allocationMode || 'parallel',
               splitOrder: options?.header?.splitOrder,
-              plannedHours: options?.header?.plannedHours ?? remainingHoursToWork,
-              hoursPerDay: options?.header?.hoursPerDay ?? maxHoursPerDay,
+              plannedHours: roundToPlanningStep(options?.header?.plannedHours ?? normalizedRemainingHoursToWork),
+              hoursPerDay: roundToPlanningStep(options?.header?.hoursPerDay ?? normalizedMaxHoursPerDay),
             }
           })
         }
@@ -5417,6 +6233,77 @@ export default function PlanningPage() {
       }
       return null;
     }
+  };
+
+  const handleReplanAllocationHeader = async (params: {
+    headerId: number;
+    taskId: number;
+    userId: number;
+    startDate: string;
+    totalHours: number;
+    hoursPerDay: number;
+    header: {
+      AllocationMode?: string;
+      SplitOrder?: number | null;
+    };
+  }) => {
+    const { headerId, taskId, userId, startDate, totalHours, hoursPerDay, header } = params;
+
+    const task = tasks.find((entry) => Number(entry.Id) === Number(taskId));
+    if (!task) {
+      throw new Error('Task not found');
+    }
+
+    const hasChildren = tasks.some((entry) => Number(entry.ParentTaskId) === Number(task.Id));
+    if (hasChildren) {
+      throw new Error('Replanning parent task slices from this modal is not supported yet. Use the planning actions for parent tasks.');
+    }
+
+    const planningUser = users.find((entry) => Number(entry.Id) === Number(userId));
+    if (!planningUser) {
+      throw new Error('User not found');
+    }
+
+    const maxHoursPerDay = Number(hoursPerDay || 0);
+    if (!Number.isFinite(maxHoursPerDay) || maxHoursPerDay <= 0) {
+      throw new Error('Hours per day must be greater than 0');
+    }
+
+    const startDateObj = new Date(`${startDate}T12:00:00`);
+    if (Number.isNaN(startDateObj.getTime())) {
+      throw new Error('Invalid start date');
+    }
+
+    const allocationResult = await executeTaskAllocation(
+      task,
+      userId,
+      startDateObj,
+      totalHours,
+      planningUser,
+      maxHoursPerDay,
+      {
+        skipReload: true,
+        appendToExistingUserSlice: true,
+        excludeHeaderId: headerId,
+        header: {
+          allocationMode: header.AllocationMode === 'sequential' ? 'sequential' : 'parallel',
+          splitOrder: header.SplitOrder ?? undefined,
+          plannedHours: totalHours,
+          hoursPerDay: maxHoursPerDay,
+        },
+      }
+    );
+
+    if (!allocationResult) {
+      throw new Error('Failed to replan allocation slice');
+    }
+
+    await deleteTaskAllocationHeaderSlice(headerId);
+
+    if (projects.length > 0) {
+      await loadAllProjectsTasks(projects);
+    }
+    await loadAllAllocations();
   };
 
 
@@ -5594,9 +6481,9 @@ export default function PlanningPage() {
       return;
     }
 
-    const hours = parseFloat(manualAllocationModal.allocatedHours);
-    if (isNaN(hours) || hours <= 0) {
-      showAlert('Error', 'Hours must be greater than 0');
+    const hours = roundToPlanningStep(parseFloat(manualAllocationModal.allocatedHours));
+    if (isNaN(hours) || hours <= 0 || !isPlanningStepValue(hours)) {
+      showAlert('Error', 'Hours must be greater than 0 and use 30-minute steps (0.5h).');
       return;
     }
 
@@ -5780,6 +6667,25 @@ export default function PlanningPage() {
       return group;
     }).sort((a: any, b: any) => (b.startDate || '').localeCompare(a.startDate || ''));
   };
+
+  // ── Slice suggested hours ─────────────────────────────────────────────────
+  // MUST be declared before any early return to satisfy Rules of Hooks.
+  const sliceSuggestedHours = useMemo(() => {
+    const sourceHeaderId = hoursPerDayModal.sourceHeaderId;
+    if (!sourceHeaderId) return null;
+
+    const sourceDates = new Set((hoursPerDayModal.sourceAllocationDates || []).map((date) => String(date).split('T')[0]));
+    const headerAllocations = allAllocations.filter((allocation) => Number(allocation.TaskAllocationHeaderId) === Number(sourceHeaderId));
+    const relevantAllocations = sourceDates.size > 0
+      ? headerAllocations.filter((allocation) => sourceDates.has(String(allocation.AllocationDate).split('T')[0]))
+      : headerAllocations;
+
+    const totalSliceHours = roundToPlanningStep(relevantAllocations.reduce((sum, allocation) => sum + Number(allocation.AllocatedHours || 0), 0));
+    return totalSliceHours > 0 ? totalSliceHours : null;
+  }, [hoursPerDayModal.sourceHeaderId, hoursPerDayModal.sourceAllocationDates, allAllocations]);
+  const defaultSuggestedHours = roundToPlanningStep(Math.max(0, hoursPerDayModal.totalEstimatedHours - hoursPerDayModal.hoursAlreadyWorked));
+  const suggestedPlanningHours = sliceSuggestedHours ?? defaultSuggestedHours;
+  // ─────────────────────────────────────────────────────────────────────────
 
   if (!user) return null;
 
@@ -6425,7 +7331,7 @@ export default function PlanningPage() {
                             key={idx}
                             className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} p-1 text-center text-[10px] border-r border-gray-200 dark:border-gray-700 ${
                               column.isWeekend
-                                ? 'bg-gray-100 dark:bg-gray-600'
+                                ? 'bg-gray-200 dark:bg-gray-600/70'
                                 : ''
                             } ${useAnnualStyleDensity && column.isMonthStart ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
                             style={useFixedPixelColumns ? { overflow: 'hidden', width: `${dayColumnWidthPx}px` } : { overflow: 'hidden' }}
@@ -6467,6 +7373,8 @@ export default function PlanningPage() {
                         <div
                           key={`milestone-col-${idx}`}
                           className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} border-r border-gray-200 dark:border-gray-700 ${
+                            column.isWeekend ? 'bg-gray-100 dark:bg-gray-700/45' : ''
+                          } ${
                             idx === todayIndex ? 'bg-blue-100/70 dark:bg-blue-800/25 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''
                           }`}
                           style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
@@ -6546,6 +7454,8 @@ export default function PlanningPage() {
                           <div
                             key={idx}
                             className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} border-r border-gray-200 dark:border-gray-700 relative ${
+                              column.isWeekend ? 'bg-gray-100 dark:bg-gray-700/45' : ''
+                            } ${
                               idx === todayIndex ? 'bg-blue-100/85 dark:bg-blue-800/30 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''
                             }`}
                             style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
@@ -6572,7 +7482,9 @@ export default function PlanningPage() {
                         );
                         const canResizeStart = !!(canResizeTask && plannedStartDate >= firstTimelineDateKey);
                         const canResizeEnd = !!(canResizeTask && plannedEndDate <= lastTimelineDateKey);
-                        const isResizingTask = taskResizeState.task?.Id === parentTask.Id;
+                        const isResizingTask =
+                          taskResizeState.task?.Id === parentTask.Id &&
+                          taskResizeState.resizeHeaderId === null;
                         const previewBarStyle = position && isResizingTask
                           ? getBarStyleFromIndices(taskResizeState.currentStartIndex, taskResizeState.currentEndIndex)
                           : null;
@@ -6740,7 +7652,7 @@ export default function PlanningPage() {
                       return matchesGanttSearch(task);
                     }
                     return plannedForUserByAllocations && matchesGanttSearch(task);
-                  });
+                  }).sort((a, b) => compareTasksForPlanningOrder(a, b, Number(userRow.Id)));
                   
                   // Build subtasks map with ALL descendants (multi-level)
                   const subtasksMap = new Map<number, Task[]>();
@@ -7042,6 +7954,8 @@ export default function PlanningPage() {
                                     ? 'bg-red-50 dark:bg-red-900/20'
                                     : isHoliday
                                     ? 'bg-amber-50 dark:bg-amber-900/20'
+                                    : summary.isWeekend
+                                    ? 'bg-gray-100 dark:bg-gray-700/45'
                                     : ''
                                 } ${idx === todayIndex ? 'bg-blue-100/60 dark:bg-blue-800/20 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
                                 style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
@@ -7199,6 +8113,7 @@ export default function PlanningPage() {
                           const subtaskTextSize = isSubtask ? 'text-[10px]' : 'text-xs';
                           const subtaskPadding = isSubtask ? 'px-1' : 'px-2';
                           const indentPrefix = isSubtask && level ? '└' + '─'.repeat(level) + ' ' : '';
+                          const canDragTaskSegment = !!(permissions?.canPlanTasks && !isGanttSearchActive && !isSubtask);
                           const canResizeTask = !!(
                             isResourceGrouping &&
                             permissions?.canPlanTasks &&
@@ -7210,6 +8125,7 @@ export default function PlanningPage() {
                           const canResizeStart = !!(canResizeTask && displayedStartDate && displayedStartDate >= firstTimelineDateKey);
                           const canResizeEnd = !!(canResizeTask && displayedEndDate && displayedEndDate <= lastTimelineDateKey);
                           const isResizingTask = taskResizeState.task?.Id === task.Id;
+                          const activeResizeHeaderId = taskResizeState.resizeHeaderId;
                           const previewBarStyle = isResizingTask
                             ? getBarStyleFromIndices(taskResizeState.currentStartIndex, taskResizeState.currentEndIndex)
                             : null;
@@ -7275,12 +8191,25 @@ export default function PlanningPage() {
                                   segment.endDate &&
                                   segment.endDate <= lastTimelineDateKey
                                 );
-                                const segmentPreviewStyle = isResizingTask && segmentIndex === 0 ? previewBarStyle : null;
                                 const segmentTooltip = taskTooltip.replace(
                                   `Dates: ${displayedStartDate || 'Not planned'} → ${displayedEndDate || 'Not planned'}`,
                                   `Dates: ${segment.startDate} → ${segment.endDate}`
                                 );
                                 const segmentHeaderId = segment.headerId;
+                                const sliceTotalHours = segmentHeaderId !== null
+                                  ? (allocationHoursByHeaderId.get(Number(segmentHeaderId)) || 0)
+                                  : 0;
+                                const segmentWorkedHours = segmentHeaderId !== null ? 0 : Number(workedHours || 0);
+                                const segmentPlannedHours = segmentHeaderId !== null ? sliceTotalHours : Number(plannedHours || 0);
+                                const segmentEstimatedHours = segmentHeaderId !== null ? sliceTotalHours : Number(estimatedHours || 0);
+                                const segmentHoursDisplay = `${segmentWorkedHours.toFixed(2)}/${segmentPlannedHours.toFixed(2)}/${segmentEstimatedHours.toFixed(2)}h`;
+                                const isResizingThisSegment =
+                                  isResizingTask &&
+                                  (
+                                    (activeResizeHeaderId !== null && segmentHeaderId !== null && Number(activeResizeHeaderId) === Number(segmentHeaderId)) ||
+                                    (activeResizeHeaderId === null && segmentIndex === 0)
+                                  );
+                                const segmentPreviewStyle = isResizingThisSegment ? previewBarStyle : null;
                                 const barDomId = segmentHeaderId !== null
                                   ? `allocation-header-${segmentHeaderId}`
                                   : undefined;
@@ -7291,7 +8220,7 @@ export default function PlanningPage() {
                                     id={barDomId}
                                     data-task-id={segmentIndex === 0 ? task.Id : undefined}
                                     data-allocation-header-id={segmentHeaderId !== null ? String(segmentHeaderId) : undefined}
-                                    draggable={permissions?.canPlanTasks && !isGanttSearchActive}
+                                    draggable={canDragTaskSegment}
                                     onDragStart={(e) => handleDragStart(e, task, userRow.Id, segmentHeaderId)}
                                     onDragEnd={handleDragEnd}
                                     onContextMenu={(e) => handleTaskContextMenu(e, task, userRow.Id, segmentHeaderId)}
@@ -7301,9 +8230,13 @@ export default function PlanningPage() {
                                         e.stopPropagation();
                                         return;
                                       }
+                                      if (segmentHeaderId !== null) {
+                                        openAllocationHeaderModal(segmentHeaderId);
+                                        return;
+                                      }
                                       void handleTaskClick(task);
                                     }}
-                                    className={`absolute ${subtaskHeight} rounded ${!statusColor ? getPriorityColor(task) : ''} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''} ${isResizingTask && segmentIndex === 0 ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''}`}
+                                    className={`absolute ${subtaskHeight} rounded ${!statusColor ? getPriorityColor(task) : ''} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${canDragTaskSegment ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''} ${isResizingThisSegment ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''}`}
                                     style={{
                                       left: segmentPreviewStyle?.left || segmentPosition.left,
                                       width: segmentPreviewStyle?.width || segmentPosition.width,
@@ -7311,7 +8244,7 @@ export default function PlanningPage() {
                                       height: '24px',
                                       ...(statusColor ? { backgroundColor: statusColor } : {}),
                                       borderLeft: `${isSubtask ? '3' : '4'}px solid ${priorityBorderHex}`,
-                                      zIndex: isResizingTask && segmentIndex === 0 ? 40 : isSubtask ? 20 + segmentIndex : 21 + segmentIndex,
+                                      zIndex: isResizingThisSegment ? 40 : isSubtask ? 20 + segmentIndex : 21 + segmentIndex,
                                     }}
                                     title={segmentTooltip}
                                   >
@@ -7319,7 +8252,15 @@ export default function PlanningPage() {
                                       <div
                                         role="button"
                                         aria-label={`Resize start date for ${task.TaskName}`}
-                                        onMouseDown={(e) => handleTaskResizeHandleMouseDown(e, task, 'start', segmentPosition.startIndex, segmentPosition.startIndex + segmentPosition.duration - 1)}
+                                        onMouseDown={(e) => handleTaskResizeHandleMouseDown(
+                                          e,
+                                          task,
+                                          'start',
+                                          segmentPosition.startIndex,
+                                          segmentPosition.startIndex + segmentPosition.duration - 1,
+                                          userRow.Id,
+                                          segmentHeaderId
+                                        )}
                                         onClick={(e) => e.stopPropagation()}
                                         className="absolute left-0 top-0 h-full w-2 cursor-ew-resize rounded-l bg-black/20 hover:bg-black/35"
                                         title="Hold Shift and drag to resize start"
@@ -7338,13 +8279,21 @@ export default function PlanningPage() {
                                       {task.TaskName}
                                     </span>
                                     {!isSubtask && showTaskBarHours && (
-                                      <span className={`ml-1 text-[10px] whitespace-nowrap pointer-events-none ${isOverPlanned ? 'bg-red-600 px-1 rounded font-bold' : 'opacity-80'}`}>{hoursDisplay}</span>
+                                      <span className={`ml-1 text-[10px] whitespace-nowrap pointer-events-none ${isOverPlanned ? 'bg-red-600 px-1 rounded font-bold' : 'opacity-80'}`}>{segmentHoursDisplay}</span>
                                     )}
                                     {segmentCanResizeEnd && isShiftResizeMode && (
                                       <div
                                         role="button"
                                         aria-label={`Resize end date for ${task.TaskName}`}
-                                        onMouseDown={(e) => handleTaskResizeHandleMouseDown(e, task, 'end', segmentPosition.startIndex, segmentPosition.startIndex + segmentPosition.duration - 1)}
+                                        onMouseDown={(e) => handleTaskResizeHandleMouseDown(
+                                          e,
+                                          task,
+                                          'end',
+                                          segmentPosition.startIndex,
+                                          segmentPosition.startIndex + segmentPosition.duration - 1,
+                                          userRow.Id,
+                                          segmentHeaderId
+                                        )}
                                         onClick={(e) => e.stopPropagation()}
                                         className="absolute right-0 top-0 h-full w-2 cursor-ew-resize rounded-r bg-black/20 hover:bg-black/35"
                                         title="Hold Shift and drag to resize end"
@@ -7521,7 +8470,7 @@ export default function PlanningPage() {
                                   : isHoliday
                                   ? 'bg-amber-100/70 dark:bg-amber-900/35'
                                     : summary.isWeekend
-                                  ? 'bg-gray-100 dark:bg-gray-700'
+                                  ? 'bg-gray-200 dark:bg-gray-600/65'
                                   : ''
                               } ${idx === todayIndex ? 'bg-blue-100/70 dark:bg-blue-800/25 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
                               title={isOverAllocated ? 'Over allocated day: planned hours exceed configured capacity' : isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
@@ -7643,7 +8592,9 @@ export default function PlanningPage() {
                         {timelineColumns.map((column, idx) => (
                           <div
                             key={idx}
-                            className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} border-r border-gray-200 dark:border-gray-700 ${idx === todayIndex ? 'bg-blue-100/60 dark:bg-blue-800/20 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
+                            className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} border-r border-gray-200 dark:border-gray-700 ${
+                              column.isWeekend ? 'bg-gray-100 dark:bg-gray-700/45' : ''
+                            } ${idx === todayIndex ? 'bg-blue-100/60 dark:bg-blue-800/20 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
                             style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
                           />
                         ))}
@@ -7789,6 +8740,169 @@ export default function PlanningPage() {
             >
               Add extra time
             </button>
+          </div>
+        )}
+
+        <AllocationHeaderDetailModal
+          isOpen={allocationHeaderModal.show}
+          headerId={allocationHeaderModal.headerId}
+          token={token}
+          canEdit={!!permissions?.canPlanTasks}
+          onClose={closeAllocationHeaderModal}
+          onDeleteAllAllocations={async ({ taskId }) => {
+            const response = await fetch(`${getApiUrl()}/api/task-allocations/task/${taskId}`, {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(errorData?.message || 'Failed to delete task allocations');
+            }
+
+            if (projects.length > 0) {
+              await loadAllProjectsTasks(projects);
+            }
+            await loadAllAllocations();
+            showAlert('Success', 'All allocations for this task were deleted successfully.');
+          }}
+          onOpenTaskDetails={async (taskId) => {
+            const task = tasks.find((entry) => Number(entry.Id) === Number(taskId));
+            if (!task) {
+              return;
+            }
+
+            closeAllocationHeaderModal();
+            await handleTaskClick(task);
+          }}
+          onSaveReplan={handleReplanAllocationHeader}
+        />
+
+        {shiftResizeSuggestionModal.show && shiftResizeSuggestionModal.task && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[130] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white">Shift resize suggestion</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{shiftResizeSuggestionModal.task.TaskName}</p>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {shiftResizeSuggestionModal.error && (
+                  <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 rounded-lg text-sm">
+                    {shiftResizeSuggestionModal.error}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Start date</label>
+                    <input
+                      type="date"
+                      value={shiftResizeSuggestionModal.plannedStartDate}
+                      onChange={(e) => setShiftResizeSuggestionModal((prev) => {
+                        const nextStartDate = e.target.value;
+                        const nextSuggested = calculateSuggestedHoursPerDay(prev.totalHours, nextStartDate, prev.plannedEndDate);
+                        return {
+                          ...prev,
+                          plannedStartDate: nextStartDate,
+                          suggestedHoursPerDay: nextSuggested,
+                          hoursPerDayInput: String(nextSuggested),
+                          error: '',
+                        };
+                      })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      disabled={shiftResizeSuggestionModal.isSubmitting}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">End date</label>
+                    <input
+                      type="date"
+                      value={shiftResizeSuggestionModal.plannedEndDate}
+                      onChange={(e) => setShiftResizeSuggestionModal((prev) => {
+                        const nextEndDate = e.target.value;
+                        const nextSuggested = calculateSuggestedHoursPerDay(prev.totalHours, prev.plannedStartDate, nextEndDate);
+                        return {
+                          ...prev,
+                          plannedEndDate: nextEndDate,
+                          suggestedHoursPerDay: nextSuggested,
+                          hoursPerDayInput: String(nextSuggested),
+                          error: '',
+                        };
+                      })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      disabled={shiftResizeSuggestionModal.isSubmitting}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Total hours</label>
+                    <input
+                      type="number"
+                      min="0.5"
+                      step="0.5"
+                      value={shiftResizeSuggestionModal.totalHours}
+                      onChange={(e) => setShiftResizeSuggestionModal((prev) => {
+                        const nextTotalHours = roundToPlanningStep(Number(e.target.value || 0));
+                        const nextSuggested = calculateSuggestedHoursPerDay(nextTotalHours, prev.plannedStartDate, prev.plannedEndDate);
+                        return {
+                          ...prev,
+                          totalHours: nextTotalHours,
+                          suggestedHoursPerDay: nextSuggested,
+                          hoursPerDayInput: String(nextSuggested),
+                          error: '',
+                        };
+                      })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      disabled={shiftResizeSuggestionModal.isSubmitting}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Hours/day (suggested)</label>
+                    <input
+                      type="number"
+                      min="0.5"
+                      step="0.5"
+                      value={shiftResizeSuggestionModal.hoursPerDayInput}
+                      onChange={(e) => setShiftResizeSuggestionModal((prev) => ({
+                        ...prev,
+                        hoursPerDayInput: String(roundToPlanningStep(Number(e.target.value || 0))),
+                        error: '',
+                      }))}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      disabled={shiftResizeSuggestionModal.isSubmitting}
+                    />
+                    <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                      Suggested: {shiftResizeSuggestionModal.suggestedHoursPerDay} h/day
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeShiftResizeSuggestionModal}
+                  className="px-4 py-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  disabled={shiftResizeSuggestionModal.isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { void handleConfirmShiftResizeSuggestion(); }}
+                  className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                  disabled={shiftResizeSuggestionModal.isSubmitting}
+                >
+                  {shiftResizeSuggestionModal.isSubmitting ? 'Replanning...' : 'Apply suggestion'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -8529,14 +9643,25 @@ export default function PlanningPage() {
                     </p>
                   )}
                 </div>
-
-                <div className="p-3 bg-gray-50 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-700 rounded-lg space-y-3">
-                    <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-                      <input
-                        type="checkbox"
-                        checked={!!hoursPerDayModal.enableSplit}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
+ 
+                    <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHoursPerDayModal((prev) => ({
+                            ...prev,
+                            enableSplit: false,
+                          }));
+                        }}
+                        className={`h-10 px-4 text-sm font-medium transition-colors ${!(hoursPerDayModal.enableSplit && !(hoursPerDayModal.sourceUserId || hoursPerDayModal.sourceHeaderId || hoursPerDayModal.suppressDependentReplan))
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                      >
+                        Normal planning
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
                           setHoursPerDayModal((prev) => {
                             const baseUserId = prev.userId || 0;
                             const baseHoursPerDay = parseFloat(prev.hoursPerDay) || prev.maxDailyHours || 8;
@@ -8558,25 +9683,37 @@ export default function PlanningPage() {
                                   splitOrder: 1,
                                   selectedLeafTaskIds: prev.isParentTask ? leafTaskIds : [],
                                 }];
+
                             return {
                               ...prev,
-                              enableSplit: checked,
+                              enableSplit: true,
                               splitMode: prev.splitMode || 'parallel',
                               splitEntries: nextEntries,
                             };
                           });
                         }}
-                        className="rounded border-gray-300 dark:border-gray-600"
-                      />
-                      Split this task across multiple users
-                    </label>
-                    {hoursPerDayModal.isParentTask && (
+                        disabled={!!(hoursPerDayModal.sourceUserId || hoursPerDayModal.sourceHeaderId || hoursPerDayModal.suppressDependentReplan)}
+                        className={`h-10 px-4 text-sm font-medium transition-colors ${(hoursPerDayModal.enableSplit && !(hoursPerDayModal.sourceUserId || hoursPerDayModal.sourceHeaderId || hoursPerDayModal.suppressDependentReplan))
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        Split planning
+                      </button>
+                    </div>
+
+                    {!!(hoursPerDayModal.sourceUserId || hoursPerDayModal.sourceHeaderId || hoursPerDayModal.suppressDependentReplan) && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        Split planning is disabled when replanning or moving an existing allocation slice.
+                      </p>
+                    )}
+
+                    {hoursPerDayModal.isParentTask && hoursPerDayModal.enableSplit && !(hoursPerDayModal.sourceUserId || hoursPerDayModal.sourceHeaderId || hoursPerDayModal.suppressDependentReplan) && (
                       <p className="text-xs text-gray-500 dark:text-gray-400">
                         For parent tasks, select which subtasks each user will own.
                       </p>
                     )}
 
-                    {hoursPerDayModal.enableSplit && (
+                    {hoursPerDayModal.enableSplit && !(hoursPerDayModal.sourceUserId || hoursPerDayModal.sourceHeaderId || hoursPerDayModal.suppressDependentReplan) && (
                       <>
                         <div>
                           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Allocation Mode</label>
@@ -8605,6 +9742,7 @@ export default function PlanningPage() {
                                       splitEntries: (prev.splitEntries || []).map((row, rowIndex) => rowIndex === index ? { ...row, userId: parsedValue } : row)
                                     }));
                                   }}
+                                  dropdownMode="portal"
                                   options={users.map((planningUser) => ({
                                     value: planningUser.Id,
                                     label: planningUser.FirstName && planningUser.LastName
@@ -8623,7 +9761,7 @@ export default function PlanningPage() {
                                   step="0.5"
                                   value={entry.plannedHours}
                                   onChange={(e) => {
-                                    const value = parseFloat(e.target.value) || 0;
+                                    const value = roundToPlanningStep(parseFloat(e.target.value) || 0);
                                     setHoursPerDayModal((prev) => ({
                                       ...prev,
                                       splitEntries: (prev.splitEntries || []).map((row, rowIndex) => rowIndex === index ? { ...row, plannedHours: value } : row)
@@ -8643,7 +9781,7 @@ export default function PlanningPage() {
                                   step="0.5"
                                   value={entry.hoursPerDay}
                                   onChange={(e) => {
-                                    const value = parseFloat(e.target.value) || 0;
+                                    const value = roundToPlanningStep(parseFloat(e.target.value) || 0);
                                     setHoursPerDayModal((prev) => ({
                                       ...prev,
                                       splitEntries: (prev.splitEntries || []).map((row, rowIndex) => rowIndex === index ? { ...row, hoursPerDay: value } : row)
@@ -8700,12 +9838,22 @@ export default function PlanningPage() {
                                         })
                                       }));
                                     }}
-                                    options={(hoursPerDayModal.leafTasks || []).map((leafTask) => ({
-                                      value: leafTask.Id,
-                                      label: leafTask.TaskName,
-                                      subtitle: `${(leafTaskRemainingHoursById[leafTask.Id] ?? parseFloat(String(leafTask.EstimatedHours || 0))).toFixed(1)}h remaining`
-                                    }))}
+                                    options={(hoursPerDayModal.leafTasks || [])
+                                      .filter((leafTask) => {
+                                        // Exclude tasks already selected by other user rows
+                                        const selectedInOthers = new Set(
+                                          (hoursPerDayModal.splitEntries || [])
+                                            .flatMap((row, rowIndex) => rowIndex !== index ? (row.selectedLeafTaskIds || []) : [])
+                                        );
+                                        return !selectedInOthers.has(leafTask.Id);
+                                      })
+                                      .map((leafTask) => ({
+                                        value: leafTask.Id,
+                                        label: leafTask.TaskName,
+                                        subtitle: `${(leafTaskRemainingHoursById[leafTask.Id] ?? parseFloat(String(leafTask.EstimatedHours || 0))).toFixed(1)}h remaining`
+                                      }))}
                                     placeholder="Select subtasks"
+                                    dropdownMode="portal"
                                   />
 
                                   <div className="mt-2">
@@ -8749,7 +9897,7 @@ export default function PlanningPage() {
                                   {
                                     userId: 0,
                                     plannedHours: 0,
-                                    hoursPerDay: parseFloat(prev.hoursPerDay) || prev.maxDailyHours || 8,
+                                    hoursPerDay: roundToPlanningStep(parseFloat(prev.hoursPerDay) || prev.maxDailyHours || 8),
                                     splitOrder: (prev.splitEntries?.length || 0) + 1,
                                     selectedLeafTaskIds: prev.isParentTask ? [] : undefined,
                                   }
@@ -8766,46 +9914,48 @@ export default function PlanningPage() {
                         </div>
                       </>
                     )}
-                </div>
+                 
               </div>
 
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  How many hours to plan?
-                </label>
-                <input
-                  type="number"
-                  min="0.5"
-                  max={hoursPerDayModal.totalEstimatedHours > 0 ? hoursPerDayModal.totalEstimatedHours : undefined}
-                  step="0.5"
-                  value={hoursPerDayModal.totalHours}
-                  disabled={!!hoursPerDayModal.enableSplit}
-                  onChange={(e) => setHoursPerDayModal(prev => ({ ...prev, totalHours: parseFloat(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white disabled:bg-gray-100 dark:bg-gray-700 dark:disabled:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-semibold"
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Suggested: {(hoursPerDayModal.totalEstimatedHours - hoursPerDayModal.hoursAlreadyWorked).toFixed(1)}h (estimated - worked)
-                </p>
-              </div>
+              {!(hoursPerDayModal.enableSplit && !(hoursPerDayModal.sourceUserId || hoursPerDayModal.sourceHeaderId || hoursPerDayModal.suppressDependentReplan)) && (
+                <>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      How many hours to plan?
+                    </label>
+                    <input
+                      type="number"
+                      min="0.5"
+                      max={hoursPerDayModal.totalEstimatedHours > 0 ? hoursPerDayModal.totalEstimatedHours : undefined}
+                      step="0.5"
+                      value={hoursPerDayModal.totalHours}
+                      onChange={(e) => setHoursPerDayModal(prev => ({ ...prev, totalHours: roundToPlanningStep(parseFloat(e.target.value) || 0) }))}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-semibold"
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Suggested: {suggestedPlanningHours.toFixed(1)}h {sliceSuggestedHours !== null ? '(current slice)' : '(estimated - worked)'}
+                    </p>
+                  </div>
 
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Hours per day
-                </label>
-                <input
-                  type="number"
-                  min="0.5"
-                  max={hoursPerDayModal.maxDailyHours}
-                  step="0.5"
-                  value={hoursPerDayModal.hoursPerDay}
-                  disabled={!!hoursPerDayModal.enableSplit}
-                  onChange={(e) => setHoursPerDayModal(prev => ({ ...prev, hoursPerDay: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white disabled:bg-gray-100 dark:bg-gray-700 dark:disabled:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Your daily work capacity: {hoursPerDayModal.maxDailyHours} hours
-                </p>
-              </div>
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Hours per day
+                    </label>
+                    <input
+                      type="number"
+                      min="0.5"
+                      max={hoursPerDayModal.maxDailyHours}
+                      step="0.5"
+                      value={hoursPerDayModal.hoursPerDay}
+                      onChange={(e) => setHoursPerDayModal(prev => ({ ...prev, hoursPerDay: String(roundToPlanningStep(parseFloat(e.target.value) || 0)) }))}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Your daily work capacity: {hoursPerDayModal.maxDailyHours} hours
+                    </p>
+                  </div>
+                </>
+              )}
               </div>
 
               <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3 bg-white dark:bg-gray-800">
@@ -8844,7 +9994,7 @@ export default function PlanningPage() {
                     step="0.5"
                     max={sliceTransferModal.totalHours}
                     value={sliceTransferModal.moveHours}
-                    onChange={(e) => setSliceTransferModal((prev) => ({ ...prev, moveHours: parseFloat(e.target.value) || 0 }))}
+                      onChange={(e) => setSliceTransferModal((prev) => ({ ...prev, moveHours: roundToPlanningStep(parseFloat(e.target.value) || 0) }))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
@@ -8865,22 +10015,24 @@ export default function PlanningPage() {
                           ...prev,
                           selectedChildTaskIds: parsed,
                           totalHours: prev.taskId
-                            ? calculateSliceHoursFromSelectedSubtasks(
+                            ? roundToPlanningStep(calculateSliceHoursFromSelectedSubtasks(
                                 prev.taskId,
                                 parsed,
                                 prev.sourceAllocationDates,
                                 prev.sourceTotalHours,
-                                prev.availableChildTaskIds.length
-                              )
+                                prev.availableChildTaskIds.length,
+                                prev.sourceHeaderId
+                              ))
                             : 0,
                           moveHours: prev.taskId
-                            ? calculateSliceHoursFromSelectedSubtasks(
+                            ? roundToPlanningStep(calculateSliceHoursFromSelectedSubtasks(
                                 prev.taskId,
                                 parsed,
                                 prev.sourceAllocationDates,
                                 prev.sourceTotalHours,
-                                prev.availableChildTaskIds.length
-                              )
+                                prev.availableChildTaskIds.length,
+                                prev.sourceHeaderId
+                              ))
                             : 0,
                         }));
                       }}
@@ -8893,6 +10045,7 @@ export default function PlanningPage() {
                           subtitle: `${parseFloat(String(taskEntry.EstimatedHours || 0)).toFixed(1)}h`,
                         }))}
                       placeholder="Select subtasks"
+                      dropdownMode="portal"
                     />
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                       Select only the subtasks that should move with this slice.
@@ -9182,7 +10335,7 @@ export default function PlanningPage() {
                       min="0.5"
                       max="24"
                       value={manualAllocationModal.allocatedHours}
-                      onChange={(e) => setManualAllocationModal(prev => ({ ...prev, allocatedHours: e.target.value }))}
+                      onChange={(e) => setManualAllocationModal(prev => ({ ...prev, allocatedHours: String(roundToPlanningStep(parseFloat(e.target.value) || 0)) }))}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                       placeholder="e.g., 4.5"
                     />
