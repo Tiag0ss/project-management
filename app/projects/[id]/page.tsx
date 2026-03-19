@@ -4862,6 +4862,8 @@ function TasksTab({
   const [taskColumnSizeMode, setTaskColumnSizeMode] = useState<Record<string, 'fixed' | 'grow'>>({});
   const [taskRowDensity, setTaskRowDensity] = useState<'compact' | 'comfortable'>('comfortable');
   const [taskColumnsReady, setTaskColumnsReady] = useState(false);
+  const [taskDragColumnId, setTaskDragColumnId] = useState<string | null>(null);
+  const [taskDragOverInfo, setTaskDragOverInfo] = useState<{ columnKey: string; side: 'left' | 'right' } | null>(null);
 
   const additionalTaskColumnKeys = React.useMemo(() => {
     const excludedKeys = new Set<string>([
@@ -5037,13 +5039,24 @@ function TasksTab({
             ? parsed.columnOrder.filter((columnId) => valid.has(columnId))
             : [];
           const missingCachedOrder = taskSelectableColumnIds.filter((columnId) => !cachedOrder.includes(columnId));
+          const normalizedCachedOrder = cachedOrder.length > 0
+            ? [...cachedOrder, ...missingCachedOrder]
+            : taskSelectableColumnIds;
           if (!cancelled) {
-            setTaskColumnOrder(cachedOrder.length > 0 ? [...cachedOrder, ...missingCachedOrder] : taskSelectableColumnIds);
+            setTaskColumnOrder(normalizedCachedOrder);
           }
 
           const cachedHidden = Array.isArray(parsed.hiddenColumns)
             ? parsed.hiddenColumns.filter((columnId) => valid.has(columnId))
             : [];
+          const cachedKnownColumns = new Set<string>([
+            ...cachedOrder,
+            ...cachedHidden,
+          ]);
+          const cachedDefaultHiddenColumns = taskDefaultHiddenColumns.filter((columnId) => !cachedKnownColumns.has(columnId));
+          const normalizedCachedHidden = Array.isArray(parsed.hiddenColumns)
+            ? Array.from(new Set([...cachedHidden, ...cachedDefaultHiddenColumns]))
+            : taskDefaultHiddenColumns;
           const cachedSizing = parsed.columnSizing && typeof parsed.columnSizing === 'object'
             ? Object.entries(parsed.columnSizing).reduce<Record<string, number>>((accumulator, [columnId, width]) => {
                 if (!valid.has(columnId)) return accumulator;
@@ -5061,7 +5074,7 @@ function TasksTab({
             return accumulator;
           }, {});
           if (!cancelled) {
-            setHiddenTaskColumns(cachedHidden);
+            setHiddenTaskColumns(normalizedCachedHidden);
             setTaskColumnSizing(cachedSizing);
             setTaskColumnSizeMode(cachedSizeMode);
             setTaskRowDensity(parsed.rowDensity === 'compact' ? 'compact' : 'comfortable');
@@ -5201,6 +5214,57 @@ function TasksTab({
       }).catch(() => undefined);
     };
   }, [taskColumnsReady, token, taskGridPreferenceKey, taskGridSessionKey, hiddenTaskColumns, taskColumnOrder, taskColumnSizing, taskColumnSizeMode, taskRowDensity, taskSelectableColumnIds.join('|')]);
+
+  const taskColumnDragProps = (columnKey: string) => {
+    const indicator = taskDragOverInfo?.columnKey === columnKey ? taskDragOverInfo.side : null;
+    return {
+      draggable: true as const,
+      style: {
+        cursor: taskDragColumnId === columnKey ? 'grabbing' as const : 'grab' as const,
+        boxShadow: indicator === 'left'
+          ? 'inset 3px 0 0 0 #3b82f6'
+          : indicator === 'right'
+          ? 'inset -3px 0 0 0 #3b82f6'
+          : undefined,
+      },
+      onDragStart: (e: React.DragEvent<HTMLTableCellElement>) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', columnKey);
+        setTaskDragColumnId(columnKey);
+      },
+      onDragEnd: () => {
+        setTaskDragColumnId(null);
+        setTaskDragOverInfo(null);
+      },
+      onDragOver: (e: React.DragEvent<HTMLTableCellElement>) => {
+        if (!taskDragColumnId || taskDragColumnId === columnKey) return;
+        e.preventDefault();
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const side: 'left' | 'right' = e.clientX < rect.left + rect.width / 2 ? 'left' : 'right';
+        setTaskDragOverInfo((p) => (p?.columnKey === columnKey && p?.side === side ? p : { columnKey, side }));
+      },
+      onDragLeave: () => {
+        setTaskDragOverInfo((p) => (p?.columnKey === columnKey ? null : p));
+      },
+      onDrop: (e: React.DragEvent<HTMLTableCellElement>) => {
+        e.preventDefault();
+        if (!taskDragColumnId || taskDragColumnId === columnKey) return;
+        const side = taskDragOverInfo?.columnKey === columnKey ? taskDragOverInfo.side : 'right';
+        setTaskColumnOrder((prev) => {
+          const order = prev.length > 0 ? [...prev] : [...taskSelectableColumnIds];
+          const fromIdx = order.indexOf(taskDragColumnId);
+          if (fromIdx < 0) return order;
+          order.splice(fromIdx, 1);
+          const toIdx = order.indexOf(columnKey);
+          if (toIdx < 0) return order;
+          order.splice(side === 'left' ? toIdx : toIdx + 1, 0, taskDragColumnId);
+          return order;
+        });
+        setTaskDragColumnId(null);
+        setTaskDragOverInfo(null);
+      },
+    };
+  };
 
   useEffect(() => {
     const grid = tasksGridRef.current;
@@ -6921,6 +6985,7 @@ function TasksTab({
                   aria-sort={getTaskAriaSort('TaskTypeName')}
                   onClick={() => handleSort('TaskTypeName')}
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                  {...taskColumnDragProps('task-type')}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="inline-flex items-center gap-1">Task Type {getTaskSortIndicator('TaskTypeName') && <span className="text-gray-400 dark:text-gray-500">{getTaskSortIndicator('TaskTypeName')}</span>}</span>
@@ -6946,6 +7011,7 @@ function TasksTab({
                   aria-sort={getTaskAriaSort('task')}
                   onClick={() => handleSort('task')}
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                  {...taskColumnDragProps('task')}
                 >
                   <div className="flex items-center gap-1">Task {getTaskSortIndicator('task') && <span className="text-gray-400 dark:text-gray-500">{getTaskSortIndicator('task')}</span>}</div>
                 </th>
@@ -6955,6 +7021,7 @@ function TasksTab({
                   aria-sort={getTaskAriaSort('assignee')}
                   onClick={() => handleSort('assignee')}
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                  {...taskColumnDragProps('assigned-to')}
                 >
                   <div className="flex items-center gap-1">Assigned To {getTaskSortIndicator('assignee') && <span className="text-gray-400 dark:text-gray-500">{getTaskSortIndicator('assignee')}</span>}</div>
                 </th>
@@ -6964,6 +7031,7 @@ function TasksTab({
                   aria-sort={getTaskAriaSort('status')}
                   onClick={() => handleSort('status')}
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                  {...taskColumnDragProps('status')}
                 >
                   <div className="flex items-center gap-1">Status {getTaskSortIndicator('status') && <span className="text-gray-400 dark:text-gray-500">{getTaskSortIndicator('status')}</span>}</div>
                 </th>
@@ -6973,6 +7041,7 @@ function TasksTab({
                   aria-sort={getTaskAriaSort('priority')}
                   onClick={() => handleSort('priority')}
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                  {...taskColumnDragProps('priority')}
                 >
                   <div className="flex items-center gap-1">Priority {getTaskSortIndicator('priority') && <span className="text-gray-400 dark:text-gray-500">{getTaskSortIndicator('priority')}</span>}</div>
                 </th>
@@ -6982,6 +7051,7 @@ function TasksTab({
                   aria-sort={getTaskAriaSort('dueDate')}
                   onClick={() => handleSort('dueDate')}
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                  {...taskColumnDragProps('due-date')}
                 >
                   <div className="flex items-center gap-1">Due Date {getTaskSortIndicator('dueDate') && <span className="text-gray-400 dark:text-gray-500">{getTaskSortIndicator('dueDate')}</span>}</div>
                 </th>
@@ -6993,6 +7063,7 @@ function TasksTab({
                     aria-sort={getTaskAriaSort(`extra:${columnKey}`)}
                     onClick={() => handleSort(`extra:${columnKey}`)}
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none"
+                    {...taskColumnDragProps(`extra-${columnKey}`)}
                   >
                     <div className="inline-flex items-center gap-1">
                       {formatAdditionalTaskColumnLabel(columnKey)}

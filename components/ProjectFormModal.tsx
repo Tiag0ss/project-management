@@ -117,7 +117,29 @@ export default function ProjectFormModal({
   const loadProjectStatuses = async (orgId: number) => {
     try {
       const response = await statusValuesApi.getProjectStatuses(orgId, token);
-      setProjectStatuses(response.statuses);
+      const statuses = response.statuses || [];
+      setProjectStatuses(statuses);
+
+      setFormData((prev) => {
+        if (project) {
+          return prev;
+        }
+
+        const hasValidStatus =
+          typeof prev.status === 'number' &&
+          statuses.some((status) => Number(status.Id) === Number(prev.status));
+
+        if (hasValidStatus) {
+          return prev;
+        }
+
+        const defaultStatus = statuses.find((status) => Number(status.IsDefault) === 1) || statuses[0];
+
+        return {
+          ...prev,
+          status: defaultStatus ? Number(defaultStatus.Id) : null,
+        };
+      });
     } catch (err: any) {
       console.error('Failed to load project statuses:', err);
     }

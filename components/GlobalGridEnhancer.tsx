@@ -13,6 +13,7 @@ interface RuntimeGridPreference {
   sortField: string | null;
   sortDirection: 'asc' | 'desc' | null;
   rowDensity: 'compact' | 'comfortable';
+  hasSavedHiddenColumns?: boolean;
 }
 
 const normalizeHeaderKey = (value: string) =>
@@ -89,7 +90,16 @@ const sanitizePreference = (raw: Partial<GridPreference> | null | undefined, ava
     ? raw.rowDensity
     : 'comfortable';
 
-  return { columnOrder, hiddenColumns, columnSizing, columnSizeMode, sortField, sortDirection, rowDensity };
+  return {
+    columnOrder,
+    hiddenColumns,
+    columnSizing,
+    columnSizeMode,
+    sortField,
+    sortDirection,
+    rowDensity,
+    hasSavedHiddenColumns: Array.isArray(raw?.hiddenColumns),
+  };
 };
 
 const isActionHeader = (label: string) => {
@@ -102,6 +112,9 @@ export default function GlobalGridEnhancer() {
   const { token } = useAuth();
   const [preferencesMap, setPreferencesMap] = useState<Map<string, RuntimeGridPreference>>(new Map());
   const saveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Always-current snapshot of runtime prefs — updated immediately on every local change
+  // so re-initialization after a React re-render uses up-to-date state, not stale server data.
+  const livePreferencesRef = useRef<Map<string, RuntimeGridPreference>>(new Map());
 
   const shouldEnhance = useMemo(() => {
     if (!pathname) return false;
@@ -132,8 +145,10 @@ export default function GlobalGridEnhancer() {
             sortField: pref.sortField ?? null,
             sortDirection: pref.sortDirection ?? null,
             rowDensity: pref.rowDensity === 'compact' || pref.rowDensity === 'comfortable' ? pref.rowDensity : 'comfortable',
+            hasSavedHiddenColumns: Array.isArray(pref.hiddenColumns),
           });
         });
+        livePreferencesRef.current = new Map(map);
         setPreferencesMap(map);
       } catch {
         if (!isCancelled) {
@@ -224,7 +239,7 @@ export default function GlobalGridEnhancer() {
 
         table.dataset.gridEnhancedKey = gridKey;
 
-        const existingPref = preferencesMap.get(gridKey);
+        const existingPref = livePreferencesRef.current.get(gridKey) ?? preferencesMap.get(gridKey);
         const defaultHiddenColumns = getDefaultHiddenColumns(headerCells, columnIds);
         const baselinePreference: RuntimeGridPreference = {
           ...defaultPreference(columnIds),
@@ -243,6 +258,13 @@ export default function GlobalGridEnhancer() {
         }
 
         if (existingPref) {
+          if (existingPref.hasSavedHiddenColumns === false) {
+            runtimePref = {
+              ...runtimePref,
+              hiddenColumns: Array.from(new Set([...runtimePref.hiddenColumns, ...defaultHiddenColumns])),
+            };
+          }
+
           const knownColumns = new Set<string>([
             ...(Array.isArray(existingPref.columnOrder) ? existingPref.columnOrder : []),
             ...(Array.isArray(existingPref.hiddenColumns) ? existingPref.hiddenColumns : []),
@@ -272,6 +294,16 @@ export default function GlobalGridEnhancer() {
             columnSizing: nextSizing,
           };
         }
+
+        // Persist the post-initialization state so re-initialization after a React re-render
+        // picks up the correct snapshot instead of stale server data.
+        livePreferencesRef.current.set(gridKey, { ...runtimePref, hasSavedHiddenColumns: true });
+
+        // commitRuntimePref: update both the local variable and the live ref atomically.
+        const commitRuntimePref = (next: RuntimeGridPreference) => {
+          runtimePref = next;
+          livePreferencesRef.current.set(gridKey, { ...next, hasSavedHiddenColumns: true });
+        };
 
         const savePreferenceDebounced = () => {
           if (!token) return;
@@ -483,11 +515,11 @@ export default function GlobalGridEnhancer() {
               const currentlySorted = runtimePref.sortField === columnId;
               const nextDirection: 'asc' | 'desc' = currentlySorted && runtimePref.sortDirection === 'asc' ? 'desc' : 'asc';
 
-              runtimePref = {
+              commitRuntimePref({
                 ...runtimePref,
                 sortField: columnId,
                 sortDirection: nextDirection,
-              };
+              });
 
               refreshTable();
               savePreferenceDebounced();
@@ -510,6 +542,108 @@ export default function GlobalGridEnhancer() {
               headerCell.style.removeProperty('outline');
               headerCell.style.removeProperty('outline-offset');
             });
+          });
+        };
+
+        const attachColumnDragHandlers = () => {
+          if (isReorderDisabled) return;
+
+          const allHeaders = Array.from(table.querySelectorAll('thead th')) as HTMLTableCellElement[];
+          let dragSourceId: string | null = null;
+
+          const clearDropIndicators = () => {
+            allHeaders.forEach((h) => h.style.removeProperty('box-shadow'));
+          };
+
+          allHeaders.forEach((headerCell) => {
+            const label = (headerCell.textContent || '').trim();
+            const isAction = isActionHeader(label);
+
+            if (!isAction) {
+              // Source: make draggable
+              if (!headerCell.dataset.gridDragBound) {
+                headerCell.dataset.gridDragBound = 'true';
+                headerCell.draggable = true;
+                headerCell.style.cursor = 'grab';
+
+                // Prevent the resize handle from triggering a drag
+                const resizeHandle = headerCell.querySelector('.grid-column-resize-handle') as HTMLElement | null;
+                if (resizeHandle) {
+                  resizeHandle.addEventListener('dragstart', (e: Event) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  });
+                }
+
+                headerCell.addEventListener('dragstart', (e: DragEvent) => {
+                  const cid = headerCell.dataset.gridColumnId;
+                  if (!cid) return;
+                  dragSourceId = cid;
+                  headerCell.style.opacity = '0.5';
+                  headerCell.style.cursor = 'grabbing';
+                  if (e.dataTransfer) {
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', cid);
+                  }
+                });
+
+                headerCell.addEventListener('dragend', () => {
+                  dragSourceId = null;
+                  headerCell.style.opacity = '';
+                  headerCell.style.cursor = 'grab';
+                  clearDropIndicators();
+                });
+              }
+
+              // Drop target
+              if (!headerCell.dataset.gridDropBound) {
+                headerCell.dataset.gridDropBound = 'true';
+
+                headerCell.addEventListener('dragover', (e: DragEvent) => {
+                  e.preventDefault();
+                  const targetId = headerCell.dataset.gridColumnId;
+                  if (!dragSourceId || !targetId || dragSourceId === targetId) {
+                    clearDropIndicators();
+                    return;
+                  }
+                  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+                  clearDropIndicators();
+                  const rect = headerCell.getBoundingClientRect();
+                  const mid = rect.left + rect.width / 2;
+                  headerCell.style.boxShadow = e.clientX < mid
+                    ? 'inset 3px 0 0 0 #3b82f6'
+                    : 'inset -3px 0 0 0 #3b82f6';
+                });
+
+                headerCell.addEventListener('dragleave', () => {
+                  headerCell.style.removeProperty('box-shadow');
+                });
+
+                headerCell.addEventListener('drop', (e: DragEvent) => {
+                  e.preventDefault();
+                  clearDropIndicators();
+                  const targetId = headerCell.dataset.gridColumnId;
+                  if (!dragSourceId || !targetId || dragSourceId === targetId) return;
+
+                  const rect = headerCell.getBoundingClientRect();
+                  const insertBefore = e.clientX < rect.left + rect.width / 2;
+                  const nextOrder = [...runtimePref.columnOrder];
+                  const fromIndex = nextOrder.indexOf(dragSourceId);
+                  if (fromIndex < 0) return;
+                  nextOrder.splice(fromIndex, 1);
+                  const adjustedToIndex = nextOrder.indexOf(targetId);
+                  if (adjustedToIndex < 0) return;
+                  nextOrder.splice(insertBefore ? adjustedToIndex : adjustedToIndex + 1, 0, dragSourceId);
+
+                  dragSourceId = null;
+
+                  commitRuntimePref({ ...runtimePref, columnOrder: nextOrder });
+                  refreshTable();
+                  ensureControlPanel();
+                  savePreferenceDebounced();
+                });
+              }
+            }
           });
         };
 
@@ -557,7 +691,7 @@ export default function GlobalGridEnhancer() {
               const startX = downEvent.clientX;
               const startWidth = Math.max(60, Math.round(headerCell.getBoundingClientRect().width));
 
-              runtimePref = {
+              commitRuntimePref({
                 ...runtimePref,
                 columnSizeMode: {
                   ...runtimePref.columnSizeMode,
@@ -567,18 +701,18 @@ export default function GlobalGridEnhancer() {
                   ...runtimePref.columnSizing,
                   [columnId]: runtimePref.columnSizing[columnId] || startWidth,
                 },
-              };
+              });
 
               const onMouseMove = (moveEvent: MouseEvent) => {
                 const delta = moveEvent.clientX - startX;
                 const nextWidth = Math.max(60, Math.min(1400, Math.round(startWidth + delta)));
-                runtimePref = {
+                commitRuntimePref({
                   ...runtimePref,
                   columnSizing: {
                     ...runtimePref.columnSizing,
                     [columnId]: nextWidth,
                   },
-                };
+                });
                 applyColumnLayout();
               };
 
@@ -624,10 +758,7 @@ export default function GlobalGridEnhancer() {
           comfyButton.className = `h-7 px-3 text-sm rounded-md transition-colors ${runtimePref.rowDensity === 'comfortable' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`;
           comfyButton.textContent = 'Comfy';
           comfyButton.addEventListener('click', () => {
-            runtimePref = {
-              ...runtimePref,
-              rowDensity: 'comfortable',
-            };
+            commitRuntimePref({ ...runtimePref, rowDensity: 'comfortable' });
             refreshTable();
             ensureControlPanel();
             savePreferenceDebounced();
@@ -638,10 +769,7 @@ export default function GlobalGridEnhancer() {
           compactButton.className = `h-7 px-3 text-sm rounded-md transition-colors ${runtimePref.rowDensity === 'compact' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`;
           compactButton.textContent = 'Compact';
           compactButton.addEventListener('click', () => {
-            runtimePref = {
-              ...runtimePref,
-              rowDensity: 'compact',
-            };
+            commitRuntimePref({ ...runtimePref, rowDensity: 'compact' });
             refreshTable();
             ensureControlPanel();
             savePreferenceDebounced();
@@ -693,10 +821,10 @@ export default function GlobalGridEnhancer() {
               } else {
                 hiddenSet.add(columnId);
               }
-              runtimePref = {
+              commitRuntimePref({
                 ...runtimePref,
                 hiddenColumns: Array.from(hiddenSet),
-              };
+              });
               refreshTable();
               savePreferenceDebounced();
             });
@@ -716,10 +844,7 @@ export default function GlobalGridEnhancer() {
               if (index === 0) return;
               const nextOrder = [...runtimePref.columnOrder];
               [nextOrder[index - 1], nextOrder[index]] = [nextOrder[index], nextOrder[index - 1]];
-              runtimePref = {
-                ...runtimePref,
-                columnOrder: nextOrder,
-              };
+              commitRuntimePref({ ...runtimePref, columnOrder: nextOrder });
               refreshTable();
               ensureControlPanel();
               savePreferenceDebounced();
@@ -736,10 +861,7 @@ export default function GlobalGridEnhancer() {
               if (index === runtimePref.columnOrder.length - 1) return;
               const nextOrder = [...runtimePref.columnOrder];
               [nextOrder[index + 1], nextOrder[index]] = [nextOrder[index], nextOrder[index + 1]];
-              runtimePref = {
-                ...runtimePref,
-                columnOrder: nextOrder,
-              };
+              commitRuntimePref({ ...runtimePref, columnOrder: nextOrder });
               refreshTable();
               ensureControlPanel();
               savePreferenceDebounced();
@@ -752,7 +874,7 @@ export default function GlobalGridEnhancer() {
 
             modeSelect.addEventListener('change', () => {
               const nextMode = modeSelect.value === 'fixed' ? 'fixed' : 'grow';
-              runtimePref = {
+              commitRuntimePref({
                 ...runtimePref,
                 columnSizeMode: {
                   ...runtimePref.columnSizeMode,
@@ -766,7 +888,7 @@ export default function GlobalGridEnhancer() {
                         : Math.max(100, Math.round(headerCells[originalIndex].getBoundingClientRect().width || 140)),
                     }
                   : runtimePref.columnSizing,
-              };
+              });
               refreshTable();
               ensureControlPanel();
               savePreferenceDebounced();
@@ -787,7 +909,7 @@ export default function GlobalGridEnhancer() {
 
             widthInput.addEventListener('change', () => {
               const nextWidth = Math.max(60, Math.min(1400, Math.round(Number(widthInput.value) || 140)));
-              runtimePref = {
+              commitRuntimePref({
                 ...runtimePref,
                 columnSizeMode: {
                   ...runtimePref.columnSizeMode,
@@ -797,7 +919,7 @@ export default function GlobalGridEnhancer() {
                   ...runtimePref.columnSizing,
                   [columnId]: nextWidth,
                 },
-              };
+              });
               refreshTable();
               ensureControlPanel();
               savePreferenceDebounced();
@@ -819,9 +941,7 @@ export default function GlobalGridEnhancer() {
           resetButton.className = 'mt-3 h-9 px-3 rounded-lg text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-colors';
           resetButton.textContent = 'Reset';
           resetButton.addEventListener('click', () => {
-            runtimePref = {
-              ...baselinePreference,
-            };
+            commitRuntimePref({ ...baselinePreference });
             refreshTable();
             ensureControlPanel();
             savePreferenceDebounced();
@@ -852,6 +972,7 @@ export default function GlobalGridEnhancer() {
 
         refreshTable();
         attachHeaderSortHandlers();
+        attachColumnDragHandlers();
         attachResizeHandles();
         ensureControlPanel();
       });
