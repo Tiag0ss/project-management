@@ -105,7 +105,7 @@ router.get('/active', authenticateToken, async (req: AuthRequest, res: Response)
 router.post('/start', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { taskId, description } = req.body;
+    const { taskId, description, startedAt } = req.body;
 
     if (!taskId) {
       return res.status(400).json({ success: false, message: 'taskId is required' });
@@ -122,6 +122,18 @@ router.post('/start', authenticateToken, async (req: AuthRequest, res: Response)
     );
     if (access.length === 0) {
       return res.status(404).json({ success: false, message: 'Task not found or access denied' });
+    }
+
+    let timerStartDate = new Date();
+    if (startedAt) {
+      const parsedStartDate = new Date(startedAt);
+      if (Number.isNaN(parsedStartDate.getTime())) {
+        return res.status(400).json({ success: false, message: 'Invalid startedAt value' });
+      }
+      if (parsedStartDate.getTime() > Date.now()) {
+        return res.status(400).json({ success: false, message: 'startedAt cannot be in the future' });
+      }
+      timerStartDate = parsedStartDate;
     }
 
     // Save any existing timer for this user as a time entry instead of discarding it
@@ -149,8 +161,8 @@ router.post('/start', authenticateToken, async (req: AuthRequest, res: Response)
 
     // Start new timer
     const [result] = await pool.execute<ResultSetHeader>(
-      'INSERT INTO ActiveTimers (UserId, TaskId, StartedAt, Description) VALUES (?, ?, NOW(), ?)',
-      [userId, taskId, description || null]
+      'INSERT INTO ActiveTimers (UserId, TaskId, StartedAt, Description) VALUES (?, ?, ?, ?)',
+      [userId, taskId, timerStartDate, description || null]
     );
 
     const [rows] = await pool.execute<RowDataPacket[]>(
@@ -166,6 +178,50 @@ router.post('/start', authenticateToken, async (req: AuthRequest, res: Response)
   } catch (error) {
     console.error('Error starting timer:', error);
     res.status(500).json({ success: false, message: 'Failed to start timer' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/timers/available-tasks:
+ *   get:
+ *     summary: Get all tasks from projects accessible to current user
+ *     tags: [Timers]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of available tasks
+ *       500:
+ *         description: Server error
+ */
+// GET /api/timers/available-tasks — all tasks from projects user can access via organization membership
+router.get('/available-tasks', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    const [tasks] = await pool.execute<RowDataPacket[]>(
+      `SELECT DISTINCT
+          t.Id,
+          t.TaskName,
+          t.ProjectId,
+          p.ProjectName,
+          p.IsHobby,
+          COALESCE(tsv.IsClosed, 0) as StatusIsClosed,
+          COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled
+       FROM Tasks t
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+       WHERE om.UserId = ?
+       ORDER BY p.IsHobby ASC, p.ProjectName ASC, t.TaskName ASC`,
+      [userId]
+    );
+
+    res.json({ success: true, tasks });
+  } catch (error) {
+    console.error('Error fetching available timer tasks:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch available tasks' });
   }
 });
 

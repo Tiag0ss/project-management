@@ -16,6 +16,8 @@ import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 
 type OrgSortField = 'name' | 'role' | 'members' | 'projects' | 'tickets' | 'tasks';
 type SortDirection = 'asc' | 'desc';
+type OrgProjectFilter = 'all' | 'with-projects' | 'without-projects';
+type OrgTicketFilter = 'all' | 'with-open' | 'without-open';
 
 export default function OrganizationsPage() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -27,6 +29,9 @@ export default function OrganizationsPage() {
     return stored === 'grid' || stored === 'list' ? stored : 'list';
   });
   const [filterText, setFilterText] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [projectFilter, setProjectFilter] = useState<OrgProjectFilter>('all');
+  const [ticketFilter, setTicketFilter] = useState<OrgTicketFilter>('all');
   const [sortField, setSortField] = useState<OrgSortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -255,6 +260,19 @@ export default function OrganizationsPage() {
   };
 
   // Filter and sort organizations
+  const availableRoles = useMemo(() => {
+    const roles = new Set<string>();
+    organizations.forEach((organization) => {
+      if (organization.Role) {
+        roles.add(organization.Role);
+      }
+    });
+    return Array.from(roles).sort((a, b) => a.localeCompare(b));
+  }, [organizations]);
+
+  const hasActiveFilters =
+    !!filterText.trim() || roleFilter !== 'all' || projectFilter !== 'all' || (internalTicketsEnabled && ticketFilter !== 'all');
+
   const filteredAndSortedOrgs = useMemo(() => {
     let result = [...organizations];
 
@@ -306,6 +324,24 @@ export default function OrganizationsPage() {
       const search = filterText.toLowerCase();
       result = result.filter((org) => rowMatchesSearch(org, search));
     }
+
+    if (roleFilter !== 'all') {
+      result = result.filter((org) => String(org.Role || '').toLowerCase() === roleFilter.toLowerCase());
+    }
+
+    if (projectFilter === 'with-projects') {
+      result = result.filter((org) => (Number(org.ProjectCount) || 0) > 0);
+    } else if (projectFilter === 'without-projects') {
+      result = result.filter((org) => (Number(org.ProjectCount) || 0) === 0);
+    }
+
+    if (internalTicketsEnabled) {
+      if (ticketFilter === 'with-open') {
+        result = result.filter((org) => (Number(org.OpenTickets) || 0) > 0);
+      } else if (ticketFilter === 'without-open') {
+        result = result.filter((org) => (Number(org.OpenTickets) || 0) === 0);
+      }
+    }
     
     // Apply sort
     result.sort((a, b) => {
@@ -337,7 +373,22 @@ export default function OrganizationsPage() {
     });
     
     return result;
-  }, [organizations, filterText, sortField, sortDirection]);
+  }, [organizations, filterText, roleFilter, projectFilter, ticketFilter, sortField, sortDirection, internalTicketsEnabled]);
+
+  const organizationIndicators = useMemo(() => {
+    const inView = filteredAndSortedOrgs.length;
+    const withProjects = filteredAndSortedOrgs.filter((org) => (Number(org.ProjectCount) || 0) > 0).length;
+    const totalMembers = filteredAndSortedOrgs.reduce((sum, org) => sum + (Number(org.MemberCount) || 0), 0);
+    const openTickets = filteredAndSortedOrgs.reduce((sum, org) => sum + (Number(org.OpenTickets) || 0), 0);
+
+    return {
+      total: organizations.length,
+      inView,
+      withProjects,
+      totalMembers,
+      openTickets,
+    };
+  }, [organizations.length, filteredAndSortedOrgs]);
 
   const additionalOrganizationColumnKeys = useMemo(() => {
     const excludedKeys = new Set<string>([
@@ -531,6 +582,39 @@ export default function OrganizationsPage() {
           </div>
         )}
 
+        {organizations.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <div className="text-sm text-blue-600 dark:text-blue-400 font-medium">🏢 Total</div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{organizationIndicators.total}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">all organizations</div>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <div className="text-sm text-indigo-600 dark:text-indigo-400 font-medium">👁 In View</div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{organizationIndicators.inView}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">after current filters</div>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <div className="text-sm text-green-600 dark:text-green-400 font-medium">📁 With Projects</div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{organizationIndicators.withProjects}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">organizations with projects</div>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <div className="text-sm text-amber-600 dark:text-amber-400 font-medium">
+                {internalTicketsEnabled ? '🎫 Open Tickets' : '👥 Members'}
+              </div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">
+                {internalTicketsEnabled ? organizationIndicators.openTickets : organizationIndicators.totalMembers}
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                {internalTicketsEnabled
+                  ? 'open tickets in current view'
+                  : 'total team members in view'}
+              </div>
+            </div>
+          </div>
+        )}
+
         {organizations.length === 0 ? (
           <EmptyState
             icon="🏢"
@@ -550,39 +634,93 @@ export default function OrganizationsPage() {
             icon="🔎"
             title="No organizations match the current filter"
             message="Try a different search term or clear the filter input."
-            primaryAction={{ label: 'Clear filters', onClick: () => setFilterText('') }}
+            primaryAction={{
+              label: 'Clear filters',
+              onClick: () => {
+                setFilterText('');
+                setRoleFilter('all');
+                setProjectFilter('all');
+                setTicketFilter('all');
+              }
+            }}
             secondaryAction={{ label: 'Reload', onClick: loadOrganizations }}
           />
         ) : viewMode === 'grid' ? (
           <>
-            {/* Filter Input */}
-            <div className="mb-4">
-              <div className="relative">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Filter organizations..."
-                  value={filterText}
-                  onChange={(e) => setFilterText(e.target.value)}
-                  className="w-full md:w-80 pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                />
-                {filterText && (
-                  <button
-                    onClick={() => setFilterText('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            {/* Filters */}
+            <div className="mb-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Search</label>
+                  <div className="relative">
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
-                  </button>
-                )}
+                    <input
+                      type="text"
+                      placeholder="Filter organizations..."
+                      value={filterText}
+                      onChange={(e) => setFilterText(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Role</label>
+                  <select
+                    value={roleFilter}
+                    onChange={(e) => setRoleFilter(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All roles</option>
+                    {availableRoles.map((role) => (
+                      <option key={role} value={role}>{role}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Projects</label>
+                  <select
+                    value={projectFilter}
+                    onChange={(e) => setProjectFilter(e.target.value as OrgProjectFilter)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All</option>
+                    <option value="with-projects">With projects</option>
+                    <option value="without-projects">Without projects</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Open Tickets</label>
+                  <select
+                    value={ticketFilter}
+                    onChange={(e) => setTicketFilter(e.target.value as OrgTicketFilter)}
+                    disabled={!internalTicketsEnabled}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All</option>
+                    <option value="with-open">With open tickets</option>
+                    <option value="without-open">Without open tickets</option>
+                  </select>
+                </div>
               </div>
-              {filterText && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                  Showing {filteredAndSortedOrgs.length} of {organizations.length} organizations
-                </p>
+              {hasActiveFilters && (
+                <div className="mt-3 flex items-center justify-between">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Showing {filteredAndSortedOrgs.length} of {organizations.length} organizations
+                  </p>
+                  <button
+                    onClick={() => {
+                      setFilterText('');
+                      setRoleFilter('all');
+                      setProjectFilter('all');
+                      setTicketFilter('all');
+                    }}
+                    className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Clear filters
+                  </button>
+                </div>
               )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -598,34 +736,80 @@ export default function OrganizationsPage() {
           </>
         ) : (
           <>
-            {/* Filter Input */}
-            <div className="mb-4">
-              <div className="relative">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Filter organizations..."
-                  value={filterText}
-                  onChange={(e) => setFilterText(e.target.value)}
-                  className="w-full md:w-80 pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                />
-                {filterText && (
-                  <button
-                    onClick={() => setFilterText('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            {/* Filters */}
+            <div className="mb-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Search</label>
+                  <div className="relative">
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
-                  </button>
-                )}
+                    <input
+                      type="text"
+                      placeholder="Filter organizations..."
+                      value={filterText}
+                      onChange={(e) => setFilterText(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Role</label>
+                  <select
+                    value={roleFilter}
+                    onChange={(e) => setRoleFilter(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All roles</option>
+                    {availableRoles.map((role) => (
+                      <option key={role} value={role}>{role}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Projects</label>
+                  <select
+                    value={projectFilter}
+                    onChange={(e) => setProjectFilter(e.target.value as OrgProjectFilter)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All</option>
+                    <option value="with-projects">With projects</option>
+                    <option value="without-projects">Without projects</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Open Tickets</label>
+                  <select
+                    value={ticketFilter}
+                    onChange={(e) => setTicketFilter(e.target.value as OrgTicketFilter)}
+                    disabled={!internalTicketsEnabled}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All</option>
+                    <option value="with-open">With open tickets</option>
+                    <option value="without-open">Without open tickets</option>
+                  </select>
+                </div>
               </div>
-              {filterText && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                  Showing {filteredAndSortedOrgs.length} of {organizations.length} organizations
-                </p>
+              {hasActiveFilters && (
+                <div className="mt-3 flex items-center justify-between">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Showing {filteredAndSortedOrgs.length} of {organizations.length} organizations
+                  </p>
+                  <button
+                    onClick={() => {
+                      setFilterText('');
+                      setRoleFilter('all');
+                      setProjectFilter('all');
+                      setTicketFilter('all');
+                    }}
+                    className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Clear filters
+                  </button>
+                </div>
               )}
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">

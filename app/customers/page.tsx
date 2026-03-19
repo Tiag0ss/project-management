@@ -9,7 +9,7 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
-import SearchableSelect from '@/components/SearchableSelect';
+import CustomerFormModal, { CustomerFormValues } from '@/components/CustomerFormModal';
 import EmptyState from '@/components/EmptyState';
 import { projectsApi, Project } from '@/lib/api/projects';
 import { downloadCsv, parseBooleanLike, parseCsv, toCsv } from '@/lib/csv';
@@ -25,6 +25,8 @@ import {
 
 type CustomerSortField = 'name' | 'email' | 'phone' | 'tickets';
 type SortDirection = 'asc' | 'desc';
+type CustomerStatusFilter = 'all' | 'active' | 'inactive';
+type CustomerTicketFilter = 'all' | 'with-open' | 'without-open';
 
 interface Organization {
   Id: number;
@@ -36,6 +38,19 @@ interface CustomerProjectStats {
   totalTasks: number;
   completedTasks: number;
 }
+
+const buildDefaultCustomerFormValues = (organizations: Organization[]): CustomerFormValues => ({
+  Name: '',
+  ExternalName: '',
+  Email: '',
+  Phone: '',
+  Address: '',
+  Notes: '',
+  OrganizationIds: organizations.length === 1 ? [organizations[0].Id] : [],
+  DefaultSupportUserId: null,
+  CreateDefaultProject: true,
+  DefaultProjectName: ''
+});
 
 export default function CustomersPage() {
   const { user, token, isLoading: authLoading } = useAuth();
@@ -57,6 +72,9 @@ export default function CustomersPage() {
   
   // Search and sort
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<CustomerStatusFilter>('all');
+  const [organizationFilterId, setOrganizationFilterId] = useState<string>('all');
+  const [ticketFilter, setTicketFilter] = useState<CustomerTicketFilter>('all');
   const [sortBy, setSortBy] = useState<CustomerSortField>('name');
   const [sortOrder, setSortOrder] = useState<SortDirection>('asc');
   
@@ -66,18 +84,7 @@ export default function CustomersPage() {
   const [isSaving, setIsSaving] = useState(false);
   
   // Form state
-  const [formData, setFormData] = useState({
-    Name: '',
-    ExternalName: '',
-    Email: '',
-    Phone: '',
-    Address: '',
-    Notes: '',
-    OrganizationIds: [] as number[],
-    DefaultSupportUserId: null as number | null,
-    CreateDefaultProject: true,
-    DefaultProjectName: ''
-  });
+  const [formData, setFormData] = useState<CustomerFormValues>(buildDefaultCustomerFormValues([]));
 
   // Confirm modal
   const [confirmModal, setConfirmModal] = useState<{
@@ -306,6 +313,27 @@ export default function CustomersPage() {
       const search = searchQuery.toLowerCase();
       filtered = filtered.filter((customer) => rowMatchesSearch(customer, search));
     }
+
+    if (statusFilter === 'active') {
+      filtered = filtered.filter((customer) => Number(customer.IsActive) === 1);
+    } else if (statusFilter === 'inactive') {
+      filtered = filtered.filter((customer) => Number(customer.IsActive) !== 1);
+    }
+
+    if (organizationFilterId !== 'all') {
+      const selectedOrgId = Number(organizationFilterId);
+      filtered = filtered.filter((customer) =>
+        customer.Organizations?.some((organization) => Number(organization.OrganizationId) === selectedOrgId)
+      );
+    }
+
+    if (internalTicketsEnabled) {
+      if (ticketFilter === 'with-open') {
+        filtered = filtered.filter((customer) => (Number(customer.OpenTickets) || 0) > 0);
+      } else if (ticketFilter === 'without-open') {
+        filtered = filtered.filter((customer) => (Number(customer.OpenTickets) || 0) === 0);
+      }
+    }
     
     // Apply sorting
     filtered.sort((a, b) => {
@@ -325,7 +353,7 @@ export default function CustomersPage() {
     });
     
     setFilteredCustomers(filtered);
-  }, [customers, searchQuery, sortBy, sortOrder]);
+  }, [customers, searchQuery, statusFilter, organizationFilterId, ticketFilter, sortBy, sortOrder, internalTicketsEnabled]);
 
   const handleSort = (field: CustomerSortField) => {
     if (sortBy === field) {
@@ -411,20 +439,27 @@ export default function CustomersPage() {
     return customerProjectStats[customerId] || { projectCount: 0, totalTasks: 0, completedTasks: 0 };
   };
 
+  const customerIndicators = useMemo(() => {
+    const inView = filteredCustomers.length;
+    const activeInView = filteredCustomers.filter((customer) => Number(customer.IsActive) === 1).length;
+    const withProjects = filteredCustomers.filter((customer) => {
+      const stats = customerProjectStats[customer.Id];
+      return (stats?.projectCount || 0) > 0;
+    }).length;
+    const openTickets = filteredCustomers.reduce((sum, customer) => sum + (Number(customer.OpenTickets) || 0), 0);
+
+    return {
+      total: customers.length,
+      inView,
+      activeInView,
+      withProjects,
+      openTickets,
+    };
+  }, [customers.length, filteredCustomers, customerProjectStats]);
+
   const openCreateModal = () => {
     setEditingCustomer(null);
-    setFormData({
-      Name: '',
-      ExternalName: '',
-      Email: '',
-      Phone: '',
-      Address: '',
-      Notes: '',
-      OrganizationIds: organizations.length === 1 ? [organizations[0].Id] : [],
-      DefaultSupportUserId: null,
-      CreateDefaultProject: true,
-      DefaultProjectName: ''
-    });
+    setFormData(buildDefaultCustomerFormValues(organizations));
     setShowModal(true);
   };
 
@@ -451,55 +486,45 @@ export default function CustomersPage() {
     setError('');
   };
 
-  const handleOrganizationToggle = (orgId: number) => {
-    setFormData(prev => ({
-      ...prev,
-      OrganizationIds: prev.OrganizationIds.includes(orgId)
-        ? prev.OrganizationIds.filter(id => id !== orgId)
-        : [...prev.OrganizationIds, orgId]
-    }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (submittedData: CustomerFormValues) => {
     setError('');
     setIsSaving(true);
 
     try {
-      if (!formData.Name.trim()) {
+      if (!submittedData.Name.trim()) {
         throw new Error('Customer name is required');
       }
 
-      if (formData.OrganizationIds.length === 0) {
+      if (submittedData.OrganizationIds.length === 0) {
         throw new Error('At least one organization must be selected');
       }
 
       if (editingCustomer) {
         // Update
         const updateData: UpdateCustomerData = {
-          Name: formData.Name,
-          ExternalName: formData.ExternalName || undefined,
-          Email: formData.Email || undefined,
-          Phone: formData.Phone || undefined,
-          Address: formData.Address || undefined,
-          Notes: formData.Notes || undefined,
-          OrganizationIds: formData.OrganizationIds,
-          DefaultSupportUserId: formData.DefaultSupportUserId || undefined
+          Name: submittedData.Name,
+          ExternalName: submittedData.ExternalName || undefined,
+          Email: submittedData.Email || undefined,
+          Phone: submittedData.Phone || undefined,
+          Address: submittedData.Address || undefined,
+          Notes: submittedData.Notes || undefined,
+          OrganizationIds: submittedData.OrganizationIds,
+          DefaultSupportUserId: submittedData.DefaultSupportUserId || undefined
         };
         await updateCustomer(token!, editingCustomer.Id, updateData);
       } else {
         // Create
         const createData: CreateCustomerData = {
-          Name: formData.Name,
-          ExternalName: formData.ExternalName || undefined,
-          Email: formData.Email || undefined,
-          Phone: formData.Phone || undefined,
-          Address: formData.Address || undefined,
-          Notes: formData.Notes || undefined,
-          OrganizationIds: formData.OrganizationIds,
-          DefaultSupportUserId: formData.DefaultSupportUserId || undefined,
-          CreateDefaultProject: formData.CreateDefaultProject,
-          DefaultProjectName: formData.CreateDefaultProject ? (formData.DefaultProjectName || formData.Name) : undefined
+          Name: submittedData.Name,
+          ExternalName: submittedData.ExternalName || undefined,
+          Email: submittedData.Email || undefined,
+          Phone: submittedData.Phone || undefined,
+          Address: submittedData.Address || undefined,
+          Notes: submittedData.Notes || undefined,
+          OrganizationIds: submittedData.OrganizationIds,
+          DefaultSupportUserId: submittedData.DefaultSupportUserId || undefined,
+          CreateDefaultProject: submittedData.CreateDefaultProject,
+          DefaultProjectName: submittedData.CreateDefaultProject ? (submittedData.DefaultProjectName || submittedData.Name) : undefined
         };
         await createCustomer(token!, createData);
       }
@@ -764,22 +789,108 @@ export default function CustomersPage() {
           </div>
         </div>
 
-        {/* Search and Sort */}
-        <div className="mb-4 flex gap-4 items-center">
-          <div className="flex-1">
-            <div className="relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search customers..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-              />
-              <svg className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+        {customers.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <div className="text-sm text-blue-600 dark:text-blue-400 font-medium">👥 Total</div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{customerIndicators.total}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">all customers</div>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <div className="text-sm text-indigo-600 dark:text-indigo-400 font-medium">👁 In View</div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{customerIndicators.inView}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">after current filters</div>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <div className="text-sm text-green-600 dark:text-green-400 font-medium">✓ Active</div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{customerIndicators.activeInView}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">active customers in view</div>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <div className="text-sm text-amber-600 dark:text-amber-400 font-medium">📁 With Projects</div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{customerIndicators.withProjects}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                {internalTicketsEnabled
+                  ? `${customerIndicators.openTickets} open tickets`
+                  : 'customers linked to projects'}
+              </div>
             </div>
           </div>
+        )}
+
+        {/* Filters */}
+        <div className="mb-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Search</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search customers..."
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                />
+                <svg className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Status</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as CustomerStatusFilter)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All statuses</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Organization</label>
+              <select
+                value={organizationFilterId}
+                onChange={(e) => setOrganizationFilterId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All organizations</option>
+                {organizations.map((organization) => (
+                  <option key={organization.Id} value={String(organization.Id)}>{organization.Name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Open Tickets</label>
+              <select
+                value={ticketFilter}
+                onChange={(e) => setTicketFilter(e.target.value as CustomerTicketFilter)}
+                disabled={!internalTicketsEnabled}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All</option>
+                <option value="with-open">With open tickets</option>
+                <option value="without-open">Without open tickets</option>
+              </select>
+            </div>
+          </div>
+          {(searchQuery || statusFilter !== 'all' || organizationFilterId !== 'all' || (internalTicketsEnabled && ticketFilter !== 'all')) && (
+            <div className="mt-3 flex items-center justify-between">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Showing {filteredCustomers.length} of {customers.length} customers</p>
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setStatusFilter('all');
+                  setOrganizationFilterId('all');
+                  setTicketFilter('all');
+                }}
+                className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
         </div>
 
         {error && (
@@ -813,7 +924,15 @@ export default function CustomersPage() {
             icon="🔎"
             title="No customers match your search"
             message="Try a different search term or clear current filters."
-            primaryAction={{ label: 'Clear filters', onClick: () => setSearchQuery('') }}
+            primaryAction={{
+              label: 'Clear filters',
+              onClick: () => {
+                setSearchQuery('');
+                setStatusFilter('all');
+                setOrganizationFilterId('all');
+                setTicketFilter('all');
+              }
+            }}
             secondaryAction={{ label: 'Reload', onClick: loadData }}
           />
         ) : viewMode === 'grid' ? (
@@ -1089,207 +1208,18 @@ export default function CustomersPage() {
         )}
       </div>
 
-      {/* Create/Edit Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                  {editingCustomer ? 'Edit Customer' : 'Add Customer'}
-                </h2>
-                <button
-                  onClick={closeModal}
-                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {error && (
-                <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded text-sm">
-                  {error}
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit}>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.Name}
-                      onChange={(e) => setFormData({ ...formData, Name: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      External Name
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.ExternalName}
-                      onChange={(e) => setFormData({ ...formData, ExternalName: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      value={formData.Email}
-                      onChange={(e) => setFormData({ ...formData, Email: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Phone
-                    </label>
-                    <input
-                      type="tel"
-                      value={formData.Phone}
-                      onChange={(e) => setFormData({ ...formData, Phone: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Address
-                    </label>
-                    <textarea
-                      value={formData.Address}
-                      onChange={(e) => setFormData({ ...formData, Address: e.target.value })}
-                      rows={2}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-
-                  {internalTicketsEnabled && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Default Support User
-                      </label>
-                      <SearchableSelect
-                        value={formData.DefaultSupportUserId?.toString() || ''}
-                        onChange={(value) => setFormData({ ...formData, DefaultSupportUserId: value ? parseInt(value) : null })}
-                        options={supportUsers.map(user => ({
-                          value: user.Id,
-                          label: user.FirstName && user.LastName ? `${user.FirstName} ${user.LastName}` : user.Username
-                        }))}
-                        placeholder="Select Support User"
-                        emptyText="No default support user"
-                      />
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        This user will be automatically assigned to tickets created by this customer
-                      </p>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Notes
-                    </label>
-                    <textarea
-                      value={formData.Notes}
-                      onChange={(e) => setFormData({ ...formData, Notes: e.target.value })}
-                      rows={3}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-
-                  {!editingCustomer && (
-                    <div className="space-y-3">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={formData.CreateDefaultProject}
-                          onChange={(e) => setFormData({ ...formData, CreateDefaultProject: e.target.checked })}
-                          className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Create default project
-                        </span>
-                      </label>
-                      {formData.CreateDefaultProject && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Project Name
-                          </label>
-                          <input
-                            type="text"
-                            value={formData.DefaultProjectName}
-                            onChange={(e) => setFormData({ ...formData, DefaultProjectName: e.target.value })}
-                            placeholder={formData.Name || 'Same as customer name'}
-                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                          />
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            Leave empty to use customer name
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Organizations <span className="text-red-500">*</span>
-                    </label>
-                    <div className="space-y-2 max-h-40 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-3">
-                      {organizations.map((org) => (
-                        <label
-                          key={org.Id}
-                          className="flex items-center gap-2 cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={formData.OrganizationIds.includes(org.Id)}
-                            onChange={() => handleOrganizationToggle(org.Id)}
-                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                          />
-                          <span className="text-gray-700 dark:text-gray-300">{org.Name}</span>
-                        </label>
-                      ))}
-                    </div>
-                    {formData.OrganizationIds.length === 0 && (
-                      <p className="text-sm text-red-500 mt-1">Select at least one organization</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-3 mt-6">
-                  <button
-                    type="button"
-                    onClick={closeModal}
-                    className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSaving || formData.OrganizationIds.length === 0}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
-                  >
-                    {isSaving ? 'Saving...' : editingCustomer ? 'Update' : 'Create'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
+      <CustomerFormModal
+        isOpen={showModal}
+        mode={editingCustomer ? 'edit' : 'create'}
+        initialValues={formData}
+        organizations={organizations}
+        supportUsers={supportUsers}
+        internalTicketsEnabled={internalTicketsEnabled}
+        isSaving={isSaving}
+        error={error}
+        onClose={closeModal}
+        onSubmit={handleSubmit}
+      />
 
       {showImportModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">

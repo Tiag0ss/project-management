@@ -14,9 +14,12 @@ import SearchableSelect from './SearchableSelect';
 import CallRecordFormModal, { CallRecordFormValues } from './CallRecordFormModal';
 import TimeEntryFormModal, { TimeEntryFormValues } from './TimeEntryFormModal';
 import ProjectFormModal from './ProjectFormModal';
+import CustomerFormModal, { CustomerFormValues } from './CustomerFormModal';
+import TimerStartModal from './TimerStartModal';
 import NavDropdownMenu from './navbar/NavDropdownMenu';
 import TaskDetailModal from './TaskDetailModal';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
+import { createCustomer, CreateCustomerData } from '@/lib/api/customers';
 import { io, Socket } from 'socket.io-client';
 import { ThemeMode, getStoredThemeMode, setThemeMode } from '@/lib/theme';
 
@@ -46,6 +49,33 @@ interface OrgMember {
   LastName: string;
   Username: string;
 }
+
+interface TimerStartTaskOption {
+  Id: number;
+  TaskName: string;
+  ProjectName?: string;
+}
+
+interface SupportUser {
+  Id: number;
+  FirstName: string;
+  LastName: string;
+  Username: string;
+  IsSupport?: number;
+}
+
+const buildDefaultCustomerFormValues = (organizations: Organization[]): CustomerFormValues => ({
+  Name: '',
+  ExternalName: '',
+  Email: '',
+  Phone: '',
+  Address: '',
+  Notes: '',
+  OrganizationIds: organizations.length === 1 ? [organizations[0].Id] : [],
+  DefaultSupportUserId: null,
+  CreateDefaultProject: true,
+  DefaultProjectName: '',
+});
 
 export default function Navbar() {
   const { user, token, logout, isCustomerUser } = useAuth();
@@ -96,6 +126,13 @@ export default function Navbar() {
   const [navTimerSeconds, setNavTimerSeconds] = useState(0);
   const navTimerTickRef = useRef<NodeJS.Timeout | null>(null);
   const navTimerPollRef = useRef<NodeJS.Timeout | null>(null);
+  const [showNavStartTimerModal, setShowNavStartTimerModal] = useState(false);
+  const [timerStartTasks, setTimerStartTasks] = useState<TimerStartTaskOption[]>([]);
+  const [timerStartTaskId, setTimerStartTaskId] = useState<number | null>(null);
+  const [timerStartTime, setTimerStartTime] = useState('');
+  const [isLoadingTimerStartTasks, setIsLoadingTimerStartTasks] = useState(false);
+  const [isStartingTimer, setIsStartingTimer] = useState(false);
+  const [timerStartError, setTimerStartError] = useState('');
   const [navTaskModalState, setNavTaskModalState] = useState<{
     show: boolean;
     isLoading: boolean;
@@ -115,7 +152,7 @@ export default function Navbar() {
   // Quick Actions dropdown state
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
   
-  // Modal type: 'task' | 'organization' | 'project' | 'timeEntry' | 'callRecord' | null
+  // Modal type: 'task' | 'organization' | 'project' | 'customer' | 'timeEntry' | 'callRecord' | null
   const [activeModal, setActiveModal] = useState<string | null>(null);
 
   // Quick Task Add state
@@ -135,6 +172,9 @@ export default function Navbar() {
   });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [customerOrganizations, setCustomerOrganizations] = useState<Organization[]>([]);
+  const [customerSupportUsers, setCustomerSupportUsers] = useState<SupportUser[]>([]);
+  const [customerForm, setCustomerForm] = useState<CustomerFormValues>(buildDefaultCustomerFormValues([]));
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [taskPriorities, setTaskPriorities] = useState<PriorityValue[]>([]);
   const [taskTypes, setTaskTypes] = useState<StatusValue[]>([]);
@@ -414,6 +454,105 @@ export default function Navbar() {
     return h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`;
   };
 
+  const getCurrentTimeHHMM = () => {
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+
+  const closeNavStartTimerModal = () => {
+    setShowNavStartTimerModal(false);
+    setTimerStartTasks([]);
+    setTimerStartTaskId(null);
+    setTimerStartTime('');
+    setIsLoadingTimerStartTasks(false);
+    setTimerStartError('');
+  };
+
+  const openNavStartTimerModal = async () => {
+    if (!token) return;
+
+    setShowNavStartTimerModal(true);
+    setTimerStartError('');
+    setIsStartingTimer(false);
+    setIsLoadingTimerStartTasks(true);
+    setTimerStartTime(getCurrentTimeHHMM());
+
+    try {
+      const response = await fetch(`${getApiUrl()}/api/timers/available-tasks`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load tasks');
+      }
+
+      const data = await response.json();
+      const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+      setTimerStartTasks(tasks);
+
+      if (tasks.length === 1) {
+        setTimerStartTaskId(Number(tasks[0].Id));
+      }
+    } catch (err: any) {
+      setTimerStartError(err.message || 'Failed to load timer options');
+    } finally {
+      setIsLoadingTimerStartTasks(false);
+    }
+  };
+
+  const handleNavStartTimer = async () => {
+    if (!token) return;
+    if (!timerStartTaskId) {
+      setTimerStartError('Please select a task');
+      return;
+    }
+    if (!timerStartTime) {
+      setTimerStartError('Please select a start time');
+      return;
+    }
+
+    const [hours, minutes] = timerStartTime.split(':').map((value) => parseInt(value, 10));
+    const startedAt = new Date();
+    startedAt.setHours(hours || 0, minutes || 0, 0, 0);
+
+    if (startedAt.getTime() > Date.now()) {
+      setTimerStartError('Start time cannot be in the future');
+      return;
+    }
+
+    setIsStartingTimer(true);
+    setTimerStartError('');
+
+    try {
+      const response = await fetch(`${getApiUrl()}/api/timers/start`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          taskId: timerStartTaskId,
+          startedAt: startedAt.toISOString(),
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to start timer');
+      }
+
+      setNavTimer(data.timer || null);
+      closeNavStartTimerModal();
+      window.dispatchEvent(new CustomEvent('timer-changed'));
+    } catch (err: any) {
+      setTimerStartError(err.message || 'Failed to start timer');
+    } finally {
+      setIsStartingTimer(false);
+    }
+  };
+
   const handleNavStopTimer = async () => {
     if (!navTimer) return;
     try {
@@ -688,6 +827,46 @@ export default function Navbar() {
       return;
     }
 
+    if (type === 'customer') {
+      if (!token) {
+        setError('Authentication token is missing');
+        return;
+      }
+
+      try {
+        const [organizationsRes, usersRes] = await Promise.all([
+          fetch(`${getApiUrl()}/api/organizations`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          }),
+          fetch(`${getApiUrl()}/api/users`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          })
+        ]);
+
+        if (!organizationsRes.ok) {
+          throw new Error('Failed to load organizations');
+        }
+
+        const orgData = await organizationsRes.json();
+        const loadedOrganizations: Organization[] = orgData.organizations || [];
+        setCustomerOrganizations(loadedOrganizations);
+
+        if (usersRes.ok) {
+          const usersData = await usersRes.json();
+          const supportUsers: SupportUser[] = (usersData.users || []).filter((candidate: SupportUser) => candidate.IsSupport);
+          setCustomerSupportUsers(supportUsers);
+        } else {
+          setCustomerSupportUsers([]);
+        }
+
+        setCustomerForm(buildDefaultCustomerFormValues(loadedOrganizations));
+      } catch (err: any) {
+        setError(err.message || 'Failed to load customer quick action data');
+      }
+
+      return;
+    }
+
   };
 
   useEffect(() => {
@@ -729,6 +908,12 @@ export default function Navbar() {
       if (key === '4' && (user?.isSupport || permissions?.canManageTickets)) {
         event.preventDefault();
         void openQuickAction('callRecord');
+        return;
+      }
+
+      if (key === '5' && permissions?.canCreateCustomers) {
+        event.preventDefault();
+        void openQuickAction('customer');
       }
     };
 
@@ -766,6 +951,55 @@ export default function Navbar() {
       }
     } catch (err: any) {
       setError(err.message || 'Failed to create organization');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Save Customer
+  const handleSaveCustomer = async (formValues: CustomerFormValues) => {
+    if (!token) {
+      setError('Authentication token is missing');
+      return;
+    }
+
+    if (!formValues.Name.trim()) {
+      setError('Customer name is required');
+      return;
+    }
+
+    if (formValues.OrganizationIds.length === 0) {
+      setError('At least one organization must be selected');
+      return;
+    }
+
+    setIsSaving(true);
+    setError('');
+
+    try {
+      const createData: CreateCustomerData = {
+        Name: formValues.Name,
+        ExternalName: formValues.ExternalName || undefined,
+        Email: formValues.Email || undefined,
+        Phone: formValues.Phone || undefined,
+        Address: formValues.Address || undefined,
+        Notes: formValues.Notes || undefined,
+        OrganizationIds: formValues.OrganizationIds,
+        DefaultSupportUserId: formValues.DefaultSupportUserId || undefined,
+        CreateDefaultProject: formValues.CreateDefaultProject,
+        DefaultProjectName: formValues.CreateDefaultProject
+          ? (formValues.DefaultProjectName || formValues.Name)
+          : undefined,
+      };
+
+      await createCustomer(token, createData);
+      closeAllModals();
+
+      if (window.location.pathname.includes('/customers')) {
+        window.location.reload();
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to create customer');
     } finally {
       setIsSaving(false);
     }
@@ -880,6 +1114,9 @@ export default function Navbar() {
     setTaskPriorities([]);
     setTaskTypes([]);
     setOrgMembers([]);
+    setCustomerOrganizations([]);
+    setCustomerSupportUsers([]);
+    setCustomerForm(buildDefaultCustomerFormValues([]));
     setTaskForm({
       projectId: '',
       taskName: '',
@@ -1748,6 +1985,17 @@ export default function Navbar() {
                         <span className="ml-auto text-xs text-gray-400 dark:text-gray-500">Ctrl+1</span>
                       </button>
                     )}
+                    {permissions?.canCreateCustomers && (
+                      <button
+                        onClick={() => openQuickAction('customer')}
+                        title="Shortcut: Ctrl+5"
+                        className="flex items-center w-full gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        <span>🏢</span>
+                        <span>Add Customer</span>
+                        <span className="ml-auto text-xs text-gray-400 dark:text-gray-500">Ctrl+5</span>
+                      </button>
+                    )}
                     {(permissions?.canManageTasks || permissions?.canCreateTasks) && (
                       <button
                         onClick={() => openQuickAction('task')}
@@ -1789,33 +2037,48 @@ export default function Navbar() {
               </div>
               )}
 
-              {/* Active Timer indicator */}
-              {!isCustomerUser && navTimer && (
+              {/* Timer indicator */}
+              {!isCustomerUser && (
                 <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={handleOpenNavTimerTaskDetail}
-                    className="flex items-center gap-1.5 text-xs font-mono bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2.5 py-1.5 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors animate-pulse"
-                    title={`Timer running: ${navTimer.TaskName} — ${navTimer.ProjectName}`}
-                  >
-                    <span>⏱</span>
-                    <span className="hidden sm:inline max-w-[120px] truncate">{navTimer.TaskName}</span>
-                    <span className="font-bold">{navFormatElapsed(navTimerSeconds)}</span>
-                  </button>
-                  <button
-                    onClick={handleNavStopTimer}
-                    title="Stop timer and save time entry"
-                    className="text-xs px-2 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors font-medium"
-                  >
-                    ⏹
-                  </button>
-                  <button
-                    onClick={handleNavDiscardTimer}
-                    title="Discard timer without saving"
-                    className="text-xs px-2 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-lg transition-colors"
-                  >
-                    ✕
-                  </button>
+                  {navTimer ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleOpenNavTimerTaskDetail}
+                        className="flex items-center gap-1.5 text-xs font-mono bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2.5 py-1.5 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors animate-pulse"
+                        title={`Timer running: ${navTimer.TaskName} — ${navTimer.ProjectName}`}
+                      >
+                        <span>⏱</span>
+                        <span className="hidden sm:inline max-w-[120px] truncate">{navTimer.TaskName}</span>
+                        <span className="font-bold">{navFormatElapsed(navTimerSeconds)}</span>
+                      </button>
+                      <button
+                        onClick={handleNavStopTimer}
+                        title="Stop timer and save time entry"
+                        className="text-xs px-2 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors font-medium"
+                      >
+                        ⏹
+                      </button>
+                      <button
+                        onClick={handleNavDiscardTimer}
+                        title="Discard timer without saving"
+                        className="text-xs px-2 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-lg transition-colors"
+                      >
+                        ✕
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={openNavStartTimerModal}
+                      className="flex items-center gap-2 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2.5 py-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                      title="No timer running. Click to start timer"
+                    >
+                      <span>⏱</span>
+                      <span className="hidden sm:inline">No timer running — click to start</span>
+                      <span className="sm:hidden">Start timer</span>
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -2090,6 +2353,20 @@ export default function Navbar() {
         </>
       )}
 
+      <TimerStartModal
+        isOpen={showNavStartTimerModal}
+        error={timerStartError}
+        isLoadingTasks={isLoadingTimerStartTasks}
+        tasks={timerStartTasks}
+        selectedTaskId={timerStartTaskId}
+        startTime={timerStartTime}
+        isStarting={isStartingTimer}
+        onClose={closeNavStartTimerModal}
+        onTaskChange={setTimerStartTaskId}
+        onStartTimeChange={setTimerStartTime}
+        onStart={handleNavStartTimer}
+      />
+
       {showQuickTaskModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
@@ -2296,6 +2573,19 @@ export default function Navbar() {
           canViewBudgetInfo={Boolean(permissions?.canViewBudgetInfo)}
         />
       )}
+
+      <CustomerFormModal
+        isOpen={activeModal === 'customer'}
+        mode="create"
+        initialValues={customerForm}
+        organizations={customerOrganizations}
+        supportUsers={customerSupportUsers}
+        internalTicketsEnabled={internalTicketsEnabled}
+        isSaving={isSaving}
+        error={error}
+        onClose={closeAllModals}
+        onSubmit={handleSaveCustomer}
+      />
 
       <TimeEntryFormModal
         isOpen={activeModal === 'timeEntry'}
