@@ -35,7 +35,7 @@ const router = Router();
 router.get('/public', async (req, res: Response) => {
   try {
     const [settings] = await pool.execute<RowDataPacket[]>(
-      'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?, ?, ?, ?)',
+      'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         'allowPublicRegistration',
         'publicRegistrationType',
@@ -43,7 +43,9 @@ router.get('/public', async (req, res: Response) => {
         'memosEnabled',
         'companyName',
         'companyLogoUrl',
-        'faviconUrl'
+        'faviconUrl',
+        'autoApproveTimeEntries',
+        'autoApproveVacations'
       ]
     );
 
@@ -59,6 +61,8 @@ router.get('/public', async (req, res: Response) => {
     const companyName = settingsObj.companyName || 'Project Management';
     const companyLogoUrl = settingsObj.companyLogoUrl || '';
     const faviconUrl = settingsObj.faviconUrl || '';
+    const autoApproveTimeEntries = settingsObj.autoApproveTimeEntries === 'true';
+    const autoApproveVacations = settingsObj.autoApproveVacations === 'true';
     res.json({
       success: true,
       allowPublicRegistration,
@@ -67,7 +71,9 @@ router.get('/public', async (req, res: Response) => {
       memosEnabled,
       companyName,
       companyLogoUrl,
-      faviconUrl
+      faviconUrl,
+      autoApproveTimeEntries,
+      autoApproveVacations
     });
   } catch (error) {
     console.error('Get public registration setting error:', error);

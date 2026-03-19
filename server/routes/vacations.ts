@@ -5,6 +5,15 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = express.Router();
 
+const isAutoApproveVacationsEnabled = async (): Promise<boolean> => {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT SettingValue FROM SystemSettings WHERE SettingKey = ? LIMIT 1`,
+    ['autoApproveVacations']
+  );
+
+  return rows.length > 0 && String(rows[0].SettingValue || '').toLowerCase() === 'true';
+};
+
 const normalizeDate = (value: unknown): string => String(value || '').split('T')[0];
 
 const toDateRange = (startDate: string, endDate: string): string[] => {
@@ -144,6 +153,7 @@ router.post('/my/request', authenticateToken, async (req: AuthRequest, res: Resp
   try {
     const userId = Number(req.user?.userId || 0);
     const { startDate, endDate, notes } = req.body;
+    const autoApproveVacations = await isAutoApproveVacationsEnabled();
 
     const normalizedStart = normalizeDate(startDate);
     const normalizedEnd = normalizeDate(endDate || startDate);
@@ -227,9 +237,17 @@ router.post('/my/request', authenticateToken, async (req: AuthRequest, res: Resp
       }
 
       await pool.execute<ResultSetHeader>(
-        `INSERT INTO UserVacations (UserId, VacationDate, Status, Notes, RequestedBy)
-         VALUES (?, ?, 'pending', ?, ?)`,
-        [userId, date, notes || null, userId]
+        `INSERT INTO UserVacations (UserId, VacationDate, Status, Notes, RequestedBy, ApprovedBy, ApprovedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          userId,
+          date,
+          autoApproveVacations ? 'approved' : 'pending',
+          notes || null,
+          userId,
+          autoApproveVacations ? userId : null,
+          autoApproveVacations ? new Date() : null,
+        ]
       );
       created += 1;
       createdByYear.set(year, pendingCreation + 1);
@@ -237,7 +255,7 @@ router.post('/my/request', authenticateToken, async (req: AuthRequest, res: Resp
 
     res.json({
       success: true,
-      message: 'Vacation request submitted',
+      message: autoApproveVacations ? 'Vacation request submitted and auto-approved' : 'Vacation request submitted',
       created,
       skipped,
       exceeded,

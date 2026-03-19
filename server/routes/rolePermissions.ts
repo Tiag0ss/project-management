@@ -629,6 +629,8 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
       if (perm.CanDeleteTickets) combined.canDeleteTickets = true;
       if (perm.CanAssignTickets) combined.canAssignTickets = true;
       if (perm.CanCreateTaskFromTicket) combined.canCreateTaskFromTicket = true;
+      if (perm.CanViewOthersPlanning) combined.canViewOthersPlanning = true;
+      if (perm.CanViewApplications) combined.canViewApplications = true;
       if (perm.CanManageApplications) combined.canManageApplications = true;
       if (perm.CanCreateApplications) combined.canCreateApplications = true;
       if (perm.CanDeleteApplications) combined.canDeleteApplications = true;

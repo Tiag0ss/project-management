@@ -990,8 +990,8 @@ function AddMemberModal({ orgId, groups, onClose, onAdded, token }: {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
-        <div className="p-6">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden">
+        <div className="p-6 overflow-y-auto max-h-[90vh]">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Add Member</h2>
             <button
@@ -1520,6 +1520,8 @@ function PermissionGroupModal({ orgId, group, onClose, onSaved, token }: {
     canDeleteTickets: !!group?.CanDeleteTickets,
     canAssignTickets: !!group?.CanAssignTickets,
     canCreateTaskFromTicket: !!group?.CanCreateTaskFromTicket,
+    canViewOthersPlanning: !!group?.CanViewOthersPlanning,
+    canViewApplications: !!group?.CanViewApplications,
     canManageMembers: !!group?.CanManageMembers,
     canManageSettings: !!group?.CanManageSettings,
     canManageApplications: !!group?.CanManageApplications,
@@ -1609,40 +1611,44 @@ function PermissionGroupModal({ orgId, group, onClose, onSaved, token }: {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Permissions
               </label>
-              {[
-                { key: 'canManageProjects', label: 'Manage Projects' },
-                { key: 'canCreateProjects', label: 'Create Projects' },
-                { key: 'canDeleteProjects', label: 'Delete Projects' },
-                { key: 'canManageTasks', label: 'Manage Tasks' },
-                { key: 'canCreateTasks', label: 'Create Tasks' },
-                { key: 'canDeleteTasks', label: 'Delete Tasks' },
-                { key: 'canAssignTasks', label: 'Assign Tasks' },
-                { key: 'canPlanTasks', label: 'Plan Tasks' },
-                { key: 'canManageTimeEntries', label: 'Manage Time Entries' },
-                { key: 'canViewReports', label: 'View Reports' },
-                { key: 'canViewBudgetInfo', label: 'View Budget Info' },
-                { key: 'canManageTickets', label: 'Manage Tickets' },
-                { key: 'canCreateTickets', label: 'Create Tickets' },
-                { key: 'canDeleteTickets', label: 'Delete Tickets' },
-                { key: 'canAssignTickets', label: 'Assign Tickets' },
-                { key: 'canCreateTaskFromTicket', label: 'Create Task from Ticket' },
-                { key: 'canManageMembers', label: 'Manage Members' },
-                { key: 'canManageSettings', label: 'Manage Settings' },
-                { key: 'canManageApplications', label: 'Manage Applications' },
-                { key: 'canCreateApplications', label: 'Create Applications' },
-                { key: 'canDeleteApplications', label: 'Delete Applications' },
-                { key: 'canManageReleases', label: 'Manage Releases' },
-              ].map(({ key, label }) => (
-                <label key={key} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData[key as keyof typeof formData] as boolean}
-                    onChange={(e) => setFormData({ ...formData, [key]: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
-                </label>
-              ))}
+              <div className="max-h-64 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-2">
+                {[
+                  { key: 'canManageProjects', label: 'Manage Projects' },
+                  { key: 'canCreateProjects', label: 'Create Projects' },
+                  { key: 'canDeleteProjects', label: 'Delete Projects' },
+                  { key: 'canManageTasks', label: 'Manage Tasks' },
+                  { key: 'canCreateTasks', label: 'Create Tasks' },
+                  { key: 'canDeleteTasks', label: 'Delete Tasks' },
+                  { key: 'canAssignTasks', label: 'Assign Tasks' },
+                  { key: 'canPlanTasks', label: 'Plan Tasks' },
+                  { key: 'canManageTimeEntries', label: 'Manage Time Entries' },
+                  { key: 'canViewReports', label: 'View Reports' },
+                  { key: 'canViewBudgetInfo', label: 'View Budget Info' },
+                  { key: 'canManageTickets', label: 'Manage Tickets' },
+                  { key: 'canCreateTickets', label: 'Create Tickets' },
+                  { key: 'canDeleteTickets', label: 'Delete Tickets' },
+                  { key: 'canAssignTickets', label: 'Assign Tickets' },
+                  { key: 'canCreateTaskFromTicket', label: 'Create Task from Ticket' },
+                  { key: 'canViewOthersPlanning', label: 'View Others Planning' },
+                  { key: 'canViewApplications', label: 'View Applications' },
+                  { key: 'canManageMembers', label: 'Manage Members' },
+                  { key: 'canManageSettings', label: 'Manage Settings' },
+                  { key: 'canManageApplications', label: 'Manage Applications' },
+                  { key: 'canCreateApplications', label: 'Create Applications' },
+                  { key: 'canDeleteApplications', label: 'Delete Applications' },
+                  { key: 'canManageReleases', label: 'Manage Releases' },
+                ].map(({ key, label }) => (
+                  <label key={key} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData[key as keyof typeof formData] as boolean}
+                      onChange={(e) => setFormData({ ...formData, [key]: e.target.checked })}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+                  </label>
+                ))}
+              </div>
             </div>
 
             <div className="flex gap-3 mt-6">

@@ -128,6 +128,7 @@ export default function TimesheetPage() {
   const [blockedCells, setBlockedCells] = useState<{[taskId: number]: {[date: string]: number}}>({}); // value = number of entries
   // Track cells with approved entries (locked from editing/deleting)
   const [approvedCells, setApprovedCells] = useState<{[taskId: number]: {[date: string]: boolean}}>({});
+  const [autoApproveTimeEntries, setAutoApproveTimeEntries] = useState(false);
   const [multiEntryCellsWarning, setMultiEntryCellsWarning] = useState('');
   // History tab filters
   const [historyDateFrom, setHistoryDateFrom] = useState(() => {
@@ -163,6 +164,7 @@ export default function TimesheetPage() {
 
   useEffect(() => {
     if (user && token) {
+      loadPublicSettings();
       loadUserProfile();
       loadTimeEntries();
       loadMyTasks();
@@ -202,7 +204,12 @@ export default function TimesheetPage() {
             if (!newBlockedCells[task.Id]) newBlockedCells[task.Id] = {};
             newBlockedCells[task.Id][date] = entries.length;
             hasMultipleEntries = true;
-          } else if (entries.length === 1 && entries[0].ApprovalStatus === 'approved' && !entries[0].IsHobby) {
+          } else if (
+            entries.length === 1
+            && entries[0].ApprovalStatus === 'approved'
+            && !entries[0].IsHobby
+            && !autoApproveTimeEntries
+          ) {
             // Approved non-hobby entry - lock cell, do NOT add to weeklyHours so it won't be saved
             if (!newApprovedCells[task.Id]) newApprovedCells[task.Id] = {};
             newApprovedCells[task.Id][date] = true;
@@ -224,7 +231,7 @@ export default function TimesheetPage() {
         setMultiEntryCellsWarning('');
       }
     }
-  }, [timesheetView, currentWeekOffset, timeEntries, myTasks]);
+  }, [timesheetView, currentWeekOffset, timeEntries, myTasks, autoApproveTimeEntries]);
 
   // Helper function to normalize date for comparison
   const normalizeDateString = (dateValue: any): string => {
@@ -393,6 +400,22 @@ export default function TimesheetPage() {
       });
     } catch (err) {
       console.error('Failed to load profile:', err);
+    }
+  };
+
+  const loadPublicSettings = async () => {
+    try {
+      const response = await fetch(`${getApiUrl()}/api/system-settings/public`);
+      if (!response.ok) {
+        setAutoApproveTimeEntries(false);
+        return;
+      }
+
+      const data = await response.json();
+      setAutoApproveTimeEntries(data.autoApproveTimeEntries === true);
+    } catch (err) {
+      console.error('Failed to load public system settings:', err);
+      setAutoApproveTimeEntries(false);
     }
   };
 
@@ -718,7 +741,7 @@ export default function TimesheetPage() {
         
         for (const [date, hours] of Object.entries(dates)) {
           // Skip if cell is blocked (multiple entries exist) or approved
-          if (blockedCells[taskId]?.[date] || approvedCells[taskId]?.[date]) {
+          if (blockedCells[taskId]?.[date] || (approvedCells[taskId]?.[date] && !autoApproveTimeEntries)) {
             skippedCount++;
             continue;
           }
@@ -1058,7 +1081,7 @@ export default function TimesheetPage() {
                                       {getApprovalBadge(entry.ApprovalStatus)}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                      {entry.ApprovalStatus === 'approved' && !entry.IsHobby ? (
+                                      {entry.ApprovalStatus === 'approved' && !entry.IsHobby && !autoApproveTimeEntries ? (
                                         <span className="text-xs text-gray-400 dark:text-gray-500 italic">Locked</span>
                                       ) : permissions?.canManageTimeEntries ? (
                                         <div className="flex items-center justify-end gap-1">
@@ -1302,6 +1325,7 @@ export default function TimesheetPage() {
                                         
                                         const hasMultipleEntries = entries.length > 1;
                                         const isApproved = !!approvedCells[task.Id]?.[date];
+                                        const isApprovedLocked = isApproved && !autoApproveTimeEntries;
                                         const savedHours = hasMultipleEntries 
                                           ? entries.reduce((sum, e) => sum + parseFloat(e.Hours as any), 0)
                                           : entries.length === 1 ? parseFloat(entries[0].Hours as any) : 0;
@@ -1314,11 +1338,11 @@ export default function TimesheetPage() {
                                             className={`px-2 py-2 text-center ${
                                               hasMultipleEntries 
                                                 ? 'bg-orange-100 dark:bg-orange-900/30' 
-                                                : isApproved
+                                                : isApprovedLocked
                                                 ? 'bg-green-50 dark:bg-green-900/20'
                                                 : ''
                                             }`}
-                                            title={hasMultipleEntries ? `${entries.length} entries exist for this day. Use Daily tab to edit.` : isApproved ? 'This entry has been approved and cannot be edited.' : ''}
+                                            title={hasMultipleEntries ? `${entries.length} entries exist for this day. Use Daily tab to edit.` : isApprovedLocked ? 'This entry has been approved and cannot be edited.' : ''}
                                           >
                                             {hasMultipleEntries ? (
                                               <div className="flex flex-col items-center">
@@ -1329,7 +1353,7 @@ export default function TimesheetPage() {
                                                   🔒 {entries.length} entries
                                                 </span>
                                               </div>
-                                            ) : isApproved ? (
+                                            ) : isApprovedLocked ? (
                                               <div className="flex flex-col items-center">
                                                 <span className="text-sm font-medium text-green-700 dark:text-green-400">
                                                   {savedHours.toFixed(2)}
@@ -1421,6 +1445,7 @@ export default function TimesheetPage() {
                                         
                                         const hasMultipleEntries = entries.length > 1;
                                         const isApproved = !!approvedCells[task.Id]?.[date];
+                                        const isApprovedLocked = isApproved && !autoApproveTimeEntries;
                                         const savedHours = hasMultipleEntries 
                                           ? entries.reduce((sum, e) => sum + parseFloat(e.Hours as any), 0)
                                           : entries.length === 1 ? parseFloat(entries[0].Hours as any) : 0;
@@ -1433,11 +1458,11 @@ export default function TimesheetPage() {
                                             className={`px-2 py-2 text-center ${
                                               hasMultipleEntries 
                                                 ? 'bg-orange-100 dark:bg-orange-900/30' 
-                                                : isApproved
+                                                : isApprovedLocked
                                                 ? 'bg-green-50 dark:bg-green-900/20'
                                                 : 'bg-purple-50/50 dark:bg-purple-900/10'
                                             }`}
-                                            title={hasMultipleEntries ? `${entries.length} entries exist for this day. Use Daily tab to edit.` : isApproved ? 'This entry has been approved and cannot be edited.' : ''}
+                                            title={hasMultipleEntries ? `${entries.length} entries exist for this day. Use Daily tab to edit.` : isApprovedLocked ? 'This entry has been approved and cannot be edited.' : ''}
                                           >
                                             {hasMultipleEntries ? (
                                               <div className="flex flex-col items-center">
@@ -1448,7 +1473,7 @@ export default function TimesheetPage() {
                                                   🔒 {entries.length} entries
                                                 </span>
                                               </div>
-                                            ) : isApproved ? (
+                                            ) : isApprovedLocked ? (
                                               <div className="flex flex-col items-center">
                                                 <span className="text-sm font-medium text-green-700 dark:text-green-400">
                                                   {savedHours.toFixed(2)}
@@ -1944,7 +1969,7 @@ export default function TimesheetPage() {
                                         {getApprovalBadge(entry.ApprovalStatus)}
                                       </td>
                                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        {entry.ApprovalStatus === 'approved' && !entry.IsHobby ? (
+                                        {entry.ApprovalStatus === 'approved' && !entry.IsHobby && !autoApproveTimeEntries ? (
                                           <span className="text-xs text-gray-400 dark:text-gray-500 italic">Locked</span>
                                         ) : permissions?.canManageTimeEntries ? (
                                           <div className="flex items-center justify-end gap-1">

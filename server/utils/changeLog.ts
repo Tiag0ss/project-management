@@ -314,6 +314,7 @@ const resolveFieldValue = async (
   }
 
   switch (field) {
+    case 'Assignees':
     case 'AssignedTo':
     case 'AssignedToUserId':
     case 'ProjectManagerId':

@@ -5,6 +5,30 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 
 const router = Router();
 
+const isAutoApproveTimeEntriesEnabled = async (): Promise<boolean> => {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT SettingValue FROM SystemSettings WHERE SettingKey = ? LIMIT 1`,
+    ['autoApproveTimeEntries']
+  );
+
+  return rows.length > 0 && String(rows[0].SettingValue || '').toLowerCase() === 'true';
+};
+
+const getApprovalStatusForTask = async (taskId: number): Promise<'approved' | 'pending'> => {
+  const autoApproveTimeEntries = await isAutoApproveTimeEntriesEnabled();
+
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT p.IsHobby
+     FROM Tasks t
+     INNER JOIN Projects p ON t.ProjectId = p.Id
+     WHERE t.Id = ?`,
+    [taskId]
+  );
+
+  const isHobby = rows.length > 0 && !!rows[0].IsHobby;
+  return (isHobby || autoApproveTimeEntries) ? 'approved' : 'pending';
+};
+
 /**
  * @swagger
  * tags:
@@ -114,10 +138,11 @@ router.post('/start', authenticateToken, async (req: AuthRequest, res: Response)
       const workDate = startedAt.toISOString().split('T')[0];
       const startTime = startedAt.toTimeString().slice(0, 5);
       const endTime = now.toTimeString().slice(0, 5);
+      const approvalStatus = await getApprovalStatusForTask(Number(existing.TaskId));
       await pool.execute(
-        `INSERT INTO TimeEntries (TaskId, UserId, WorkDate, Hours, StartTime, EndTime, Description)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [existing.TaskId, userId, workDate, elapsedHours, startTime, endTime, existing.Description || '']
+        `INSERT INTO TimeEntries (TaskId, UserId, WorkDate, Hours, StartTime, EndTime, Description, ApprovalStatus)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [existing.TaskId, userId, workDate, elapsedHours, startTime, endTime, existing.Description || '', approvalStatus]
       );
       await pool.execute('DELETE FROM ActiveTimers WHERE UserId = ?', [userId]);
     }
@@ -199,12 +224,13 @@ router.post('/:id/stop', authenticateToken, async (req: AuthRequest, res: Respon
     const startTime = startedAt.toTimeString().slice(0, 5);
     const endTime = now.toTimeString().slice(0, 5);
     const finalDescription = overrideDescription || timer.Description || '';
+    const approvalStatus = await getApprovalStatusForTask(Number(timer.TaskId));
 
     // Create time entry
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO TimeEntries (TaskId, UserId, WorkDate, Hours, StartTime, EndTime, Description)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [timer.TaskId, userId, workDate, elapsedHours, startTime, endTime, finalDescription]
+      `INSERT INTO TimeEntries (TaskId, UserId, WorkDate, Hours, StartTime, EndTime, Description, ApprovalStatus)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [timer.TaskId, userId, workDate, elapsedHours, startTime, endTime, finalDescription, approvalStatus]
     );
 
     // Delete timer

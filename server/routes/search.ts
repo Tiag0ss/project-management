@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { pool } from '../config/database';
+import { dbProvider } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { RowDataPacket } from '../config/database';
 
@@ -82,6 +83,12 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const searchTerm = textTerms ? `%${textTerms}%` : null;
     const tagPlaceholders = normalizedTags.map(() => '?').join(',');
     const hasTagFilter = normalizedTags.length > 0;
+    const gitHubIssueSearchExpr = dbProvider === 'mssql'
+      ? 'CAST(t.GitHubIssueNumber AS NVARCHAR(50))'
+      : 'CAST(t.GitHubIssueNumber AS CHAR)';
+    const giteaIssueSearchExpr = dbProvider === 'mssql'
+      ? 'CAST(t.GiteaIssueNumber AS NVARCHAR(50))'
+      : 'CAST(t.GiteaIssueNumber AS CHAR)';
 
     const [ticketSetting] = await pool.execute<RowDataPacket[]>(
       'SELECT SettingValue FROM SystemSettings WHERE SettingKey = ?',
@@ -93,8 +100,15 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const taskConditions: string[] = [];
 
     if (searchTerm) {
-      taskConditions.push('(t.TaskName LIKE ? OR t.Description LIKE ?)');
-      taskParams.push(searchTerm, searchTerm);
+      taskConditions.push(`(
+        t.TaskName LIKE ?
+        OR t.Description LIKE ?
+        OR t.JiraIssueKey LIKE ?
+        OR t.ExternalIssueId LIKE ?
+        OR ${gitHubIssueSearchExpr} LIKE ?
+        OR ${giteaIssueSearchExpr} LIKE ?
+      )`);
+      taskParams.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
     }
 
     if (hasTagFilter) {
@@ -138,8 +152,8 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const ticketConditions: string[] = [];
 
     if (searchTerm) {
-      ticketConditions.push('(t.Title LIKE ? OR t.TicketNumber LIKE ? OR t.Description LIKE ?)');
-      ticketParams.push(searchTerm, searchTerm, searchTerm);
+      ticketConditions.push('(t.Title LIKE ? OR t.TicketNumber LIKE ? OR t.Description LIKE ? OR t.ExternalTicketId LIKE ?)');
+      ticketParams.push(searchTerm, searchTerm, searchTerm, searchTerm);
     }
 
     if (hasTagFilter) {
@@ -189,8 +203,8 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const projectConditions: string[] = [];
 
     if (searchTerm) {
-      projectConditions.push('(p.ProjectName LIKE ? OR p.Description LIKE ?)');
-      projectParams.push(searchTerm, searchTerm);
+      projectConditions.push('(p.ProjectName LIKE ? OR p.Description LIKE ? OR p.JiraBoardId LIKE ?)');
+      projectParams.push(searchTerm, searchTerm, searchTerm);
     }
 
     if (hasTagFilter) {

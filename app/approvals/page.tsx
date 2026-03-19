@@ -129,7 +129,7 @@ export default function ApprovalsPage() {
   const [vacationTeamRequests, setVacationTeamRequests] = useState<VacationRequest[]>([]);
   const [vacationMembers, setVacationMembers] = useState<VacationTeamMember[]>([]);
   const [vacationYear, setVacationYear] = useState<number>(new Date().getFullYear());
-  const [vacationStatusFilter, setVacationStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [vacationStatusFilter, setVacationStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [vacationSortField, setVacationSortField] = useState<'user' | 'date' | 'status'>('date');
   const [vacationSortDirection, setVacationSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -254,23 +254,21 @@ export default function ApprovalsPage() {
         const members = membersData.members || [];
         setVacationMembers(members);
 
-          const effectiveMemberId = selectedMemberId || (members.length > 0 ? String(members[0].Id) : '');
-          if (effectiveMemberId && effectiveMemberId !== selectedMemberId) {
-            setSelectedMemberId(effectiveMemberId);
+          const params = new URLSearchParams();
+          params.set('year', String(vacationYear));
+          params.set('status', vacationStatusFilter);
+          if (selectedMemberId) {
+            params.set('userId', selectedMemberId);
           }
 
-          if (effectiveMemberId) {
-            const teamRequestsRes = await fetch(
-              `${getApiUrl()}/api/vacations/requests?year=${vacationYear}&status=${vacationStatusFilter}&userId=${effectiveMemberId}`,
-              { headers: { 'Authorization': `Bearer ${token}` } }
-            );
+          const teamRequestsRes = await fetch(
+            `${getApiUrl()}/api/vacations/requests?${params.toString()}`,
+            { headers: { 'Authorization': `Bearer ${token}` } }
+          );
 
-            if (teamRequestsRes.ok) {
-              const teamReqData = await teamRequestsRes.json();
-              setVacationTeamRequests(teamReqData.requests || []);
-            } else {
-              setVacationTeamRequests([]);
-            }
+          if (teamRequestsRes.ok) {
+            const teamReqData = await teamRequestsRes.json();
+            setVacationTeamRequests(teamReqData.requests || []);
           } else {
             setVacationTeamRequests([]);
           }
@@ -1183,6 +1181,7 @@ export default function ApprovalsPage() {
                           onChange={(e) => setSelectedMemberId(e.target.value)}
                           className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                         >
+                          <option value="">All users</option>
                           {vacationMembers.map((member) => (
                             <option key={member.Id} value={member.Id}>
                               {(member.FirstName && member.LastName) ? `${member.FirstName} ${member.LastName}` : member.Username}

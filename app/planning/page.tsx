@@ -1401,6 +1401,7 @@ export default function PlanningPage() {
 
   const handleTaskClick = async (task: Task) => {
     const fullTask = tasks.find((entry) => Number(entry.Id) === Number(task.Id)) || task;
+    const canPlanTaskAllocations = !!permissions?.canPlanTasks;
     setSelectedTask(fullTask);
     setLoadingAllocations(true);
 
@@ -1433,20 +1434,24 @@ export default function PlanningPage() {
     }
     
     try {
-      // Fetch task allocations
-      const allocationsResponse = await fetch(
-        `${getApiUrl()}/api/task-allocations/task/${fullTask.Id}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
+      if (canPlanTaskAllocations) {
+        // Fetch task allocations for planners
+        const allocationsResponse = await fetch(
+          `${getApiUrl()}/api/task-allocations/task/${fullTask.Id}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        if (allocationsResponse.ok) {
+          const data = await allocationsResponse.json();
+          setTaskAllocations(data.allocations || []);
+        } else {
+          setTaskAllocations([]);
         }
-      );
-      
-      if (allocationsResponse.ok) {
-        const data = await allocationsResponse.json();
-        setTaskAllocations(data.allocations || []);
       } else {
         setTaskAllocations([]);
       }
@@ -1732,6 +1737,18 @@ export default function PlanningPage() {
     return !tasks.some((candidate) => candidate.ParentTaskId === taskId);
   };
 
+  const isClosedUnscheduledWithAnchor = (task: Task): boolean => {
+    return Number(task.UnscheduledWork || 0) === 1
+      && Number(task.StatusIsClosed || 0) === 1
+      && !!task.ClosedAt;
+  };
+
+  const isRenderableUnscheduledTask = (task: Task): boolean => {
+    if (Number(task.UnscheduledWork || 0) !== 1) return false;
+    if (isClosedUnscheduledWithAnchor(task)) return true;
+    return !isTaskClosedOrCancelled(task);
+  };
+
   const hasUnscheduledAssignedDescendant = (parentTaskId: number, userId?: number): boolean => {
     const directChildren = tasks.filter((candidate) => candidate.ParentTaskId === parentTaskId);
     if (directChildren.length === 0) return false;
@@ -1745,7 +1762,7 @@ export default function PlanningPage() {
         ? hasAnyTaskAssignee(candidate)
         : isTaskAssignedToUser(candidate, userId);
 
-      if (candidateIsLeaf && isUnscheduled && matchesAssignee && !isTaskClosedOrCancelled(candidate)) {
+      if (candidateIsLeaf && isUnscheduled && matchesAssignee && isRenderableUnscheduledTask(candidate)) {
         return true;
       }
 
@@ -1759,7 +1776,7 @@ export default function PlanningPage() {
   };
 
   const getTaskClosedAnchorDate = (task: Task): Date | null => {
-    const rawDate = task.ClosedAt || (isTaskClosedOrCancelled(task) ? task.UpdatedAt : null);
+    const rawDate = Number(task.StatusIsClosed || 0) === 1 ? task.ClosedAt : null;
     if (!rawDate) return null;
 
     const dateOnly = String(rawDate).split('T')[0];
@@ -1779,7 +1796,7 @@ export default function PlanningPage() {
         ? hasAnyTaskAssignee(candidate)
         : isTaskAssignedToUser(candidate, userId);
 
-      if (candidateIsLeaf && isUnscheduled && matchesAssignee && !isTaskClosedOrCancelled(candidate)) {
+      if (candidateIsLeaf && isUnscheduled && matchesAssignee && isRenderableUnscheduledTask(candidate)) {
         relevantTasks.push(candidate);
       }
 
@@ -1886,14 +1903,15 @@ export default function PlanningPage() {
     const isAssignedUnscheduled = isLeafTask(task.Id)
       && Number(task.UnscheduledWork || 0) === 1
       && hasAnyTaskAssignee(task)
-      && !isTaskClosedOrCancelled(task);
+      && isRenderableUnscheduledTask(task);
     const hasUnscheduledDescendant = !task.ParentTaskId && hasUnscheduledAssignedDescendant(task.Id);
 
     if (isAssignedUnscheduled || hasUnscheduledDescendant) {
       const unscheduledAnchorDate = getUnscheduledAnchorDate(task, options?.unscheduledUserId);
       startDate = new Date(unscheduledAnchorDate);
       endDate = new Date(unscheduledAnchorDate);
-      endDate.setDate(endDate.getDate() + 2); // Visualize unscheduled work across 3 days for readability
+      const unscheduledVisualDays = isClosedUnscheduledWithAnchor(task) ? 1 : 3;
+      endDate.setDate(endDate.getDate() + (unscheduledVisualDays - 1));
     } else if (task.PlannedStartDate && task.PlannedEndDate) {
       // Parse planned dates - handle both 'YYYY-MM-DD' and ISO timestamp formats
       const parseDate = (dateStr: string) => {
@@ -2317,11 +2335,13 @@ export default function PlanningPage() {
 
       result = tasks.filter((task) => {
         if (task.ParentTaskId) return false;
-        if (isTaskClosedOrCancelled(task)) return false;
 
-        const isUnscheduledAssigned = Number(task.UnscheduledWork || 0) === 1
+        const isRenderableClosedUnscheduled = isClosedUnscheduledWithAnchor(task);
+        if (isTaskClosedOrCancelled(task) && !isRenderableClosedUnscheduled) return false;
+
+        const isUnscheduledAssigned = isRenderableUnscheduledTask(task)
           && hasAnyTaskAssignee(task)
-          && !isTaskClosedOrCancelled(task);
+          ;
         if (isUnscheduledAssigned) {
           return isTaskAssignedToUser(task, Number(userId));
         }
@@ -6783,9 +6803,10 @@ export default function PlanningPage() {
     const grouped = new Map<string, { id: string; label: string; subLabel: string; tasks: Task[] }>();
     const parentTasks = tasks.filter((t) => {
       if (t.ParentTaskId) return false;
-      if (isTaskClosedOrCancelled(t)) return false;
+      const isRenderableClosedUnscheduled = isClosedUnscheduledWithAnchor(t);
+      if (isTaskClosedOrCancelled(t) && !isRenderableClosedUnscheduled) return false;
       const hasPlannedDates = !!(t.PlannedStartDate && t.PlannedEndDate);
-      const isAssignedUnscheduled = Number(t.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(t) && !isTaskClosedOrCancelled(t);
+      const isAssignedUnscheduled = isRenderableUnscheduledTask(t) && hasAnyTaskAssignee(t);
       const hasUnscheduledDescendants = hasUnscheduledAssignedDescendant(t.Id);
       if (!(hasPlannedDates || isAssignedUnscheduled || hasUnscheduledDescendants) || !matchesGanttSearch(t)) return false;
 
@@ -7636,15 +7657,17 @@ export default function PlanningPage() {
 
                   const parentTasksWithDates = tasks.filter((task) => {
                     if (task.ParentTaskId) return false;
-                    if (isTaskClosedOrCancelled(task)) return false;
 
-                    const isUnscheduledAssigned = Number(task.UnscheduledWork || 0) === 1
+                    const isRenderableClosedUnscheduled = isClosedUnscheduledWithAnchor(task);
+                    if (isTaskClosedOrCancelled(task) && !isRenderableClosedUnscheduled) return false;
+
+                    const isUnscheduledAssigned = isRenderableUnscheduledTask(task)
                       && hasAnyTaskAssignee(task)
-                      && !isTaskClosedOrCancelled(task);
+                      ;
                     const plannedForUserByAllocations = parentTaskIdsFromAllocations.has(task.Id);
-                    const unscheduledAssigned = Number(task.UnscheduledWork || 0) === 1
+                    const unscheduledAssigned = isRenderableUnscheduledTask(task)
                       && isTaskAssignedToUser(task, Number(userRow.Id))
-                      && !isTaskClosedOrCancelled(task);
+                      ;
                     if (isUnscheduledAssigned) {
                       return unscheduledAssigned && matchesGanttSearch(task);
                     }
@@ -8235,7 +8258,7 @@ export default function PlanningPage() {
                                         e.stopPropagation();
                                         return;
                                       }
-                                      if (segmentHeaderId !== null) {
+                                      if (segmentHeaderId !== null && permissions?.canPlanTasks) {
                                         openAllocationHeaderModal(segmentHeaderId);
                                         return;
                                       }

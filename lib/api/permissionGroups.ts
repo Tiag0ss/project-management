@@ -23,6 +23,8 @@ export interface PermissionGroup {
   CanDeleteTickets: number;
   CanAssignTickets: number;
   CanCreateTaskFromTicket: number;
+  CanViewOthersPlanning: number;
+  CanViewApplications: number;
   CanManageMembers: number;
   CanManageSettings: number;
   CanManageApplications: number;
@@ -55,6 +57,8 @@ export interface CreatePermissionGroupData {
   canDeleteTickets: boolean;
   canAssignTickets: boolean;
   canCreateTaskFromTicket: boolean;
+  canViewOthersPlanning: boolean;
+  canViewApplications: boolean;
   canManageMembers: boolean;
   canManageSettings: boolean;
   canManageApplications: boolean;

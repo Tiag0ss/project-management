@@ -5,6 +5,15 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = express.Router();
 
+const isAutoApproveTimeEntriesEnabled = async (): Promise<boolean> => {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT SettingValue FROM SystemSettings WHERE SettingKey = ? LIMIT 1`,
+    ['autoApproveTimeEntries']
+  );
+
+  return rows.length > 0 && String(rows[0].SettingValue || '').toLowerCase() === 'true';
+};
+
 const canManageTeamEntry = async (entryId: string, currentUserId: number | undefined) => {
   const [entries] = await pool.execute<RowDataPacket[]>(
     `SELECT te.Id, te.UserId, te.ApprovalStatus, u.TeamLeaderId
@@ -276,7 +285,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     // Hobby entries are automatically approved
     const isHobby = !!tasks[0].IsHobby;
-    const approvalStatus = isHobby ? 'approved' : 'pending';
+    const autoApproveTimeEntries = await isAutoApproveTimeEntriesEnabled();
+    const approvalStatus = (isHobby || autoApproveTimeEntries) ? 'approved' : 'pending';
 
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO TimeEntries (TaskId, UserId, WorkDate, Hours, Description, StartTime, EndTime, ApprovalStatus)
@@ -354,14 +364,16 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     }
 
     const isHobby = !!entries[0].IsHobby;
+    const autoApproveTimeEntries = await isAutoApproveTimeEntriesEnabled();
 
     // Only block editing approved entries for non-hobby projects
-    if (!isHobby && entries[0].ApprovalStatus === 'approved') {
+    if (!isHobby && !autoApproveTimeEntries && entries[0].ApprovalStatus === 'approved') {
       return res.status(403).json({ success: false, message: 'Cannot edit an approved time entry' });
     }
 
-    // Any user edit must go back to pending for re-approval
-    const newApprovalStatus = 'pending';
+    const newApprovalStatus = (isHobby || autoApproveTimeEntries) ? 'approved' : 'pending';
+    const newApprovedBy = newApprovalStatus === 'approved' ? userId : null;
+    const approvedAtExpression = newApprovalStatus === 'approved' ? 'CURRENT_TIMESTAMP' : 'NULL';
 
     await pool.execute(
       `UPDATE TimeEntries 
@@ -371,8 +383,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
            StartTime = COALESCE(?, StartTime),
            EndTime = COALESCE(?, EndTime),
            ApprovalStatus = ?,
-           ApprovedBy = NULL,
-           ApprovedAt = NULL,
+           ApprovedBy = ?,
+           ApprovedAt = ${approvedAtExpression},
            UpdatedAt = CURRENT_TIMESTAMP
        WHERE Id = ?`,
       [
@@ -382,6 +394,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         startTime ?? null, 
         endTime ?? null,
         newApprovalStatus,
+        newApprovedBy,
         id
       ]
     );
@@ -438,9 +451,10 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     }
 
     const isHobby = !!entries[0].IsHobby;
+    const autoApproveTimeEntries = await isAutoApproveTimeEntriesEnabled();
 
     // Only block deleting approved entries for non-hobby projects
-    if (!isHobby && entries[0].ApprovalStatus === 'approved') {
+    if (!isHobby && !autoApproveTimeEntries && entries[0].ApprovalStatus === 'approved') {
       return res.status(403).json({ success: false, message: 'Cannot delete an approved time entry' });
     }
 

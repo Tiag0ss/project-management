@@ -100,6 +100,24 @@ export interface CreateTaskData {
   syncAllocationHeaderDates?: boolean;
 }
 
+export type UpdateTaskData = Omit<Partial<CreateTaskData>,
+  'assignedTo' | 'estimatedHours' | 'storyPoints' | 'parentTaskId' | 'dependsOnTaskId' |
+  'customerId' | 'gitHubIssueNumber' | 'giteaIssueNumber' | 'applicationId' |
+  'releaseVersionId' | 'jiraIssueKey'
+> & {
+  assignedTo?: number | null;
+  estimatedHours?: number | null;
+  storyPoints?: number | null;
+  parentTaskId?: number | null;
+  dependsOnTaskId?: number | null;
+  customerId?: number | null;
+  gitHubIssueNumber?: number | null;
+  giteaIssueNumber?: number | null;
+  applicationId?: number | null;
+  releaseVersionId?: number | null;
+  jiraIssueKey?: string | null;
+};
+
 export const tasksApi = {
   async getByProject(projectId: number, token: string): Promise<{ success: boolean; tasks: Task[] }> {
     const response = await fetch(`${API_BASE_URL}/api/tasks/project/${projectId}`, {
@@ -155,7 +173,7 @@ export const tasksApi = {
     return data;
   },
 
-  async update(id: number, taskData: Partial<CreateTaskData>, token: string): Promise<{ success: boolean }> {
+  async update(id: number, taskData: Partial<UpdateTaskData>, token: string): Promise<{ success: boolean }> {
     const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`, {
       method: 'PUT',
       headers: {

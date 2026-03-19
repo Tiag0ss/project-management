@@ -283,6 +283,12 @@ function DashboardContent() {
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState({
+    timeEntries: 0,
+    vacations: 0,
+    canApproveTime: false,
+    canApproveVacations: false,
+  });
 
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setModalMessage({ type: 'confirm', title, message, onConfirm });
@@ -871,6 +877,74 @@ function DashboardContent() {
     }
   };
 
+  const loadPendingApprovals = async () => {
+    if (!token || !user || isCustomerUser) {
+      setPendingApprovals({
+        timeEntries: 0,
+        vacations: 0,
+        canApproveTime: false,
+        canApproveVacations: false,
+      });
+      return;
+    }
+
+    try {
+      const [timeScopeRes, vacationScopeRes] = await Promise.all([
+        fetch(`${getApiUrl()}/api/time-entries/approval-scope`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }),
+        fetch(`${getApiUrl()}/api/vacations/approval-scope`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }),
+      ]);
+
+      const canApproveTime = timeScopeRes.ok ? !!(await timeScopeRes.json())?.canApprove : false;
+      const canApproveVacations = vacationScopeRes.ok ? !!(await vacationScopeRes.json())?.canApprove : false;
+      const effectiveCanApproveTime = canApproveTime || !!user.isAdmin;
+      const effectiveCanApproveVacations = canApproveVacations || !!user.isAdmin;
+
+      const [timeCount, vacationCount] = await Promise.all([
+        effectiveCanApproveTime
+          ? fetch(`${getApiUrl()}/api/time-entries/pending-approval/team?status=pending`, {
+              headers: { 'Authorization': `Bearer ${token}` },
+            })
+              .then(async (response) => {
+                if (!response.ok) return 0;
+                const data = await response.json();
+                return Array.isArray(data.entries) ? data.entries.length : 0;
+              })
+              .catch(() => 0)
+          : Promise.resolve(0),
+        effectiveCanApproveVacations
+          ? fetch(`${getApiUrl()}/api/vacations/pending`, {
+              headers: { 'Authorization': `Bearer ${token}` },
+            })
+              .then(async (response) => {
+                if (!response.ok) return 0;
+                const data = await response.json();
+                return Array.isArray(data.requests) ? data.requests.length : 0;
+              })
+              .catch(() => 0)
+          : Promise.resolve(0),
+      ]);
+
+      setPendingApprovals({
+        timeEntries: timeCount,
+        vacations: vacationCount,
+        canApproveTime: effectiveCanApproveTime,
+        canApproveVacations: effectiveCanApproveVacations,
+      });
+    } catch (err) {
+      console.error('Failed to load pending approvals:', err);
+      setPendingApprovals({
+        timeEntries: 0,
+        vacations: 0,
+        canApproveTime: false,
+        canApproveVacations: false,
+      });
+    }
+  };
+
   const loadTimeEntries = async (): Promise<TimeEntry[]> => {
     try {
       const response = await fetch(
@@ -1008,6 +1082,7 @@ function DashboardContent() {
 
     loadUserProfile();
     loadSummaryStats();
+    loadPendingApprovals();
   }, [user, token, featureFlagsLoaded, isCustomerUser, internalTicketsEnabled]);
 
   useEffect(() => {
@@ -1043,6 +1118,9 @@ function DashboardContent() {
   if (!user) {
     return null;
   }
+
+  const totalPendingApprovals = pendingApprovals.timeEntries + pendingApprovals.vacations;
+  const showPendingApprovalAlert = totalPendingApprovals > 0 && (pendingApprovals.canApproveTime || pendingApprovals.canApproveVacations);
 
   if (!isLoadingPermissions && !permissions?.canViewDashboard) {
     return (
@@ -1285,7 +1363,7 @@ function DashboardContent() {
             <div className="space-y-6">
               {/* Welcome Header */}
               <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow p-6 text-white">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-4">
                   <div>
                     <h2 className="text-2xl font-bold">
                       Welcome back, {user?.firstName || user?.username}!
@@ -1294,11 +1372,38 @@ function DashboardContent() {
                       {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     </p>
                   </div>
-                  {summaryStats.overdueTasks > 0 && (
-                    <div className="bg-red-500 px-4 py-2 rounded-lg">
-                      <span className="text-sm font-medium">⚠️ {summaryStats.overdueTasks} overdue task{summaryStats.overdueTasks > 1 ? 's' : ''}</span>
-                    </div>
-                  )}
+                  <div className="flex flex-col items-end gap-2">
+                    {showPendingApprovalAlert && (
+                      <div className="bg-amber-500/95 text-white px-3 py-2 rounded-lg">
+                        <div className="text-xs font-semibold uppercase tracking-wide opacity-90">Approval Required</div>
+                        <div className="mt-1 flex flex-wrap justify-end gap-2">
+                          {pendingApprovals.timeEntries > 0 && pendingApprovals.canApproveTime && (
+                            <button
+                              onClick={() => router.push('/approvals?tab=time')}
+                              className="px-2.5 py-1 rounded bg-white/20 hover:bg-white/30 text-xs font-medium transition-colors"
+                              title="Open time entries approval"
+                            >
+                              {pendingApprovals.timeEntries} time entr{pendingApprovals.timeEntries === 1 ? 'y' : 'ies'}
+                            </button>
+                          )}
+                          {pendingApprovals.vacations > 0 && pendingApprovals.canApproveVacations && (
+                            <button
+                              onClick={() => router.push('/approvals?tab=vacations')}
+                              className="px-2.5 py-1 rounded bg-white/20 hover:bg-white/30 text-xs font-medium transition-colors"
+                              title="Open vacations approval"
+                            >
+                              {pendingApprovals.vacations} vacation{pendingApprovals.vacations === 1 ? '' : 's'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {summaryStats.overdueTasks > 0 && (
+                      <div className="bg-red-500 px-4 py-2 rounded-lg">
+                        <span className="text-sm font-medium">⚠️ {summaryStats.overdueTasks} overdue task{summaryStats.overdueTasks > 1 ? 's' : ''}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

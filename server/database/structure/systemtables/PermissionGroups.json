@@ -153,6 +153,20 @@
       "Comment": "Permission to create tasks directly from tickets within organization"
     },
     {
+      "FieldName": "CanViewOthersPlanning",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to view planning data of other users within organization"
+    },
+    {
+      "FieldName": "CanViewApplications",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to view applications within organization"
+    },
+    {
       "FieldName": "CanManageMembers",
       "DataType": "tinyint(1)",
       "NotNullable": true,

@@ -199,9 +199,10 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
           CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks, CanPlanTasks,
             CanManageTimeEntries, CanViewReports, CanViewBudgetInfo,
           CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets, CanCreateTaskFromTicket,
+            CanViewOthersPlanning, CanViewApplications,
           CanManageMembers, CanManageSettings,
           CanManageApplications, CanCreateApplications, CanDeleteApplications, CanManageReleases)
-           VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)` ,
         [
           orgId, rp.RoleName, rp.RoleName,
           rp.CanManageProjects ? 1 : 0, rp.CanCreateProjects ? 1 : 0, rp.CanDeleteProjects ? 1 : 0,
@@ -211,6 +212,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
           rp.CanManageTickets ? 1 : 0, rp.CanCreateTickets ? 1 : 0,
           rp.CanDeleteTickets ? 1 : 0, rp.CanAssignTickets ? 1 : 0,
           rp.CanCreateTaskFromTicket ? 1 : 0,
+            rp.CanViewOthersPlanning ? 1 : 0,
+            rp.CanViewApplications ? 1 : 0,
           rp.CanManageApplications ? 1 : 0,
           rp.CanCreateApplications ? 1 : 0,
           rp.CanDeleteApplications ? 1 : 0,
@@ -1090,9 +1093,8 @@ router.delete('/:id/members/:memberId', authenticateToken, async (req: AuthReque
 
 /**
  * POST /api/organizations/admin/create-system-groups
- * Admin-only: Retroactively create missing system permission groups for all existing organizations.
- * System groups (Developer, Support, Manager) are created from current global RolePermissions values.
- * Orgs that already have system groups for a given role are skipped for that role.
+ * Admin-only: Retroactively create missing system permission groups for all existing organizations
+ * and sync existing system groups from current global RolePermissions values.
  */
 router.post('/admin/create-system-groups', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -1137,19 +1139,42 @@ router.post('/admin/create-system-groups', authenticateToken, async (req: AuthRe
 
     const roles = ['Developer', 'Support', 'Manager'];
     let created = 0;
+    let synced = 0;
     let skipped = 0;
 
     for (const org of orgs) {
       for (const roleName of roles) {
         const key = `${org.Id}:${roleName}`;
-        if (existingSet.has(key)) {
+        const rp = roleMap[roleName];
+        if (!rp) {
           skipped++;
           continue;
         }
 
-        const rp = roleMap[roleName];
-        if (!rp) {
-          skipped++;
+        if (existingSet.has(key)) {
+          await pool.execute(
+            `UPDATE PermissionGroups
+             SET CanManageProjects = ?, CanCreateProjects = ?, CanDeleteProjects = ?,
+                 CanManageTasks = ?, CanCreateTasks = ?, CanDeleteTasks = ?, CanAssignTasks = ?,
+                 CanPlanTasks = ?, CanManageTimeEntries = ?, CanViewReports = ?, CanViewBudgetInfo = ?,
+                 CanManageTickets = ?, CanCreateTickets = ?, CanDeleteTickets = ?, CanAssignTickets = ?,
+                 CanCreateTaskFromTicket = ?,
+                 CanViewOthersPlanning = ?, CanViewApplications = ?,
+                 CanManageApplications = ?, CanCreateApplications = ?, CanDeleteApplications = ?, CanManageReleases = ?
+             WHERE OrganizationId = ? AND LinkedRole = ? AND IsSystemGroup = 1`,
+            [
+              rp.CanManageProjects ? 1 : 0, rp.CanCreateProjects ? 1 : 0, rp.CanDeleteProjects ? 1 : 0,
+              rp.CanManageTasks ? 1 : 0, rp.CanCreateTasks ? 1 : 0, rp.CanDeleteTasks ? 1 : 0, rp.CanAssignTasks ? 1 : 0,
+              rp.CanPlanTasks ? 1 : 0, rp.CanManageTimeEntries ? 1 : 0, rp.CanViewReports ? 1 : 0, rp.CanViewBudgetInfo ? 1 : 0,
+              rp.CanManageTickets ? 1 : 0, rp.CanCreateTickets ? 1 : 0, rp.CanDeleteTickets ? 1 : 0, rp.CanAssignTickets ? 1 : 0,
+              rp.CanCreateTaskFromTicket ? 1 : 0,
+              rp.CanViewOthersPlanning ? 1 : 0, rp.CanViewApplications ? 1 : 0,
+              rp.CanManageApplications ? 1 : 0, rp.CanCreateApplications ? 1 : 0, rp.CanDeleteApplications ? 1 : 0, rp.CanManageReleases ? 1 : 0,
+              org.Id,
+              roleName,
+            ]
+          );
+          synced++;
           continue;
         }
 
@@ -1160,8 +1185,9 @@ router.post('/admin/create-system-groups', authenticateToken, async (req: AuthRe
             CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks,
             CanPlanTasks, CanManageTimeEntries, CanViewReports, CanViewBudgetInfo,
             CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets,
-            CanCreateTaskFromTicket, CanManageMembers, CanManageSettings
-          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
+            CanCreateTaskFromTicket, CanViewOthersPlanning, CanViewApplications, CanManageMembers, CanManageSettings,
+            CanManageApplications, CanCreateApplications, CanDeleteApplications, CanManageReleases
+          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)` ,
           [
             org.Id,
             roleName,
@@ -1171,7 +1197,11 @@ router.post('/admin/create-system-groups', authenticateToken, async (req: AuthRe
             rp.CanManageTasks ? 1 : 0, rp.CanCreateTasks ? 1 : 0, rp.CanDeleteTasks ? 1 : 0, rp.CanAssignTasks ? 1 : 0,
             rp.CanPlanTasks ? 1 : 0, rp.CanManageTimeEntries ? 1 : 0, rp.CanViewReports ? 1 : 0, rp.CanViewBudgetInfo ? 1 : 0,
             rp.CanManageTickets ? 1 : 0, rp.CanCreateTickets ? 1 : 0, rp.CanDeleteTickets ? 1 : 0, rp.CanAssignTickets ? 1 : 0,
-            rp.CanCreateTaskFromTicket ? 1 : 0
+            rp.CanCreateTaskFromTicket ? 1 : 0, rp.CanViewOthersPlanning ? 1 : 0, rp.CanViewApplications ? 1 : 0,
+            rp.CanManageApplications ? 1 : 0,
+            rp.CanCreateApplications ? 1 : 0,
+            rp.CanDeleteApplications ? 1 : 0,
+            rp.CanManageReleases ? 1 : 0,
           ]
         );
         created++;
@@ -1180,8 +1210,9 @@ router.post('/admin/create-system-groups', authenticateToken, async (req: AuthRe
 
     res.json({ 
       success: true, 
-      message: `Migration complete: ${created} system groups created, ${skipped} already existed.`,
+      message: `Sync complete: ${created} system groups created, ${synced} system groups synced, ${skipped} skipped.`,
       created,
+      synced,
       skipped
     });
   } catch (error) {

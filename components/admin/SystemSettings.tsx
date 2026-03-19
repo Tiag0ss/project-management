@@ -117,6 +117,8 @@ interface SystemSettings {
   defaultTimezone?: string;
   internalTicketsEnabled?: string;
   memosEnabled?: string;
+  autoApproveTimeEntries?: string;
+  autoApproveVacations?: string;
   aiAssistantEnabled?: string;
   openAIApiKey?: string;
   aiViewsAutoCreate?: string;
@@ -163,6 +165,8 @@ export default function SystemSettings() {
     defaultTimezone: '',
     internalTicketsEnabled: 'true',
     memosEnabled: 'true',
+    autoApproveTimeEntries: 'false',
+    autoApproveVacations: 'false',
     aiAssistantEnabled: 'false',
     openAIApiKey: '',
     aiViewsAutoCreate: 'true',
@@ -230,6 +234,8 @@ export default function SystemSettings() {
           defaultTimezone: data.settings.defaultTimezone || '',
           internalTicketsEnabled: data.settings.internalTicketsEnabled || 'true',
           memosEnabled: data.settings.memosEnabled || 'true',
+          autoApproveTimeEntries: data.settings.autoApproveTimeEntries || 'false',
+          autoApproveVacations: data.settings.autoApproveVacations || 'false',
           aiAssistantEnabled: data.settings.aiAssistantEnabled || 'false',
           openAIApiKey: data.settings.openAIApiKey || '',
           aiViewsAutoCreate: data.settings.aiViewsAutoCreate || 'true',
@@ -824,6 +830,40 @@ export default function SystemSettings() {
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
                       Only controls visibility of Memos in the navbar.
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.autoApproveTimeEntries === 'true'}
+                    onChange={(e) => handleChange('autoApproveTimeEntries', e.target.checked ? 'true' : 'false')}
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      Auto-approve Time Entries
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      New time entries are created as approved and approved entries remain editable.
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.autoApproveVacations === 'true'}
+                    onChange={(e) => handleChange('autoApproveVacations', e.target.checked ? 'true' : 'false')}
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      Auto-approve Vacations
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      New vacation requests are immediately approved.
                     </div>
                   </div>
                 </label>

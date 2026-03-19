@@ -4,7 +4,7 @@ import { getApiUrl } from '@/lib/api/config';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Task, CreateTaskData, tasksApi, TaskAssignee } from '@/lib/api/tasks';
+import { Task, CreateTaskData, UpdateTaskData, tasksApi, TaskAssignee } from '@/lib/api/tasks';
 import { Project, projectsApi } from '@/lib/api/projects';
 import { Customer, getCustomersByOrganization } from '@/lib/api/customers';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
@@ -20,7 +20,7 @@ interface TaskDetailModalProps {
   project: Project;
   tasks: Task[];
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: () => void | Promise<void>;
   token: string;
   // jiraIntegration prop removed; integration is fetched internally
   onOpenTask?: (task: Task) => void;
@@ -815,32 +815,51 @@ export default function TaskDetailModal({
           ? null
           : Number(formData.giteaIssueNumber));
 
-      const payload: CreateTaskData = {
-        projectId: formData.projectId,
-        taskName: formData.taskName,
-        description: formData.description || '',
-        status: formData.status ?? null,
-        priority: formData.priority ?? null,
-        taskType: formData.taskType ?? null,
-        assignedTo: formData.assignedTo ?? undefined,
-        dueDate: formData.dueDate || '',
-        dueDateMandatory: !!formData.dueDateMandatory,
-        unscheduledWork: !!formData.unscheduledWork,
-        estimatedHours: formData.estimatedHours ?? undefined,
-        storyPoints: formData.storyPoints ?? undefined,
-        parentTaskId: formData.parentTaskId ?? undefined,
-        plannedStartDate: formData.plannedStartDate || '',
-        plannedEndDate: formData.plannedEndDate || '',
-        dependsOnTaskId: formData.dependsOnTaskId ?? undefined,
-        customerId: formData.customerId ?? null,
-        jiraIssueKey: normalizedJiraIssueKey ?? '',
-        gitHubIssueNumber: normalizedGitHubIssueNumber ?? null,
-        giteaIssueNumber: normalizedGiteaIssueNumber ?? null,
-        applicationId: formData.applicationId ?? null,
-        releaseVersionId: formData.releaseVersionId ?? null,
-      };
+      const normalizedAssignedTo = formData.assignedTo === undefined
+        ? null
+        : formData.assignedTo;
+
+      const normalizedEstimatedHours = formData.estimatedHours === undefined
+        ? null
+        : formData.estimatedHours;
+
+      const normalizedStoryPoints = formData.storyPoints === undefined
+        ? null
+        : formData.storyPoints;
+
+      const normalizedParentTaskId = formData.parentTaskId === undefined
+        ? null
+        : formData.parentTaskId;
+
+      const normalizedDependsOnTaskId = formData.dependsOnTaskId === undefined
+        ? null
+        : formData.dependsOnTaskId;
 
       if (task?.Id) {
+        const payload: UpdateTaskData = {
+          projectId: formData.projectId,
+          taskName: formData.taskName,
+          description: formData.description || '',
+          status: formData.status ?? null,
+          priority: formData.priority ?? null,
+          taskType: formData.taskType ?? null,
+          assignedTo: normalizedAssignedTo,
+          dueDate: formData.dueDate || '',
+          dueDateMandatory: !!formData.dueDateMandatory,
+          unscheduledWork: !!formData.unscheduledWork,
+          estimatedHours: normalizedEstimatedHours,
+          storyPoints: normalizedStoryPoints,
+          parentTaskId: normalizedParentTaskId,
+          plannedStartDate: formData.plannedStartDate || '',
+          plannedEndDate: formData.plannedEndDate || '',
+          dependsOnTaskId: normalizedDependsOnTaskId,
+          customerId: formData.customerId ?? null,
+          jiraIssueKey: normalizedJiraIssueKey ?? '',
+          gitHubIssueNumber: normalizedGitHubIssueNumber ?? null,
+          giteaIssueNumber: normalizedGiteaIssueNumber ?? null,
+          applicationId: formData.applicationId ?? null,
+          releaseVersionId: formData.releaseVersionId ?? null,
+        };
         await tasksApi.update(task.Id, payload, token);
 
         // Sync assignees: add newly added ones, remove removed ones
@@ -848,17 +867,50 @@ export default function TaskDetailModal({
         const currentIds = new Set(taskAssignees.map((a) => a.UserId));
         const toAdd = taskAssignees.filter((a) => !originalIds.has(a.UserId));
         const toRemove = (task.Assignees || []).filter((a) => !currentIds.has(a.UserId));
-        await Promise.all([
-          ...toAdd.map((a) => tasksApi.addAssignee(task.Id, a.UserId, token)),
-          ...toRemove.map((a) => tasksApi.removeAssignee(task.Id, a.UserId, token)),
-        ]);
+        try {
+          await Promise.all([
+            ...toAdd.map((a) => tasksApi.addAssignee(task.Id, a.UserId, token)),
+            ...toRemove.map((a) => tasksApi.removeAssignee(task.Id, a.UserId, token)),
+          ]);
+        } catch (assigneeSyncError) {
+          console.error('Task saved, but assignee sync failed:', assigneeSyncError);
+        }
       } else {
+        const payload: CreateTaskData = {
+          projectId: formData.projectId,
+          taskName: formData.taskName,
+          description: formData.description || '',
+          status: formData.status ?? null,
+          priority: formData.priority ?? null,
+          taskType: formData.taskType ?? null,
+          assignedTo: formData.assignedTo ?? undefined,
+          dueDate: formData.dueDate || '',
+          dueDateMandatory: !!formData.dueDateMandatory,
+          unscheduledWork: !!formData.unscheduledWork,
+          estimatedHours: formData.estimatedHours ?? undefined,
+          storyPoints: formData.storyPoints ?? undefined,
+          parentTaskId: formData.parentTaskId ?? undefined,
+          plannedStartDate: formData.plannedStartDate || '',
+          plannedEndDate: formData.plannedEndDate || '',
+          dependsOnTaskId: formData.dependsOnTaskId ?? undefined,
+          customerId: formData.customerId ?? null,
+          jiraIssueKey: normalizedJiraIssueKey ?? '',
+          gitHubIssueNumber: normalizedGitHubIssueNumber ?? null,
+          giteaIssueNumber: normalizedGiteaIssueNumber ?? null,
+          applicationId: formData.applicationId ?? null,
+          releaseVersionId: formData.releaseVersionId ?? null,
+        };
         const result = await tasksApi.create(payload, token);
         // Add assignees to the newly created task
         const newTaskId = result.taskId;
-        await Promise.all(taskAssignees.map((a) => tasksApi.addAssignee(newTaskId, a.UserId, token)));
+        try {
+          await Promise.all(taskAssignees.map((a) => tasksApi.addAssignee(newTaskId, a.UserId, token)));
+        } catch (assigneeSyncError) {
+          console.error('Task created, but assignee sync failed:', assigneeSyncError);
+        }
       }
-      onSaved();
+      await Promise.resolve(onSaved());
+      onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to save task');
     } finally {
@@ -1903,14 +1955,14 @@ export default function TaskDetailModal({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Description
                 </label>
-                <div className="max-h-56 min-h-[120px] overflow-y-auto rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700">
-                  <RichTextEditor
-                    content={formData.description || ''}
-                    onChange={(html) => setFormData({ ...formData, description: html })}
-                    placeholder="Enter task description..."
-                    className="min-h-[120px] max-h-56"
-                  />
-                </div>
+                <RichTextEditor
+                  content={formData.description || ''}
+                  onChange={(html) => setFormData({ ...formData, description: html })}
+                  placeholder="Enter task description..."
+                  className="min-h-[120px]"
+                  contentScrollOnly={true}
+                  contentMaxHeightClass="max-h-56"
+                />
               </div>
 
               {/* Ticket Reference */}
@@ -2566,7 +2618,7 @@ export default function TaskDetailModal({
                     Parent Task (Optional)
                   </label>
                   <SearchableSelect
-                    value={formData.parentTaskId}
+                    value={typeof formData.parentTaskId === 'number' ? formData.parentTaskId : undefined}
                     onChange={(value) => setFormData({ ...formData, parentTaskId: value })}
                     options={getAvailableParentTasks()}
                     placeholder="No Parent (Top-level task)"
@@ -2579,7 +2631,7 @@ export default function TaskDetailModal({
                     Depends On (Optional)
                   </label>
                   <SearchableSelect
-                    value={formData.dependsOnTaskId}
+                    value={typeof formData.dependsOnTaskId === 'number' ? formData.dependsOnTaskId : undefined}
                     onChange={(value) => setFormData({ ...formData, dependsOnTaskId: value })}
                     options={getAvailableDependencyTasks()}
                     placeholder="No dependency"
@@ -2635,7 +2687,7 @@ export default function TaskDetailModal({
                   Parent Task (Optional)
                 </label>
                 <SearchableSelect
-                  value={formData.parentTaskId}
+                  value={typeof formData.parentTaskId === 'number' ? formData.parentTaskId : undefined}
                   onChange={(value) => setFormData({ ...formData, parentTaskId: value })}
                   options={getAvailableParentTasks()}
                   placeholder="No Parent (Top-level task)"
@@ -2651,7 +2703,7 @@ export default function TaskDetailModal({
                   Depends On (Optional)
                 </label>
                 <SearchableSelect
-                  value={formData.dependsOnTaskId}
+                  value={typeof formData.dependsOnTaskId === 'number' ? formData.dependsOnTaskId : undefined}
                   onChange={(value) => setFormData({ ...formData, dependsOnTaskId: value })}
                   options={getAvailableDependencyTasks()}
                   placeholder="No dependency"

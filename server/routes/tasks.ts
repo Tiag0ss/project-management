@@ -1476,6 +1476,12 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const hasChanged = (oldVal: any, newVal: any): boolean => {
       return normalizeString(oldVal) !== normalizeString(newVal);
     };
+
+    const normalizeDescriptionForHistory = (value: any): string | null => {
+      const sanitized = sanitizeRichText(value);
+      if (!sanitized) return null;
+      return sanitized.replace(/\s+/g, ' ').trim();
+    };
     
     if (taskName !== undefined && hasChanged(oldTask.TaskName, taskName)) {
       changes.push({ field: 'TaskName', oldVal: oldTask.TaskName, newVal: taskName });
@@ -1492,8 +1498,12 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     if (assignedTo !== undefined && hasChanged(oldTask.AssignedTo, assignedTo)) {
       changes.push({ field: 'AssignedTo', oldVal: String(oldTask.AssignedTo || ''), newVal: String(assignedTo || '') });
     }
-    if (description !== undefined && hasChanged(oldTask.Description, description)) {
-      changes.push({ field: 'Description', oldVal: oldTask.Description || '', newVal: description || '' });
+    if (description !== undefined) {
+      const oldDescriptionNormalized = normalizeDescriptionForHistory(oldTask.Description);
+      const newDescriptionNormalized = normalizeDescriptionForHistory(finalDescription);
+      if (oldDescriptionNormalized !== newDescriptionNormalized) {
+        changes.push({ field: 'Description', oldVal: oldDescriptionNormalized, newVal: newDescriptionNormalized });
+      }
     }
     if (estimatedHours !== undefined && hasChanged(oldTask.EstimatedHours, estimatedHours)) {
       changes.push({ field: 'EstimatedHours', oldVal: String(oldTask.EstimatedHours || ''), newVal: String(estimatedHours || '') });

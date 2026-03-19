@@ -144,6 +144,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       canDeleteTickets,
       canAssignTickets,
       canCreateTaskFromTicket,
+      canViewOthersPlanning,
+      canViewApplications,
       canManageMembers,
       canManageSettings,
       canManageApplications,
@@ -177,8 +179,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO PermissionGroups 
-        (OrganizationId, GroupName, Description, CanManageProjects, CanCreateProjects, CanDeleteProjects, CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks, CanPlanTasks, CanManageTimeEntries, CanViewReports, CanViewBudgetInfo, CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets, CanCreateTaskFromTicket, CanManageMembers, CanManageSettings, CanManageApplications, CanCreateApplications, CanDeleteApplications, CanManageReleases) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (OrganizationId, GroupName, Description, CanManageProjects, CanCreateProjects, CanDeleteProjects, CanManageTasks, CanCreateTasks, CanDeleteTasks, CanAssignTasks, CanPlanTasks, CanManageTimeEntries, CanViewReports, CanViewBudgetInfo, CanManageTickets, CanCreateTickets, CanDeleteTickets, CanAssignTickets, CanCreateTaskFromTicket, CanViewOthersPlanning, CanViewApplications, CanManageMembers, CanManageSettings, CanManageApplications, CanCreateApplications, CanDeleteApplications, CanManageReleases) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         organizationId,
         groupName,
@@ -199,6 +201,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         canDeleteTickets ? 1 : 0,
         canAssignTickets ? 1 : 0,
         canCreateTaskFromTicket ? 1 : 0,
+        canViewOthersPlanning ? 1 : 0,
+        canViewApplications ? 1 : 0,
         canManageMembers ? 1 : 0,
         canManageSettings ? 1 : 0,
         canManageApplications ? 1 : 0,
@@ -292,6 +296,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       canDeleteTickets,
       canAssignTickets,
       canCreateTaskFromTicket,
+      canViewOthersPlanning,
+      canViewApplications,
       canManageMembers,
       canManageSettings,
       canManageApplications,
@@ -339,7 +345,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
            CanPlanTasks = ?, CanManageTimeEntries = ?, CanViewReports = ?,
            CanViewBudgetInfo = ?,
            CanManageTickets = ?, CanCreateTickets = ?, CanDeleteTickets = ?, CanAssignTickets = ?,
-             CanCreateTaskFromTicket = ?, CanManageMembers = ?, CanManageSettings = ?,
+             CanCreateTaskFromTicket = ?, CanViewOthersPlanning = ?, CanViewApplications = ?, CanManageMembers = ?, CanManageSettings = ?,
              CanManageApplications = ?, CanCreateApplications = ?, CanDeleteApplications = ?, CanManageReleases = ?
        WHERE Id = ?`,
       [
@@ -361,6 +367,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         canDeleteTickets ? 1 : 0,
         canAssignTickets ? 1 : 0,
         canCreateTaskFromTicket ? 1 : 0,
+        canViewOthersPlanning ? 1 : 0,
+        canViewApplications ? 1 : 0,
         canManageMembers ? 1 : 0,
         canManageSettings ? 1 : 0,
         canManageApplications ? 1 : 0,
@@ -441,6 +449,7 @@ router.post('/:id/sync-from-global', authenticateToken, async (req: AuthRequest,
            CanViewBudgetInfo = ?,
            CanManageTickets = ?, CanCreateTickets = ?, CanDeleteTickets = ?, CanAssignTickets = ?,
              CanCreateTaskFromTicket = ?,
+            CanViewOthersPlanning = ?, CanViewApplications = ?,
              CanManageApplications = ?, CanCreateApplications = ?, CanDeleteApplications = ?, CanManageReleases = ?
        WHERE Id = ?`,
       [
@@ -450,6 +459,7 @@ router.post('/:id/sync-from-global', authenticateToken, async (req: AuthRequest,
         rp.CanViewBudgetInfo ? 1 : 0,
         rp.CanManageTickets ? 1 : 0, rp.CanCreateTickets ? 1 : 0, rp.CanDeleteTickets ? 1 : 0, rp.CanAssignTickets ? 1 : 0,
         rp.CanCreateTaskFromTicket ? 1 : 0,
+        rp.CanViewOthersPlanning ? 1 : 0, rp.CanViewApplications ? 1 : 0,
         rp.CanManageApplications ? 1 : 0, rp.CanCreateApplications ? 1 : 0, rp.CanDeleteApplications ? 1 : 0, rp.CanManageReleases ? 1 : 0,
         groupId
       ]

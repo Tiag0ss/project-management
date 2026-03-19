@@ -12,6 +12,8 @@ interface RichTextEditorProps {
   placeholder?: string;
   className?: string;
   editable?: boolean;
+  contentScrollOnly?: boolean;
+  contentMaxHeightClass?: string;
 }
 
 export default function RichTextEditor({
@@ -20,6 +22,8 @@ export default function RichTextEditor({
   placeholder = 'Start typing...',
   className = '',
   editable = true,
+  contentScrollOnly = false,
+  contentMaxHeightClass = 'max-h-56',
 }: RichTextEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -283,8 +287,10 @@ export default function RichTextEditor({
           </button>
         </div>
       )}
-      
-      <EditorContent editor={editor} className="text-gray-900 dark:text-white" />
+
+      <div className={contentScrollOnly ? `overflow-y-auto ${contentMaxHeightClass}` : ''}>
+        <EditorContent editor={editor} className="text-gray-900 dark:text-white" />
+      </div>
     </div>
   );
 }
