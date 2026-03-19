@@ -5521,7 +5521,7 @@ function TasksTab({
   );
 
   const taskMatchesFilters = (task: Task): boolean => {
-    if (hideClosed && Number(task.StatusIsClosed || 0) === 1) return false;
+    if (hideClosed && (Number(task.StatusIsClosed || 0) === 1 || Number(task.StatusIsCancelled || 0) === 1)) return false;
     const taskStatusId = task.Status !== null && task.Status !== undefined ? Number(task.Status) : undefined;
     const taskPriorityId = task.Priority !== null && task.Priority !== undefined ? Number(task.Priority) : undefined;
     const taskAssigneeId = task.AssignedTo !== null && task.AssignedTo !== undefined ? Number(task.AssignedTo) : undefined;

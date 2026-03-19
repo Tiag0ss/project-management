@@ -364,6 +364,13 @@
       "Comment": "When left layout is enabled: whether sidebar starts collapsed"
     },
     {
+      "FieldName": "DashboardCalendarInOverview",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1",
+      "Comment": "User preference: show dashboard calendar inside Overview tab"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

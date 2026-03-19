@@ -53,6 +53,7 @@ export interface User {
   TeamLeaderName?: string | null;
   CountryCode?: string | null;
   JiraId?: string | null;
+  DashboardCalendarInOverview?: number | boolean;
   CreatedAt: string;
   UpdatedAt: string;
 }

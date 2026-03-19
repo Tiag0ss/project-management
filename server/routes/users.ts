@@ -88,7 +88,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
               HobbyHoursMonday, HobbyHoursTuesday, HobbyHoursWednesday, HobbyHoursThursday,
               HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
               Timezone, HourlyRate, AnnualVacationDays, CountryCode, JiraId,
-              NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed,
+              NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed, DashboardCalendarInOverview,
               CreatedAt, UpdatedAt 
        FROM Users 
        WHERE Id = ?`,
@@ -154,11 +154,12 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
       navbarMenuLayout,
       navbarLeftMode,
       navbarLeftCollapsed,
+      dashboardCalendarInOverview,
     } = req.body;
 
     const [oldProfile] = await pool.execute<RowDataPacket[]>(
       `SELECT FirstName, LastName, Email, Timezone, CountryCode, AnnualVacationDays,
-              NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed
+              NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed, DashboardCalendarInOverview
        FROM Users WHERE Id = ?`,
       [userId]
     );
@@ -196,6 +197,10 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
       ? (navbarLeftCollapsed ? 1 : 0)
       : (oldData.NavbarLeftCollapsed ? 1 : 0);
 
+    const finalDashboardCalendarInOverview = dashboardCalendarInOverview !== undefined
+      ? (dashboardCalendarInOverview ? 1 : 0)
+      : (oldData.DashboardCalendarInOverview ? 1 : 0);
+
     const finalAnnualVacationDays = annualVacationDays !== undefined
       ? Math.max(0, parseFloat(String(annualVacationDays || 0)))
       : parseFloat(String(oldData.AnnualVacationDays || 22));
@@ -226,7 +231,7 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
     await pool.execute(
       `UPDATE Users 
        SET FirstName = ?, LastName = ?, Email = ?, Timezone = ?, CountryCode = ?,
-           AnnualVacationDays = ?, NavbarMenuLayout = ?, NavbarLeftMode = ?, NavbarLeftCollapsed = ?
+           AnnualVacationDays = ?, NavbarMenuLayout = ?, NavbarLeftMode = ?, NavbarLeftCollapsed = ?, DashboardCalendarInOverview = ?
        WHERE Id = ?`,
       [
         finalFirstName || null,
@@ -238,6 +243,7 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
         finalNavbarMenuLayout,
         finalNavbarLeftMode,
         finalNavbarLeftCollapsed,
+        finalDashboardCalendarInOverview,
         userId,
       ]
     );
@@ -266,6 +272,16 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
     }
     if (String(finalNavbarLeftCollapsed || '') !== String(oldData.NavbarLeftCollapsed || '')) {
       await logUserHistory(userId!, userId!, 'updated', 'NavbarLeftCollapsed', String(oldData.NavbarLeftCollapsed || 0), String(finalNavbarLeftCollapsed || 0));
+    }
+    if (String(finalDashboardCalendarInOverview || '') !== String(oldData.DashboardCalendarInOverview || '')) {
+      await logUserHistory(
+        userId!,
+        userId!,
+        'updated',
+        'DashboardCalendarInOverview',
+        String(oldData.DashboardCalendarInOverview || 0),
+        String(finalDashboardCalendarInOverview || 0)
+      );
     }
     if (String(finalAnnualVacationDays || '') !== String(oldData.AnnualVacationDays || '')) {
       await logUserHistory(userId!, userId!, 'updated', 'AnnualVacationDays', String(oldData.AnnualVacationDays || ''), String(finalAnnualVacationDays || ''));

@@ -121,6 +121,7 @@ function DashboardContent() {
     if (tabParam === 'calendar' || tabParam === 'analytics') return tabParam;
     return 'overview';
   });
+  const [showCalendarInOverview, setShowCalendarInOverview] = useState(true);
 
   // ...existing state declarations...
 
@@ -209,6 +210,7 @@ function DashboardContent() {
   const [pendingTasks, setPendingTasks] = useState<TaskWithProject[]>([]);
   const [isPrintMode, setIsPrintMode] = useState(false);
   const [showAllPendingTasks, setShowAllPendingTasks] = useState(false);
+  const [showAllUnscheduledTasks, setShowAllUnscheduledTasks] = useState(false);
   const [showTaskDetailsModal, setShowTaskDetailsModal] = useState(false);
   const [detailsTask, setDetailsTask] = useState<Task | null>(null);
   const [detailsProject, setDetailsProject] = useState<Project | null>(null);
@@ -242,8 +244,8 @@ function DashboardContent() {
     }
   }, [showTaskDetailsModal, detailsProject, token]);
   const [detailsProjectTasks, setDetailsProjectTasks] = useState<Task[]>([]);
-  const [pendingSortBy, setPendingSortBy] = useState<TaskSortOption>('dueDate');
-  const [unscheduledSortBy, setUnscheduledSortBy] = useState<TaskSortOption>('dueDate');
+  const [pendingSortBy, setPendingSortBy] = useState<TaskSortOption>('priority');
+  const [unscheduledSortBy, setUnscheduledSortBy] = useState<TaskSortOption>('priority');
   const [globalStats, setGlobalStats] = useState<{
     organizations: { total: number };
     customers: { total: number };
@@ -378,6 +380,14 @@ function DashboardContent() {
     }
   }, [tabParam]);
 
+  useEffect(() => {
+    if (!showCalendarInOverview) return;
+    if (activeTab !== 'calendar') return;
+
+    setActiveTab('overview');
+    window.history.pushState({}, '', '/dashboard');
+  }, [showCalendarInOverview, activeTab]);
+
   const isTaskOverdue = (dueDate?: string | null): boolean => {
     if (!dueDate) return false;
     const due = new Date(dueDate);
@@ -473,20 +483,12 @@ function DashboardContent() {
   }, [myTasks]);
 
   const getPriorityRank = useCallback((task: TaskWithProject) => {
-    const priorityName = String(task.PriorityName || '').toLowerCase().trim();
-    if (priorityName.includes('critical')) return 0;
-    if (priorityName.includes('urgent')) return 1;
-    if (priorityName.includes('high')) return 2;
-    if (priorityName.includes('medium')) return 3;
-    if (priorityName.includes('normal')) return 4;
-    if (priorityName.includes('low')) return 5;
-
-    const numericPriority = Number(task.Priority);
-    if (!Number.isNaN(numericPriority)) {
-      return numericPriority;
+    const configuredSortOrder = Number(task.PrioritySortOrder);
+    if (Number.isFinite(configuredSortOrder)) {
+      return configuredSortOrder;
     }
 
-    return 999;
+    return Number.NEGATIVE_INFINITY;
   }, []);
 
   const sortTasks = useCallback((tasks: TaskWithProject[], sortBy: TaskSortOption) => {
@@ -501,7 +503,7 @@ function DashboardContent() {
       if (sortBy === 'priority') {
         const rankA = getPriorityRank(a);
         const rankB = getPriorityRank(b);
-        if (rankA !== rankB) return rankA - rankB;
+        if (rankA !== rankB) return rankB - rankA;
       }
 
       const dueA = a.DueDate ? new Date(a.DueDate).getTime() : Number.MAX_SAFE_INTEGER;
@@ -613,6 +615,7 @@ function DashboardContent() {
         saturday: response.user.HobbyHoursSaturday || 4,
         sunday: response.user.HobbyHoursSunday || 4,
       });
+      setShowCalendarInOverview(Number(response.user.DashboardCalendarInOverview ?? 1) === 1);
     } catch (err) {
       console.error('Failed to load profile:', err);
     }
@@ -1016,10 +1019,11 @@ function DashboardContent() {
 
   useEffect(() => {
     if (!user || !token || !featureFlagsLoaded || isCustomerUser) return;
-    if (activeTab !== 'calendar') return;
+    const shouldLoadCalendar = activeTab === 'calendar' || (showCalendarInOverview && activeTab === 'overview');
+    if (!shouldLoadCalendar) return;
 
     loadCalendarData();
-  }, [user, token, featureFlagsLoaded, isCustomerUser, activeTab]);
+  }, [user, token, featureFlagsLoaded, isCustomerUser, activeTab, showCalendarInOverview]);
   
   if (isLoading) {
     return (
@@ -1223,20 +1227,22 @@ function DashboardContent() {
                 <span className="font-medium">Overview</span>
               </button>
 
-              <button
-                onClick={() => {
-                  setActiveTab('calendar');
-                  window.history.pushState({}, '', '/dashboard?tab=calendar');
-                }}
-                className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                  activeTab === 'calendar'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <span className="text-xl">📅</span>
-                <span className="font-medium">Calendar</span>
-              </button>
+              {!showCalendarInOverview && (
+                <button
+                  onClick={() => {
+                    setActiveTab('calendar');
+                    window.history.pushState({}, '', '/dashboard?tab=calendar');
+                  }}
+                  className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                    activeTab === 'calendar'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <span className="text-xl">📅</span>
+                  <span className="font-medium">Calendar</span>
+                </button>
+              )}
 
               {!!user?.isAdmin && (
                 <button
@@ -1358,56 +1364,83 @@ function DashboardContent() {
                 </div>
               </div>
 
-              {/* Today's Schedule */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white flex items-center gap-2">
-                  <span className="text-2xl">📅</span> Today&apos;s Schedule
-                </h3>
-                {summaryStats.tasksToday.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-gray-500 dark:text-gray-400">No tasks scheduled for today</p>
-                    <button
-                      onClick={() => router.push('/planning')}
-                      className="mt-3 text-blue-600 dark:text-blue-400 hover:underline text-sm"
-                    >
-                      Go to Planning →
-                    </button>
+              {showCalendarInOverview ? (
+                calendarLoading ? (
+                  <div className="space-y-4 animate-pulse">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-20" />
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-[520px]" />
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {summaryStats.tasksToday.map((task, idx) => (
-                      <div 
-                        key={idx}
-                        className="flex items-center justify-between border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                  <CalendarTab
+                    tasks={myTasks}
+                    timeEntries={timeEntries}
+                    callRecords={callRecords}
+                    taskAllocations={taskAllocations}
+                    recurringAllocations={recurringAllocations}
+                    workStartTimes={workStartTimes}
+                    lunchTime={lunchTime}
+                    lunchDuration={lunchDuration}
+                    token={token || ''}
+                    onDataChanged={() => {
+                      loadTimeEntries();
+                      loadCallRecords();
+                      loadTaskAllocations();
+                      loadRecurringAllocations();
+                      loadSummaryStats();
+                    }}
+                  />
+                )
+              ) : (
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                  <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white flex items-center gap-2">
+                    <span className="text-2xl">📅</span> Today&apos;s Schedule
+                  </h3>
+                  {summaryStats.tasksToday.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-gray-500 dark:text-gray-400">No tasks scheduled for today</p>
+                      <button
+                        onClick={() => router.push('/planning')}
+                        className="mt-3 text-blue-600 dark:text-blue-400 hover:underline text-sm"
                       >
-                        <div className="flex items-center gap-4">
-                          <div className="flex flex-col items-center text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-lg">
-                            <span className="font-medium">{task.startTime || '—'}</span>
-                            <span className="text-xs">to</span>
-                            <span className="font-medium">{task.endTime || '—'}</span>
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-medium text-gray-900 dark:text-white">{task.taskName}</h4>
-                              {task.isHobby && (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                                  Hobby
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">{task.projectName}</p>
-                          </div>
-                        </div>
-                        <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{Number(task.hours).toFixed(1)}h</span>
-                      </div>
-                    ))}
-                    <div className="pt-3 border-t dark:border-gray-700 flex justify-between items-center">
-                      <span className="text-sm text-gray-500 dark:text-gray-400">Total allocated today</span>
-                      <span className="text-lg font-bold text-gray-900 dark:text-white">{summaryStats.allocatedToday.toFixed(1)}h</span>
+                        Go to Planning →
+                      </button>
                     </div>
-                  </div>
-                )}
-              </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {summaryStats.tasksToday.map((task, idx) => (
+                        <div 
+                          key={idx}
+                          className="flex items-center justify-between border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="flex flex-col items-center text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-lg">
+                              <span className="font-medium">{task.startTime || '—'}</span>
+                              <span className="text-xs">to</span>
+                              <span className="font-medium">{task.endTime || '—'}</span>
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-medium text-gray-900 dark:text-white">{task.taskName}</h4>
+                                {task.isHobby && (
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                    Hobby
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-500 dark:text-gray-400">{task.projectName}</p>
+                            </div>
+                          </div>
+                          <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{Number(task.hours).toFixed(1)}h</span>
+                        </div>
+                      ))}
+                      <div className="pt-3 border-t dark:border-gray-700 flex justify-between items-center">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Total allocated today</span>
+                        <span className="text-lg font-bold text-gray-900 dark:text-white">{summaryStats.allocatedToday.toFixed(1)}h</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <div className="mb-4 flex items-center justify-between gap-3">
@@ -1428,7 +1461,7 @@ function DashboardContent() {
                   <p className="text-sm text-gray-500 dark:text-gray-400">No open unscheduled work tasks</p>
                 ) : (
                   <div className="space-y-3">
-                    {sortedOpenUnscheduledTasks.map((task) => {
+                    {sortedOpenUnscheduledTasks.slice(0, (isPrintMode || showAllUnscheduledTasks) ? sortedOpenUnscheduledTasks.length : 5).map((task) => {
                       const isOverdue = isTaskOverdue(task.DueDate ? String(task.DueDate) : null);
 
                       return (
@@ -1525,6 +1558,18 @@ function DashboardContent() {
                         </div>
                       );
                     })}
+                    {!isPrintMode && sortedOpenUnscheduledTasks.length > 5 && (
+                      <div className="text-center pt-2">
+                        <button
+                          onClick={() => setShowAllUnscheduledTasks((previous) => !previous)}
+                          className="text-blue-600 dark:text-blue-400 hover:underline text-sm"
+                        >
+                          {showAllUnscheduledTasks
+                            ? 'Show less tasks'
+                            : `View all ${sortedOpenUnscheduledTasks.length} tasks →`}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1664,13 +1709,15 @@ function DashboardContent() {
                       <span className="text-2xl">📁</span>
                       <span className="font-medium text-gray-900 dark:text-white">Projects</span>
                     </button>
-                    <button
-                      onClick={() => setActiveTab('calendar')}
-                      className="flex items-center gap-3 p-4 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-orange-500 dark:hover:border-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
-                    >
-                      <span className="text-2xl">🗓️</span>
-                      <span className="font-medium text-gray-900 dark:text-white">Calendar</span>
-                    </button>
+                    {!showCalendarInOverview && (
+                      <button
+                        onClick={() => setActiveTab('calendar')}
+                        className="flex items-center gap-3 p-4 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-orange-500 dark:hover:border-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+                      >
+                        <span className="text-2xl">🗓️</span>
+                        <span className="font-medium text-gray-900 dark:text-white">Calendar</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1795,7 +1842,7 @@ function DashboardContent() {
           )}
 
           {/* Calendar Tab */}
-          {activeTab === 'calendar' && (
+          {!showCalendarInOverview && activeTab === 'calendar' && (
             calendarLoading ? (
               <div className="space-y-4 animate-pulse">
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-20" />

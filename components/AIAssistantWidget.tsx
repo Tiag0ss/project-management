@@ -9,11 +9,17 @@ type AssistantMessage = {
   content: string;
 };
 
+const ASSISTANT_BUBBLE_SIZE = 56;
+const ASSISTANT_PANEL_WIDTH = 360;
+const ASSISTANT_PANEL_HEIGHT = 460;
+const ASSISTANT_VIEWPORT_MARGIN = 8;
+
 export default function AIAssistantWidget() {
   const { user, token } = useAuth();
   const [isMinimized, setIsMinimized] = useState(false);
   const [isVisibilityLoading, setIsVisibilityLoading] = useState(true);
   const [isGloballyAvailable, setIsGloballyAvailable] = useState(false);
+  const [bubblePosition, setBubblePosition] = useState({ x: 0, y: 0 });
   const [messages, setMessages] = useState<AssistantMessage[]>([
     {
       role: 'assistant',
@@ -23,6 +29,18 @@ export default function AIAssistantWidget() {
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const bubbleDragStateRef = useRef<{
+    isDragging: boolean;
+    pointerOffsetX: number;
+    pointerOffsetY: number;
+    moved: boolean;
+  }>({
+    isDragging: false,
+    pointerOffsetX: 0,
+    pointerOffsetY: 0,
+    moved: false,
+  });
+  const suppressBubbleClickRef = useRef(false);
 
   const canUseAssistant = Boolean(user && token);
 
@@ -77,16 +95,92 @@ export default function AIAssistantWidget() {
     return 'Ask about projects, overdue tasks, capacity, hours...';
   }, [canUseAssistant]);
 
+  const expandedPanelPosition = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return { left: ASSISTANT_VIEWPORT_MARGIN, top: ASSISTANT_VIEWPORT_MARGIN };
+    }
+
+    const preferredLeft = bubblePosition.x + ASSISTANT_BUBBLE_SIZE - ASSISTANT_PANEL_WIDTH;
+    const preferredTop = bubblePosition.y + ASSISTANT_BUBBLE_SIZE - ASSISTANT_PANEL_HEIGHT;
+    const maxLeft = Math.max(ASSISTANT_VIEWPORT_MARGIN, window.innerWidth - ASSISTANT_PANEL_WIDTH - ASSISTANT_VIEWPORT_MARGIN);
+    const maxTop = Math.max(ASSISTANT_VIEWPORT_MARGIN, window.innerHeight - ASSISTANT_PANEL_HEIGHT - ASSISTANT_VIEWPORT_MARGIN);
+
+    return {
+      left: Math.min(Math.max(ASSISTANT_VIEWPORT_MARGIN, preferredLeft), maxLeft),
+      top: Math.min(Math.max(ASSISTANT_VIEWPORT_MARGIN, preferredTop), maxTop),
+    };
+  }, [bubblePosition]);
+
   useEffect(() => {
     try {
       const stored = localStorage.getItem('ai-assistant:minimized');
       if (stored === '1') {
         setIsMinimized(true);
       }
+
+      const storedPosition = localStorage.getItem('ai-assistant:bubble-position');
+      if (storedPosition) {
+        const parsed = JSON.parse(storedPosition);
+        const x = Number(parsed?.x);
+        const y = Number(parsed?.y);
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+          setBubblePosition({ x, y });
+          return;
+        }
+      }
     } catch {
       // Ignore localStorage read errors
     }
+
+    if (typeof window !== 'undefined') {
+      setBubblePosition({ x: window.innerWidth - 72, y: window.innerHeight - 72 });
+    }
   }, []);
+
+  useEffect(() => {
+    const handlePointerMove = (event: MouseEvent | PointerEvent) => {
+      const dragState = bubbleDragStateRef.current;
+      if (!dragState.isDragging) return;
+
+      const nextX = Math.min(
+        Math.max(8, event.clientX - dragState.pointerOffsetX),
+        Math.max(8, window.innerWidth - ASSISTANT_BUBBLE_SIZE - ASSISTANT_VIEWPORT_MARGIN)
+      );
+      const nextY = Math.min(
+        Math.max(8, event.clientY - dragState.pointerOffsetY),
+        Math.max(8, window.innerHeight - ASSISTANT_BUBBLE_SIZE - ASSISTANT_VIEWPORT_MARGIN)
+      );
+
+      dragState.moved = true;
+      setBubblePosition({ x: nextX, y: nextY });
+    };
+
+    const handlePointerUp = () => {
+      const dragState = bubbleDragStateRef.current;
+      if (!dragState.isDragging) return;
+
+      dragState.isDragging = false;
+      if (dragState.moved) {
+        suppressBubbleClickRef.current = true;
+        window.setTimeout(() => {
+          suppressBubbleClickRef.current = false;
+        }, 0);
+        try {
+          localStorage.setItem('ai-assistant:bubble-position', JSON.stringify(bubblePosition));
+        } catch {
+          // Ignore localStorage write errors
+        }
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [bubblePosition]);
 
   useEffect(() => {
     const loadAssistantAvailability = async () => {
@@ -131,6 +225,24 @@ export default function AIAssistantWidget() {
     }
   };
 
+  const handleBubblePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    bubbleDragStateRef.current = {
+      isDragging: true,
+      pointerOffsetX: event.clientX - rect.left,
+      pointerOffsetY: event.clientY - rect.top,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handleBubbleClick = () => {
+    if (suppressBubbleClickRef.current) {
+      return;
+    }
+    setMinimized(false);
+  };
+
   if (isVisibilityLoading || !isGloballyAvailable) {
     return null;
   }
@@ -139,10 +251,12 @@ export default function AIAssistantWidget() {
     return (
       <button
         type="button"
-        onClick={() => setMinimized(false)}
-        className="fixed bottom-4 right-4 z-[130] w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-2xl border border-blue-500 flex items-center justify-center"
+        onClick={handleBubbleClick}
+        onPointerDown={handleBubblePointerDown}
+        className="fixed z-[130] w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-2xl border border-blue-500 flex items-center justify-center touch-none cursor-grab active:cursor-grabbing"
         title="Open AI Assistant"
         aria-label="Open AI Assistant"
+        style={{ left: `${bubblePosition.x}px`, top: `${bubblePosition.y}px` }}
       >
         <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <path d="M8 10H16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
@@ -154,7 +268,10 @@ export default function AIAssistantWidget() {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-[130] w-[360px] max-w-[calc(100vw-1rem)] h-[460px] max-h-[calc(100vh-1rem)] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl flex flex-col overflow-hidden">
+    <div
+      className="fixed z-[130] w-[360px] max-w-[calc(100vw-1rem)] h-[460px] max-h-[calc(100vh-1rem)] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl flex flex-col overflow-hidden"
+      style={{ left: `${expandedPanelPosition.left}px`, top: `${expandedPanelPosition.top}px` }}
+    >
       <div className="px-4 py-3 bg-blue-600 text-white text-sm font-semibold flex items-center justify-between">
         <span>AI Assistant</span>
         <div className="flex items-center gap-2">

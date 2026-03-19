@@ -115,6 +115,7 @@ export default function ProfilePage() {
     navbarMenuLayout: 'top',
     navbarLeftMode: 'fixed',
     navbarLeftCollapsed: false,
+    dashboardCalendarInOverview: true,
   });
   
   // Password change state
@@ -276,6 +277,7 @@ export default function ProfilePage() {
           navbarMenuLayout: (profile.NavbarMenuLayout || 'top') === 'left' ? 'left' : 'top',
           navbarLeftMode: (profile.NavbarLeftMode || 'fixed') === 'floating' ? 'floating' : 'fixed',
           navbarLeftCollapsed: !!profile.NavbarLeftCollapsed,
+          dashboardCalendarInOverview: Number(profile.DashboardCalendarInOverview ?? 1) === 1,
         });
       }
     } catch (err) {
@@ -1261,6 +1263,25 @@ export default function ProfilePage() {
                       )}
                     </div>
                   )}
+
+                  <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">Show Calendar in Dashboard Overview</p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">When enabled, calendar appears inside Overview and the separate Dashboard calendar menu is hidden.</p>
+                    </div>
+                    {isEditingProfile ? (
+                      <input
+                        type="checkbox"
+                        checked={profileForm.dashboardCalendarInOverview}
+                        onChange={(e) => setProfileForm(prev => ({ ...prev, dashboardCalendarInOverview: e.target.checked }))}
+                        className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    ) : (
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        {profileForm.dashboardCalendarInOverview ? 'Yes' : 'No'}
+                      </span>
+                    )}
+                  </div>
 
 
                 </div>
