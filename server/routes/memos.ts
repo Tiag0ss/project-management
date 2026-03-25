@@ -94,6 +94,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     const memoIds = memos.map((memo) => memo.Id).filter((memoId) => memoId !== null && memoId !== undefined);
     const tagsByMemoId = new Map<number, string[]>();
+    const relatedByMemoId = new Map<number, Array<{ Id: number; Title: string; Visibility: string; CreatedAt: string }>>();
 
     if (memoIds.length > 0) {
       const placeholders = memoIds.map(() => '?').join(',');
@@ -114,6 +115,60 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       }
     }
 
+    if (memoIds.length > 0) {
+      const memoIdPlaceholders = memoIds.map(() => '?').join(',');
+      const relationVisibilityClause = orgIds.length > 0
+        ? `(rm.Visibility = 'public' OR (rm.Visibility = 'private' AND rm.UserId = ?) OR (rm.Visibility = 'organizations' AND rm.UserId IN (SELECT DISTINCT UserId FROM OrganizationMembers WHERE OrganizationId IN (${orgIds.map(() => '?').join(',')}))))`
+        : `(rm.Visibility = 'public' OR (rm.Visibility = 'private' AND rm.UserId = ?))`;
+
+      const relationSql = `
+        SELECT mr.MemoId AS SourceMemoId, rm.Id, rm.Title, rm.Visibility, rm.CreatedAt
+        FROM MemoRelations mr
+        INNER JOIN Memos rm ON rm.Id = mr.RelatedMemoId
+        WHERE mr.MemoId IN (${memoIdPlaceholders})
+          AND ${relationVisibilityClause}
+
+        UNION ALL
+
+        SELECT mr.RelatedMemoId AS SourceMemoId, rm.Id, rm.Title, rm.Visibility, rm.CreatedAt
+        FROM MemoRelations mr
+        INNER JOIN Memos rm ON rm.Id = mr.MemoId
+        WHERE mr.RelatedMemoId IN (${memoIdPlaceholders})
+          AND ${relationVisibilityClause}
+      `;
+
+      const relationParams = [
+        ...memoIds,
+        userId,
+        ...orgIds,
+        ...memoIds,
+        userId,
+        ...orgIds,
+      ];
+
+      const [relationRows] = await pool.execute<RowDataPacket[]>(relationSql, relationParams);
+
+      for (const row of relationRows) {
+        const sourceMemoId = Number(row.SourceMemoId);
+        const relatedMemo = {
+          Id: Number(row.Id),
+          Title: String(row.Title || ''),
+          Visibility: String(row.Visibility || 'private'),
+          CreatedAt: String(row.CreatedAt || ''),
+        };
+
+        if (!relatedByMemoId.has(sourceMemoId)) {
+          relatedByMemoId.set(sourceMemoId, []);
+        }
+
+        const existing = relatedByMemoId.get(sourceMemoId) || [];
+        if (!existing.some((item) => item.Id === relatedMemo.Id)) {
+          existing.push(relatedMemo);
+          relatedByMemoId.set(sourceMemoId, existing);
+        }
+      }
+    }
+
     // Get attachments for each memo
     for (const memo of memos) {
       const [attachments] = await pool.execute<RowDataPacket[]>(
@@ -122,6 +177,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       );
       memo.Attachments = attachments;
       memo.Tags = (tagsByMemoId.get(Number(memo.Id)) || []).join(',');
+      memo.RelatedMemos = relatedByMemoId.get(Number(memo.Id)) || [];
     }
 
     res.json({ success: true, memos });
@@ -212,6 +268,56 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     memo.Attachments = attachments;
     memo.Tags = memoTags.map((tag) => String(tag.TagName)).join(',');
 
+    const [currentUserOrgs] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM OrganizationMembers WHERE UserId = ?',
+      [userId]
+    );
+    const currentOrgIds = currentUserOrgs.map((org) => Number(org.OrganizationId));
+
+    const relationVisibilityClause = currentOrgIds.length > 0
+      ? `(rm.Visibility = 'public' OR (rm.Visibility = 'private' AND rm.UserId = ?) OR (rm.Visibility = 'organizations' AND rm.UserId IN (SELECT DISTINCT UserId FROM OrganizationMembers WHERE OrganizationId IN (${currentOrgIds.map(() => '?').join(',')}))))`
+      : `(rm.Visibility = 'public' OR (rm.Visibility = 'private' AND rm.UserId = ?))`;
+
+    const relationSql = `
+      SELECT rm.Id, rm.Title, rm.Visibility, rm.CreatedAt
+      FROM MemoRelations mr
+      INNER JOIN Memos rm ON rm.Id = mr.RelatedMemoId
+      WHERE mr.MemoId = ?
+        AND ${relationVisibilityClause}
+
+      UNION ALL
+
+      SELECT rm.Id, rm.Title, rm.Visibility, rm.CreatedAt
+      FROM MemoRelations mr
+      INNER JOIN Memos rm ON rm.Id = mr.MemoId
+      WHERE mr.RelatedMemoId = ?
+        AND ${relationVisibilityClause}
+    `;
+
+    const relationParams = [
+      Number(id),
+      userId,
+      ...currentOrgIds,
+      Number(id),
+      userId,
+      ...currentOrgIds,
+    ];
+    const [relationRows] = await pool.execute<RowDataPacket[]>(relationSql, relationParams);
+
+    const uniqueRelated = new Map<number, { Id: number; Title: string; Visibility: string; CreatedAt: string }>();
+    for (const row of relationRows) {
+      const relatedId = Number(row.Id);
+      if (!uniqueRelated.has(relatedId)) {
+        uniqueRelated.set(relatedId, {
+          Id: relatedId,
+          Title: String(row.Title || ''),
+          Visibility: String(row.Visibility || 'private'),
+          CreatedAt: String(row.CreatedAt || ''),
+        });
+      }
+    }
+    memo.RelatedMemos = Array.from(uniqueRelated.values());
+
     res.json({ success: true, memo });
   } catch (error) {
     console.error('Error fetching memo:', error);
@@ -258,7 +364,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { title, content, visibility, tags } = req.body;
+    const { title, content, visibility, tags, relatedMemoIds } = req.body;
 
     if (!title?.trim()) {
       return res.status(400).json({ success: false, message: 'Title is required' });
@@ -279,6 +385,32 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
           await pool.execute(
             'INSERT INTO MemoTags (MemoId, TagName) VALUES (?, ?)',
             [memoId, tag.trim()]
+          );
+        }
+      }
+    }
+
+    if (Array.isArray(relatedMemoIds) && relatedMemoIds.length > 0) {
+      const normalizedRelatedIds = Array.from(
+        new Set(
+          relatedMemoIds
+            .map((value: unknown) => Number(value))
+            .filter((value: number) => Number.isInteger(value) && value > 0 && value !== memoId)
+        )
+      );
+
+      if (normalizedRelatedIds.length > 0) {
+        const placeholders = normalizedRelatedIds.map(() => '?').join(',');
+        const [existingRelated] = await pool.execute<RowDataPacket[]>(
+          `SELECT Id FROM Memos WHERE Id IN (${placeholders})`,
+          normalizedRelatedIds
+        );
+        const validRelatedIds = existingRelated.map((row) => Number(row.Id));
+
+        for (const relatedId of validRelatedIds) {
+          await pool.execute(
+            'INSERT INTO MemoRelations (MemoId, RelatedMemoId) VALUES (?, ?)',
+            [memoId, relatedId]
           );
         }
       }
@@ -337,7 +469,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const { id } = req.params;
-    const { title, content, visibility, tags } = req.body;
+    const { title, content, visibility, tags, relatedMemoIds } = req.body;
 
     // Check if user owns the memo
     const [memos] = await pool.execute<RowDataPacket[]>(
@@ -371,6 +503,36 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
               [id, tag.trim()]
             );
           }
+        }
+      }
+    }
+
+    // Update relations - replace outgoing relations from this memo
+    await pool.execute('DELETE FROM MemoRelations WHERE MemoId = ?', [id]);
+
+    if (Array.isArray(relatedMemoIds) && relatedMemoIds.length > 0) {
+      const memoId = Number(id);
+      const normalizedRelatedIds = Array.from(
+        new Set(
+          relatedMemoIds
+            .map((value: unknown) => Number(value))
+            .filter((value: number) => Number.isInteger(value) && value > 0 && value !== memoId)
+        )
+      );
+
+      if (normalizedRelatedIds.length > 0) {
+        const placeholders = normalizedRelatedIds.map(() => '?').join(',');
+        const [existingRelated] = await pool.execute<RowDataPacket[]>(
+          `SELECT Id FROM Memos WHERE Id IN (${placeholders})`,
+          normalizedRelatedIds
+        );
+        const validRelatedIds = existingRelated.map((row) => Number(row.Id));
+
+        for (const relatedId of validRelatedIds) {
+          await pool.execute(
+            'INSERT INTO MemoRelations (MemoId, RelatedMemoId) VALUES (?, ?)',
+            [id, relatedId]
+          );
         }
       }
     }
@@ -427,6 +589,9 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     // Delete tags
     await pool.execute('DELETE FROM MemoTags WHERE MemoId = ?', [id]);
+
+    // Delete memo relations (both directions)
+    await pool.execute('DELETE FROM MemoRelations WHERE MemoId = ? OR RelatedMemoId = ?', [id, id]);
     
     // Delete attachments records (files should be cleaned up separately)
     await pool.execute('DELETE FROM MemoAttachments WHERE MemoId = ?', [id]);

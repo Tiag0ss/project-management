@@ -73,6 +73,14 @@
       "ToTable": "MemoAttachments",
       "ToField": "MemoId",
       "Type": "OneToMany"
+    },
+    {
+      "Name": "MemoRelations",
+      "Description": "Memo can have relations to other memos",
+      "FromField": "Id",
+      "ToTable": "MemoRelations",
+      "ToField": "MemoId",
+      "Type": "OneToMany"
     }
   ]
 }

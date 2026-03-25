@@ -27,6 +27,7 @@ export default function MemosPage() {
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [filterVisibility, setFilterVisibility] = useState<'all' | 'private' | 'organizations' | 'public'>('all');
   const [filterText, setFilterText] = useState('');
+  const [focusedMemoId, setFocusedMemoId] = useState<number | null>(null);
 
   // Form state
   const [memoForm, setMemoForm] = useState({
@@ -34,6 +35,7 @@ export default function MemosPage() {
     content: '',
     visibility: 'private' as 'private' | 'organizations' | 'public',
     tags: [] as string[],
+    relatedMemoIds: [] as number[],
   });
   const [confirmModal, setConfirmModal] = useState<{
     show: boolean;
@@ -67,7 +69,7 @@ export default function MemosPage() {
   };
 
   const handleCreateMemo = () => {
-    setMemoForm({ title: '', content: '', visibility: 'private', tags: [] });
+    setMemoForm({ title: '', content: '', visibility: 'private', tags: [], relatedMemoIds: [] });
     setSelectedMemo(null);
     setShowMemoModal(true);
   };
@@ -78,9 +80,29 @@ export default function MemosPage() {
       content: memo.Content || '',
       visibility: memo.Visibility,
       tags: memo.Tags ? memo.Tags.split(',').map(t => t.trim()) : [],
+      relatedMemoIds: (memo.RelatedMemos || []).map((relatedMemo) => Number(relatedMemo.Id)),
     });
     setSelectedMemo(memo);
     setShowMemoModal(true);
+  };
+
+  const handleOpenMemo = (memoId: number) => {
+    setEnableDateFilter(false);
+    setFilterTag(null);
+    setFilterVisibility('all');
+    setFilterText('');
+    setFocusedMemoId(memoId);
+
+    setTimeout(() => {
+      const targetElement = document.getElementById(`memo-${memoId}`);
+      if (targetElement) {
+        targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 120);
+
+    setTimeout(() => {
+      setFocusedMemoId((current) => (current === memoId ? null : current));
+    }, 2600);
   };
 
   const handleSaveMemo = async () => {
@@ -246,6 +268,15 @@ export default function MemosPage() {
       value: tag,
       label: tag,
     }));
+
+  const relatedMemoOptions = memos
+    .filter((memo) => (selectedMemo ? memo.Id !== selectedMemo.Id : true))
+    .map((memo) => ({
+      value: String(memo.Id),
+      label: memo.Title,
+      description: memo.Visibility,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   const days = getDaysInMonth(currentMonth);
   const monthName = currentMonth.toLocaleDateString(MEMO_CALENDAR_LOCALE, { month: 'long', year: 'numeric' });
@@ -510,7 +541,11 @@ export default function MemosPage() {
             ) : (
               <div className="space-y-4">
                 {filteredMemos.map(memo => (
-                  <div key={memo.Id} className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+                  <div
+                    id={`memo-${memo.Id}`}
+                    key={memo.Id}
+                    className={`bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 transition-all ${focusedMemoId === memo.Id ? 'ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-gray-900' : ''}`}
+                  >
                     {/* Memo Header */}
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
@@ -600,6 +635,25 @@ export default function MemosPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                         </svg>
                         <span>Attachments ({memo.Attachments.length})</span>
+                      </div>
+                    )}
+
+                    {/* Related Memos */}
+                    {memo.RelatedMemos && memo.RelatedMemos.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Related memos</p>
+                        <div className="flex flex-wrap gap-2">
+                          {memo.RelatedMemos.map((relatedMemo) => (
+                            <button
+                              key={`${memo.Id}-${relatedMemo.Id}`}
+                              onClick={() => handleOpenMemo(relatedMemo.Id)}
+                              className="px-3 py-1.5 text-xs rounded-lg bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors"
+                              title={`Open memo: ${relatedMemo.Title}`}
+                            >
+                              ↗ {relatedMemo.Title}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -716,6 +770,33 @@ export default function MemosPage() {
                       </span>
                     ))}
                   </div>
+                </div>
+
+                {/* Related Memos */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Related Memos
+                  </label>
+                  <div className="space-y-3">
+                    <SearchableMultiSelect
+                      values={memoForm.relatedMemoIds.map((memoId) => String(memoId))}
+                      onChange={(values) => {
+                        const relatedMemoIds = Array.from(
+                          new Set(
+                            values
+                              .map((value) => Number(value))
+                              .filter((value) => Number.isInteger(value) && value > 0)
+                          )
+                        );
+                        setMemoForm(prev => ({ ...prev, relatedMemoIds }));
+                      }}
+                      options={relatedMemoOptions}
+                      placeholder="Select related memos"
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    Linked memos will appear below this memo and can be clicked to open.
+                  </p>
                 </div>
               </div>
 

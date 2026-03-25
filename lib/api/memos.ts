@@ -15,6 +15,14 @@ export interface Memo {
   LastName?: string;
   Tags?: string; // Comma-separated
   Attachments?: MemoAttachment[];
+  RelatedMemos?: MemoRelationSummary[];
+}
+
+export interface MemoRelationSummary {
+  Id: number;
+  Title: string;
+  Visibility: 'private' | 'organizations' | 'public';
+  CreatedAt: string;
 }
 
 export interface MemoAttachment {
@@ -68,6 +76,7 @@ export async function createMemo(
     content?: string;
     visibility: 'private' | 'organizations' | 'public';
     tags?: string[];
+    relatedMemoIds?: number[];
   },
   token: string
 ): Promise<number> {
@@ -95,6 +104,7 @@ export async function updateMemo(
     content?: string;
     visibility: 'private' | 'organizations' | 'public';
     tags?: string[];
+    relatedMemoIds?: number[];
   },
   token: string
 ): Promise<void> {

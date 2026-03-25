@@ -1,0 +1,32 @@
+{
+  "TableName": "MemoRelations",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique memo relation identifier"
+    },
+    {
+      "FieldName": "MemoId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - source memo"
+    },
+    {
+      "FieldName": "RelatedMemoId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - related memo"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when relation was created"
+    }
+  ]
+}
