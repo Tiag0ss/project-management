@@ -9,6 +9,8 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableSelect from '@/components/SearchableSelect';
+import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
+import { CustomFieldValues } from '@/lib/customFields';
 
 interface Ticket {
   Id: number;
@@ -49,6 +51,7 @@ interface Ticket {
   StatusIsClosed: number;
   StatusType: string | null;
   PriorityColor: string | null;
+  [key: string]: unknown;
 }
 
 interface Organization {
@@ -131,6 +134,7 @@ export default function TicketsPage() {
     priority: '',
     category: 'Support',
     externalTicketId: '',
+    customFields: {} as CustomFieldValues,
   });
   const [creating, setCreating] = useState(false);
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
@@ -495,6 +499,7 @@ export default function TicketsPage() {
             priority: createForm.priority,
             category: createForm.category,
             externalTicketId: createForm.externalTicketId || null,
+            customFields: createForm.customFields,
           }),
         }
       );
@@ -556,6 +561,7 @@ export default function TicketsPage() {
         priority: ticketPriorities.find(p => p.IsDefault)?.PriorityName || ticketPriorities[0]?.PriorityName || '',
         category: 'Support',
         externalTicketId: '',
+        customFields: {},
       });
       setAttachmentFiles([]);
       setJiraIntegration(null);
@@ -1452,6 +1458,13 @@ export default function TicketsPage() {
                       </select>
                     </div>
                   </div>
+
+                  <CustomFieldsFormSection
+                    tableName="Tickets"
+                    token={token || undefined}
+                    values={createForm.customFields}
+                    onChange={(customFields) => setCreateForm(prev => ({ ...prev, customFields }))}
+                  />
                   
                   {/* Attachments */}
                   <div>

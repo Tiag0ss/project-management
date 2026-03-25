@@ -10,6 +10,15 @@ import { useToast } from '@/contexts/ToastContext';
 import { usersApi, User } from '@/lib/api/users';
 import { tasksApi, Task } from '@/lib/api/tasks';
 import { projectsApi, Project } from '@/lib/api/projects';
+import {
+  DashboardKpiMetadata,
+  DashboardKpiMetricValue,
+  DashboardKpiType,
+  DashboardKpiWidget,
+  getDashboardKpis,
+  getDashboardKpiValues,
+  saveDashboardKpis,
+} from '@/lib/api/dashboardKpis';
 import Navbar from '@/components/Navbar';
 import EmptyState from '@/components/EmptyState';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
@@ -87,6 +96,52 @@ interface CalendarTabProps {
 type DashboardTab = 'overview' | 'calendar' | 'analytics';
 type AnalyticsPeriod = 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth' | 'allTime';
 type TaskSortOption = 'dueDate' | 'priority' | 'project';
+type PendingWorkFilter = 'all' | 'scheduled' | 'unscheduled';
+
+type KpiTemplate = {
+  type: DashboardKpiType;
+  label: string;
+  defaultTitle: string;
+  icon: string;
+  borderClass: string;
+  requiresOrganization?: boolean;
+  requiresStatus?: boolean;
+  requiresPriority?: boolean;
+};
+
+const KPI_TEMPLATES: KpiTemplate[] = [
+  { type: 'totalProjects', label: 'Projects', defaultTitle: 'Projects', icon: '📁', borderClass: 'border-blue-500' },
+  { type: 'myTasks', label: 'My Tasks', defaultTitle: 'My Tasks', icon: '✓', borderClass: 'border-green-500' },
+  { type: 'myPendingTasks', label: 'My Pending Tasks', defaultTitle: 'My Pending Tasks', icon: '🕒', borderClass: 'border-amber-500' },
+  { type: 'myCompletedTasks', label: 'My Completed Tasks', defaultTitle: 'My Completed Tasks', icon: '✅', borderClass: 'border-emerald-500' },
+  { type: 'myTickets', label: 'My Tickets', defaultTitle: 'My Tickets', icon: '🎫', borderClass: 'border-indigo-500' },
+  { type: 'hoursThisWeek', label: 'Hours This Week', defaultTitle: 'Hours This Week', icon: '⏱️', borderClass: 'border-purple-500' },
+  { type: 'hoursThisMonth', label: 'Hours This Month', defaultTitle: 'Hours This Month', icon: '📊', borderClass: 'border-orange-500' },
+  { type: 'customersTotal', label: 'Customers', defaultTitle: 'Customers', icon: '🏢', borderClass: 'border-teal-500' },
+  { type: 'organizationProjects', label: 'Organization Projects', defaultTitle: 'Organization Projects', icon: '📂', borderClass: 'border-sky-500', requiresOrganization: true },
+  { type: 'organizationTasks', label: 'Organization Tasks', defaultTitle: 'Organization Tasks', icon: '🗂️', borderClass: 'border-cyan-500', requiresOrganization: true },
+  { type: 'organizationPendingTasks', label: 'Organization Pending Tasks', defaultTitle: 'Organization Pending Tasks', icon: '📌', borderClass: 'border-yellow-500', requiresOrganization: true },
+  { type: 'organizationCompletedTasks', label: 'Organization Completed Tasks', defaultTitle: 'Organization Completed Tasks', icon: '🎯', borderClass: 'border-lime-500', requiresOrganization: true },
+  { type: 'tasksByStatus', label: 'Tasks by Status', defaultTitle: 'Tasks by Status', icon: '📍', borderClass: 'border-pink-500', requiresOrganization: true, requiresStatus: true },
+  { type: 'tasksByPriority', label: 'Tasks by Priority', defaultTitle: 'Tasks by Priority', icon: '🚩', borderClass: 'border-rose-500', requiresOrganization: true, requiresPriority: true },
+];
+
+const getDefaultKpiWidgets = (internalTicketsEnabled: boolean): DashboardKpiWidget[] => {
+  const defaults: DashboardKpiWidget[] = [
+    { id: 'projects', type: 'totalProjects', title: 'Projects' },
+    { id: 'my-tasks', type: 'myTasks', title: 'My Tasks' },
+    { id: 'hours-week', type: 'hoursThisWeek', title: 'Hours This Week' },
+    { id: 'hours-month', type: 'hoursThisMonth', title: 'Hours This Month' },
+  ];
+
+  if (internalTicketsEnabled) {
+    defaults.splice(2, 0, { id: 'my-tickets', type: 'myTickets', title: 'My Tickets' });
+  }
+
+  return defaults;
+};
+
+const buildWidgetId = (type: DashboardKpiType): string => `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 // Use CalendarTab with dynamic import wrapper
 const CalendarTab = dynamic(
@@ -210,7 +265,6 @@ function DashboardContent() {
   const [pendingTasks, setPendingTasks] = useState<TaskWithProject[]>([]);
   const [isPrintMode, setIsPrintMode] = useState(false);
   const [showAllPendingTasks, setShowAllPendingTasks] = useState(false);
-  const [showAllUnscheduledTasks, setShowAllUnscheduledTasks] = useState(false);
   const [showTaskDetailsModal, setShowTaskDetailsModal] = useState(false);
   const [detailsTask, setDetailsTask] = useState<Task | null>(null);
   const [detailsProject, setDetailsProject] = useState<Project | null>(null);
@@ -244,8 +298,8 @@ function DashboardContent() {
     }
   }, [showTaskDetailsModal, detailsProject, token]);
   const [detailsProjectTasks, setDetailsProjectTasks] = useState<Task[]>([]);
+  const [pendingWorkFilter, setPendingWorkFilter] = useState<PendingWorkFilter>('all');
   const [pendingSortBy, setPendingSortBy] = useState<TaskSortOption>('priority');
-  const [unscheduledSortBy, setUnscheduledSortBy] = useState<TaskSortOption>('priority');
   const [globalStats, setGlobalStats] = useState<{
     organizations: { total: number };
     customers: { total: number };
@@ -289,6 +343,19 @@ function DashboardContent() {
     canApproveTime: false,
     canApproveVacations: false,
   });
+  const [kpiWidgets, setKpiWidgets] = useState<DashboardKpiWidget[]>([]);
+  const [kpiValues, setKpiValues] = useState<Record<string, DashboardKpiMetricValue>>({});
+  const [kpiMetadata, setKpiMetadata] = useState<DashboardKpiMetadata>({
+    organizations: [],
+    statusesByOrganization: {},
+    prioritiesByOrganization: {},
+  });
+  const [kpiSectionLoading, setKpiSectionLoading] = useState(false);
+  const [kpiEditMode, setKpiEditMode] = useState(false);
+  const [kpiSaving, setKpiSaving] = useState(false);
+  const [kpiConfigLoaded, setKpiConfigLoaded] = useState(false);
+  const [kpiAddType, setKpiAddType] = useState<DashboardKpiType | ''>('');
+  const [draggingWidgetId, setDraggingWidgetId] = useState<string | null>(null);
 
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setModalMessage({ type: 'confirm', title, message, onConfirm });
@@ -478,15 +545,9 @@ function DashboardContent() {
     return String(dateValue).split('T')[0];
   };
 
-  const openUnscheduledTasks = useMemo(() => {
-    return myTasks
-      .filter((task) => {
-        const isUnscheduled = Number(task.UnscheduledWork || 0) === 1;
-        const isClosed = Number(task.StatusIsClosed || 0) === 1;
-        const isCancelled = Number(task.StatusIsCancelled || 0) === 1;
-        return isUnscheduled && !isClosed && !isCancelled;
-      });
-  }, [myTasks]);
+  const unscheduledPendingTasks = useMemo(() => {
+    return pendingTasks.filter((task) => Number(task.UnscheduledWork || 0) === 1);
+  }, [pendingTasks]);
 
   const getPriorityRank = useCallback((task: TaskWithProject) => {
     const configuredSortOrder = Number(task.PrioritySortOrder);
@@ -522,13 +583,25 @@ function DashboardContent() {
     return sorted;
   }, [getPriorityRank]);
 
-  const sortedPendingTasks = useMemo(() => {
-    return sortTasks(pendingTasks, pendingSortBy);
-  }, [pendingTasks, pendingSortBy, sortTasks]);
+  const filteredPendingTasks = useMemo(() => {
+    return pendingTasks.filter((task) => {
+      const isUnscheduled = Number(task.UnscheduledWork || 0) === 1;
 
-  const sortedOpenUnscheduledTasks = useMemo(() => {
-    return sortTasks(openUnscheduledTasks, unscheduledSortBy);
-  }, [openUnscheduledTasks, unscheduledSortBy, sortTasks]);
+      if (pendingWorkFilter === 'unscheduled') {
+        return isUnscheduled;
+      }
+
+      if (pendingWorkFilter === 'scheduled') {
+        return !isUnscheduled;
+      }
+
+      return true;
+    });
+  }, [pendingTasks, pendingWorkFilter]);
+
+  const sortedPendingTasks = useMemo(() => {
+    return sortTasks(filteredPendingTasks, pendingSortBy);
+  }, [filteredPendingTasks, pendingSortBy, sortTasks]);
 
   const openTaskDetails = useCallback(async (taskRef: Pick<Task, 'Id' | 'ProjectId'>) => {
     if (!token) return;
@@ -841,6 +914,180 @@ function DashboardContent() {
     }
   };
 
+  const getKpiTemplate = (type: DashboardKpiType) => KPI_TEMPLATES.find((template) => template.type === type);
+
+  const getWidgetDisplayTitle = (widget: DashboardKpiWidget) => {
+    if (widget.title && widget.title.trim().length > 0) {
+      return widget.title.trim();
+    }
+
+    const template = getKpiTemplate(widget.type);
+    if (!template) {
+      return 'KPI';
+    }
+
+    if (widget.type === 'tasksByStatus' && widget.organizationId && widget.statusValueId) {
+      const statuses = kpiMetadata.statusesByOrganization[String(widget.organizationId)] || [];
+      const match = statuses.find((item) => Number(item.Id) === Number(widget.statusValueId));
+      if (match) {
+        return `${match.StatusName} Tasks`;
+      }
+    }
+
+    if (widget.type === 'tasksByPriority' && widget.organizationId && widget.priorityValueId) {
+      const priorities = kpiMetadata.prioritiesByOrganization[String(widget.organizationId)] || [];
+      const match = priorities.find((item) => Number(item.Id) === Number(widget.priorityValueId));
+      if (match) {
+        return `${match.PriorityName} Tasks`;
+      }
+    }
+
+    if (
+      (widget.type === 'organizationProjects' ||
+        widget.type === 'organizationTasks' ||
+        widget.type === 'organizationPendingTasks' ||
+        widget.type === 'organizationCompletedTasks') &&
+      widget.organizationId
+    ) {
+      const org = kpiMetadata.organizations.find((item) => Number(item.Id) === Number(widget.organizationId));
+      if (org) {
+        return `${org.Name} - ${template.defaultTitle}`;
+      }
+    }
+
+    return template.defaultTitle;
+  };
+
+  const loadKpiValues = useCallback(async (widgets: DashboardKpiWidget[]) => {
+    if (!token) {
+      return;
+    }
+
+    try {
+      const values = await getDashboardKpiValues(token, widgets);
+      setKpiValues(values);
+    } catch (error) {
+      console.error('Failed to load KPI values:', error);
+      showToast({ type: 'error', message: 'Failed to load KPI values' });
+    }
+  }, [token, showToast]);
+
+  const loadKpiConfig = useCallback(async () => {
+    if (!token || isCustomerUser) {
+      return;
+    }
+
+    setKpiSectionLoading(true);
+    try {
+      const response = await getDashboardKpis(token);
+      setKpiMetadata(response.metadata);
+
+      let widgets = response.hasCustomConfig
+        ? response.widgets
+        : getDefaultKpiWidgets(internalTicketsEnabled);
+
+      if (!internalTicketsEnabled) {
+        widgets = widgets.filter((widget) => widget.type !== 'myTickets');
+      }
+
+      setKpiWidgets(widgets);
+      await loadKpiValues(widgets);
+      setKpiConfigLoaded(true);
+    } catch (error) {
+      console.error('Failed to load KPI config:', error);
+      showToast({ type: 'error', message: 'Failed to load dashboard KPI configuration' });
+      setKpiConfigLoaded(true);
+    } finally {
+      setKpiSectionLoading(false);
+    }
+  }, [token, isCustomerUser, internalTicketsEnabled, loadKpiValues, showToast]);
+
+  const handleAddWidget = () => {
+    if (!kpiAddType) {
+      return;
+    }
+
+    const template = getKpiTemplate(kpiAddType);
+    if (!template) {
+      return;
+    }
+
+    const firstOrganizationId = kpiMetadata.organizations[0]?.Id;
+    const statuses = firstOrganizationId ? (kpiMetadata.statusesByOrganization[String(firstOrganizationId)] || []) : [];
+    const priorities = firstOrganizationId ? (kpiMetadata.prioritiesByOrganization[String(firstOrganizationId)] || []) : [];
+
+    const newWidget: DashboardKpiWidget = {
+      id: buildWidgetId(kpiAddType),
+      type: kpiAddType,
+      title: template.defaultTitle,
+      organizationId: template.requiresOrganization ? (firstOrganizationId || null) : null,
+      statusValueId: template.requiresStatus ? (statuses[0]?.Id || null) : null,
+      priorityValueId: template.requiresPriority ? (priorities[0]?.Id || null) : null,
+    };
+
+    setKpiWidgets((prev) => [...prev, newWidget]);
+    setKpiAddType('');
+  };
+
+  const handleRemoveWidget = (widgetId: string) => {
+    setKpiWidgets((prev) => prev.filter((widget) => widget.id !== widgetId));
+  };
+
+  const handleWidgetFieldChange = (widgetId: string, updates: Partial<DashboardKpiWidget>) => {
+    setKpiWidgets((prev) => prev.map((widget) => (widget.id === widgetId ? { ...widget, ...updates } : widget)));
+  };
+
+  const handleKpiDragStart = (widgetId: string) => {
+    setDraggingWidgetId(widgetId);
+  };
+
+  const handleKpiDrop = (targetWidgetId: string) => {
+    if (!draggingWidgetId || draggingWidgetId === targetWidgetId) {
+      setDraggingWidgetId(null);
+      return;
+    }
+
+    setKpiWidgets((prev) => {
+      const sourceIndex = prev.findIndex((widget) => widget.id === draggingWidgetId);
+      const targetIndex = prev.findIndex((widget) => widget.id === targetWidgetId);
+      if (sourceIndex === -1 || targetIndex === -1) {
+        return prev;
+      }
+
+      const reordered = [...prev];
+      const [moved] = reordered.splice(sourceIndex, 1);
+      reordered.splice(targetIndex, 0, moved);
+      return reordered;
+    });
+
+    setDraggingWidgetId(null);
+  };
+
+  const handleCancelKpiEdit = async () => {
+    setKpiEditMode(false);
+    await loadKpiConfig();
+  };
+
+  const handleSaveKpis = async () => {
+    if (!token) {
+      return;
+    }
+
+    setKpiSaving(true);
+    try {
+      const savedWidgets = await saveDashboardKpis(token, kpiWidgets);
+      setKpiWidgets(savedWidgets);
+      await loadKpiValues(savedWidgets);
+      setKpiEditMode(false);
+      showToast({ type: 'success', message: 'Dashboard KPIs updated' });
+    } catch (error) {
+      console.error('Failed to save dashboard KPIs:', error);
+      showToast({ type: 'error', message: 'Failed to save dashboard KPIs' });
+    } finally {
+      setKpiSaving(false);
+    }
+  };
+
   const loadGlobalStats = async (period: AnalyticsPeriod = 'thisMonth') => {
     if (!user?.isAdmin) return;
     
@@ -1083,7 +1330,16 @@ function DashboardContent() {
     loadUserProfile();
     loadSummaryStats();
     loadPendingApprovals();
-  }, [user, token, featureFlagsLoaded, isCustomerUser, internalTicketsEnabled]);
+    loadKpiConfig();
+  }, [user, token, featureFlagsLoaded, isCustomerUser, internalTicketsEnabled, loadKpiConfig]);
+
+  useEffect(() => {
+    if (!token || isCustomerUser || !kpiConfigLoaded || kpiEditMode) {
+      return;
+    }
+
+    loadKpiValues(kpiWidgets);
+  }, [token, isCustomerUser, kpiConfigLoaded, kpiEditMode, kpiWidgets, loadKpiValues]);
 
   useEffect(() => {
     if (!user || !token || !featureFlagsLoaded || isCustomerUser || !user.isAdmin) return;
@@ -1121,6 +1377,7 @@ function DashboardContent() {
 
   const totalPendingApprovals = pendingApprovals.timeEntries + pendingApprovals.vacations;
   const showPendingApprovalAlert = totalPendingApprovals > 0 && (pendingApprovals.canApproveTime || pendingApprovals.canApproveVacations);
+  const selectableKpiTemplates = KPI_TEMPLATES.filter((template) => internalTicketsEnabled || template.type !== 'myTickets');
 
   if (!isLoadingPermissions && !permissions?.canViewDashboard) {
     return (
@@ -1408,65 +1665,171 @@ function DashboardContent() {
               </div>
 
               {/* Summary Stats Grid */}
-              <div className={`grid grid-cols-1 md:grid-cols-2 ${internalTicketsEnabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 border-blue-500">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Projects</p>
-                      <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{summaryStats.totalProjects}</p>
-                    </div>
-                    <div className="text-3xl text-blue-500 opacity-60">📁</div>
+              <div className="space-y-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">KPIs</h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {kpiEditMode ? (
+                      <>
+                        <select
+                          value={kpiAddType}
+                          onChange={(e) => setKpiAddType(e.target.value as DashboardKpiType | '')}
+                          className="h-10 px-3 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        >
+                          <option value="">Select KPI</option>
+                          {selectableKpiTemplates.map((template) => (
+                            <option key={template.type} value={template.type}>{template.label}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={handleAddWidget}
+                          className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+                          disabled={!kpiAddType}
+                        >
+                          Add KPI
+                        </button>
+                        <button
+                          onClick={handleSaveKpis}
+                          className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
+                          disabled={kpiSaving}
+                        >
+                          {kpiSaving ? 'Saving...' : 'Save'}
+                        </button>
+                        <button
+                          onClick={handleCancelKpiEdit}
+                          className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => setKpiEditMode(true)}
+                        className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        Edit KPIs
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 border-green-500">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">My Tasks</p>
-                      <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{summaryStats.myTasks}</p>
-                      {summaryStats.overdueTasks > 0 && (
-                        <p className="text-xs text-red-500 dark:text-red-400 mt-1">{summaryStats.overdueTasks} overdue</p>
-                      )}
-                    </div>
-                    <div className="text-3xl text-green-500 opacity-60">✓</div>
+                {kpiSectionLoading ? (
+                  <div className={`grid grid-cols-1 md:grid-cols-2 ${internalTicketsEnabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
+                    {Array.from({ length: internalTicketsEnabled ? 5 : 4 }).map((_, idx) => (
+                      <div key={`kpi-card-skeleton-${idx}`} className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 h-36 animate-pulse" />
+                    ))}
                   </div>
-                </div>
+                ) : kpiWidgets.length === 0 ? (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700 text-center text-gray-600 dark:text-gray-300">
+                    No KPI cards configured. Enter edit mode to add KPI cards.
+                  </div>
+                ) : (
+                  <div className={`grid grid-cols-1 md:grid-cols-2 ${kpiWidgets.length >= 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
+                    {kpiWidgets.map((widget) => {
+                      const template = getKpiTemplate(widget.type);
+                      const valueData = kpiValues[widget.id] || { value: 0 };
+                      const numericValue = Number(valueData.value || 0);
+                      const formattedValue = valueData.suffix === 'h' ? numericValue.toFixed(1) : numericValue.toLocaleString();
+                      const statusOptions = widget.organizationId ? (kpiMetadata.statusesByOrganization[String(widget.organizationId)] || []) : [];
+                      const priorityOptions = widget.organizationId ? (kpiMetadata.prioritiesByOrganization[String(widget.organizationId)] || []) : [];
 
-                {internalTicketsEnabled && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 border-indigo-500">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">My Tickets</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{Number(summaryStats.myTickets) || 0}</p>
-                        {summaryStats.unresolvedTickets > 0 && (
-                          <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">{Number(summaryStats.unresolvedTickets) || 0} active</p>
-                        )}
-                      </div>
-                      <div className="text-3xl text-indigo-500 opacity-60">🎫</div>
-                    </div>
+                      return (
+                        <div
+                          key={widget.id}
+                          draggable={kpiEditMode}
+                          onDragStart={() => handleKpiDragStart(widget.id)}
+                          onDragOver={(e) => {
+                            if (kpiEditMode) e.preventDefault();
+                          }}
+                          onDrop={() => handleKpiDrop(widget.id)}
+                          className={`bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 ${template?.borderClass || 'border-gray-400'} ${kpiEditMode ? 'cursor-move' : ''}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm text-gray-500 dark:text-gray-400">{getWidgetDisplayTitle(widget)}</p>
+                              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{formattedValue}{valueData.suffix || ''}</p>
+                              {valueData.subtitle && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{valueData.subtitle}</p>
+                              )}
+                            </div>
+                            <div className="text-3xl opacity-60">{template?.icon || '📌'}</div>
+                          </div>
+
+                          {kpiEditMode && (
+                            <div className="mt-4 space-y-2">
+                              <div className="grid grid-cols-1 gap-2">
+                                <input
+                                  type="text"
+                                  value={widget.title || ''}
+                                  onChange={(e) => handleWidgetFieldChange(widget.id, { title: e.target.value })}
+                                  placeholder="Card title"
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+
+                                {template?.requiresOrganization && (
+                                  <select
+                                    value={widget.organizationId || ''}
+                                    onChange={(e) => {
+                                      const nextOrgId = e.target.value ? Number(e.target.value) : null;
+                                      const nextStatuses = nextOrgId ? (kpiMetadata.statusesByOrganization[String(nextOrgId)] || []) : [];
+                                      const nextPriorities = nextOrgId ? (kpiMetadata.prioritiesByOrganization[String(nextOrgId)] || []) : [];
+                                      handleWidgetFieldChange(widget.id, {
+                                        organizationId: nextOrgId,
+                                        statusValueId: template.requiresStatus ? (nextStatuses[0]?.Id || null) : null,
+                                        priorityValueId: template.requiresPriority ? (nextPriorities[0]?.Id || null) : null,
+                                      });
+                                    }}
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                  >
+                                    <option value="">Select organization</option>
+                                    {kpiMetadata.organizations.map((org) => (
+                                      <option key={org.Id} value={org.Id}>{org.Name}</option>
+                                    ))}
+                                  </select>
+                                )}
+
+                                {template?.requiresStatus && (
+                                  <select
+                                    value={widget.statusValueId || ''}
+                                    onChange={(e) => handleWidgetFieldChange(widget.id, { statusValueId: e.target.value ? Number(e.target.value) : null })}
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                  >
+                                    <option value="">Select status</option>
+                                    {statusOptions.map((status) => (
+                                      <option key={status.Id} value={status.Id}>{status.StatusName}</option>
+                                    ))}
+                                  </select>
+                                )}
+
+                                {template?.requiresPriority && (
+                                  <select
+                                    value={widget.priorityValueId || ''}
+                                    onChange={(e) => handleWidgetFieldChange(widget.id, { priorityValueId: e.target.value ? Number(e.target.value) : null })}
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                  >
+                                    <option value="">Select priority</option>
+                                    {priorityOptions.map((priority) => (
+                                      <option key={priority.Id} value={priority.Id}>{priority.PriorityName}</option>
+                                    ))}
+                                  </select>
+                                )}
+                              </div>
+
+                              <div className="flex justify-end">
+                                <button
+                                  onClick={() => handleRemoveWidget(widget.id)}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/40"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
-
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 border-purple-500">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Hours This Week</p>
-                      <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{summaryStats.hoursThisWeek.toFixed(1)}h</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Allocated: {summaryStats.allocatedThisWeek.toFixed(1)}h</p>
-                    </div>
-                    <div className="text-3xl text-purple-500 opacity-60">⏱️</div>
-                  </div>
-                </div>
-
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 border-orange-500">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Hours This Month</p>
-                      <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{summaryStats.hoursThisMonth.toFixed(1)}h</p>
-                    </div>
-                    <div className="text-3xl text-orange-500 opacity-60">📊</div>
-                  </div>
-                </div>
               </div>
 
               {showCalendarInOverview ? (
@@ -1548,26 +1911,81 @@ function DashboardContent() {
               )}
 
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <span className="text-2xl">📝</span> Unscheduled Work
-                  </h3>
-                  <select
-                    value={unscheduledSortBy}
-                    onChange={(event) => setUnscheduledSortBy(event.target.value as TaskSortOption)}
-                    className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <option value="dueDate">Sort: Due date</option>
-                    <option value="priority">Sort: Priority</option>
-                    <option value="project">Sort: Project</option>
-                  </select>
+                <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                      <span className="text-2xl">📋</span> My Pending Tasks
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                      One list for all open tasks, filtered by planning type.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full text-sm font-medium text-gray-600 dark:text-gray-300">
+                      {sortedPendingTasks.length} visible
+                    </span>
+                    <select
+                      value={pendingSortBy}
+                      onChange={(event) => setPendingSortBy(event.target.value as TaskSortOption)}
+                      className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="dueDate">Sort: Due date</option>
+                      <option value="priority">Sort: Priority</option>
+                      <option value="project">Sort: Project</option>
+                    </select>
+                  </div>
                 </div>
-                {sortedOpenUnscheduledTasks.length === 0 ? (
-                  <p className="text-sm text-gray-500 dark:text-gray-400">No open unscheduled work tasks</p>
+
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {[
+                    { key: 'all' as const, label: 'All Pending', count: pendingTasks.length },
+                    { key: 'scheduled' as const, label: 'Scheduled', count: pendingTasks.length - unscheduledPendingTasks.length },
+                    { key: 'unscheduled' as const, label: 'Unscheduled', count: unscheduledPendingTasks.length },
+                  ].map((option) => {
+                    const isActive = pendingWorkFilter === option.key;
+
+                    return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => {
+                          setPendingWorkFilter(option.key);
+                          setShowAllPendingTasks(false);
+                        }}
+                        className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                          isActive
+                            ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/20 dark:text-blue-300'
+                            : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        <span>{option.label}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs ${
+                          isActive
+                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                            : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                        }`}>
+                          {option.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {sortedPendingTasks.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500 dark:text-gray-400">
+                      {pendingWorkFilter === 'unscheduled'
+                        ? 'No unscheduled pending tasks.'
+                        : pendingWorkFilter === 'scheduled'
+                          ? 'No scheduled pending tasks.'
+                          : '🎉 No pending tasks! Great job!'}
+                    </p>
+                  </div>
                 ) : (
                   <div className="space-y-3">
-                    {sortedOpenUnscheduledTasks.slice(0, (isPrintMode || showAllUnscheduledTasks) ? sortedOpenUnscheduledTasks.length : 5).map((task) => {
+                    {sortedPendingTasks.slice(0, (isPrintMode || showAllPendingTasks) ? sortedPendingTasks.length : 5).map((task) => {
                       const isOverdue = isTaskOverdue(task.DueDate ? String(task.DueDate) : null);
+                      const isUnscheduled = Number(task.UnscheduledWork || 0) === 1;
 
                       return (
                         <div
@@ -1587,16 +2005,21 @@ function DashboardContent() {
                                     Hobby
                                   </span>
                                 )}
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                  isUnscheduled
+                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                                    : 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
+                                }`}>
+                                  {isUnscheduled ? 'Unscheduled' : 'Scheduled'}
+                                </span>
                                 {isOverdue && (
                                   <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-full">
                                     Overdue
                                   </span>
-                                )}  
-                                {/* Unscheduled chip removed */}
+                                )}
                               </div>
                               <div className="flex items-center gap-2 mt-1 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
                                 <span>{task.ProjectName || 'No project'}</span>
-                                {/* Show client: prefer task.CustomerName, else project.CustomerName */}
                                 {task.CustomerName && (
                                   <span className="ml-2 text-blue-500">• {task.CustomerName}</span>
                                 )}
@@ -1645,7 +2068,7 @@ function DashboardContent() {
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-3 shrink-0">
+                            <div className="ml-4 flex items-center gap-3 shrink-0">
                               <button
                                 onClick={() => openTaskDetails(task)}
                                 className="text-sm text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
@@ -1663,15 +2086,15 @@ function DashboardContent() {
                         </div>
                       );
                     })}
-                    {!isPrintMode && sortedOpenUnscheduledTasks.length > 5 && (
+                    {!isPrintMode && sortedPendingTasks.length > 5 && (
                       <div className="text-center pt-2">
                         <button
-                          onClick={() => setShowAllUnscheduledTasks((previous) => !previous)}
+                          onClick={() => setShowAllPendingTasks((previous) => !previous)}
                           className="text-blue-600 dark:text-blue-400 hover:underline text-sm"
                         >
-                          {showAllUnscheduledTasks
+                          {showAllPendingTasks
                             ? 'Show less tasks'
-                            : `View all ${sortedOpenUnscheduledTasks.length} tasks →`}
+                            : `View all ${sortedPendingTasks.length} tasks →`}
                         </button>
                       </div>
                     )}
@@ -1825,122 +2248,6 @@ function DashboardContent() {
                     )}
                   </div>
                 </div>
-              </div>
-
-              {/* Pending Tasks */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <span className="text-2xl">📋</span> My Pending Tasks
-                  </h3>
-                  <div className="flex items-center gap-3">
-                    <span className="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full text-sm font-medium text-gray-600 dark:text-gray-300">
-                      {sortedPendingTasks.length} task{sortedPendingTasks.length !== 1 ? 's' : ''}
-                    </span>
-                    <select
-                      value={pendingSortBy}
-                      onChange={(event) => setPendingSortBy(event.target.value as TaskSortOption)}
-                      className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    >
-                      <option value="dueDate">Sort: Due date</option>
-                      <option value="priority">Sort: Priority</option>
-                      <option value="project">Sort: Project</option>
-                    </select>
-                  </div>
-                </div>
-                {sortedPendingTasks.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-gray-500 dark:text-gray-400">🎉 No pending tasks! Great job!</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {sortedPendingTasks.slice(0, (isPrintMode || showAllPendingTasks) ? sortedPendingTasks.length : 5).map(task => {
-                      const isOverdue = isTaskOverdue(task.DueDate ? String(task.DueDate) : null);
-                      return (
-                        <div 
-                          key={task.Id}
-                          className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${
-                            isOverdue 
-                              ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/10' 
-                              : 'border-gray-200 dark:border-gray-700'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <h4 className="font-medium text-gray-900 dark:text-white">
-                                  {task.TaskName}
-                                </h4>
-                                {isOverdue && (
-                                  <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-full">
-                                    Overdue
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                                {task.ProjectName}
-                              </p>
-                              <div className="flex items-center gap-3 mt-2 flex-wrap">
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                                  style={task.PriorityColor ? {
-                                    backgroundColor: task.PriorityColor + '20',
-                                    color: task.PriorityColor
-                                  } : undefined}
-                                >
-                                  {task.PriorityName || 'Normal'}
-                                </span>
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                                  style={task.StatusColor ? {
-                                    backgroundColor: task.StatusColor + '20',
-                                    color: task.StatusColor
-                                  } : undefined}
-                                >
-                                  {task.StatusName || 'Unknown'}
-                                </span>
-                                {task.DueDate && (
-                                  <span className={`text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
-                                    📅 Due: {new Date(task.DueDate).toLocaleDateString()}
-                                  </span>
-                                )}
-                                {task.EstimatedHours && (
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                                    ⏱️ {task.EstimatedHours}h estimated
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="ml-4 flex items-center gap-3">
-                              <button
-                                onClick={() => openTaskDetails(task)}
-                                className="text-sm text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
-                              >
-                                Task Details
-                              </button>
-                              <button
-                                onClick={() => router.push(`/projects/${task.ProjectId}`)}
-                                className="text-sm text-gray-600 dark:text-gray-300 hover:underline whitespace-nowrap"
-                              >
-                                Go to Project →
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {!isPrintMode && sortedPendingTasks.length > 5 && (
-                      <div className="text-center pt-2">
-                        <button
-                          onClick={() => setShowAllPendingTasks((previous) => !previous)}
-                          className="text-blue-600 dark:text-blue-400 hover:underline text-sm"
-                        >
-                          {showAllPendingTasks
-                            ? 'Show less tasks'
-                            : `View all ${sortedPendingTasks.length} tasks →`}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
             )

@@ -11,8 +11,8 @@ import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import CustomerFormModal, { CustomerFormValues } from '@/components/CustomerFormModal';
 import EmptyState from '@/components/EmptyState';
-import { projectsApi, Project } from '@/lib/api/projects';
 import { downloadCsv, parseBooleanLike, parseCsv, toCsv } from '@/lib/csv';
+import { extractCustomFieldValues } from '@/lib/customFields';
 import { 
   getCustomers, 
   createCustomer, 
@@ -48,8 +48,9 @@ const buildDefaultCustomerFormValues = (organizations: Organization[]): Customer
   Notes: '',
   OrganizationIds: organizations.length === 1 ? [organizations[0].Id] : [],
   DefaultSupportUserId: null,
-  CreateDefaultProject: true,
-  DefaultProjectName: ''
+  CreateDefaultProject: false,
+  DefaultProjectName: '',
+  CustomFields: {},
 });
 
 export default function CustomersPage() {
@@ -376,6 +377,16 @@ export default function CustomersPage() {
       const customersData = await getCustomers(token!);
       setCustomers(customersData);
 
+      const statsByCustomer: Record<number, CustomerProjectStats> = {};
+      customersData.forEach((customer) => {
+        statsByCustomer[customer.Id] = {
+          projectCount: Number(customer.ProjectCount) || 0,
+          totalTasks: Number(customer.TotalTasks) || 0,
+          completedTasks: Number(customer.CompletedTasks) || 0,
+        };
+      });
+      setCustomerProjectStats(statsByCustomer);
+
       // Load organizations for the dropdown
       const response = await fetch(`${getApiUrl()}/api/organizations`, {
         headers: {
@@ -399,33 +410,6 @@ export default function CustomersPage() {
         setSupportUsers(supportUsersList);
       }
 
-      // Load projects for customer/project/task summary data
-      try {
-        const projectsResponse = await projectsApi.getAll(token!);
-        const projects = projectsResponse.projects || [];
-
-        const statsByCustomer: Record<number, CustomerProjectStats> = {};
-
-        projects.forEach((project: Project) => {
-          if (!project.CustomerId) return;
-
-          if (!statsByCustomer[project.CustomerId]) {
-            statsByCustomer[project.CustomerId] = {
-              projectCount: 0,
-              totalTasks: 0,
-              completedTasks: 0,
-            };
-          }
-
-          statsByCustomer[project.CustomerId].projectCount += 1;
-          statsByCustomer[project.CustomerId].totalTasks += Number(project.TotalTasks) || 0;
-          statsByCustomer[project.CustomerId].completedTasks += Number(project.CompletedTasks) || 0;
-        });
-
-        setCustomerProjectStats(statsByCustomer);
-      } catch {
-        setCustomerProjectStats({});
-      }
     } catch (err: any) {
       const message = err.message || 'Failed to load data';
       setError(message);
@@ -475,7 +459,8 @@ export default function CustomersPage() {
       OrganizationIds: customer.Organizations?.map(o => o.OrganizationId) || [],
       DefaultSupportUserId: (customer as any).DefaultSupportUserId || null,
       CreateDefaultProject: false,
-      DefaultProjectName: ''
+      DefaultProjectName: '',
+      CustomFields: extractCustomFieldValues(customer),
     });
     setShowModal(true);
   };
@@ -509,7 +494,8 @@ export default function CustomersPage() {
           Address: submittedData.Address || undefined,
           Notes: submittedData.Notes || undefined,
           OrganizationIds: submittedData.OrganizationIds,
-          DefaultSupportUserId: submittedData.DefaultSupportUserId || undefined
+          DefaultSupportUserId: submittedData.DefaultSupportUserId || undefined,
+          customFields: submittedData.CustomFields,
         };
         await updateCustomer(token!, editingCustomer.Id, updateData);
       } else {
@@ -524,7 +510,8 @@ export default function CustomersPage() {
           OrganizationIds: submittedData.OrganizationIds,
           DefaultSupportUserId: submittedData.DefaultSupportUserId || undefined,
           CreateDefaultProject: submittedData.CreateDefaultProject,
-          DefaultProjectName: submittedData.CreateDefaultProject ? (submittedData.DefaultProjectName || submittedData.Name) : undefined
+          DefaultProjectName: submittedData.CreateDefaultProject ? (submittedData.DefaultProjectName || submittedData.Name) : undefined,
+          customFields: submittedData.CustomFields,
         };
         await createCustomer(token!, createData);
       }
@@ -1219,6 +1206,7 @@ export default function CustomersPage() {
         error={error}
         onClose={closeModal}
         onSubmit={handleSubmit}
+        token={token || undefined}
       />
 
       {showImportModal && (

@@ -1,0 +1,70 @@
+{
+  "TableName": "CustomFields",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique custom field identifier"
+    },
+    {
+      "FieldName": "TableName",
+      "DataType": "varchar(100)",
+      "NotNullable": true,
+      "Comment": "Name of the table where this custom field applies (e.g., Projects, Tasks, Users)"
+    },
+    {
+      "FieldName": "FieldName",
+      "DataType": "varchar(100)",
+      "NotNullable": true,
+      "Comment": "Database column name (will be prefixed with U_ by system)"
+    },
+    {
+      "FieldName": "DisplayName",
+      "DataType": "varchar(255)",
+      "NotNullable": true,
+      "Comment": "Display name shown to users in UI"
+    },
+    {
+      "FieldName": "DataType",
+      "DataType": "varchar(50)",
+      "NotNullable": true,
+      "Comment": "Data type for the field (varchar(255), int, decimal(10,2), date, text, etc.)"
+    },
+    {
+      "FieldName": "IsRequired",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Whether field is required (1) or optional (0)"
+    },
+    {
+      "FieldName": "Description",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Description of what this custom field is for"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Creation timestamp"
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "User ID who created this custom field"
+    },
+    {
+      "FieldName": "IsActive",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1",
+      "Comment": "Whether field is active (1) or deleted (0)"
+    }
+  ]
+}

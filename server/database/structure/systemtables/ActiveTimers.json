@@ -16,7 +16,38 @@
     {
       "FieldName": "TaskId",
       "DataType": "int",
-      "NotNullable": true
+      "NotNullable": false
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "ProjectId",
+      "DataType": "int",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "TimerType",
+      "DataType": "varchar(50)",
+      "NotNullable": true,
+      "DefaultValue": "task"
+    },
+    {
+      "FieldName": "CallType",
+      "DataType": "varchar(50)",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Participants",
+      "DataType": "text",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "Subject",
+      "DataType": "varchar(255)",
+      "NotNullable": false
     },
     {
       "FieldName": "StartedAt",

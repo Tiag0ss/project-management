@@ -5,6 +5,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { createNotification } from './notifications';
 import { logActivity } from './activityLogs';
 import { logProjectHistory } from '../utils/changeLog';
+import { prepareCustomFieldData } from '../utils/customFields';
 
 const router = Router();
 
@@ -632,7 +633,7 @@ router.get('/:id/permissions', authenticateToken, async (req: AuthRequest, res: 
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { organizationId, projectName, description, status, startDate, endDate, isHobby, isGlobal, isVisibleToCustomer, customerId, jiraBoardId, budget, budgetType, applicationIds } = req.body;
+    const { organizationId, projectName, description, status, startDate, endDate, isHobby, isGlobal, isVisibleToCustomer, customerId, jiraBoardId, budget, budgetType, applicationIds, customFields } = req.body;
     const finalBudgetType = normalizeBudgetType(budgetType);
     const finalIsGlobal = isGlobal === true || isGlobal === 1;
     const hasCustomerInput = customerId !== undefined && customerId !== null && customerId !== '';
@@ -674,9 +675,11 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       });
     }
 
+    const customFieldData = await prepareCustomFieldData('Projects', customFields);
+
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, IsGlobal, IsVisibleToCustomer, CustomerId, JiraBoardId, Budget, BudgetType) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, IsGlobal, IsVisibleToCustomer, CustomerId, JiraBoardId, Budget, BudgetType${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
       [
         organizationId,
         projectName, 
@@ -691,7 +694,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         finalCustomerId,
         jiraBoardId || null,
         budget !== undefined && budget !== '' ? parseFloat(budget) : null,
-        finalBudgetType
+        finalBudgetType,
+        ...customFieldData.insertValues
       ]
     );
 
@@ -1017,7 +1021,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const projectId = req.params.id;
-    const { projectName, description, status, startDate, endDate, isHobby, isGlobal, isVisibleToCustomer, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo, budget, budgetType, applicationIds } = req.body;
+    const { projectName, description, status, startDate, endDate, isHobby, isGlobal, isVisibleToCustomer, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo, budget, budgetType, applicationIds, customFields } = req.body;
 
     // Check if project exists and get current data
     const [existing] = await pool.execute<RowDataPacket[]>(
@@ -1094,6 +1098,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         message: 'Project status is required'
       });
     }
+
+    const customFieldData = await prepareCustomFieldData('Projects', customFields, oldProject as Record<string, unknown>);
 
     // Normalize empty values for comparison
     const normalizeValue = (value: any): string => {
@@ -1186,6 +1192,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     if (finalIsVisibleToCustomer !== (oldProject.IsVisibleToCustomer ? 1 : 0)) {
       changes.push({ field: 'IsVisibleToCustomer', oldVal: String(oldProject.IsVisibleToCustomer), newVal: String(finalIsVisibleToCustomer) });
     }
+    for (const change of customFieldData.changes) {
+      changes.push({ field: change.field, oldVal: change.oldVal, newVal: change.newVal });
+    }
 
     // Convert empty strings to null for date fields
     const normalizedStartDate = startDate === '' ? null : startDate;
@@ -1193,9 +1202,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Projects 
-       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, IsGlobal = ?, IsVisibleToCustomer = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ?, GiteaOwner = ?, GiteaRepo = ?, Budget = ?, BudgetType = ?
+       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, IsGlobal = ?, IsVisibleToCustomer = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ?, GiteaOwner = ?, GiteaRepo = ?, Budget = ?, BudgetType = ?${customFieldData.updateAssignments.length > 0 ? `, ${customFieldData.updateAssignments.join(', ')}` : ''}
        WHERE Id = ?`,
-      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, finalIsGlobal ? 1 : 0, finalIsVisibleToCustomer, finalCustomerId, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, giteaOwner || null, giteaRepo || null, budget !== undefined && budget !== '' ? parseFloat(budget) : null, finalBudgetType, projectId]
+      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, finalIsGlobal ? 1 : 0, finalIsVisibleToCustomer, finalCustomerId, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, giteaOwner || null, giteaRepo || null, budget !== undefined && budget !== '' ? parseFloat(budget) : null, finalBudgetType, ...customFieldData.updateValues, projectId]
     );
     
     // Log changes to history

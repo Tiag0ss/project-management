@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import { prepareCustomFieldData } from '../utils/customFields';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { decrypt } from '../utils/encryption';
 
@@ -68,10 +69,10 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const { startDate, endDate } = req.query;
 
     let query = `
-      SELECT cr.*, p.ProjectName, p.OrganizationId, o.Name as OrganizationName, t.TaskName
+      SELECT cr.*, p.ProjectName, COALESCE(cr.OrganizationId, p.OrganizationId) as OrganizationId, o.Name as OrganizationName, t.TaskName
       FROM CallRecords cr
       LEFT JOIN Projects p ON cr.ProjectId = p.Id
-      LEFT JOIN Organizations o ON p.OrganizationId = o.Id
+      LEFT JOIN Organizations o ON COALESCE(cr.OrganizationId, p.OrganizationId) = o.Id
       LEFT JOIN Tasks t ON cr.TaskId = t.Id
       WHERE cr.UserId = ?
     `;
@@ -151,8 +152,10 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       participants,
       subject,
       notes,
+      organizationId,
       projectId,
-      taskId
+      taskId,
+      customFields,
     } = req.body;
 
     if (!callDate || !startTime) {
@@ -162,10 +165,13 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       });
     }
 
+    const customFieldData = await prepareCustomFieldData('CallRecords', customFields);
+
+
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO CallRecords 
-       (UserId, CallDate, StartTime, DurationMinutes, CallType, Participants, Subject, Notes, ProjectId, TaskId)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (UserId, CallDate, StartTime, DurationMinutes, CallType, Participants, Subject, Notes, OrganizationId, ProjectId, TaskId${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
       [
         userId,
         callDate,
@@ -175,8 +181,10 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         participants || null,
         subject || null,
         notes || null,
+        organizationId || null,
         projectId || null,
-        taskId || null
+        taskId || null,
+        ...customFieldData.insertValues
       ]
     );
 
@@ -246,8 +254,10 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       participants,
       subject,
       notes,
+      organizationId,
       projectId,
-      taskId
+      taskId,
+      customFields,
     } = req.body;
 
     // Check ownership
@@ -263,10 +273,12 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       });
     }
 
+    const customFieldData = await prepareCustomFieldData('CallRecords', customFields, existing[0] as Record<string, unknown>);
+
     await pool.execute(
       `UPDATE CallRecords SET
        CallDate = ?, StartTime = ?, DurationMinutes = ?, CallType = ?,
-       Participants = ?, Subject = ?, Notes = ?, ProjectId = ?, TaskId = ?
+       Participants = ?, Subject = ?, Notes = ?, OrganizationId = ?, ProjectId = ?, TaskId = ?${customFieldData.updateAssignments.length > 0 ? `, ${customFieldData.updateAssignments.join(', ')}` : ''}
        WHERE Id = ? AND UserId = ?`,
       [
         callDate,
@@ -276,8 +288,10 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         participants || null,
         subject || null,
         notes || null,
+        organizationId || null,
         projectId || null,
         taskId || null,
+        ...customFieldData.updateValues,
         id,
         userId
       ]

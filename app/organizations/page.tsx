@@ -8,6 +8,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
 import { organizationsApi, Organization, CreateOrganizationData } from '@/lib/api/organizations';
+import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
+import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 import { downloadCsv, parseCsv, toCsv } from '@/lib/csv';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
@@ -882,6 +884,13 @@ export default function OrganizationsPage() {
                   const totalTasks = Number(org.TotalTasks) || 0;
                   const completedTasks = Number(org.CompletedTasks) || 0;
                   const taskProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+                  const canEditOrganization =
+                    !!user?.isAdmin ||
+                    !!permissions?.canManageOrganizations ||
+                    org.Role === 'Owner' ||
+                    org.Role === 'Admin' ||
+                    Number(org.CanManageSettings || 0) === 1;
+                  const canDeleteOrganization = org.Role === 'Owner';
                   
                   const getRoleBadgeColor = (role: string) => {
                     switch (role) {
@@ -945,7 +954,7 @@ export default function OrganizationsPage() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" />
                             </svg>
                           </button>
-                          {(org.Role === 'Owner' || org.Role === 'Admin') && (
+                          {canEditOrganization && (
                             <button
                               onClick={(e) => { e.stopPropagation(); handleEdit(org); }}
                               title="Edit organization"
@@ -957,7 +966,7 @@ export default function OrganizationsPage() {
                               </svg>
                             </button>
                           )}
-                          {(org.Role === 'Owner' || org.Role === 'Admin') && (
+                          {canDeleteOrganization && (
                             <button
                               onClick={(e) => { e.stopPropagation(); handleDelete(org.Id); }}
                               title="Delete organization"
@@ -1239,6 +1248,7 @@ function EditOrganizationModal({
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [customFields, setCustomFields] = useState<CustomFieldValues>(() => extractCustomFieldValues(organization));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1246,7 +1256,7 @@ function EditOrganizationModal({
     setIsLoading(true);
 
     try {
-      await organizationsApi.update(organization.Id, formData, token);
+      await organizationsApi.update(organization.Id, { ...formData, customFields }, token);
       onUpdated();
     } catch (err: any) {
       setError(err.message || 'Failed to update organization');
@@ -1317,6 +1327,13 @@ function EditOrganizationModal({
               />
             </div>
 
+            <CustomFieldsFormSection
+              tableName="Organizations"
+              token={token}
+              values={customFields}
+              onChange={setCustomFields}
+            />
+
             <div className="flex gap-3 mt-6">
               <button
                 type="button"
@@ -1356,6 +1373,7 @@ function CreateOrganizationModal({
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [customFields, setCustomFields] = useState<CustomFieldValues>({});
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1363,7 +1381,7 @@ function CreateOrganizationModal({
     setIsLoading(true);
 
     try {
-      await organizationsApi.create(formData, token);
+      await organizationsApi.create({ ...formData, customFields }, token);
       onCreated();
     } catch (err: any) {
       setError(err.message || 'Failed to create organization');
@@ -1433,6 +1451,13 @@ function CreateOrganizationModal({
                 placeholder="Enter organization description"
               />
             </div>
+
+            <CustomFieldsFormSection
+              tableName="Organizations"
+              token={token}
+              values={customFields}
+              onChange={setCustomFields}
+            />
 
             <div className="flex gap-3 mt-6">
               <button

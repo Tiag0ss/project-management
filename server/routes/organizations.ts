@@ -4,8 +4,69 @@ import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { logActivity } from './activityLogs';
 import { logOrganizationHistory } from '../utils/changeLog';
+import { prepareCustomFieldData } from '../utils/customFields';
 
 const router = Router();
+
+const getGlobalOrganizationManagementPermission = async (userId?: number): Promise<boolean> => {
+  if (!userId) {
+    return false;
+  }
+
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT u.isAdmin,
+            COALESCE(MAX(CASE WHEN rp.CanManageOrganizations = 1 THEN 1 ELSE 0 END), 0) AS CanManageOrganizations
+     FROM Users u
+     LEFT JOIN RolePermissions rp ON
+       (u.IsDeveloper = 1 AND rp.RoleName = 'Developer') OR
+       (u.IsSupport = 1 AND rp.RoleName = 'Support') OR
+       (u.IsManager = 1 AND rp.RoleName = 'Manager')
+     WHERE u.Id = ?
+     GROUP BY u.Id, u.isAdmin`,
+    [userId]
+  );
+
+  if (rows.length === 0) {
+    return false;
+  }
+
+  return Number(rows[0].isAdmin) === 1 || Number(rows[0].CanManageOrganizations) === 1;
+};
+
+const getOrganizationPermissionSnapshot = async (orgId: string | string[], userId?: number): Promise<{
+  role: string;
+  canManageSettings: boolean;
+  canManageMembers: boolean;
+} | null> => {
+  if (!userId) {
+    return null;
+  }
+
+  const normalizedOrgId = Array.isArray(orgId) ? orgId[0] : orgId;
+  if (!normalizedOrgId) {
+    return null;
+  }
+
+  const [members] = await pool.execute<RowDataPacket[]>(
+    `SELECT om.Role,
+            COALESCE(pg.CanManageSettings, 0) AS CanManageSettings,
+            COALESCE(pg.CanManageMembers, 0) AS CanManageMembers
+     FROM OrganizationMembers om
+     LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+     WHERE om.OrganizationId = ? AND om.UserId = ?`,
+    [normalizedOrgId, userId]
+  );
+
+  if (members.length === 0) {
+    return null;
+  }
+
+  return {
+    role: String(members[0].Role || ''),
+    canManageSettings: Number(members[0].CanManageSettings) === 1,
+    canManageMembers: Number(members[0].CanManageMembers) === 1,
+  };
+};
 
 /**
  * @swagger
@@ -32,7 +93,9 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const userId = req.user?.userId;
 
     const [organizations] = await pool.execute<RowDataPacket[]>(
-      `SELECT o.*, om.Role, om.PermissionGroupId,
+            `SELECT o.*, om.Role, om.PermissionGroupId,
+              COALESCE(pg.CanManageSettings, 0) as CanManageSettings,
+              COALESCE(pg.CanManageMembers, 0) as CanManageMembers,
               u.Username as CreatorName,
               (SELECT COUNT(*) FROM OrganizationMembers WHERE OrganizationId = o.Id) as MemberCount,
               (SELECT COUNT(*) FROM Projects WHERE OrganizationId = o.Id) as ProjectCount,
@@ -45,6 +108,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
               COALESCE(taskStats.ActiveProjects, 0) as ActiveProjects
        FROM Organizations o
        INNER JOIN OrganizationMembers om ON o.Id = om.OrganizationId
+      LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
        LEFT JOIN Users u ON o.CreatedBy = u.Id
        LEFT JOIN (
          SELECT 
@@ -102,9 +166,13 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const orgId = req.params.id;
 
     const [organizations] = await pool.execute<RowDataPacket[]>(
-      `SELECT o.*, om.Role, om.PermissionGroupId, u.Username as CreatorName
+      `SELECT o.*, om.Role, om.PermissionGroupId,
+          COALESCE(pg.CanManageSettings, 0) as CanManageSettings,
+          COALESCE(pg.CanManageMembers, 0) as CanManageMembers,
+          u.Username as CreatorName
        FROM Organizations o
        INNER JOIN OrganizationMembers om ON o.Id = om.OrganizationId
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
        LEFT JOIN Users u ON o.CreatedBy = u.Id
        WHERE o.Id = ? AND om.UserId = ?`,
       [orgId, userId]
@@ -156,7 +224,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { name, abbreviation, description } = req.body;
+    const { name, abbreviation, description, customFields } = req.body;
 
     if (!name) {
       return res.status(400).json({ 
@@ -165,10 +233,12 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       });
     }
 
+    const customFieldData = await prepareCustomFieldData('Organizations', customFields);
+
     // Create organization
     const [result] = await pool.execute<ResultSetHeader>(
-      'INSERT INTO Organizations (Name, Abbreviation, Description, CreatedBy) VALUES (?, ?, ?, ?)',
-      [name, abbreviation || null, description || null, userId]
+      `INSERT INTO Organizations (Name, Abbreviation, Description, CreatedBy${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) VALUES (?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
+      [name, abbreviation || null, description || null, userId, ...customFieldData.insertValues]
     );
 
     const orgId = result.insertId;
@@ -333,7 +403,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
  * @swagger
  * /api/organizations/{id}:
  *   put:
- *     summary: Update an organization (requires Owner or CanManageSettings)
+ *     summary: Update an organization (requires Owner/CanManageSettings or global CanManageOrganizations)
  *     tags: [Organizations]
  *     security:
  *       - bearerAuth: []
@@ -355,7 +425,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
  *       200:
  *         description: Organization updated
  *       403:
- *         description: Forbidden - requires Owner or CanManageSettings
+ *         description: Forbidden - requires Owner/CanManageSettings or global CanManageOrganizations
  *       404:
  *         description: Not found
  */
@@ -363,18 +433,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const orgId = req.params.id;
-    const { name, abbreviation, description } = req.body;
+    const { name, abbreviation, description, customFields } = req.body;
 
-    // Check if user has permission (Owner or has CanManageSettings)
-    const [members] = await pool.execute<RowDataPacket[]>(
-      `SELECT om.Role, pg.CanManageSettings
-       FROM OrganizationMembers om
-       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
-       WHERE om.OrganizationId = ? AND om.UserId = ?`,
-      [orgId, userId]
-    );
+    const [hasGlobalManageOrganizations, orgPermissions] = await Promise.all([
+      getGlobalOrganizationManagementPermission(userId),
+      getOrganizationPermissionSnapshot(orgId, userId),
+    ]);
 
-    if (members.length === 0 || (members[0].Role !== 'Owner' && !members[0].CanManageSettings)) {
+    if (!orgPermissions || (!hasGlobalManageOrganizations && orgPermissions.role !== 'Owner' && orgPermissions.role !== 'Admin' && !orgPermissions.canManageSettings)) {
       return res.status(403).json({ 
         success: false, 
         message: 'Permission denied' 
@@ -434,9 +500,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       );
     }
 
+    const customFieldData = await prepareCustomFieldData('Organizations', customFields, oldOrg as Record<string, unknown>);
+    for (const change of customFieldData.changes) {
+      await logOrganizationHistory(Number(orgId), userId!, 'updated', change.field, change.oldVal, change.newVal);
+    }
+
     await pool.execute(
-      'UPDATE Organizations SET Name = ?, Abbreviation = ?, Description = ? WHERE Id = ?',
-      [name, abbreviation, description, orgId]
+      `UPDATE Organizations SET Name = ?, Abbreviation = ?, Description = ?${customFieldData.updateAssignments.length > 0 ? `, ${customFieldData.updateAssignments.join(', ')}` : ''} WHERE Id = ?`,
+      [name, abbreviation, description, ...customFieldData.updateValues, orgId]
     );
 
     // Log organization update
@@ -704,15 +775,12 @@ router.get('/:id/available-users', authenticateToken, async (req: AuthRequest, r
     const requesterId = req.user?.userId;
     const orgId = req.params.id;
 
-    const [requester] = await pool.execute<RowDataPacket[]>(
-      `SELECT om.Role, pg.CanManageMembers
-       FROM OrganizationMembers om
-       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
-       WHERE om.OrganizationId = ? AND om.UserId = ?`,
-      [orgId, requesterId]
-    );
+    const [hasGlobalManageOrganizations, orgPermissions] = await Promise.all([
+      getGlobalOrganizationManagementPermission(requesterId),
+      getOrganizationPermissionSnapshot(orgId, requesterId),
+    ]);
 
-    if (requester.length === 0 || (requester[0].Role !== 'Owner' && !requester[0].CanManageMembers)) {
+    if (!orgPermissions || (!hasGlobalManageOrganizations && orgPermissions.role !== 'Owner' && orgPermissions.role !== 'Admin' && !orgPermissions.canManageMembers)) {
       return res.status(403).json({
         success: false,
         message: 'Permission denied'
@@ -783,15 +851,12 @@ router.post('/:id/members', authenticateToken, async (req: AuthRequest, res: Res
     const { userId, userEmail, role, permissionGroupId } = req.body;
 
     // Check if requester has permission
-    const [requester] = await pool.execute<RowDataPacket[]>(
-      `SELECT om.Role, pg.CanManageMembers
-       FROM OrganizationMembers om
-       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
-       WHERE om.OrganizationId = ? AND om.UserId = ?`,
-      [orgId, requesterId]
-    );
+    const [hasGlobalManageOrganizations, orgPermissions] = await Promise.all([
+      getGlobalOrganizationManagementPermission(requesterId),
+      getOrganizationPermissionSnapshot(orgId, requesterId),
+    ]);
 
-    if (requester.length === 0 || (requester[0].Role !== 'Owner' && !requester[0].CanManageMembers)) {
+    if (!orgPermissions || (!hasGlobalManageOrganizations && orgPermissions.role !== 'Owner' && orgPermissions.role !== 'Admin' && !orgPermissions.canManageMembers)) {
       return res.status(403).json({ 
         success: false, 
         message: 'Permission denied' 
@@ -935,15 +1000,12 @@ router.put('/:id/members/:memberId', authenticateToken, async (req: AuthRequest,
     const { role, permissionGroupId } = req.body;
 
     // Check if requester has permission
-    const [requester] = await pool.execute<RowDataPacket[]>(
-      `SELECT om.Role, pg.CanManageMembers
-       FROM OrganizationMembers om
-       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
-       WHERE om.OrganizationId = ? AND om.UserId = ?`,
-      [orgId, userId]
-    );
+    const [hasGlobalManageOrganizations, orgPermissions] = await Promise.all([
+      getGlobalOrganizationManagementPermission(userId),
+      getOrganizationPermissionSnapshot(orgId, userId),
+    ]);
 
-    if (requester.length === 0 || (requester[0].Role !== 'Owner' && !requester[0].CanManageMembers)) {
+    if (!orgPermissions || (!hasGlobalManageOrganizations && orgPermissions.role !== 'Owner' && orgPermissions.role !== 'Admin' && !orgPermissions.canManageMembers)) {
       return res.status(403).json({ 
         success: false, 
         message: 'Permission denied' 
@@ -1022,15 +1084,12 @@ router.delete('/:id/members/:memberId', authenticateToken, async (req: AuthReque
     const memberId = req.params.memberId;
 
     // Check if requester has permission
-    const [requester] = await pool.execute<RowDataPacket[]>(
-      `SELECT om.Role, pg.CanManageMembers
-       FROM OrganizationMembers om
-       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
-       WHERE om.OrganizationId = ? AND om.UserId = ?`,
-      [orgId, userId]
-    );
+    const [hasGlobalManageOrganizations, orgPermissions] = await Promise.all([
+      getGlobalOrganizationManagementPermission(userId),
+      getOrganizationPermissionSnapshot(orgId, userId),
+    ]);
 
-    if (requester.length === 0 || (requester[0].Role !== 'Owner' && !requester[0].CanManageMembers)) {
+    if (!orgPermissions || (!hasGlobalManageOrganizations && orgPermissions.role !== 'Owner' && orgPermissions.role !== 'Admin' && !orgPermissions.canManageMembers)) {
       return res.status(403).json({ 
         success: false, 
         message: 'Permission denied' 

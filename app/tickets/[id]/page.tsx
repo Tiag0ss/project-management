@@ -17,6 +17,8 @@ import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
+import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
+import { CustomFieldDefinition, CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 
 interface Ticket {
   Id: number;
@@ -54,6 +56,7 @@ interface Ticket {
   DeveloperFirstName: string | null;
   DeveloperLastName: string | null;
   DeveloperUsername: string | null;
+  [key: string]: unknown;
 }
 
 interface Comment {
@@ -93,6 +96,7 @@ export default function TicketDetailPage() {
   const [error, setError] = useState('');
   const [ticketStatuses, setTicketStatuses] = useState<{ Id: number; StatusName: string; Color: string; IsClosed: number; IsDefault: number }[]>([]);
   const [ticketPriorities, setTicketPriorities] = useState<{ Id: number; PriorityName: string; Color: string; IsDefault: number }[]>([]);
+  const [ticketCustomFields, setTicketCustomFields] = useState<CustomFieldDefinition[]>([]);
 
   // Edit state
   const [isEditing, setIsEditing] = useState(false);
@@ -109,6 +113,7 @@ export default function TicketDetailPage() {
     customerId: '',
     projectId: '',
     applicationIds: [] as number[],
+    customFields: {} as CustomFieldValues,
   });
   const [saving, setSaving] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
@@ -140,6 +145,7 @@ export default function TicketDetailPage() {
     status: null,
     priority: null,
     estimatedHours: 0,
+    customFields: {},
   });
   const [creatingTask, setCreatingTask] = useState(false);
   
@@ -338,7 +344,23 @@ export default function TicketDetailPage() {
         customerId: data.ticket.CustomerId?.toString() || '',
         projectId: data.ticket.ProjectId?.toString() || '',
         applicationIds: [],
+        customFields: extractCustomFieldValues(data.ticket),
       });
+
+      try {
+        const customFieldsRes = await fetch(
+          `${getApiUrl()}/api/custom-fields/Tickets`,
+          { headers: { 'Authorization': `Bearer ${token}` } }
+        );
+        if (customFieldsRes.ok) {
+          const customFieldsData = await customFieldsRes.json();
+          setTicketCustomFields(customFieldsData.customFields || []);
+        } else {
+          setTicketCustomFields([]);
+        }
+      } catch {
+        setTicketCustomFields([]);
+      }
 
       // Load ticket status/priority values for this organization
       if (data.ticket.OrganizationId) {
@@ -466,6 +488,7 @@ export default function TicketDetailPage() {
       assignedTo: ticket.AssignedToUserId || undefined,
       estimatedHours: 0,
       ticketId: ticket.Id,
+      customFields: {},
     });
 
     // If no project associated, load organizations for selection
@@ -700,6 +723,7 @@ export default function TicketDetailPage() {
             organizationId: editForm.organizationId ? parseInt(editForm.organizationId) : null,
             customerId: editForm.customerId ? parseInt(editForm.customerId) : null,
             projectId: editForm.projectId ? parseInt(editForm.projectId) : null,
+            customFields: editForm.customFields,
           }),
         }
       );
@@ -984,6 +1008,32 @@ export default function TicketDetailPage() {
 
   if (!ticket) return null;
 
+  const ticketCustomFieldValues = extractCustomFieldValues(ticket);
+
+  const formatCustomFieldValue = (field: CustomFieldDefinition, value: unknown): string => {
+    if (value === null || value === undefined || value === '') {
+      return '—';
+    }
+
+    if (field.DataType === 'tinyint(1)') {
+      return Number(value) === 1 || value === true ? 'Yes' : 'No';
+    }
+
+    if (field.DataType === 'date') {
+      const date = new Date(String(value));
+      if (!Number.isNaN(date.getTime())) {
+        return date.toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+      }
+    }
+
+    return String(value);
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
       <Navbar />
@@ -1199,6 +1249,38 @@ export default function TicketDetailPage() {
                   ) : (
                     <p className="text-gray-400 dark:text-gray-500 italic">No description provided</p>
                   )}
+                </div>
+              )}
+
+              {isEditing && (
+                <div className="mt-6">
+                  <CustomFieldsFormSection
+                    tableName="Tickets"
+                    token={token || undefined}
+                    values={editForm.customFields}
+                    onChange={(customFields) => setEditForm(prev => ({ ...prev, customFields }))}
+                  />
+                </div>
+              )}
+
+              {!isEditing && ticketCustomFields.length > 0 && (
+                <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-6">
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">Custom Fields</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {ticketCustomFields
+                      .slice()
+                      .sort((a, b) => a.DisplayName.localeCompare(b.DisplayName))
+                      .map((field) => (
+                        <div key={field.Id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 p-3">
+                          <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                            {field.DisplayName}
+                          </div>
+                          <div className="mt-1 text-sm text-gray-900 dark:text-white break-words">
+                            {formatCustomFieldValue(field, ticketCustomFieldValues[field.FieldName])}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
                 </div>
               )}
               </div>
@@ -2047,6 +2129,13 @@ export default function TicketDetailPage() {
                     </p>
                   </div>
                 )}
+
+                <CustomFieldsFormSection
+                  tableName="Tasks"
+                  token={token || undefined}
+                  values={taskForm.customFields || {}}
+                  onChange={(customFields) => setTaskForm({ ...taskForm, customFields })}
+                />
               </div>
 
               <div className="flex gap-3 mt-6">

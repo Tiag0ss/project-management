@@ -1,4 +1,5 @@
 import { getApiUrl } from './config';
+import { CustomFieldValues } from '@/lib/customFields';
 
 const API_BASE_URL = getApiUrl();
 
@@ -56,6 +57,7 @@ export interface User {
   DashboardCalendarInOverview?: number | boolean;
   CreatedAt: string;
   UpdatedAt: string;
+  [key: string]: unknown;
 }
 
 export interface UpdateUserData {
@@ -82,6 +84,7 @@ export interface UpdateUserData {
   teamLeaderId?: number | null;
   countryCode?: string | null;
   jiraId?: string | null;
+  customFields?: CustomFieldValues;
 }
 
 export interface CreateUserData extends UpdateUserData {

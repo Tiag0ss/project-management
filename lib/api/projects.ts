@@ -1,4 +1,5 @@
 import { getApiUrl } from './config';
+import { CustomFieldValues } from '@/lib/customFields';
 
 const API_BASE_URL = getApiUrl();
 
@@ -44,6 +45,7 @@ export interface Project {
   OpenTickets?: number;
   UnplannedTasks?: number;
   OverdueTasks?: number;
+  [key: string]: unknown;
 }
 
 export interface CreateProjectData {
@@ -65,6 +67,7 @@ export interface CreateProjectData {
   budget?: number | null;
   budgetType?: 'monetary' | 'hours';
   applicationIds?: number[];
+  customFields?: CustomFieldValues;
 }
 
 export interface UpdateProjectData {
@@ -85,6 +88,7 @@ export interface UpdateProjectData {
   budget?: number | null;
   budgetType?: 'monetary' | 'hours';
   applicationIds?: number[];
+  customFields?: CustomFieldValues;
 }
 
 export interface UpdateProjectDataWithId extends UpdateProjectData {

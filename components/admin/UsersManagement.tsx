@@ -8,6 +8,8 @@ import { usersApi, User } from '@/lib/api/users';
 import { getCustomers } from '@/lib/api/customers';
 import { COUNTRY_OPTIONS, getCountryName } from '@/lib/constants/countries';
 import SearchableSelect from '@/components/SearchableSelect';
+import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
+import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 
 interface CustomerOption {
   Id: number;
@@ -567,6 +569,7 @@ function CreateUserModal({
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [customFields, setCustomFields] = useState<CustomFieldValues>({});
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -605,6 +608,7 @@ function CreateUserModal({
         workHoursSunday: parseFloat(formData.workHoursSunday),
         hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
         annualVacationDays: parseFloat(formData.annualVacationDays || '0') || 0,
+        customFields,
       }, token);
       onUserCreated();
     } catch (err: any) {
@@ -882,6 +886,13 @@ function CreateUserModal({
               />
             </div>
 
+            <CustomFieldsFormSection
+              tableName="Users"
+              token={token}
+              values={customFields}
+              onChange={setCustomFields}
+            />
+
             <div className="flex gap-3 mt-6">
               <button
                 type="button"
@@ -952,6 +963,7 @@ function EditUserModal({
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [customFields, setCustomFields] = useState<CustomFieldValues>(() => extractCustomFieldValues(user));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -989,6 +1001,7 @@ function EditUserModal({
         workHoursSunday: parseFloat(formData.workHoursSunday),
         hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
         annualVacationDays: parseFloat(formData.annualVacationDays || '0') || 0,
+        customFields,
       }, token);
       onUserUpdated();
     } catch (err: any) {
@@ -1240,6 +1253,13 @@ function EditUserModal({
                 </label>
               </div>
             </div>
+
+            <CustomFieldsFormSection
+              tableName="Users"
+              token={token}
+              values={customFields}
+              onChange={setCustomFields}
+            />
 
             <div className="flex gap-3 mt-6">
               <button

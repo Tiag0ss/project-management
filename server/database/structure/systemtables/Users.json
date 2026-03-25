@@ -371,6 +371,13 @@
       "Comment": "User preference: show dashboard calendar inside Overview tab"
     },
     {
+      "FieldName": "DashboardKpiConfig",
+      "DataType": "text",
+      "NotNullable": false,
+      "DefaultValue": null,
+      "Comment": "User dashboard KPI widgets configuration as JSON"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

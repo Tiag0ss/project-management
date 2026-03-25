@@ -3,6 +3,7 @@ import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { createNotification } from './notifications';
+import { prepareCustomFieldData } from '../utils/customFields';
 import { logActivity } from './activityLogs';
 import { sanitizeRichText } from '../utils/sanitize';
 import { computeCompletionPercentages } from '../utils/taskCompletion';
@@ -891,7 +892,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, customerId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId } = req.body;
+    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, customerId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, customFields } = req.body;
 
     if (!taskName || !projectId) {
       return res.status(400).json({ 
@@ -983,9 +984,11 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         ? normalizedEstimatedHours
         : normalizedStoryPoints;
 
+    const customFieldData = await prepareCustomFieldData('Tasks', customFields);
+
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, UnscheduledWork, EstimatedHours, StoryPoints, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, GitHubIssueNumber, GiteaIssueNumber, ApplicationId, CreatedBy) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, UnscheduledWork, EstimatedHours, StoryPoints, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, GitHubIssueNumber, GiteaIssueNumber, ApplicationId, CreatedBy${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
       [
         projectId,
         taskName,
@@ -1010,7 +1013,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         normalizedGitHubIssueNumber,
         normalizedGiteaIssueNumber,
         applicationId || null,
-        userId
+        userId,
+        ...customFieldData.insertValues
       ]
     );
 
@@ -1151,7 +1155,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const taskId = req.params.id;
-    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, customerId, syncAllocationHeaderDates } = req.body;
+    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, customerId, syncAllocationHeaderDates, customFields } = req.body;
 
     // Verify user has access to this task's project through organization membership and has CanManageTasks permission
     const [access] = await pool.execute<RowDataPacket[]>(
@@ -1382,9 +1386,11 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       }
     }
 
+    const customFieldData = await prepareCustomFieldData('Tasks', customFields, oldTask as Record<string, unknown>);
+
     await pool.execute(
       `UPDATE Tasks 
-       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, UnscheduledWork = ?, EstimatedHours = ?, StoryPoints = ?, ParentTaskId = ?, DisplayOrder = ?, PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, JiraIssueKey = ?, GitHubIssueNumber = ?, GiteaIssueNumber = ?, CustomerId = ?, ApplicationId = ?, ReleaseVersionId = ?
+       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, UnscheduledWork = ?, EstimatedHours = ?, StoryPoints = ?, ParentTaskId = ?, DisplayOrder = ?, PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, JiraIssueKey = ?, GitHubIssueNumber = ?, GiteaIssueNumber = ?, CustomerId = ?, ApplicationId = ?, ReleaseVersionId = ?${customFieldData.updateAssignments.length > 0 ? `, ${customFieldData.updateAssignments.join(', ')}` : ''}
        WHERE Id = ?`,
       [
         finalTaskName,
@@ -1409,6 +1415,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         finalCustomerId,
         finalApplicationId,
         finalReleaseVersionId,
+        ...customFieldData.updateValues,
         taskId
       ]
     );
@@ -1572,6 +1579,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     }
     if (releaseVersionId !== undefined && hasChanged(oldTask.ReleaseVersionId, releaseVersionId)) {
       changes.push({ field: 'ReleaseVersionId', oldVal: String(oldTask.ReleaseVersionId || ''), newVal: String(releaseVersionId || '') });
+    }
+    for (const change of customFieldData.changes) {
+      changes.push({ field: change.field, oldVal: change.oldVal, newVal: change.newVal });
     }
 
     // Create history entries for each change

@@ -59,6 +59,12 @@
       "Comment": "Notes or summary from the call"
     },
     {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Organizations.Id if related to an organization"
+    },
+    {
       "FieldName": "ProjectId",
       "DataType": "int",
       "NotNullable": false,
@@ -111,6 +117,14 @@
       "Description": "Call Record is related to a Project",
       "FromField": "ProjectId",
       "ToTable": "Projects",
+      "ToField": "Id",
+      "Type": "ManyToOne"
+    },
+    {
+      "Name": "CallRecordOrganization",
+      "Description": "Call Record is related to an Organization",
+      "FromField": "OrganizationId",
+      "ToTable": "Organizations",
       "ToField": "Id",
       "Type": "ManyToOne"
     }

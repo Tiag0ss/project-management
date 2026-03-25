@@ -42,6 +42,23 @@ async function getColumnDataType(tableName: string, columnName: string): Promise
   }
 }
 
+async function isColumnNullable(tableName: string, columnName: string): Promise<boolean | null> {
+  try {
+    const query = isMssql
+      ? `SELECT IS_NULLABLE FROM information_schema.columns
+         WHERE table_schema = ? AND table_name = ? AND column_name = ?`
+      : `SELECT IS_NULLABLE FROM information_schema.columns
+         WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`;
+
+    const params = isMssql ? ['dbo', tableName, columnName] : [tableName, columnName];
+    const [rows] = await pool.execute<RowDataPacket[]>(query, params);
+    if (rows.length === 0) return null;
+    return String(rows[0].IS_NULLABLE || '').toUpperCase() === 'YES';
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Migration: Convert Tasks.Status, Tasks.Priority, and Projects.Status
  * from varchar (text names) to int (FK IDs referencing status/priority value tables).
@@ -441,6 +458,58 @@ async function migrateTaskAllocationHeadersBackfill(): Promise<void> {
 }
 
 /**
+ * Migration: support both task timers and call-record timers in ActiveTimers.
+ *
+ * This migration is idempotent:
+ * - makes TaskId nullable on existing databases
+ * - backfills TimerType to 'task' where null/empty
+ */
+async function migrateActiveTimersForMixedTimerTypes(): Promise<void> {
+  try {
+    const taskIdNullable = await isColumnNullable('ActiveTimers', 'TaskId');
+    const timerTypeExists = await getColumnDataType('ActiveTimers', 'TimerType');
+
+    if (taskIdNullable === true && timerTypeExists) {
+      await pool.execute(
+        `UPDATE ActiveTimers
+         SET TimerType = 'task'
+         WHERE TimerType IS NULL OR TimerType = ''`
+      );
+      return;
+    }
+
+    logger.info('⚡ Running migration: Enable mixed timer types in ActiveTimers...');
+
+    if (taskIdNullable === false) {
+      await pool.execute(
+        isMssql
+          ? `ALTER TABLE ActiveTimers ALTER COLUMN TaskId int NULL`
+          : `ALTER TABLE ActiveTimers MODIFY COLUMN TaskId int NULL`
+      );
+      logger.info('  ✓ ActiveTimers.TaskId now allows NULL');
+    }
+
+    if (timerTypeExists) {
+      await pool.execute(
+        `UPDATE ActiveTimers
+         SET TimerType = 'task'
+         WHERE TimerType IS NULL OR TimerType = ''`
+      );
+      logger.info("  ✓ ActiveTimers.TimerType backfilled to 'task'");
+    }
+
+    logger.info('✓ Migration complete: ActiveTimers supports task and call timers');
+  } catch (error: any) {
+    if (isMissingTableError(error)) {
+      logger.info('  ℹ Tables not yet created, migration will run on next startup');
+      return;
+    }
+    logger.error('✗ Migration failed:', error);
+    throw error;
+  }
+}
+
+/**
  * Run all pending database migrations.
  * Called during server startup after buildAllTables.
  * All migrations must be idempotent (safe to run multiple times).
@@ -453,6 +522,7 @@ export async function runMigrations(): Promise<void> {
     await migrateTicketNumberToNullable();
     await migrateDescriptionToMediumtext();
     await migrateTaskAllocationHeadersBackfill();
+    await migrateActiveTimersForMixedTimerTypes();
     logger.info('=== Migrations Complete ===');
   } catch (error) {
     logger.error('Migration error:', error);

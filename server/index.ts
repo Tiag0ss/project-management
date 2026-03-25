@@ -37,6 +37,7 @@ import tagsRoutes from './routes/tags';
 import searchRoutes from './routes/search';
 import customersRoutes from './routes/customers';
 import statisticsRoutes from './routes/statistics';
+import dashboardKpisRoutes from './routes/dashboardKpis';
 import ticketsRoutes from './routes/tickets';
 import taskImportRoutes from './routes/taskImport';
 import rolePermissionsRoutes from './routes/rolePermissions';
@@ -76,6 +77,8 @@ import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler'
 import { startPdfReportScheduler } from './utils/pdfReportScheduler';
 import { startSlaAutoTransitionScheduler } from './utils/slaAutoTransitionScheduler';
 import { initSocketHub } from './utils/socketHub';
+
+const customFieldsRoutes = require(path.join(__dirname, 'routes', 'customFields')).default;
 
 dotenv.config();
 
@@ -231,6 +234,7 @@ app.prepare().then(async () => {
   server.use('/api/customers', customersRoutes);
   server.use('/api/applications', applicationsRoutes);
   server.use('/api/statistics', statisticsRoutes);
+  server.use('/api/dashboard-kpis', dashboardKpisRoutes);
   server.use('/api/tickets', ticketsRoutes);
   server.use('/api/planning-import', planningImportRoutes);
   server.use('/api/task-import', taskImportRoutes);
@@ -252,6 +256,7 @@ app.prepare().then(async () => {
   server.use('/api/timers', timersRoutes);
   server.use('/api/task-templates', taskTemplatesRoutes);
   server.use('/api/sla-rules', slaRulesRoutes);
+  server.use('/api/custom-fields', customFieldsRoutes);
   server.use('/api/sprints', sprintsRoutes);
   server.use('/api/project-milestones', projectMilestonesRoutes);
   server.use('/api/portal', portalRoutes);

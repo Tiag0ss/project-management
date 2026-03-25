@@ -7,6 +7,8 @@ import { organizationsApi, Organization } from '@/lib/api/organizations';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
+import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
+import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 
 interface ProjectFormModalProps {
   project: Project | null;
@@ -51,6 +53,7 @@ export default function ProjectFormModal({
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [customFields, setCustomFields] = useState<CustomFieldValues>(() => extractCustomFieldValues(project));
 
   useEffect(() => {
     void loadOrganizations();
@@ -213,8 +216,8 @@ export default function ProjectFormModal({
       }
 
       const requestData: CreateProjectData = canViewBudgetInfo
-        ? formData
-        : { ...formData, budget: undefined, budgetType: undefined };
+        ? { ...formData, customFields }
+        : { ...formData, budget: undefined, budgetType: undefined, customFields };
 
       if (project) {
         await projectsApi.update(project.Id, requestData, token);
@@ -510,6 +513,13 @@ export default function ProjectFormModal({
               )}
             </div>
 
+
+            <CustomFieldsFormSection
+              tableName="Projects"
+              token={token}
+              values={customFields}
+              onChange={setCustomFields}
+            />
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

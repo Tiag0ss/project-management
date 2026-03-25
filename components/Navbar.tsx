@@ -15,7 +15,7 @@ import CallRecordFormModal, { CallRecordFormValues } from './CallRecordFormModal
 import TimeEntryFormModal, { TimeEntryFormValues } from './TimeEntryFormModal';
 import ProjectFormModal from './ProjectFormModal';
 import CustomerFormModal, { CustomerFormValues } from './CustomerFormModal';
-import TimerStartModal from './TimerStartModal';
+import TimerStartModal, { TimerMode, TimerStartCallFormValues } from './TimerStartModal';
 import NavDropdownMenu from './navbar/NavDropdownMenu';
 import TaskDetailModal from './TaskDetailModal';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
@@ -73,13 +73,15 @@ const buildDefaultCustomerFormValues = (organizations: Organization[]): Customer
   Notes: '',
   OrganizationIds: organizations.length === 1 ? [organizations[0].Id] : [],
   DefaultSupportUserId: null,
-  CreateDefaultProject: true,
+  CreateDefaultProject: false,
   DefaultProjectName: '',
+  CustomFields: {},
 });
 
 export default function Navbar() {
   const { user, token, logout, isCustomerUser } = useAuth();
   const { permissions, isLoading: permissionsLoading } = usePermissions();
+  const router = useRouter();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -122,15 +124,41 @@ export default function Navbar() {
   const [canAccessVacationApprovals, setCanAccessVacationApprovals] = useState(false);
 
   // Active timer state
-  const [navTimer, setNavTimer] = useState<{ Id: number; TaskId: number; TaskName: string; ProjectId: number; ProjectName: string; StartedAt: string } | null>(null);
+  const [navTimer, setNavTimer] = useState<{
+    Id: number;
+    TaskId?: number | null;
+    TaskName?: string | null;
+    ProjectId?: number | null;
+    ProjectName?: string | null;
+    TimerType?: string | null;
+    CallType?: string | null;
+    Subject?: string | null;
+    Participants?: string | null;
+    StartedAt: string;
+  } | null>(null);
   const [navTimerSeconds, setNavTimerSeconds] = useState(0);
   const navTimerTickRef = useRef<NodeJS.Timeout | null>(null);
   const navTimerPollRef = useRef<NodeJS.Timeout | null>(null);
   const [showNavStartTimerModal, setShowNavStartTimerModal] = useState(false);
+  const [timerStartMode, setTimerStartMode] = useState<TimerMode>('task');
   const [timerStartTasks, setTimerStartTasks] = useState<TimerStartTaskOption[]>([]);
   const [timerStartTaskId, setTimerStartTaskId] = useState<number | null>(null);
   const [timerStartTime, setTimerStartTime] = useState('');
   const [isLoadingTimerStartTasks, setIsLoadingTimerStartTasks] = useState(false);
+  const [timerStartOrganizations, setTimerStartOrganizations] = useState<Organization[]>([]);
+  const [timerStartProjects, setTimerStartProjects] = useState<Project[]>([]);
+  const [timerStartCallTasks, setTimerStartCallTasks] = useState<TimerStartTaskOption[]>([]);
+  const [isLoadingTimerStartProjects, setIsLoadingTimerStartProjects] = useState(false);
+  const [isLoadingTimerStartCallTasks, setIsLoadingTimerStartCallTasks] = useState(false);
+  const [timerStartCallForm, setTimerStartCallForm] = useState<TimerStartCallFormValues>({
+    organizationId: '',
+    projectId: '',
+    taskId: '',
+    callType: 'Teams',
+    participants: '',
+    subject: '',
+    notes: '',
+  });
   const [isStartingTimer, setIsStartingTimer] = useState(false);
   const [timerStartError, setTimerStartError] = useState('');
   const [navTaskModalState, setNavTaskModalState] = useState<{
@@ -465,24 +493,104 @@ export default function Navbar() {
     setShowNavStartTimerModal(false);
     setTimerStartTasks([]);
     setTimerStartTaskId(null);
+    setTimerStartMode('task');
     setTimerStartTime('');
     setIsLoadingTimerStartTasks(false);
+    setTimerStartOrganizations([]);
+    setTimerStartProjects([]);
+    setTimerStartCallTasks([]);
+    setIsLoadingTimerStartProjects(false);
+    setIsLoadingTimerStartCallTasks(false);
+    setTimerStartCallForm({
+      organizationId: '',
+      projectId: '',
+      taskId: '',
+      callType: 'Teams',
+      participants: '',
+      subject: '',
+      notes: '',
+    });
     setTimerStartError('');
+  };
+
+  const loadTimerStartProjectsForOrg = async (organizationId: string) => {
+    if (!token || !organizationId) {
+      setTimerStartProjects([]);
+      setTimerStartCallTasks([]);
+      return;
+    }
+
+    setIsLoadingTimerStartProjects(true);
+    try {
+      const response = await fetch(`${getApiUrl()}/api/projects?organizationId=${organizationId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load projects');
+      }
+
+      const data = await response.json();
+      setTimerStartProjects(Array.isArray(data.projects) ? data.projects : []);
+    } finally {
+      setIsLoadingTimerStartProjects(false);
+    }
+  };
+
+  const loadTimerStartTasksForProject = async (projectId: string) => {
+    if (!token || !projectId) {
+      setTimerStartCallTasks([]);
+      return;
+    }
+
+    setIsLoadingTimerStartCallTasks(true);
+    try {
+      const response = await fetch(`${getApiUrl()}/api/tasks/project/${projectId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load tasks');
+      }
+
+      const data = await response.json();
+      setTimerStartCallTasks(Array.isArray(data.tasks) ? data.tasks : []);
+    } finally {
+      setIsLoadingTimerStartCallTasks(false);
+    }
   };
 
   const openNavStartTimerModal = async () => {
     if (!token) return;
 
     setShowNavStartTimerModal(true);
+    setTimerStartMode('task');
     setTimerStartError('');
     setIsStartingTimer(false);
     setIsLoadingTimerStartTasks(true);
     setTimerStartTime(getCurrentTimeHHMM());
+    setTimerStartTaskId(null);
+    setTimerStartProjects([]);
+    setTimerStartCallTasks([]);
+    setTimerStartCallForm({
+      organizationId: '',
+      projectId: '',
+      taskId: '',
+      callType: 'Teams',
+      participants: '',
+      subject: '',
+      notes: '',
+    });
 
     try {
-      const response = await fetch(`${getApiUrl()}/api/timers/available-tasks`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const [response, organizationsResponse] = await Promise.all([
+        fetch(`${getApiUrl()}/api/timers/available-tasks`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch(`${getApiUrl()}/api/organizations`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+      ]);
 
       if (!response.ok) {
         throw new Error('Failed to load tasks');
@@ -491,6 +599,13 @@ export default function Navbar() {
       const data = await response.json();
       const tasks = Array.isArray(data.tasks) ? data.tasks : [];
       setTimerStartTasks(tasks);
+
+      if (organizationsResponse.ok) {
+        const organizationsData = await organizationsResponse.json();
+        setTimerStartOrganizations(Array.isArray(organizationsData.organizations) ? organizationsData.organizations : []);
+      } else {
+        setTimerStartOrganizations([]);
+      }
 
       if (tasks.length === 1) {
         setTimerStartTaskId(Number(tasks[0].Id));
@@ -504,7 +619,7 @@ export default function Navbar() {
 
   const handleNavStartTimer = async () => {
     if (!token) return;
-    if (!timerStartTaskId) {
+    if (timerStartMode === 'task' && !timerStartTaskId) {
       setTimerStartError('Please select a task');
       return;
     }
@@ -533,7 +648,20 @@ export default function Navbar() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          taskId: timerStartTaskId,
+          timerType: timerStartMode,
+          taskId: timerStartMode === 'task'
+            ? timerStartTaskId
+            : (timerStartCallForm.taskId ? parseInt(timerStartCallForm.taskId, 10) : null),
+          organizationId: timerStartMode === 'callRecord' && timerStartCallForm.organizationId
+            ? parseInt(timerStartCallForm.organizationId, 10)
+            : null,
+          projectId: timerStartMode === 'callRecord' && timerStartCallForm.projectId
+            ? parseInt(timerStartCallForm.projectId, 10)
+            : null,
+          callType: timerStartMode === 'callRecord' ? timerStartCallForm.callType : null,
+          participants: timerStartMode === 'callRecord' ? (timerStartCallForm.participants || null) : null,
+          subject: timerStartMode === 'callRecord' ? (timerStartCallForm.subject || null) : null,
+          description: timerStartMode === 'callRecord' ? (timerStartCallForm.notes || null) : null,
           startedAt: startedAt.toISOString(),
         }),
       });
@@ -579,8 +707,16 @@ export default function Navbar() {
     } catch {}
   };
 
-  const handleOpenNavTimerTaskDetail = async () => {
-    if (!navTimer || !token) return;
+  const navTimerLabel = navTimer?.TimerType === 'callRecord'
+    ? (navTimer.Subject || navTimer.Participants || `${navTimer.CallType || 'Call'} record`)
+    : (navTimer?.TaskName || 'Running timer');
+
+  const navTimerTitle = navTimer?.TimerType === 'callRecord'
+    ? `Timer running: ${navTimer.Subject || navTimer.Participants || navTimer.CallType || 'Call record'}${navTimer.ProjectName ? ` — ${navTimer.ProjectName}` : ''}`
+    : `Timer running: ${navTimer?.TaskName || ''}${navTimer?.ProjectName ? ` — ${navTimer.ProjectName}` : ''}`;
+
+  const openNavTaskDetail = async (projectId: number, taskId: number) => {
+    if (!token) return;
 
     setNavTaskModalState({
       show: true,
@@ -593,10 +729,10 @@ export default function Navbar() {
 
     try {
       const [projectRes, tasksRes] = await Promise.all([
-        fetch(`${getApiUrl()}/api/projects/${navTimer.ProjectId}`, {
+        fetch(`${getApiUrl()}/api/projects/${projectId}`, {
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         }),
-        fetch(`${getApiUrl()}/api/tasks/project/${navTimer.ProjectId}`, {
+        fetch(`${getApiUrl()}/api/tasks/project/${projectId}`, {
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         }),
       ]);
@@ -609,10 +745,10 @@ export default function Navbar() {
       const project = projectData?.project || null;
       const tasksData = tasksRes.ok ? await tasksRes.json() : { tasks: [] };
       const projectTasks = Array.isArray(tasksData?.tasks) ? tasksData.tasks : [];
-      const activeTask = projectTasks.find((taskItem: any) => Number(taskItem.Id) === Number(navTimer.TaskId)) || null;
+      const activeTask = projectTasks.find((taskItem: any) => Number(taskItem.Id) === Number(taskId)) || null;
 
       if (!project || !activeTask) {
-        throw new Error('Active timer task no longer exists in this project');
+        throw new Error('Task no longer exists in this project');
       }
 
       setNavTaskModalState({
@@ -633,6 +769,11 @@ export default function Navbar() {
         error: error?.message || 'Failed to open task detail',
       });
     }
+  };
+
+  const handleOpenNavTimerTaskDetail = async () => {
+    if (!navTimer) return;
+    await openNavTaskDetail(Number(navTimer.ProjectId), Number(navTimer.TaskId));
   };
 
   const handleCloseNavTaskModal = () => {
@@ -990,6 +1131,7 @@ export default function Navbar() {
         DefaultProjectName: formValues.CreateDefaultProject
           ? (formValues.DefaultProjectName || formValues.Name)
           : undefined,
+        customFields: formValues.CustomFields,
       };
 
       await createCustomer(token, createData);
@@ -2044,12 +2186,18 @@ export default function Navbar() {
                     <>
                       <button
                         type="button"
-                        onClick={handleOpenNavTimerTaskDetail}
+                        onClick={() => {
+                          if (navTimer?.TimerType === 'callRecord') {
+                            router.push('/call-records');
+                            return;
+                          }
+                          handleOpenNavTimerTaskDetail();
+                        }}
                         className="flex items-center gap-1.5 text-xs font-mono bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2.5 py-1.5 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors animate-pulse"
-                        title={`Timer running: ${navTimer.TaskName} — ${navTimer.ProjectName}`}
+                        title={navTimerTitle}
                       >
                         <span>⏱</span>
-                        <span className="hidden sm:inline max-w-[120px] truncate">{navTimer.TaskName}</span>
+                        <span className="hidden sm:inline max-w-[120px] truncate">{navTimerLabel}</span>
                         <span className="font-bold">{navFormatElapsed(navTimerSeconds)}</span>
                       </button>
                       <button
@@ -2131,6 +2279,11 @@ export default function Navbar() {
                             onClick={() => {
                               if (!notification.IsRead) {
                                 markAsRead(notification.Id);
+                              }
+                              if (notification.RelatedTaskId && notification.RelatedProjectId) {
+                                setNotificationsOpen(false);
+                                openNavTaskDetail(Number(notification.RelatedProjectId), Number(notification.RelatedTaskId));
+                                return;
                               }
                               if (notification.Link) {
                                 window.location.href = notification.Link;
@@ -2356,13 +2509,59 @@ export default function Navbar() {
       <TimerStartModal
         isOpen={showNavStartTimerModal}
         error={timerStartError}
+        timerMode={timerStartMode}
         isLoadingTasks={isLoadingTimerStartTasks}
+        isLoadingCallProjects={isLoadingTimerStartProjects}
+        isLoadingCallTasks={isLoadingTimerStartCallTasks}
         tasks={timerStartTasks}
+        organizations={timerStartOrganizations}
+        projects={timerStartProjects}
+        callTasks={timerStartCallTasks}
         selectedTaskId={timerStartTaskId}
+        callForm={timerStartCallForm}
         startTime={timerStartTime}
         isStarting={isStartingTimer}
         onClose={closeNavStartTimerModal}
+        onTimerModeChange={setTimerStartMode}
         onTaskChange={setTimerStartTaskId}
+        onCallFormChange={(updates) => {
+          if (Object.prototype.hasOwnProperty.call(updates, 'organizationId')) {
+            const organizationId = updates.organizationId ?? '';
+            setTimerStartCallForm((prev) => ({
+              ...prev,
+              ...updates,
+              organizationId,
+              projectId: '',
+              taskId: '',
+            }));
+            setTimerStartProjects([]);
+            setTimerStartCallTasks([]);
+            if (organizationId) {
+              void loadTimerStartProjectsForOrg(organizationId);
+            }
+            return;
+          }
+
+          if (Object.prototype.hasOwnProperty.call(updates, 'projectId')) {
+            const projectId = updates.projectId ?? '';
+            setTimerStartCallForm((prev) => ({
+              ...prev,
+              ...updates,
+              projectId,
+              taskId: '',
+            }));
+            setTimerStartCallTasks([]);
+            if (projectId) {
+              void loadTimerStartTasksForProject(projectId);
+            }
+            return;
+          }
+
+          setTimerStartCallForm((prev) => ({
+            ...prev,
+            ...updates,
+          }));
+        }}
         onStartTimeChange={setTimerStartTime}
         onStart={handleNavStartTimer}
       />
@@ -2585,6 +2784,7 @@ export default function Navbar() {
         error={error}
         onClose={closeAllModals}
         onSubmit={handleSaveCustomer}
+        token={token || ''}
       />
 
       <TimeEntryFormModal

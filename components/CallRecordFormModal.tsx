@@ -3,6 +3,8 @@
 import { getApiUrl } from '@/lib/api/config';
 import { useEffect, useMemo, useState } from 'react';
 import SearchableSelect from '@/components/SearchableSelect';
+import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
+import { CustomFieldValues } from '@/lib/customFields';
 
 interface Organization {
   Id: number;
@@ -33,6 +35,7 @@ export interface CallRecordFormValues {
   organizationId: string;
   projectId: string;
   taskId: string;
+  customFields: CustomFieldValues;
 }
 
 interface CallRecordFormModalProps {
@@ -63,6 +66,7 @@ const buildDefaultFormData = (): CallRecordFormValues => ({
   organizationId: '',
   projectId: '',
   taskId: '',
+  customFields: {},
 });
 
 const mergeFormData = (initialData?: Partial<CallRecordFormValues>): CallRecordFormValues => ({
@@ -377,6 +381,12 @@ export default function CallRecordFormModal({
                 </select>
               </div>
             </div>
+            <CustomFieldsFormSection
+              tableName="CallRecords"
+              token={token}
+              values={formData.customFields}
+              onChange={(customFields) => setFormData((prev) => ({ ...prev, customFields }))}
+            />
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -434,7 +444,6 @@ export default function CallRecordFormModal({
                 placeholder="Select task (optional)"
                 emptyText="-- None --"
                 disabled={!formData.projectId}
-                autoSelectSingleOption
               />
             </div>
 

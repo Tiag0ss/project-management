@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
 import CallRecordFormModal, { CallRecordFormValues } from '@/components/CallRecordFormModal';
+import { extractCustomFieldValues } from '@/lib/customFields';
 
 interface CallRecord {
   Id: number;
@@ -23,6 +24,7 @@ interface CallRecord {
   OrganizationName?: string;
   ProjectName?: string;
   TaskName?: string;
+  [key: string]: unknown;
 }
 
 interface ImportCallRecordRow {
@@ -117,6 +119,7 @@ export default function CallRecordsPage() {
           organizationId: formData.organizationId || null,
           projectId: formData.projectId || null,
           taskId: formData.taskId || null,
+                  customFields: formData.customFields,
         }),
       });
 
@@ -438,6 +441,7 @@ export default function CallRecordsPage() {
             organizationId: editingRecord.OrganizationId ? String(editingRecord.OrganizationId) : '',
             projectId: editingRecord.ProjectId ? String(editingRecord.ProjectId) : '',
             taskId: editingRecord.TaskId ? String(editingRecord.TaskId) : '',
+            customFields: extractCustomFieldValues(editingRecord),
           } : undefined}
           onClose={resetForm}
           onSubmit={handleSubmit}

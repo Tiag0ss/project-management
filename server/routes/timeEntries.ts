@@ -1,6 +1,7 @@
 import express, { Response } from 'express';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { pool } from '../config/database';
+import { prepareCustomFieldData } from '../utils/customFields';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = express.Router();
@@ -260,7 +261,7 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { taskId, workDate, hours, description, startTime, endTime } = req.body;
+    const { taskId, workDate, hours, description, startTime, endTime, customFields } = req.body;
 
     if (!taskId || !workDate || !hours) {
       return res.status(400).json({ 
@@ -287,11 +288,12 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const isHobby = !!tasks[0].IsHobby;
     const autoApproveTimeEntries = await isAutoApproveTimeEntriesEnabled();
     const approvalStatus = (isHobby || autoApproveTimeEntries) ? 'approved' : 'pending';
+    const customFieldData = await prepareCustomFieldData('TimeEntries', customFields);
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO TimeEntries (TaskId, UserId, WorkDate, Hours, Description, StartTime, EndTime, ApprovalStatus)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [taskId, userId, workDate, hours, description || null, startTime || null, endTime || null, approvalStatus]
+      `INSERT INTO TimeEntries (TaskId, UserId, WorkDate, Hours, Description, StartTime, EndTime, ApprovalStatus${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
+      [taskId, userId, workDate, hours, description || null, startTime || null, endTime || null, approvalStatus, ...customFieldData.insertValues]
     );
 
     res.json({ 
@@ -347,7 +349,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const { id } = req.params;
-    const { workDate, hours, description, startTime, endTime } = req.body;
+    const { workDate, hours, description, startTime, endTime, customFields } = req.body;
 
     // Verify user owns this entry, get IsHobby from project
     const [entries] = await pool.execute<RowDataPacket[]>(
@@ -374,6 +376,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const newApprovalStatus = (isHobby || autoApproveTimeEntries) ? 'approved' : 'pending';
     const newApprovedBy = newApprovalStatus === 'approved' ? userId : null;
     const approvedAtExpression = newApprovalStatus === 'approved' ? 'CURRENT_TIMESTAMP' : 'NULL';
+    const currentEntry = entries[0];
+    const customFieldData = await prepareCustomFieldData('TimeEntries', customFields, currentEntry as Record<string, unknown>);
 
     await pool.execute(
       `UPDATE TimeEntries 
@@ -385,7 +389,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
            ApprovalStatus = ?,
            ApprovedBy = ?,
            ApprovedAt = ${approvedAtExpression},
-           UpdatedAt = CURRENT_TIMESTAMP
+           UpdatedAt = CURRENT_TIMESTAMP${customFieldData.updateAssignments.length > 0 ? `, ${customFieldData.updateAssignments.join(', ')}` : ''}
        WHERE Id = ?`,
       [
         workDate ?? null, 
@@ -395,6 +399,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         endTime ?? null,
         newApprovalStatus,
         newApprovedBy,
+        ...customFieldData.updateValues,
         id
       ]
     );

@@ -1,4 +1,5 @@
 import { getApiUrl } from './config';
+import { CustomFieldValues } from '@/lib/customFields';
 
 const API_BASE_URL = getApiUrl();
 
@@ -11,6 +12,8 @@ export interface Organization {
   CreatorName?: string;
   Role: string;
   PermissionGroupId?: number;
+  CanManageSettings?: number;
+  CanManageMembers?: number;
   MemberCount?: number;
   ProjectCount?: number;
   OpenTickets?: number;
@@ -19,6 +22,7 @@ export interface Organization {
   ActiveProjects?: number;
   CreatedAt: string;
   UpdatedAt: string;
+  [key: string]: unknown;
 }
 
 export interface OrganizationMember {
@@ -37,6 +41,7 @@ export interface CreateOrganizationData {
   name: string;
   abbreviation?: string;
   description?: string;
+  customFields?: CustomFieldValues;
 }
 
 export interface AddMemberData {

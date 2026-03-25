@@ -2,7 +2,7 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, use, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -22,7 +22,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
   const orgId = parseInt(resolvedParams.id);
   
   const [organization, setOrganization] = useState<Organization | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'projects' | 'permissions' | 'statuses' | 'tags' | 'attachments' | 'integrations' | 'sla' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'projects' | 'permissions' | 'statuses' | 'tags' | 'integrations' | 'sla' | 'workflow-policies' | 'attachments' | 'history'>('overview');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const { user, token, isLoading: authLoading } = useAuth();
@@ -279,9 +279,12 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
 
   if (!user || !organization) return null;
 
-  const canManageSettings = organization.Role === 'Owner' || organization.Role === 'Admin';
-  
-  console.log('Organization Role:', organization.Role, 'canManageSettings:', canManageSettings);
+  const canManageSettings =
+    !!user?.isAdmin ||
+    !!permissions?.canManageOrganizations ||
+    organization.Role === 'Owner' ||
+    organization.Role === 'Admin' ||
+    Number(organization.CanManageSettings || 0) === 1;
 
   return (
     <CustomerUserGuard>
@@ -370,19 +373,6 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
               >
                 🏷️ Tags
               </button>
-              <button
-                onClick={() => {
-                  setActiveTab('attachments');
-                  loadAttachments();
-                }}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'attachments'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📎 Attachments
-              </button>
               {canManageSettings && (
                 <button
                   onClick={() => setActiveTab('integrations')}
@@ -407,6 +397,31 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
                   ⏱️ SLA Rules
                 </button>
               )}
+              {canManageSettings && (
+                <button
+                  onClick={() => setActiveTab('workflow-policies')}
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                    activeTab === 'workflow-policies'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  ✅ Workflow Transition Policies (DoR/DoD)
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setActiveTab('attachments');
+                  loadAttachments();
+                }}
+                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                  activeTab === 'attachments'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                📎 Attachments
+              </button>
               <button
                 onClick={() => setActiveTab('history')}
                 className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
@@ -453,6 +468,11 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
               />
             )}
             {activeTab === 'tags' && <TagsTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}
+            {activeTab === 'integrations' && <IntegrationsTab orgId={orgId} token={token!} />}
+            {activeTab === 'sla' && <SlaTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}
+            {activeTab === 'workflow-policies' && (
+              <WorkflowPoliciesTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />
+            )}
             {activeTab === 'attachments' && (
               <AttachmentsTab 
                 orgId={orgId} 
@@ -463,8 +483,6 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
                 onDeleteAttachment={handleDeleteAttachment}
               />
             )}
-            {activeTab === 'integrations' && <IntegrationsTab orgId={orgId} token={token!} />}
-            {activeTab === 'sla' && <SlaTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}
             {activeTab === 'history' && (
               <div>
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">📜 Change History</h2>
@@ -545,15 +563,15 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
 }
 
 function OverviewTab({ organization, orgId, token, internalTicketsEnabled }: { organization: Organization; orgId: number; token: string; internalTicketsEnabled: boolean }) {
-  const [projects, setProjects] = useState<any[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [tickets, setTickets] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    loadProjects();
+    void loadProjects();
     if (internalTicketsEnabled) {
-      loadTickets();
+      void loadTickets();
     } else {
       setTickets([]);
     }
@@ -563,21 +581,18 @@ function OverviewTab({ organization, orgId, token, internalTicketsEnabled }: { o
     setIsLoading(true);
     setError('');
     try {
-      const response = await fetch(
-        `${getApiUrl()}/api/projects?organizationId=${orgId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      const response = await fetch(`${getApiUrl()}/api/projects?organizationId=${orgId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
       if (!response.ok) throw new Error('Failed to load projects');
       const data = await response.json();
       setProjects(data.projects || []);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'Failed to load projects');
     } finally {
       setIsLoading(false);
     }
@@ -585,15 +600,12 @@ function OverviewTab({ organization, orgId, token, internalTicketsEnabled }: { o
 
   const loadTickets = async () => {
     try {
-      const response = await fetch(
-        `${getApiUrl()}/api/tickets?organizationId=${orgId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      const response = await fetch(`${getApiUrl()}/api/tickets?organizationId=${orgId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
       if (response.ok) {
         const data = await response.json();
@@ -604,38 +616,163 @@ function OverviewTab({ organization, orgId, token, internalTicketsEnabled }: { o
     }
   };
 
-  // Calculate totals
-  const totalProjects = projects.length;
-  const activeProjects = projects.filter(p => !p.StatusIsClosed && !p.StatusIsCancelled).length;
-  const completedProjects = projects.filter(p => p.StatusIsClosed === 1).length;
-  const totalEstimated = projects.reduce((sum, p) => sum + Number(p.TotalEstimatedHours || 0), 0);
-  const totalWorked = projects.reduce((sum, p) => sum + Number(p.TotalWorkedHours || 0), 0);
-  const totalTasks = projects.reduce((sum, p) => sum + Number(p.TotalTasks || 0), 0);
-  const completedTasks = projects.reduce((sum, p) => sum + Number(p.CompletedTasks || 0), 0);
-  const overallProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  const normalizeDate = (value?: string | null) => {
+    if (!value) return null;
+    return String(value).split('T')[0];
+  };
 
-  // Calculate ticket stats
+  const today = new Date();
+  const todayKey = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString().split('T')[0];
+  const upcomingLimit = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  upcomingLimit.setDate(upcomingLimit.getDate() + 14);
+  const upcomingLimitKey = upcomingLimit.toISOString().split('T')[0];
+
+  const totalProjects = projects.length;
+  const activeProjects = projects.filter((project) => Number(project.StatusIsClosed || 0) !== 1 && Number(project.StatusIsCancelled || 0) !== 1).length;
+  const completedProjects = projects.filter((project) => Number(project.StatusIsClosed || 0) === 1).length;
+  const cancelledProjects = projects.filter((project) => Number(project.StatusIsCancelled || 0) === 1).length;
+  const onHoldProjects = projects.filter((project) => String(project.StatusName || '').toLowerCase() === 'on hold').length;
+  const hobbyProjects = projects.filter((project) => Number(project.IsHobby || 0) === 1).length;
+  const workProjects = totalProjects - hobbyProjects;
+  const customerVisibleProjects = projects.filter((project) => Number(project.IsVisibleToCustomer || 0) === 1).length;
+  const globalProjects = projects.filter((project) => Number(project.IsGlobal || 0) === 1).length;
+
+  const totalEstimated = projects.reduce((sum, project) => sum + Number(project.TotalEstimatedHours || 0), 0);
+  const totalWorked = projects.reduce((sum, project) => sum + Number(project.TotalWorkedHours || 0), 0);
+  const totalTasks = projects.reduce((sum, project) => sum + Number(project.TotalTasks || 0), 0);
+  const completedTasks = projects.reduce((sum, project) => sum + Number(project.CompletedTasks || 0), 0);
+  const overdueTasks = projects.reduce((sum, project) => sum + Number(project.OverdueTasks || 0), 0);
+  const unplannedTasks = projects.reduce((sum, project) => sum + Number(project.UnplannedTasks || 0), 0);
+  const overallProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  const hoursProgress = totalEstimated > 0 ? Math.round((totalWorked / totalEstimated) * 100) : 0;
+
   const totalTickets = tickets.length;
-  const openTickets = tickets.filter(t => t.Status === 'Open').length;
-  const resolvedTickets = tickets.filter(t => t.Status === 'Resolved' || t.Status === 'Closed').length;
+  const openTickets = tickets.filter((ticket) => String(ticket.Status || '').toLowerCase() === 'open').length;
+  const inProgressTickets = tickets.filter((ticket) => String(ticket.Status || '').toLowerCase().includes('progress')).length;
+  const waitingTickets = tickets.filter((ticket) => String(ticket.Status || '').toLowerCase().includes('waiting')).length;
+  const resolvedTickets = tickets.filter((ticket) => Number(ticket.StatusIsClosed || 0) === 1).length;
   const unresolvedTickets = totalTickets - resolvedTickets;
+  const urgentTickets = tickets.filter((ticket) => ['urgent', 'high'].includes(String(ticket.Priority || '').toLowerCase())).length;
+
+  const overdueProjects = useMemo(() => {
+    return projects
+      .filter((project) => {
+        const endDate = normalizeDate(project.EndDate);
+        return !!endDate
+          && Number(project.StatusIsClosed || 0) !== 1
+          && Number(project.StatusIsCancelled || 0) !== 1
+          && endDate < todayKey;
+      })
+      .sort((a, b) => String(a.EndDate || '').localeCompare(String(b.EndDate || '')));
+  }, [projects, todayKey]);
+
+  const upcomingProjects = useMemo(() => {
+    return projects
+      .filter((project) => {
+        const endDate = normalizeDate(project.EndDate);
+        return !!endDate
+          && Number(project.StatusIsClosed || 0) !== 1
+          && Number(project.StatusIsCancelled || 0) !== 1
+          && endDate >= todayKey
+          && endDate <= upcomingLimitKey;
+      })
+      .sort((a, b) => String(a.EndDate || '').localeCompare(String(b.EndDate || '')));
+  }, [projects, todayKey, upcomingLimitKey]);
+
+  const recentProjects = useMemo(() => {
+    return [...projects]
+      .sort((a, b) => new Date(String(b.UpdatedAt || b.CreatedAt || 0)).getTime() - new Date(String(a.UpdatedAt || a.CreatedAt || 0)).getTime())
+      .slice(0, 6);
+  }, [projects]);
+
+  const customerSummaries = useMemo(() => {
+    const map = new Map<string, { name: string; projectCount: number; workedHours: number; estimatedHours: number }>();
+
+    projects.forEach((project) => {
+      const customerName = String(project.CustomerName || '').trim();
+      if (!customerName) return;
+
+      const existing = map.get(customerName) || {
+        name: customerName,
+        projectCount: 0,
+        workedHours: 0,
+        estimatedHours: 0,
+      };
+
+      existing.projectCount += 1;
+      existing.workedHours += Number(project.TotalWorkedHours || 0);
+      existing.estimatedHours += Number(project.TotalEstimatedHours || 0);
+      map.set(customerName, existing);
+    });
+
+    return Array.from(map.values())
+      .sort((a, b) => b.projectCount - a.projectCount || b.workedHours - a.workedHours)
+      .slice(0, 5);
+  }, [projects]);
+
+  const projectStatusCards = [
+    { label: 'Active', value: activeProjects, tone: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20' },
+    { label: 'Completed', value: completedProjects, tone: 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20' },
+    { label: 'On Hold', value: onHoldProjects, tone: 'text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20' },
+    { label: 'Cancelled', value: cancelledProjects, tone: 'text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/60' },
+  ];
 
   return (
     <div className="space-y-6">
-      {/* Organization Info */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Your Role</div>
-          <div className="text-2xl font-bold text-gray-900 dark:text-white">{organization.Role}</div>
-        </div>
-        <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Members</div>
-          <div className="text-2xl font-bold text-gray-900 dark:text-white">{organization.MemberCount || 0}</div>
-        </div>
-        <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Created By</div>
-          <div className="text-lg font-medium text-gray-900 dark:text-white">{organization.CreatorName || 'Unknown'}</div>
-          <div className="text-xs text-gray-500 dark:text-gray-400">{new Date(organization.CreatedAt).toLocaleDateString()}</div>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-3">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Organization Dashboard</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Portfolio health, delivery progress, and operational signals for {organization.Name}.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                Role: {organization.Role}
+              </span>
+              <span className="px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                {organization.MemberCount || 0} members
+              </span>
+              <span className="px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                {workProjects} work / {hobbyProjects} hobby projects
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+              <div>
+                <div className="text-gray-500 dark:text-gray-400">Created by</div>
+                <div className="font-medium text-gray-900 dark:text-white">{organization.CreatorName || 'Unknown'}</div>
+              </div>
+              <div>
+                <div className="text-gray-500 dark:text-gray-400">Created on</div>
+                <div className="font-medium text-gray-900 dark:text-white">{new Date(organization.CreatedAt).toLocaleDateString()}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 min-w-full lg:min-w-[320px] lg:max-w-[360px]">
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Customer Visible</div>
+              <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{customerVisibleProjects}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">projects visible in portal</div>
+            </div>
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Global</div>
+              <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{globalProjects}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">shared projects</div>
+            </div>
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Overdue Tasks</div>
+              <div className="mt-1 text-2xl font-bold text-red-600 dark:text-red-400">{overdueTasks}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">across all projects</div>
+            </div>
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Unplanned Tasks</div>
+              <div className="mt-1 text-2xl font-bold text-amber-600 dark:text-amber-400">{unplannedTasks}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">need planning</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -646,106 +783,258 @@ function OverviewTab({ organization, orgId, token, internalTicketsEnabled }: { o
       )}
 
       {isLoading ? (
-        <div className="text-center py-8 text-gray-500 dark:text-gray-400">Loading statistics...</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div key={`org-overview-skeleton-${index}`} className="h-32 bg-white dark:bg-gray-800 rounded-lg shadow animate-pulse" />
+          ))}
+        </div>
       ) : (
         <>
-          {/* Summary Cards */}
-          <div className={`grid grid-cols-1 md:grid-cols-2 ${internalTicketsEnabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-6`}>
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-blue-500">
-              <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Projects</div>
+          <div className={`grid grid-cols-1 md:grid-cols-2 ${internalTicketsEnabled ? 'xl:grid-cols-5' : 'xl:grid-cols-4'} gap-4`}>
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow border-l-4 border-blue-500">
+              <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Projects</div>
               <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalProjects}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                {activeProjects} active, {completedProjects} completed
-              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{activeProjects} active · {completedProjects} completed</div>
             </div>
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-purple-500">
-              <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Tasks</div>
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow border-l-4 border-purple-500">
+              <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Tasks</div>
               <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalTasks}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                {completedTasks} completed ({overallProgress}%)
-              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{completedTasks} completed · {overallProgress}% progress</div>
             </div>
             {internalTicketsEnabled && (
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-indigo-500">
-                <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Tickets</div>
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow border-l-4 border-indigo-500">
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Tickets</div>
                 <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalTickets}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {resolvedTickets} resolved, {unresolvedTickets} pending
-                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{unresolvedTickets} open · {urgentTickets} urgent/high</div>
               </div>
             )}
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-orange-500">
-              <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Estimated Hours</div>
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow border-l-4 border-orange-500">
+              <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Estimated Hours</div>
               <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalEstimated.toFixed(0)}h</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">planned across project totals</div>
             </div>
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-green-500">
-              <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Hours Worked</div>
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow border-l-4 border-green-500">
+              <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Hours Worked</div>
               <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalWorked.toFixed(0)}h</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                {totalEstimated > 0 ? Math.round((totalWorked / totalEstimated) * 100) : 0}% of estimated
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{hoursProgress}% of estimated effort</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div className="xl:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-lg shadow border border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Delivery Progress</h3>
+              <div className="space-y-5">
+                <div>
+                  <div className="flex justify-between items-center text-sm mb-1">
+                    <span className="text-gray-600 dark:text-gray-400">Tasks completed</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{completedTasks}/{totalTasks} ({overallProgress}%)</span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                    <div className="bg-blue-600 h-3 rounded-full transition-all" style={{ width: `${overallProgress}%` }} />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between items-center text-sm mb-1">
+                    <span className="text-gray-600 dark:text-gray-400">Hours progress</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{totalWorked.toFixed(0)}h / {totalEstimated.toFixed(0)}h</span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                    <div className={`h-3 rounded-full transition-all ${totalWorked > totalEstimated ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${Math.min(100, totalEstimated > 0 ? (totalWorked / totalEstimated) * 100 : 0)}%` }} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+                  {projectStatusCards.map((card) => (
+                    <div key={card.label} className={`rounded-lg p-4 text-center ${card.tone}`}>
+                      <div className="text-2xl font-bold">{card.value}</div>
+                      <div className="text-sm">{card.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                    <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Portfolio Mix</div>
+                    <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">{workProjects} work projects</div>
+                    <div className="text-sm text-gray-700 dark:text-gray-300">{hobbyProjects} hobby projects</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                    <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Task Risks</div>
+                    <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">{overdueTasks} overdue tasks</div>
+                    <div className="text-sm text-gray-700 dark:text-gray-300">{unplannedTasks} unplanned tasks</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                    <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Support Load</div>
+                    <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">{openTickets} open tickets</div>
+                    <div className="text-sm text-gray-700 dark:text-gray-300">{waitingTickets} waiting · {inProgressTickets} in progress</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Attention Areas</h3>
+              <div className="space-y-5">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-red-600 dark:text-red-400">Overdue Projects</h4>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{overdueProjects.length}</span>
+                  </div>
+                  {overdueProjects.length === 0 ? (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">No overdue projects.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {overdueProjects.slice(0, 4).map((project) => {
+                        const endDate = normalizeDate(project.EndDate);
+                        const daysOverdue = endDate ? Math.max(1, Math.floor((new Date(todayKey).getTime() - new Date(endDate).getTime()) / 86400000)) : 0;
+                        return (
+                          <div key={project.Id} className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/10 p-3">
+                            <div className="text-sm font-medium text-gray-900 dark:text-white">{project.ProjectName}</div>
+                            <div className="text-xs text-red-600 dark:text-red-400 mt-1">{daysOverdue} day{daysOverdue !== 1 ? 's' : ''} overdue</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-amber-600 dark:text-amber-400">Upcoming Deadlines</h4>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">next 14 days</span>
+                  </div>
+                  {upcomingProjects.length === 0 ? (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">No upcoming deadlines.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {upcomingProjects.slice(0, 4).map((project) => {
+                        const endDate = normalizeDate(project.EndDate);
+                        const daysLeft = endDate ? Math.max(0, Math.ceil((new Date(endDate).getTime() - new Date(todayKey).getTime()) / 86400000)) : 0;
+                        return (
+                          <div key={project.Id} className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/10 p-3">
+                            <div className="text-sm font-medium text-gray-900 dark:text-white">{project.ProjectName}</div>
+                            <div className="text-xs text-amber-700 dark:text-amber-300 mt-1">{daysLeft === 0 ? 'Due today' : `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Progress Overview */}
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Overall Progress</h3>
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between items-center text-sm mb-1">
-                  <span className="text-gray-600 dark:text-gray-400">Tasks Completed</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{completedTasks}/{totalTasks}</span>
-                </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                  <div 
-                    className="bg-blue-600 h-3 rounded-full transition-all"
-                    style={{ width: `${overallProgress}%` }}
-                  />
-                </div>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div className="xl:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Project Activity</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Most recently updated projects in this organization.</p>
               </div>
-              <div>
-                <div className="flex justify-between items-center text-sm mb-1">
-                  <span className="text-gray-600 dark:text-gray-400">Hours Progress</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{totalWorked.toFixed(0)}h / {totalEstimated.toFixed(0)}h</span>
+              {recentProjects.length === 0 ? (
+                <div className="p-6 text-sm text-gray-500 dark:text-gray-400">No projects found.</div>
+              ) : (
+                <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {recentProjects.map((project) => {
+                    const progress = Number(project.TotalTasks || 0) > 0 ? Math.round((Number(project.CompletedTasks || 0) / Number(project.TotalTasks || 1)) * 100) : 0;
+
+                    return (
+                      <div key={project.Id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <div className="font-medium text-gray-900 dark:text-white truncate">{project.ProjectName}</div>
+                              {project.StatusName && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" style={project.StatusColor ? { backgroundColor: `${project.StatusColor}20`, color: project.StatusColor } : undefined}>
+                                  {project.StatusName}
+                                </span>
+                              )}
+                              {Number(project.IsHobby || 0) === 1 && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                                  Hobby
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-sm text-gray-500 dark:text-gray-400 mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                              <span>{project.CustomerName || 'Internal / no customer'}</span>
+                              <span>{Number(project.TotalTasks || 0)} tasks</span>
+                              <span>{Number(project.TotalWorkedHours || 0).toFixed(1)}h worked</span>
+                              <span>Updated {new Date(project.UpdatedAt).toLocaleDateString()}</span>
+                            </div>
+                            <div className="mt-3">
+                              <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                                <span>Task progress</span>
+                                <span>{progress}%</span>
+                              </div>
+                              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                                <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${progress}%` }} />
+                              </div>
+                            </div>
+                          </div>
+                          <a href={`/projects/${project.Id}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap">
+                            Open project
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                  <div 
-                    className={`h-3 rounded-full transition-all ${
-                      totalWorked > totalEstimated ? 'bg-red-500' : 'bg-green-500'
-                    }`}
-                    style={{ width: `${Math.min(100, totalEstimated > 0 ? (totalWorked / totalEstimated) * 100 : 0)}%` }}
-                  />
+              )}
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Top Customers</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 mb-4">Customers with the most active portfolio footprint.</p>
+              {customerSummaries.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">No customer-linked projects yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {customerSummaries.map((customer) => (
+                    <div key={customer.name} className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                      <div className="font-medium text-gray-900 dark:text-white">{customer.name}</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">{customer.projectCount} project{customer.projectCount !== 1 ? 's' : ''}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">{customer.workedHours.toFixed(1)}h worked / {customer.estimatedHours.toFixed(0)}h estimated</div>
+                    </div>
+                  ))}
                 </div>
-              </div>
+              )}
             </div>
           </div>
 
-          {/* Project Status Breakdown */}
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Project Status</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                <div className="text-2xl font-bold text-green-600 dark:text-green-400">{activeProjects}</div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">Active</div>
-              </div>
-              <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{completedProjects}</div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">Completed</div>
-              </div>
-              <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-                <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
-                  {projects.filter(p => p.StatusName?.toLowerCase() === 'on hold').length}
+          {internalTicketsEnabled && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6">
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Ticket Snapshot</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Current support load inside this organization.</p>
                 </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">On Hold</div>
+                <a href={`/tickets?organizationId=${orgId}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap">
+                  View tickets
+                </a>
               </div>
-              <div className="text-center p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <div className="text-2xl font-bold text-gray-600 dark:text-gray-400">
-                  {projects.filter(p => p.StatusIsCancelled === 1).length}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="rounded-lg bg-gray-50 dark:bg-gray-700/60 p-4 text-center">
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">{totalTickets}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Total</div>
                 </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">Other</div>
+                <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{openTickets}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Open</div>
+                </div>
+                <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 p-4 text-center">
+                  <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{waitingTickets}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Waiting</div>
+                </div>
+                <div className="rounded-lg bg-purple-50 dark:bg-purple-900/20 p-4 text-center">
+                  <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">{inProgressTickets}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">In Progress</div>
+                </div>
+                <div className="rounded-lg bg-green-50 dark:bg-green-900/20 p-4 text-center">
+                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">{resolvedTickets}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Resolved</div>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </>
       )}
     </div>
@@ -771,15 +1060,15 @@ function MembersTab({
   const [editingMember, setEditingMember] = useState<OrganizationMember | null>(null);
 
   useEffect(() => {
-    loadMembers();
-    loadGroups();
+    void loadMembers();
+    void loadGroups();
   }, [orgId]);
 
   const loadMembers = async () => {
     try {
       setIsLoading(true);
       const response = await organizationsApi.getMembers(orgId, token);
-      setMembers(response.members);
+      setMembers(response.members || []);
       setError('');
     } catch (err: any) {
       setError(err.message || 'Failed to load members');
@@ -791,30 +1080,26 @@ function MembersTab({
   const loadGroups = async () => {
     try {
       const response = await permissionGroupsApi.getByOrganization(orgId, token);
-      setGroups(response.groups);
+      setGroups(response.groups || []);
     } catch (err: any) {
       console.error('Failed to load groups:', err);
     }
   };
 
   const handleRemove = async (memberId: number) => {
-    showConfirm(
-      'Remove Member',
-      'Are you sure you want to remove this member?',
-      async () => {
-        try {
-          await organizationsApi.removeMember(orgId, memberId, token);
-          await loadMembers();
-        } catch (err: any) {
-          setError(err.message || 'Failed to remove member');
-        }
+    showConfirm('Remove Member', 'Are you sure you want to remove this member?', async () => {
+      try {
+        await organizationsApi.removeMember(orgId, memberId, token);
+        await loadMembers();
+      } catch (err: any) {
+        setError(err.message || 'Failed to remove member');
       }
-    );
+    });
   };
 
-  if (isLoading) return <div>Loading members...</div>;
-
-  console.log('MembersTab - canManage:', canManage, 'members:', members);
+  if (isLoading) {
+    return <div className="text-gray-500 dark:text-gray-400">Loading members...</div>;
+  }
 
   return (
     <div>
@@ -823,7 +1108,7 @@ function MembersTab({
         {canManage && (
           <button
             onClick={() => setShowAddModal(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+            className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white transition-colors"
           >
             Add Member
           </button>
@@ -836,80 +1121,83 @@ function MembersTab({
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-900">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">User</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Email</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Role</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Permission Group</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Joined</th>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-900">
+              <tr>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">User</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Email</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Role</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Permission Group</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Joined</th>
                 {canManage && (
-                <th scope="col" className="relative px-6 py-3">
-                  <span className="sr-only">Actions</span>
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-            {members.map((member) => (
-              <tr key={member.Id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                  {member.Username}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                  {member.Email}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                  {member.Role}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                  {member.GroupName || '-'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                  {new Date(member.JoinedAt).toLocaleDateString()}
-                </td>
-                {canManage && (
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    {member.Role !== 'Owner' && (
-                      <div className="flex gap-2 justify-end">
-                        <button
-                          onClick={() => setEditingMember(member)}
-                          title="Edit member"
-                          aria-label="Edit member"
-                          className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          onClick={() => handleRemove(member.Id)}
-                          title="Remove member"
-                          aria-label="Remove member"
-                          className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    )}
-                  </td>
+                  <th scope="col" className="relative px-6 py-3">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 )}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+              {members.map((member) => (
+                <tr key={member.Id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{member.Username}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{member.Email}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">{member.Role}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{member.GroupName || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(member.JoinedAt).toLocaleDateString()}</td>
+                  {canManage && (
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      {member.Role !== 'Owner' ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => setEditingMember(member)}
+                            className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+                            title="Edit member"
+                            aria-label="Edit member"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => handleRemove(member.Id)}
+                            className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
+                            title="Remove member"
+                            aria-label="Remove member"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3m-7 0h8" />
+                            </svg>
+                          </button>
+                        </div>
+                      ) : null}
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {members.length === 0 && (
+                <tr>
+                  <td colSpan={canManage ? 6 : 5} className="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                    No members found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {showAddModal && (
         <AddMemberModal
           orgId={orgId}
           groups={groups}
+          token={token}
           onClose={() => setShowAddModal(false)}
           onAdded={() => {
             setShowAddModal(false);
-            loadMembers();
+            void loadMembers();
           }}
-          token={token}
         />
       )}
 
@@ -918,12 +1206,12 @@ function MembersTab({
           orgId={orgId}
           member={editingMember}
           groups={groups}
+          token={token}
           onClose={() => setEditingMember(null)}
           onUpdated={() => {
             setEditingMember(null);
-            loadMembers();
+            void loadMembers();
           }}
-          token={token}
         />
       )}
     </div>
@@ -937,19 +1225,12 @@ function AddMemberModal({ orgId, groups, onClose, onAdded, token }: {
   onAdded: () => void;
   token: string;
 }) {
-  const [formData, setFormData] = useState<AddMemberData>({
-    userId: undefined,
+  const [availableUsers, setAvailableUsers] = useState<Array<{ Id: number; Username: string; Email: string; FirstName?: string; LastName?: string }>>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [formData, setFormData] = useState<{ userId?: number; role: string; permissionGroupId?: number }>({
     role: 'Member',
     permissionGroupId: undefined,
   });
-  const [availableUsers, setAvailableUsers] = useState<Array<{
-    Id: number;
-    Username: string;
-    Email: string;
-    FirstName?: string;
-    LastName?: string;
-  }>>([]);
-  const [loadingUsers, setLoadingUsers] = useState(true);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -958,23 +1239,29 @@ function AddMemberModal({ orgId, groups, onClose, onAdded, token }: {
       try {
         setLoadingUsers(true);
         const response = await organizationsApi.getAvailableUsers(orgId, token);
-        setAvailableUsers(response.users || []);
+        const users = response.users || [];
+        setAvailableUsers(users);
+        if (users.length === 1) {
+          setFormData((prev) => ({ ...prev, userId: users[0].Id }));
+        }
       } catch (err: any) {
-        setError(err.message || 'Failed to load users');
+        setError(err.message || 'Failed to load available users');
       } finally {
         setLoadingUsers(false);
       }
     };
 
-    loadAvailableUsers();
+    void loadAvailableUsers();
   }, [orgId, token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!formData.userId) {
       setError('Please select a user');
       return;
     }
+
     setError('');
     setIsLoading(true);
 
@@ -994,12 +1281,7 @@ function AddMemberModal({ orgId, groups, onClose, onAdded, token }: {
         <div className="p-6 overflow-y-auto max-h-[90vh]">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Add Member</h2>
-            <button
-              onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
-            >
-              ×
-            </button>
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl">×</button>
           </div>
 
           {error && (
@@ -1010,16 +1292,11 @@ function AddMemberModal({ orgId, groups, onClose, onAdded, token }: {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                User *
-              </label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">User *</label>
               <SearchableSelect
                 value={formData.userId || ''}
-                onChange={(value) => setFormData({ ...formData, userId: value ? parseInt(value, 10) : undefined })}
-                options={availableUsers.map((userItem) => ({
-                  value: userItem.Id,
-                  label: `${userItem.Username} (${userItem.Email})`
-                }))}
+                onChange={(value) => setFormData({ ...formData, userId: value ? parseInt(String(value), 10) : undefined })}
+                options={availableUsers.map((userItem) => ({ value: userItem.Id, label: `${userItem.Username} (${userItem.Email})` }))}
                 placeholder="User"
                 emptyText={loadingUsers ? 'Loading users...' : (availableUsers.length === 0 ? 'No available users' : 'Select user')}
                 disabled={loadingUsers || availableUsers.length === 0}
@@ -1027,9 +1304,7 @@ function AddMemberModal({ orgId, groups, onClose, onAdded, token }: {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Role
-              </label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Role</label>
               <select
                 value={formData.role}
                 onChange={(e) => setFormData({ ...formData, role: e.target.value })}
@@ -1041,12 +1316,10 @@ function AddMemberModal({ orgId, groups, onClose, onAdded, token }: {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Permission Group (Optional)
-              </label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Permission Group (Optional)</label>
               <select
                 value={formData.permissionGroupId || ''}
-                onChange={(e) => setFormData({ ...formData, permissionGroupId: e.target.value ? parseInt(e.target.value) : undefined })}
+                onChange={(e) => setFormData({ ...formData, permissionGroupId: e.target.value ? parseInt(e.target.value, 10) : undefined })}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="">None</option>
@@ -1057,18 +1330,8 @@ function AddMemberModal({ orgId, groups, onClose, onAdded, token }: {
             </div>
 
             <div className="flex gap-3 mt-6">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-              >
+              <button type="button" onClick={onClose} className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition-colors font-medium">Cancel</button>
+              <button type="submit" disabled={isLoading} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium">
                 {isLoading ? 'Adding...' : 'Add Member'}
               </button>
             </div>
@@ -1115,12 +1378,7 @@ function EditMemberModal({ orgId, member, groups, onClose, onUpdated, token }: {
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Edit Member</h2>
-            <button
-              onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
-            >
-              ×
-            </button>
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl">×</button>
           </div>
 
           {error && (
@@ -1137,9 +1395,7 @@ function EditMemberModal({ orgId, member, groups, onClose, onUpdated, token }: {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Role
-              </label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Role</label>
               <select
                 value={formData.role}
                 onChange={(e) => setFormData({ ...formData, role: e.target.value })}
@@ -1151,12 +1407,10 @@ function EditMemberModal({ orgId, member, groups, onClose, onUpdated, token }: {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Permission Group (Optional)
-              </label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Permission Group (Optional)</label>
               <select
                 value={formData.permissionGroupId || ''}
-                onChange={(e) => setFormData({ ...formData, permissionGroupId: e.target.value ? parseInt(e.target.value) : undefined })}
+                onChange={(e) => setFormData({ ...formData, permissionGroupId: e.target.value ? parseInt(e.target.value, 10) : undefined })}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="">None</option>
@@ -1167,18 +1421,8 @@ function EditMemberModal({ orgId, member, groups, onClose, onUpdated, token }: {
             </div>
 
             <div className="flex gap-3 mt-6">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-              >
+              <button type="button" onClick={onClose} className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition-colors font-medium">Cancel</button>
+              <button type="submit" disabled={isLoading} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium">
                 {isLoading ? 'Updating...' : 'Update Member'}
               </button>
             </div>
@@ -1727,14 +1971,11 @@ function StatusesTab({
   const [milestoneTypes, setMilestoneTypes] = useState<StatusValue[]>([]);
   const [ticketStatuses, setTicketStatuses] = useState<any[]>([]);
   const [ticketPriorities, setTicketPriorities] = useState<any[]>([]);
-  const [workflowPolicies, setWorkflowPolicies] = useState<WorkflowTransitionPolicy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeType, setActiveType] = useState<'project' | 'task' | 'priority' | 'type' | 'milestone-type' | 'ticket' | 'ticket-priority'>('project');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingStatus, setEditingStatus] = useState<StatusValue | null>(null);
-  const [showPolicyModal, setShowPolicyModal] = useState(false);
-  const [editingPolicy, setEditingPolicy] = useState<WorkflowTransitionPolicy | null>(null);
 
   useEffect(() => {
     loadStatuses();
@@ -1749,13 +1990,12 @@ function StatusesTab({
   const loadStatuses = async () => {
     try {
       setIsLoading(true);
-      const [projectRes, taskRes, priorityRes, typeRes, milestoneTypeRes, workflowPolicyRes] = await Promise.all([
+      const [projectRes, taskRes, priorityRes, typeRes, milestoneTypeRes] = await Promise.all([
         statusValuesApi.getProjectStatuses(orgId, token),
         statusValuesApi.getTaskStatuses(orgId, token),
         statusValuesApi.getTaskPriorities(orgId, token),
         statusValuesApi.getTaskTypes(orgId, token),
         statusValuesApi.getMilestoneTypes(orgId, token),
-        workflowTransitionPoliciesApi.getByOrganization(orgId, token),
       ]);
 
       let ticketRes: any = { statuses: [] };
@@ -1775,7 +2015,6 @@ function StatusesTab({
       setMilestoneTypes(milestoneTypeRes.types);
       setTicketStatuses(ticketRes.statuses || []);
       setTicketPriorities(ticketPriRes.priorities || []);
-      setWorkflowPolicies(workflowPolicyRes.policies || []);
       setError('');
     } catch (err: any) {
       setError(err.message || 'Failed to load status values');
@@ -1815,21 +2054,6 @@ function StatusesTab({
           await loadStatuses();
         } catch (err: any) {
           setError(err.message || 'Failed to delete ' + itemType);
-        }
-      }
-    );
-  };
-
-  const handleDeletePolicy = async (policyId: number) => {
-    showConfirm(
-      'Delete Workflow Policy',
-      'Are you sure you want to delete this workflow transition policy?',
-      async () => {
-        try {
-          await workflowTransitionPoliciesApi.delete(policyId, token);
-          await loadStatuses();
-        } catch (err: any) {
-          setError(err.message || 'Failed to delete workflow transition policy');
         }
       }
     );
@@ -2000,81 +2224,6 @@ function StatusesTab({
         ))}
       </div>
 
-      <div className="mt-8 border-t border-gray-200 dark:border-gray-700 pt-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Workflow Transition Policies (DoR/DoD)</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Validate required fields when moving tasks between statuses.</p>
-          </div>
-          {canManage && (
-            <button
-              onClick={() => setShowPolicyModal(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-            >
-              Add Policy
-            </button>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          {workflowPolicies.length === 0 ? (
-            <div className="text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-              No workflow transition policies configured yet.
-            </div>
-          ) : workflowPolicies.map((policy) => {
-            const requiredFields = [
-              policy.RequireDescription ? 'Description' : null,
-              policy.RequireAssignee ? 'Assignee' : null,
-              policy.RequireDueDate ? 'Due Date' : null,
-              policy.RequireEstimatedHours ? 'Estimated Hours' : null,
-              policy.RequireStoryPoints ? 'Story Points' : null,
-              policy.RequirePlannedDates ? 'Planned Dates' : null,
-            ].filter(Boolean);
-
-            return (
-              <div key={policy.Id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-gray-900 dark:text-white">{policy.PolicyName}</span>
-                    <span className="text-xs px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded-full">{policy.RuleType || 'Custom'}</span>
-                    {!policy.IsActive && (
-                      <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full">Inactive</span>
-                    )}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-                    {policy.FromStatusName || `#${policy.FromStatusId}`} → {policy.ToStatusName || `#${policy.ToStatusId}`}
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Required: {requiredFields.length > 0 ? requiredFields.join(', ') : 'None'}
-                  </div>
-                </div>
-
-                {canManage && (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setEditingPolicy(policy)}
-                      title="Edit policy"
-                      aria-label="Edit policy"
-                      className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 px-3 py-1"
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      onClick={() => handleDeletePolicy(policy.Id)}
-                      title="Delete policy"
-                      aria-label="Delete policy"
-                      className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 px-3 py-1"
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
       {showCreateModal && (
         <StatusValueModal
           orgId={orgId}
@@ -2101,6 +2250,149 @@ function StatusesTab({
           token={token}
         />
       )}
+    </div>
+  );
+}
+
+function WorkflowPoliciesTab({
+  orgId,
+  canManage,
+  token,
+  showConfirm,
+}: {
+  orgId: number;
+  canManage: boolean;
+  token: string;
+  showConfirm: (title: string, message: string, onConfirm: () => void) => void;
+}) {
+  const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
+  const [workflowPolicies, setWorkflowPolicies] = useState<WorkflowTransitionPolicy[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [editingPolicy, setEditingPolicy] = useState<WorkflowTransitionPolicy | null>(null);
+
+  useEffect(() => {
+    void loadWorkflowPolicies();
+  }, [orgId]);
+
+  const loadWorkflowPolicies = async () => {
+    try {
+      setIsLoading(true);
+      const [taskRes, workflowPolicyRes] = await Promise.all([
+        statusValuesApi.getTaskStatuses(orgId, token),
+        workflowTransitionPoliciesApi.getByOrganization(orgId, token),
+      ]);
+
+      setTaskStatuses(taskRes.statuses || []);
+      setWorkflowPolicies(workflowPolicyRes.policies || []);
+      setError('');
+    } catch (err: any) {
+      setError(err.message || 'Failed to load workflow transition policies');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeletePolicy = async (policyId: number) => {
+    showConfirm(
+      'Delete Workflow Policy',
+      'Are you sure you want to delete this workflow transition policy?',
+      async () => {
+        try {
+          await workflowTransitionPoliciesApi.delete(policyId, token);
+          await loadWorkflowPolicies();
+        } catch (err: any) {
+          setError(err.message || 'Failed to delete workflow transition policy');
+        }
+      }
+    );
+  };
+
+  if (isLoading) {
+    return <div>Loading workflow transition policies...</div>;
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6 gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">✅ Workflow Transition Policies (DoR/DoD)</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Validate required fields when moving tasks between statuses.</p>
+        </div>
+        {canManage && (
+          <button
+            onClick={() => setShowPolicyModal(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            Add Policy
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded">
+          {error}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {workflowPolicies.length === 0 ? (
+          <div className="text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+            No workflow transition policies configured yet.
+          </div>
+        ) : workflowPolicies.map((policy) => {
+          const requiredFields = [
+            policy.RequireDescription ? 'Description' : null,
+            policy.RequireAssignee ? 'Assignee' : null,
+            policy.RequireDueDate ? 'Due Date' : null,
+            policy.RequireEstimatedHours ? 'Estimated Hours' : null,
+            policy.RequireStoryPoints ? 'Story Points' : null,
+            policy.RequirePlannedDates ? 'Planned Dates' : null,
+          ].filter(Boolean);
+
+          return (
+            <div key={policy.Id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-gray-900 dark:text-white">{policy.PolicyName}</span>
+                  <span className="text-xs px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded-full">{policy.RuleType || 'Custom'}</span>
+                  {!policy.IsActive && (
+                    <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full">Inactive</span>
+                  )}
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                  {policy.FromStatusName || `#${policy.FromStatusId}`} → {policy.ToStatusName || `#${policy.ToStatusId}`}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Required: {requiredFields.length > 0 ? requiredFields.join(', ') : 'None'}
+                </div>
+              </div>
+
+              {canManage && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setEditingPolicy(policy)}
+                    title="Edit policy"
+                    aria-label="Edit policy"
+                    className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 px-3 py-1"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={() => handleDeletePolicy(policy.Id)}
+                    title="Delete policy"
+                    aria-label="Delete policy"
+                    className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 px-3 py-1"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       {showPolicyModal && (
         <WorkflowPolicyModal
@@ -2109,7 +2401,7 @@ function StatusesTab({
           onClose={() => setShowPolicyModal(false)}
           onSaved={() => {
             setShowPolicyModal(false);
-            loadStatuses();
+            void loadWorkflowPolicies();
           }}
           token={token}
         />
@@ -2123,7 +2415,7 @@ function StatusesTab({
           onClose={() => setEditingPolicy(null)}
           onSaved={() => {
             setEditingPolicy(null);
-            loadStatuses();
+            void loadWorkflowPolicies();
           }}
           token={token}
         />

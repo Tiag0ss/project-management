@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getApiUrl } from '@/lib/api/config';
 import SearchableSelect from '@/components/SearchableSelect';
+import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
+import { CustomFieldValues } from '@/lib/customFields';
 import RichTextEditor from '@/components/RichTextEditor';
 
 interface Organization {
@@ -29,6 +31,7 @@ export interface TimeEntryFormValues {
   endTime: string;
   hours: string;
   description: string;
+  customFields: CustomFieldValues;
 }
 
 interface TimeEntryTaskOption {
@@ -64,6 +67,7 @@ const buildDefaultFormData = (): TimeEntryFormValues => ({
   endTime: '17:00',
   hours: '',
   description: '',
+  customFields: {},
 });
 
 const mergeFormData = (initialData?: Partial<TimeEntryFormValues>): TimeEntryFormValues => ({
@@ -471,6 +475,12 @@ export default function TimeEntryFormModal({
               />
             </div>
           </div>
+            <CustomFieldsFormSection
+              tableName="TimeEntries"
+              token={token}
+              values={formData.customFields}
+              onChange={(customFields) => setFormData((prev) => ({ ...prev, customFields }))}
+            />
 
           <div className="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button

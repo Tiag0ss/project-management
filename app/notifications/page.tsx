@@ -6,6 +6,9 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import TaskDetailModal from '@/components/TaskDetailModal';
+import { projectsApi, Project } from '@/lib/api/projects';
+import { tasksApi, Task } from '@/lib/api/tasks';
 
 interface Notification {
   Id: number;
@@ -14,6 +17,8 @@ interface Notification {
   Title: string;
   Message: string;
   Link: string | null;
+  RelatedTaskId?: number | null;
+  RelatedProjectId?: number | null;
   IsRead: number;
   CreatedAt: string;
 }
@@ -24,6 +29,21 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [taskModalState, setTaskModalState] = useState<{
+    show: boolean;
+    isLoading: boolean;
+    project: Project | null;
+    task: Task | null;
+    tasks: Task[];
+    error: string;
+  }>({
+    show: false,
+    isLoading: false,
+    project: null,
+    task: null,
+    tasks: [],
+    error: '',
+  });
 
   // Check authentication - only redirect if not loading and no token
   useEffect(() => {
@@ -103,9 +123,70 @@ export default function NotificationsPage() {
     }
   };
 
+  const closeTaskDetails = () => {
+    setTaskModalState({
+      show: false,
+      isLoading: false,
+      project: null,
+      task: null,
+      tasks: [],
+      error: '',
+    });
+  };
+
+  const openTaskDetails = async (projectId: number, taskId: number) => {
+    if (!token) return;
+
+    setTaskModalState({
+      show: true,
+      isLoading: true,
+      project: null,
+      task: null,
+      tasks: [],
+      error: '',
+    });
+
+    try {
+      const [projectRes, tasksRes] = await Promise.all([
+        projectsApi.getById(projectId, token),
+        tasksApi.getByProject(projectId, token),
+      ]);
+
+      const project = projectRes?.project || null;
+      const projectTasks = Array.isArray(tasksRes?.tasks) ? tasksRes.tasks : [];
+      const activeTask = projectTasks.find((entry) => Number(entry.Id) === Number(taskId)) || null;
+
+      if (!project || !activeTask) {
+        throw new Error('Task no longer exists in this project');
+      }
+
+      setTaskModalState({
+        show: true,
+        isLoading: false,
+        project,
+        task: activeTask,
+        tasks: projectTasks,
+        error: '',
+      });
+    } catch (err: any) {
+      setTaskModalState({
+        show: true,
+        isLoading: false,
+        project: null,
+        task: null,
+        tasks: [],
+        error: err?.message || 'Failed to open task detail',
+      });
+    }
+  };
+
   const handleNotificationClick = (notification: Notification) => {
     if (!notification.IsRead) {
       markAsRead(notification.Id);
+    }
+    if (notification.RelatedTaskId && notification.RelatedProjectId) {
+      openTaskDetails(Number(notification.RelatedProjectId), Number(notification.RelatedTaskId));
+      return;
     }
     if (notification.Link) {
       router.push(notification.Link);
@@ -298,6 +379,54 @@ export default function NotificationsPage() {
         )}
       </div>
     </div>
+
+      {taskModalState.show && (
+        <>
+          {taskModalState.isLoading && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 text-gray-700 dark:text-gray-300">
+                Loading task details...
+              </div>
+            </div>
+          )}
+
+          {!taskModalState.isLoading && taskModalState.error && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+                <div className="text-sm text-red-600 dark:text-red-400 mb-4">{taskModalState.error}</div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={closeTaskDetails}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!taskModalState.isLoading && !taskModalState.error && taskModalState.project && taskModalState.task && token && (
+            <TaskDetailModal
+              projectId={Number(taskModalState.project.Id)}
+              organizationId={Number(taskModalState.project.OrganizationId)}
+              task={taskModalState.task}
+              project={taskModalState.project}
+              tasks={taskModalState.tasks}
+              onOpenTask={(targetTask) => {
+                const fullTask = taskModalState.tasks.find((entry) => Number(entry.Id) === Number(targetTask.Id)) || targetTask;
+                setTaskModalState((prev) => ({ ...prev, task: fullTask }));
+              }}
+              onClose={closeTaskDetails}
+              onSaved={async () => {
+                if (!taskModalState.project || !taskModalState.task) return;
+                await openTaskDetails(Number(taskModalState.project.Id), Number(taskModalState.task.Id));
+              }}
+              token={token}
+            />
+          )}
+        </>
+      )}
     </>
   );
 }

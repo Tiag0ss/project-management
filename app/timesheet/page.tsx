@@ -14,6 +14,8 @@ import SearchableSelect from '@/components/SearchableSelect';
 import RichTextEditor from '@/components/RichTextEditor';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import TimeEntryFormModal, { TimeEntryFormValues } from '@/components/TimeEntryFormModal';
+import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
+import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 
 interface TaskWithProject extends Task {
   ProjectName?: string;
@@ -38,6 +40,7 @@ interface TimeEntry {
   ApprovalStatus?: string;
   ApprovedBy?: number;
   ApprovedAt?: string;
+  [key: string]: unknown;
 }
 
 interface TaskAllocationForCalendar {
@@ -118,6 +121,7 @@ export default function TimesheetPage() {
     hours: '',
     description: ''
   });
+  const [editCustomFields, setEditCustomFields] = useState<CustomFieldValues>({});
   const [timesheetView, setTimesheetView] = useState<'daily' | 'weekly' | 'history' | 'resume'>('daily');
   const [resumePeriod, setResumePeriod] = useState<ResumePeriod>('thisWeek');
   const [resumeSummary, setResumeSummary] = useState<ResumeByUserRow[]>([]);
@@ -526,7 +530,8 @@ export default function TimesheetPage() {
             startTime: entry.startTime || null,
             endTime: entry.endTime || null,
             hours: hours,
-            description: entry.description
+            description: entry.description,
+            customFields: entryValues?.customFields || {},
           })
         }
       );
@@ -575,6 +580,7 @@ export default function TimesheetPage() {
       hours: entry.Hours.toString(),
       description: entry.Description || ''
     });
+    setEditCustomFields(extractCustomFieldValues(entry));
   };
 
   const handleUpdateTimeEntry = async () => {
@@ -606,6 +612,7 @@ export default function TimesheetPage() {
             description: editEntry.description,
             startTime: editEntry.startTime || null,
             endTime: editEntry.endTime || null,
+            customFields: editCustomFields,
           }),
         }
       );
@@ -622,6 +629,7 @@ export default function TimesheetPage() {
           hours: '',
           description: ''
         });
+        setEditCustomFields({});
         loadTimeEntries();
         setTimeout(() => setMessage(''), 3000);
       } else {
@@ -646,6 +654,7 @@ export default function TimesheetPage() {
       hours: '',
       description: ''
     });
+    setEditCustomFields({});
   };
 
   const handleDeleteTimeEntry = async (entryId: number) => {
@@ -1057,7 +1066,7 @@ export default function TimesheetPage() {
                                 <tr key={entry.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                                   <>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                                      {new Date(entry.WorkDate).toLocaleDateString()}
+                                      {new Date(normalizeDateString(entry.WorkDate) + 'T12:00:00').toLocaleDateString()}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                                       {entry.ProjectName}
@@ -2218,6 +2227,7 @@ export default function TimesheetPage() {
           submitLabel="Add Entry"
           onClose={() => setShowCreateTimeEntryModal(false)}
           onSubmit={handleCreateTimeEntry}
+                    token={token || undefined}
           taskOptions={myTasks.map((task) => ({
             value: task.Id,
             label: `${task.ProjectName} - ${task.TaskName} (${task.StatusName || 'Unknown'})`,
@@ -2285,6 +2295,12 @@ export default function TimesheetPage() {
                       placeholder="What did you work on?"
                     />
                   </div>
+                  <CustomFieldsFormSection
+                    tableName="TimeEntries"
+                    token={token || undefined}
+                    values={editCustomFields}
+                    onChange={setEditCustomFields}
+                  />
                 </div>
 
                 <div className="flex justify-end space-x-3 mt-6">

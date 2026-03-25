@@ -6,6 +6,7 @@ import bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { logActivity } from './activityLogs';
 import { logUserHistory } from '../utils/changeLog';
+import { prepareCustomFieldData } from '../utils/customFields';
 
 const router = Router();
 const SALT_ROUNDS = 10;
@@ -568,9 +569,7 @@ router.put('/work-hours', authenticateToken, async (req: AuthRequest, res: Respo
 router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const [users] = await pool.execute<RowDataPacket[]>(
-      `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName, u.IsActive, u.IsAdmin, 
-              u.UserType, u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager,
-              u.HourlyRate, u.AnnualVacationDays, u.TeamLeaderId, u.CountryCode, u.JiraId, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
+      `SELECT u.*, c.Name as CustomerName, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
               u.CreatedAt, u.UpdatedAt 
        FROM Users u
        LEFT JOIN Customers c ON u.CustomerId = c.Id
@@ -630,7 +629,7 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
 router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.params.id;
-    const { username, email, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, annualVacationDays, teamLeaderId, countryCode, jiraId } = req.body;
+    const { username, email, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, annualVacationDays, teamLeaderId, countryCode, jiraId, customFields } = req.body;
     const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
 
     if (!isValidCountryCode(normalizedCountryCode)) {
@@ -769,11 +768,16 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
       changes.push({ field: 'AnnualVacationDays', oldVal: String(oldUser.AnnualVacationDays ?? 22), newVal: String(sanitizedAnnualVacationDays) });
     }
 
+    const customFieldData = await prepareCustomFieldData('Users', customFields, oldUser as Record<string, unknown>);
+    for (const change of customFieldData.changes) {
+      changes.push({ field: change.field, oldVal: change.oldVal, newVal: change.newVal });
+    }
+
     await pool.execute(
       `UPDATE Users 
-       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, UserType = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, AnnualVacationDays = ?, TeamLeaderId = ?, CountryCode = ?, JiraId = ? 
+       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, UserType = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, AnnualVacationDays = ?, TeamLeaderId = ?, CountryCode = ?, JiraId = ?${customFieldData.updateAssignments.length > 0 ? `, ${customFieldData.updateAssignments.join(', ')}` : ''} 
        WHERE Id = ?`,
-      [username, finalEmail, firstName || null, lastName || null, isActive, isAdmin, finalUserType, finalCustomerId, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, sanitizedAnnualVacationDays, teamLeaderId || null, normalizedCountryCode, jiraId || null, userId]
+      [username, finalEmail, firstName || null, lastName || null, isActive, isAdmin, finalUserType, finalCustomerId, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, sanitizedAnnualVacationDays, teamLeaderId || null, normalizedCountryCode, jiraId || null, ...customFieldData.updateValues, userId]
     );
     
     // Log changes to history
@@ -1032,7 +1036,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, 
  */
 router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, annualVacationDays, teamLeaderId, countryCode, jiraId } = req.body;
+    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, annualVacationDays, teamLeaderId, countryCode, jiraId, customFields } = req.body;
     const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
 
     if (!isValidCountryCode(normalizedCountryCode)) {
@@ -1112,10 +1116,12 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
       ? Math.max(0, parsedAnnualVacationDays)
       : 22;
 
+    const customFieldData = await prepareCustomFieldData('Users', customFields);
+
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, AnnualVacationDays, TeamLeaderId, CountryCode, JiraId) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, sanitizedAnnualVacationDays, teamLeaderId || null, normalizedCountryCode, jiraId || null]
+      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, AnnualVacationDays, TeamLeaderId, CountryCode, JiraId${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
+      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, sanitizedAnnualVacationDays, teamLeaderId || null, normalizedCountryCode, jiraId || null, ...customFieldData.insertValues]
     );
 
     // Log user creation

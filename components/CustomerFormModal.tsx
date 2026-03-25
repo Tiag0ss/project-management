@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import SearchableSelect from './SearchableSelect';
+import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
+import { CustomFieldValues } from '@/lib/customFields';
 
 export interface CustomerFormValues {
   Name: string;
@@ -14,6 +16,7 @@ export interface CustomerFormValues {
   DefaultSupportUserId: number | null;
   CreateDefaultProject: boolean;
   DefaultProjectName: string;
+  CustomFields: CustomFieldValues;
 }
 
 interface CustomerModalOrganization {
@@ -39,6 +42,7 @@ interface CustomerFormModalProps {
   error?: string;
   onClose: () => void;
   onSubmit: (values: CustomerFormValues) => void | Promise<void>;
+  token?: string;
 }
 
 export default function CustomerFormModal({
@@ -52,6 +56,7 @@ export default function CustomerFormModal({
   error,
   onClose,
   onSubmit,
+  token,
 }: CustomerFormModalProps) {
   const [values, setValues] = useState<CustomerFormValues>(initialValues);
 
@@ -254,6 +259,13 @@ export default function CustomerFormModal({
                   <p className="text-sm text-red-500 mt-1">Select at least one organization</p>
                 )}
               </div>
+
+              <CustomFieldsFormSection
+                tableName="Customers"
+                token={token}
+                values={values.CustomFields}
+                onChange={(customFields) => setValues({ ...values, CustomFields: customFields })}
+              />
             </div>
 
             <div className="flex justify-end gap-3 mt-6">

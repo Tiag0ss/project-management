@@ -26,6 +26,23 @@ async function hasOrgAccess(orgId: number, userId?: number): Promise<boolean> {
 async function canManageOrgSettings(orgId: number, userId?: number): Promise<boolean> {
   if (!userId) return false;
 
+  const [globalRows] = await pool.execute<RowDataPacket[]>(
+    `SELECT u.isAdmin,
+            COALESCE(MAX(CASE WHEN rp.CanManageOrganizations = 1 THEN 1 ELSE 0 END), 0) AS CanManageOrganizations
+     FROM Users u
+     LEFT JOIN RolePermissions rp ON
+       (u.IsDeveloper = 1 AND rp.RoleName = 'Developer') OR
+       (u.IsSupport = 1 AND rp.RoleName = 'Support') OR
+       (u.IsManager = 1 AND rp.RoleName = 'Manager')
+     WHERE u.Id = ?
+     GROUP BY u.Id, u.isAdmin`,
+    [userId]
+  );
+
+  if (globalRows.length > 0 && (Number(globalRows[0].isAdmin) === 1 || Number(globalRows[0].CanManageOrganizations) === 1)) {
+    return true;
+  }
+
   const [rows] = await pool.execute<RowDataPacket[]>(
     `SELECT om.Role, COALESCE(pg.CanManageSettings, 0) as CanManageSettings
      FROM OrganizationMembers om

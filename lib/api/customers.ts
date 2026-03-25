@@ -1,4 +1,5 @@
 import { getApiUrl } from './config';
+import { CustomFieldValues } from '@/lib/customFields';
 
 const API_URL = getApiUrl();
 
@@ -16,8 +17,12 @@ export interface Customer {
   CreatedAt: string;
   UpdatedAt: string;
   OpenTickets?: number;
+  ProjectCount?: number;
+  TotalTasks?: number;
+  CompletedTasks?: number;
   Organizations?: CustomerOrganization[];
   Contacts?: CustomerContact[];
+  [key: string]: unknown;
 }
 
 export interface CustomerContact {
@@ -47,6 +52,7 @@ export interface CreateCustomerData {
   OrganizationIds: number[];
   CreateDefaultProject?: boolean;
   DefaultProjectName?: string;
+  customFields?: CustomFieldValues;
 }
 
 export interface UpdateCustomerData {
@@ -66,6 +72,7 @@ export interface UpdateCustomerData {
     Phone?: string | null;
     IsDefault?: number | boolean;
   }[];
+  customFields?: CustomFieldValues;
 }
 
 export async function getCustomers(token: string): Promise<Customer[]> {

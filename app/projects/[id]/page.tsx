@@ -19,10 +19,12 @@ import ChangeHistory from '@/components/ChangeHistory';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
+import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { getTaskAttachment } from '@/lib/api/taskAttachments';
 import { downloadTablePdf } from '@/lib/api/pdfExport';
 import { getAllGridPreferences, saveGridPreference } from '@/lib/api/gridPreferences';
 import { projectMilestonesApi, ProjectMilestone, SaveProjectMilestoneData } from '@/lib/api/projectMilestones';
+import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -11042,6 +11044,7 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [customFields, setCustomFields] = useState<CustomFieldValues>(() => extractCustomFieldValues(project));
 
   useEffect(() => {
     loadOrganizations();
@@ -11204,6 +11207,7 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
         giteaRepo: formData.giteaRepo || null,
         customerId: formData.isGlobal ? null : (formData.customerId || null),
         applicationIds: formData.applicationIds || [],
+        customFields,
       };
 
       if (canViewBudgetInfo) {
@@ -11646,6 +11650,13 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
             </div>
           )}
 
+          <CustomFieldsFormSection
+            tableName="Projects"
+            token={token}
+            values={customFields}
+            onChange={setCustomFields}
+          />
+
           <button
             type="submit"
             disabled={isLoading}
@@ -11701,6 +11712,7 @@ function EditProjectModal({
   const [showTransferConfirm, setShowTransferConfirm] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [customFields, setCustomFields] = useState<CustomFieldValues>(() => extractCustomFieldValues(project));
 
   useEffect(() => {
     loadOrganizations();
@@ -11868,6 +11880,7 @@ function EditProjectModal({
         isHobby: formData.isHobby || false,
         isVisibleToCustomer: formData.isGlobal ? false : (formData.isVisibleToCustomer || false),
         applicationIds: formData.applicationIds || [],
+        customFields,
       };
       console.log('Updating project with data:', updateData);
       await projectsApi.update(project.Id, updateData, token);
@@ -12266,6 +12279,13 @@ function EditProjectModal({
                 </div>
               </div>
             )}
+
+            <CustomFieldsFormSection
+              tableName="Projects"
+              token={token}
+              values={customFields}
+              onChange={setCustomFields}
+            />
 
             <div className="flex gap-3 mt-6">
               <button

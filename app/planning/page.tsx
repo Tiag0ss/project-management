@@ -151,6 +151,7 @@ export default function PlanningPage() {
   const [showGanttTotals, setShowGanttTotals] = useState(true);
   const [showTaskBarHours, setShowTaskBarHours] = useState(true);
   const [showGanttViewOptions, setShowGanttViewOptions] = useState(false);
+  const [selectedGanttUserIds, setSelectedGanttUserIds] = useState<number[]>([]);
   const [hasLoadedGanttViewPrefs, setHasLoadedGanttViewPrefs] = useState(false);
   const [ganttSearch, setGanttSearch] = useState('');
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'year' | 'custom'>('week');
@@ -844,6 +845,27 @@ export default function PlanningPage() {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showGanttViewOptions]);
+
+  useEffect(() => {
+    setSelectedGanttUserIds((previousSelectedIds) => {
+      if (previousSelectedIds.length === 0) {
+        return previousSelectedIds;
+      }
+
+      const availableUserIds = new Set(
+        users
+          .map((planningUser) => Number(planningUser.Id))
+          .filter((id) => Number.isInteger(id) && id > 0)
+      );
+      const nextSelectedIds = previousSelectedIds.filter((id) => availableUserIds.has(id));
+
+      if (nextSelectedIds.length === previousSelectedIds.length) {
+        return previousSelectedIds;
+      }
+
+      return nextSelectedIds;
+    });
+  }, [users]);
 
   useEffect(() => {
     const closeMenu = () => {
@@ -2148,7 +2170,7 @@ export default function PlanningPage() {
   };
 
   // Calculate dependency lines for SVG overlay
-  const getDependencyLines = useCallback((days: Date[]) => {
+  const getDependencyLines = useCallback(() => {
     const lines: { 
       fromTaskId: number; 
       toTaskId: number; 
@@ -2164,7 +2186,7 @@ export default function PlanningPage() {
     
     const container = ganttContainerRef.current;
     const containerRect = container.getBoundingClientRect();
-    
+
     // Find all tasks with dependencies
     const tasksWithDeps = tasks.filter(t => t.DependsOnTaskId && t.PlannedStartDate && t.PlannedEndDate);
     
@@ -2172,7 +2194,6 @@ export default function PlanningPage() {
       const parentTask = tasks.find(t => t.Id === task.DependsOnTaskId);
       if (!parentTask || !parentTask.PlannedEndDate) continue;
       
-      // Find task elements by data attribute
       const taskElement = container.querySelector(`[data-task-id="${task.Id}"]`) as HTMLElement;
       const parentElement = container.querySelector(`[data-task-id="${parentTask.Id}"]`) as HTMLElement;
       
@@ -2205,17 +2226,77 @@ export default function PlanningPage() {
   // State to store calculated dependency lines
   const [dependencyLines, setDependencyLines] = useState<ReturnType<typeof getDependencyLines>>([]);
 
-  // Update dependency lines when tasks or view changes
+  // Update dependency lines when tasks/view/layout changes
   useEffect(() => {
+    if (!showDependencyLines) {
+      setDependencyLines([]);
+      return;
+    }
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let rafA = 0;
+    let rafB = 0;
+
     const updateLines = () => {
-      const days = getDaysInView();
-      setDependencyLines(getDependencyLines(days));
+      setDependencyLines(getDependencyLines());
     };
+
+    const scheduleUpdate = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+
+      timeoutId = setTimeout(() => {
+        rafA = requestAnimationFrame(() => {
+          rafB = requestAnimationFrame(updateLines);
+        });
+      }, 0);
+    };
+
+    scheduleUpdate();
+
+    const container = ganttContainerRef.current;
+    let resizeObserver: ResizeObserver | null = null;
+
+    if (container && typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        scheduleUpdate();
+      });
+      resizeObserver.observe(container);
+    }
+
+    const handleWindowResize = () => scheduleUpdate();
+    window.addEventListener('resize', handleWindowResize);
     
-    // Delay to ensure DOM is updated
-    const timer = setTimeout(updateLines, 100);
-    return () => clearTimeout(timer);
-  }, [tasks, viewStartDate, viewMode, customStartDate, customEndDate, showDependencyLines, getDependencyLines]);
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      if (rafA) {
+        cancelAnimationFrame(rafA);
+      }
+      if (rafB) {
+        cancelAnimationFrame(rafB);
+      }
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', handleWindowResize);
+    };
+  }, [
+    showDependencyLines,
+    getDependencyLines,
+    tasks,
+    allAllocations,
+    childAllocations,
+    recurringAllocations,
+    outlookTimelineEvents,
+    users,
+    ganttGroupBy,
+    selectedGanttUserIds,
+    viewStartDate,
+    viewMode,
+    customStartDate,
+    customEndDate,
+  ]);
 
   // Critical path computation using CPM (Critical Path Method)
   const criticalPathIds = React.useMemo((): Set<number> => {
@@ -2336,8 +2417,9 @@ export default function PlanningPage() {
       result = tasks.filter((task) => {
         if (task.ParentTaskId) return false;
 
+        const plannedForUserByAllocations = parentTaskIdsFromAllocations.has(task.Id);
         const isRenderableClosedUnscheduled = isClosedUnscheduledWithAnchor(task);
-        if (isTaskClosedOrCancelled(task) && !isRenderableClosedUnscheduled) return false;
+        if (isTaskClosedOrCancelled(task) && !isRenderableClosedUnscheduled && !plannedForUserByAllocations) return false;
 
         const isUnscheduledAssigned = isRenderableUnscheduledTask(task)
           && hasAnyTaskAssignee(task)
@@ -2348,7 +2430,7 @@ export default function PlanningPage() {
         if (hasUnscheduledAssignedDescendant(task.Id, Number(userId))) {
           return true;
         }
-        if (parentTaskIdsFromAllocations.has(task.Id)) return true;
+        if (plannedForUserByAllocations) return true;
         return false;
       });
     }
@@ -6776,6 +6858,43 @@ export default function PlanningPage() {
   const normalizedGanttSearch = ganttSearch.trim().toLowerCase();
   const isGanttSearchActive = normalizedGanttSearch.length > 0;
   const isResourceGrouping = ganttGroupBy === 'resource';
+  const availableGanttUsers = users.filter((planningUser) => Number(planningUser.Id) > 0);
+  const allGanttUserIds = availableGanttUsers.map((planningUser) => Number(planningUser.Id));
+  const normalizedSelectedGanttUserIds = selectedGanttUserIds.length === 0
+    ? allGanttUserIds
+    : selectedGanttUserIds.filter((id) => allGanttUserIds.includes(id));
+  const selectedGanttUserIdSet = new Set(normalizedSelectedGanttUserIds);
+  const visibleGanttUsers = availableGanttUsers.filter((planningUser) => selectedGanttUserIdSet.has(Number(planningUser.Id)));
+  const isAllGanttUsersSelected =
+    availableGanttUsers.length > 0
+    && normalizedSelectedGanttUserIds.length === availableGanttUsers.length;
+
+  const toggleGanttUserSelection = (targetUserId: number) => {
+    setSelectedGanttUserIds((previousSelectedIds) => {
+      const currentSelection = previousSelectedIds.length === 0
+        ? [...allGanttUserIds]
+        : previousSelectedIds.filter((id) => allGanttUserIds.includes(id));
+
+      const nextSelection = currentSelection.includes(targetUserId)
+        ? currentSelection.filter((id) => id !== targetUserId)
+        : [...currentSelection, targetUserId];
+
+      if (nextSelection.length === 0) {
+        return currentSelection;
+      }
+
+      if (nextSelection.length >= allGanttUserIds.length) {
+        return [];
+      }
+
+      return nextSelection;
+    });
+  };
+
+  const resetGanttUserSelectionToAll = () => {
+    setSelectedGanttUserIds([]);
+  };
+
   const matchesGanttSearch = (task: Task) => {
     if (!isGanttSearchActive) return true;
     const projectName = projects.find((p) => p.Id === task.ProjectId)?.ProjectName || '';
@@ -6803,9 +6922,9 @@ export default function PlanningPage() {
     const grouped = new Map<string, { id: string; label: string; subLabel: string; tasks: Task[] }>();
     const parentTasks = tasks.filter((t) => {
       if (t.ParentTaskId) return false;
-      const isRenderableClosedUnscheduled = isClosedUnscheduledWithAnchor(t);
-      if (isTaskClosedOrCancelled(t) && !isRenderableClosedUnscheduled) return false;
       const hasPlannedDates = !!(t.PlannedStartDate && t.PlannedEndDate);
+      const isRenderableClosedUnscheduled = isClosedUnscheduledWithAnchor(t);
+      if (isTaskClosedOrCancelled(t) && !isRenderableClosedUnscheduled && !hasPlannedDates) return false;
       const isAssignedUnscheduled = isRenderableUnscheduledTask(t) && hasAnyTaskAssignee(t);
       const hasUnscheduledDescendants = hasUnscheduledAssignedDescendant(t.Id);
       if (!(hasPlannedDates || isAssignedUnscheduled || hasUnscheduledDescendants) || !matchesGanttSearch(t)) return false;
@@ -7199,6 +7318,55 @@ export default function PlanningPage() {
                         />
                         Show task bar hours
                       </label>
+                      {isResourceGrouping && (
+                        <>
+                          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Users to render</span>
+                              <button
+                                type="button"
+                                onClick={resetGanttUserSelectionToAll}
+                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                              >
+                                All users
+                              </button>
+                            </div>
+                            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer mb-1">
+                              <input
+                                type="checkbox"
+                                checked={isAllGanttUsersSelected}
+                                onChange={resetGanttUserSelectionToAll}
+                                className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                              />
+                              Select all users
+                            </label>
+                            <div className="max-h-40 overflow-y-auto pr-1 space-y-1">
+                              {availableGanttUsers.map((planningUser) => {
+                                const userId = Number(planningUser.Id);
+                                const isSelected = selectedGanttUserIdSet.has(userId);
+                                const userLabel = planningUser.FirstName && planningUser.LastName
+                                  ? `${planningUser.FirstName} ${planningUser.LastName}`
+                                  : planningUser.Username;
+
+                                return (
+                                  <label
+                                    key={planningUser.Id}
+                                    className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => toggleGanttUserSelection(userId)}
+                                      className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                                    />
+                                    <span className="truncate" title={userLabel}>{userLabel}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -7634,7 +7802,7 @@ export default function PlanningPage() {
                 )}
 
                 {/* User rows */}
-                {isResourceGrouping && users.map(userRow => {
+                {isResourceGrouping && visibleGanttUsers.map(userRow => {
                   const tasksById = new Map(tasks.map((task) => [task.Id, task]));
                   const parentTaskIdsFromAllocations = new Set<number>();
 
@@ -7658,13 +7826,13 @@ export default function PlanningPage() {
                   const parentTasksWithDates = tasks.filter((task) => {
                     if (task.ParentTaskId) return false;
 
+                    const plannedForUserByAllocations = parentTaskIdsFromAllocations.has(task.Id);
                     const isRenderableClosedUnscheduled = isClosedUnscheduledWithAnchor(task);
-                    if (isTaskClosedOrCancelled(task) && !isRenderableClosedUnscheduled) return false;
+                    if (isTaskClosedOrCancelled(task) && !isRenderableClosedUnscheduled && !plannedForUserByAllocations) return false;
 
                     const isUnscheduledAssigned = isRenderableUnscheduledTask(task)
                       && hasAnyTaskAssignee(task)
                       ;
-                    const plannedForUserByAllocations = parentTaskIdsFromAllocations.has(task.Id);
                     const unscheduledAssigned = isRenderableUnscheduledTask(task)
                       && isTaskAssignedToUser(task, Number(userRow.Id))
                       ;

@@ -1,4 +1,5 @@
 import { getApiUrl } from './config';
+import { CustomFieldValues } from '@/lib/customFields';
 
 const API_BASE_URL = getApiUrl();
 
@@ -70,6 +71,7 @@ export interface Task {
   CreatedAt: string;
   UpdatedAt: string;
   ClosedAt?: string | null;
+  [key: string]: unknown;
 }
 
 export interface CreateTaskData {
@@ -98,6 +100,7 @@ export interface CreateTaskData {
   applicationId?: number | null;
   releaseVersionId?: number | null;
   syncAllocationHeaderDates?: boolean;
+  customFields?: CustomFieldValues;
 }
 
 export type UpdateTaskData = Omit<Partial<CreateTaskData>,

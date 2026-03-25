@@ -3,6 +3,7 @@ import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { logCustomerHistory } from '../utils/changeLog';
+import { prepareCustomFieldData } from '../utils/customFields';
 
 const router = Router();
 
@@ -146,6 +147,56 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     const [customers] = await pool.execute<RowDataPacket[]>(query, params);
 
+    const statsParams: (number | string)[] = [userId!, userId!];
+    let customerStatsQuery = `
+      SELECT c.Id as CustomerId,
+             COUNT(DISTINCT CASE
+               WHEN pom.UserId IS NULL THEN NULL
+               WHEN COALESCE(p.IsGlobal, 0) = 0 THEN p.Id
+               WHEN t.Id IS NOT NULL THEN p.Id
+               ELSE NULL
+             END) as ProjectCount,
+             COUNT(DISTINCT CASE
+               WHEN pom.UserId IS NULL THEN NULL
+               WHEN COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 THEN t.Id
+               ELSE NULL
+             END) as TotalTasks,
+             COUNT(DISTINCT CASE
+               WHEN pom.UserId IS NULL THEN NULL
+               WHEN COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 AND COALESCE(tsv.IsClosed, 0) = 1 THEN t.Id
+               ELSE NULL
+             END) as CompletedTasks
+      FROM Customers c
+      INNER JOIN CustomerOrganizations co ON c.Id = co.CustomerId
+      INNER JOIN OrganizationMembers om ON co.OrganizationId = om.OrganizationId AND om.UserId = ?
+      LEFT JOIN Projects p ON (
+        (COALESCE(p.IsGlobal, 0) = 0 AND p.CustomerId = c.Id)
+        OR COALESCE(p.IsGlobal, 0) = 1
+      )
+      LEFT JOIN OrganizationMembers pom ON p.OrganizationId = pom.OrganizationId AND pom.UserId = ?
+      LEFT JOIN Tasks t ON t.ProjectId = p.Id
+        AND (COALESCE(p.IsGlobal, 0) = 0 OR t.CustomerId = c.Id)
+      LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+      WHERE c.IsActive = 1`;
+
+    if (organizationId) {
+      customerStatsQuery += ' AND co.OrganizationId = ?';
+      statsParams.push(parseInt(organizationId as string));
+    }
+
+    customerStatsQuery += '\n      GROUP BY c.Id';
+
+    const [customerStatsRows] = await pool.execute<RowDataPacket[]>(customerStatsQuery, statsParams);
+    const customerStatsById = new Map<number, { projectCount: number; totalTasks: number; completedTasks: number }>();
+
+    customerStatsRows.forEach((row) => {
+      customerStatsById.set(Number(row.CustomerId), {
+        projectCount: Number(row.ProjectCount) || 0,
+        totalTasks: Number(row.TotalTasks) || 0,
+        completedTasks: Number(row.CompletedTasks) || 0,
+      });
+    });
+
     // Get organization associations and open ticket count for each customer
     for (const customer of customers) {
       const [orgs] = await pool.execute<RowDataPacket[]>(
@@ -176,6 +227,11 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         [customer.Id]
       );
       customer.OpenTickets = ticketCount[0].count;
+
+      const customerStats = customerStatsById.get(Number(customer.Id));
+      customer.ProjectCount = customerStats?.projectCount || 0;
+      customer.TotalTasks = customerStats?.totalTasks || 0;
+      customer.CompletedTasks = customerStats?.completedTasks || 0;
     }
 
     res.json({
@@ -309,7 +365,8 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { Name, ExternalName, Email, Phone, Address, Notes, DefaultSupportUserId, OrganizationIds, CreateDefaultProject, DefaultProjectName, Contacts } = req.body;
+    const { Name, ExternalName, Email, Phone, Address, Notes, DefaultSupportUserId, OrganizationIds, CreateDefaultProject, DefaultProjectName, Contacts, customFields } = req.body;
+    let projectCustomFieldData: Awaited<ReturnType<typeof prepareCustomFieldData>> | null = null;
 
     if (!Name || !Name.trim()) {
       return res.status(400).json({
@@ -345,11 +402,24 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       }
     }
 
+    const customFieldData = await prepareCustomFieldData('Customers', customFields);
+
+    if (CreateDefaultProject) {
+      try {
+        projectCustomFieldData = await prepareCustomFieldData('Projects', {});
+      } catch (projectCustomFieldError: any) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot create default project: ${projectCustomFieldError?.message || 'required Project custom fields are missing'}. Disable "Create default project" or make required Project custom fields optional.`
+        });
+      }
+    }
+
     // Create customer
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Customers (Name, ExternalName, Email, Phone, Address, Notes, DefaultSupportUserId, IsActive, CreatedBy)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-      [Name.trim(), ExternalName || null, Email || null, Phone || null, Address || null, Notes || null, DefaultSupportUserId || null, userId]
+      `INSERT INTO Customers (Name, ExternalName, Email, Phone, Address, Notes, DefaultSupportUserId, IsActive, CreatedBy${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''})
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
+      [Name.trim(), ExternalName || null, Email || null, Phone || null, Address || null, Notes || null, DefaultSupportUserId || null, userId, ...customFieldData.insertValues]
     );
 
     const customerId = result.insertId;
@@ -373,13 +443,13 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     // Create default project(s) if requested
-    if (CreateDefaultProject) {
+    if (CreateDefaultProject && projectCustomFieldData) {
       const projectName = (DefaultProjectName && DefaultProjectName.trim()) || Name.trim();
       for (const orgId of OrganizationIds) {
         await pool.execute<ResultSetHeader>(
-          `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, CustomerId)
-           VALUES (?, ?, ?, ?, (SELECT Id FROM ProjectStatusValues WHERE OrganizationId = ? AND IsDefault = 1 LIMIT 1), NULL, NULL, 0, ?)`,
-          [orgId, projectName, `Default project for customer ${Name.trim()}`, userId, orgId, customerId]
+          `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, CustomerId${projectCustomFieldData.insertColumns.length > 0 ? `, ${projectCustomFieldData.insertColumns.join(', ')}` : ''})
+           VALUES (?, ?, ?, ?, (SELECT Id FROM ProjectStatusValues WHERE OrganizationId = ? AND IsDefault = 1 LIMIT 1), NULL, NULL, 0, ?${projectCustomFieldData.insertPlaceholders.length > 0 ? `, ${projectCustomFieldData.insertPlaceholders.join(', ')}` : ''})`,
+          [orgId, projectName, `Default project for customer ${Name.trim()}`, userId, orgId, customerId, ...projectCustomFieldData.insertValues]
         );
       }
     }
@@ -473,7 +543,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const customerId = parseInt(req.params.id as string);
-    const { Name, ExternalName, Email, Phone, Address, Notes, DefaultSupportUserId, IsActive, OrganizationIds, Website, ContactPerson, ContactEmail, ContactPhone, ProjectManagerId, Contacts } = req.body;
+    const { Name, ExternalName, Email, Phone, Address, Notes, DefaultSupportUserId, IsActive, OrganizationIds, Website, ContactPerson, ContactEmail, ContactPhone, ProjectManagerId, Contacts, customFields } = req.body;
 
     // Check if user has access to this customer
     const [existingCustomers] = await pool.execute<RowDataPacket[]>(
@@ -614,6 +684,15 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       }
       updates.push('DefaultSupportUserId = ?');
       values.push(DefaultSupportUserId || null);
+    }
+
+    const customFieldData = await prepareCustomFieldData('Customers', customFields, oldCustomer as Record<string, unknown>);
+    for (const change of customFieldData.changes) {
+      changes.push({ field: change.field, oldVal: change.oldVal, newVal: change.newVal });
+    }
+    if (customFieldData.updateAssignments.length > 0) {
+      updates.push(...customFieldData.updateAssignments);
+      values.push(...customFieldData.updateValues);
     }
 
     if (updates.length > 0) {
@@ -1105,6 +1184,183 @@ router.delete('/:id/users/:userId', authenticateToken, async (req: AuthRequest, 
   } catch (error) {
     console.error('Remove customer user error:', error);
     res.status(500).json({ success: false, message: 'Failed to remove user from customer' });
+  }
+});
+
+// Get enriched overview data for a customer (tasks by status/priority, team, overdue, upcoming, recent activity)
+router.get('/:id/overview', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const customerId = parseInt(req.params.id as string);
+
+    // Access check
+    const [access] = await pool.execute<RowDataPacket[]>(
+      `SELECT 1 FROM Customers c
+       INNER JOIN CustomerOrganizations co ON c.Id = co.CustomerId
+       INNER JOIN OrganizationMembers om ON co.OrganizationId = om.OrganizationId
+       WHERE om.UserId = ? AND c.Id = ?`,
+      [userId, customerId]
+    );
+
+    if (access.length === 0) {
+      return res.status(404).json({ success: false, message: 'Customer not found' });
+    }
+
+    // Calculate date boundaries in app layer to stay DB-agnostic
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const in14Days = new Date(today);
+    in14Days.setDate(today.getDate() + 14);
+    const in14DaysStr = in14Days.toISOString().split('T')[0];
+
+    // Scope: a task belongs to this customer if:
+    //   - project is directly owned by the customer (non-global), OR
+    //   - project is global and the task has CustomerId = this customer
+    const scopeSql = `(
+      (p.CustomerId = ? AND COALESCE(p.IsGlobal, 0) = 0)
+      OR (COALESCE(p.IsGlobal, 0) = 1 AND t.CustomerId = ?)
+    )`;
+
+    // Run all queries in parallel
+    const [
+      [tasksByStatus],
+      [tasksByPriority],
+      [recentTimeEntries],
+      [teamMembers],
+      [pendingTasks],
+      [overdueTasks],
+      [upcomingTasks],
+    ] = await Promise.all([
+      // Tasks by status
+      pool.execute<RowDataPacket[]>(
+        `SELECT tsv.StatusName, tsv.ColorCode as StatusColor,
+                COALESCE(tsv.IsClosed, 0) as IsClosed,
+                COUNT(t.Id) as TaskCount
+         FROM Tasks t
+         INNER JOIN Projects p ON t.ProjectId = p.Id
+         INNER JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+         WHERE ${scopeSql}
+           AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
+         GROUP BY tsv.Id, tsv.StatusName, tsv.ColorCode, tsv.IsClosed
+         ORDER BY TaskCount DESC`,
+        [customerId, customerId]
+      ),
+      // Tasks by priority
+      pool.execute<RowDataPacket[]>(
+        `SELECT tpv.PriorityName, tpv.ColorCode as PriorityColor, COUNT(t.Id) as TaskCount
+         FROM Tasks t
+         INNER JOIN Projects p ON t.ProjectId = p.Id
+         INNER JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
+         LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+         WHERE ${scopeSql}
+           AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
+         GROUP BY tpv.Id, tpv.PriorityName, tpv.ColorCode
+         ORDER BY TaskCount DESC`,
+        [customerId, customerId]
+      ),
+      // Recent time entries (last 10)
+      pool.execute<RowDataPacket[]>(
+        `SELECT te.Id, te.WorkDate, te.Hours, te.Description,
+                u.Id as UserId, u.FirstName, u.LastName, u.Username,
+                t.Id as TaskId, t.TaskName,
+                p.Id as ProjectId, p.ProjectName
+         FROM TimeEntries te
+         INNER JOIN Tasks t ON te.TaskId = t.Id
+         INNER JOIN Projects p ON t.ProjectId = p.Id
+         INNER JOIN Users u ON te.UserId = u.Id
+         WHERE ${scopeSql}
+         ORDER BY te.WorkDate DESC, te.Id DESC
+         LIMIT 10`,
+        [customerId, customerId]
+      ),
+      // Team members (users with time entries on this customer's tasks)
+      pool.execute<RowDataPacket[]>(
+        `SELECT u.Id as UserId, u.FirstName, u.LastName, u.Username,
+                COUNT(DISTINCT t.Id) as TaskCount,
+                COALESCE(SUM(te.Hours), 0) as WorkedHours
+         FROM Users u
+         INNER JOIN TimeEntries te ON u.Id = te.UserId
+         INNER JOIN Tasks t ON te.TaskId = t.Id
+         INNER JOIN Projects p ON t.ProjectId = p.Id
+         WHERE ${scopeSql}
+         GROUP BY u.Id, u.FirstName, u.LastName, u.Username
+         ORDER BY WorkedHours DESC
+         LIMIT 8`,
+        [customerId, customerId]
+      ),
+      // Pending tasks (all non-closed tasks for this customer scope)
+      pool.execute<RowDataPacket[]>(
+        `SELECT t.Id, t.TaskName, t.PlannedEndDate,
+                p.Id as ProjectId, p.ProjectName,
+                u.FirstName as AssignedFirstName, u.LastName as AssignedLastName, u.Username as AssignedUsername,
+                tsv.StatusName, tsv.ColorCode as StatusColor
+         FROM Tasks t
+         INNER JOIN Projects p ON t.ProjectId = p.Id
+         INNER JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+         LEFT JOIN Users u ON t.AssignedTo = u.Id
+         WHERE ${scopeSql}
+           AND COALESCE(tsv.IsClosed, 0) = 0
+           AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
+         ORDER BY CASE WHEN t.PlannedEndDate IS NULL THEN 1 ELSE 0 END,
+                  t.PlannedEndDate ASC,
+                  t.Id DESC
+         LIMIT 20`,
+        [customerId, customerId]
+      ),
+      // Overdue tasks (PlannedEndDate < today, not closed)
+      pool.execute<RowDataPacket[]>(
+        `SELECT t.Id, t.TaskName, t.PlannedEndDate,
+                p.Id as ProjectId, p.ProjectName,
+                u.FirstName as AssignedFirstName, u.LastName as AssignedLastName, u.Username as AssignedUsername,
+                tsv.StatusName, tsv.ColorCode as StatusColor
+         FROM Tasks t
+         INNER JOIN Projects p ON t.ProjectId = p.Id
+         INNER JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+         LEFT JOIN Users u ON t.AssignedTo = u.Id
+         WHERE ${scopeSql}
+           AND t.PlannedEndDate < ?
+           AND COALESCE(tsv.IsClosed, 0) = 0
+           AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
+         ORDER BY t.PlannedEndDate ASC
+         LIMIT 10`,
+        [customerId, customerId, todayStr]
+      ),
+      // Upcoming tasks in the next 14 days, not yet closed
+      pool.execute<RowDataPacket[]>(
+        `SELECT t.Id, t.TaskName, t.PlannedEndDate,
+                p.Id as ProjectId, p.ProjectName,
+                u.FirstName as AssignedFirstName, u.LastName as AssignedLastName, u.Username as AssignedUsername,
+                tsv.StatusName, tsv.ColorCode as StatusColor
+         FROM Tasks t
+         INNER JOIN Projects p ON t.ProjectId = p.Id
+         INNER JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+         LEFT JOIN Users u ON t.AssignedTo = u.Id
+         WHERE ${scopeSql}
+           AND t.PlannedEndDate >= ?
+           AND t.PlannedEndDate <= ?
+           AND COALESCE(tsv.IsClosed, 0) = 0
+           AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
+         ORDER BY t.PlannedEndDate ASC
+         LIMIT 10`,
+        [customerId, customerId, todayStr, in14DaysStr]
+      ),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        tasksByStatus,
+        tasksByPriority,
+        recentTimeEntries,
+        teamMembers,
+        pendingTasks,
+        overdueTasks,
+        upcomingTasks,
+      },
+    });
+  } catch (error) {
+    console.error('Get customer overview error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch customer overview' });
   }
 });
 

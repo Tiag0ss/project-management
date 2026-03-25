@@ -9,7 +9,10 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
+import TaskDetailModal from '@/components/TaskDetailModal';
 import { getCustomer, updateCustomer, Customer } from '@/lib/api/customers';
+import { projectsApi, Project as ApiProject } from '@/lib/api/projects';
+import { tasksApi, Task as ApiTask } from '@/lib/api/tasks';
 
 interface Project {
   Id: number;
@@ -60,6 +63,92 @@ interface CustomerContact {
 
 type TabType = 'overview' | 'users' | 'settings' | 'attachments' | 'history';
 
+interface TaskByStatus {
+  StatusName: string;
+  StatusColor: string;
+  IsClosed: number;
+  TaskCount: number;
+}
+
+interface TaskByPriority {
+  PriorityName: string;
+  PriorityColor: string;
+  TaskCount: number;
+}
+
+interface RecentTimeEntry {
+  Id: number;
+  WorkDate: string;
+  Hours: number;
+  Description: string | null;
+  UserId: number;
+  FirstName: string;
+  LastName: string;
+  Username: string;
+  TaskId: number;
+  TaskName: string;
+  ProjectId: number;
+  ProjectName: string;
+}
+
+interface TeamMember {
+  UserId: number;
+  FirstName: string;
+  LastName: string;
+  Username: string;
+  TaskCount: number;
+  WorkedHours: number;
+}
+
+interface PendingTask {
+  Id: number;
+  TaskName: string;
+  PlannedEndDate: string | null;
+  ProjectId: number;
+  ProjectName: string;
+  AssignedFirstName: string | null;
+  AssignedLastName: string | null;
+  AssignedUsername: string | null;
+  StatusName: string;
+  StatusColor: string;
+}
+
+interface OverdueTask {
+  Id: number;
+  TaskName: string;
+  PlannedEndDate: string;
+  ProjectId: number;
+  ProjectName: string;
+  AssignedFirstName: string | null;
+  AssignedLastName: string | null;
+  AssignedUsername: string | null;
+  StatusName: string;
+  StatusColor: string;
+}
+
+interface UpcomingTask {
+  Id: number;
+  TaskName: string;
+  PlannedEndDate: string;
+  ProjectId: number;
+  ProjectName: string;
+  AssignedFirstName: string | null;
+  AssignedLastName: string | null;
+  AssignedUsername: string | null;
+  StatusName: string;
+  StatusColor: string;
+}
+
+interface CustomerOverviewData {
+  tasksByStatus: TaskByStatus[];
+  tasksByPriority: TaskByPriority[];
+  recentTimeEntries: RecentTimeEntry[];
+  teamMembers: TeamMember[];
+  pendingTasks: PendingTask[];
+  overdueTasks: OverdueTask[];
+  upcomingTasks: UpcomingTask[];
+}
+
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const customerId = parseInt(resolvedParams.id);
@@ -74,6 +163,23 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const [availableUsers, setAvailableUsers] = useState<User[]>([]);
   const [projectManagers, setProjectManagers] = useState<ProjectManager[]>([]);
   const [tickets, setTickets] = useState<any[]>([]);
+  const [overviewData, setOverviewData] = useState<CustomerOverviewData | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [taskModalState, setTaskModalState] = useState<{
+    show: boolean;
+    isLoading: boolean;
+    project: ApiProject | null;
+    task: ApiTask | null;
+    tasks: ApiTask[];
+    error: string;
+  }>({
+    show: false,
+    isLoading: false,
+    project: null,
+    task: null,
+    tasks: [],
+    error: '',
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -220,7 +326,9 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       } else {
         setTickets([]);
       }
-      
+
+      await loadOverviewData();
+
     } catch (err: any) {
       setError(err.message || 'Failed to load customer');
     } finally {
@@ -283,6 +391,80 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     } catch (err) {
       console.error('Failed to load tickets:', err);
     }
+  };
+
+  const loadOverviewData = async () => {
+    setOverviewLoading(true);
+    try {
+      const res = await fetch(`${getApiUrl()}/api/customers/${customerId}/overview`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOverviewData(data.data || null);
+      }
+    } catch (err) {
+      console.error('Failed to load customer overview:', err);
+    } finally {
+      setOverviewLoading(false);
+    }
+  };
+
+  const openTaskDetails = async (projectId: number, taskId: number) => {
+    if (!token) return;
+
+    setTaskModalState({
+      show: true,
+      isLoading: true,
+      project: null,
+      task: null,
+      tasks: [],
+      error: '',
+    });
+
+    try {
+      const [projectRes, tasksRes] = await Promise.all([
+        projectsApi.getById(projectId, token),
+        tasksApi.getByProject(projectId, token),
+      ]);
+
+      const project = projectRes?.project || null;
+      const projectTasks = Array.isArray(tasksRes?.tasks) ? tasksRes.tasks : [];
+      const activeTask = projectTasks.find((entry) => Number(entry.Id) === Number(taskId)) || null;
+
+      if (!project || !activeTask) {
+        throw new Error('Task no longer exists in this project');
+      }
+
+      setTaskModalState({
+        show: true,
+        isLoading: false,
+        project,
+        task: activeTask,
+        tasks: projectTasks,
+        error: '',
+      });
+    } catch (err: any) {
+      setTaskModalState({
+        show: true,
+        isLoading: false,
+        project: null,
+        task: null,
+        tasks: [],
+        error: err?.message || 'Failed to open task detail',
+      });
+    }
+  };
+
+  const closeTaskDetails = () => {
+    setTaskModalState({
+      show: false,
+      isLoading: false,
+      project: null,
+      task: null,
+      tasks: [],
+      error: '',
+    });
   };
 
   const loadAttachments = async () => {
@@ -768,62 +950,58 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
           {activeTab === 'overview' && (
           <div className="space-y-6">
-            {/* Statistics Cards */}
-            <div className={`grid grid-cols-2 ${internalTicketsEnabled ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-                <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Projects</div>
+            {/* KPI Stat Cards */}
+            <div className={`grid grid-cols-2 ${internalTicketsEnabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow border-l-4 border-gray-300 dark:border-gray-600">
+                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Total Projects</div>
                 <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalProjects}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{completedProjects} completed</div>
               </div>
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-green-500">
-                <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Active Projects</div>
-                <div className="text-3xl font-bold text-gray-900 dark:text-white">{activeProjects}</div>
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow border-l-4 border-green-500">
+                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Active Projects</div>
+                <div className="text-3xl font-bold text-green-600 dark:text-green-400">{activeProjects}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">of {totalProjects} total</div>
               </div>
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-blue-500">
-                <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Tasks Completed</div>
-                <div className="text-3xl font-bold text-gray-900 dark:text-white">{completedTasks}/{totalTasks}</div>
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow border-l-4 border-blue-500">
+                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Tasks Complete</div>
+                <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{overallProgress}%</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{completedTasks} / {totalTasks} tasks</div>
               </div>
               {internalTicketsEnabled && (
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-indigo-500">
-                  <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Tickets</div>
-                  <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalTickets}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {unresolvedTickets} pending
-                  </div>
+                <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow border-l-4 border-indigo-500">
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Tickets</div>
+                  <div className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{totalTickets}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{unresolvedTickets} unresolved</div>
                 </div>
               )}
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-orange-500">
-                <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Hours Worked</div>
-                <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalWorkedHours.toFixed(0)}h</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  of {totalEstimatedHours.toFixed(0)}h estimated
-                </div>
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow border-l-4 border-orange-500">
+                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Hours Worked</div>
+                <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">{totalWorkedHours.toFixed(0)}h</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">est. {totalEstimatedHours.toFixed(0)}h</div>
               </div>
             </div>
 
-            {/* Progress Overview */}
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Overall Progress</h3>
-              <div className="space-y-4">
+            {/* Progress bars */}
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow">
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4 uppercase tracking-wider">Overall Progress</h3>
+              <div className="space-y-3">
                 <div>
                   <div className="flex justify-between items-center text-sm mb-1">
-                    <span className="text-gray-600 dark:text-gray-400">Tasks Completed</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{completedTasks}/{totalTasks} ({overallProgress}%)</span>
+                    <span className="text-gray-600 dark:text-gray-400">Task completion</span>
+                    <span className="font-semibold text-gray-900 dark:text-white">{completedTasks}/{totalTasks} ({overallProgress}%)</span>
                   </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                    <div 
-                      className="bg-blue-600 h-3 rounded-full transition-all"
-                      style={{ width: `${overallProgress}%` }}
-                    />
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                    <div className="bg-blue-600 h-2.5 rounded-full transition-all" style={{ width: `${overallProgress}%` }} />
                   </div>
                 </div>
                 <div>
                   <div className="flex justify-between items-center text-sm mb-1">
-                    <span className="text-gray-600 dark:text-gray-400">Hours Progress</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{totalWorkedHours.toFixed(0)}h / {totalEstimatedHours.toFixed(0)}h</span>
+                    <span className="text-gray-600 dark:text-gray-400">Hours progress</span>
+                    <span className="font-semibold text-gray-900 dark:text-white">{totalWorkedHours.toFixed(1)}h / {totalEstimatedHours.toFixed(0)}h</span>
                   </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                    <div 
-                      className={`h-3 rounded-full transition-all ${totalWorkedHours > totalEstimatedHours ? 'bg-red-500' : 'bg-green-500'}`}
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                    <div
+                      className={`h-2.5 rounded-full transition-all ${totalWorkedHours > totalEstimatedHours ? 'bg-red-500' : 'bg-green-500'}`}
                       style={{ width: `${Math.min(100, totalEstimatedHours > 0 ? (totalWorkedHours / totalEstimatedHours) * 100 : 0)}%` }}
                     />
                   </div>
@@ -831,29 +1009,367 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               </div>
             </div>
 
+            {/* Tasks by Status & Priority */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Tasks by Status */}
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4 uppercase tracking-wider">Tasks by Status</h3>
+                {overviewLoading ? (
+                  <div className="space-y-2">
+                    {[1,2,3].map(i => <div key={i} className="h-7 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />)}
+                  </div>
+                ) : !overviewData || overviewData.tasksByStatus.length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No task data.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {(() => {
+                      const total = overviewData.tasksByStatus.reduce((s, r) => s + Number(r.TaskCount), 0);
+                      return overviewData.tasksByStatus.map((row) => {
+                        const pct = total > 0 ? Math.round((Number(row.TaskCount) / total) * 100) : 0;
+                        return (
+                          <div key={row.StatusName}>
+                            <div className="flex justify-between items-center text-sm mb-1">
+                              <div className="flex items-center gap-2">
+                                <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: row.StatusColor || '#6B7280' }} />
+                                <span className="text-gray-700 dark:text-gray-300">{row.StatusName}</span>
+                              </div>
+                              <span className="font-medium text-gray-900 dark:text-white">{Number(row.TaskCount)} <span className="text-gray-400 font-normal">({pct}%)</span></span>
+                            </div>
+                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                              <div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: row.StatusColor || '#6B7280' }} />
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                )}
+              </div>
+
+              {/* Tasks by Priority */}
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4 uppercase tracking-wider">Tasks by Priority</h3>
+                {overviewLoading ? (
+                  <div className="space-y-2">
+                    {[1,2,3].map(i => <div key={i} className="h-7 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />)}
+                  </div>
+                ) : !overviewData || overviewData.tasksByPriority.length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No priority data.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {(() => {
+                      const total = overviewData.tasksByPriority.reduce((s, r) => s + Number(r.TaskCount), 0);
+                      return overviewData.tasksByPriority.map((row) => {
+                        const pct = total > 0 ? Math.round((Number(row.TaskCount) / total) * 100) : 0;
+                        return (
+                          <div key={row.PriorityName}>
+                            <div className="flex justify-between items-center text-sm mb-1">
+                              <div className="flex items-center gap-2">
+                                <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: row.PriorityColor || '#6B7280' }} />
+                                <span className="text-gray-700 dark:text-gray-300">{row.PriorityName}</span>
+                              </div>
+                              <span className="font-medium text-gray-900 dark:text-white">{Number(row.TaskCount)} <span className="text-gray-400 font-normal">({pct}%)</span></span>
+                            </div>
+                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                              <div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: row.PriorityColor || '#6B7280' }} />
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Pending Tasks */}
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow">
+              <div className="flex items-center gap-2 mb-4">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Pending Tasks</h3>
+                {!overviewLoading && overviewData && overviewData.pendingTasks.length > 0 && (
+                  <span className="px-2 py-0.5 text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded-full">
+                    {overviewData.pendingTasks.length}
+                  </span>
+                )}
+              </div>
+              {overviewLoading ? (
+                <div className="space-y-2">{[1, 2, 3, 4].map((i) => <div key={i} className="h-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />)}</div>
+              ) : !overviewData || overviewData.pendingTasks.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">No pending tasks.</p>
+              ) : (
+                <div className="space-y-2">
+                  {overviewData.pendingTasks.map((task) => {
+                    const assignedName = task.AssignedFirstName
+                      ? `${task.AssignedFirstName} ${task.AssignedLastName || ''}`.trim()
+                      : task.AssignedUsername;
+
+                    return (
+                      <div
+                        key={task.Id}
+                        onClick={() => openTaskDetails(task.ProjectId, task.Id)}
+                        className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{task.TaskName}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{task.ProjectName}</div>
+                          </div>
+                          <span
+                            className="px-2 py-0.5 text-xs rounded-full whitespace-nowrap flex-shrink-0"
+                            style={{
+                              backgroundColor: task.StatusColor ? `${task.StatusColor}20` : '#e5e7eb',
+                              color: task.StatusColor || '#374151',
+                            }}
+                          >
+                            {task.StatusName}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                          <span>
+                            Due: {task.PlannedEndDate ? String(task.PlannedEndDate).split('T')[0] : 'No date'}
+                          </span>
+                          <span>
+                            Assignee: {assignedName || 'Unassigned'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Overdue & Upcoming */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Overdue Tasks */}
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow">
+                <div className="flex items-center gap-2 mb-4">
+                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Overdue Tasks</h3>
+                  {!overviewLoading && overviewData && overviewData.overdueTasks.length > 0 && (
+                    <span className="px-2 py-0.5 text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-full">{overviewData.overdueTasks.length}</span>
+                  )}
+                </div>
+                {overviewLoading ? (
+                  <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />)}</div>
+                ) : !overviewData || overviewData.overdueTasks.length === 0 ? (
+                  <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    No overdue tasks!
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {overviewData.overdueTasks.map((task) => {
+                      const daysOverdue = Math.floor((Date.now() - new Date(task.PlannedEndDate).getTime()) / 86400000);
+                      return (
+                        <div
+                          key={task.Id}
+                          onClick={() => openTaskDetails(task.ProjectId, task.Id)}
+                          className="p-3 border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/10 rounded-lg cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors"
+                        >
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{task.TaskName}</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{task.ProjectName}</div>
+                            </div>
+                            <span className="text-xs font-semibold text-red-600 dark:text-red-400 whitespace-nowrap flex-shrink-0">{daysOverdue}d overdue</span>
+                          </div>
+                          {(task.AssignedFirstName || task.AssignedUsername) && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              👤 {task.AssignedFirstName ? `${task.AssignedFirstName} ${task.AssignedLastName || ''}`.trim() : task.AssignedUsername}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Upcoming Deadlines */}
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow">
+                <div className="flex items-center gap-2 mb-4">
+                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Upcoming (14 days)</h3>
+                  {!overviewLoading && overviewData && overviewData.upcomingTasks.length > 0 && (
+                    <span className="px-2 py-0.5 text-xs font-semibold bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 rounded-full">{overviewData.upcomingTasks.length}</span>
+                  )}
+                </div>
+                {overviewLoading ? (
+                  <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />)}</div>
+                ) : !overviewData || overviewData.upcomingTasks.length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No deadlines in the next 14 days.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {overviewData.upcomingTasks.map((task) => {
+                      const daysUntil = Math.ceil((new Date(task.PlannedEndDate).getTime() - Date.now()) / 86400000);
+                      return (
+                        <div
+                          key={task.Id}
+                          onClick={() => openTaskDetails(task.ProjectId, task.Id)}
+                          className="p-3 border border-yellow-200 dark:border-yellow-900/50 bg-yellow-50 dark:bg-yellow-900/10 rounded-lg cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-900/20 transition-colors"
+                        >
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{task.TaskName}</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{task.ProjectName}</div>
+                            </div>
+                            <span className="text-xs font-semibold text-yellow-600 dark:text-yellow-400 whitespace-nowrap flex-shrink-0">
+                              {daysUntil === 0 ? 'today' : `${daysUntil}d left`}
+                            </span>
+                          </div>
+                          {(task.AssignedFirstName || task.AssignedUsername) && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              👤 {task.AssignedFirstName ? `${task.AssignedFirstName} ${task.AssignedLastName || ''}`.trim() : task.AssignedUsername}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Team Members */}
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow">
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4 uppercase tracking-wider">Team — Active Contributors</h3>
+              {overviewLoading ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[1,2,3,4].map(i => <div key={i} className="h-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />)}
+                </div>
+              ) : !overviewData || overviewData.teamMembers.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">No time entries recorded yet.</p>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {overviewData.teamMembers.map((member) => {
+                    const initials = [member.FirstName, member.LastName].filter(Boolean).map(n => n[0].toUpperCase()).join('') || member.Username[0].toUpperCase();
+                    const fullName = [member.FirstName, member.LastName].filter(Boolean).join(' ') || member.Username;
+                    return (
+                      <div key={member.UserId} className="p-3 rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col items-center text-center gap-1">
+                        <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold text-sm">
+                          {initials}
+                        </div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-white leading-tight">{fullName}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{Number(member.WorkedHours).toFixed(1)}h · {member.TaskCount} task{Number(member.TaskCount) !== 1 ? 's' : ''}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Recent Time Entries */}
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow">
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4 uppercase tracking-wider">Recent Activity</h3>
+              {overviewLoading ? (
+                <div className="space-y-2">{[1,2,3,4].map(i => <div key={i} className="h-10 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />)}</div>
+              ) : !overviewData || overviewData.recentTimeEntries.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">No time entries recorded yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="text-left pb-2 pr-4">Date</th>
+                        <th className="text-left pb-2 pr-4">User</th>
+                        <th className="text-left pb-2 pr-4">Task</th>
+                        <th className="text-left pb-2 pr-4">Project</th>
+                        <th className="text-right pb-2">Hours</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                      {overviewData.recentTimeEntries.map((entry) => {
+                        const dateStr = String(entry.WorkDate).split('T')[0];
+                        const personName = [entry.FirstName, entry.LastName].filter(Boolean).join(' ') || entry.Username;
+                        return (
+                          <tr key={entry.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                            <td className="py-2 pr-4 text-gray-600 dark:text-gray-400 whitespace-nowrap">{dateStr}</td>
+                            <td className="py-2 pr-4 text-gray-900 dark:text-white whitespace-nowrap">{personName}</td>
+                            <td className="py-2 pr-4">
+                              <div
+                                className="text-blue-600 dark:text-blue-400 cursor-pointer hover:underline max-w-[180px] truncate"
+                                onClick={() => openTaskDetails(entry.ProjectId, entry.TaskId)}
+                                title={entry.TaskName}
+                              >
+                                {entry.TaskName}
+                              </div>
+                              {entry.Description && (
+                                <div className="text-xs text-gray-400 truncate max-w-[180px]" title={entry.Description}>{entry.Description}</div>
+                              )}
+                            </td>
+                            <td className="py-2 pr-4 text-gray-600 dark:text-gray-400 max-w-[140px] truncate" title={entry.ProjectName}>{entry.ProjectName}</td>
+                            <td className="py-2 text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">{Number(entry.Hours).toFixed(1)}h</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Projects */}
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow">
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4 uppercase tracking-wider">Projects</h3>
+              {projects.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">No projects associated with this customer.</p>
+              ) : (
+                <div className="space-y-3">
+                  {projects.map((project) => {
+                    const progress = project.TotalTasks > 0 ? Math.round((Number(project.CompletedTasks) / Number(project.TotalTasks)) * 100) : 0;
+                    return (
+                      <div
+                        key={project.Id}
+                        onClick={() => router.push(`/projects/${project.Id}`)}
+                        className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer"
+                      >
+                        <div className="flex justify-between items-start gap-2 mb-2">
+                          <div className="min-w-0">
+                            <div className="font-medium text-gray-900 dark:text-white truncate">{project.ProjectName}</div>
+                            <div className="text-sm text-gray-500 dark:text-gray-400">
+                              {project.CompletedTasks}/{project.TotalTasks} tasks · {Number(project.TotalWorkedHours || 0).toFixed(1)}h / {Number(project.TotalEstimatedHours || 0).toFixed(0)}h
+                            </div>
+                          </div>
+                          <span className="px-2 py-1 text-xs rounded-full whitespace-nowrap flex-shrink-0" style={{ backgroundColor: project.StatusColor ? `${project.StatusColor}20` : '#e5e7eb', color: project.StatusColor || '#374151' }}>
+                            {project.StatusName || 'Unknown'}
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                          <div
+                            className={`h-1.5 rounded-full ${project.StatusIsClosed ? 'bg-green-500' : 'bg-blue-600'}`}
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                        <div className="text-right text-xs text-gray-400 mt-0.5">{progress}%</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {/* Contact Information */}
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Contact Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow">
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4 uppercase tracking-wider">Contact Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">Contact Person</div>
-                  <div className="text-gray-900 dark:text-white">{defaultContact?.Name || '-'}</div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Contact Person</div>
+                  <div className="text-sm text-gray-900 dark:text-white">{defaultContact?.Name || '-'}</div>
                 </div>
                 <div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">Email</div>
-                  <div className="text-gray-900 dark:text-white">{defaultContact?.Email || customer.Email || '-'}</div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Email</div>
+                  <div className="text-sm text-gray-900 dark:text-white">{defaultContact?.Email || customer.Email || '-'}</div>
                 </div>
                 <div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">Phone</div>
-                  <div className="text-gray-900 dark:text-white">{defaultContact?.Phone || customer.Phone || '-'}</div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Phone</div>
+                  <div className="text-sm text-gray-900 dark:text-white">{defaultContact?.Phone || customer.Phone || '-'}</div>
                 </div>
                 <div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">Total Contacts</div>
-                  <div className="text-gray-900 dark:text-white">{customerContacts.length}</div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Total Contacts</div>
+                  <div className="text-sm text-gray-900 dark:text-white">{customerContacts.length}</div>
                 </div>
                 <div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">Website</div>
-                  <div className="text-gray-900 dark:text-white">
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Website</div>
+                  <div className="text-sm text-gray-900 dark:text-white">
                     {(customer as any).Website ? (
                       <a href={(customer as any).Website} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
                         {(customer as any).Website}
@@ -861,45 +1377,15 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                     ) : '-'}
                   </div>
                 </div>
-                <div className="md:col-span-2">
-                  <div className="text-sm text-gray-500 dark:text-gray-400">Address</div>
-                  <div className="text-gray-900 dark:text-white whitespace-pre-line">{customer.Address || '-'}</div>
+                <div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Address</div>
+                  <div className="text-sm text-gray-900 dark:text-white whitespace-pre-line">{customer.Address || '-'}</div>
                 </div>
               </div>
-            </div>
-
-            {/* Projects List */}
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Projects</h3>
-              {projects.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400">No projects associated with this customer.</p>
-              ) : (
-                <div className="space-y-3">
-                  {projects.map((project) => {
-                    const progress = project.TotalTasks > 0 ? Math.round((project.CompletedTasks / project.TotalTasks) * 100) : 0;
-                    return (
-                      <div
-                        key={project.Id}
-                        onClick={() => router.push(`/projects/${project.Id}`)}
-                        className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer"
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <div className="font-medium text-gray-900 dark:text-white">{project.ProjectName}</div>
-                            <div className="text-sm text-gray-500 dark:text-gray-400">
-                              {project.CompletedTasks}/{project.TotalTasks} tasks • {Number(project.TotalWorkedHours || 0).toFixed(1)}h worked
-                            </div>
-                          </div>
-                          <span className="px-2 py-1 text-xs rounded-full" style={{ backgroundColor: project.StatusColor ? `${project.StatusColor}20` : undefined, color: project.StatusColor || undefined }}>
-                            {project.StatusName || 'Unknown'}
-                          </span>
-                        </div>
-                        <div className="mt-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                          <div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${progress}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
+              {customer.Notes && (
+                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-1">Notes</div>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{customer.Notes}</p>
                 </div>
               )}
             </div>
@@ -1401,6 +1887,58 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             </div>
           </div>
         </div>
+      )}
+
+      {taskModalState.show && (
+        <>
+          {taskModalState.isLoading && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 text-gray-700 dark:text-gray-300">
+                Loading task details...
+              </div>
+            </div>
+          )}
+
+          {!taskModalState.isLoading && taskModalState.error && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+                <div className="text-sm text-red-600 dark:text-red-400 mb-4">{taskModalState.error}</div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={closeTaskDetails}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!taskModalState.isLoading && !taskModalState.error && taskModalState.project && taskModalState.task && token && (
+            <TaskDetailModal
+              projectId={Number(taskModalState.project.Id)}
+              organizationId={Number(taskModalState.project.OrganizationId)}
+              task={taskModalState.task}
+              project={taskModalState.project}
+              tasks={taskModalState.tasks}
+              onOpenTask={(targetTask: ApiTask) => {
+                const fullTask = taskModalState.tasks.find((entry) => Number(entry.Id) === Number(targetTask.Id)) || targetTask;
+                setTaskModalState((prev) => ({
+                  ...prev,
+                  task: fullTask,
+                }));
+              }}
+              onClose={closeTaskDetails}
+              onSaved={async () => {
+                if (!taskModalState.project || !taskModalState.task) return;
+                await openTaskDetails(Number(taskModalState.project.Id), Number(taskModalState.task.Id));
+                await loadData();
+              }}
+              token={token}
+            />
+          )}
+        </>
       )}
     </div>
     </CustomerUserGuard>

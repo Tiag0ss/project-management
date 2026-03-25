@@ -6,6 +6,7 @@ import { createNotification } from './notifications';
 import { logActivity } from './activityLogs';
 import { sanitizeRichText } from '../utils/sanitize';
 import { resolveHistoryValues } from '../utils/changeLog';
+import { prepareCustomFieldData } from '../utils/customFields';
 
 const router = Router();
 
@@ -447,7 +448,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const customerId = req.user?.customerId;
-    const { organizationId, projectId, title, description, priority, category, customerId: bodyCustomerId, externalTicketId } = req.body;
+    const { organizationId, projectId, title, description, priority, category, customerId: bodyCustomerId, externalTicketId, customFields } = req.body;
     const isCustomerUser = !!customerId;
 
     if (!organizationId || !title) {
@@ -565,13 +566,15 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: 'Ticket priority is required but no matching priority was found for this organization' });
     }
 
+    const customFieldData = await prepareCustomFieldData('Tickets', customFields);
+
     // Insert ticket first to get the ID
     console.log('[Ticket Creation] Inserting ticket with AssignedToUserId:', assignedToUserId);
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO Tickets (
         OrganizationId, CustomerId, ProjectId, CreatedByUserId, AssignedToUserId,
-        Title, Description, StatusId, PriorityId, Category, ExternalTicketId
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        Title, Description, StatusId, PriorityId, Category, ExternalTicketId${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
       [
         organizationId,
         ticketCustomerId,
@@ -583,7 +586,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         newStatusId,
         newPriorityId,
         category || 'Support',
-        externalTicketId || null
+        externalTicketId || null,
+        ...customFieldData.insertValues
       ]
     );
 
@@ -720,6 +724,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const scheduledDate = normalizeString(req.body.scheduledDate);
     const organizationId = req.body.organizationId;
     const customerId_new = req.body.customerId; // Different from user's customerId
+    const customFields = req.body.customFields;
 
     if (status !== undefined && status !== null && status === '') {
       return res.status(400).json({ success: false, message: 'Status is required' });
@@ -773,6 +778,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       // Regular users can update all fields
       const updates: string[] = [];
       const params: any[] = [];
+      const customFieldData = await prepareCustomFieldData('Tickets', customFields, ticket as Record<string, unknown>);
 
       if (title !== undefined) {
         if (title !== ticket.Title) {
@@ -787,6 +793,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         }
         updates.push('Description = ?');
         params.push(description);
+      }
+      for (const change of customFieldData.changes) {
+        await logTicketHistory(ticketId, userId!, 'Updated', change.field, change.oldVal, change.newVal);
       }
       if (status !== undefined) {
         // Resolve new StatusId from name
@@ -939,6 +948,11 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
           updates.push('CustomerId = ?');
           params.push(customerId_new || null);
         }
+      }
+
+      if (customFieldData.updateAssignments.length > 0) {
+        updates.push(...customFieldData.updateAssignments);
+        params.push(...customFieldData.updateValues);
       }
 
       updates.push('UpdatedAt = NOW()');

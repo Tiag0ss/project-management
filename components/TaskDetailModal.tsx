@@ -12,6 +12,8 @@ import { usersApi, User } from '@/lib/api/users';
 import RichTextEditor from './RichTextEditor';
 import SearchableSelectComponent from './SearchableSelect';
 import { usePermissions } from '@/contexts/PermissionsContext';
+import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
+import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 
 interface TaskDetailModalProps {
   projectId: number;
@@ -287,6 +289,7 @@ export default function TaskDetailModal({
     applicationId: task?.ApplicationId ?? null,
     releaseVersionId: task?.ReleaseVersionId ?? null,
   });
+  const [customFields, setCustomFields] = useState<CustomFieldValues>(() => extractCustomFieldValues(task));
   
   // Data states
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
@@ -859,6 +862,7 @@ export default function TaskDetailModal({
           giteaIssueNumber: normalizedGiteaIssueNumber ?? null,
           applicationId: formData.applicationId ?? null,
           releaseVersionId: formData.releaseVersionId ?? null,
+          customFields,
         };
         await tasksApi.update(task.Id, payload, token);
 
@@ -899,6 +903,7 @@ export default function TaskDetailModal({
           giteaIssueNumber: normalizedGiteaIssueNumber ?? null,
           applicationId: formData.applicationId ?? null,
           releaseVersionId: formData.releaseVersionId ?? null,
+          customFields,
         };
         const result = await tasksApi.create(payload, token);
         // Add assignees to the newly created task
@@ -2454,6 +2459,13 @@ export default function TaskDetailModal({
                   </p>
                 </div>
               )}
+
+              <CustomFieldsFormSection
+                tableName="Tasks"
+                token={token}
+                values={customFields}
+                onChange={setCustomFields}
+              />
 
             </form>
           )}
