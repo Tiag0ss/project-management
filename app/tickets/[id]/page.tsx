@@ -1252,37 +1252,6 @@ export default function TicketDetailPage() {
                 </div>
               )}
 
-              {isEditing && (
-                <div className="mt-6">
-                  <CustomFieldsFormSection
-                    tableName="Tickets"
-                    token={token || undefined}
-                    values={editForm.customFields}
-                    onChange={(customFields) => setEditForm(prev => ({ ...prev, customFields }))}
-                  />
-                </div>
-              )}
-
-              {!isEditing && ticketCustomFields.length > 0 && (
-                <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-6">
-                  <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">Custom Fields</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {ticketCustomFields
-                      .slice()
-                      .sort((a, b) => a.DisplayName.localeCompare(b.DisplayName))
-                      .map((field) => (
-                        <div key={field.Id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 p-3">
-                          <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                            {field.DisplayName}
-                          </div>
-                          <div className="mt-1 text-sm text-gray-900 dark:text-white break-words">
-                            {formatCustomFieldValue(field, ticketCustomFieldValues[field.FieldName])}
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
               </div>
             )}
 
@@ -1856,6 +1825,41 @@ export default function TicketDetailPage() {
                         )}
                       </dd>
                     )}
+                  </div>
+                )}
+
+                {isEditing && (
+                  <div>
+                    <dt className="text-sm text-gray-500 dark:text-gray-400 mb-2">Custom Fields</dt>
+                    <CustomFieldsFormSection
+                      tableName="Tickets"
+                      token={token || undefined}
+                      values={editForm.customFields}
+                      onChange={(customFields) => setEditForm(prev => ({ ...prev, customFields }))}
+                    />
+                  </div>
+                )}
+
+                {!isEditing && ticketCustomFields.length > 0 && (
+                  <div>
+                    <dt className="text-sm text-gray-500 dark:text-gray-400 mb-2">Custom Fields</dt>
+                    <dd>
+                      <div className="grid grid-cols-1 gap-3">
+                        {ticketCustomFields
+                          .slice()
+                          .sort((a, b) => a.DisplayName.localeCompare(b.DisplayName))
+                          .map((field) => (
+                            <div key={field.Id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 p-3">
+                              <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                {field.DisplayName}
+                              </div>
+                              <div className="mt-1 text-sm text-gray-900 dark:text-white break-words">
+                                {formatCustomFieldValue(field, ticketCustomFieldValues[field.FieldName])}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </dd>
                   </div>
                 )}
 

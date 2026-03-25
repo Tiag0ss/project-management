@@ -1459,13 +1459,6 @@ export default function TicketsPage() {
                     </div>
                   </div>
 
-                  <CustomFieldsFormSection
-                    tableName="Tickets"
-                    token={token || undefined}
-                    values={createForm.customFields}
-                    onChange={(customFields) => setCreateForm(prev => ({ ...prev, customFields }))}
-                  />
-                  
                   {/* Attachments */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1502,6 +1495,13 @@ export default function TicketsPage() {
                       </div>
                     )}
                   </div>
+
+                  <CustomFieldsFormSection
+                    tableName="Tickets"
+                    token={token || undefined}
+                    values={createForm.customFields}
+                    onChange={(customFields) => setCreateForm(prev => ({ ...prev, customFields }))}
+                  />
                 </div>
 
                 {/* Actions */}

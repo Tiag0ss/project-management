@@ -381,13 +381,6 @@ export default function CallRecordFormModal({
                 </select>
               </div>
             </div>
-            <CustomFieldsFormSection
-              tableName="CallRecords"
-              token={token}
-              values={formData.customFields}
-              onChange={(customFields) => setFormData((prev) => ({ ...prev, customFields }))}
-            />
-
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Subject
@@ -472,6 +465,13 @@ export default function CallRecordFormModal({
                 placeholder="Meeting notes..."
               />
             </div>
+
+            <CustomFieldsFormSection
+              tableName="CallRecords"
+              token={token}
+              values={formData.customFields}
+              onChange={(customFields) => setFormData((prev) => ({ ...prev, customFields }))}
+            />
 
             <div className="flex gap-2 pt-2">
               <button
