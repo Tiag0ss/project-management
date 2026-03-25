@@ -119,6 +119,7 @@ interface SystemSettings {
   memosEnabled?: string;
   autoApproveTimeEntries?: string;
   autoApproveVacations?: string;
+  frontpageEnabled?: string;
   aiAssistantEnabled?: string;
   openAIApiKey?: string;
   aiViewsAutoCreate?: string;
@@ -167,6 +168,7 @@ export default function SystemSettings() {
     memosEnabled: 'true',
     autoApproveTimeEntries: 'false',
     autoApproveVacations: 'false',
+    frontpageEnabled: 'true',
     aiAssistantEnabled: 'false',
     openAIApiKey: '',
     aiViewsAutoCreate: 'true',
@@ -236,6 +238,7 @@ export default function SystemSettings() {
           memosEnabled: data.settings.memosEnabled || 'true',
           autoApproveTimeEntries: data.settings.autoApproveTimeEntries || 'false',
           autoApproveVacations: data.settings.autoApproveVacations || 'false',
+          frontpageEnabled: data.settings.frontpageEnabled !== undefined ? data.settings.frontpageEnabled : 'true',
           aiAssistantEnabled: data.settings.aiAssistantEnabled || 'false',
           openAIApiKey: data.settings.openAIApiKey || '',
           aiViewsAutoCreate: data.settings.aiViewsAutoCreate || 'true',
@@ -555,7 +558,7 @@ export default function SystemSettings() {
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  Leave empty and save to clear the stored SMTP password.
+                  Leave blank to keep the existing password. Only fill in to change it.
                 </p>
               </div>
 
@@ -803,6 +806,23 @@ export default function SystemSettings() {
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
+                    checked={settings.frontpageEnabled !== 'false'}
+                    onChange={(e) => handleChange('frontpageEnabled', e.target.checked ? 'true' : 'false')}
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      Enable Front Page
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      When disabled, visiting the root URL redirects directly to the login page.
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
                     checked={settings.internalTicketsEnabled === 'true'}
                     onChange={(e) => handleChange('internalTicketsEnabled', e.target.checked ? 'true' : 'false')}
                     className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
@@ -904,7 +924,7 @@ export default function SystemSettings() {
                     className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Leave empty and save to clear the stored API key.
+                    Leave blank to keep the existing key. Only fill in to change it.
                   </p>
                 </div>
 

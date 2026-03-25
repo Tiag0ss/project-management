@@ -45,10 +45,20 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
     title: string;
     message: string;
     onConfirm?: () => void;
+    confirmLabel?: string;
+    confirmVariant?: 'primary' | 'danger';
   } | null>(null);
 
-  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
-    setModalMessage({ type: 'confirm', title, message, onConfirm });
+  const showConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    options?: {
+      confirmLabel?: string;
+      confirmVariant?: 'primary' | 'danger';
+    }
+  ) => {
+    setModalMessage({ type: 'confirm', title, message, onConfirm, ...options });
   };
 
   const closeConfirmModal = () => {
@@ -554,8 +564,8 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
         message={modalMessage?.message || ''}
         onClose={closeConfirmModal}
         onConfirm={handleModalConfirm}
-        confirmLabel="Delete"
-        confirmVariant="danger"
+        confirmLabel={modalMessage?.confirmLabel}
+        confirmVariant={modalMessage?.confirmVariant}
       />
     </div>
     </CustomerUserGuard>
@@ -1050,7 +1060,15 @@ function MembersTab({
   orgId: number; 
   canManage: boolean; 
   token: string;
-  showConfirm: (title: string, message: string, onConfirm: () => void) => void;
+  showConfirm: (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    options?: {
+      confirmLabel?: string;
+      confirmVariant?: 'primary' | 'danger';
+    }
+  ) => void;
 }) {
   const [members, setMembers] = useState<OrganizationMember[]>([]);
   const [groups, setGroups] = useState<PermissionGroup[]>([]);
@@ -1442,7 +1460,15 @@ function PermissionsTab({
   orgId: number; 
   canManage: boolean; 
   token: string;
-  showConfirm: (title: string, message: string, onConfirm: () => void) => void;
+  showConfirm: (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    options?: {
+      confirmLabel?: string;
+      confirmVariant?: 'primary' | 'danger';
+    }
+  ) => void;
 }) {
   const [groups, setGroups] = useState<PermissionGroup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -1493,6 +1519,10 @@ function PermissionsTab({
         } catch (err: any) {
           setError(err.message || 'Failed to sync permission group');
         }
+      },
+      {
+        confirmLabel: 'Sync',
+        confirmVariant: 'primary',
       }
     );
   };
@@ -1961,7 +1991,15 @@ function StatusesTab({
   orgId: number; 
   canManage: boolean; 
   token: string;
-  showConfirm: (title: string, message: string, onConfirm: () => void) => void;
+  showConfirm: (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    options?: {
+      confirmLabel?: string;
+      confirmVariant?: 'primary' | 'danger';
+    }
+  ) => void;
   internalTicketsEnabled: boolean;
 }) {
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
@@ -2263,7 +2301,15 @@ function WorkflowPoliciesTab({
   orgId: number;
   canManage: boolean;
   token: string;
-  showConfirm: (title: string, message: string, onConfirm: () => void) => void;
+  showConfirm: (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    options?: {
+      confirmLabel?: string;
+      confirmVariant?: 'primary' | 'danger';
+    }
+  ) => void;
 }) {
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [workflowPolicies, setWorkflowPolicies] = useState<WorkflowTransitionPolicy[]>([]);
@@ -3152,6 +3198,54 @@ interface Tag {
   CreatedAt: string;
 }
 
+const clampTagColorChannel = (value: number): number => Math.max(0, Math.min(255, Math.round(value)));
+
+const normalizeTagHexColor = (color: string | undefined): string => {
+  const fallback = '#6B7280';
+  if (!color) return fallback;
+  const trimmed = color.trim();
+  const hex = trimmed.startsWith('#') ? trimmed.slice(1) : trimmed;
+
+  if (/^[0-9a-fA-F]{3}$/.test(hex)) {
+    return `#${hex.split('').map((char) => char + char).join('')}`;
+  }
+
+  if (/^[0-9a-fA-F]{6}$/.test(hex)) {
+    return `#${hex}`;
+  }
+
+  return fallback;
+};
+
+const tagHexToRgb = (color: string): { r: number; g: number; b: number } => {
+  const normalized = normalizeTagHexColor(color);
+  return {
+    r: parseInt(normalized.slice(1, 3), 16),
+    g: parseInt(normalized.slice(3, 5), 16),
+    b: parseInt(normalized.slice(5, 7), 16),
+  };
+};
+
+const tagRgbToHex = ({ r, g, b }: { r: number; g: number; b: number }): string => {
+  const toHex = (value: number) => clampTagColorChannel(value).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+};
+
+const blendTagHexColors = (baseColor: string, mixColor: string, ratio: number): string => {
+  const base = tagHexToRgb(baseColor);
+  const mix = tagHexToRgb(mixColor);
+  const mixRatio = Math.max(0, Math.min(1, ratio));
+  const baseRatio = 1 - mixRatio;
+
+  return tagRgbToHex({
+    r: base.r * baseRatio + mix.r * mixRatio,
+    g: base.g * baseRatio + mix.g * mixRatio,
+    b: base.b * baseRatio + mix.b * mixRatio,
+  });
+};
+
+const withTagAlpha = (color: string, alphaHex: string): string => `${normalizeTagHexColor(color)}${alphaHex}`;
+
 function TagsTab({
   orgId,
   canManage,
@@ -3161,7 +3255,15 @@ function TagsTab({
   orgId: number;
   canManage: boolean;
   token: string;
-  showConfirm: (title: string, message: string, onConfirm: () => void) => void;
+  showConfirm: (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    options?: {
+      confirmLabel?: string;
+      confirmVariant?: 'primary' | 'danger';
+    }
+  ) => void;
 }) {
   const [tags, setTags] = useState<Tag[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -3173,6 +3275,7 @@ function TagsTab({
     description: ''
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [isImportingDefaults, setIsImportingDefaults] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -3291,12 +3394,105 @@ function TagsTab({
     );
   };
 
+  const handleImportDefaults = async () => {
+    showConfirm(
+      'Import Default Tags',
+      'Import the default slash-based tag presets into this organization? Existing tags with the same name will be skipped.',
+      async () => {
+        setIsImportingDefaults(true);
+        setError('');
+
+        try {
+          const response = await fetch(
+            `${getApiUrl()}/api/tags/organization/${orgId}/import-defaults`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+
+          const result = await response.json();
+          if (!response.ok) {
+            throw new Error(result.message || 'Failed to import default tags');
+          }
+
+          await loadTags();
+        } catch (err: any) {
+          setError(err.message || 'Failed to import default tags');
+        } finally {
+          setIsImportingDefaults(false);
+        }
+      },
+      {
+        confirmLabel: 'Import',
+        confirmVariant: 'primary',
+      }
+    );
+  };
+
   const colorPresets = [
     '#EF4444', '#F97316', '#F59E0B', '#EAB308', '#84CC16',
     '#22C55E', '#10B981', '#14B8A6', '#06B6D4', '#0EA5E9',
     '#3B82F6', '#6366F1', '#8B5CF6', '#A855F7', '#D946EF',
     '#EC4899', '#F43F5E', '#6B7280', '#374151', '#1F2937'
   ];
+
+  const renderSegmentedTagPreview = (tag: { Id: number; Name: string; Color: string }) => {
+    const segments = tag.Name
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+
+    const baseColor = normalizeTagHexColor(tag.Color);
+
+    if (segments.length <= 1) {
+      return (
+        <span
+          className="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-md border"
+          style={{
+            backgroundColor: withTagAlpha(baseColor, '20'),
+            color: baseColor,
+            borderColor: withTagAlpha(baseColor, '55'),
+          }}
+        >
+          {segments[0] || tag.Name}
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-stretch overflow-hidden rounded-md border" style={{ borderColor: withTagAlpha(baseColor, '66') }}>
+        {segments.map((segment, index) => {
+          const segmentBackground = index === 0
+            ? blendTagHexColors(baseColor, '#111827', 0.18)
+            : index === segments.length - 1
+              ? baseColor
+              : blendTagHexColors(baseColor, '#ffffff', 0.12 * index);
+
+          const segmentTextColor = index === 0
+            ? blendTagHexColors(baseColor, '#ffffff', 0.72)
+            : '#ffffff';
+
+          return (
+            <span
+              key={`${tag.Id}-${segment}-${index}`}
+              className="px-2.5 py-1 text-xs font-semibold leading-none"
+              style={{
+                backgroundColor: segmentBackground,
+                color: segmentTextColor,
+                borderLeft: index === 0 ? 'none' : `1px solid ${withTagAlpha(baseColor, '88')}`,
+              }}
+            >
+              {segment}
+            </span>
+          );
+        })}
+      </span>
+    );
+  };
 
   if (isLoading) {
     return <div className="text-gray-500 dark:text-gray-400">Loading tags...</div>;
@@ -3312,29 +3508,56 @@ function TagsTab({
           </p>
         </div>
         {canManage && (
-          <button
-            onClick={openCreateModal}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Create Tag
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleImportDefaults}
+              disabled={isImportingDefaults}
+              className="px-4 py-2 bg-gray-900 hover:bg-gray-800 disabled:bg-gray-500 text-white rounded-lg transition-colors flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m14.836 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.356-2m15.356 2H15" />
+              </svg>
+              {isImportingDefaults ? 'Importing...' : 'Import Default Tags'}
+            </button>
+            <button
+              onClick={openCreateModal}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create Tag
+            </button>
+          </div>
         )}
       </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
+          {error}
+        </div>
+      )}
 
       {tags.length === 0 ? (
         <div className="text-center py-12 text-gray-500 dark:text-gray-400">
           <div className="text-4xl mb-4">🏷️</div>
           <p>No tags created yet.</p>
           {canManage && (
-            <button
-              onClick={openCreateModal}
-              className="mt-4 text-blue-600 dark:text-blue-400 hover:underline"
-            >
-              Create your first tag
-            </button>
+            <div className="mt-4 flex items-center justify-center gap-4">
+              <button
+                onClick={handleImportDefaults}
+                disabled={isImportingDefaults}
+                className="text-gray-900 dark:text-gray-100 hover:underline disabled:opacity-60"
+              >
+                {isImportingDefaults ? 'Importing defaults...' : 'Import default tags'}
+              </button>
+              <button
+                onClick={openCreateModal}
+                className="text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Create your first tag
+              </button>
+            </div>
           )}
         </div>
       ) : (
@@ -3345,18 +3568,12 @@ function TagsTab({
               className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 flex items-center justify-between"
             >
               <div className="flex items-center gap-3">
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center"
-                  style={{ backgroundColor: tag.Color + '30', border: `2px solid ${tag.Color}` }}
-                >
-                  <span style={{ color: tag.Color }}>🏷️</span>
-                </div>
                 <div>
-                  <div className="font-medium text-gray-900 dark:text-white">{tag.Name}</div>
+                  <div className="mb-2">{renderSegmentedTagPreview(tag)}</div>
                   {tag.Description && (() => {
                     const plainText = tag.Description.replace(/<[^>]*>/g, '').trim();
                     return plainText ? (
-                      <div className="text-xs text-gray-500 dark:text-gray-400">{plainText}</div>
+                      <div className="text-xs text-gray-300 dark:text-gray-400">{plainText}</div>
                     ) : null;
                   })()}
                 </div>
@@ -3409,9 +3626,12 @@ function TagsTab({
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="e.g., Bug, Feature, Urgent"
+                    placeholder="e.g., Kind/Bug, Reviewed/Confirmed, Status/Blocked"
                     maxLength={50}
                   />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Use <span className="font-semibold">/</span> to create segmented labels visually, for example <span className="font-semibold">Kind/Bug</span>.
+                  </p>
                 </div>
 
                 <div className="mb-4">

@@ -6,6 +6,12 @@ import RichTextEditor from '@/components/RichTextEditor';
 import { getMemos, createMemo, updateMemo, deleteMemo, Memo } from '@/lib/api/memos';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import SearchableMultiSelect from '@/components/SearchableMultiSelect';
+
+const MEMO_CALENDAR_LOCALE = 'en-US';
+const MEMO_CALENDAR_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const normalizeMemoTag = (tag: string): string => tag.trim().replace(/\s+/g, ' ');
 
 export default function MemosPage() {
   const { user, token, isLoading } = useAuth();
@@ -29,7 +35,6 @@ export default function MemosPage() {
     visibility: 'private' as 'private' | 'organizations' | 'public',
     tags: [] as string[],
   });
-  const [tagInput, setTagInput] = useState('');
   const [confirmModal, setConfirmModal] = useState<{
     show: boolean;
     title: string;
@@ -63,7 +68,6 @@ export default function MemosPage() {
 
   const handleCreateMemo = () => {
     setMemoForm({ title: '', content: '', visibility: 'private', tags: [] });
-    setTagInput('');
     setSelectedMemo(null);
     setShowMemoModal(true);
   };
@@ -75,7 +79,6 @@ export default function MemosPage() {
       visibility: memo.Visibility,
       tags: memo.Tags ? memo.Tags.split(',').map(t => t.trim()) : [],
     });
-    setTagInput('');
     setSelectedMemo(memo);
     setShowMemoModal(true);
   };
@@ -122,11 +125,11 @@ export default function MemosPage() {
     });
   };
 
-  const addTag = () => {
-    const tag = tagInput.trim();
-    if (tag && !memoForm.tags.includes(tag)) {
+  const addTag = (rawTag: string) => {
+    const tag = normalizeMemoTag(rawTag);
+    const existingTags = new Set(memoForm.tags.map((memoTag) => normalizeMemoTag(memoTag).toLowerCase()));
+    if (tag && !existingTags.has(tag.toLowerCase())) {
       setMemoForm(prev => ({ ...prev, tags: [...prev.tags, tag] }));
-      setTagInput('');
     }
   };
 
@@ -167,14 +170,12 @@ export default function MemosPage() {
   };
 
   const handleDateSelect = (date: Date) => {
-    // Se clicar na mesma data selecionada, remove o filtro de data
     if (enableDateFilter && 
         date.getDate() === selectedDate.getDate() &&
         date.getMonth() === selectedDate.getMonth() &&
         date.getFullYear() === selectedDate.getFullYear()) {
       setEnableDateFilter(false);
     } else {
-      // Seleciona nova data e ativa filtro
       setSelectedDate(date);
       setEnableDateFilter(true);
     }
@@ -234,8 +235,20 @@ export default function MemosPage() {
     memos.flatMap(m => m.Tags ? m.Tags.split(',').map(t => t.trim()) : [])
   )).sort();
 
+  const memoTagOptions = Array.from(
+    new Set([
+      ...allTags.map(normalizeMemoTag),
+      ...memoForm.tags.map(normalizeMemoTag),
+    ].filter(Boolean))
+  )
+    .sort((a, b) => a.localeCompare(b))
+    .map((tag) => ({
+      value: tag,
+      label: tag,
+    }));
+
   const days = getDaysInMonth(currentMonth);
-  const monthName = currentMonth.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' });
+  const monthName = currentMonth.toLocaleDateString(MEMO_CALENDAR_LOCALE, { month: 'long', year: 'numeric' });
 
   if (!user) return null;
 
@@ -293,14 +306,14 @@ export default function MemosPage() {
               {enableDateFilter && (
                 <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-center">
                   <p className="text-xs text-blue-700 dark:text-blue-400">
-                    📅 Showing: {selectedDate.toLocaleDateString('pt-PT', { day: 'numeric', month: 'long' })}
+                    📅 Showing: {selectedDate.toLocaleDateString(MEMO_CALENDAR_LOCALE, { day: 'numeric', month: 'long' })}
                   </p>
                 </div>
               )}
 
               {/* Calendar Grid */}
               <div className="grid grid-cols-7 gap-1 text-center">
-                {['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'].map(day => (
+                {MEMO_CALENDAR_WEEKDAYS.map(day => (
                   <div key={day} className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                     {day}
                   </div>
@@ -330,6 +343,16 @@ export default function MemosPage() {
                     );
                   });
 
+                  const hasOwnMemos = memos.some(m => {
+                    if (m.UserId !== user.id) return false;
+                    const memoDate = new Date(m.CreatedAt);
+                    return (
+                      memoDate.getDate() === day.getDate() &&
+                      memoDate.getMonth() === day.getMonth() &&
+                      memoDate.getFullYear() === day.getFullYear()
+                    );
+                  });
+
                   return (
                     <button
                       key={index}
@@ -337,9 +360,10 @@ export default function MemosPage() {
                       className={`
                         p-2 text-sm rounded
                         ${isSelected ? 'bg-blue-600 text-white' : ''}
-                        ${isToday && !isSelected ? 'bg-blue-100 dark:bg-blue-900 font-bold' : ''}
-                        ${!isSelected && !isToday ? 'hover:bg-gray-100 dark:hover:bg-gray-700' : ''}
-                        ${hasMemos && !isSelected ? 'font-semibold' : ''}
+                        ${hasOwnMemos && !isSelected ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 font-semibold ring-1 ring-emerald-300 dark:ring-emerald-700' : ''}
+                        ${isToday && !isSelected && !hasOwnMemos ? 'bg-blue-100 dark:bg-blue-900 font-bold' : ''}
+                        ${!isSelected && !isToday && !hasOwnMemos ? 'hover:bg-gray-100 dark:hover:bg-gray-700' : ''}
+                        ${hasMemos && !hasOwnMemos && !isSelected ? 'font-semibold' : ''}
                       `}
                     >
                       {day.getDate()}
@@ -470,7 +494,7 @@ export default function MemosPage() {
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center">
                 <p className="text-gray-500 dark:text-gray-400 mb-4">
                   {enableDateFilter
-                    ? `No memos for ${selectedDate.toLocaleDateString('pt-PT', { day: 'numeric', month: 'long', year: 'numeric' })}`
+                    ? `No memos for ${selectedDate.toLocaleDateString(MEMO_CALENDAR_LOCALE, { day: 'numeric', month: 'long', year: 'numeric' })}`
                     : 'No memos found with the current filters'
                   }
                 </p>
@@ -503,7 +527,7 @@ export default function MemosPage() {
                               : memo.Username}
                           </span>
                           <span>•</span>
-                          <span>{new Date(memo.CreatedAt).toLocaleDateString('pt-PT', { 
+                          <span>{new Date(memo.CreatedAt).toLocaleDateString(MEMO_CALENDAR_LOCALE, { 
                             weekday: 'short', 
                             day: 'numeric', 
                             month: 'numeric', 
@@ -653,22 +677,29 @@ export default function MemosPage() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Tags
                   </label>
-                  <div className="flex space-x-2 mb-2">
-                    <input
-                      type="text"
-                      value={tagInput}
-                      onChange={(e) => setTagInput(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
-                      placeholder="Add tag (press Enter)"
-                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  <div className="space-y-3">
+                    <SearchableMultiSelect
+                      values={memoForm.tags}
+                      onChange={(values) => {
+                        const normalized = Array.from(
+                          new Set(
+                            values
+                              .map((value) => normalizeMemoTag(String(value)))
+                              .filter(Boolean)
+                          )
+                        );
+                        setMemoForm(prev => ({ ...prev, tags: normalized }));
+                      }}
+                      options={memoTagOptions}
+                      placeholder="Select existing tags"
+                      allowCreate
+                      createLabel="Add tag"
+                      onCreateOption={addTag}
                     />
-                    <button
-                      onClick={addTag}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
-                    >
-                      Add
-                    </button>
                   </div>
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    Select existing tags, or type in the search box to add a new one.
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     {memoForm.tags.map((tag, idx) => (
                       <span 

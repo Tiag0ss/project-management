@@ -41,6 +41,12 @@ Edge cases:
    - Never insert new planning allocations without a header ID.
    - Prefer header-aware slice endpoints (`/header/:headerId`, `/header/:headerId/hours`, `/header/:headerId/dates`) for targeted slice operations.
 18. Startup-safe migrations for planning data must be idempotent and should backfill `TaskAllocationHeaderId` for legacy rows and repair orphan header references.
+19. For Dashboard KPI drill-down routes:
+   - Keep one shared query source for list-backed KPI data and reuse it for both `/api/dashboard-kpis/values` and `/api/dashboard-kpis/:widgetId/details`.
+   - Ensure summary KPI values for list-backed cards are derived from the same backing list used by details.
+   - Include navigation identifiers (`taskId`, `projectId`) in detail payloads when rows need deep linking.
+   - Include task tags when available (`TaskTags` + `Tags`) in task detail rows.
+   - Never read `Projects.CustomerName` directly; resolve project customer label via `LEFT JOIN Customers` + `COALESCE(ExternalName, Name)`.
 
 ## Output Contract
 

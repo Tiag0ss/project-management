@@ -11,6 +11,8 @@ import { usersApi, User } from '@/lib/api/users';
 import { tasksApi, Task } from '@/lib/api/tasks';
 import { projectsApi, Project } from '@/lib/api/projects';
 import {
+  DashboardKpiDetailItem,
+  DashboardKpiDetailResult,
   DashboardKpiMetadata,
   DashboardKpiMetricValue,
   DashboardKpiType,
@@ -23,6 +25,7 @@ import Navbar from '@/components/Navbar';
 import EmptyState from '@/components/EmptyState';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import TaskDetailModal from '@/components/TaskDetailModal';
+import SegmentedTagBadge from '@/components/tags/SegmentedTagBadge';
 import dynamic from 'next/dynamic';
 import CalendarTabComponent from './CalendarTab';
 
@@ -107,6 +110,7 @@ type KpiTemplate = {
   requiresOrganization?: boolean;
   requiresStatus?: boolean;
   requiresPriority?: boolean;
+  requiresTag?: boolean;
 };
 
 const KPI_TEMPLATES: KpiTemplate[] = [
@@ -124,6 +128,7 @@ const KPI_TEMPLATES: KpiTemplate[] = [
   { type: 'organizationCompletedTasks', label: 'Organization Completed Tasks', defaultTitle: 'Organization Completed Tasks', icon: '🎯', borderClass: 'border-lime-500', requiresOrganization: true },
   { type: 'tasksByStatus', label: 'Tasks by Status', defaultTitle: 'Tasks by Status', icon: '📍', borderClass: 'border-pink-500', requiresOrganization: true, requiresStatus: true },
   { type: 'tasksByPriority', label: 'Tasks by Priority', defaultTitle: 'Tasks by Priority', icon: '🚩', borderClass: 'border-rose-500', requiresOrganization: true, requiresPriority: true },
+  { type: 'tasksByTag', label: 'Tasks by Tag', defaultTitle: 'Tasks by Tag', icon: '🏷️', borderClass: 'border-fuchsia-500', requiresOrganization: true, requiresTag: true },
 ];
 
 const getDefaultKpiWidgets = (internalTicketsEnabled: boolean): DashboardKpiWidget[] => {
@@ -345,10 +350,27 @@ function DashboardContent() {
   });
   const [kpiWidgets, setKpiWidgets] = useState<DashboardKpiWidget[]>([]);
   const [kpiValues, setKpiValues] = useState<Record<string, DashboardKpiMetricValue>>({});
+  const [kpiDetailsByWidget, setKpiDetailsByWidget] = useState<Record<string, DashboardKpiDetailResult>>({});
   const [kpiMetadata, setKpiMetadata] = useState<DashboardKpiMetadata>({
     organizations: [],
     statusesByOrganization: {},
     prioritiesByOrganization: {},
+    tagsByOrganization: {},
+  });
+  const [kpiDetailModal, setKpiDetailModal] = useState<{
+    show: boolean;
+    widgetId: string | null;
+    widget: DashboardKpiWidget | null;
+    items: DashboardKpiDetailItem[];
+    isLoading: boolean;
+    type: 'tasks' | 'projects' | 'customers' | 'tickets' | 'timeEntries' | 'unknown';
+  }>({
+    show: false,
+    widgetId: null,
+    widget: null,
+    items: [],
+    isLoading: false,
+    type: 'tasks',
   });
   const [kpiSectionLoading, setKpiSectionLoading] = useState(false);
   const [kpiEditMode, setKpiEditMode] = useState(false);
@@ -363,6 +385,61 @@ function DashboardContent() {
 
   const closeModal = () => {
     setModalMessage(null);
+  };
+
+  const openKpiDetailModal = async (widget: DashboardKpiWidget) => {
+    setKpiDetailModal((prev) => ({ ...prev, show: true, widgetId: widget.id, widget, isLoading: true, items: [] }));
+
+    const cachedDetails = kpiDetailsByWidget[widget.id];
+    if (cachedDetails) {
+      setKpiDetailModal((prev) => ({
+        ...prev,
+        items: cachedDetails.items || [],
+        type: cachedDetails.type || 'unknown',
+        isLoading: false,
+      }));
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/dashboard-kpis/${widget.id}/details`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ widget }),
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setKpiDetailsByWidget((prev) => ({
+          ...prev,
+          [widget.id]: {
+            type: data.type || 'unknown',
+            items: data.items || [],
+          },
+        }));
+        setKpiDetailModal((prev) => ({
+          ...prev,
+          items: data.items || [],
+          type: data.type || 'unknown',
+          isLoading: false,
+        }));
+      } else {
+        setKpiDetailModal((prev) => ({ ...prev, isLoading: false }));
+      }
+    } catch (error) {
+      console.error('Failed to load KPI details:', error);
+      setKpiDetailModal((prev) => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const closeKpiDetailModal = () => {
+    setKpiDetailModal((prev) => ({ ...prev, show: false }));
   };
 
   const handleModalConfirm = () => {
@@ -630,6 +707,70 @@ function DashboardContent() {
       showToast({ type: 'error', message: 'Failed to open task details.' });
     }
   }, [token, showToast]);
+
+  const handleKpiDetailItemOpen = useCallback((item: DashboardKpiDetailItem) => {
+    if (kpiDetailModal.type === 'tasks') {
+      if (!item.taskId || !item.projectId) {
+        showToast({ type: 'error', message: 'Task details are not available for this item.' });
+        return;
+      }
+      closeKpiDetailModal();
+      openTaskDetails({ Id: Number(item.taskId), ProjectId: Number(item.projectId) });
+      return;
+    }
+
+    if (kpiDetailModal.type === 'timeEntries') {
+      if (!item.taskId || !item.projectId) {
+        showToast({ type: 'error', message: 'This time entry is not linked to a task.' });
+        return;
+      }
+      closeKpiDetailModal();
+      openTaskDetails({ Id: Number(item.taskId), ProjectId: Number(item.projectId) });
+      return;
+    }
+
+    if (kpiDetailModal.type === 'projects') {
+      closeKpiDetailModal();
+      router.push(`/projects/${item.id}`);
+      return;
+    }
+
+    if (kpiDetailModal.type === 'customers') {
+      closeKpiDetailModal();
+      router.push(`/customers/${item.id}`);
+      return;
+    }
+
+    if (kpiDetailModal.type === 'tickets') {
+      closeKpiDetailModal();
+      router.push(`/tickets/${item.id}`);
+    }
+  }, [kpiDetailModal.type, openTaskDetails, router, showToast]);
+
+  const getKpiDetailItemActionLabel = useCallback(() => {
+    if (kpiDetailModal.type === 'tasks' || kpiDetailModal.type === 'timeEntries') {
+      return 'Open task details';
+    }
+    if (kpiDetailModal.type === 'projects') {
+      return 'Open project';
+    }
+    if (kpiDetailModal.type === 'customers') {
+      return 'Open customer';
+    }
+    if (kpiDetailModal.type === 'tickets') {
+      return 'Open ticket';
+    }
+    return null;
+  }, [kpiDetailModal.type]);
+
+  const getKpiDetailTypeLabel = useCallback(() => {
+    if (kpiDetailModal.type === 'tasks') return 'Tasks';
+    if (kpiDetailModal.type === 'projects') return 'Projects';
+    if (kpiDetailModal.type === 'customers') return 'Customers';
+    if (kpiDetailModal.type === 'tickets') return 'Tickets';
+    if (kpiDetailModal.type === 'timeEntries') return 'Time Entries';
+    return 'Items';
+  }, [kpiDetailModal.type]);
 
   const loadPortalData = async () => {
     setPortalLoading(true);
@@ -942,6 +1083,14 @@ function DashboardContent() {
       }
     }
 
+    if (widget.type === 'tasksByTag' && widget.organizationId && widget.tagId) {
+      const tags = kpiMetadata.tagsByOrganization[String(widget.organizationId)] || [];
+      const match = tags.find((item) => Number(item.Id) === Number(widget.tagId));
+      if (match) {
+        return `${match.Name} Tasks`;
+      }
+    }
+
     if (
       (widget.type === 'organizationProjects' ||
         widget.type === 'organizationTasks' ||
@@ -964,8 +1113,43 @@ function DashboardContent() {
     }
 
     try {
-      const values = await getDashboardKpiValues(token, widgets);
-      setKpiValues(values);
+      const response = await getDashboardKpiValues(token, widgets);
+      setKpiDetailsByWidget(response.detailsByWidget || {});
+
+      const derivedValues: Record<string, DashboardKpiMetricValue> = {};
+
+      widgets.forEach((widget) => {
+        const details = response.detailsByWidget?.[widget.id];
+        const fallback = response.values?.[widget.id] || { value: 0 };
+
+        if (!details) {
+          derivedValues[widget.id] = fallback;
+          return;
+        }
+
+        if (widget.type === 'hoursThisWeek' || widget.type === 'hoursThisMonth') {
+          const totalHours = details.items.reduce((sum, item) => sum + Number(item.hours || 0), 0);
+          derivedValues[widget.id] = {
+            value: totalHours,
+            suffix: 'h',
+            subtitle: widget.type === 'hoursThisWeek' ? fallback.subtitle : undefined,
+          };
+          return;
+        }
+
+        if (widget.type === 'myTickets') {
+          const activeCount = details.items.filter((item) => !item.isClosed).length;
+          derivedValues[widget.id] = {
+            value: details.items.length,
+            subtitle: activeCount > 0 ? `${activeCount} active` : undefined,
+          };
+          return;
+        }
+
+        derivedValues[widget.id] = { value: details.items.length };
+      });
+
+      setKpiValues(derivedValues);
     } catch (error) {
       console.error('Failed to load KPI values:', error);
       showToast({ type: 'error', message: 'Failed to load KPI values' });
@@ -1015,6 +1199,7 @@ function DashboardContent() {
     const firstOrganizationId = kpiMetadata.organizations[0]?.Id;
     const statuses = firstOrganizationId ? (kpiMetadata.statusesByOrganization[String(firstOrganizationId)] || []) : [];
     const priorities = firstOrganizationId ? (kpiMetadata.prioritiesByOrganization[String(firstOrganizationId)] || []) : [];
+    const tags = firstOrganizationId ? (kpiMetadata.tagsByOrganization[String(firstOrganizationId)] || []) : [];
 
     const newWidget: DashboardKpiWidget = {
       id: buildWidgetId(kpiAddType),
@@ -1023,6 +1208,7 @@ function DashboardContent() {
       organizationId: template.requiresOrganization ? (firstOrganizationId || null) : null,
       statusValueId: template.requiresStatus ? (statuses[0]?.Id || null) : null,
       priorityValueId: template.requiresPriority ? (priorities[0]?.Id || null) : null,
+      tagId: template.requiresTag ? (tags[0]?.Id || null) : null,
     };
 
     setKpiWidgets((prev) => [...prev, newWidget]);
@@ -1732,6 +1918,7 @@ function DashboardContent() {
                       const formattedValue = valueData.suffix === 'h' ? numericValue.toFixed(1) : numericValue.toLocaleString();
                       const statusOptions = widget.organizationId ? (kpiMetadata.statusesByOrganization[String(widget.organizationId)] || []) : [];
                       const priorityOptions = widget.organizationId ? (kpiMetadata.prioritiesByOrganization[String(widget.organizationId)] || []) : [];
+                      const tagOptions = widget.organizationId ? (kpiMetadata.tagsByOrganization[String(widget.organizationId)] || []) : [];
 
                       return (
                         <div
@@ -1742,7 +1929,8 @@ function DashboardContent() {
                             if (kpiEditMode) e.preventDefault();
                           }}
                           onDrop={() => handleKpiDrop(widget.id)}
-                          className={`bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 ${template?.borderClass || 'border-gray-400'} ${kpiEditMode ? 'cursor-move' : ''}`}
+                          onClick={() => !kpiEditMode && openKpiDetailModal(widget)}
+                          className={`bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 ${template?.borderClass || 'border-gray-400'} ${kpiEditMode ? 'cursor-move' : 'cursor-pointer hover:shadow-lg transition-shadow'}`}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
@@ -1773,10 +1961,12 @@ function DashboardContent() {
                                       const nextOrgId = e.target.value ? Number(e.target.value) : null;
                                       const nextStatuses = nextOrgId ? (kpiMetadata.statusesByOrganization[String(nextOrgId)] || []) : [];
                                       const nextPriorities = nextOrgId ? (kpiMetadata.prioritiesByOrganization[String(nextOrgId)] || []) : [];
+                                      const nextTags = nextOrgId ? (kpiMetadata.tagsByOrganization[String(nextOrgId)] || []) : [];
                                       handleWidgetFieldChange(widget.id, {
                                         organizationId: nextOrgId,
                                         statusValueId: template.requiresStatus ? (nextStatuses[0]?.Id || null) : null,
                                         priorityValueId: template.requiresPriority ? (nextPriorities[0]?.Id || null) : null,
+                                        tagId: template.requiresTag ? (nextTags[0]?.Id || null) : null,
                                       });
                                     }}
                                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -1810,6 +2000,19 @@ function DashboardContent() {
                                     <option value="">Select priority</option>
                                     {priorityOptions.map((priority) => (
                                       <option key={priority.Id} value={priority.Id}>{priority.PriorityName}</option>
+                                    ))}
+                                  </select>
+                                )}
+
+                                {template?.requiresTag && (
+                                  <select
+                                    value={widget.tagId || ''}
+                                    onChange={(e) => handleWidgetFieldChange(widget.id, { tagId: e.target.value ? Number(e.target.value) : null })}
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                  >
+                                    <option value="">Select tag</option>
+                                    {tagOptions.map((tag) => (
+                                      <option key={tag.Id} value={tag.Id}>{tag.Name}</option>
                                     ))}
                                   </select>
                                 )}
@@ -2027,6 +2230,18 @@ function DashboardContent() {
                                   <span className="ml-2 text-blue-500">• {task.ProjectCustomerName}</span>
                                 )}
                               </div>
+                              {!!task.TaskTags?.length && (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {task.TaskTags.map((tag) => (
+                                    <SegmentedTagBadge
+                                      key={`${task.Id}-${tag.Id}`}
+                                      name={tag.Name}
+                                      color={tag.Color}
+                                      size="xs"
+                                    />
+                                  ))}
+                                </div>
+                              )}
                               <div className="flex items-center gap-3 mt-2 flex-wrap">
                                 <span
                                   className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
@@ -2636,6 +2851,268 @@ function DashboardContent() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Executive Summary Cards */}
+                  <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900/30 dark:to-slate-800/30 rounded-lg shadow p-6 border border-slate-200 dark:border-slate-700">
+                    <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400 mb-4">Executive Summary</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="text-center">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-medium mb-2">Active Projects</p>
+                        <p className="text-3xl font-bold text-slate-900 dark:text-white">{globalStats.projects.active}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">of {globalStats.projects.total} total</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-medium mb-2">Active Users</p>
+                        <p className="text-3xl font-bold text-slate-900 dark:text-white">{globalStats.users.total}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{Math.round((globalStats.users.total - globalStats.users.admins) / Math.max(globalStats.users.total, 1) * 100)}% team members</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-medium mb-2">Completion</p>
+                        <p className="text-3xl font-bold text-slate-900 dark:text-white">
+                          {globalStats.tasks.total > 0 ? Math.round((globalStats.tasks.completed / globalStats.tasks.total) * 100) : 0}%
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{globalStats.tasks.completed}/{globalStats.tasks.total} tasks</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-medium mb-2">Estimated Capacity</p>
+                        <p className="text-3xl font-bold text-slate-900 dark:text-white">{globalStats.hours.totalEstimated.toFixed(0)}h</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{globalStats.hours.totalWorked.toFixed(0)}h completed</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Performance Metrics */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Execution Performance */}
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                      <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-4">Execution Performance</h3>
+                      <div className="space-y-4">
+                        <div>
+                          <div className="flex items-baseline justify-between mb-2">
+                            <span className="text-sm text-gray-700 dark:text-gray-300">Task Completion Rate</span>
+                            <span className="text-lg font-bold text-gray-900 dark:text-white">
+                              {globalStats.tasks.total > 0 ? Math.round((globalStats.tasks.completed / globalStats.tasks.total) * 100) : 0}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                            <div
+                              className="h-3 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
+                              style={{
+                                width: `${Math.min(100, globalStats.tasks.total > 0 ? (globalStats.tasks.completed / globalStats.tasks.total) * 100 : 0)}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-baseline justify-between mb-2">
+                            <span className="text-sm text-gray-700 dark:text-gray-300">Effort Velocity</span>
+                            <span className="text-lg font-bold text-gray-900 dark:text-white">
+                              {(globalStats.hours.totalWorked / Math.max(globalStats.hours.totalEstimated, 1) * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                            <div
+                              className={`h-3 rounded-full bg-gradient-to-r ${
+                                globalStats.hours.totalWorked > globalStats.hours.totalEstimated
+                                  ? 'from-orange-500 to-red-500'
+                                  : 'from-blue-500 to-indigo-500'
+                              }`}
+                              style={{
+                                width: `${Math.min(100, (globalStats.hours.totalWorked / Math.max(globalStats.hours.totalEstimated, 1)) * 100)}%`,
+                              }}
+                            />
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {globalStats.hours.totalWorked > globalStats.hours.totalEstimated
+                              ? `${(globalStats.hours.totalWorked - globalStats.hours.totalEstimated).toFixed(0)}h over estimate`
+                              : `${(globalStats.hours.totalEstimated - globalStats.hours.totalWorked).toFixed(0)}h under estimate`}
+                          </p>
+                        </div>
+
+                        <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600 dark:text-gray-400">Tasks In Progress</span>
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
+                              {globalStats.tasks.inProgress}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600 dark:text-gray-400">Completed This Period</span>
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300">
+                              {globalStats.tasks.completed}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Risk & Capacity Assessment */}
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                      <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-4">Risk & Capacity</h3>
+                      <div className="space-y-4">
+                        {globalStats.tasks.overdue > 0 && (
+                          <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                            <div className="flex items-start gap-3">
+                              <div className="text-2xl">⚠️</div>
+                              <div className="flex-1">
+                                <p className="text-sm font-semibold text-red-900 dark:text-red-300">Overdue Risk</p>
+                                <p className="text-2xl font-bold text-red-700 dark:text-red-400 mt-1">{globalStats.tasks.overdue}</p>
+                                <p className="text-xs text-red-700 dark:text-red-400 mt-1">
+                                  {((globalStats.tasks.overdue / Math.max(globalStats.tasks.total, 1)) * 100).toFixed(0)}% of active tasks
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {globalStats.tasks.unplanned > 0 && (
+                          <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                            <div className="flex items-start gap-3">
+                              <div className="text-2xl">📋</div>
+                              <div className="flex-1">
+                                <p className="text-sm font-semibold text-amber-900 dark:text-amber-300">Allocation Gap</p>
+                                <p className="text-2xl font-bold text-amber-700 dark:text-amber-400 mt-1">{globalStats.tasks.unplanned}</p>
+                                <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                                  {((globalStats.tasks.unplanned / Math.max(globalStats.tasks.total, 1)) * 100).toFixed(0)}% need planning
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {globalStats.tasks.overdue === 0 && globalStats.tasks.unplanned === 0 && (
+                          <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                            <div className="flex items-start gap-3">
+                              <div className="text-2xl">✅</div>
+                              <div className="flex-1">
+                                <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-300">Status: Healthy</p>
+                                <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-1">
+                                  No overdue tasks or allocation gaps detected
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                          <p className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-widest mb-3">Team Capacity</p>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-gray-600 dark:text-gray-400">Weekly Avg</span>
+                              <span className="font-semibold text-gray-900 dark:text-white">{(globalStats.hours.thisWeek / 7).toFixed(1)}h/day</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-gray-600 dark:text-gray-400">{getPeriodLabel(analyticsPeriod)} Total</span>
+                              <span className="font-semibold text-gray-900 dark:text-white">{globalStats.hours.thisMonth.toFixed(0)}h</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Resource Distribution & Utilization */}
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                    <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400 mb-4">Project & Resource Focus</h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* Top Projects Contribution */}
+                      <div>
+                        <p className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-widest mb-4">Hours by Project</p>
+                        {globalStats.topProjects.length === 0 ? (
+                          <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">No hours logged in period</p>
+                        ) : (
+                          <div className="space-y-3">
+                            {globalStats.topProjects.map((project, idx) => (
+                              <div key={project.id}>
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${
+                                      idx === 0 ? 'bg-yellow-500' :
+                                      idx === 1 ? 'bg-gray-400' :
+                                      idx === 2 ? 'bg-orange-500' :
+                                      'bg-gray-400/50'
+                                    }`}>{idx + 1}</span>
+                                    <div className="min-w-0">
+                                      <p className="font-medium text-gray-900 dark:text-white truncate text-sm">{project.name}</p>
+                                      <p className="text-xs text-gray-500 dark:text-gray-400">{project.organization}</p>
+                                    </div>
+                                  </div>
+                                  <span className="font-bold text-gray-900 dark:text-white text-sm whitespace-nowrap ml-2">{project.hours.toFixed(1)}h</span>
+                                </div>
+                                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                                  <div
+                                    className="h-2 rounded-full bg-gradient-to-r from-slate-600 to-slate-400"
+                                    style={{
+                                      width: `${Math.max(5, (project.hours / Math.max(...globalStats.topProjects.map(p => p.hours), 1)) * 100)}%`,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Top Contributors Distribution */}
+                      <div>
+                        <p className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-widest mb-4">Team Effort</p>
+                        {globalStats.topUsers.length === 0 ? (
+                          <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">No hours logged</p>
+                        ) : (
+                          <div className="space-y-3">
+                            {globalStats.topUsers.map((user, idx) => (
+                              <div key={user.id}>
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${
+                                      idx === 0 ? 'bg-yellow-500' :
+                                      idx === 1 ? 'bg-gray-400' :
+                                      idx === 2 ? 'bg-orange-500' :
+                                      'bg-gray-400/50'
+                                    }`}>{idx + 1}</span>
+                                    <p className="font-medium text-gray-900 dark:text-white text-sm truncate">{user.name}</p>
+                                  </div>
+                                  <span className="font-bold text-gray-900 dark:text-white text-sm whitespace-nowrap ml-2">{user.hours.toFixed(1)}h</span>
+                                </div>
+                                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                                  <div
+                                    className="h-2 rounded-full bg-gradient-to-r from-indigo-600 to-indigo-400"
+                                    style={{
+                                      width: `${Math.max(5, (user.hours / Math.max(...globalStats.topUsers.map(u => u.hours), 1)) * 100)}%`,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Period Summary */}
+                  <div className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-900/10 dark:to-blue-900/10 rounded-lg shadow p-6 border border-indigo-200 dark:border-indigo-800">
+                    <h3 className="text-sm font-semibold uppercase tracking-wide text-indigo-900 dark:text-indigo-300 mb-4">Period Summary {getPeriodLabel(analyticsPeriod)}</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="p-3 bg-white dark:bg-gray-800 rounded-lg">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-1">Tasks Completed</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white">{globalStats.tasks.completed}</p>
+                      </div>
+                      <div className="p-3 bg-white dark:bg-gray-800 rounded-lg">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-1">Hours Worked</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white">{globalStats.hours.thisMonth.toFixed(0)}h</p>
+                      </div>
+                      <div className="p-3 bg-white dark:bg-gray-800 rounded-lg">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-1">Active Projects</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white">{globalStats.projects.active}</p>
+                      </div>
+                      <div className="p-3 bg-white dark:bg-gray-800 rounded-lg">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-1">Team Members</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white">{globalStats.users.total}</p>
+                      </div>
+                    </div>
+                  </div>
                 </>
               )}
             </div>
@@ -2678,6 +3155,131 @@ function DashboardContent() {
           token={token || ''}
           // jiraIntegration prop removed; now handled internally in modal
         />
+      )}
+
+      {kpiDetailModal.show && kpiDetailModal.widget && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                  Details - {getWidgetDisplayTitle(kpiDetailModal.widget)}
+                </h3>
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                  {getKpiDetailTypeLabel()} • {kpiDetailModal.items.length} item{kpiDetailModal.items.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeKpiDetailModal}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {kpiDetailModal.isLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : kpiDetailModal.items.length === 0 ? (
+                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                  No items found for this KPI.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {kpiDetailModal.items.map((item) => {
+                    const actionLabel = getKpiDetailItemActionLabel();
+                    const isClickable = !!actionLabel;
+
+                    return (
+                      <button
+                        key={`${kpiDetailModal.type}-${item.id}-${item.taskId || 0}-${item.projectId || 0}`}
+                        type="button"
+                        onClick={() => {
+                          if (isClickable) {
+                            handleKpiDetailItemOpen(item);
+                          }
+                        }}
+                        className={`w-full text-left p-3 bg-gray-50 dark:bg-gray-700/50 rounded transition-colors border border-transparent ${
+                          isClickable
+                            ? 'hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-gray-200 dark:hover:border-gray-600 cursor-pointer'
+                            : 'cursor-default'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="font-medium text-gray-900 dark:text-white text-sm truncate">{item.name}</div>
+                            {(item.project || item.customer) && (
+                              <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 truncate">
+                                {item.project ? <span>{item.project}</span> : null}
+                                {item.project && item.customer ? <span> • </span> : null}
+                                {item.customer ? <span>{item.customer}</span> : null}
+                              </div>
+                            )}
+                            {item.status && (
+                              <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                Status: {item.status}
+                              </div>
+                            )}
+                            {kpiDetailModal.type === 'tasks' && Array.isArray(item.tags) && item.tags.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {item.tags.map((tag) => (
+                                  <SegmentedTagBadge
+                                    key={`${item.id}-${tag.name}`}
+                                    name={tag.name}
+                                    color={tag.color}
+                                    size="xs"
+                                  />
+                                ))}
+                              </div>
+                            )}
+                            {(item.date || typeof item.hours === 'number') && (
+                              <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                {item.date ? <span>{item.date}</span> : null}
+                                {item.date && typeof item.hours === 'number' ? <span> • </span> : null}
+                                {typeof item.hours === 'number' ? <span>{item.hours.toFixed(2)}h</span> : null}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            {kpiDetailModal.type === 'tickets' && item.status && (
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${item.isClosed ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+                                {item.status}
+                              </span>
+                            )}
+                            {kpiDetailModal.type === 'tasks' && item.status && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                                {item.status}
+                              </span>
+                            )}
+                            {actionLabel && (
+                              <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                                {actionLabel}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-gray-200 dark:border-gray-700 p-6 flex justify-end">
+              <button
+                type="button"
+                onClick={closeKpiDetailModal}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -5,6 +5,23 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 
 const router = Router();
 
+const DEFAULT_TAGS: Array<{ name: string; color: string; description: string }> = [
+  { name: 'Compat/Breaking', color: '#DA3633', description: "Breaking change that won't be backward compatible" },
+  { name: 'Kind/Bug', color: '#D1242F', description: 'Something is not working' },
+  { name: 'Kind/Documentation', color: '#577590', description: 'Documentation changes' },
+  { name: 'Kind/Enhancement', color: '#73A8E5', description: 'Improve existing functionality' },
+  { name: 'Kind/Feature', color: '#1F8FE5', description: 'New functionality' },
+  { name: 'Kind/Security', color: '#9C36B5', description: 'This is security issue' },
+  { name: 'Kind/Testing', color: '#B5856D', description: 'Issue or pull request related to testing' },
+  { name: 'Reviewed/Confirmed', color: '#B08872', description: 'Issue has been confirmed' },
+  { name: 'Reviewed/Duplicate', color: '#8B949E', description: 'This issue or pull request already exists' },
+  { name: 'Reviewed/Invalid', color: '#6E7781', description: 'Invalid issue' },
+  { name: "Reviewed/Won't Fix", color: '#E6EDF3', description: "This issue won't be fixed" },
+  { name: 'Status/Abandoned', color: '#8E6E63', description: 'Somebody has started to work on this but abandoned work' },
+  { name: 'Status/Blocked', color: '#BF3989', description: 'Something is blocking this issue or pull request' },
+  { name: 'Status/Need More Info', color: '#7D8590', description: 'Feedback is required to reproduce issue or to continue work' },
+];
+
 /**
  * @swagger
  * tags:
@@ -105,6 +122,66 @@ router.get('/organization/:organizationId/usage', authenticateToken, async (req:
   } catch (error) {
     console.error('Error fetching tag usage:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch tag usage' });
+  }
+});
+
+router.post('/organization/:organizationId/import-defaults', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const organizationId = parseInt(req.params.organizationId as string, 10);
+
+    if (!Number.isFinite(organizationId) || organizationId <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid organization ID' });
+    }
+
+    const [existingRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT Name FROM Tags WHERE OrganizationId = ?',
+      [organizationId]
+    );
+
+    const existingNames = new Set(
+      existingRows
+        .map((row) => String(row.Name || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    let importedCount = 0;
+    let skippedCount = 0;
+    const importedTags: string[] = [];
+    const skippedTags: string[] = [];
+
+    for (const tag of DEFAULT_TAGS) {
+      const normalizedName = tag.name.trim().toLowerCase();
+      if (existingNames.has(normalizedName)) {
+        skippedCount += 1;
+        skippedTags.push(tag.name);
+        continue;
+      }
+
+      await pool.execute<ResultSetHeader>(
+        `INSERT INTO Tags (OrganizationId, Name, Color, Description, CreatedBy)
+         VALUES (?, ?, ?, ?, ?)`,
+        [organizationId, tag.name, tag.color, tag.description, userId || null]
+      );
+
+      existingNames.add(normalizedName);
+      importedCount += 1;
+      importedTags.push(tag.name);
+    }
+
+    res.json({
+      success: true,
+      message: importedCount > 0
+        ? `Imported ${importedCount} default tag${importedCount === 1 ? '' : 's'}${skippedCount > 0 ? `, skipped ${skippedCount} existing` : ''}`
+        : 'All default tags already exist',
+      importedCount,
+      skippedCount,
+      importedTags,
+      skippedTags,
+    });
+  } catch (error) {
+    console.error('Error importing default tags:', error);
+    res.status(500).json({ success: false, message: 'Failed to import default tags' });
   }
 });
 

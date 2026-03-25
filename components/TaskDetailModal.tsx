@@ -4,6 +4,7 @@ import { getApiUrl } from '@/lib/api/config';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import { Task, CreateTaskData, UpdateTaskData, tasksApi, TaskAssignee } from '@/lib/api/tasks';
 import { Project, projectsApi } from '@/lib/api/projects';
 import { Customer, getCustomersByOrganization } from '@/lib/api/customers';
@@ -71,6 +72,54 @@ interface Tag {
   Color: string;
   Description?: string;
 }
+
+const clampColorChannel = (value: number): number => Math.max(0, Math.min(255, Math.round(value)));
+
+const normalizeHexColor = (color: string | undefined): string => {
+  const fallback = '#6B7280';
+  if (!color) return fallback;
+  const trimmed = color.trim();
+  const hex = trimmed.startsWith('#') ? trimmed.slice(1) : trimmed;
+
+  if (/^[0-9a-fA-F]{3}$/.test(hex)) {
+    return `#${hex.split('').map((char) => char + char).join('')}`;
+  }
+
+  if (/^[0-9a-fA-F]{6}$/.test(hex)) {
+    return `#${hex}`;
+  }
+
+  return fallback;
+};
+
+const hexToRgb = (color: string): { r: number; g: number; b: number } => {
+  const normalized = normalizeHexColor(color);
+  return {
+    r: parseInt(normalized.slice(1, 3), 16),
+    g: parseInt(normalized.slice(3, 5), 16),
+    b: parseInt(normalized.slice(5, 7), 16),
+  };
+};
+
+const rgbToHex = ({ r, g, b }: { r: number; g: number; b: number }): string => {
+  const toHex = (value: number) => clampColorChannel(value).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+};
+
+const blendHexColors = (baseColor: string, mixColor: string, ratio: number): string => {
+  const base = hexToRgb(baseColor);
+  const mix = hexToRgb(mixColor);
+  const mixRatio = Math.max(0, Math.min(1, ratio));
+  const baseRatio = 1 - mixRatio;
+
+  return rgbToHex({
+    r: base.r * baseRatio + mix.r * mixRatio,
+    g: base.g * baseRatio + mix.g * mixRatio,
+    b: base.b * baseRatio + mix.b * mixRatio,
+  });
+};
+
+const withAlpha = (color: string, alphaHex: string): string => `${normalizeHexColor(color)}${alphaHex}`;
 
 interface TaskAllocation {
   Id: number;
@@ -1095,6 +1144,47 @@ export default function TaskDetailModal({
     setFormData({ ...formData, assignedTo: updated.length > 0 ? updated[0].UserId : undefined });
   };
 
+  const handleAssigneesMultiSelectChange = (values: (string | number)[]) => {
+    const selectedIds = Array.from(
+      new Set(
+        values
+          .map((value) => Number(value))
+          .filter((value) => Number.isInteger(value) && value > 0)
+      )
+    );
+
+    const selectedAssignees = selectedIds
+      .map((userId) => {
+        const existingAssignee = taskAssignees.find((assignee) => assignee.UserId === userId);
+        if (existingAssignee) {
+          return existingAssignee;
+        }
+
+        const user = organizationUsers.find((organizationUser) => organizationUser.Id === userId);
+        if (!user) {
+          return null;
+        }
+
+        return {
+          UserId: user.Id,
+          Username: user.Username,
+          FirstName: user.FirstName,
+          LastName: user.LastName,
+        };
+      })
+      .filter((assignee): assignee is TaskAssignee => assignee !== null);
+
+    setTaskAssignees(selectedAssignees);
+
+    const principalAssigneeStillSelected = selectedIds.includes(Number(formData.assignedTo));
+    setFormData((previous) => ({
+      ...previous,
+      assignedTo: principalAssigneeStillSelected
+        ? previous.assignedTo
+        : selectedAssignees[0]?.UserId,
+    }));
+  };
+
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim() || !task?.Id) return;
@@ -1673,6 +1763,79 @@ export default function TaskDetailModal({
     : (['details', 'hours'] as const)
   );
 
+  const renderTaskTagBadge = (tag: Tag) => {
+    const segments = tag.Name
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+
+    const baseColor = normalizeHexColor(tag.Color);
+
+    if (segments.length <= 1) {
+      return (
+        <span
+          key={tag.Id}
+          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full border"
+          style={{
+            backgroundColor: withAlpha(baseColor, '20'),
+            color: baseColor,
+            borderColor: withAlpha(baseColor, '55'),
+          }}
+        >
+          <span>{segments[0] || tag.Name}</span>
+          <button
+            onClick={() => handleRemoveTag(tag.Id)}
+            className="ml-1 hover:opacity-70"
+            title="Remove tag"
+            type="button"
+          >
+            ×
+          </button>
+        </span>
+      );
+    }
+
+    return (
+      <span key={tag.Id} className="inline-flex items-center">
+        <span className="inline-flex items-stretch overflow-hidden rounded-md border" style={{ borderColor: withAlpha(baseColor, '66') }}>
+          {segments.map((segment, index) => {
+            const segmentBackground = index === 0
+              ? blendHexColors(baseColor, '#111827', 0.18)
+              : index === segments.length - 1
+                ? baseColor
+                : blendHexColors(baseColor, '#ffffff', 0.12 * index);
+
+            const segmentTextColor = index === 0
+              ? blendHexColors(baseColor, '#ffffff', 0.72)
+              : '#ffffff';
+
+            return (
+              <span
+                key={`${tag.Id}-${segment}-${index}`}
+                className="px-2.5 py-1 text-xs font-semibold leading-none"
+                style={{
+                  backgroundColor: segmentBackground,
+                  color: segmentTextColor,
+                  borderLeft: index === 0 ? 'none' : `1px solid ${withAlpha(baseColor, '88')}`,
+                }}
+              >
+                {segment}
+              </span>
+            );
+          })}
+        </span>
+        <button
+          onClick={() => handleRemoveTag(tag.Id)}
+          className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-xs text-gray-500 hover:bg-gray-100 hover:text-red-500 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-red-400"
+          title="Remove tag"
+          type="button"
+        >
+          ×
+        </button>
+      </span>
+    );
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full h-[90vh] overflow-hidden flex flex-col">
@@ -1787,22 +1950,7 @@ export default function TaskDetailModal({
               {/* Tags */}
               {task?.Id && (
                 <div className="flex flex-wrap items-center gap-2 mt-2">
-                  {taskTags.map((tag) => (
-                    <span
-                      key={tag.Id}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full"
-                      style={{ backgroundColor: tag.Color + '20', color: tag.Color, border: `1px solid ${tag.Color}` }}
-                    >
-                      🏷️ {tag.Name}
-                      <button
-                        onClick={() => handleRemoveTag(tag.Id)}
-                        className="ml-1 hover:opacity-70"
-                        title="Remove tag"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
+                  {taskTags.map((tag) => renderTaskTagBadge(tag))}
                   <div className="relative">
                     <button
                       onClick={() => setShowTagSelector(!showTagSelector)}
@@ -2320,24 +2468,18 @@ export default function TaskDetailModal({
                     <span className="text-sm text-gray-400 dark:text-gray-500 italic">No assignees</span>
                   )}
                 </div>
-                {/* Add assignee dropdown */}
+                {/* Searchable multi-assignee selector */}
                 {permissions?.canAssignTasks && (
-                <select
-                  value=""
-                  onChange={(e) => {
-                    if (e.target.value) handleAddAssignee(parseInt(e.target.value));
-                  }}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="">+ Add assignee…</option>
-                  {organizationUsers
-                    .filter((u) => !taskAssignees.some((a) => a.UserId === u.Id))
-                    .map((user) => (
-                      <option key={user.Id} value={user.Id}>
-                        {user.Username}{user.FirstName && user.LastName ? ` (${user.FirstName} ${user.LastName})` : ''}
-                      </option>
-                    ))}
-                </select>
+                  <SearchableMultiSelect
+                    values={taskAssignees.map((assignee) => assignee.UserId)}
+                    onChange={handleAssigneesMultiSelectChange}
+                    options={organizationUsers.map((user) => ({
+                      value: user.Id,
+                      label: `${user.Username}${user.FirstName && user.LastName ? ` (${user.FirstName} ${user.LastName})` : ''}`,
+                    }))}
+                    placeholder="Select assignees..."
+                    dropdownMode="portal"
+                  />
                 )}
               </div>
 

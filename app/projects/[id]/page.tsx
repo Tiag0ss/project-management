@@ -25,6 +25,7 @@ import { downloadTablePdf } from '@/lib/api/pdfExport';
 import { getAllGridPreferences, saveGridPreference } from '@/lib/api/gridPreferences';
 import { projectMilestonesApi, ProjectMilestone, SaveProjectMilestoneData } from '@/lib/api/projectMilestones';
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
+import SegmentedTagBadge from '@/components/tags/SegmentedTagBadge';
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -6229,19 +6230,14 @@ function TasksTab({
                 )}
               </div>
               {!isEditingRow && (taskTagMap.get(task.Id) || []).length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-0.5">
+                <div className="flex flex-wrap gap-1.5 mt-1">
                   {(taskTagMap.get(task.Id) || []).map(tag => (
-                    <span
+                    <SegmentedTagBadge
                       key={`${task.Id}-${tag.id}`}
-                      className="px-2 py-0.5 rounded-full text-xs font-medium"
-                      style={{
-                        backgroundColor: `${tag.color}20`,
-                        color: tag.color,
-                        border: `1px solid ${tag.color}`,
-                      }}
-                    >
-                      #{tag.name}
-                    </span>
+                      name={tag.name}
+                      color={tag.color}
+                      size="xs"
+                    />
                   ))}
                 </div>
               )}

@@ -41,6 +41,11 @@ Out of scope:
    - Avoid date-prompt slicing when partial slice mode is requested.
    - For parent task slices, child rows are also header-driven via `TaskChildAllocations.TaskAllocationHeaderId`; never infer slice membership from dates alone.
 14. When a user selector exists in planning split/assignment flows, prefer the existing searchable select component over a plain `<select>` when user list can be large.
+15. For Dashboard KPI cards with drill-down:
+   - Use `detailsByWidget` as the backing list source for both card values and detail modal contents.
+   - Render detail rows by item type (`tasks`, `projects`, `customers`, `tickets`, `timeEntries`) with type-appropriate fields.
+   - Row navigation behavior must be consistent: tasks/time entries open `TaskDetailModal`; projects/customers/tickets navigate to their detail pages.
+   - For task rows, show tags when `item.tags` is available.
 
 ## Output Contract
 

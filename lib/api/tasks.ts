@@ -11,6 +11,12 @@ export interface TaskAssignee {
   AssignedAt?: string;
 }
 
+export interface TaskTag {
+  Id: number;
+  Name: string;
+  Color?: string | null;
+}
+
 export interface Task {
   Id: number;
   ProjectId: number;
@@ -33,6 +39,7 @@ export interface Task {
   AssignedTo?: number;
   AssigneeName?: string;
   Assignees?: TaskAssignee[];
+  TaskTags?: TaskTag[];
   DueDate?: string;
   DueDateMandatory?: number;
   UnscheduledWork?: number;
@@ -71,6 +78,10 @@ export interface Task {
   CreatedAt: string;
   UpdatedAt: string;
   ClosedAt?: string | null;
+  DoneTransitionsByDay?: Array<{
+    date: string;
+    count: number;
+  }>;
   [key: string]: unknown;
 }
 

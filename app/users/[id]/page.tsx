@@ -478,7 +478,7 @@ export default function UserDetailPage() {
         <div className="mb-6">
           <button
             onClick={() => router.push('/users')}
-            className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-4"
+            className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-4 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -486,54 +486,53 @@ export default function UserDetailPage() {
             Back to Users
           </button>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center text-2xl font-bold text-blue-600 dark:text-blue-400">
-                {user.FirstName?.[0] || user.Username[0].toUpperCase()}
-                {user.LastName?.[0] || ''}
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {getDisplayName()}
-                </h1>
-                <p className="text-gray-500 dark:text-gray-400">@{user.Username}</p>
-                <div className="flex gap-2 mt-1">
-                  {!!user.IsAdmin && (
-                    <span className="px-2 py-0.5 text-xs bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 rounded-full">
-                      Admin
-                    </span>
-                  )}
-                  {user.UserType === 'fictitious' && (
-                    <span className="px-2 py-0.5 text-xs bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300 rounded-full">
-                      Fictitious User
-                    </span>
-                  )}
-                  {user.CustomerId && (
-                    <span className="px-2 py-0.5 text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 rounded-full">
-                      Customer: {user.CustomerName}
-                    </span>
-                  )}
-                  {!user.CustomerId && user.UserType !== 'fictitious' && (
-                    <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded-full">
-                      Internal User
-                    </span>
-                  )}
-                  <span className={`px-2 py-0.5 text-xs rounded-full ${
-                    user.IsActive
-                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                      : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                  }`}>
-                    {user.IsActive ? 'Active' : 'Inactive'}
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center text-2xl font-bold text-blue-600 dark:text-blue-400 flex-shrink-0">
+              {user.FirstName?.[0] || user.Username[0].toUpperCase()}
+              {user.LastName?.[0] || ''}
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                {getDisplayName()}
+              </h1>
+              <p className="text-gray-500 dark:text-gray-400">@{user.Username}</p>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {!!user.IsAdmin && (
+                  <span className="px-2 py-0.5 text-xs bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 rounded-full">
+                    Admin
                   </span>
-                </div>
+                )}
+                {user.UserType === 'fictitious' && (
+                  <span className="px-2 py-0.5 text-xs bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300 rounded-full">
+                    Fictitious User
+                  </span>
+                )}
+                {user.CustomerId && (
+                  <span className="px-2 py-0.5 text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 rounded-full">
+                    Customer: {user.CustomerName}
+                  </span>
+                )}
+                {!user.CustomerId && user.UserType !== 'fictitious' && (
+                  <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded-full">
+                    Internal User
+                  </span>
+                )}
+                <span className={`px-2 py-0.5 text-xs rounded-full ${
+                  user.IsActive
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                    : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                }`}>
+                  {user.IsActive ? 'Active' : 'Inactive'}
+                </span>
               </div>
             </div>
           </div>
         </div>
 
         {error && (
-          <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded-lg">
-            {error}
+          <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg flex items-center gap-3">
+            <span className="text-xl">⚠️</span>
+            <span>{error}</span>
           </div>
         )}
 
@@ -598,16 +597,20 @@ export default function UserDetailPage() {
 
         {/* Tabs */}
         <div className="border-b border-gray-200 dark:border-gray-700 mb-6">
-          <nav className="-mb-px flex space-x-8">
+          <nav className="-mb-px flex space-x-8" role="tablist">
             <button
               onClick={() => setActiveTab('overview')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              role="tab"
+              aria-selected={activeTab === 'overview'}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all ${
                 activeTab === 'overview'
                   ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600'
               }`}
             >
-              📊 Overview
+              <span className="inline-flex items-center gap-2">
+                <span>📊</span> Overview
+              </span>
             </button>
             <button
               onClick={() => {
@@ -616,23 +619,36 @@ export default function UserDetailPage() {
                   loadAttachments();
                 }
               }}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              role="tab"
+              aria-selected={activeTab === 'attachments'}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all ${
                 activeTab === 'attachments'
                   ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600'
               }`}
             >
-              📎 Attachments ({attachments.length})
+              <span className="inline-flex items-center gap-2">
+                <span>📎</span> Attachments
+                {attachments.length > 0 && (
+                  <span className="inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-blue-600 rounded-full">
+                    {attachments.length}
+                  </span>
+                )}
+              </span>
             </button>
             <button
               onClick={() => setActiveTab('history')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              role="tab"
+              aria-selected={activeTab === 'history'}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all ${
                 activeTab === 'history'
                   ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600'
               }`}
             >
-              📜 History
+              <span className="inline-flex items-center gap-2">
+                <span>📜</span> History
+              </span>
             </button>
           </nav>
         </div>
@@ -644,61 +660,85 @@ export default function UserDetailPage() {
             {/* Organization Memberships */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
               <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Organization Memberships ({memberships.length})
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                  <span>🏢</span> Organization Memberships
+                  <span className="inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-blue-600 rounded-full">
+                    {memberships.length}
+                  </span>
                 </h2>
                 {availableOrganizations.length > 0 && (
                   <button
                     onClick={() => setShowAddModal(true)}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
                   >
-                    + Add to Organization
+                    <span>➕</span> Add Organization
                   </button>
                 )}
               </div>
 
               <div className="divide-y divide-gray-200 dark:divide-gray-700">
                 {memberships.length === 0 ? (
-                  <div className="p-6 text-center text-gray-500 dark:text-gray-400">
-                    User is not a member of any organization
+                  <div className="p-6 text-center">
+                    <div className="text-4xl mb-2">🚀</div>
+                    <p className="text-gray-500 dark:text-gray-400">
+                      User is not a member of any organization yet
+                    </p>
                   </div>
                 ) : (
                   memberships.map((membership) => (
-                    <div key={membership.Id} className="p-4 flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-gray-900 dark:text-white">
-                          {membership.OrganizationName}
-                        </div>
-                        <div className="flex gap-2 mt-1">
-                          <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded-full">
-                            {membership.Role}
-                          </span>
-                          {membership.PermissionGroupName && (
-                            <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300 rounded-full">
-                              {membership.PermissionGroupName}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                          Joined {formatDate(membership.JoinedAt)}
+                    <div key={membership.Id} className="p-5 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors flex items-center justify-between group">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center text-lg font-bold text-blue-600 dark:text-blue-400">
+                            {membership.OrganizationName.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <button
+                              onClick={() => {
+                                // Navigate to organization details
+                                router.push(`/organizations/${membership.OrganizationId}`);
+                              }}
+                              className="font-semibold text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                              title="View organization"
+                            >
+                              {membership.OrganizationName}
+                            </button>
+                            <div className="flex gap-2 mt-2">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                                Role: {membership.Role}
+                              </span>
+                              {membership.PermissionGroupName && (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                                  {membership.PermissionGroupName}
+                                </span>
+                              )}
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                                📅 {formatDate(membership.JoinedAt)}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => handleEditMembership(membership)}
                           title="Edit membership"
                           aria-label="Edit membership"
-                          className="px-3 py-1.5 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400"
+                          className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
                         >
-                          ✏️
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
                         </button>
                         <button
                           onClick={() => handleRemoveMembership(membership.Id)}
                           title="Remove membership"
                           aria-label="Remove membership"
-                          className="px-3 py-1.5 text-sm text-red-600 hover:text-red-800 dark:text-red-400"
+                          className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
                         >
-                          🗑️
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
                         </button>
                       </div>
                     </div>
@@ -710,8 +750,8 @@ export default function UserDetailPage() {
             {/* Recent Activity */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Recent Time Entries
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                  <span>⏱️</span> Recent Time Entries
                 </h2>
               </div>
 
@@ -722,26 +762,50 @@ export default function UserDetailPage() {
                   </div>
                 ) : (
                   recentActivity.map((entry) => (
-                    <div key={entry.Id} className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="font-medium text-gray-900 dark:text-white">
+                    <div 
+                      key={entry.Id} 
+                      className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer group"
+                      onClick={() => {
+                        // Find task ID from entry - would need to be passed from backend or stored
+                        // For now, just show the task/project names are clickable
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Tasks detail would navigate to task page if we had taskId
+                              // router.push(`/projects/${projectId}/tasks/${entry.taskId}`);
+                            }}
+                            className="font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 block text-left transition-colors"
+                            title="View task details"
+                          >
                             {entry.TaskName}
-                          </div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
-                            {entry.ProjectName}
-                          </div>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Would navigate to project page
+                            }}
+                            className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 block mt-0.5 text-left transition-colors"
+                            title="View project details"
+                          >
+                            📁 {entry.ProjectName}
+                          </button>
                           {entry.Description && (
-                            <div className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                            <div className="text-sm text-gray-400 dark:text-gray-500 mt-2 truncate">
                               {entry.Description}
                             </div>
                           )}
                         </div>
-                        <div className="text-right">
-                          <div className="font-medium text-gray-900 dark:text-white">
-                            {entry.Hours}h
+                        <div className="text-right flex-shrink-0">
+                          <div className="inline-block px-3 py-1 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+                            <div className="font-semibold text-blue-600 dark:text-blue-400">
+                              {entry.Hours}h
+                            </div>
                           </div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                          <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
                             {formatDate(entry.WorkDate)}
                           </div>
                         </div>
@@ -757,72 +821,109 @@ export default function UserDetailPage() {
           <div className="space-y-6">
             {/* User Info */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">
-                User Information
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+                <span>👤</span> User Information
               </h3>
-              <dl className="space-y-3">
-                <div>
-                  <dt className="text-sm text-gray-500 dark:text-gray-400">Email</dt>
-                  <dd className="text-sm text-gray-900 dark:text-white">{user.Email}</dd>
+              <dl className="space-y-4">
+                <div className="border-b border-gray-100 dark:border-gray-700 pb-4 last:border-b-0 last:pb-0">
+                  <dt className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Email</dt>
+                  <dd className="text-sm text-gray-900 dark:text-white font-medium break-all hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                    <a href={`mailto:${user.Email}`} title="Send email">
+                      {user.Email}
+                    </a>
+                  </dd>
                 </div>
-                <div>
-                  <dt className="text-sm text-gray-500 dark:text-gray-400">Username</dt>
-                  <dd className="text-sm text-gray-900 dark:text-white">@{user.Username}</dd>
+                <div className="border-b border-gray-100 dark:border-gray-700 pb-4 last:border-b-0 last:pb-0">
+                  <dt className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Username</dt>
+                  <dd className="text-sm text-gray-900 dark:text-white font-medium">@{user.Username}</dd>
                 </div>
                 {user.FirstName && (
-                  <div>
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">First Name</dt>
-                    <dd className="text-sm text-gray-900 dark:text-white">{user.FirstName}</dd>
+                  <div className="border-b border-gray-100 dark:border-gray-700 pb-4 last:border-b-0 last:pb-0">
+                    <dt className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">First Name</dt>
+                    <dd className="text-sm text-gray-900 dark:text-white font-medium">{user.FirstName}</dd>
                   </div>
                 )}
                 {user.LastName && (
-                  <div>
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Last Name</dt>
-                    <dd className="text-sm text-gray-900 dark:text-white">{user.LastName}</dd>
+                  <div className="border-b border-gray-100 dark:border-gray-700 pb-4 last:border-b-0 last:pb-0">
+                    <dt className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Last Name</dt>
+                    <dd className="text-sm text-gray-900 dark:text-white font-medium">{user.LastName}</dd>
                   </div>
                 )}
-                <hr className="border-gray-200 dark:border-gray-700" />
-                <div>
-                  <dt className="text-sm text-gray-500 dark:text-gray-400">Created</dt>
-                  <dd className="text-sm text-gray-900 dark:text-white">{formatDate(user.CreatedAt)}</dd>
+                <div className="border-b border-gray-100 dark:border-gray-700 pb-4 last:border-b-0 last:pb-0">
+                  <dt className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Created</dt>
+                  <dd className="text-sm text-gray-900 dark:text-white font-medium">{formatDate(user.CreatedAt)}</dd>
                 </div>
-                <div>
-                  <dt className="text-sm text-gray-500 dark:text-gray-400">Last Updated</dt>
-                  <dd className="text-sm text-gray-900 dark:text-white">{formatDate(user.UpdatedAt)}</dd>
+                <div className="border-b border-gray-100 dark:border-gray-700 pb-4 last:border-b-0 last:pb-0">
+                  <dt className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Last Updated</dt>
+                  <dd className="text-sm text-gray-900 dark:text-white font-medium">{formatDate(user.UpdatedAt)}</dd>
                 </div>
+                {user.CustomerId && (
+                  <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">
+                    <dt className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Associated Customer</dt>
+                    <dd className="text-sm text-gray-900 dark:text-white font-medium">
+                      <button
+                        onClick={() => router.push(`/customers/${user.CustomerId}`)}
+                        className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                        title="View customer"
+                      >
+                        {user.CustomerName}
+                      </button>
+                    </dd>
+                  </div>
+                )}
               </dl>
             </div>
 
             {/* Work Hours */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">
-                Work Schedule
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-5 flex items-center gap-2">
+                <span>📅</span> Work Schedule
               </h3>
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {[
-                  ['Monday', user.WorkHoursMonday],
-                  ['Tuesday', user.WorkHoursTuesday],
-                  ['Wednesday', user.WorkHoursWednesday],
-                  ['Thursday', user.WorkHoursThursday],
-                  ['Friday', user.WorkHoursFriday],
-                  ['Saturday', user.WorkHoursSaturday],
-                  ['Sunday', user.WorkHoursSunday],
-                ].map(([day, hours]) => (
-                  <div key={day as string} className="flex justify-between text-sm">
-                    <span className="text-gray-500 dark:text-gray-400">{day}</span>
-                    <span className={`font-medium ${
-                      (hours as number) > 0
-                        ? 'text-gray-900 dark:text-white'
-                        : 'text-gray-400 dark:text-gray-500'
-                    }`}>
-                      {hours || 0}h
-                    </span>
+                  ['Monday', user.WorkHoursMonday, '📍'],
+                  ['Tuesday', user.WorkHoursTuesday, '📍'],
+                  ['Wednesday', user.WorkHoursWednesday, '📍'],
+                  ['Thursday', user.WorkHoursThursday, '📍'],
+                  ['Friday', user.WorkHoursFriday, '📍'],
+                  ['Saturday', user.WorkHoursSaturday, '🏳️'],
+                  ['Sunday', user.WorkHoursSunday, '🏳️'],
+                ].map(([day, hours, emoji]) => {
+                  const hourValue = hours as number;
+                  return (
+                    <div key={day as string} className="flex items-center justify-between p-2.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{emoji}</span>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{day}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-24 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              hourValue >= 8 ? 'bg-green-500' :
+                              hourValue >= 4 ? 'bg-blue-500' :
+                              hourValue > 0 ? 'bg-yellow-500' :
+                              'bg-gray-300'
+                            }`}
+                            style={{ width: `${Math.min((hourValue / 8) * 100, 100)}%` }}
+                          ></div>
+                        </div>
+                        <span className={`font-semibold text-sm w-8 text-right ${
+                          hourValue > 0
+                            ? 'text-gray-900 dark:text-white'
+                            : 'text-gray-400 dark:text-gray-500'
+                        }`}>
+                          {hourValue || 0}h
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="mt-4 pt-4 border-t-2 border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center justify-between p-2.5 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800/50">
+                    <span className="text-sm font-bold text-gray-900 dark:text-white">Weekly Total</span>
+                    <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{getWeeklyWorkHours()}h</span>
                   </div>
-                ))}
-                <hr className="border-gray-200 dark:border-gray-700 my-2" />
-                <div className="flex justify-between text-sm font-semibold">
-                  <span className="text-gray-700 dark:text-gray-300">Total</span>
-                  <span className="text-blue-600 dark:text-blue-400">{getWeeklyWorkHours()}h/week</span>
                 </div>
               </div>
             </div>
@@ -831,55 +932,66 @@ export default function UserDetailPage() {
         )}
 
         {activeTab === 'attachments' && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-              User Uploaded Files
-            </h2>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <span>📎</span> Uploaded Files
+              </h2>
+            </div>
             
             {loadingAttachments ? (
-              <p className="text-gray-500 dark:text-gray-400">Loading...</p>
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
+              </div>
             ) : attachments.length === 0 ? (
-              <p className="text-gray-500 dark:text-gray-400 text-center py-8">
-                This user hasn't uploaded any files yet.
-              </p>
+              <div className="p-12 text-center">
+                <div className="text-5xl mb-3">📁</div>
+                <p className="text-gray-500 dark:text-gray-400 font-medium">
+                  No files uploaded yet
+                </p>
+                <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
+                  Files will appear here once uploaded
+                </p>
+              </div>
             ) : (
-              <div className="space-y-3">
+              <div className="divide-y divide-gray-200 dark:divide-gray-700">
                 {attachments.map((attachment: any) => (
                   <div
                     key={`${attachment.Type}-${attachment.Id}`}
-                    className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600"
+                    className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors flex items-center gap-4 group"
                   >
-                    <div className="flex items-start gap-4">
-                      <span className="text-3xl flex-shrink-0">{getFileIcon(attachment.FileType)}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`px-2 py-0.5 text-xs font-semibold rounded ${getTypeColor(attachment.Type)}`}>
-                            {attachment.Type}
+                    <div className="text-3xl flex-shrink-0">{getFileIcon(attachment.FileType)}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${getTypeColor(attachment.Type)}`}>
+                          {attachment.Type}
+                        </span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {attachment.EntityName}
+                        </span>
+                        {attachment.ProjectName && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            in {attachment.ProjectName}
                           </span>
-                          <span className="text-sm text-gray-600 dark:text-gray-400">
-                            {attachment.EntityName}
-                          </span>
-                          {attachment.ProjectName && (
-                            <span className="text-sm text-gray-500 dark:text-gray-500">
-                              · {attachment.ProjectName}
-                            </span>
-                          )}
-                        </div>
-                        <div className="font-medium text-gray-900 dark:text-white truncate">
-                          {attachment.FileName}
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {formatFileSize(attachment.FileSize)} · {new Date(attachment.CreatedAt).toLocaleDateString()}
-                        </div>
+                        )}
                       </div>
-                      <button
-                        onClick={() => handleDownloadAttachment(attachment)}
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors flex-shrink-0"
-                        title="Download"
-                      >
-                        ⬇️ Download
-                      </button>
+                      <div className="font-medium text-gray-900 dark:text-white truncate">
+                        {attachment.FileName}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {formatFileSize(attachment.FileSize)} · {new Date(attachment.CreatedAt).toLocaleDateString()}
+                      </div>
                     </div>
+                    <button
+                      onClick={() => handleDownloadAttachment(attachment)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors flex-shrink-0"
+                      title="Download file"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Download
+                    </button>
                   </div>
                 ))}
               </div>
@@ -888,24 +1000,30 @@ export default function UserDetailPage() {
         )}
 
         {activeTab === 'history' && user && currentUser?.isAdmin && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">📜 Change History</h2>
-            <ChangeHistory entityType="user" entityId={user.Id} />
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <span>📜</span> Change History
+              </h2>
+            </div>
+            <div className="p-6">
+              <ChangeHistory entityType="user" entityId={user.Id} />
+            </div>
           </div>
         )}
       </main>
 
       {/* Add Membership Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full animate-in fade-in zoom-in-95">
             <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                Add to Organization
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <span>➕</span> Add to Organization
               </h2>
               <button
                 onClick={() => setShowAddModal(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 p-1 transition-colors"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -966,16 +1084,25 @@ export default function UserDetailPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                  className="px-4 py-2.5 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg font-medium transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={adding}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg"
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg font-medium transition-colors inline-flex items-center gap-2"
                 >
-                  {adding ? 'Adding...' : 'Add Membership'}
+                  {adding ? (
+                    <>
+                      <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span>
+                      Adding...
+                    </>
+                  ) : (
+                    <>
+                      <span>➕</span> Add Membership
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -985,15 +1112,15 @@ export default function UserDetailPage() {
 
       {/* Edit Membership Modal */}
       {editingMembership && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full animate-in fade-in zoom-in-95">
             <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                Edit Membership - {editingMembership.OrganizationName}
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <span>✏️</span> Edit Membership
               </h2>
               <button
                 onClick={() => setEditingMembership(null)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 p-1 transition-colors"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1038,16 +1165,25 @@ export default function UserDetailPage() {
                 <button
                   type="button"
                   onClick={() => setEditingMembership(null)}
-                  className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                  className="px-4 py-2.5 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg font-medium transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg"
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg font-medium transition-colors inline-flex items-center gap-2"
                 >
-                  {saving ? 'Saving...' : 'Save Changes'}
+                  {saving ? (
+                    <>
+                      <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span>
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <span>💾</span> Save Changes
+                    </>
+                  )}
                 </button>
               </div>
             </form>

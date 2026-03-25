@@ -48,6 +48,11 @@ export default function Home() {
       
       if (response.ok) {
         const data = await response.json();
+        // If front page is disabled, redirect straight to login
+        if (data.frontpageEnabled === false) {
+          router.replace('/login');
+          return;
+        }
         setAllowPublicRegistration(data.allowPublicRegistration === true);
         setRegistrationType(data.publicRegistrationType || 'internal');
         setCompanyName(data.companyName || 'Project Management');

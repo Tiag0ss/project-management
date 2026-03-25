@@ -16,7 +16,8 @@ export type DashboardKpiType =
   | 'organizationPendingTasks'
   | 'organizationCompletedTasks'
   | 'tasksByStatus'
-  | 'tasksByPriority';
+  | 'tasksByPriority'
+  | 'tasksByTag';
 
 export interface DashboardKpiWidget {
   id: string;
@@ -25,12 +26,37 @@ export interface DashboardKpiWidget {
   organizationId?: number | null;
   statusValueId?: number | null;
   priorityValueId?: number | null;
+  tagId?: number | null;
 }
 
 export interface DashboardKpiMetricValue {
   value: number;
   suffix?: string;
   subtitle?: string;
+}
+
+export interface DashboardKpiDetailItem {
+  id: number;
+  name: string;
+  taskId?: number;
+  projectId?: number;
+  tags?: Array<{ name: string; color?: string | null }>;
+  project?: string;
+  customer?: string;
+  status?: string;
+  date?: string;
+  hours?: number;
+  isClosed?: boolean;
+}
+
+export interface DashboardKpiDetailResult {
+  type: 'tasks' | 'projects' | 'customers' | 'tickets' | 'timeEntries' | 'unknown';
+  items: DashboardKpiDetailItem[];
+}
+
+export interface DashboardKpiValuesResponse {
+  values: Record<string, DashboardKpiMetricValue>;
+  detailsByWidget: Record<string, DashboardKpiDetailResult>;
 }
 
 export interface DashboardKpiOptionOrganization {
@@ -50,10 +76,17 @@ export interface DashboardKpiOptionPriority {
   ColorCode: string | null;
 }
 
+export interface DashboardKpiOptionTag {
+  Id: number;
+  Name: string;
+  Color: string | null;
+}
+
 export interface DashboardKpiMetadata {
   organizations: DashboardKpiOptionOrganization[];
   statusesByOrganization: Record<string, DashboardKpiOptionStatus[]>;
   prioritiesByOrganization: Record<string, DashboardKpiOptionPriority[]>;
+  tagsByOrganization: Record<string, DashboardKpiOptionTag[]>;
 }
 
 export async function getDashboardKpis(token: string): Promise<{ widgets: DashboardKpiWidget[]; hasCustomConfig: boolean; metadata: DashboardKpiMetadata }> {
@@ -76,6 +109,7 @@ export async function getDashboardKpis(token: string): Promise<{ widgets: Dashbo
       organizations: Array.isArray(data.metadata?.organizations) ? data.metadata.organizations : [],
       statusesByOrganization: data.metadata?.statusesByOrganization || {},
       prioritiesByOrganization: data.metadata?.prioritiesByOrganization || {},
+      tagsByOrganization: data.metadata?.tagsByOrganization || {},
     },
   };
 }
@@ -101,7 +135,7 @@ export async function saveDashboardKpis(token: string, widgets: DashboardKpiWidg
 export async function getDashboardKpiValues(
   token: string,
   widgets: DashboardKpiWidget[]
-): Promise<Record<string, DashboardKpiMetricValue>> {
+): Promise<DashboardKpiValuesResponse> {
   const response = await fetch(`${API_URL}/api/dashboard-kpis/values`, {
     method: 'POST',
     headers: {
@@ -116,5 +150,8 @@ export async function getDashboardKpiValues(
     throw new Error(data.message || 'Failed to load dashboard KPI values');
   }
 
-  return data.values || {};
+  return {
+    values: data.values || {},
+    detailsByWidget: data.detailsByWidget || {},
+  };
 }

@@ -22,6 +22,7 @@ Use them when asking Copilot for implementation work, so output stays consistent
 - `skill-permission-gated-ui.prompt.md` — UI changes with strict role/permission gating
 - `skill-release-pdf-flow.prompt.md` — Application releases, task linking, and PDF export flows
 - `skill-auth-password-recovery.prompt.md` — Forgot-password/reset-password flows, token safety, and SMTP-linked reset emails
+- `skill-dashboard-kpi-drilldown.prompt.md` — Dashboard KPI values/details parity, type-aware drill-down rendering, and click-navigation contracts
 
 ## Notes
 
@@ -36,6 +37,9 @@ Use them when asking Copilot for implementation work, so output stays consistent
   - Timesheet Resume lives in `app/timesheet/page.tsx` (not Dashboard)
   - Period-based analytics/resume flows should support `allTime` when requested
   - Customer change history remains scoped to History tab only
+  - Dashboard KPI list-backed cards must keep values and drill-down details from a single shared source (`detailsByWidget` parity)
+  - KPI detail rows must be type-aware and keep click contract (tasks/time entries open `TaskDetailModal`; projects/customers/tickets navigate)
+  - KPI task detail rows should include tags when available
   - Planning bars are header-driven (`TaskAllocationHeaderId`), not date-gap grouped
   - Planning drag contract: normal drag moves full slice; `Ctrl + drag` moves partial slice by hours
   - Planning allocation writes must preserve `TaskAllocationHeaderId` and use header-aware slice endpoints when applicable

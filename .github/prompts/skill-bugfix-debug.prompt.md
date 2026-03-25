@@ -31,6 +31,8 @@ Any known logs/errors:
 13. If bug touches planning data creation flows, ensure every inserted allocation has `TaskAllocationHeaderId` and startup backfills repair null/orphan references.
 14. If bug touches slice move/delete logic, validate header-aware endpoints first (`/header/:headerId`, `/header/:headerId/hours`, `/header/:headerId/dates`) before broad task/user/date deletes.
 15. If bug touches parent/child slice planning, ensure `TaskChildAllocations.TaskAllocationHeaderId` is populated and every child query/delete/recalc is filtered by that header, not only by date.
+16. If bug touches Dashboard KPI drill-down, validate that card values and detail modal items come from the same backing list source (no diverging count query path).
+17. When a fix changes reusable project behavior rules, also update `.github/copilot-instructions.md` and the relevant prompt template(s) under `.github/prompts/` in the same task.
 
 ## Output Contract
 

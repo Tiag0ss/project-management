@@ -35,7 +35,7 @@ const router = Router();
 router.get('/public', async (req, res: Response) => {
   try {
     const [settings] = await pool.execute<RowDataPacket[]>(
-      'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         'allowPublicRegistration',
         'publicRegistrationType',
@@ -45,7 +45,8 @@ router.get('/public', async (req, res: Response) => {
         'companyLogoUrl',
         'faviconUrl',
         'autoApproveTimeEntries',
-        'autoApproveVacations'
+        'autoApproveVacations',
+        'frontpageEnabled'
       ]
     );
 
@@ -63,6 +64,7 @@ router.get('/public', async (req, res: Response) => {
     const faviconUrl = settingsObj.faviconUrl || '';
     const autoApproveTimeEntries = settingsObj.autoApproveTimeEntries === 'true';
     const autoApproveVacations = settingsObj.autoApproveVacations === 'true';
+    const frontpageEnabled = settingsObj.frontpageEnabled !== 'false';
     res.json({
       success: true,
       allowPublicRegistration,
@@ -73,7 +75,8 @@ router.get('/public', async (req, res: Response) => {
       companyLogoUrl,
       faviconUrl,
       autoApproveTimeEntries,
-      autoApproveVacations
+      autoApproveVacations,
+      frontpageEnabled
     });
   } catch (error) {
     console.error('Get public registration setting error:', error);
@@ -339,6 +342,11 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
       // Skip masked placeholder values - don't overwrite with the mask
       if (MASKED_KEYS.includes(key) && finalValue === '••••••••') {
+        continue;
+      }
+
+      // Skip empty sensitive values - don't clear stored encrypted secrets when field is left blank
+      if (ENCRYPTED_KEYS.includes(key) && !finalValue) {
         continue;
       }
 

@@ -22,6 +22,7 @@ Use reusable prompt templates from `.github/prompts/` when tasks match these cat
 - `skill-permission-gated-ui.prompt.md`
 - `skill-release-pdf-flow.prompt.md`
 - `skill-auth-password-recovery.prompt.md`
+- `skill-dashboard-kpi-drilldown.prompt.md`
 
 If a request is close to one of these templates, follow that template structure first, then adapt to the user-specific scope.
 
@@ -515,6 +516,20 @@ className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-
 ### Dashboard Analytics
 - Analytics supports selectable periods with default current month behavior
 - Include `allTime` period option for aggregate metrics where applicable
+
+### Dashboard KPI Drill-down (CRITICAL)
+- KPI widgets with list-backed metrics must use a single source of truth: `/api/dashboard-kpis/values` should provide both summary values and backing lists (`detailsByWidget`)
+- For list-backed KPI cards, displayed totals must be derived from the same backing list used by drill-down details (avoid separate count-only logic that can diverge)
+- The details endpoint (`/api/dashboard-kpis/:widgetId/details`) must reuse the same backend query builder as `/values`; differences should be pagination only
+- Task/detail payloads must include navigation identifiers (`taskId`, `projectId`) so rows can open the right target
+- Task detail rows must include tags when available (from `TaskTags`/`Tags`)
+- KPI modal rendering must be type-aware: `tasks`, `projects`, `customers`, `tickets`, `timeEntries`
+- KPI modal click contract:
+  - `tasks` and `timeEntries` open task details via `TaskDetailModal`
+  - `projects` navigates to `/projects/:id`
+  - `customers` navigates to `/customers/:id`
+  - `tickets` navigates to `/tickets/:id`
+- When resolving project customer labels in KPI queries, never read `Projects.CustomerName` directly; use `LEFT JOIN Customers` and `COALESCE(Customers.ExternalName, Customers.Name)`
 
 ### Applications & Versions
 - `Applications.IsCustomerSpecific` and `ApplicationVersions.IsCustomerSpecific` are supported flags

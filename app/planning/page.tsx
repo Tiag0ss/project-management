@@ -500,6 +500,7 @@ export default function PlanningPage() {
     isSaving: false,
     isDeleting: false,
   });
+  const [showOverdueDetails, setShowOverdueDetails] = useState(false);
 
   const showAlert = (title: string, message: string) => {
     setModalMessage({ type: 'alert', title, message });
@@ -1852,6 +1853,59 @@ export default function PlanningPage() {
     return closedDates[0] ? new Date(closedDates[0]) : today;
   };
 
+  const getUnscheduledDoneTransitionDates = (task: Task, userId?: number): string[] => {
+    const relevantTasks = getRelevantUnscheduledTasks(task, userId);
+    if (relevantTasks.length === 0) {
+      return [];
+    }
+
+    const uniqueDates = new Set<string>();
+
+    relevantTasks.forEach((candidate) => {
+      const transitions = Array.isArray(candidate.DoneTransitionsByDay) ? candidate.DoneTransitionsByDay : [];
+      transitions.forEach((transition) => {
+        const rawDate = transition?.date;
+        if (!rawDate) return;
+
+        const normalizedDate = normalizeDateOnly(String(rawDate));
+        if (normalizedDate) {
+          uniqueDates.add(normalizedDate);
+        }
+      });
+    });
+
+    return Array.from(uniqueDates).sort((a, b) => a.localeCompare(b));
+  };
+
+  const getUnscheduledRenderDates = (task: Task, userId?: number): Array<{ date: string; source: 'done' | 'openToday' }> => {
+    const relevantTasks = getRelevantUnscheduledTasks(task, userId);
+    if (relevantTasks.length === 0) {
+      return [];
+    }
+
+    const doneDates = getUnscheduledDoneTransitionDates(task, userId);
+    const renderDates = new Map<string, { date: string; source: 'done' | 'openToday' }>();
+    doneDates.forEach((date) => {
+      renderDates.set(`done|${date}`, { date, source: 'done' });
+    });
+
+    const hasOpenRelevantTask = relevantTasks.some((candidate) => !isTaskClosedOrCancelled(candidate));
+    if (hasOpenRelevantTask) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayKey = getDateKeyFromDate(today);
+      renderDates.set(`openToday|${todayKey}`, { date: todayKey, source: 'openToday' });
+    }
+
+    return Array.from(renderDates.values())
+      .sort((a, b) => {
+        if (a.date !== b.date) {
+          return a.date.localeCompare(b.date);
+        }
+        return a.source === b.source ? 0 : a.source === 'done' ? -1 : 1;
+      });
+  };
+
   const getPrioritySortOrder = (task: Task): number | null => {
     const configuredOrder = Number(task.PrioritySortOrder);
     if (Number.isFinite(configuredOrder)) {
@@ -1913,12 +1967,17 @@ export default function PlanningPage() {
       useFixedPixelColumns?: boolean;
       columnWidthPx?: number;
       unscheduledUserId?: number;
+      forcePlannedDates?: boolean;
     }
   ) => {
     if (columns.length === 0) return null;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const visibleRangeStart = new Date(columns[0].start);
+    visibleRangeStart.setHours(0, 0, 0, 0);
+    const visibleRangeEnd = new Date(columns[columns.length - 1].end);
+    visibleRangeEnd.setHours(0, 0, 0, 0);
 
     let startDate: Date;
     let endDate: Date;
@@ -1927,13 +1986,36 @@ export default function PlanningPage() {
       && hasAnyTaskAssignee(task)
       && isRenderableUnscheduledTask(task);
     const hasUnscheduledDescendant = !task.ParentTaskId && hasUnscheduledAssignedDescendant(task.Id);
+    const shouldForcePlannedDates = !!options?.forcePlannedDates;
 
-    if (isAssignedUnscheduled || hasUnscheduledDescendant) {
-      const unscheduledAnchorDate = getUnscheduledAnchorDate(task, options?.unscheduledUserId);
-      startDate = new Date(unscheduledAnchorDate);
-      endDate = new Date(unscheduledAnchorDate);
-      const unscheduledVisualDays = isClosedUnscheduledWithAnchor(task) ? 1 : 3;
-      endDate.setDate(endDate.getDate() + (unscheduledVisualDays - 1));
+    if (shouldForcePlannedDates && task.PlannedStartDate && task.PlannedEndDate) {
+      const parseDate = (dateStr: string) => {
+        const dateOnly = String(dateStr).split('T')[0];
+        return new Date(dateOnly + 'T12:00:00');
+      };
+
+      startDate = parseDate(task.PlannedStartDate);
+      endDate = parseDate(task.PlannedEndDate);
+    } else if (isAssignedUnscheduled || hasUnscheduledDescendant) {
+      const unscheduledRenderDates = getUnscheduledRenderDates(task, options?.unscheduledUserId);
+      const visibleRenderDate = unscheduledRenderDates.find((entry) => {
+        const parsed = new Date(`${entry.date}T12:00:00`);
+        if (Number.isNaN(parsed.getTime())) return false;
+        parsed.setHours(0, 0, 0, 0);
+        return parsed >= visibleRangeStart && parsed <= visibleRangeEnd;
+      });
+
+      if (visibleRenderDate) {
+        const visibleDate = new Date(`${visibleRenderDate.date}T12:00:00`);
+        startDate = new Date(visibleDate);
+        endDate = new Date(visibleDate);
+      } else {
+        const unscheduledAnchorDate = getUnscheduledAnchorDate(task, options?.unscheduledUserId);
+        startDate = new Date(unscheduledAnchorDate);
+        endDate = new Date(unscheduledAnchorDate);
+        const unscheduledVisualDays = isClosedUnscheduledWithAnchor(task) ? 1 : 3;
+        endDate.setDate(endDate.getDate() + (unscheduledVisualDays - 1));
+      }
     } else if (task.PlannedStartDate && task.PlannedEndDate) {
       // Parse planned dates - handle both 'YYYY-MM-DD' and ISO timestamp formats
       const parseDate = (dateStr: string) => {
@@ -6848,6 +6930,7 @@ export default function PlanningPage() {
   const isGanttLoading = isLoadingData || loadingAllocations;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayDateKey = getDateKeyFromDate(today);
   const todayIndex = timelineColumns.findIndex((column) => {
     const columnStart = new Date(column.start);
     const columnEnd = new Date(column.end);
@@ -6994,6 +7077,65 @@ export default function PlanningPage() {
   const milestoneRowHeight = visibleMilestones.length === 0
     ? 24
     : Math.max(24, milestoneRowPadding * 2 + milestoneLaneCount * milestoneLaneHeight);
+  const projectById = new Map(projects.map((project) => [Number(project.Id), project]));
+  const isDateOutsideCurrentTimeline = (dateKey: string) => {
+    if (!firstTimelineDateKey || !lastTimelineDateKey) return true;
+    return dateKey < firstTimelineDateKey || dateKey > lastTimelineDateKey;
+  };
+  const focusTimelineDate = (dateKey: string) => {
+    const parsedDate = new Date(`${dateKey}T12:00:00`);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return;
+    }
+
+    const nextViewStartDate = new Date(parsedDate);
+    nextViewStartDate.setHours(0, 0, 0, 0);
+    nextViewStartDate.setDate(nextViewStartDate.getDate() - 2);
+    setViewStartDate(nextViewStartDate);
+
+    if (viewMode === 'custom') {
+      const visibleSpanDays = Math.max(1, days.length);
+      const nextCustomStartDate = new Date(nextViewStartDate);
+      nextCustomStartDate.setHours(12, 0, 0, 0);
+      const nextCustomEndDate = new Date(nextCustomStartDate);
+      nextCustomEndDate.setDate(nextCustomEndDate.getDate() + visibleSpanDays - 1);
+      setCustomStartDate(formatDateForInput(nextCustomStartDate));
+      setCustomEndDate(formatDateForInput(nextCustomEndDate));
+    }
+  };
+  const overdueMilestones = projectMilestones
+    .map((milestone) => {
+      const dueDate = normalizeDateKey(milestone.DueDate);
+      if (!dueDate) return null;
+
+      const dueDateValue = new Date(`${dueDate}T00:00:00`);
+      if (Number.isNaN(dueDateValue.getTime())) return null;
+
+      const daysOverdue = Math.max(1, Math.round((today.getTime() - dueDateValue.getTime()) / 86400000));
+      const project = projectById.get(Number(milestone.ProjectId));
+
+      return {
+        milestone,
+        dueDate,
+        dueDateValue,
+        daysOverdue,
+        projectName: project?.ProjectName || `Project #${milestone.ProjectId}`,
+        projectCustomerName: project?.CustomerName || '',
+        isOutsideCurrentTimeline: isDateOutsideCurrentTimeline(dueDate),
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => {
+      return !!entry
+        && Number(entry.milestone.IsCompleted || 0) !== 1
+        && entry.dueDate < todayDateKey;
+    })
+    .sort((a, b) => {
+      const dateDiff = a.dueDateValue.getTime() - b.dueDateValue.getTime();
+      if (dateDiff !== 0) return dateDiff;
+      return a.projectName.localeCompare(b.projectName) || a.milestone.Name.localeCompare(b.milestone.Name);
+    });
+  const overdueMilestonesPreview = overdueMilestones.slice(0, 5);
+  const overdueMilestonesOutsideTimelineCount = overdueMilestones.filter((entry) => entry.isOutsideCurrentTimeline).length;
 
   return (
     <CustomerUserGuard>
@@ -7073,6 +7215,62 @@ export default function PlanningPage() {
                 )}
               </div>
             </div>
+
+            {overdueMilestones.length > 0 && (
+              <div className="bg-amber-50/60 dark:bg-amber-900/10 border-b border-amber-200/50 dark:border-amber-800/30 px-4 py-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOverdueDetails(!showOverdueDetails)}
+                  className="flex items-center gap-2 text-sm hover:opacity-75 transition-opacity"
+                >
+                  <span className="text-amber-700 dark:text-amber-600">⚠️</span>
+                  <span className="font-medium text-amber-800 dark:text-amber-300">
+                    {overdueMilestones.length} overdue milestone{overdueMilestones.length === 1 ? '' : 's'}
+                  </span>
+                  <svg className={`w-4 h-4 text-amber-600 dark:text-amber-400 transition-transform ${showOverdueDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7-7-7 7" />
+                  </svg>
+                </button>
+
+                {showOverdueDetails && (
+                  <div className="mt-2 space-y-1 max-h-64 overflow-y-auto">
+                    {overdueMilestonesPreview.map((entry) => (
+                      <div key={`overdue-milestone-${entry.milestone.Id}`} className="flex items-center justify-between gap-2 text-xs py-1 px-2 rounded bg-white/50 dark:bg-gray-800/30 hover:bg-white/80 dark:hover:bg-gray-800/50 transition-colors">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium text-gray-900 dark:text-white truncate">{entry.milestone.Name}</div>
+                          <div className="text-xs text-gray-600 dark:text-gray-400 truncate">
+                            {entry.projectName} • {entry.daysOverdue}d overdue
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button 
+                            type="button"
+                            onClick={() => { setActiveTab('gantt'); focusTimelineDate(entry.dueDate); }}
+                            className="px-2 py-0.5 text-xs bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors"
+                            title="Show in Gantt"
+                          >
+                            Show
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void openMilestoneEditor(entry.milestone)}
+                            className="px-2 py-0.5 text-xs bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded transition-colors"
+                            title="Edit milestone"
+                          >
+                            ✎
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {overdueMilestones.length > overdueMilestonesPreview.length && (
+                      <div className="text-xs text-amber-700 dark:text-amber-400 py-1 px-2">
+                        +{overdueMilestones.length - overdueMilestonesPreview.length} more
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {activeTab === 'gantt' && (
           <div className="w-full bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700 flex-1 min-h-0 flex flex-col">
@@ -7585,6 +7783,7 @@ export default function PlanningPage() {
                       const projectName = projects.find((project) => Number(project.Id) === Number(milestone.ProjectId))?.ProjectName || 'Project';
                       const milestoneColor = milestone.MilestoneTypeColor || '#059669';
                       const isCompletedMilestone = Number(milestone.IsCompleted || 0) === 1;
+                      const isOverdueMilestone = !isCompletedMilestone && dueDate < todayDateKey;
                       const sameDayOffset = visibleMilestones
                         .slice(0, milestoneIndex)
                         .filter((entry) => normalizeDateKey(entry.DueDate) === dueDate).length;
@@ -7600,7 +7799,9 @@ export default function PlanningPage() {
                         <div
                           key={`milestone-${milestone.Id}`}
                           onClick={() => openMilestoneEditor(milestone)}
-                          className="absolute h-4 rounded text-white text-[10px] px-1.5 flex items-center cursor-pointer hover:opacity-100"
+                          className={`absolute h-4 rounded text-white text-[10px] px-1.5 flex items-center cursor-pointer hover:opacity-100 ${
+                            isOverdueMilestone ? 'ring-2 ring-red-400/80 dark:ring-red-300/80' : ''
+                          }`}
                           style={{
                             left,
                             width,
@@ -7609,7 +7810,7 @@ export default function PlanningPage() {
                             backgroundColor: milestoneColor,
                             opacity: isCompletedMilestone ? 0.7 : 0.9,
                           }}
-                          title={`Click to edit milestone\n\n${projectName}\n${milestone.Name}\nType: ${milestone.MilestoneTypeName || 'No type'}\nDue: ${new Date(`${dueDate}T12:00:00`).toLocaleDateString()}${isCompletedMilestone ? '\nStatus: Completed' : '\nStatus: Open'}`}
+                          title={`Click to edit milestone\n\n${projectName}\n${milestone.Name}\nType: ${milestone.MilestoneTypeName || 'No type'}\nDue: ${new Date(`${dueDate}T12:00:00`).toLocaleDateString()}${isCompletedMilestone ? '\nStatus: Completed' : isOverdueMilestone ? `\nStatus: Open (Overdue by ${Math.max(1, Math.round((today.getTime() - new Date(`${dueDate}T00:00:00`).getTime()) / 86400000))} days)` : '\nStatus: Open'}`}
                         >
                           <span className="truncate inline-flex items-center gap-1">
                             <span className="inline-flex items-center">{renderMilestoneTypeSvg(milestone.MilestoneTypeIconSvg, 'w-3 h-3')}</span>
@@ -7962,7 +8163,22 @@ export default function PlanningPage() {
                   const getTaskVisualRowSpan = (taskId: number): number => {
                     const cached = taskRowSpanCache.get(taskId);
                     if (cached) return cached;
-                    const span = Math.max(1, getTaskUserAllocationSegments(taskId, userRow.Id).length);
+
+                    const allocationSpan = Math.max(1, getTaskUserAllocationSegments(taskId, userRow.Id).length);
+                    const currentTask = tasks.find((candidate) => Number(candidate.Id) === Number(taskId));
+
+                    let unscheduledSpan = 0;
+                    if (currentTask) {
+                      const hasUnscheduledSelfForUser = Number(currentTask.UnscheduledWork || 0) === 1
+                        && isTaskAssignedToUser(currentTask, Number(userRow.Id));
+                      const hasUnscheduledChildForUser = hasUnscheduledAssignedDescendant(currentTask.Id, Number(userRow.Id));
+
+                      if (hasUnscheduledSelfForUser || hasUnscheduledChildForUser) {
+                        unscheduledSpan = getUnscheduledRenderDates(currentTask, Number(userRow.Id)).length;
+                      }
+                    }
+
+                    const span = Math.max(allocationSpan, unscheduledSpan, 1);
                     taskRowSpanCache.set(taskId, span);
                     return span;
                   };
@@ -8190,19 +8406,29 @@ export default function PlanningPage() {
                           const hasAnyTaskAllocation = allAllocations.some((allocation) => allocation.TaskId === task.Id);
                           const hasLegacyTaskDates = !!(task.PlannedStartDate && task.PlannedEndDate);
 
-                          const taskBarSegments: Array<{ headerId: number | null; startDate: string; endDate: string }> = [];
+                          const taskBarSegments: Array<{ headerId: number | null; startDate: string; endDate: string; source?: 'done' | 'openToday' | 'default' }> = [];
 
                           if (userAllocationSegments.length > 0) {
                             displayedStartDate = userAllocationSegments[0].startDate;
                             displayedEndDate = userAllocationSegments[userAllocationSegments.length - 1].endDate;
                             taskBarSegments.push(...userAllocationSegments);
                           } else if (isUnscheduledForUser || hasUnscheduledAssignedChildForUser) {
-                            const anchorDate = getUnscheduledAnchorDate(task, Number(userRow.Id));
-                            const endDate = new Date(anchorDate);
-                            endDate.setDate(endDate.getDate() + 2);
-                            displayedStartDate = getDateKeyFromDate(anchorDate);
-                            displayedEndDate = getDateKeyFromDate(endDate);
-                            taskBarSegments.push({ headerId: null, startDate: displayedStartDate, endDate: displayedEndDate });
+                            const unscheduledRenderDates = getUnscheduledRenderDates(task, Number(userRow.Id));
+
+                            if (unscheduledRenderDates.length > 0) {
+                              displayedStartDate = unscheduledRenderDates[0].date;
+                              displayedEndDate = unscheduledRenderDates[unscheduledRenderDates.length - 1].date;
+                              unscheduledRenderDates.forEach((entry) => {
+                                taskBarSegments.push({ headerId: null, startDate: entry.date, endDate: entry.date, source: entry.source });
+                              });
+                            } else {
+                              const anchorDate = getUnscheduledAnchorDate(task, Number(userRow.Id));
+                              const endDate = new Date(anchorDate);
+                              endDate.setDate(endDate.getDate() + 2);
+                              displayedStartDate = getDateKeyFromDate(anchorDate);
+                              displayedEndDate = getDateKeyFromDate(endDate);
+                              taskBarSegments.push({ headerId: null, startDate: displayedStartDate, endDate: displayedEndDate });
+                            }
                           } else if (!hasAnyTaskAllocation && hasLegacyTaskDates) {
                             displayedStartDate = normalizeDateOnly(task.PlannedStartDate);
                             displayedEndDate = normalizeDateOnly(task.PlannedEndDate);
@@ -8238,7 +8464,38 @@ export default function PlanningPage() {
                             return null;
                           }
 
-                          if (taskBarSegments.length === 0) {
+                          const mergedTaskBarSegments = (() => {
+                            const byKey = new Map<string, { headerId: number | null; startDate: string; endDate: string; source?: 'done' | 'openToday' | 'default' }>();
+
+                            const sourceRank = (source?: 'done' | 'openToday' | 'default') => {
+                              if (source === 'done') return 3;
+                              if (source === 'openToday') return 2;
+                              return 1;
+                            };
+
+                            taskBarSegments.forEach((segment) => {
+                              const key = segment.source
+                                ? `${segment.source}|${segment.startDate}|${segment.endDate}`
+                                : `${segment.headerId ?? 'legacy'}|${segment.startDate}|${segment.endDate}`;
+                              const existing = byKey.get(key);
+
+                              if (!existing || sourceRank(segment.source) > sourceRank(existing.source)) {
+                                byKey.set(key, segment);
+                              }
+                            });
+
+                            return Array.from(byKey.values()).sort((a, b) => {
+                              if (a.startDate !== b.startDate) {
+                                return a.startDate.localeCompare(b.startDate);
+                              }
+                              if (a.endDate !== b.endDate) {
+                                return a.endDate.localeCompare(b.endDate);
+                              }
+                              return Number(a.headerId ?? 0) - Number(b.headerId ?? 0);
+                            });
+                          })();
+
+                          if (mergedTaskBarSegments.length === 0) {
                             return null;
                           }
                           
@@ -8345,6 +8602,27 @@ export default function PlanningPage() {
                               })()
                             : 0;
 
+                          const renderableTaskBarSegments = mergedTaskBarSegments
+                            .map((segment) => {
+                              const segmentTask = {
+                                ...task,
+                                PlannedStartDate: segment.startDate,
+                                PlannedEndDate: segment.endDate,
+                              };
+                              const segmentPosition = getTaskPosition(segmentTask, timelineColumns, {
+                                useFixedPixelColumns,
+                                columnWidthPx: dayColumnWidthPx,
+                                forcePlannedDates: true,
+                              });
+
+                              if (!segmentPosition) {
+                                return null;
+                              }
+
+                              return { segment, segmentPosition };
+                            })
+                            .filter((entry): entry is { segment: typeof mergedTaskBarSegments[number]; segmentPosition: NonNullable<ReturnType<typeof getTaskPosition>> } => entry !== null);
+
                           return (
                             <React.Fragment key={`bar-${task.Id}`}>
                               {baselinePosition && (
@@ -8362,20 +8640,7 @@ export default function PlanningPage() {
                                   title={`Baseline: ${task.BaselineStartDate} → ${task.BaselineEndDate}${driftDays !== 0 ? `\nDrift: ${driftDays > 0 ? '+' : ''}${driftDays} days` : ''}`}
                                 />
                               )}
-                              {taskBarSegments.map((segment, segmentIndex) => {
-                                const segmentTask = {
-                                  ...task,
-                                  PlannedStartDate: segment.startDate,
-                                  PlannedEndDate: segment.endDate,
-                                };
-                                const segmentPosition = getTaskPosition(segmentTask, timelineColumns, {
-                                  useFixedPixelColumns,
-                                  columnWidthPx: dayColumnWidthPx,
-                                });
-
-                                if (!segmentPosition) {
-                                  return null;
-                                }
+                              {renderableTaskBarSegments.map(({ segment, segmentPosition }, segmentIndex) => {
 
                                 const segmentCanResizeStart = !!(
                                   canResizeStart &&
@@ -8409,6 +8674,11 @@ export default function PlanningPage() {
                                 const barDomId = segmentHeaderId !== null
                                   ? `allocation-header-${segmentHeaderId}`
                                   : undefined;
+                                const isDoneTransitionSegment = segment.source === 'done';
+                                const segmentStatusColor = isDoneTransitionSegment ? undefined : statusColor;
+                                const segmentBaseColorClass = isDoneTransitionSegment
+                                  ? 'bg-green-600 dark:bg-green-600'
+                                  : (!segmentStatusColor ? getPriorityColor(task) : '');
 
                                 return (
                                   <div
@@ -8432,13 +8702,13 @@ export default function PlanningPage() {
                                       }
                                       void handleTaskClick(task);
                                     }}
-                                    className={`absolute ${subtaskHeight} rounded ${!statusColor ? getPriorityColor(task) : ''} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${canDragTaskSegment ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''} ${isResizingThisSegment ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''}`}
+                                    className={`absolute ${subtaskHeight} rounded ${segmentBaseColorClass} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${canDragTaskSegment ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''} ${isResizingThisSegment ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''}`}
                                     style={{
                                       left: segmentPreviewStyle?.left || segmentPosition.left,
                                       width: segmentPreviewStyle?.width || segmentPosition.width,
                                       top: `${2 + (row + segmentIndex) * 24}px`,
                                       height: '24px',
-                                      ...(statusColor ? { backgroundColor: statusColor } : {}),
+                                      ...(segmentStatusColor ? { backgroundColor: segmentStatusColor } : {}),
                                       borderLeft: `${isSubtask ? '3' : '4'}px solid ${priorityBorderHex}`,
                                       zIndex: isResizingThisSegment ? 40 : isSubtask ? 20 + segmentIndex : 21 + segmentIndex,
                                     }}

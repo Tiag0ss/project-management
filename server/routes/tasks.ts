@@ -245,6 +245,24 @@ function parseAssigneesJson(tasks: any[]): any[] {
   });
 }
 
+function parseTaskTagsJson(tasks: any[]): any[] {
+  return tasks.map((task) => {
+    let taskTags: any[] = [];
+    if (task.TaskTagsJson) {
+      try {
+        taskTags = typeof task.TaskTagsJson === 'string' ? JSON.parse(task.TaskTagsJson) : task.TaskTagsJson;
+      } catch {
+        taskTags = [];
+      }
+    }
+
+    return {
+      ...task,
+      TaskTags: Array.isArray(taskTags) ? taskTags : [],
+    };
+  });
+}
+
 async function populateAssigneesJson(tasks: any[]): Promise<void> {
   const taskIds = tasks
     .map((task) => task?.Id)
@@ -287,6 +305,51 @@ async function populateAssigneesJson(tasks: any[]): Promise<void> {
   for (const task of tasks) {
     const assignees = assigneesByTask.get(Number(task.Id)) || [];
     task.AssigneesJson = JSON.stringify(assignees);
+  }
+}
+
+async function populateTaskTagsJson(tasks: any[]): Promise<void> {
+  const taskIds = tasks
+    .map((task) => task?.Id)
+    .filter((taskId) => taskId !== null && taskId !== undefined);
+
+  for (const task of tasks) {
+    if (task.TaskTagsJson === undefined || task.TaskTagsJson === null) {
+      task.TaskTagsJson = '[]';
+    }
+  }
+
+  if (taskIds.length === 0) {
+    return;
+  }
+
+  const placeholders = taskIds.map(() => '?').join(',');
+  const [tagRows] = await pool.execute<RowDataPacket[]>(
+    `SELECT tt.TaskId, t.Id as TagId, t.Name as TagName, t.Color as TagColor
+     FROM TaskTags tt
+     INNER JOIN Tags t ON t.Id = tt.TagId
+     WHERE tt.TaskId IN (${placeholders})
+     ORDER BY tt.TaskId ASC, t.Name ASC`,
+    taskIds
+  );
+
+  const tagsByTask = new Map<number, Array<{ Id: number; Name: string; Color: string | null }>>();
+  for (const row of tagRows) {
+    const taskId = Number(row.TaskId);
+    if (!tagsByTask.has(taskId)) {
+      tagsByTask.set(taskId, []);
+    }
+
+    tagsByTask.get(taskId)?.push({
+      Id: Number(row.TagId),
+      Name: String(row.TagName || ''),
+      Color: row.TagColor ? String(row.TagColor) : null,
+    });
+  }
+
+  for (const task of tasks) {
+    const tags = tagsByTask.get(Number(task.Id)) || [];
+    task.TaskTagsJson = JSON.stringify(tags);
   }
 }
 
@@ -376,7 +439,8 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
               tk.Title as TicketTitle,
               tk.ExternalTicketId,
               oji.JiraUrl,
-              '[]' as AssigneesJson
+              '[]' as AssigneesJson,
+              '[]' as TaskTagsJson
        FROM Tasks t
        JOIN Projects p ON t.ProjectId = p.Id
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
@@ -401,10 +465,11 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
     );
 
     await populateAssigneesJson(tasks);
+    await populateTaskTagsJson(tasks);
 
     res.json({
       success: true,
-      tasks: computeCompletionPercentages(parseAssigneesJson(tasks))
+      tasks: computeCompletionPercentages(parseTaskTagsJson(parseAssigneesJson(tasks)))
     });
   } catch (error) {
     console.error('Get my tasks error:', error);
@@ -668,6 +733,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
     });
 
     const closedAtByTaskId = new Map<number, string>();
+    const doneTransitionsByTaskId = new Map<number, Map<string, number>>();
     if (tasks.length > 0 && closedStatusValues.size > 0) {
       const [statusHistory] = await pool.execute<RowDataPacket[]>(
         `SELECT th.TaskId, th.NewValue, th.CreatedAt
@@ -681,7 +747,6 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
 
       statusHistory.forEach((entry) => {
         const taskId = Number(entry.TaskId);
-        if (closedAtByTaskId.has(taskId)) return;
 
         const statusToken = String(entry.NewValue || '').trim();
         if (!closedStatusValues.has(statusToken) && !closedStatusValues.has(statusToken.toLowerCase())) {
@@ -690,7 +755,18 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
 
         const closedDate = toDateOnly(entry.CreatedAt);
         if (closedDate) {
-          closedAtByTaskId.set(taskId, closedDate);
+          if (!closedAtByTaskId.has(taskId)) {
+            closedAtByTaskId.set(taskId, closedDate);
+          }
+
+          if (!doneTransitionsByTaskId.has(taskId)) {
+            doneTransitionsByTaskId.set(taskId, new Map<string, number>());
+          }
+
+          const dayMap = doneTransitionsByTaskId.get(taskId);
+          if (dayMap) {
+            dayMap.set(closedDate, (dayMap.get(closedDate) || 0) + 1);
+          }
         }
       });
     }
@@ -703,9 +779,16 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
         closedStatusValues.has(currentStatusToken) ||
         closedStatusValues.has(currentStatusToken.toLowerCase());
 
+      const doneTransitionsByDay = Number(task.UnscheduledWork || 0) === 1
+        ? Array.from(doneTransitionsByTaskId.get(Number(task.Id))?.entries() || [])
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([date, count]) => ({ date, count }))
+        : [];
+
       return {
         ...task,
         ClosedAt: closedAtByTaskId.get(Number(task.Id)) || (isClosedNow ? toDateOnly(task.UpdatedAt) : null),
+        DoneTransitionsByDay: doneTransitionsByDay,
       };
     });
 
