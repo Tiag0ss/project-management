@@ -16,10 +16,20 @@ interface ReportColumn {
   type?: 'text' | 'date' | 'number' | 'boolean';
 }
 
+interface ReportSummaryMetric {
+  key: string;
+  label: string;
+  value: string;
+}
+
 const LEADING_REPORT_COLUMNS: ReportColumn[] = [
   { key: 'OrganizationName', label: 'Organization' },
   { key: 'ProjectName', label: 'Project' },
   { key: 'TaskName', label: 'Task' },
+];
+
+const CUSTOMER_LEADING_REPORT_COLUMNS: ReportColumn[] = [
+  { key: 'OrganizationName', label: 'Organization' },
 ];
 
 interface EntityFilterConfig {
@@ -95,6 +105,11 @@ const REPORT_TABS: ReportTabConfig[] = [
       { key: 'OrganizationName', label: 'Organization' },
       { key: 'CustomerName', label: 'Customer' },
       { key: 'StatusName', label: 'Status' },
+      { key: 'TotalTasks', label: 'Total Tasks', type: 'number' },
+      { key: 'OpenTasks', label: 'Open Tasks', type: 'number' },
+      { key: 'ClosedTasks', label: 'Closed Tasks', type: 'number' },
+      { key: 'TotalEstimatedHours', label: 'Estimation Hours', type: 'number' },
+      { key: 'TotalWorkedHours', label: 'Consumed Hours', type: 'number' },
       { key: 'StartDate', label: 'Start', type: 'date' },
       { key: 'EndDate', label: 'End', type: 'date' },
       { key: 'CreatorName', label: 'Created by' },
@@ -123,6 +138,7 @@ const REPORT_TABS: ReportTabConfig[] = [
       { key: 'PriorityName', label: 'Priority' },
       { key: 'AssigneeName', label: 'Assignee' },
       { key: 'EstimatedHours', label: 'Estimated', type: 'number' },
+      { key: 'WorkedHours', label: 'Consumed Hours', type: 'number' },
       { key: 'PlannedStartDate', label: 'Planned start', type: 'date' },
       { key: 'PlannedEndDate', label: 'Planned end', type: 'date' },
     ],
@@ -176,17 +192,23 @@ const REPORT_TABS: ReportTabConfig[] = [
     key: 'customers',
     label: 'Customers',
     icon: '🏢',
-    searchFields: ['Name', 'ExternalName', 'Email', 'Phone', 'StatusName'],
+    searchFields: ['OrganizationName', 'Name', 'ExternalName', 'Email', 'Phone', 'StatusName'],
     dateField: 'CreatedAt',
+    organizationFilter: { idField: 'OrganizationId', labelField: 'OrganizationName', label: 'Organization' },
     statusField: 'StatusName',
     columns: [
+      { key: 'OrganizationName', label: 'Organization' },
       { key: 'Name', label: 'Name' },
       { key: 'ExternalName', label: 'External name' },
       { key: 'Email', label: 'Email' },
       { key: 'Phone', label: 'Phone' },
       { key: 'StatusName', label: 'Status' },
+      { key: 'TotalTasks', label: 'Total Tasks', type: 'number' },
+      { key: 'OpenTasks', label: 'Open Tasks', type: 'number' },
+      { key: 'ClosedTasks', label: 'Closed Tasks', type: 'number' },
+      { key: 'TotalEstimatedHours', label: 'Estimation Hours', type: 'number' },
+      { key: 'TotalWorkedHours', label: 'Consumed Hours', type: 'number' },
       { key: 'OpenTickets', label: 'Open tickets', type: 'number' },
-      { key: 'CreatedAt', label: 'Created', type: 'date' },
     ],
   },
   {
@@ -329,11 +351,13 @@ const getUniqueStringOptions = (rows: ReportRow[], field?: string) => {
   ).sort((a, b) => a.localeCompare(b));
 };
 
-const getOrderedColumns = (columns: ReportColumn[]): ReportColumn[] => {
+const getOrderedColumns = (columns: ReportColumn[], tabKey?: ReportTabKey): ReportColumn[] => {
   const seen = new Set<string>();
   const ordered: ReportColumn[] = [];
 
-  LEADING_REPORT_COLUMNS.forEach((column) => {
+  const leadingColumns = tabKey === 'customers' ? CUSTOMER_LEADING_REPORT_COLUMNS : LEADING_REPORT_COLUMNS;
+
+  leadingColumns.forEach((column) => {
     if (!seen.has(column.key)) {
       ordered.push(column);
       seen.add(column.key);
@@ -348,6 +372,12 @@ const getOrderedColumns = (columns: ReportColumn[]): ReportColumn[] => {
   });
 
   return ordered;
+};
+
+const formatNumberMetric = (value: number, decimals = 0): string => {
+  if (!Number.isFinite(value)) return '0';
+  if (decimals === 0) return String(Math.round(value));
+  return value.toFixed(decimals);
 };
 
 export default function ReportsPage() {
@@ -460,7 +490,7 @@ export default function ReportsPage() {
 
   const currentFilters = currentTab ? filtersByTab[currentTab.key] : DEFAULT_FILTERS;
   const currentRows = currentTab ? datasets[currentTab.key] || [] : [];
-  const currentColumns = currentTab ? getOrderedColumns(currentTab.columns) : [];
+  const currentColumns = currentTab ? getOrderedColumns(currentTab.columns, currentTab.key) : [];
   const currentError = currentTab ? tabErrors[currentTab.key] || '' : '';
   const isLoadingCurrentTab = currentTab ? loadingTabs[currentTab.key] || false : false;
   const hasRequestedCurrentTab = currentTab ? !!requestedTabs[currentTab.key] : false;
@@ -512,6 +542,47 @@ export default function ReportsPage() {
       return true;
     });
   }, [currentFilters, currentRows, currentTab]);
+
+  const summaryMetrics = useMemo(() => {
+    if (!currentTab || !hasRequestedCurrentTab) return [] as ReportSummaryMetric[];
+
+    const sumField = (field: string) =>
+      filteredRows.reduce((sum, row) => sum + Number(row[field] || 0), 0);
+
+    if (currentTab.key === 'projects') {
+      return [
+        { key: 'projects', label: 'Projects', value: formatNumberMetric(filteredRows.length) },
+        { key: 'openTasks', label: 'Open Tasks', value: formatNumberMetric(sumField('OpenTasks')) },
+        { key: 'closedTasks', label: 'Closed Tasks', value: formatNumberMetric(sumField('ClosedTasks')) },
+        { key: 'estimated', label: 'Estimation Hours', value: formatNumberMetric(sumField('TotalEstimatedHours'), 2) },
+        { key: 'consumed', label: 'Consumed Hours', value: formatNumberMetric(sumField('TotalWorkedHours'), 2) },
+      ];
+    }
+
+    if (currentTab.key === 'tasks') {
+      const openTasks = filteredRows.filter((row) => Number(row.StatusIsClosed || 0) === 0 && Number(row.StatusIsCancelled || 0) === 0).length;
+      const closedTasks = filteredRows.filter((row) => Number(row.StatusIsClosed || 0) === 1).length;
+      return [
+        { key: 'tasks', label: 'Tasks', value: formatNumberMetric(filteredRows.length) },
+        { key: 'openTasks', label: 'Open Tasks', value: formatNumberMetric(openTasks) },
+        { key: 'closedTasks', label: 'Closed Tasks', value: formatNumberMetric(closedTasks) },
+        { key: 'estimated', label: 'Estimation Hours', value: formatNumberMetric(sumField('EstimatedHours'), 2) },
+        { key: 'consumed', label: 'Consumed Hours', value: formatNumberMetric(sumField('WorkedHours'), 2) },
+      ];
+    }
+
+    if (currentTab.key === 'customers') {
+      return [
+        { key: 'customers', label: 'Customers', value: formatNumberMetric(filteredRows.length) },
+        { key: 'openTasks', label: 'Open Tasks', value: formatNumberMetric(sumField('OpenTasks')) },
+        { key: 'closedTasks', label: 'Closed Tasks', value: formatNumberMetric(sumField('ClosedTasks')) },
+        { key: 'estimated', label: 'Estimation Hours', value: formatNumberMetric(sumField('TotalEstimatedHours'), 2) },
+        { key: 'consumed', label: 'Consumed Hours', value: formatNumberMetric(sumField('TotalWorkedHours'), 2) },
+      ];
+    }
+
+    return [] as ReportSummaryMetric[];
+  }, [currentTab, filteredRows, hasRequestedCurrentTab]);
 
   const organizationOptions = useMemo(
     () => getUniqueOptions(currentRows, currentTab?.organizationFilter),
@@ -723,6 +794,17 @@ export default function ReportsPage() {
                     </button>
                   </div>
                 </div>
+
+                {summaryMetrics.length > 0 && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+                    {summaryMetrics.map((metric) => (
+                      <div key={metric.key} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 px-4 py-3">
+                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{metric.label}</p>
+                        <p className="mt-1 text-xl font-semibold text-gray-900 dark:text-white">{metric.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                   <div>

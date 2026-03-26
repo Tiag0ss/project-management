@@ -86,13 +86,44 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
               ELSE c.Name
             END as CustomerName,
             creator.Username as CreatorName,
-            psv.StatusName
+            psv.StatusName,
+            COALESCE(taskStats.TotalTasks, 0) as TotalTasks,
+            COALESCE(taskStats.OpenTasks, 0) as OpenTasks,
+            COALESCE(taskStats.ClosedTasks, 0) as ClosedTasks,
+            COALESCE(taskStats.TotalEstimatedHours, 0) as TotalEstimatedHours,
+            COALESCE(taskStats.TotalWorkedHours, 0) as TotalWorkedHours
           FROM Projects p
           INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId AND om.UserId = ?
           LEFT JOIN Organizations o ON p.OrganizationId = o.Id
           LEFT JOIN Customers c ON p.CustomerId = c.Id
           LEFT JOIN Users creator ON p.CreatedBy = creator.Id
           LEFT JOIN ProjectStatusValues psv ON p.Status = psv.Id
+          LEFT JOIN (
+            SELECT
+              t.ProjectId,
+              COUNT(*) as TotalTasks,
+              SUM(CASE WHEN COALESCE(tsv.IsClosed, 0) = 0 AND COALESCE(tsv.IsCancelled, 0) = 0 THEN 1 ELSE 0 END) as OpenTasks,
+              SUM(CASE WHEN COALESCE(tsv.IsClosed, 0) = 1 THEN 1 ELSE 0 END) as ClosedTasks,
+              SUM(
+                CASE
+                  WHEN parentTask.Id IS NULL THEN COALESCE(t.EstimatedHours, 0)
+                  ELSE 0
+                END
+              ) as TotalEstimatedHours,
+              COALESCE(worked.TotalWorkedHours, 0) as TotalWorkedHours
+            FROM Tasks t
+            LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+            LEFT JOIN Tasks parentTask ON parentTask.ParentTaskId = t.Id
+            LEFT JOIN (
+              SELECT
+                t2.ProjectId,
+                SUM(te.Hours) as TotalWorkedHours
+              FROM TimeEntries te
+              INNER JOIN Tasks t2 ON te.TaskId = t2.Id
+              GROUP BY t2.ProjectId
+            ) worked ON worked.ProjectId = t.ProjectId
+            GROUP BY t.ProjectId, worked.TotalWorkedHours
+          ) taskStats ON taskStats.ProjectId = p.Id
           ORDER BY p.ProjectName ASC
         `;
         params = [userId];
@@ -124,7 +155,10 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
             assignee.Username as AssigneeName,
             creator.Username as CreatorName,
             tsv.StatusName,
-            tpv.PriorityName
+            COALESCE(tsv.IsClosed, 0) as StatusIsClosed,
+            COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
+            tpv.PriorityName,
+            COALESCE(worked.WorkedHours, 0) as WorkedHours
           FROM Tasks t
           INNER JOIN Projects p ON t.ProjectId = p.Id
           INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId AND om.UserId = ?
@@ -135,6 +169,11 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
           LEFT JOIN Users creator ON t.CreatedBy = creator.Id
           LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
           LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
+          LEFT JOIN (
+            SELECT TaskId, SUM(Hours) as WorkedHours
+            FROM TimeEntries
+            GROUP BY TaskId
+          ) worked ON worked.TaskId = t.Id
           ORDER BY t.CreatedAt DESC, t.Id DESC
         `;
         params = [userId];
@@ -220,6 +259,8 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
         query = `
           SELECT DISTINCT
             c.Id,
+            customerOrg.OrganizationId,
+            customerOrg.OrganizationName,
             c.Name,
             c.ExternalName,
             c.Email,
@@ -227,6 +268,11 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
             c.CreatedAt,
             c.UpdatedAt,
             CASE WHEN COALESCE(c.IsActive, 1) = 1 THEN 'Active' ELSE 'Inactive' END as StatusName,
+            COALESCE(customerTaskStats.TotalTasks, 0) as TotalTasks,
+            COALESCE(customerTaskStats.OpenTasks, 0) as OpenTasks,
+            COALESCE(customerTaskStats.ClosedTasks, 0) as ClosedTasks,
+            COALESCE(customerTaskStats.TotalEstimatedHours, 0) as TotalEstimatedHours,
+            COALESCE(customerWorkedStats.TotalWorkedHours, 0) as TotalWorkedHours,
             (
               SELECT COUNT(*)
               FROM Tickets tk
@@ -236,9 +282,51 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
           FROM Customers c
           INNER JOIN CustomerOrganizations co ON c.Id = co.CustomerId
           INNER JOIN OrganizationMembers om ON co.OrganizationId = om.OrganizationId AND om.UserId = ?
+          LEFT JOIN (
+            SELECT
+              co2.CustomerId,
+              MIN(co2.OrganizationId) as OrganizationId,
+              MIN(o2.Name) as OrganizationName
+            FROM CustomerOrganizations co2
+            INNER JOIN Organizations o2 ON co2.OrganizationId = o2.Id
+            GROUP BY co2.CustomerId
+          ) customerOrg ON customerOrg.CustomerId = c.Id
+          LEFT JOIN (
+            SELECT
+              base.EffectiveCustomerId as CustomerId,
+              COUNT(*) as TotalTasks,
+              SUM(CASE WHEN base.StatusIsClosed = 0 AND base.StatusIsCancelled = 0 THEN 1 ELSE 0 END) as OpenTasks,
+              SUM(CASE WHEN base.StatusIsClosed = 1 THEN 1 ELSE 0 END) as ClosedTasks,
+              SUM(CASE WHEN base.IsLeafTask = 1 THEN base.EstimatedHours ELSE 0 END) as TotalEstimatedHours
+            FROM (
+              SELECT
+                t.Id,
+                COALESCE(t.CustomerId, p.CustomerId) as EffectiveCustomerId,
+                COALESCE(t.EstimatedHours, 0) as EstimatedHours,
+                COALESCE(tsv.IsClosed, 0) as StatusIsClosed,
+                COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
+                CASE WHEN child.Id IS NULL THEN 1 ELSE 0 END as IsLeafTask
+              FROM Tasks t
+              INNER JOIN Projects p ON t.ProjectId = p.Id
+              INNER JOIN OrganizationMembers omTask ON p.OrganizationId = omTask.OrganizationId AND omTask.UserId = ?
+              LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+              LEFT JOIN Tasks child ON child.ParentTaskId = t.Id
+            ) base
+            GROUP BY base.EffectiveCustomerId
+          ) customerTaskStats ON customerTaskStats.CustomerId = c.Id
+          LEFT JOIN (
+            SELECT
+              COALESCE(t.CustomerId, p.CustomerId) as EffectiveCustomerId,
+              SUM(te.Hours) as TotalWorkedHours
+            FROM TimeEntries te
+            INNER JOIN Tasks t ON te.TaskId = t.Id
+            INNER JOIN Projects p ON t.ProjectId = p.Id
+            INNER JOIN OrganizationMembers omTime ON p.OrganizationId = omTime.OrganizationId AND omTime.UserId = ?
+            GROUP BY COALESCE(t.CustomerId, p.CustomerId)
+          ) customerWorkedStats ON customerWorkedStats.EffectiveCustomerId = c.Id
           ORDER BY c.Name ASC
         `;
-        params = [userId];
+        params = [userId, userId, userId];
         break;
 
       case 'applications':
