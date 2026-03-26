@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import logger from '../utils/logger';
+import { pool } from '../config/database';
 
 // CRITICAL: JWT_SECRET must be set in environment variables
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -20,7 +21,7 @@ export interface AuthRequest extends Request {
   };
 }
 
-export function authenticateToken(req: AuthRequest, res: Response, next: NextFunction) {
+export async function authenticateToken(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
@@ -48,6 +49,15 @@ export function authenticateToken(req: AuthRequest, res: Response, next: NextFun
     const sixHoursInSeconds = 6 * 60 * 60;
 
     if (timeUntilExpiry < sixHoursInSeconds) {
+      try {
+        await pool.execute('UPDATE Users SET LastLoginAt = CURRENT_TIMESTAMP WHERE Id = ?', [decoded.userId]);
+      } catch (refreshUpdateError) {
+        logger.warn('Failed to update LastLoginAt during token auto-refresh', {
+          error: refreshUpdateError,
+          userId: decoded.userId,
+        });
+      }
+
       // Generate new token with same payload but fresh expiration
       const newToken = jwt.sign(
         {

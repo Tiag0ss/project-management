@@ -63,6 +63,10 @@ interface CallRecord {
   CallType: string;
   Participants: string;
   Subject: string;
+  Notes?: string;
+  OrganizationId?: number;
+  ProjectId?: number;
+  TaskId?: number;
 }
 
 interface TaskAllocation {
@@ -105,6 +109,7 @@ interface CalendarEvent {
     projectId?: number;
     taskId?: number;
     entryId?: number;
+    callId?: number;
     hours?: number | string;
     callType?: string;
     description?: string;
@@ -348,6 +353,8 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     endTime: string;
     description: string;
   } | null>(null);
+  const [showEditCallModal, setShowEditCallModal] = useState(false);
+  const [editingCallRecord, setEditingCallRecord] = useState<CallRecord | null>(null);
 
   // Convert tasks and time entries to calendar events (non-overlapping)
   const events = useMemo(() => {
@@ -476,6 +483,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
           end,
           resource: {
             type: 'call',
+            callId: call.Id,
             callType: call.CallType,
           },
         });
@@ -763,6 +771,12 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
 
     if (event.resource.type === 'task' && event.resource.projectId && event.resource.taskId) {
       await openTaskDetails(Number(event.resource.projectId), Number(event.resource.taskId));
+    } else if (event.resource.type === 'call' && event.resource.callId) {
+      const call = callRecords.find((record) => Number(record.Id) === Number(event.resource.callId));
+      if (call) {
+        setEditingCallRecord(call);
+        setShowEditCallModal(true);
+      }
     } else if (event.resource.type === 'timeEntry' && event.resource.entryId) {
       // Open edit modal for time entry
       const entry = timeEntries.find(e => e.Id === event.resource.entryId);
@@ -780,7 +794,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
         setShowEditEntryModal(true);
       }
     }
-  }, [openTaskDetails, timeEntries]);
+  }, [openTaskDetails, timeEntries, callRecords]);
 
   const handleNavigate = useCallback((date: Date) => {
     setCurrentDate(date);
@@ -888,6 +902,11 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   const closeEditEntryModal = () => {
     setShowEditEntryModal(false);
     setEditingEntry(null);
+  };
+
+  const closeEditCallModal = () => {
+    setShowEditCallModal(false);
+    setEditingCallRecord(null);
   };
 
   const handleCreateTimeEntry = async (entryData: TimeEntryFormValues) => {
@@ -1029,6 +1048,50 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     } catch (err) {
       console.error('Failed to create call record:', err);
       throw err instanceof Error ? err : new Error('Failed to create call record');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleUpdateCallRecord = async (callData: CallRecordFormValues) => {
+    if (!editingCallRecord) return;
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/call-records/${editingCallRecord.Id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            callDate: callData.callDate,
+            startTime: callData.startTime,
+            durationMinutes: callData.durationMinutes,
+            callType: callData.callType,
+            participants: callData.participants,
+            subject: callData.subject,
+            notes: callData.notes,
+            organizationId: callData.organizationId || null,
+            projectId: callData.projectId || null,
+            taskId: callData.taskId || null,
+            customFields: callData.customFields || {},
+          }),
+        }
+      );
+
+      if (response.ok) {
+        closeEditCallModal();
+        onDataChanged();
+      } else {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.message || 'Failed to update call record');
+      }
+    } catch (err) {
+      console.error('Failed to update call record:', err);
+      throw err instanceof Error ? err : new Error('Failed to update call record');
     } finally {
       setIsSaving(false);
     }
@@ -1444,6 +1507,30 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
         onBack={() => setSlotAction('choice')}
         onClose={closeSlotModal}
         onSubmit={handleCreateCallRecord}
+      />
+
+      <CallRecordFormModal
+        isOpen={showEditCallModal && !!editingCallRecord}
+        token={token}
+        title="📞 Edit Call Record"
+        submitLabel="Save"
+        isSubmitting={isSaving}
+        initialData={editingCallRecord ? {
+          callDate: editingCallRecord.CallDate ? String(editingCallRecord.CallDate).split('T')[0] : format(new Date(), 'yyyy-MM-dd'),
+          startTime: editingCallRecord.StartTime ? String(editingCallRecord.StartTime).slice(0, 5) : '09:00',
+          durationMinutes: Number(editingCallRecord.DurationMinutes || 30),
+          callType: editingCallRecord.CallType || 'Teams',
+          participants: editingCallRecord.Participants || '',
+          subject: editingCallRecord.Subject || '',
+          notes: editingCallRecord.Notes || '',
+          organizationId: editingCallRecord.OrganizationId ? String(editingCallRecord.OrganizationId) : '',
+          projectId: editingCallRecord.ProjectId ? String(editingCallRecord.ProjectId) : '',
+          taskId: editingCallRecord.TaskId ? String(editingCallRecord.TaskId) : '',
+          customFields: {},
+        } : undefined}
+        showDateField={true}
+        onClose={closeEditCallModal}
+        onSubmit={handleUpdateCallRecord}
       />
 
       {/* Edit Time Entry Modal */}

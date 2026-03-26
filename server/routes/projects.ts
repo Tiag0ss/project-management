@@ -6,12 +6,92 @@ import { createNotification } from './notifications';
 import { logActivity } from './activityLogs';
 import { logProjectHistory } from '../utils/changeLog';
 import { prepareCustomFieldData } from '../utils/customFields';
+import { computeProjectHealth } from '../utils/projectHealth';
 
 const router = Router();
 
 const normalizeBudgetType = (value: unknown): 'monetary' | 'hours' => {
   return value === 'hours' ? 'hours' : 'monetary';
 };
+
+const resolveCanViewBudgetInfo = async (userId: number): Promise<boolean> => {
+  const [users] = await pool.execute<RowDataPacket[]>(
+    'SELECT isAdmin, IsDeveloper, IsSupport, IsManager FROM Users WHERE Id = ?',
+    [userId]
+  );
+
+  if (!users.length) {
+    return false;
+  }
+
+  const user = users[0];
+  if (Number(user.isAdmin || 0) === 1) {
+    return true;
+  }
+
+  const roles: string[] = [];
+  if (Number(user.IsDeveloper || 0) === 1) roles.push('Developer');
+  if (Number(user.IsSupport || 0) === 1) roles.push('Support');
+  if (Number(user.IsManager || 0) === 1) roles.push('Manager');
+
+  let canViewBudgetInfo = false;
+
+  if (roles.length > 0) {
+    const placeholders = roles.map(() => '?').join(',');
+    const [rolePerms] = await pool.execute<RowDataPacket[]>(
+      `SELECT CanViewBudgetInfo FROM RolePermissions WHERE RoleName IN (${placeholders})`,
+      roles
+    );
+
+    rolePerms.forEach((perm) => {
+      if (Number(perm.CanViewBudgetInfo || 0) === 1) {
+        canViewBudgetInfo = true;
+      }
+    });
+  }
+
+  const [orgGroupPerms] = await pool.execute<RowDataPacket[]>(
+    `SELECT pg.CanViewBudgetInfo
+     FROM PermissionGroups pg
+     INNER JOIN OrganizationMembers om ON om.PermissionGroupId = pg.Id
+     WHERE om.UserId = ?`,
+    [userId]
+  );
+
+  orgGroupPerms.forEach((perm) => {
+    if (Number(perm.CanViewBudgetInfo || 0) === 1) {
+      canViewBudgetInfo = true;
+    }
+  });
+
+  return canViewBudgetInfo;
+};
+
+const attachProjectHealth = (projects: RowDataPacket[], canViewBudgetInfo: boolean) => projects.map((project) => {
+  const health = computeProjectHealth({
+    isClosed: project.StatusIsClosed,
+    isCancelled: project.StatusIsCancelled,
+    canViewBudgetInfo,
+    budget: project.Budget,
+    budgetSpent: project.BudgetSpent,
+    endDate: project.EndDate,
+    overdueTasks: project.HealthOverdueTasks,
+    totalTasks: project.HealthTotalTasks,
+    unassignedTasks: project.HealthUnassignedTasks,
+    overdueMilestones: project.OverdueMilestones,
+    upcomingMilestonesSoon: project.UpcomingMilestonesSoon,
+    nextOpenMilestoneDueDate: project.NextOpenMilestoneDueDate,
+    activeSprintCount: project.ActiveSprintCount,
+    overdueActiveSprints: project.OverdueActiveSprints,
+    activeSprintEndDate: project.ActiveSprintEndDate,
+  });
+
+  return {
+    ...project,
+    HealthStatus: health.status,
+    HealthReasons: health.reasons,
+  };
+});
 
 /**
  * @swagger
@@ -42,6 +122,14 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const organizationId = req.query.organizationId;
+    const canViewBudgetInfo = await resolveCanViewBudgetInfo(Number(userId));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const soonDate = new Date(today);
+    soonDate.setDate(soonDate.getDate() + 7);
+    const toDateString = (value: Date) => value.toISOString().split('T')[0];
+    const todayStr = toDateString(today);
+    const soonDateStr = toDateString(soonDate);
 
     let query = `SELECT p.*, u.Username as CreatorName, o.Name as OrganizationName,
        c.Name as CustomerName,
@@ -52,6 +140,15 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        COALESCE(taskStats.TotalEstimatedHours, 0) as TotalEstimatedHours,
        COALESCE(taskStats.TotalWorkedHours, 0) as TotalWorkedHours,
        COALESCE(taskStats.OverdueTasks, 0) as OverdueTasks,
+      COALESCE(healthTaskStats.HealthTotalTasks, 0) as HealthTotalTasks,
+      COALESCE(healthTaskStats.HealthOverdueTasks, 0) as HealthOverdueTasks,
+      COALESCE(healthTaskStats.HealthUnassignedTasks, 0) as HealthUnassignedTasks,
+       COALESCE(milestoneStats.OverdueMilestones, 0) as OverdueMilestones,
+       COALESCE(milestoneStats.UpcomingMilestonesSoon, 0) as UpcomingMilestonesSoon,
+       milestoneStats.NextOpenMilestoneDueDate as NextOpenMilestoneDueDate,
+       COALESCE(sprintStats.ActiveSprintCount, 0) as ActiveSprintCount,
+       COALESCE(sprintStats.OverdueActiveSprints, 0) as OverdueActiveSprints,
+       sprintStats.ActiveSprintEndDate as ActiveSprintEndDate,
        (SELECT COUNT(*) FROM Tickets tk LEFT JOIN TicketStatusValues tsv2 ON tk.StatusId = tsv2.Id WHERE tk.ProjectId = p.Id AND COALESCE(tsv2.IsClosed, 0) = 0) as OpenTickets,
        COALESCE(unplannedStats.UnplannedTasks, 0) as UnplannedTasks,
        CASE
@@ -84,6 +181,16 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
          GROUP BY t.ProjectId
        ) taskStats ON p.Id = taskStats.ProjectId
        LEFT JOIN (
+         SELECT
+           t.ProjectId,
+           COUNT(*) as HealthTotalTasks,
+           COUNT(CASE WHEN t.AssignedTo IS NULL THEN 1 END) as HealthUnassignedTasks,
+           COUNT(CASE WHEN t.DueDate IS NOT NULL AND t.DueDate < ? AND COALESCE(tsv3.IsClosed, 0) = 0 AND COALESCE(tsv3.IsCancelled, 0) = 0 THEN 1 END) as HealthOverdueTasks
+         FROM Tasks t
+         LEFT JOIN TaskStatusValues tsv3 ON t.Status = tsv3.Id
+         GROUP BY t.ProjectId
+       ) healthTaskStats ON p.Id = healthTaskStats.ProjectId
+       LEFT JOIN (
          SELECT 
            t.ProjectId,
            COUNT(*) as UnplannedTasks
@@ -99,6 +206,24 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
          GROUP BY t.ProjectId
        ) unplannedStats ON p.Id = unplannedStats.ProjectId
        LEFT JOIN (
+         SELECT
+           pm.ProjectId,
+           COUNT(CASE WHEN COALESCE(pm.IsCompleted, 0) = 0 AND pm.DueDate IS NOT NULL AND pm.DueDate < ? THEN 1 END) as OverdueMilestones,
+           COUNT(CASE WHEN COALESCE(pm.IsCompleted, 0) = 0 AND pm.DueDate IS NOT NULL AND pm.DueDate >= ? AND pm.DueDate <= ? THEN 1 END) as UpcomingMilestonesSoon,
+           MIN(CASE WHEN COALESCE(pm.IsCompleted, 0) = 0 AND pm.DueDate IS NOT NULL AND pm.DueDate >= ? THEN pm.DueDate END) as NextOpenMilestoneDueDate
+         FROM ProjectMilestones pm
+         GROUP BY pm.ProjectId
+       ) milestoneStats ON p.Id = milestoneStats.ProjectId
+       LEFT JOIN (
+         SELECT
+           s.ProjectId,
+           COUNT(CASE WHEN s.Status = 'active' THEN 1 END) as ActiveSprintCount,
+           COUNT(CASE WHEN s.Status = 'active' AND s.EndDate IS NOT NULL AND s.EndDate < ? THEN 1 END) as OverdueActiveSprints,
+           MIN(CASE WHEN s.Status = 'active' THEN s.EndDate END) as ActiveSprintEndDate
+         FROM Sprints s
+         GROUP BY s.ProjectId
+       ) sprintStats ON p.Id = sprintStats.ProjectId
+       LEFT JOIN (
          SELECT t2.ProjectId,
                 SUM(te2.Hours * COALESCE(u2.HourlyRate, 0)) as CostSpent,
                 SUM(te2.Hours) as HoursSpent
@@ -108,7 +233,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
          GROUP BY t2.ProjectId
        ) budgetStats ON p.Id = budgetStats.ProjectId
        WHERE om.UserId = ?`;
-    const params: any[] = [userId];
+    const params: any[] = [todayStr, todayStr, todayStr, soonDateStr, todayStr, todayStr, userId];
 
     if (organizationId) {
       query += ' AND p.OrganizationId = ?';
@@ -118,10 +243,11 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     query += ' ORDER BY p.CreatedAt DESC';
 
     const [projects] = await pool.execute<RowDataPacket[]>(query, params);
+    const projectsWithHealth = attachProjectHealth(projects, canViewBudgetInfo);
 
     res.json({
       success: true,
-      projects
+      projects: projectsWithHealth
     });
   } catch (error) {
     console.error('Get projects error:', error);
@@ -156,11 +282,34 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const projectId = req.params.id;
+    const canViewBudgetInfo = await resolveCanViewBudgetInfo(Number(userId));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const soonDate = new Date(today);
+    soonDate.setDate(soonDate.getDate() + 7);
+    const toDateString = (value: Date) => value.toISOString().split('T')[0];
+    const todayStr = toDateString(today);
+    const soonDateStr = toDateString(soonDate);
 
     const [projects] = await pool.execute<RowDataPacket[]>(
       `SELECT p.*, u.Username as CreatorName, o.Name as OrganizationName, c.Name as CustomerName,
               psv.StatusName, psv.ColorCode as StatusColor,
               COALESCE(psv.IsClosed, 0) as StatusIsClosed, COALESCE(psv.IsCancelled, 0) as StatusIsCancelled,
+              COALESCE(taskStats.TotalTasks, 0) as TotalTasks,
+              COALESCE(taskStats.CompletedTasks, 0) as CompletedTasks,
+              COALESCE(taskStats.TotalEstimatedHours, 0) as TotalEstimatedHours,
+              COALESCE(taskStats.TotalWorkedHours, 0) as TotalWorkedHours,
+              COALESCE(taskStats.OverdueTasks, 0) as OverdueTasks,
+              COALESCE(unplannedStats.UnplannedTasks, 0) as UnplannedTasks,
+              COALESCE(healthTaskStats.HealthTotalTasks, 0) as HealthTotalTasks,
+              COALESCE(healthTaskStats.HealthOverdueTasks, 0) as HealthOverdueTasks,
+              COALESCE(healthTaskStats.HealthUnassignedTasks, 0) as HealthUnassignedTasks,
+              COALESCE(milestoneStats.OverdueMilestones, 0) as OverdueMilestones,
+              COALESCE(milestoneStats.UpcomingMilestonesSoon, 0) as UpcomingMilestonesSoon,
+              milestoneStats.NextOpenMilestoneDueDate as NextOpenMilestoneDueDate,
+              COALESCE(sprintStats.ActiveSprintCount, 0) as ActiveSprintCount,
+              COALESCE(sprintStats.OverdueActiveSprints, 0) as OverdueActiveSprints,
+              sprintStats.ActiveSprintEndDate as ActiveSprintEndDate,
               CASE
                 WHEN COALESCE(p.BudgetType, 'monetary') = 'hours' THEN COALESCE(budgetStats.HoursSpent, 0)
                 ELSE COALESCE(budgetStats.CostSpent, 0)
@@ -170,6 +319,68 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
        LEFT JOIN Organizations o ON p.OrganizationId = o.Id
        LEFT JOIN Customers c ON p.CustomerId = c.Id
        LEFT JOIN ProjectStatusValues psv ON p.Status = psv.Id
+       LEFT JOIN (
+         SELECT 
+           t.ProjectId,
+           COUNT(CASE WHEN COALESCE(tsv2.HideFromPlanningAndStatistics, 0) = 0 THEN 1 END) as TotalTasks,
+           COUNT(CASE WHEN COALESCE(tsv2.HideFromPlanningAndStatistics, 0) = 0 AND COALESCE(tsv2.IsClosed, 0) = 1 THEN 1 END) as CompletedTasks,
+           SUM(CASE WHEN COALESCE(tsv2.HideFromPlanningAndStatistics, 0) = 0
+                     AND NOT EXISTS (
+                       SELECT 1
+                       FROM Tasks tChild
+                       WHERE tChild.ProjectId = t.ProjectId
+                         AND tChild.ParentTaskId = t.Id
+                     )
+                    THEN t.EstimatedHours ELSE 0 END) as TotalEstimatedHours,
+           COALESCE((SELECT SUM(te.Hours) FROM TimeEntries te WHERE te.TaskId IN (SELECT Id FROM Tasks WHERE ProjectId = t.ProjectId)), 0) as TotalWorkedHours,
+           COUNT(CASE WHEN COALESCE(tsv2.HideFromPlanningAndStatistics, 0) = 0 AND t.DueDate IS NOT NULL AND t.DueDate < CURDATE() AND COALESCE(tsv2.IsClosed, 0) = 0 AND COALESCE(tsv2.IsCancelled, 0) = 0 THEN 1 END) as OverdueTasks
+         FROM Tasks t
+         LEFT JOIN TaskStatusValues tsv2 ON t.Status = tsv2.Id
+         GROUP BY t.ProjectId
+       ) taskStats ON p.Id = taskStats.ProjectId
+       LEFT JOIN (
+         SELECT
+           t.ProjectId,
+           COUNT(*) as UnplannedTasks
+         FROM Tasks t
+         LEFT JOIN TaskAllocations ta ON t.Id = ta.TaskId
+         LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+         WHERE t.ParentTaskId IS NULL
+           AND ta.TaskId IS NULL
+           AND COALESCE(t.UnscheduledWork, 0) = 0
+           AND COALESCE(tsv.IsClosed, 0) = 0
+           AND COALESCE(tsv.IsCancelled, 0) = 0
+           AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
+         GROUP BY t.ProjectId
+       ) unplannedStats ON p.Id = unplannedStats.ProjectId
+       LEFT JOIN (
+         SELECT
+           t.ProjectId,
+           COUNT(*) as HealthTotalTasks,
+           COUNT(CASE WHEN t.AssignedTo IS NULL THEN 1 END) as HealthUnassignedTasks,
+           COUNT(CASE WHEN t.DueDate IS NOT NULL AND t.DueDate < ? AND COALESCE(tsv3.IsClosed, 0) = 0 AND COALESCE(tsv3.IsCancelled, 0) = 0 THEN 1 END) as HealthOverdueTasks
+         FROM Tasks t
+         LEFT JOIN TaskStatusValues tsv3 ON t.Status = tsv3.Id
+         GROUP BY t.ProjectId
+       ) healthTaskStats ON p.Id = healthTaskStats.ProjectId
+       LEFT JOIN (
+         SELECT
+           pm.ProjectId,
+           COUNT(CASE WHEN COALESCE(pm.IsCompleted, 0) = 0 AND pm.DueDate IS NOT NULL AND pm.DueDate < ? THEN 1 END) as OverdueMilestones,
+           COUNT(CASE WHEN COALESCE(pm.IsCompleted, 0) = 0 AND pm.DueDate IS NOT NULL AND pm.DueDate >= ? AND pm.DueDate <= ? THEN 1 END) as UpcomingMilestonesSoon,
+           MIN(CASE WHEN COALESCE(pm.IsCompleted, 0) = 0 AND pm.DueDate IS NOT NULL AND pm.DueDate >= ? THEN pm.DueDate END) as NextOpenMilestoneDueDate
+         FROM ProjectMilestones pm
+         GROUP BY pm.ProjectId
+       ) milestoneStats ON p.Id = milestoneStats.ProjectId
+       LEFT JOIN (
+         SELECT
+           s.ProjectId,
+           COUNT(CASE WHEN s.Status = 'active' THEN 1 END) as ActiveSprintCount,
+           COUNT(CASE WHEN s.Status = 'active' AND s.EndDate IS NOT NULL AND s.EndDate < ? THEN 1 END) as OverdueActiveSprints,
+           MIN(CASE WHEN s.Status = 'active' THEN s.EndDate END) as ActiveSprintEndDate
+         FROM Sprints s
+         GROUP BY s.ProjectId
+       ) sprintStats ON p.Id = sprintStats.ProjectId
        LEFT JOIN (
          SELECT t2.ProjectId,
                 SUM(te2.Hours * COALESCE(u2.HourlyRate, 0)) as CostSpent,
@@ -181,7 +392,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
        ) budgetStats ON p.Id = budgetStats.ProjectId
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
        WHERE p.Id = ? AND om.UserId = ?`,
-      [projectId, userId]
+      [todayStr, todayStr, todayStr, soonDateStr, todayStr, todayStr, projectId, userId]
     );
 
     if (projects.length === 0) {
@@ -199,8 +410,10 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       [projectId]
     );
 
+    const projectWithHealth = attachProjectHealth(projects, canViewBudgetInfo)[0];
+
     const project = {
-      ...projects[0],
+      ...projectWithHealth,
       ApplicationIds: appRows.map((r: any) => r.Id),
       ApplicationNames: appRows.map((r: any) => r.Name),
     };

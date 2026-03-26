@@ -21,61 +21,6 @@ type ProjectSortField = 'name' | 'status' | 'tasks' | 'hours' | 'tickets' | 'sta
 type SortDirection = 'asc' | 'desc';
 type RAGStatus = 'red' | 'amber' | 'green';
 
-function computeRAG(project: Project, canViewBudgetInfo: boolean): { status: RAGStatus; reasons: string[] } {
-  // Closed or cancelled projects are always green — work is done
-  if (project.StatusIsClosed || project.StatusIsCancelled) {
-    return { status: 'green', reasons: [] };
-  }
-
-  const budgetTotal = Number(project.Budget) || 0;
-  const budgetSpent = Number(project.BudgetSpent) || 0;
-  const budgetPct = budgetTotal > 0 ? Math.round((budgetSpent / budgetTotal) * 100) : 0;
-
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const endDate = project.EndDate ? new Date(project.EndDate) : null;
-  const isOverdue = endDate !== null && endDate < today;
-
-  const reasons: string[] = [];
-  let status: RAGStatus = 'green';
-
-  // --- RED conditions ---
-  if (canViewBudgetInfo && budgetPct >= 100) { status = 'red'; reasons.push(`Budget exceeded (${budgetPct}%)`); }
-  if (isOverdue) { status = 'red'; reasons.push('Past end date'); }
-
-  const overdueTasks = Number(project.OverdueTasks) || 0;
-  const totalTasks = Number(project.TotalTasks) || 0;
-
-  // --- RED conditions (match detail page logic) ---
-  if (overdueTasks > 2) { status = 'red'; reasons.push(`${overdueTasks} overdue tasks`); }
-
-  if (status !== 'red') {
-    // --- AMBER conditions ---
-    if (canViewBudgetInfo && budgetPct >= 80) { status = 'amber'; reasons.push(`Budget at ${budgetPct}%`); }
-
-    if (overdueTasks > 0) {
-      status = 'amber';
-      reasons.push(`${overdueTasks} overdue task${overdueTasks > 1 ? 's' : ''}`);
-    }
-
-    if (endDate) {
-      const daysLeft = Math.ceil((endDate.getTime() - today.getTime()) / 86400000);
-      if (daysLeft <= 7 && daysLeft > 0) {
-        if (status !== 'amber') status = 'amber';
-        reasons.push(`Due in ${daysLeft}d`);
-      }
-    }
-
-    // Unassigned tasks > 30% of total
-    const unassigned = Number(project.UnplannedTasks) || 0;
-    if (totalTasks > 0 && unassigned > totalTasks * 0.3) {
-      if (status !== 'amber') status = 'amber';
-      reasons.push(`${unassigned} unassigned tasks`);
-    }
-  }
-
-  return { status, reasons };
-}
-
 export default function ProjectsPage() {
   const { showToast } = useToast();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -133,7 +78,11 @@ export default function ProjectsPage() {
 
     const loadFeatureFlags = async () => {
       try {
-        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        const res = await fetch(`${getApiUrl()}/api/system-settings/user-flags`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
         if (res.ok) {
           const data = await res.json();
           setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
@@ -386,9 +335,12 @@ export default function ProjectsPage() {
   // Filter and sort projects
   const ragMap = useMemo(() => {
     const map = new Map<number, { status: RAGStatus; reasons: string[] }>();
-    projects.forEach(p => map.set(p.Id, computeRAG(p, canViewBudgetInfo)));
+    projects.forEach((p) => map.set(p.Id, {
+      status: p.HealthStatus || 'green',
+      reasons: Array.isArray(p.HealthReasons) ? p.HealthReasons : [],
+    }));
     return map;
-  }, [projects, canViewBudgetInfo]);
+  }, [projects]);
 
   const orgs = useMemo(() => Array.from(new Set(projects.map(p => p.OrganizationName || '').filter(Boolean))).sort(), [projects]);
   const statuses = useMemo(() => Array.from(new Set(projects.map(p => p.StatusName || '').filter(Boolean))).sort(), [projects]);

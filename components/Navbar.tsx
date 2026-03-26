@@ -91,10 +91,13 @@ export default function Navbar() {
   
   // Menu dropdowns
   const [workMenuOpen, setWorkMenuOpen] = useState(false);
+  const [workLogsMenuOpen, setWorkLogsMenuOpen] = useState(false);
   const [managementMenuOpen, setManagementMenuOpen] = useState(false);
   const workMenuRef = useRef<HTMLDivElement>(null);
+  const workLogsMenuRef = useRef<HTMLDivElement>(null);
   const managementMenuRef = useRef<HTMLDivElement>(null);
   const workMenuCloseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const workLogsMenuCloseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const managementMenuCloseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Global Search state
@@ -253,6 +256,9 @@ export default function Navbar() {
       if (workMenuRef.current && !workMenuRef.current.contains(event.target as Node)) {
         setWorkMenuOpen(false);
       }
+      if (workLogsMenuRef.current && !workLogsMenuRef.current.contains(event.target as Node)) {
+        setWorkLogsMenuOpen(false);
+      }
       if (managementMenuRef.current && !managementMenuRef.current.contains(event.target as Node)) {
         setManagementMenuOpen(false);
       }
@@ -262,6 +268,7 @@ export default function Navbar() {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       if (workMenuCloseTimeoutRef.current) clearTimeout(workMenuCloseTimeoutRef.current);
+      if (workLogsMenuCloseTimeoutRef.current) clearTimeout(workLogsMenuCloseTimeoutRef.current);
       if (managementMenuCloseTimeoutRef.current) clearTimeout(managementMenuCloseTimeoutRef.current);
     };
   }, []);
@@ -269,13 +276,36 @@ export default function Navbar() {
   useEffect(() => {
     const loadFeatureFlags = async () => {
       try {
-        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
-        if (!res.ok) return;
-        const data = await res.json();
-        setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
-        setMemosEnabled(data.memosEnabled !== false);
-        setCompanyName(data.companyName || 'Project Management');
-        setCompanyLogoUrl(data.companyLogoUrl || '');
+        const publicRes = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        if (publicRes.ok) {
+          const publicData = await publicRes.json();
+          setCompanyName(publicData.companyName || 'Project Management');
+          setCompanyLogoUrl(publicData.companyLogoUrl || '');
+        } else {
+          setCompanyName('Project Management');
+          setCompanyLogoUrl('');
+        }
+
+        if (!token) {
+          setInternalTicketsEnabled(true);
+          setMemosEnabled(true);
+          return;
+        }
+
+        const flagsRes = await fetch(`${getApiUrl()}/api/system-settings/user-flags`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        if (flagsRes.ok) {
+          const flagsData = await flagsRes.json();
+          setInternalTicketsEnabled(flagsData.internalTicketsEnabled !== false);
+          setMemosEnabled(flagsData.memosEnabled !== false);
+        } else {
+          setInternalTicketsEnabled(true);
+          setMemosEnabled(true);
+        }
       } catch {
         setInternalTicketsEnabled(true);
         setMemosEnabled(true);
@@ -285,7 +315,7 @@ export default function Navbar() {
     };
 
     loadFeatureFlags();
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     const loadNavbarPreferences = async () => {
@@ -1505,12 +1535,14 @@ export default function Navbar() {
   const canShowMemosLink = !isCustomerUser && memosEnabled;
   const canShowTimesheetLink = !isCustomerUser;
   const canShowCallRecordsLink = !isCustomerUser;
+  const canShowWorkSummaryLink = !isCustomerUser;
   const canShowReportsLink = !isCustomerUser && (permissionsLoading || permissions?.canViewReports || permissions?.canManageOrganizations || !!user?.isAdmin);
   const canShowDocsLink = true;
 
   const showOverviewSection = canShowDashboardLink;
-  const showDeliverySection = canShowProjectsLink || canShowPlanningLink || canShowTimesheetLink;
-  const showServiceSection = canShowTicketsLink || canShowMemosLink || canShowCallRecordsLink;
+  const showDeliverySection = canShowProjectsLink || canShowPlanningLink;
+  const showWorkLogsSection = canShowTimesheetLink || canShowCallRecordsLink || canShowWorkSummaryLink;
+  const showServiceSection = canShowTicketsLink || canShowMemosLink;
   const showManagementSection = canShowCustomersOption || canShowApplicationsOption || canShowOrganizationsOption || canShowAnyApprovalsOption;
   const showReportingSection = canShowReportsLink;
 
@@ -1527,7 +1559,90 @@ export default function Navbar() {
   const isFixedCollapsedRail = shouldUseLeftSidebar && navbarLeftMode === 'fixed' && navbarLeftCollapsed;
   const isHoverExpandedRail = isFixedCollapsedRail && isLeftSidebarHovered;
   const isSidebarEffectivelyCollapsed = !isFloatingMode && navbarLeftCollapsed && !isHoverExpandedRail;
-  const sidebarItemClass = `flex items-center ${isSidebarEffectivelyCollapsed ? 'justify-center px-2' : 'gap-2 px-3'} py-2 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700`;
+  const sidebarItemClass = `flex items-center gap-2 px-3 py-1.5 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 overflow-hidden whitespace-nowrap`;
+  const sidebarSectionHeaderClass = 'px-3 h-5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400';
+  const renderSidebarSectionHeader = (title: string) => {
+    if (isSidebarEffectivelyCollapsed) {
+      return (
+        <div className="px-3 h-5 flex items-center">
+          <div className="h-px w-full bg-gray-200 dark:bg-gray-700" />
+        </div>
+      );
+    }
+
+    return (
+      <div className={sidebarSectionHeaderClass}>
+        <span>{title}</span>
+        <span className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+      </div>
+    );
+  };
+
+  const NavTimerIndicator = ({ centered = false }: { centered?: boolean }) => {
+    const timerButtonClass = centered
+      ? 'flex items-center gap-1.5 text-xs font-mono bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2.5 py-1.5 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors max-w-[420px]'
+      : 'flex items-center gap-1.5 text-xs font-mono bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2.5 py-1.5 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors';
+
+    return (
+      <div className="flex items-center gap-1">
+        {navTimer ? (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                if (navTimer?.TimerType === 'callRecord') {
+                  router.push('/call-records');
+                  return;
+                }
+                handleOpenNavTimerTaskDetail();
+              }}
+              className={timerButtonClass}
+              title={navTimerTitle}
+            >
+              <span>⏱</span>
+              {centered ? (
+                <span className="max-w-[220px] truncate">{navTimerLabel}</span>
+              ) : (
+                <span className="hidden sm:inline max-w-[120px] truncate">{navTimerLabel}</span>
+              )}
+              <span className="font-bold">{navFormatElapsed(navTimerSeconds)}</span>
+            </button>
+            <button
+              onClick={handleNavStopTimer}
+              title="Stop timer and save time entry"
+              className="text-xs px-2 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors font-medium"
+            >
+              ⏹
+            </button>
+            <button
+              onClick={handleNavDiscardTimer}
+              title="Discard timer without saving"
+              className="text-xs px-2 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-lg transition-colors"
+            >
+              ✕
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={openNavStartTimerModal}
+            className="flex items-center gap-2 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2.5 py-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors animate-pulse ring-2 ring-red-300/70 dark:ring-red-900/70 shadow-[0_0_14px_rgba(239,68,68,0.45)] dark:shadow-[0_0_14px_rgba(248,113,113,0.35)]"
+            title="No timer running. Click to start timer"
+          >
+            <span>⏱</span>
+            {centered ? (
+              <span>No timer running — click to start</span>
+            ) : (
+              <>
+                <span className="hidden sm:inline">No timer running — click to start</span>
+                <span className="sm:hidden">Start timer</span>
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    );
+  };
 
   const toggleLeftSidebar = () => {
     if (isFloatingMode) {
@@ -1552,6 +1667,21 @@ export default function Navbar() {
     if (workMenuCloseTimeoutRef.current) clearTimeout(workMenuCloseTimeoutRef.current);
     workMenuCloseTimeoutRef.current = setTimeout(() => {
       setWorkMenuOpen(false);
+    }, 180);
+  };
+
+  const handleWorkLogsMenuMouseEnter = () => {
+    if (workLogsMenuCloseTimeoutRef.current) {
+      clearTimeout(workLogsMenuCloseTimeoutRef.current);
+      workLogsMenuCloseTimeoutRef.current = null;
+    }
+    setWorkLogsMenuOpen(true);
+  };
+
+  const handleWorkLogsMenuMouseLeave = () => {
+    if (workLogsMenuCloseTimeoutRef.current) clearTimeout(workLogsMenuCloseTimeoutRef.current);
+    workLogsMenuCloseTimeoutRef.current = setTimeout(() => {
+      setWorkLogsMenuOpen(false);
     }, 180);
   };
 
@@ -1598,7 +1728,7 @@ export default function Navbar() {
             : 'fixed left-0 top-16 bottom-0 z-[70] border-r border-gray-200 dark:border-gray-700'} ${isSidebarEffectivelyCollapsed ? (isHoverExpandedRail ? 'w-72' : 'w-16') : 'w-72'} bg-white dark:bg-gray-800 shadow-xl transition-all duration-200`}
         >
           <div className="h-full flex flex-col">
-            <div className={`flex items-center ${isSidebarEffectivelyCollapsed ? 'justify-center' : 'justify-between'} p-3 border-b border-gray-200 dark:border-gray-700`}>
+            <div className={`h-16 shrink-0 flex items-center ${isSidebarEffectivelyCollapsed ? 'justify-center' : 'justify-between'} px-3 border-b border-gray-200 dark:border-gray-700`}>
               {isSidebarEffectivelyCollapsed ? (
                 <span className="text-gray-700 dark:text-gray-300">☰</span>
               ) : (
@@ -1606,12 +1736,9 @@ export default function Navbar() {
               )}
             </div>
 
-            <nav className="flex-1 overflow-y-auto p-2 space-y-1">
+            <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
               {showOverviewSection && (
                 <div>
-                  {!isSidebarEffectivelyCollapsed && (
-                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Overview</p>
-                  )}
                   {canShowDashboardLink && (
                     <a href="/dashboard" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">📊</span>{!isSidebarEffectivelyCollapsed && <span>Dashboard</span>}
@@ -1621,10 +1748,8 @@ export default function Navbar() {
               )}
 
               {showDeliverySection && (
-                <div className={`${showOverviewSection ? 'mt-2 pt-2 border-t border-gray-200 dark:border-gray-700' : ''}`}>
-                  {!isSidebarEffectivelyCollapsed && (
-                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Delivery</p>
-                  )}
+                <div className={`${showOverviewSection ? 'mt-1.5 pt-1.5' : ''}`}>
+                  {renderSidebarSectionHeader('Delivery')}
                   {canShowProjectsLink && (
                     <a href="/projects" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">📁</span>{!isSidebarEffectivelyCollapsed && <span>Projects</span>}
@@ -1635,27 +1760,36 @@ export default function Navbar() {
                       <span className="w-5 text-center">📅</span>{!isSidebarEffectivelyCollapsed && <span>Planning</span>}
                     </a>
                   )}
+                </div>
+              )}
+
+              {showWorkLogsSection && (
+                <div className={`${showOverviewSection || showDeliverySection ? 'mt-1.5 pt-1.5' : ''}`}>
+                  {renderSidebarSectionHeader('Work Logs')}
                   {canShowTimesheetLink && (
                     <a href="/timesheet" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">📝</span>{!isSidebarEffectivelyCollapsed && <span>Timesheet</span>}
+                    </a>
+                  )}
+                  {canShowCallRecordsLink && (
+                    <a href="/call-records" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📞</span>{!isSidebarEffectivelyCollapsed && <span>Call Records</span>}
+                    </a>
+                  )}
+                  {canShowWorkSummaryLink && (
+                    <a href="/work-summary" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📚</span>{!isSidebarEffectivelyCollapsed && <span>Work Summary</span>}
                     </a>
                   )}
                 </div>
               )}
 
               {showServiceSection && (
-                <div className={`${showOverviewSection || showDeliverySection ? 'mt-2 pt-2 border-t border-gray-200 dark:border-gray-700' : ''}`}>
-                  {!isSidebarEffectivelyCollapsed && (
-                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Service</p>
-                  )}
+                <div className={`${showOverviewSection || showDeliverySection || showWorkLogsSection ? 'mt-1.5 pt-1.5' : ''}`}>
+                  {renderSidebarSectionHeader('Service')}
                   {canShowTicketsLink && (
                     <a href="/tickets" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">🎫</span>{!isSidebarEffectivelyCollapsed && <span>Tickets</span>}
-                    </a>
-                  )}
-                  {canShowCallRecordsLink && (
-                    <a href="/call-records" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                      <span className="w-5 text-center">📞</span>{!isSidebarEffectivelyCollapsed && <span>Call Records</span>}
                     </a>
                   )}
                   {canShowMemosLink && (
@@ -1667,10 +1801,8 @@ export default function Navbar() {
               )}
 
               {showManagementSection && (
-                <div className={`${showOverviewSection || showDeliverySection || showServiceSection ? 'mt-2 pt-2 border-t border-gray-200 dark:border-gray-700' : ''}`}>
-                  {!isSidebarEffectivelyCollapsed && (
-                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Management</p>
-                  )}
+                <div className={`${showOverviewSection || showDeliverySection || showWorkLogsSection || showServiceSection ? 'mt-1.5 pt-1.5' : ''}`}>
+                  {renderSidebarSectionHeader('Management')}
                   {canShowCustomersOption && (
                     <a href="/customers" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">🏢</span>{!isSidebarEffectivelyCollapsed && <span>Customers</span>}
@@ -1695,13 +1827,11 @@ export default function Navbar() {
               )}
 
               {showReportingSection && (
-                <div className={`${showOverviewSection || showDeliverySection || showServiceSection || showManagementSection ? 'mt-2 pt-2 border-t border-gray-200 dark:border-gray-700' : ''}`}>
-                  {!isSidebarEffectivelyCollapsed && (
-                    <p className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Reporting</p>
-                  )}
+                <div className={`${showOverviewSection || showDeliverySection || showWorkLogsSection || showServiceSection || showManagementSection ? 'mt-1.5 pt-1.5' : ''}`}>
+                  {renderSidebarSectionHeader('Reporting')}
                   {canShowReportsLink && (
                     <a href="/web-reports" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                      <span className="w-5 text-center">📈</span>{!isSidebarEffectivelyCollapsed && <span>Reports</span>}
+                      <span className="w-5 text-center">📈</span>{!isSidebarEffectivelyCollapsed && <span>Advanced Reports</span>}
                     </a>
                   )}
                 </div>
@@ -1736,7 +1866,7 @@ export default function Navbar() {
       >
         {/* content not limited to max width so nav items span entire header */}
         <div className="w-full px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
+          <div className="relative flex justify-between h-16">
             <div className="flex items-center space-x-8">
               {shouldUseLeftSidebar && (
                 <button
@@ -1803,6 +1933,38 @@ export default function Navbar() {
                   />
                 )}
 
+                {/* Work Logs Dropdown */}
+                {!isCustomerUser && (
+                  <NavDropdownMenu
+                    menuRef={workLogsMenuRef}
+                    isOpen={workLogsMenuOpen}
+                    title="⏱️ Work Logs"
+                    onToggle={() => setWorkLogsMenuOpen(!workLogsMenuOpen)}
+                    onMouseEnter={handleWorkLogsMenuMouseEnter}
+                    onMouseLeave={handleWorkLogsMenuMouseLeave}
+                    items={[
+                      {
+                        label: '📝 Timesheet',
+                        href: '/timesheet',
+                        visible: true,
+                        onClick: () => setWorkLogsMenuOpen(false),
+                      },
+                      {
+                        label: '📞 Call Records',
+                        href: '/call-records',
+                        visible: true,
+                        onClick: () => setWorkLogsMenuOpen(false),
+                      },
+                      {
+                        label: '📚 Work Summary',
+                        href: '/work-summary',
+                        visible: true,
+                        onClick: () => setWorkLogsMenuOpen(false),
+                      },
+                    ]}
+                  />
+                )}
+
                 {/* Tickets */}
                 {internalTicketsEnabled && (user?.isSupport || isCustomerUser || permissions?.canManageTickets || permissions?.canCreateTickets) && (
                     <a 
@@ -1861,7 +2023,7 @@ export default function Navbar() {
                   />
                 )}
 
-                {/* Reports */}
+                {/* Advanced Reports */}
 
                 {!isCustomerUser && (permissionsLoading || permissions?.canViewReports || permissions?.canManageOrganizations || !!user?.isAdmin) && (                 
                 //{!isCustomerUser && (
@@ -1869,12 +2031,19 @@ export default function Navbar() {
                     href="/web-reports" 
                     className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
                   >
-                    📈 Reports
+                    📈 Advanced Reports
                   </a>
                 )}
               </div>
               )}
             </div>
+
+            {!isCustomerUser && shouldUseLeftSidebar && (
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[81]">
+                <NavTimerIndicator centered />
+              </div>
+            )}
+
             <div className="flex items-center space-x-4">
               {/* Global Search - Hidden for customer users */}
               {!isCustomerUser && (
@@ -2180,54 +2349,8 @@ export default function Navbar() {
               )}
 
               {/* Timer indicator */}
-              {!isCustomerUser && (
-                <div className="flex items-center gap-1">
-                  {navTimer ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (navTimer?.TimerType === 'callRecord') {
-                            router.push('/call-records');
-                            return;
-                          }
-                          handleOpenNavTimerTaskDetail();
-                        }}
-                        className="flex items-center gap-1.5 text-xs font-mono bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2.5 py-1.5 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors animate-pulse"
-                        title={navTimerTitle}
-                      >
-                        <span>⏱</span>
-                        <span className="hidden sm:inline max-w-[120px] truncate">{navTimerLabel}</span>
-                        <span className="font-bold">{navFormatElapsed(navTimerSeconds)}</span>
-                      </button>
-                      <button
-                        onClick={handleNavStopTimer}
-                        title="Stop timer and save time entry"
-                        className="text-xs px-2 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors font-medium"
-                      >
-                        ⏹
-                      </button>
-                      <button
-                        onClick={handleNavDiscardTimer}
-                        title="Discard timer without saving"
-                        className="text-xs px-2 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-lg transition-colors"
-                      >
-                        ✕
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={openNavStartTimerModal}
-                      className="flex items-center gap-2 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2.5 py-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                      title="No timer running. Click to start timer"
-                    >
-                      <span>⏱</span>
-                      <span className="hidden sm:inline">No timer running — click to start</span>
-                      <span className="sm:hidden">Start timer</span>
-                    </button>
-                  )}
-                </div>
+              {!isCustomerUser && !shouldUseLeftSidebar && (
+                <NavTimerIndicator />
               )}
 
               {/* Notifications Dropdown - Hidden for customer users */}
@@ -2392,6 +2515,13 @@ export default function Navbar() {
                       onClick={() => setDropdownOpen(false)}
                     >
                       📞 Call Records
+                    </a>
+                    <a
+                      href="/work-summary"
+                      className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      onClick={() => setDropdownOpen(false)}
+                    >
+                      📚 Work Summary
                     </a>
                     </>
                     )}

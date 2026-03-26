@@ -90,7 +90,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
               HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
               Timezone, HourlyRate, AnnualVacationDays, CountryCode, JiraId,
               NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed, DashboardCalendarInOverview,
-              CreatedAt, UpdatedAt 
+              LastLoginAt, CreatedAt, UpdatedAt 
        FROM Users 
        WHERE Id = ?`,
       [userId]
@@ -1119,9 +1119,9 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
     const customFieldData = await prepareCustomFieldData('Users', customFields);
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, AnnualVacationDays, TeamLeaderId, CountryCode, JiraId${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
-      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, sanitizedAnnualVacationDays, teamLeaderId || null, normalizedCountryCode, jiraId || null, ...customFieldData.insertValues]
+      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, AnnualVacationDays, TeamLeaderId, CountryCode, JiraId, NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
+      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, sanitizedAnnualVacationDays, teamLeaderId || null, normalizedCountryCode, jiraId || null, 'left', 'fixed', 1, ...customFieldData.insertValues]
     );
 
     // Log user creation
@@ -1190,7 +1190,7 @@ router.get('/:id/details', authenticateToken, requireAdmin, async (req: AuthRequ
     // Get user info
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName, u.IsActive, u.IsAdmin, 
-              u.UserType, u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager, u.HourlyRate, u.JiraId, u.CreatedAt, u.UpdatedAt,
+              u.UserType, u.CustomerId, c.Name as CustomerName, u.IsDeveloper, u.IsSupport, u.IsManager, u.HourlyRate, u.JiraId, u.LastLoginAt, u.CreatedAt, u.UpdatedAt,
               u.WorkHoursMonday, u.WorkHoursTuesday, u.WorkHoursWednesday, u.WorkHoursThursday,
               u.WorkHoursFriday, u.WorkHoursSaturday, u.WorkHoursSunday
        FROM Users u

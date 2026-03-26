@@ -5,13 +5,18 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 
 const router = Router();
 
+const parseBooleanSetting = (value: unknown): boolean => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
+};
+
 const isAutoApproveTimeEntriesEnabled = async (): Promise<boolean> => {
   const [rows] = await pool.execute<RowDataPacket[]>(
     `SELECT SettingValue FROM SystemSettings WHERE SettingKey = ? LIMIT 1`,
     ['autoApproveTimeEntries']
   );
 
-  return rows.length > 0 && String(rows[0].SettingValue || '').toLowerCase() === 'true';
+  return rows.length > 0 && parseBooleanSetting(rows[0].SettingValue);
 };
 
 const getApprovalStatusForTask = async (taskId: number): Promise<'approved' | 'pending'> => {

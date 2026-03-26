@@ -165,8 +165,8 @@ router.post('/setup', async (req: Request, res: Response) => {
       const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
       const [userResult] = await connection.execute<ResultSetHeader>(
-        `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, UserType, IsAdmin, IsDeveloper, IsSupport, IsManager, IsActive) 
-         VALUES (?, ?, ?, ?, ?, 'internal', 1, 1, 1, 1, 1)`,
+        `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, UserType, IsAdmin, IsDeveloper, IsSupport, IsManager, IsActive, NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed) 
+         VALUES (?, ?, ?, ?, ?, 'internal', 1, 1, 1, 1, 1, 'left', 'fixed', 1)`,
         [username, email, passwordHash, firstName || null, lastName || null]
       );
 

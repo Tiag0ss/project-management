@@ -35,6 +35,13 @@ interface EncryptedAuthPayload {
 
 const authEncryptionSessions = new Map<string, EncryptionSession>();
 
+const updateUserLastLoginAt = async (userId: number) => {
+  await pool.execute(
+    'UPDATE Users SET LastLoginAt = CURRENT_TIMESTAMP WHERE Id = ?',
+    [userId]
+  );
+};
+
 const cleanupExpiredEncryptionSessions = () => {
   const now = Date.now();
   for (const [token, session] of authEncryptionSessions.entries()) {
@@ -246,8 +253,8 @@ router.post('/register', async (req: Request, res: Response) => {
 
     // Insert user
     const [result] = await pool.execute<ResultSetHeader>(
-      'INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, UserType, CustomerId) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [username, email, passwordHash, firstName || null, lastName || null, userType, customerId]
+      'INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, UserType, CustomerId, NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [username, email, passwordHash, firstName || null, lastName || null, userType, customerId, 'left', 'fixed', 1]
     );
 
     // Log registration
@@ -390,6 +397,8 @@ router.post('/login', async (req: Request, res: Response) => {
       });
     }
 
+    await updateUserLastLoginAt(Number(user.Id));
+
     // Generate JWT token
     const token = jwt.sign(
       { 
@@ -502,7 +511,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
 
     // Verify user still exists and is active
     const [users] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id, Username, Email, IsAdmin, IsSupport, IsDeveloper, IsManager, CustomerId, CountryCode FROM Users WHERE Id = ?',
+      'SELECT Id, Username, Email, IsAdmin, IsSupport, IsDeveloper, IsManager, CustomerId, CountryCode, IsActive FROM Users WHERE Id = ?',
       [decoded.userId]
     );
 
@@ -514,6 +523,15 @@ router.post('/refresh', async (req: Request, res: Response) => {
     }
 
     const user = users[0];
+
+    if (!user.IsActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Account is disabled'
+      });
+    }
+
+    await updateUserLastLoginAt(Number(user.Id));
 
     // Generate new token
     const newToken = jwt.sign(

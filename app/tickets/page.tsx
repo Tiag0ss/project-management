@@ -154,9 +154,18 @@ export default function TicketsPage() {
   }, [user, isLoading, router]);
 
   useEffect(() => {
+    if (!token) {
+      setFeatureFlagsLoaded(true);
+      return;
+    }
+
     const loadFeatureFlags = async () => {
       try {
-        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        const res = await fetch(`${getApiUrl()}/api/system-settings/user-flags`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
         if (res.ok) {
           const data = await res.json();
           setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
@@ -171,7 +180,7 @@ export default function TicketsPage() {
     };
 
     loadFeatureFlags();
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (token && featureFlagsLoaded && internalTicketsEnabled) {

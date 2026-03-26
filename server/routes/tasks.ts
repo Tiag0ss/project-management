@@ -421,7 +421,7 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
     const [tasks] = await pool.execute<RowDataPacket[]>(
       `SELECT DISTINCT t.*, 
               p.ProjectName,
-              COALESCE(tc.ExternalName, tc.Name) as CustomerName,
+              COALESCE(tc.ExternalName, tc.Name, pc.ExternalName, pc.Name) as CustomerName,
               COALESCE(pc.ExternalName, pc.Name) as ProjectCustomerName,
               p.IsHobby,
               u1.Username as CreatorName,
@@ -620,9 +620,9 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
     if (canPlanTasks) {
       // Can see all tasks (either manage or plan permission)
       const [allTasks] = await pool.execute<RowDataPacket[]>(
-        `SELECT t.*, 
-                p.ProjectName,
-          COALESCE(c.ExternalName, c.Name) as CustomerName,
+          `SELECT t.*, 
+              p.ProjectName,
+            COALESCE(tc.ExternalName, tc.Name, pc.ExternalName, pc.Name) as CustomerName,
                 u1.Username as CreatorName,
                 u2.Username as AssigneeName,
                 depTask.TaskName as DependsOnTaskName,
@@ -644,7 +644,8 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
          INNER JOIN Projects p ON t.ProjectId = p.Id
          LEFT JOIN Users u1 ON t.CreatedBy = u1.Id
          LEFT JOIN Users u2 ON t.AssignedTo = u2.Id
-         LEFT JOIN Customers c ON t.CustomerId = c.Id
+         LEFT JOIN Customers tc ON t.CustomerId = tc.Id
+         LEFT JOIN Customers pc ON p.CustomerId = pc.Id
          LEFT JOIN Tasks depTask ON t.DependsOnTaskId = depTask.Id
          LEFT JOIN Tickets tk ON t.TicketId = tk.Id
          LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1
@@ -669,9 +670,9 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
     } else {
       // Can only see tasks assigned to them
       const [myTasks] = await pool.execute<RowDataPacket[]>(
-        `SELECT t.*, 
-                p.ProjectName,
-          COALESCE(c.ExternalName, c.Name) as CustomerName,
+          `SELECT t.*, 
+              p.ProjectName,
+            COALESCE(tc.ExternalName, tc.Name, pc.ExternalName, pc.Name) as CustomerName,
                 u1.Username as CreatorName,
                 u2.Username as AssigneeName,
                 depTask.TaskName as DependsOnTaskName,
@@ -693,7 +694,8 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
          INNER JOIN Projects p ON t.ProjectId = p.Id
          LEFT JOIN Users u1 ON t.CreatedBy = u1.Id
          LEFT JOIN Users u2 ON t.AssignedTo = u2.Id
-         LEFT JOIN Customers c ON t.CustomerId = c.Id
+         LEFT JOIN Customers tc ON t.CustomerId = tc.Id
+         LEFT JOIN Customers pc ON p.CustomerId = pc.Id
          LEFT JOIN Tasks depTask ON t.DependsOnTaskId = depTask.Id
          LEFT JOIN Tickets tk ON t.TicketId = tk.Id
          LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1

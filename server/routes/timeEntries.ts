@@ -6,13 +6,18 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = express.Router();
 
+const parseBooleanSetting = (value: unknown): boolean => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
+};
+
 const isAutoApproveTimeEntriesEnabled = async (): Promise<boolean> => {
   const [rows] = await pool.execute<RowDataPacket[]>(
     `SELECT SettingValue FROM SystemSettings WHERE SettingKey = ? LIMIT 1`,
     ['autoApproveTimeEntries']
   );
 
-  return rows.length > 0 && String(rows[0].SettingValue || '').toLowerCase() === 'true';
+  return rows.length > 0 && parseBooleanSetting(rows[0].SettingValue);
 };
 
 const canManageTeamEntry = async (entryId: string, currentUserId: number | undefined) => {
@@ -139,7 +144,7 @@ router.get('/my-entries', authenticateToken, async (req: AuthRequest, res: Respo
     const { startDate, endDate } = req.query;
 
     let query = `
-      SELECT te.*, t.TaskName, t.ProjectId, p.ProjectName, p.IsHobby, c.Name as CustomerName
+      SELECT te.*, t.TaskName, t.JiraIssueKey, t.ProjectId, p.ProjectName, p.IsHobby, c.Name as CustomerName
       FROM TimeEntries te
       INNER JOIN Tasks t ON te.TaskId = t.Id
       INNER JOIN Projects p ON t.ProjectId = p.Id

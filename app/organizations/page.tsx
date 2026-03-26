@@ -76,7 +76,11 @@ export default function OrganizationsPage() {
 
     const loadFeatureFlags = async () => {
       try {
-        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        const res = await fetch(`${getApiUrl()}/api/system-settings/user-flags`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
         if (res.ok) {
           const data = await res.json();
           setInternalTicketsEnabled(data.internalTicketsEnabled !== false);

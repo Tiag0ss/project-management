@@ -69,11 +69,14 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const { startDate, endDate } = req.query;
 
     let query = `
-      SELECT cr.*, p.ProjectName, COALESCE(cr.OrganizationId, p.OrganizationId) as OrganizationId, o.Name as OrganizationName, t.TaskName
+                  SELECT cr.*, p.ProjectName, COALESCE(cr.OrganizationId, p.OrganizationId) as OrganizationId, o.Name as OrganizationName, t.TaskName, t.JiraIssueKey,
+             COALESCE(tc.ExternalName, tc.Name, pc.ExternalName, pc.Name) as CustomerName
       FROM CallRecords cr
-      LEFT JOIN Projects p ON cr.ProjectId = p.Id
-      LEFT JOIN Organizations o ON COALESCE(cr.OrganizationId, p.OrganizationId) = o.Id
       LEFT JOIN Tasks t ON cr.TaskId = t.Id
+            LEFT JOIN Projects p ON COALESCE(t.ProjectId, cr.ProjectId) = p.Id
+      LEFT JOIN Organizations o ON COALESCE(cr.OrganizationId, p.OrganizationId) = o.Id
+      LEFT JOIN Customers tc ON t.CustomerId = tc.Id
+      LEFT JOIN Customers pc ON p.CustomerId = pc.Id
       WHERE cr.UserId = ?
     `;
     const params: any[] = [userId];

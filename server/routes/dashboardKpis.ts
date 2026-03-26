@@ -20,7 +20,17 @@ type DashboardKpiType =
   | 'organizationCompletedTasks'
   | 'tasksByStatus'
   | 'tasksByPriority'
-  | 'tasksByTag';
+  | 'tasksByTag'
+  | 'tasksFiltered'
+  | 'overdueTasksFiltered'
+  | 'blockedTasksFiltered'
+  | 'unestimatedTasksFiltered'
+  | 'reopenedTasksFiltered'
+  | 'throughputThisWeek'
+  | 'throughputThisMonth'
+  | 'cycleTimeMedianDays'
+  | 'leadTimeMedianDays'
+  | 'ticketsSlaRisk';
 
 interface DashboardKpiWidget {
   id: string;
@@ -54,6 +64,16 @@ const ALLOWED_KPI_TYPES = new Set<DashboardKpiType>([
   'tasksByStatus',
   'tasksByPriority',
   'tasksByTag',
+  'tasksFiltered',
+  'overdueTasksFiltered',
+  'blockedTasksFiltered',
+  'unestimatedTasksFiltered',
+  'reopenedTasksFiltered',
+  'throughputThisWeek',
+  'throughputThisMonth',
+  'cycleTimeMedianDays',
+  'leadTimeMedianDays',
+  'ticketsSlaRisk',
 ]);
 
 const KPI_TYPES_REQUIRING_ORG = new Set<DashboardKpiType>([
@@ -64,6 +84,16 @@ const KPI_TYPES_REQUIRING_ORG = new Set<DashboardKpiType>([
   'tasksByStatus',
   'tasksByPriority',
   'tasksByTag',
+  'tasksFiltered',
+  'overdueTasksFiltered',
+  'blockedTasksFiltered',
+  'unestimatedTasksFiltered',
+  'reopenedTasksFiltered',
+  'throughputThisWeek',
+  'throughputThisMonth',
+  'cycleTimeMedianDays',
+  'leadTimeMedianDays',
+  'ticketsSlaRisk',
 ]);
 
 const sanitizeWidget = (rawWidget: any, index: number): DashboardKpiWidget | null => {
@@ -357,6 +387,46 @@ const mapTaskRowsWithTags = (rows: RowDataPacket[]): KpiDetailItem[] => {
   return Array.from(byTaskId.values());
 };
 
+const applyOptionalTaskFilters = (
+  widget: DashboardKpiWidget,
+  baseQuery: string,
+  params: Array<number | string>
+): { query: string; params: Array<number | string> } => {
+  let query = baseQuery;
+  const nextParams = [...params];
+
+  if (widget.statusValueId) {
+    query += ' AND t.Status = ?';
+    nextParams.push(Number(widget.statusValueId));
+  }
+
+  if (widget.priorityValueId) {
+    query += ' AND t.Priority = ?';
+    nextParams.push(Number(widget.priorityValueId));
+  }
+
+  if (widget.tagId) {
+    query += ' AND EXISTS (SELECT 1 FROM TaskTags ftt WHERE ftt.TaskId = t.Id AND ftt.TagId = ?)';
+    nextParams.push(Number(widget.tagId));
+  }
+
+  return { query, params: nextParams };
+};
+
+const calculateMedian = (values: number[]): number => {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  return sorted[mid];
+};
+
 const getWidgetDetails = async (
   widget: DashboardKpiWidget,
   userId: number,
@@ -368,6 +438,8 @@ const getWidgetDetails = async (
   }
 
   const placeholders = accessibleOrgIds.map(() => '?').join(',');
+  const todayDate = new Date();
+  const todayKey = todayDate.toISOString().split('T')[0];
   const limit = options?.limit;
   const offset = Math.max(0, Number(options?.offset || 0));
   const appendPagination = (baseQuery: string, params: Array<number | string>) => {
@@ -501,8 +573,8 @@ const getWidgetDetails = async (
       base += ' AND COALESCE(tsv.IsClosed, 0) = 1';
     }
 
-    base += ' ORDER BY t.TaskName ASC';
-    const paged = appendPagination(base, [...accessibleOrgIds, userId, userId]);
+    const filtered = applyOptionalTaskFilters(widget, base, [...accessibleOrgIds, userId, userId]);
+    const paged = appendPagination(`${filtered.query} ORDER BY t.TaskName ASC`, filtered.params);
     const [rows] = await pool.execute<RowDataPacket[]>(paged.query, paged.params);
 
     return {
@@ -518,7 +590,17 @@ const getWidgetDetails = async (
     widget.type === 'organizationCompletedTasks' ||
     widget.type === 'tasksByStatus' ||
     widget.type === 'tasksByPriority' ||
-    widget.type === 'tasksByTag'
+    widget.type === 'tasksByTag' ||
+    widget.type === 'tasksFiltered' ||
+    widget.type === 'overdueTasksFiltered' ||
+    widget.type === 'blockedTasksFiltered' ||
+    widget.type === 'unestimatedTasksFiltered' ||
+    widget.type === 'reopenedTasksFiltered' ||
+    widget.type === 'throughputThisWeek' ||
+    widget.type === 'throughputThisMonth' ||
+    widget.type === 'cycleTimeMedianDays' ||
+    widget.type === 'leadTimeMedianDays' ||
+    widget.type === 'ticketsSlaRisk'
   ) {
     if (!widget.organizationId || !accessibleOrgIds.includes(Number(widget.organizationId))) {
       return { type: 'unknown', items: [] };
@@ -547,12 +629,179 @@ const getWidgetDetails = async (
       };
     }
 
+    if (widget.type === 'ticketsSlaRisk') {
+      const base = `
+        SELECT tk.Id, tk.ProjectId, tk.Title, p.ProjectName, COALESCE(c.ExternalName, c.Name) as CustomerName,
+               tsv.StatusName, COALESCE(tsv.IsClosed, 0) as IsClosed,
+               tk.CreatedAt,
+               tk.ResolvedAt,
+               sr.ResolutionHours
+        FROM Tickets tk
+        LEFT JOIN Projects p ON p.Id = tk.ProjectId
+        LEFT JOIN Customers c ON c.Id = COALESCE(tk.CustomerId, p.CustomerId)
+        LEFT JOIN TicketStatusValues tsv ON tsv.Id = tk.StatusId
+        LEFT JOIN SLARules sr ON sr.OrganizationId = tk.OrganizationId
+          AND sr.IsActive = 1
+          AND (sr.PriorityId IS NULL OR sr.PriorityId = tk.PriorityId)
+        WHERE tk.OrganizationId = ?
+          AND COALESCE(tsv.IsClosed, 0) = 0
+          AND sr.ResolutionHours IS NOT NULL
+        ORDER BY tk.CreatedAt ASC`;
+
+      const paged = appendPagination(base, [organizationId]);
+      const [rows] = await pool.execute<RowDataPacket[]>(paged.query, paged.params);
+
+      const now = Date.now();
+      const items = rows
+        .map((row) => {
+          const createdAt = row.CreatedAt ? new Date(row.CreatedAt).getTime() : 0;
+          const resolutionHours = Number(row.ResolutionHours || 0);
+          if (!createdAt || !resolutionHours || row.ResolvedAt) {
+            return null;
+          }
+
+          const elapsedHours = (now - createdAt) / 3600000;
+          if (elapsedHours < resolutionHours * 0.75) {
+            return null;
+          }
+
+          const riskLevel = elapsedHours >= resolutionHours ? 2 : 1;
+          return {
+            id: Number(row.Id),
+            projectId: row.ProjectId ? Number(row.ProjectId) : undefined,
+            name: String(row.Title || ''),
+            project: String(row.ProjectName || ''),
+            customer: String(row.CustomerName || ''),
+            status: String(row.StatusName || ''),
+            isClosed: Number(row.IsClosed || 0) === 1,
+            hours: riskLevel,
+          } as KpiDetailItem;
+        })
+        .filter((entry): entry is KpiDetailItem => entry !== null)
+        .sort((a, b) => Number(b.hours || 0) - Number(a.hours || 0));
+
+      return {
+        type: 'tickets',
+        items,
+      };
+    }
+
+    if (widget.type === 'throughputThisWeek' || widget.type === 'throughputThisMonth') {
+      const range = widget.type === 'throughputThisWeek' ? getWeekBounds() : getMonthBounds();
+      let base = `
+        SELECT t.Id, t.ProjectId, t.TaskName, p.ProjectName, COALESCE(c.ExternalName, c.Name) as CustomerName,
+               tsv.StatusName, tg.Name as TagName, tg.Color as TagColor
+        FROM Tasks t
+        INNER JOIN Projects p ON p.Id = t.ProjectId
+        LEFT JOIN Customers c ON p.CustomerId = c.Id
+        LEFT JOIN TaskStatusValues tsv ON tsv.Id = t.Status
+        LEFT JOIN TaskTags tt ON tt.TaskId = t.Id
+        LEFT JOIN Tags tg ON tg.Id = tt.TagId
+        WHERE p.OrganizationId = ?
+          AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0
+          AND EXISTS (
+            SELECT 1
+            FROM TaskHistory th
+            INNER JOIN TaskStatusValues closedStatus ON closedStatus.OrganizationId = p.OrganizationId
+              AND COALESCE(closedStatus.IsClosed, 0) = 1
+              AND th.NewValue = closedStatus.StatusName
+            WHERE th.TaskId = t.Id
+              AND th.FieldName = 'Status'
+              AND th.CreatedAt >= ?
+              AND th.CreatedAt <= ?
+          )`;
+
+      const filtered = applyOptionalTaskFilters(widget, base, [organizationId, `${range.start} 00:00:00`, `${range.end} 23:59:59`]);
+      const paged = appendPagination(`${filtered.query} ORDER BY t.TaskName ASC`, filtered.params);
+      const [rows] = await pool.execute<RowDataPacket[]>(paged.query, paged.params);
+
+      return {
+        type: 'tasks',
+        items: mapTaskRowsWithTags(rows),
+      };
+    }
+
+    if (widget.type === 'cycleTimeMedianDays' || widget.type === 'leadTimeMedianDays') {
+      let base = `
+        SELECT t.Id, t.ProjectId, t.TaskName, p.ProjectName, COALESCE(c.ExternalName, c.Name) as CustomerName,
+               tsv.StatusName,
+               t.CreatedAt,
+               (
+                 SELECT MIN(thClosed.CreatedAt)
+                 FROM TaskHistory thClosed
+                 INNER JOIN TaskStatusValues closedStatus ON closedStatus.OrganizationId = p.OrganizationId
+                   AND COALESCE(closedStatus.IsClosed, 0) = 1
+                   AND thClosed.NewValue = closedStatus.StatusName
+                 WHERE thClosed.TaskId = t.Id
+                   AND thClosed.FieldName = 'Status'
+               ) as FirstClosedAt,
+               (
+                 SELECT MIN(thStart.CreatedAt)
+                 FROM TaskHistory thStart
+                 WHERE thStart.TaskId = t.Id
+                   AND thStart.FieldName = 'Status'
+               ) as FirstStatusChangeAt
+        FROM Tasks t
+        INNER JOIN Projects p ON p.Id = t.ProjectId
+        LEFT JOIN Customers c ON p.CustomerId = c.Id
+        LEFT JOIN TaskStatusValues tsv ON tsv.Id = t.Status
+        WHERE p.OrganizationId = ?
+          AND COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0`;
+
+      const filtered = applyOptionalTaskFilters(widget, base, [organizationId]);
+      const [rows] = await pool.execute<RowDataPacket[]>(filtered.query, filtered.params);
+
+      const metricItems = rows
+        .map((row) => {
+          const createdAt = row.CreatedAt ? new Date(row.CreatedAt) : null;
+          const firstClosedAt = row.FirstClosedAt ? new Date(row.FirstClosedAt) : null;
+          const firstStatusChangeAt = row.FirstStatusChangeAt ? new Date(row.FirstStatusChangeAt) : null;
+          if (!createdAt || !firstClosedAt || Number.isNaN(createdAt.getTime()) || Number.isNaN(firstClosedAt.getTime())) {
+            return null;
+          }
+
+          const startDate = widget.type === 'cycleTimeMedianDays'
+            ? (firstStatusChangeAt && !Number.isNaN(firstStatusChangeAt.getTime()) ? firstStatusChangeAt : createdAt)
+            : createdAt;
+
+          const days = Math.max(0, (firstClosedAt.getTime() - startDate.getTime()) / 86400000);
+
+          return {
+            id: Number(row.Id),
+            taskId: Number(row.Id),
+            projectId: row.ProjectId ? Number(row.ProjectId) : undefined,
+            name: String(row.TaskName || ''),
+            project: String(row.ProjectName || ''),
+            customer: String(row.CustomerName || ''),
+            status: String(row.StatusName || ''),
+            date: row.FirstClosedAt ? String(row.FirstClosedAt).split('T')[0] : undefined,
+            hours: Number(days.toFixed(2)),
+          } as KpiDetailItem;
+        })
+        .filter((item): item is KpiDetailItem => item !== null)
+        .sort((a, b) => Number(b.hours || 0) - Number(a.hours || 0));
+
+      if (typeof limit === 'number') {
+        return {
+          type: 'tasks',
+          items: metricItems.slice(offset, offset + limit),
+        };
+      }
+
+      return {
+        type: 'tasks',
+        items: metricItems,
+      };
+    }
+
     let base = `
       SELECT t.Id, t.ProjectId, t.TaskName, p.ProjectName, COALESCE(c.ExternalName, c.Name) as CustomerName, tsv.StatusName, tg.Name as TagName, tg.Color as TagColor
       FROM Tasks t
       INNER JOIN Projects p ON p.Id = t.ProjectId
       LEFT JOIN Customers c ON p.CustomerId = c.Id
       LEFT JOIN TaskStatusValues tsv ON tsv.Id = t.Status
+      LEFT JOIN Tasks dep ON dep.Id = t.DependsOnTaskId
+      LEFT JOIN TaskStatusValues depStatus ON depStatus.Id = dep.Status
       LEFT JOIN TaskTags tt ON tt.TaskId = t.Id
       LEFT JOIN Tags tg ON tg.Id = tt.TagId
       WHERE p.OrganizationId = ?
@@ -564,19 +813,46 @@ const getWidgetDetails = async (
       base += ' AND COALESCE(tsv.IsClosed, 0) = 0 AND COALESCE(tsv.IsCancelled, 0) = 0';
     } else if (widget.type === 'organizationCompletedTasks') {
       base += ' AND COALESCE(tsv.IsClosed, 0) = 1';
-    } else if (widget.type === 'tasksByStatus' && widget.statusValueId) {
-      base += ' AND t.Status = ?';
-      params.push(Number(widget.statusValueId));
-    } else if (widget.type === 'tasksByPriority' && widget.priorityValueId) {
-      base += ' AND t.Priority = ?';
-      params.push(Number(widget.priorityValueId));
-    } else if (widget.type === 'tasksByTag' && widget.tagId) {
-      base += ' AND tt.TagId = ?';
-      params.push(Number(widget.tagId));
+    } else if (widget.type === 'overdueTasksFiltered') {
+      base += ' AND t.DueDate IS NOT NULL AND t.DueDate < ? AND COALESCE(tsv.IsClosed, 0) = 0 AND COALESCE(tsv.IsCancelled, 0) = 0';
+      params.push(todayKey);
+    } else if (widget.type === 'blockedTasksFiltered') {
+      base += ' AND t.DependsOnTaskId IS NOT NULL AND COALESCE(depStatus.IsClosed, 0) = 0 AND COALESCE(depStatus.IsCancelled, 0) = 0';
+    } else if (widget.type === 'unestimatedTasksFiltered') {
+      base += ' AND COALESCE(t.EstimatedHours, 0) <= 0 AND COALESCE(tsv.IsClosed, 0) = 0 AND COALESCE(tsv.IsCancelled, 0) = 0';
+    } else if (widget.type === 'reopenedTasksFiltered') {
+      base += ` AND EXISTS (
+        SELECT 1
+        FROM TaskHistory closedHistory
+        INNER JOIN TaskStatusValues closedStatus ON closedStatus.OrganizationId = p.OrganizationId
+          AND COALESCE(closedStatus.IsClosed, 0) = 1
+          AND closedHistory.NewValue = closedStatus.StatusName
+        WHERE closedHistory.TaskId = t.Id
+          AND closedHistory.FieldName = 'Status'
+      )`;
+      base += ` AND EXISTS (
+        SELECT 1
+        FROM TaskHistory reopenHistory
+        INNER JOIN TaskStatusValues reopenStatus ON reopenStatus.OrganizationId = p.OrganizationId
+          AND COALESCE(reopenStatus.IsClosed, 0) = 0
+          AND COALESCE(reopenStatus.IsCancelled, 0) = 0
+          AND reopenHistory.NewValue = reopenStatus.StatusName
+        WHERE reopenHistory.TaskId = t.Id
+          AND reopenHistory.FieldName = 'Status'
+          AND reopenHistory.CreatedAt > (
+            SELECT MAX(closedHistory2.CreatedAt)
+            FROM TaskHistory closedHistory2
+            INNER JOIN TaskStatusValues closedStatus2 ON closedStatus2.OrganizationId = p.OrganizationId
+              AND COALESCE(closedStatus2.IsClosed, 0) = 1
+              AND closedHistory2.NewValue = closedStatus2.StatusName
+            WHERE closedHistory2.TaskId = t.Id
+              AND closedHistory2.FieldName = 'Status'
+          )
+      )`;
     }
 
-    base += ' ORDER BY t.TaskName ASC';
-    const paged = appendPagination(base, params);
+    const filtered = applyOptionalTaskFilters(widget, base, params);
+    const paged = appendPagination(`${filtered.query} ORDER BY t.TaskName ASC`, filtered.params);
     const [rows] = await pool.execute<RowDataPacket[]>(paged.query, paged.params);
 
     return {
@@ -627,6 +903,43 @@ const getWidgetValue = async (
     return {
       value: details.items.length,
       subtitle: active > 0 ? `${active} active` : undefined,
+    };
+  }
+
+  if (widget.type === 'ticketsSlaRisk') {
+    const breached = details.items.filter((item) => Number(item.hours || 0) >= 2).length;
+    const warning = details.items.filter((item) => Number(item.hours || 0) === 1).length;
+    const subtitleParts: string[] = [];
+    if (breached > 0) {
+      subtitleParts.push(`${breached} breached`);
+    }
+    if (warning > 0) {
+      subtitleParts.push(`${warning} near breach`);
+    }
+
+    return {
+      value: details.items.length,
+      subtitle: subtitleParts.length > 0 ? subtitleParts.join(' • ') : undefined,
+    };
+  }
+
+  if (widget.type === 'cycleTimeMedianDays' || widget.type === 'leadTimeMedianDays') {
+    const values = details.items
+      .map((item) => Number(item.hours || 0))
+      .filter((entry) => Number.isFinite(entry) && entry >= 0);
+
+    const median = calculateMedian(values);
+    return {
+      value: Number(median.toFixed(1)),
+      suffix: 'd',
+      subtitle: values.length > 0 ? `${values.length} closed tasks` : undefined,
+    };
+  }
+
+  if (widget.type === 'throughputThisWeek' || widget.type === 'throughputThisMonth') {
+    return {
+      value: details.items.length,
+      subtitle: widget.type === 'throughputThisWeek' ? 'Closed this week' : 'Closed this month',
     };
   }
 

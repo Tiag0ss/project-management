@@ -169,6 +169,15 @@ export default function GlobalGridEnhancer() {
     if (!shouldEnhance) return;
 
     const applyEnhancements = () => {
+      const existingToolbars = Array.from(document.querySelectorAll('.global-grid-controls'));
+      existingToolbars.forEach((toolbar) => {
+        if (!(toolbar instanceof HTMLDivElement)) return;
+        const nextSibling = toolbar.nextElementSibling;
+        if (!(nextSibling instanceof HTMLTableElement)) {
+          toolbar.remove();
+        }
+      });
+
       const tables = Array.from(document.querySelectorAll('table'));
       const signatureUsageCount = new Map<string, number>();
 

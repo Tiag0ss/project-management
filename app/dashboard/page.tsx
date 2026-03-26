@@ -111,6 +111,7 @@ type KpiTemplate = {
   requiresStatus?: boolean;
   requiresPriority?: boolean;
   requiresTag?: boolean;
+  supportsOptionalTaskFilters?: boolean;
 };
 
 const KPI_TEMPLATES: KpiTemplate[] = [
@@ -129,6 +130,16 @@ const KPI_TEMPLATES: KpiTemplate[] = [
   { type: 'tasksByStatus', label: 'Tasks by Status', defaultTitle: 'Tasks by Status', icon: '📍', borderClass: 'border-pink-500', requiresOrganization: true, requiresStatus: true },
   { type: 'tasksByPriority', label: 'Tasks by Priority', defaultTitle: 'Tasks by Priority', icon: '🚩', borderClass: 'border-rose-500', requiresOrganization: true, requiresPriority: true },
   { type: 'tasksByTag', label: 'Tasks by Tag', defaultTitle: 'Tasks by Tag', icon: '🏷️', borderClass: 'border-fuchsia-500', requiresOrganization: true, requiresTag: true },
+  { type: 'tasksFiltered', label: 'Filtered Tasks', defaultTitle: 'Filtered Tasks', icon: '🔎', borderClass: 'border-violet-500', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'overdueTasksFiltered', label: 'Overdue Tasks', defaultTitle: 'Overdue Tasks', icon: '⏰', borderClass: 'border-red-500', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'blockedTasksFiltered', label: 'Blocked Tasks', defaultTitle: 'Blocked Tasks', icon: '⛔', borderClass: 'border-amber-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'unestimatedTasksFiltered', label: 'Unestimated Tasks', defaultTitle: 'Unestimated Tasks', icon: '🧮', borderClass: 'border-slate-500', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'reopenedTasksFiltered', label: 'Reopened Tasks', defaultTitle: 'Reopened Tasks', icon: '🔁', borderClass: 'border-orange-500', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'throughputThisWeek', label: 'Throughput This Week', defaultTitle: 'Throughput This Week', icon: '📈', borderClass: 'border-emerald-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'throughputThisMonth', label: 'Throughput This Month', defaultTitle: 'Throughput This Month', icon: '📉', borderClass: 'border-cyan-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'cycleTimeMedianDays', label: 'Cycle Time Median', defaultTitle: 'Cycle Time Median', icon: '🧭', borderClass: 'border-blue-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'leadTimeMedianDays', label: 'Lead Time Median', defaultTitle: 'Lead Time Median', icon: '🚀', borderClass: 'border-indigo-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'ticketsSlaRisk', label: 'Tickets SLA Risk', defaultTitle: 'Tickets SLA Risk', icon: '⚠️', borderClass: 'border-rose-600', requiresOrganization: true },
 ];
 
 const getDefaultKpiWidgets = (internalTicketsEnabled: boolean): DashboardKpiWidget[] => {
@@ -457,7 +468,11 @@ function DashboardContent() {
 
     const loadFeatureFlags = async () => {
       try {
-        const res = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        const res = await fetch(`${getApiUrl()}/api/system-settings/user-flags`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
         if (res.ok) {
           const data = await res.json();
           setInternalTicketsEnabled(data.internalTicketsEnabled !== false);
@@ -1067,39 +1082,51 @@ function DashboardContent() {
       return 'KPI';
     }
 
-    if (widget.type === 'tasksByStatus' && widget.organizationId && widget.statusValueId) {
-      const statuses = kpiMetadata.statusesByOrganization[String(widget.organizationId)] || [];
-      const match = statuses.find((item) => Number(item.Id) === Number(widget.statusValueId));
-      if (match) {
-        return `${match.StatusName} Tasks`;
-      }
+    const statusLabel = widget.organizationId && widget.statusValueId
+      ? (kpiMetadata.statusesByOrganization[String(widget.organizationId)] || []).find((item) => Number(item.Id) === Number(widget.statusValueId))?.StatusName
+      : null;
+    const priorityLabel = widget.organizationId && widget.priorityValueId
+      ? (kpiMetadata.prioritiesByOrganization[String(widget.organizationId)] || []).find((item) => Number(item.Id) === Number(widget.priorityValueId))?.PriorityName
+      : null;
+    const tagLabel = widget.organizationId && widget.tagId
+      ? (kpiMetadata.tagsByOrganization[String(widget.organizationId)] || []).find((item) => Number(item.Id) === Number(widget.tagId))?.Name
+      : null;
+
+    if (widget.type === 'tasksByStatus' && statusLabel) {
+      return `${statusLabel} Tasks`;
     }
 
-    if (widget.type === 'tasksByPriority' && widget.organizationId && widget.priorityValueId) {
-      const priorities = kpiMetadata.prioritiesByOrganization[String(widget.organizationId)] || [];
-      const match = priorities.find((item) => Number(item.Id) === Number(widget.priorityValueId));
-      if (match) {
-        return `${match.PriorityName} Tasks`;
-      }
+    if (widget.type === 'tasksByPriority' && priorityLabel) {
+      return `${priorityLabel} Tasks`;
     }
 
-    if (widget.type === 'tasksByTag' && widget.organizationId && widget.tagId) {
-      const tags = kpiMetadata.tagsByOrganization[String(widget.organizationId)] || [];
-      const match = tags.find((item) => Number(item.Id) === Number(widget.tagId));
-      if (match) {
-        return `${match.Name} Tasks`;
-      }
+    if (widget.type === 'tasksByTag' && tagLabel) {
+      return `${tagLabel} Tasks`;
     }
 
     if (
       (widget.type === 'organizationProjects' ||
         widget.type === 'organizationTasks' ||
         widget.type === 'organizationPendingTasks' ||
-        widget.type === 'organizationCompletedTasks') &&
+        widget.type === 'organizationCompletedTasks' ||
+        widget.type === 'tasksFiltered' ||
+        widget.type === 'overdueTasksFiltered' ||
+        widget.type === 'blockedTasksFiltered' ||
+        widget.type === 'unestimatedTasksFiltered' ||
+        widget.type === 'reopenedTasksFiltered' ||
+        widget.type === 'throughputThisWeek' ||
+        widget.type === 'throughputThisMonth' ||
+        widget.type === 'cycleTimeMedianDays' ||
+        widget.type === 'leadTimeMedianDays' ||
+        widget.type === 'ticketsSlaRisk') &&
       widget.organizationId
     ) {
       const org = kpiMetadata.organizations.find((item) => Number(item.Id) === Number(widget.organizationId));
       if (org) {
+        const filters = [statusLabel, priorityLabel, tagLabel].filter(Boolean);
+        if (filters.length > 0) {
+          return `${org.Name} - ${template.defaultTitle} (${filters.join(' • ')})`;
+        }
         return `${org.Name} - ${template.defaultTitle}`;
       }
     }
@@ -1146,7 +1173,7 @@ function DashboardContent() {
           return;
         }
 
-        derivedValues[widget.id] = { value: details.items.length };
+        derivedValues[widget.id] = fallback;
       });
 
       setKpiValues(derivedValues);
@@ -1563,7 +1590,9 @@ function DashboardContent() {
 
   const totalPendingApprovals = pendingApprovals.timeEntries + pendingApprovals.vacations;
   const showPendingApprovalAlert = totalPendingApprovals > 0 && (pendingApprovals.canApproveTime || pendingApprovals.canApproveVacations);
-  const selectableKpiTemplates = KPI_TEMPLATES.filter((template) => internalTicketsEnabled || template.type !== 'myTickets');
+  const selectableKpiTemplates = KPI_TEMPLATES.filter(
+    (template) => internalTicketsEnabled || (template.type !== 'myTickets' && template.type !== 'ticketsSlaRisk')
+  );
 
   if (!isLoadingPermissions && !permissions?.canViewDashboard) {
     return (
@@ -1978,39 +2007,39 @@ function DashboardContent() {
                                   </select>
                                 )}
 
-                                {template?.requiresStatus && (
+                                {(template?.requiresStatus || template?.supportsOptionalTaskFilters) && (
                                   <select
                                     value={widget.statusValueId || ''}
                                     onChange={(e) => handleWidgetFieldChange(widget.id, { statusValueId: e.target.value ? Number(e.target.value) : null })}
                                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                                   >
-                                    <option value="">Select status</option>
+                                    <option value="">{template?.requiresStatus ? 'Select status' : 'Any status'}</option>
                                     {statusOptions.map((status) => (
                                       <option key={status.Id} value={status.Id}>{status.StatusName}</option>
                                     ))}
                                   </select>
                                 )}
 
-                                {template?.requiresPriority && (
+                                {(template?.requiresPriority || template?.supportsOptionalTaskFilters) && (
                                   <select
                                     value={widget.priorityValueId || ''}
                                     onChange={(e) => handleWidgetFieldChange(widget.id, { priorityValueId: e.target.value ? Number(e.target.value) : null })}
                                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                                   >
-                                    <option value="">Select priority</option>
+                                    <option value="">{template?.requiresPriority ? 'Select priority' : 'Any priority'}</option>
                                     {priorityOptions.map((priority) => (
                                       <option key={priority.Id} value={priority.Id}>{priority.PriorityName}</option>
                                     ))}
                                   </select>
                                 )}
 
-                                {template?.requiresTag && (
+                                {(template?.requiresTag || template?.supportsOptionalTaskFilters) && (
                                   <select
                                     value={widget.tagId || ''}
                                     onChange={(e) => handleWidgetFieldChange(widget.id, { tagId: e.target.value ? Number(e.target.value) : null })}
                                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                                   >
-                                    <option value="">Select tag</option>
+                                    <option value="">{template?.requiresTag ? 'Select tag' : 'Any tag'}</option>
                                     {tagOptions.map((tag) => (
                                       <option key={tag.Id} value={tag.Id}>{tag.Name}</option>
                                     ))}

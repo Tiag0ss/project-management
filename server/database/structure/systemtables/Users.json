@@ -346,7 +346,7 @@
       "FieldName": "NavbarMenuLayout",
       "DataType": "varchar(20)",
       "NotNullable": true,
-      "DefaultValue": "top",
+      "DefaultValue": "left",
       "Comment": "User preference for navbar menu layout: top or left"
     },
     {
@@ -360,7 +360,7 @@
       "FieldName": "NavbarLeftCollapsed",
       "DataType": "tinyint(1)",
       "NotNullable": true,
-      "DefaultValue": "0",
+      "DefaultValue": "1",
       "Comment": "When left layout is enabled: whether sidebar starts collapsed"
     },
     {
@@ -376,6 +376,13 @@
       "NotNullable": false,
       "DefaultValue": null,
       "Comment": "User dashboard KPI widgets configuration as JSON"
+    },
+    {
+      "FieldName": "LastLoginAt",
+      "DataType": "datetime",
+      "NotNullable": false,
+      "DefaultValue": null,
+      "Comment": "Date and time of the most recent successful login or token refresh"
     },
     {
       "FieldName": "CreatedAt",

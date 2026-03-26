@@ -13,6 +13,11 @@ const MASKED_KEYS = ['smtpPassword', 'openAIApiKey', 'outlookTenantId', 'outlook
 
 const router = Router();
 
+const parseBooleanSetting = (value: unknown): boolean => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
+};
+
 /**
  * @swagger
  * tags:
@@ -35,17 +40,13 @@ const router = Router();
 router.get('/public', async (req, res: Response) => {
   try {
     const [settings] = await pool.execute<RowDataPacket[]>(
-      'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?, ?, ?)',
       [
         'allowPublicRegistration',
         'publicRegistrationType',
-        'internalTicketsEnabled',
-        'memosEnabled',
         'companyName',
         'companyLogoUrl',
         'faviconUrl',
-        'autoApproveTimeEntries',
-        'autoApproveVacations',
         'frontpageEnabled'
       ]
     );
@@ -55,27 +56,19 @@ router.get('/public', async (req, res: Response) => {
       settingsObj[setting.SettingKey] = setting.SettingValue;
     });
 
-    const allowPublicRegistration = settingsObj.allowPublicRegistration === 'true';
+    const allowPublicRegistration = parseBooleanSetting(settingsObj.allowPublicRegistration);
     const publicRegistrationType = settingsObj.publicRegistrationType || 'internal';
-    const internalTicketsEnabled = settingsObj.internalTicketsEnabled !== 'false';
-    const memosEnabled = settingsObj.memosEnabled !== 'false';
     const companyName = settingsObj.companyName || 'Project Management';
     const companyLogoUrl = settingsObj.companyLogoUrl || '';
     const faviconUrl = settingsObj.faviconUrl || '';
-    const autoApproveTimeEntries = settingsObj.autoApproveTimeEntries === 'true';
-    const autoApproveVacations = settingsObj.autoApproveVacations === 'true';
     const frontpageEnabled = settingsObj.frontpageEnabled !== 'false';
     res.json({
       success: true,
       allowPublicRegistration,
       publicRegistrationType,
-      internalTicketsEnabled,
-      memosEnabled,
       companyName,
       companyLogoUrl,
       faviconUrl,
-      autoApproveTimeEntries,
-      autoApproveVacations,
       frontpageEnabled
     });
   } catch (error) {
@@ -83,6 +76,40 @@ router.get('/public', async (req, res: Response) => {
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch registration setting' 
+    });
+  }
+});
+
+// Get authenticated user flags (requires login)
+router.get('/user-flags', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const [settings] = await pool.execute<RowDataPacket[]>(
+      'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?)',
+      ['autoApproveTimeEntries', 'autoApproveVacations', 'internalTicketsEnabled', 'memosEnabled']
+    );
+
+    const settingsObj: Record<string, string> = {};
+    settings.forEach(setting => {
+      settingsObj[setting.SettingKey] = setting.SettingValue;
+    });
+
+    const autoApproveTimeEntries = parseBooleanSetting(settingsObj.autoApproveTimeEntries);
+    const autoApproveVacations = parseBooleanSetting(settingsObj.autoApproveVacations);
+    const internalTicketsEnabled = settingsObj.internalTicketsEnabled !== 'false';
+    const memosEnabled = settingsObj.memosEnabled !== 'false';
+
+    res.json({
+      success: true,
+      autoApproveTimeEntries,
+      autoApproveVacations,
+      internalTicketsEnabled,
+      memosEnabled,
+    });
+  } catch (error) {
+    console.error('Get user flags error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch user flags',
     });
   }
 });

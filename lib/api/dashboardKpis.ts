@@ -17,7 +17,17 @@ export type DashboardKpiType =
   | 'organizationCompletedTasks'
   | 'tasksByStatus'
   | 'tasksByPriority'
-  | 'tasksByTag';
+  | 'tasksByTag'
+  | 'tasksFiltered'
+  | 'overdueTasksFiltered'
+  | 'blockedTasksFiltered'
+  | 'unestimatedTasksFiltered'
+  | 'reopenedTasksFiltered'
+  | 'throughputThisWeek'
+  | 'throughputThisMonth'
+  | 'cycleTimeMedianDays'
+  | 'leadTimeMedianDays'
+  | 'ticketsSlaRisk';
 
 export interface DashboardKpiWidget {
   id: string;

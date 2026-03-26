@@ -409,7 +409,11 @@ export default function TimesheetPage() {
 
   const loadPublicSettings = async () => {
     try {
-      const response = await fetch(`${getApiUrl()}/api/system-settings/public`);
+      const response = await fetch(`${getApiUrl()}/api/system-settings/user-flags`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
       if (!response.ok) {
         setAutoApproveTimeEntries(false);
         return;
@@ -952,26 +956,6 @@ export default function TimesheetPage() {
                     }`}
                   >
                     🗓️ Weekly Grid
-                  </button>
-                  <button
-                    onClick={() => setTimesheetView('history')}
-                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                      timesheetView === 'history'
-                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    📊 All Entries
-                  </button>
-                  <button
-                    onClick={() => setTimesheetView('resume')}
-                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                      timesheetView === 'resume'
-                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    📋 Resume
                   </button>
                 </nav>
               </div>

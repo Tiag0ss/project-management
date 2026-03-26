@@ -45,6 +45,14 @@ export interface Project {
   OpenTickets?: number;
   UnplannedTasks?: number;
   OverdueTasks?: number;
+  OverdueMilestones?: number;
+  UpcomingMilestonesSoon?: number;
+  NextOpenMilestoneDueDate?: string | null;
+  ActiveSprintCount?: number;
+  OverdueActiveSprints?: number;
+  ActiveSprintEndDate?: string | null;
+  HealthStatus?: 'red' | 'amber' | 'green';
+  HealthReasons?: string[];
   [key: string]: unknown;
 }
 
