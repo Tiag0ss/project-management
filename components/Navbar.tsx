@@ -1830,6 +1830,11 @@ export default function Navbar() {
                 <div className={`${showOverviewSection || showDeliverySection || showWorkLogsSection || showServiceSection || showManagementSection ? 'mt-1.5 pt-1.5' : ''}`}>
                   {renderSidebarSectionHeader('Reporting')}
                   {canShowReportsLink && (
+                    <a href="/reports" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">📊</span>{!isSidebarEffectivelyCollapsed && <span>Reports</span>}
+                    </a>
+                  )}
+                  {canShowReportsLink && (
                     <a href="/web-reports" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">📈</span>{!isSidebarEffectivelyCollapsed && <span>Advanced Reports</span>}
                     </a>
@@ -2021,6 +2026,17 @@ export default function Navbar() {
                       },
                     ]}
                   />
+                )}
+
+                {/* Reports */}
+
+                {!isCustomerUser && (permissionsLoading || permissions?.canViewReports || permissions?.canManageOrganizations || !!user?.isAdmin) && (
+                  <a
+                    href="/reports"
+                    className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
+                  >
+                    📊 Reports
+                  </a>
                 )}
 
                 {/* Advanced Reports */}

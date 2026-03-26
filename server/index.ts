@@ -71,6 +71,7 @@ import pdfExportsRoutes from './routes/pdfExports';
 import planningImportRoutes from './routes/planningImport';
 import aiAssistantRoutes from './routes/aiAssistant';
 import outlookCalendarRoutes from './routes/outlookCalendar';
+import reportsRoutes from './routes/reports';
 import { ensureAiAssistantViews } from './utils/aiAssistantViews';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
 import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler';
@@ -266,6 +267,7 @@ app.prepare().then(async () => {
   server.use('/api/holidays', holidaysRoutes);
   server.use('/api/vacations', vacationsRoutes);
   server.use('/api/pdf-exports', pdfExportsRoutes);
+  server.use('/api/reports', reportsRoutes);
   server.use('/api/ai-assistant', aiAssistantRoutes);
 
   // Error handling middleware

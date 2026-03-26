@@ -1357,7 +1357,7 @@ export default function WebReportsPage() {
             <div className="bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg shadow p-6 text-white mb-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h1 className="text-3xl font-bold">📊 Web Reports</h1>
+                  <h1 className="text-3xl font-bold">📊 Advanced Reports</h1>
                   <p className="text-purple-100 mt-1">Dynamic pivot table reporting</p>
                 </div>
                 <div className="text-5xl opacity-80">📈</div>
