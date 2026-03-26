@@ -780,6 +780,129 @@ router.get('/project/:projectId/issues', authenticateToken, async (req: AuthRequ
  *       403:
  *         description: Access denied
  */
+// Check live Jira status for all integrated tickets in a project
+router.get('/organization/:organizationId/check-ticket-statuses', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { organizationId } = req.params;
+    const rawProjectId = req.query.projectId;
+    const projectId = rawProjectId ? Number(rawProjectId) : null;
+    const userId = req.user?.userId;
+
+    // Access check
+    const [memberCheck] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [organizationId, userId]
+    );
+    if (memberCheck.length === 0) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Get Jira integration credentials
+    const [integration] = await pool.execute<RowDataPacket[]>(
+      `SELECT IsEnabled, JiraUrl, JiraEmail, JiraApiToken
+       FROM OrganizationJiraIntegrations
+       WHERE OrganizationId = ? AND IsEnabled = 1`,
+      [organizationId]
+    );
+    if (integration.length === 0) {
+      return res.status(404).json({ success: false, message: 'Jira integration not configured or disabled' });
+    }
+
+    const { JiraUrl, JiraEmail, JiraApiToken: encryptedToken } = integration[0];
+    const JiraApiToken = decrypt(encryptedToken);
+
+    // Fetch tasks with Jira issue keys, optionally filtered by project
+    const taskQuery = projectId
+      ? `SELECT t.Id as TaskId, t.TaskName, t.JiraIssueKey, t.ExternalIssueId, t.Status as StatusId, tsv.StatusName
+         FROM Tasks t
+         INNER JOIN Projects p ON t.ProjectId = p.Id
+         LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+         WHERE p.Id = ? AND p.OrganizationId = ?
+           AND (t.JiraIssueKey IS NOT NULL OR t.ExternalIssueId IS NOT NULL)`
+      : `SELECT t.Id as TaskId, t.TaskName, t.JiraIssueKey, t.ExternalIssueId, t.Status as StatusId, tsv.StatusName
+         FROM Tasks t
+         INNER JOIN Projects p ON t.ProjectId = p.Id
+         LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+         WHERE p.OrganizationId = ?
+           AND (t.JiraIssueKey IS NOT NULL OR t.ExternalIssueId IS NOT NULL)`;
+
+    const taskParams = projectId ? [projectId, organizationId] : [organizationId];
+    const [taskRows] = await pool.execute<RowDataPacket[]>(taskQuery, taskParams);
+
+    if (taskRows.length === 0) {
+      return res.json({ success: true, tickets: [] });
+    }
+
+    // Build issue key → task map (prefer JiraIssueKey, fallback to ExternalIssueId)
+    const issueKeyToTask = new Map<string, { taskId: number; taskName: string; taskStatusId: number | null; taskStatusName: string | null }>();
+    for (const row of taskRows) {
+      const key = String(row.JiraIssueKey || row.ExternalIssueId || '').trim();
+      if (key && !issueKeyToTask.has(key)) {
+        issueKeyToTask.set(key, {
+          taskId: Number(row.TaskId),
+          taskName: String(row.TaskName || ''),
+          taskStatusId: row.StatusId !== null && row.StatusId !== undefined ? Number(row.StatusId) : null,
+          taskStatusName: row.StatusName ? String(row.StatusName) : null,
+        });
+      }
+    }
+
+    const issueKeys = Array.from(issueKeyToTask.keys());
+    const keysJql = issueKeys.map(k => `"${k}"`).join(', ');
+    const jql = `key in (${keysJql}) ORDER BY created DESC`;
+
+    const authHeader = 'Basic ' + Buffer.from(`${JiraEmail}:${JiraApiToken}`).toString('base64');
+    const searchUrl = `${JiraUrl}/rest/api/3/search/jql`;
+
+    const jiraResponse = await fetch(searchUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ jql, maxResults: 500, fields: ['summary', 'status'] }),
+    });
+
+    if (!jiraResponse.ok) {
+      const errorText = await jiraResponse.text();
+      console.error('Jira check-ticket-statuses search failed:', jiraResponse.status, errorText);
+      return res.status(400).json({ success: false, message: `Failed to query Jira: ${jiraResponse.status} ${jiraResponse.statusText}` });
+    }
+
+    const jiraData = await jiraResponse.json();
+    const jiraIssueMap = new Map<string, { jiraSummary: string; jiraStatus: string }>();
+    for (const issue of (jiraData.issues || [])) {
+      jiraIssueMap.set(String(issue.key), {
+        jiraSummary: String(issue.fields?.summary || ''),
+        jiraStatus: String(issue.fields?.status?.name || ''),
+      });
+    }
+
+    // Merge results
+    const tickets = issueKeys
+      .filter(key => jiraIssueMap.has(key))
+      .map(key => {
+        const task = issueKeyToTask.get(key)!;
+        const jira = jiraIssueMap.get(key)!;
+        return {
+          issueKey: key,
+          jiraSummary: jira.jiraSummary,
+          jiraStatus: jira.jiraStatus,
+          taskId: task.taskId,
+          taskName: task.taskName,
+          taskStatusId: task.taskStatusId,
+          taskStatusName: task.taskStatusName,
+        };
+      });
+
+    res.json({ success: true, tickets });
+  } catch (error: any) {
+    console.error('Check ticket statuses error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to check ticket statuses' });
+  }
+});
+
 // Delete Jira integration
 router.delete('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

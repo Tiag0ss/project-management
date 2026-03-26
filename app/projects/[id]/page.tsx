@@ -26,6 +26,7 @@ import { getAllGridPreferences, saveGridPreference } from '@/lib/api/gridPrefere
 import { projectMilestonesApi, ProjectMilestone, SaveProjectMilestoneData } from '@/lib/api/projectMilestones';
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 import SegmentedTagBadge from '@/components/tags/SegmentedTagBadge';
+import JiraStatusMappingPanel from '@/components/projects/JiraStatusMappingPanel';
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -117,9 +118,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [jiraTicketsError, setJiraTicketsError] = useState('');
   const [jiraSearchQuery, setJiraSearchQuery] = useState('');
   const [hideIntegratedJiraTickets, setHideIntegratedJiraTickets] = useState(false);
+  const [existingJiraIssueStatusByKey, setExistingJiraIssueStatusByKey] = useState<Record<string, { taskId: number; statusId: number | null; statusName: string | null }>>({});
   const [jiraTicketMappings, setJiraTicketMappings] = useState<Record<string, { customerId?: number; assigneeId?: number }>>({});
   const [jiraImportCustomers, setJiraImportCustomers] = useState<Customer[]>([]);
   const [jiraImportUsers, setJiraImportUsers] = useState<User[]>([]);
+  const [jiraTicketStatusMapping, setJiraTicketStatusMapping] = useState<{ [key: string]: string }>({});
   const [jiraTicketPriorityMapping, setJiraTicketPriorityMapping] = useState<{ [key: string]: string }>({});
   const [jiraTicketTypeMapping, setJiraTicketTypeMapping] = useState<{ [key: string]: string }>({});
   const [jiraBoardAssigneeMapping, setJiraBoardAssigneeMapping] = useState<Record<string, number | ''>>({});
@@ -128,6 +131,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [isJiraPriorityMappingOpen, setIsJiraPriorityMappingOpen] = useState(false);
   const [isJiraAssigneeMappingOpen, setIsJiraAssigneeMappingOpen] = useState(false);
   const [isJiraTicketMappingOpen, setIsJiraTicketMappingOpen] = useState(false);
+  // Check Jira Ticket Status modal state
+  const [showJiraCheckStatusModal, setShowJiraCheckStatusModal] = useState(false);
+  const [jiraCheckStatusLoading, setJiraCheckStatusLoading] = useState(false);
+  const [jiraCheckStatusTickets, setJiraCheckStatusTickets] = useState<Array<{issueKey: string; jiraSummary: string; jiraStatus: string; taskId: number; taskName: string; taskStatusId: number | null; taskStatusName: string | null}>>([]);
+  const [jiraCheckStatusError, setJiraCheckStatusError] = useState('');
+  const [jiraCheckStatusMapping, setJiraCheckStatusMapping] = useState<Record<string, string>>({});
+  const [selectedCheckStatusKeys, setSelectedCheckStatusKeys] = useState<Set<string>>(new Set());
+  const [isApplyingCheckStatus, setIsApplyingCheckStatus] = useState(false);
+  const [checkStatusOnlyChanged, setCheckStatusOnlyChanged] = useState(true);
   const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
   const { user, token, isLoading: authLoading } = useAuth();
@@ -892,6 +904,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             : []
         );
         setExistingIssueIds(existingIds);
+
+        const detailsByKey: Record<string, { taskId: number; statusId: number | null; statusName: string | null }> = {};
+        if (Array.isArray(data.issueDetails)) {
+          for (const detail of data.issueDetails) {
+            const issueKey = String(detail?.IssueKey || '').trim();
+            if (!issueKey || detailsByKey[issueKey]) continue;
+            detailsByKey[issueKey] = {
+              taskId: Number(detail?.TaskId || 0),
+              statusId: detail?.StatusId === null || detail?.StatusId === undefined ? null : Number(detail.StatusId),
+              statusName: detail?.StatusName ? String(detail.StatusName) : null,
+            };
+          }
+        }
+        setExistingJiraIssueStatusByKey(detailsByKey);
       }
     } catch (err) {
       console.error('Failed to load existing Jira issues:', err);
@@ -1159,17 +1185,72 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     return searchText.trim().length > 0;
   };
 
+  const resolveJiraTicketMappedStatus = (jiraStatus?: string): { id: number; name: string } | null => {
+    if (!jiraStatus) return null;
+
+    const mappedValue = jiraTicketStatusMapping[jiraStatus];
+    if (mappedValue !== undefined && mappedValue !== null && String(mappedValue).trim() !== '') {
+      const mappedId = Number(mappedValue);
+      if (!Number.isNaN(mappedId)) {
+        const byId = taskStatuses.find((status) => Number(status.Id) === mappedId);
+        if (byId) {
+          return { id: Number(byId.Id), name: String(byId.StatusName || byId.PriorityName || byId.TypeName || '') };
+        }
+      }
+
+      const byName = taskStatuses.find((status) =>
+        String(status.StatusName || '').trim().toLowerCase() === String(mappedValue).trim().toLowerCase()
+      );
+      if (byName) {
+        return { id: Number(byName.Id), name: String(byName.StatusName || '') };
+      }
+    }
+
+    const direct = taskStatuses.find((status) =>
+      String(status.StatusName || '').trim().toLowerCase() === String(jiraStatus).trim().toLowerCase()
+    );
+
+    if (!direct) return null;
+    return { id: Number(direct.Id), name: String(direct.StatusName || '') };
+  };
+
+  const getExistingJiraStatusUpdate = (issueKey: string, jiraStatus?: string) => {
+    const existing = existingJiraIssueStatusByKey[issueKey];
+    if (!existing) return { isExisting: false, hasStatusChange: false, mappedStatusName: null as string | null };
+
+    const mappedStatus = resolveJiraTicketMappedStatus(jiraStatus);
+    if (!mappedStatus) {
+      return { isExisting: true, hasStatusChange: false, mappedStatusName: null as string | null };
+    }
+
+    const currentStatusId = existing.statusId === null || existing.statusId === undefined ? null : Number(existing.statusId);
+    const hasStatusChange = currentStatusId !== mappedStatus.id;
+
+    return {
+      isExisting: true,
+      hasStatusChange,
+      mappedStatusName: mappedStatus.name || null,
+    };
+  };
+
   const handleImportJiraTickets = async () => {
     if (!token || !project) return;
 
-    const validIssues = Array.from(selectedJiraTickets).filter(key => !existingIssueIds.has(key));
-    if (validIssues.length === 0) return;
+    const selectedIssueKeys = Array.from(selectedJiraTickets);
+    const actionableIssueKeys = selectedIssueKeys.filter((key) => {
+      if (!existingIssueIds.has(key)) return true;
+      const issue = jiraTickets.find((item) => item.key === key);
+      if (!issue) return false;
+      return getExistingJiraStatusUpdate(issue.key, issue.status).hasStatusChange;
+    });
+
+    if (actionableIssueKeys.length === 0) return;
 
     setJiraTicketsImporting(true);
     setJiraTicketsError('');
 
     try {
-      const issuesToImport = jiraTickets.filter(issue => validIssues.includes(issue.key));
+      const issuesToImport = jiraTickets.filter(issue => actionableIssueKeys.includes(issue.key));
 
       const response = await fetch(
         `${getApiUrl()}/api/tasks/import-from-jira`,
@@ -1183,10 +1264,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             projectId: parseInt(projectId),
             importSource: 'ticket',
             issues: issuesToImport,
+            statusMapping: jiraTicketStatusMapping,
             priorityMapping: jiraTicketPriorityMapping,
             taskTypeMapping: jiraTicketTypeMapping,
+            allowStatusUpdatesForExisting: true,
             ticketMappings: Object.fromEntries(
-              validIssues.map((key) => {
+              actionableIssueKeys.map((key) => {
                 const rawCustomerId = jiraTicketMappings[key]?.customerId;
                 const isAutoCreate = rawCustomerId !== undefined && rawCustomerId !== null && Number(rawCustomerId) < 0;
                 let autoCreateCustomerName: string | null = null;
@@ -1217,16 +1300,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       const result = await response.json();
       const imported = result.data?.imported || 0;
       const skipped = result.data?.skipped || 0;
+      const updatedStatuses = result.data?.updatedStatuses || 0;
 
       let message = `Successfully imported ${imported} task(s) from Jira tickets.`;
+      if (updatedStatuses > 0) {
+        message += ` Updated status on ${updatedStatuses} existing task(s).`;
+      }
       if (skipped > 0) {
-        message += ` ${skipped} issue(s) were already integrated.`;
+        message += ` ${skipped} issue(s) were already integrated without status changes.`;
       }
 
       showAlert('Import Successful', message);
       await loadProject();
       setShowJiraTicketsModal(false);
       setSelectedJiraTickets(new Set());
+      setJiraTicketStatusMapping({});
       setJiraTicketPriorityMapping({});
       setJiraTicketTypeMapping({});
       setJiraTicketMappings({});
@@ -1236,6 +1324,93 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setJiraTicketsError(err.message || 'Failed to import Jira tickets');
     } finally {
       setJiraTicketsImporting(false);
+    }
+  };
+
+  const resolveCheckStatusMapped = (jiraStatus: string, mapping: Record<string, string>): { id: number; name: string } | null => {
+    const val = mapping[jiraStatus];
+    if (val) {
+      const byName = taskStatuses.find(s => (s.StatusName || '').toLowerCase() === val.toLowerCase());
+      if (byName) return { id: Number(byName.Id), name: String(byName.StatusName || '') };
+    }
+    const direct = taskStatuses.find(s => (s.StatusName || '').toLowerCase() === (jiraStatus || '').toLowerCase());
+    return direct ? { id: Number(direct.Id), name: String(direct.StatusName || '') } : null;
+  };
+
+  const handleOpenCheckJiraStatus = async () => {
+    if (!project || !token) return;
+    setShowJiraCheckStatusModal(true);
+    setJiraCheckStatusLoading(true);
+    setJiraCheckStatusError('');
+    setJiraCheckStatusTickets([]);
+    const initialMapping = parseMappingJson(project.JiraTaskStatusMappingJson);
+    setJiraCheckStatusMapping(initialMapping);
+    try {
+      const res = await fetch(
+        `${getApiUrl()}/api/jira-integrations/organization/${project.OrganizationId}/check-ticket-statuses?projectId=${projectId}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to load ticket statuses');
+      }
+      const data = await res.json();
+      const tickets = data.tickets || [];
+      setJiraCheckStatusTickets(tickets);
+      // Pre-select tickets with status changes (simple name comparison)
+      const changed = new Set<string>(
+        tickets
+          .filter((t: any) => {
+            const mapped = resolveCheckStatusMapped(t.jiraStatus, initialMapping);
+            if (mapped) return mapped.id !== (t.taskStatusId === null ? null : Number(t.taskStatusId));
+            return (t.jiraStatus || '').toLowerCase() !== (t.taskStatusName || '').toLowerCase();
+          })
+          .map((t: any) => t.issueKey)
+      );
+      setSelectedCheckStatusKeys(changed);
+    } catch (err: any) {
+      setJiraCheckStatusError(err.message || 'Failed to load ticket statuses');
+    } finally {
+      setJiraCheckStatusLoading(false);
+    }
+  };
+
+  const handleApplyCheckJiraStatus = async () => {
+    if (!project || !token || selectedCheckStatusKeys.size === 0) return;
+    setIsApplyingCheckStatus(true);
+    setJiraCheckStatusError('');
+    try {
+      const issuesToUpdate = jiraCheckStatusTickets
+        .filter(t => selectedCheckStatusKeys.has(t.issueKey))
+        .map(t => ({ key: t.issueKey, status: t.jiraStatus, summary: t.jiraSummary }));
+
+      const res = await fetch(`${getApiUrl()}/api/tasks/import-from-jira`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: parseInt(projectId),
+          importSource: 'ticket',
+          issues: issuesToUpdate,
+          statusMapping: jiraCheckStatusMapping,
+          allowStatusUpdatesForExisting: true,
+          ticketMappings: {},
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to update statuses');
+      }
+      const result = await res.json();
+      const updated = result.data?.updatedStatuses || 0;
+      showAlert('Status Update', `Updated status on ${updated} task(s).`);
+      setShowJiraCheckStatusModal(false);
+      setSelectedCheckStatusKeys(new Set());
+      setJiraCheckStatusTickets([]);
+      await loadTasks();
+    } catch (err: any) {
+      setJiraCheckStatusError(err.message || 'Failed to update statuses');
+    } finally {
+      setIsApplyingCheckStatus(false);
     }
   };
 
@@ -1947,6 +2122,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setJiraTicketsError('');
       setJiraSearchQuery('');
       setJiraTicketMappings({});
+      setJiraTicketStatusMapping(parseMappingJson(project.JiraTaskStatusMappingJson));
       setJiraTicketPriorityMapping(parseMappingJson(project.JiraTaskPriorityMappingJson));
       setJiraTicketTypeMapping(parseMappingJson(project.JiraTaskTypeMappingJson));
 
@@ -1954,6 +2130,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         await Promise.all([
           usersApi.getByOrganization(project.OrganizationId, token!).then((res) => setJiraImportUsers(res.users || [])).catch(() => setJiraImportUsers([])),
           getCustomersByOrganization(token!, project.OrganizationId).then((data) => setJiraImportCustomers(data || [])).catch(() => setJiraImportCustomers([])),
+          loadTaskStatuses(),
           loadTaskPriorities(),
           loadTaskTypes(),
           loadExistingJiraIssues(),
@@ -1982,7 +2159,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   const visibleJiraTickets = jiraTickets.filter(ticket => {
     if (!hideIntegratedJiraTickets) return true;
-    return !existingIssueIds.has(ticket.key);
+    if (!existingIssueIds.has(ticket.key)) return true;
+    return getExistingJiraStatusUpdate(ticket.key, ticket.status).hasStatusChange;
   });
 
   const jiraTicketIssueTypes = Array.from(new Set(jiraTickets.map(t => t.issueType).filter(Boolean)));
@@ -2250,6 +2428,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               onImportFromJiraTicket={() => {
                 setShowJiraTicketsModal(true);
               }}
+              onCheckJiraTicketStatus={handleOpenCheckJiraStatus}
               onImportFromGitHub={() => setShowGitHubImportModal(true)}
               onImportFromGitea={() => setShowGiteaImportModal(true)}
               internalTicketsEnabled={internalTicketsEnabled}
@@ -3845,6 +4024,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     setSelectedJiraTickets(new Set());
                     setJiraTicketsError('');
                     setJiraSearchQuery('');
+                    setJiraTicketStatusMapping({});
                     setJiraTicketMappings({});
                   }}
                   className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
@@ -3862,7 +4042,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               </div>
 
               {!jiraTicketsLoading && jiraTickets.length > 0 && (
-                <div className="mb-4 p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
+                <>
+                  <div className="mb-3">
+                    <JiraStatusMappingPanel
+                      jiraStatuses={Array.from(new Set(jiraTickets.map((ticket) => ticket.status).filter(Boolean)))}
+                      taskStatuses={taskStatuses}
+                      mapping={jiraTicketStatusMapping}
+                      onChange={setJiraTicketStatusMapping}
+                    />
+                  </div>
+
+                  <div className="mb-4 p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
                   <button
                     onClick={() => setIsJiraTicketMappingOpen(!isJiraTicketMappingOpen)}
                     className="w-full flex items-center justify-between text-left"
@@ -3924,7 +4114,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       )}
                     </div>
                   )}
-                </div>
+                  </div>
+                </>
               )}
 
               {/* Search */}
@@ -3974,7 +4165,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     <button
                       onClick={() => {
                         const newIssueKeys = visibleJiraTickets
-                          .filter(ticket => !existingIssueIds.has(ticket.key))
+                          .filter((ticket) => {
+                            if (!existingIssueIds.has(ticket.key)) return true;
+                            return getExistingJiraStatusUpdate(ticket.key, ticket.status).hasStatusChange;
+                          })
                           .map(ticket => ticket.key);
 
                         if (newIssueKeys.every(key => selectedJiraTickets.has(key))) {
@@ -3987,9 +4181,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       }}
                       className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
                     >
-                      {visibleJiraTickets.filter(ticket => !existingIssueIds.has(ticket.key)).every(ticket => selectedJiraTickets.has(ticket.key))
-                        ? 'Deselect All New'
-                        : 'Select All New'}
+                      {visibleJiraTickets
+                        .filter((ticket) => !existingIssueIds.has(ticket.key) || getExistingJiraStatusUpdate(ticket.key, ticket.status).hasStatusChange)
+                        .every((ticket) => selectedJiraTickets.has(ticket.key))
+                          ? 'Deselect All Actionable'
+                          : 'Select All Actionable'}
                     </button>
                   )}
                   {existingIssueIds.size > 0 && (
@@ -4018,6 +4214,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               {!jiraTicketsLoading && !jiraTicketsError && visibleJiraTickets.length > 0 && (
                 <div className="space-y-2 mb-4 max-h-[400px] overflow-y-auto">
                   {visibleJiraTickets.map((ticket) => (
+                    (() => {
+                      const existingStatus = getExistingJiraStatusUpdate(ticket.key, ticket.status);
+                      const isExisting = existingStatus.isExisting;
+                      const canUpdateStatus = existingStatus.hasStatusChange;
+                      const disableSelection = isExisting && !canUpdateStatus;
+                      return (
                     <div
                       key={ticket.key}
                       className={`block p-4 border rounded-lg cursor-pointer transition-all ${
@@ -4030,9 +4232,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         <input
                           type="checkbox"
                           checked={selectedJiraTickets.has(ticket.key)}
-                          disabled={existingIssueIds.has(ticket.key)}
+                          disabled={disableSelection}
                           onChange={() => {
-                            if (existingIssueIds.has(ticket.key)) return;
+                            if (disableSelection) return;
                             const updated = new Set(selectedJiraTickets);
                             if (updated.has(ticket.key)) {
                               updated.delete(ticket.key);
@@ -4048,7 +4250,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                             <span className="font-medium text-purple-600 dark:text-purple-400">
                               {ticket.key}
                             </span>
-                            {existingIssueIds.has(ticket.key) && (
+                            {isExisting && (
                               <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">
                                 Already integrated
                               </span>
@@ -4073,7 +4275,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                             </div>
                           )}
 
-                          {!existingIssueIds.has(ticket.key) && (
+                          {isExisting && canUpdateStatus && (
+                            <div className="mt-2 text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2 py-1">
+                              Jira status: <span className="font-semibold">{ticket.status || '—'}</span> · Current task status: <span className="font-semibold">{existingJiraIssueStatusByKey[ticket.key]?.statusName || '—'}</span> · Will update to: <span className="font-semibold">{existingStatus.mappedStatusName || ticket.status || '—'}</span>
+                            </div>
+                          )}
+
+                          {!isExisting && (
                             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
                               <div>
                                 <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Customer</label>
@@ -4138,6 +4346,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         </div>
                       </div>
                     </div>
+                      );
+                    })()
                   ))}
                 </div>
               )}
@@ -4157,6 +4367,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     setSelectedJiraTickets(new Set());
                     setJiraTicketsError('');
                     setJiraSearchQuery('');
+                    setJiraTicketStatusMapping({});
                     setJiraTicketMappings({});
                   }}
                   className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
@@ -4165,14 +4376,236 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 </button>
                 <button
                   onClick={handleImportJiraTickets}
-                  disabled={jiraTicketsImporting || Array.from(selectedJiraTickets).filter(key => !existingIssueIds.has(key)).length === 0}
+                  disabled={jiraTicketsImporting || Array.from(selectedJiraTickets).filter((key) => {
+                    if (!existingIssueIds.has(key)) return true;
+                    const issue = jiraTickets.find((ticket) => ticket.key === key);
+                    if (!issue) return false;
+                    return getExistingJiraStatusUpdate(issue.key, issue.status).hasStatusChange;
+                  }).length === 0}
                   className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
                 >
                   {jiraTicketsImporting
                     ? 'Importing...'
-                    : `Import Selected (${Array.from(selectedJiraTickets).filter(key => !existingIssueIds.has(key)).length})`}
+                    : `Import / Update Selected (${Array.from(selectedJiraTickets).filter((key) => {
+                        if (!existingIssueIds.has(key)) return true;
+                        const issue = jiraTickets.find((ticket) => ticket.key === key);
+                        if (!issue) return false;
+                        return getExistingJiraStatusUpdate(issue.key, issue.status).hasStatusChange;
+                      }).length})`}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Check Jira Ticket Status Modal */}
+      {showJiraCheckStatusModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <span className="text-2xl">🔍</span>
+                  Check Jira Ticket Status
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowJiraCheckStatusModal(false);
+                    setJiraCheckStatusTickets([]);
+                    setJiraCheckStatusError('');
+                    setSelectedCheckStatusKeys(new Set());
+                  }}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {jiraCheckStatusError && (
+                <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
+                  {jiraCheckStatusError}
+                </div>
+              )}
+
+              {jiraCheckStatusLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-gray-500 dark:text-gray-400">Loading ticket statuses from Jira...</div>
+                </div>
+              ) : jiraCheckStatusTickets.length === 0 && !jiraCheckStatusError ? (
+                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                  No integrated Jira tickets found for this project.
+                </div>
+              ) : (
+                <>
+                  {/* Status Mapping Panel */}
+                  {jiraCheckStatusTickets.length > 0 && (
+                    <div className="mb-4">
+                      <JiraStatusMappingPanel
+                        jiraStatuses={Array.from(new Set(jiraCheckStatusTickets.map(t => t.jiraStatus).filter(Boolean)))}
+                        taskStatuses={taskStatuses}
+                        mapping={jiraCheckStatusMapping}
+                        onChange={(m) => {
+                          setJiraCheckStatusMapping(m);
+                          // Re-compute selection when mapping changes
+                          const changed = new Set<string>(
+                            jiraCheckStatusTickets
+                              .filter(t => {
+                                const mapped = resolveCheckStatusMapped(t.jiraStatus, m);
+                                if (mapped) return mapped.id !== (t.taskStatusId === null ? null : Number(t.taskStatusId));
+                                return (t.jiraStatus || '').toLowerCase() !== (t.taskStatusName || '').toLowerCase();
+                              })
+                              .map(t => t.issueKey)
+                          );
+                          setSelectedCheckStatusKeys(changed);
+                        }}
+                        defaultExpanded
+                      />
+                    </div>
+                  )}
+
+                  {/* Filter toggle */}
+                  <div className="mb-3 flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={checkStatusOnlyChanged}
+                        onChange={(e) => setCheckStatusOnlyChanged(e.target.checked)}
+                        className="w-4 h-4 text-amber-600 focus:ring-amber-500"
+                      />
+                      Show only tickets with status changes
+                    </label>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {jiraCheckStatusTickets.filter(t => {
+                        const mapped = resolveCheckStatusMapped(t.jiraStatus, jiraCheckStatusMapping);
+                        if (mapped) return mapped.id !== (t.taskStatusId === null ? null : Number(t.taskStatusId));
+                        return (t.jiraStatus || '').toLowerCase() !== (t.taskStatusName || '').toLowerCase();
+                      }).length} ticket(s) with changes
+                    </span>
+                  </div>
+
+                  {/* Ticket list */}
+                  <div className="space-y-2 mb-4">
+                    {jiraCheckStatusTickets
+                      .filter(t => {
+                        if (!checkStatusOnlyChanged) return true;
+                        const mapped = resolveCheckStatusMapped(t.jiraStatus, jiraCheckStatusMapping);
+                        if (mapped) return mapped.id !== (t.taskStatusId === null ? null : Number(t.taskStatusId));
+                        return (t.jiraStatus || '').toLowerCase() !== (t.taskStatusName || '').toLowerCase();
+                      })
+                      .map(t => {
+                        const mapped = resolveCheckStatusMapped(t.jiraStatus, jiraCheckStatusMapping);
+                        const hasChange = mapped
+                          ? mapped.id !== (t.taskStatusId === null ? null : Number(t.taskStatusId))
+                          : (t.jiraStatus || '').toLowerCase() !== (t.taskStatusName || '').toLowerCase();
+                        const isSelected = selectedCheckStatusKeys.has(t.issueKey);
+                        return (
+                          <div
+                            key={t.issueKey}
+                            className={`flex items-start gap-3 p-3 rounded-lg border ${
+                              hasChange
+                                ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/10'
+                                : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              disabled={!hasChange}
+                              onChange={() => {
+                                const updated = new Set(selectedCheckStatusKeys);
+                                if (updated.has(t.issueKey)) updated.delete(t.issueKey);
+                                else updated.add(t.issueKey);
+                                setSelectedCheckStatusKeys(updated);
+                              }}
+                              className="mt-1 w-4 h-4 text-amber-600 focus:ring-amber-500 disabled:opacity-40"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium text-purple-600 dark:text-purple-400 text-sm">{t.issueKey}</span>
+                                <span className="text-sm text-gray-900 dark:text-white truncate">{t.taskName}</span>
+                              </div>
+                              <div className="mt-1 text-xs text-gray-600 dark:text-gray-400 truncate">{t.jiraSummary}</div>
+                              <div className="mt-1.5 flex items-center gap-1.5 text-xs flex-wrap">
+                                <span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                                  Jira: {t.jiraStatus || '—'}
+                                </span>
+                                <span className="text-gray-400">→</span>
+                                <span className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                                  Task: {t.taskStatusName || '—'}
+                                </span>
+                                {hasChange && mapped && (
+                                  <>
+                                    <span className="text-amber-500">→</span>
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-medium">
+                                      Will update to: {mapped.name}
+                                    </span>
+                                  </>
+                                )}
+                                {!hasChange && (
+                                  <span className="px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">✓ In sync</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allChangedKeys = new Set<string>(
+                            jiraCheckStatusTickets
+                              .filter(t => {
+                                const mapped = resolveCheckStatusMapped(t.jiraStatus, jiraCheckStatusMapping);
+                                if (mapped) return mapped.id !== (t.taskStatusId === null ? null : Number(t.taskStatusId));
+                                return (t.jiraStatus || '').toLowerCase() !== (t.taskStatusName || '').toLowerCase();
+                              })
+                              .map(t => t.issueKey)
+                          );
+                          setSelectedCheckStatusKeys(allChangedKeys);
+                        }}
+                        className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        Select all changed
+                      </button>
+                      <span className="text-gray-400">|</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCheckStatusKeys(new Set())}
+                        className="text-sm text-gray-500 dark:text-gray-400 hover:underline"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => {
+                          setShowJiraCheckStatusModal(false);
+                          setJiraCheckStatusTickets([]);
+                          setSelectedCheckStatusKeys(new Set());
+                        }}
+                        className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                      >
+                        Close
+                      </button>
+                      <button
+                        onClick={handleApplyCheckJiraStatus}
+                        disabled={isApplyingCheckStatus || selectedCheckStatusKeys.size === 0}
+                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                      >
+                        {isApplyingCheckStatus ? 'Updating...' : `Update ${selectedCheckStatusKeys.size} ticket(s)`}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -4999,6 +5432,7 @@ function TasksTab({
   onImportFromJiraTicket,
   onImportFromGitHub,
   onImportFromGitea,
+  onCheckJiraTicketStatus,
   internalTicketsEnabled,
   canCreate,
   canManage,
@@ -5022,6 +5456,7 @@ function TasksTab({
   onImportFromJiraTicket: () => void;
   onImportFromGitHub: () => void;
   onImportFromGitea: () => void;
+  onCheckJiraTicketStatus?: () => void;
   internalTicketsEnabled: boolean;
   canCreate: boolean;
   canManage: boolean;
@@ -6848,6 +7283,23 @@ function TasksTab({
                             <div>
                               <div className="font-medium text-gray-900 dark:text-white">Import from Jira Ticket</div>
                               <div className="text-xs text-gray-500 dark:text-gray-400">Tickets import</div>
+                            </div>
+                          </button>
+                        )}
+
+                        {/* Check Jira Ticket Status - only if Jira Tickets integration is configured */}
+                        {hasJiraTicketIntegration && onCheckJiraTicketStatus && (
+                          <button
+                            onClick={() => {
+                              onCheckJiraTicketStatus();
+                              setShowImportDropdown(false);
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
+                          >
+                            <span className="text-xl">🔍</span>
+                            <div>
+                              <div className="font-medium text-gray-900 dark:text-white">Check Jira Ticket Status</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">Detect status changes</div>
                             </div>
                           </button>
                         )}
@@ -13687,6 +14139,7 @@ function SaveTemplateModal({
           description: t.Description || null,
           estimatedHours: t.EstimatedHours || null,
           priority: t.Priority || null,
+          taskType: t.TaskType || null,
           sortOrder: i,
           parentIndex: null as number | null,
           _originalId: t.Id,
@@ -13806,12 +14259,16 @@ function ApplyTemplateModal({
   const [isLoading, setIsLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isApplying, setIsApplying] = useState(false);
+  const [isDeletingTemplateId, setIsDeletingTemplateId] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [preview, setPreview] = useState<any[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [selectedPreviewItemIds, setSelectedPreviewItemIds] = useState<Set<number>>(new Set());
+  const [templateToDelete, setTemplateToDelete] = useState<{ id: number; name: string } | null>(null);
 
   useEffect(() => {
     const load = async () => {
+      setIsLoading(true);
       try {
         const res = await fetch(`${getApiUrl()}/api/task-templates?organizationId=${organizationId}`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -13836,10 +14293,34 @@ function ApplyTemplateModal({
       });
       if (res.ok) {
         const data = await res.json();
-        setPreview(data.items || []);
+        const items = data.items || [];
+        setPreview(items);
+        setSelectedPreviewItemIds(new Set(items.map((item: any) => Number(item.Id)).filter((itemId: number) => Number.isFinite(itemId))));
       }
     } catch { /* ignore */ }
     finally { setPreviewLoading(false); }
+  };
+
+  const togglePreviewItemSelection = (itemId: number) => {
+    setSelectedPreviewItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  };
+
+  const selectAllPreviewItems = () => {
+    setSelectedPreviewItemIds(
+      new Set(preview.map((item) => Number(item.Id)).filter((itemId) => Number.isFinite(itemId)))
+    );
+  };
+
+  const clearPreviewSelection = () => {
+    setSelectedPreviewItemIds(new Set());
   };
 
   const handleApply = async () => {
@@ -13850,17 +14331,47 @@ function ApplyTemplateModal({
       const res = await fetch(`${getApiUrl()}/api/task-templates/${selectedId}/apply`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId }),
+        body: JSON.stringify({ projectId, selectedItemIds: Array.from(selectedPreviewItemIds) }),
       });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.message || 'Failed to apply template');
       }
-      const data = await res.json();
+      await res.json();
       onApplied();
     } catch (err: any) {
       setError(err.message || 'Failed to apply template');
       setIsApplying(false);
+    }
+  };
+
+  const handleDeleteTemplate = async () => {
+    if (!templateToDelete) return;
+
+    setError('');
+    setIsDeletingTemplateId(templateToDelete.id);
+    try {
+      const res = await fetch(`${getApiUrl()}/api/task-templates/${templateToDelete.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Failed to delete template');
+      }
+
+      if (selectedId === templateToDelete.id) {
+        setSelectedId(null);
+        setPreview([]);
+      }
+
+      setTemplates((prev) => prev.filter((item) => item.Id !== templateToDelete.id));
+      setTemplateToDelete(null);
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete template');
+    } finally {
+      setIsDeletingTemplateId(null);
     }
   };
 
@@ -13904,7 +14415,24 @@ function ApplyTemplateModal({
                       <h3 className="font-semibold text-gray-900 dark:text-white">{t.Name}</h3>
                       {t.Description && <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{t.Description}</p>}
                     </div>
-                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-4 shrink-0">{t.ItemCount} task{t.ItemCount !== 1 ? 's' : ''}</span>
+                    <div className="ml-4 shrink-0 flex items-center gap-2">
+                      <span className="text-xs text-gray-500 dark:text-gray-400">{t.ItemCount} task{t.ItemCount !== 1 ? 's' : ''}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTemplateToDelete({ id: t.Id, name: t.Name });
+                        }}
+                        disabled={isDeletingTemplateId === t.Id}
+                        className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
+                        title="Delete template"
+                        aria-label="Delete template"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 7h12M9 7V5h6v2m-7 0l1 12h4l1-12M10 11v6m4-6v6" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <p className="text-xs text-gray-400 mt-2">
                     By {t.FirstName} {t.LastName} · {new Date(t.CreatedAt).toLocaleDateString()}
@@ -13916,19 +14444,50 @@ function ApplyTemplateModal({
 
           {selectedId && (
             <div className="mt-4">
-              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Preview tasks to be created:</h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Select tasks to create:</h3>
+                {!previewLoading && preview.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={selectAllPreviewItems}
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearPreviewSelection}
+                      className="text-xs text-gray-600 dark:text-gray-300 hover:underline"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+              </div>
               {previewLoading ? (
                 <p className="text-sm text-gray-500">Loading preview…</p>
               ) : (
                 <ul className="space-y-1 max-h-44 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded p-2">
                   {preview.map(item => (
                     <li key={item.Id} className="text-sm text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedPreviewItemIds.has(Number(item.Id))}
+                        onChange={() => togglePreviewItemSelection(Number(item.Id))}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
                       <span>{item.ParentItemId ? '↳' : '•'}</span>
                       <span style={{ paddingLeft: item.ParentItemId ? 12 : 0 }}>{item.Title}</span>
                       {item.EstimatedHours && <span className="text-xs text-gray-400">({item.EstimatedHours}h)</span>}
                     </li>
                   ))}
                 </ul>
+              )}
+              {!previewLoading && preview.length > 0 && (
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  {selectedPreviewItemIds.size} of {preview.length} task{preview.length !== 1 ? 's' : ''} selected.
+                </p>
               )}
             </div>
           )}
@@ -13940,13 +14499,25 @@ function ApplyTemplateModal({
           </button>
           <button
             onClick={handleApply}
-            disabled={!selectedId || isApplying}
+            disabled={!selectedId || isApplying || selectedPreviewItemIds.size === 0}
             className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 dark:disabled:bg-blue-800 text-white px-4 py-2 rounded-lg transition-colors"
           >
             {isApplying ? 'Creating tasks…' : 'Apply Template'}
           </button>
         </div>
       </div>
+
+      <ConfirmAlertModal
+        isOpen={!!templateToDelete}
+        type="confirm"
+        title="Delete Template"
+        message={templateToDelete ? `Are you sure you want to delete \"${templateToDelete.name}\"?` : ''}
+        onClose={() => setTemplateToDelete(null)}
+        onConfirm={handleDeleteTemplate}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        confirmVariant="danger"
+      />
     </div>
   );
 }

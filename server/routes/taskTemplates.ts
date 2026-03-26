@@ -5,6 +5,34 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+const normalizeLabel = (value: unknown): string => String(value ?? '').trim().toLowerCase();
+
+const resolveNamedId = (
+  rows: RowDataPacket[],
+  rawValue: unknown,
+  idField: string,
+  nameField: string,
+  defaultResolver: (items: RowDataPacket[]) => number | null
+): number | null => {
+  const fallbackId = defaultResolver(rows);
+
+  if (rawValue === null || rawValue === undefined || String(rawValue).trim() === '') {
+    return fallbackId;
+  }
+
+  const numericValue = Number(rawValue);
+  if (Number.isFinite(numericValue)) {
+    const exact = rows.find((item) => Number(item[idField]) === numericValue);
+    if (exact) return Number(exact[idField]);
+  }
+
+  const normalized = normalizeLabel(rawValue);
+  const byName = rows.find((item) => normalizeLabel(item[nameField]) === normalized);
+  if (byName) return Number(byName[idField]);
+
+  return fallbackId;
+};
+
 /**
  * @swagger
  * tags:
@@ -179,8 +207,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
           : null;
 
         const [itemResult] = await conn.execute<ResultSetHeader>(
-          `INSERT INTO TaskTemplateItems (TemplateId, ParentItemId, Title, Description, EstimatedHours, Priority, SortOrder)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO TaskTemplateItems (TemplateId, ParentItemId, Title, Description, EstimatedHours, Priority, TaskType, SortOrder)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             templateId,
             parentId,
@@ -188,6 +216,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
             item.description || null,
             item.estimatedHours || null,
             item.priority || null,
+            item.taskType || null,
             item.sortOrder ?? i,
           ]
         );
@@ -341,18 +370,138 @@ router.post('/:id/apply', authenticateToken, async (req: AuthRequest, res: Respo
   const conn = await pool.getConnection();
   try {
     const { id } = req.params;
-    const { projectId, statusOverride, priorityOverride } = req.body;
+    const { projectId, statusOverride, priorityOverride, selectedItemIds } = req.body;
+    const userId = Number(req.user?.userId || 0);
 
     if (!projectId) {
       return res.status(400).json({ success: false, message: 'projectId is required' });
     }
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const [projectRows] = await conn.execute<RowDataPacket[]>(
+      `SELECT Id, OrganizationId FROM Projects WHERE Id = ?`,
+      [projectId]
+    );
+
+    if (projectRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
+
+    const organizationId = Number(projectRows[0].OrganizationId);
+
+    const [statusRows] = await conn.execute<RowDataPacket[]>(
+      `SELECT Id, StatusName, IsDefault, SortOrder, COALESCE(IsClosed, 0) as IsClosed, COALESCE(IsCancelled, 0) as IsCancelled
+       FROM TaskStatusValues
+       WHERE OrganizationId = ?
+       ORDER BY COALESCE(SortOrder, 9999) ASC, Id ASC`,
+      [organizationId]
+    );
+
+    const [priorityRows] = await conn.execute<RowDataPacket[]>(
+      `SELECT Id, PriorityName, IsDefault, SortOrder
+       FROM TaskPriorityValues
+       WHERE OrganizationId = ?
+       ORDER BY COALESCE(SortOrder, 9999) ASC, Id ASC`,
+      [organizationId]
+    );
+
+    const [taskTypeRows] = await conn.execute<RowDataPacket[]>(
+      `SELECT Id, TypeName, IsDefault, SortOrder
+       FROM TaskTypeValues
+       WHERE OrganizationId = ?
+       ORDER BY COALESCE(SortOrder, 9999) ASC, Id ASC`,
+      [organizationId]
+    );
+
+    if (statusRows.length === 0) {
+      return res.status(400).json({ success: false, message: 'No task statuses configured for this organization' });
+    }
+
+    const defaultStatusId = resolveNamedId(
+      statusRows,
+      statusOverride,
+      'Id',
+      'StatusName',
+      (items) => {
+        const defaultRow = items.find((item) => Number(item.IsDefault || 0) === 1);
+        if (defaultRow) return Number(defaultRow.Id);
+
+        const todoRow = items.find((item) => {
+          const statusName = normalizeLabel(item.StatusName);
+          return Number(item.IsClosed || 0) === 0
+            && Number(item.IsCancelled || 0) === 0
+            && (statusName.includes('to do') || statusName.includes('todo') || statusName.includes('open'));
+        });
+        if (todoRow) return Number(todoRow.Id);
+
+        const activeRow = items.find((item) => Number(item.IsClosed || 0) === 0 && Number(item.IsCancelled || 0) === 0);
+        if (activeRow) return Number(activeRow.Id);
+
+        return items[0] ? Number(items[0].Id) : null;
+      }
+    );
+
+    if (!defaultStatusId) {
+      return res.status(400).json({ success: false, message: 'Could not resolve a valid task status for this organization' });
+    }
+
+    const defaultPriorityId = resolveNamedId(
+      priorityRows,
+      priorityOverride,
+      'Id',
+      'PriorityName',
+      (items) => {
+        if (items.length === 0) return null;
+
+        const defaultRow = items.find((item) => Number(item.IsDefault || 0) === 1);
+        if (defaultRow) return Number(defaultRow.Id);
+
+        const mediumRow = items.find((item) => {
+          const priorityName = normalizeLabel(item.PriorityName);
+          return priorityName === 'medium' || priorityName.includes('normal');
+        });
+        if (mediumRow) return Number(mediumRow.Id);
+
+        return Number(items[0].Id);
+      }
+    );
 
     const [items] = await conn.execute<RowDataPacket[]>(
       `SELECT * FROM TaskTemplateItems WHERE TemplateId = ? ORDER BY SortOrder ASC, Id ASC`,
       [id]
     );
 
-    if (items.length === 0) {
+    const selectedIdSet = new Set<number>(
+      Array.isArray(selectedItemIds)
+        ? selectedItemIds
+            .map((value: unknown) => Number(value))
+            .filter((value: number) => Number.isFinite(value) && value > 0)
+        : []
+    );
+
+    const itemsToApply = selectedIdSet.size > 0
+      ? items.filter((item) => selectedIdSet.has(Number(item.Id)))
+      : items;
+
+    const defaultTaskTypeId = resolveNamedId(
+      taskTypeRows,
+      null,
+      'Id',
+      'TypeName',
+      (rows) => {
+        if (rows.length === 0) return null;
+
+        const defaultRow = rows.find((item) => Number(item.IsDefault || 0) === 1);
+        if (defaultRow) return Number(defaultRow.Id);
+
+        return Number(rows[0].Id);
+      }
+    );
+
+    if (itemsToApply.length === 0) {
       return res.json({ success: true, created: 0, message: 'Template has no items' });
     }
 
@@ -360,27 +509,45 @@ router.post('/:id/apply', authenticateToken, async (req: AuthRequest, res: Respo
 
     const idMap: Record<number, number> = {}; // template item Id → new Task Id
 
-    for (const item of items) {
+    for (const item of itemsToApply) {
       const parentTaskId = item.ParentItemId !== null ? (idMap[item.ParentItemId] ?? null) : null;
 
+      const resolvedPriorityId = resolveNamedId(
+        priorityRows,
+        priorityOverride ?? item.Priority,
+        'Id',
+        'PriorityName',
+        () => defaultPriorityId
+      );
+
+      const resolvedTaskTypeId = resolveNamedId(
+        taskTypeRows,
+        item.TaskType,
+        'Id',
+        'TypeName',
+        () => defaultTaskTypeId
+      );
+
       const [taskResult] = await conn.execute<ResultSetHeader>(
-        `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, EstimatedHours, ParentTaskId)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, EstimatedHours, ParentTaskId, CreatedBy)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           projectId,
           item.Title,
           item.Description || null,
-          statusOverride || 'To Do',
-          priorityOverride || item.Priority || 'Medium',
+          defaultStatusId,
+          resolvedPriorityId,
+          resolvedTaskTypeId,
           item.EstimatedHours || null,
           parentTaskId,
+          userId,
         ]
       );
       idMap[item.Id] = taskResult.insertId;
     }
 
     await conn.commit();
-    res.json({ success: true, created: items.length, message: `${items.length} tasks created from template` });
+    res.json({ success: true, created: itemsToApply.length, message: `${itemsToApply.length} tasks created from template` });
   } catch (error) {
     await conn.rollback();
     console.error('Error applying task template:', error);

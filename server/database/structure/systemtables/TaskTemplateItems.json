@@ -39,6 +39,11 @@
       "NotNullable": false
     },
     {
+      "FieldName": "TaskType",
+      "DataType": "varchar(100)",
+      "NotNullable": false
+    },
+    {
       "FieldName": "SortOrder",
       "DataType": "int",
       "NotNullable": true,

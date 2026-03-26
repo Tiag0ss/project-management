@@ -834,22 +834,38 @@ router.get('/project/:projectId/integrated-issue-ids', authenticateToken, async 
     const organizationId = Number(access[0].OrganizationId);
 
     const [rows] = await pool.execute<RowDataPacket[]>(
-      `SELECT t.JiraIssueKey, t.ExternalIssueId
+      `SELECT t.Id as TaskId, t.JiraIssueKey, t.ExternalIssueId, t.Status as StatusId, tsv.StatusName
        FROM Tasks t
        INNER JOIN Projects p ON t.ProjectId = p.Id
+       LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        WHERE p.OrganizationId = ?
          AND (t.JiraIssueKey IS NOT NULL OR t.ExternalIssueId IS NOT NULL)`,
       [organizationId]
     );
 
-    const issueIds = Array.from(new Set(
-      rows
-        .flatMap((row: any) => [row.JiraIssueKey, row.ExternalIssueId])
-        .filter((value: any) => value !== null && value !== undefined && String(value).trim() !== '')
-        .map((value: any) => String(value).trim())
-    ));
+    const issueIds = new Set<string>();
+    const issueDetails: Array<{ IssueKey: string; TaskId: number; StatusId: number | null; StatusName: string | null }> = [];
+    const detailAddedForKey = new Set<string>();
 
-    res.json({ success: true, issueIds });
+    for (const row of rows) {
+      const rawKeys = [row.JiraIssueKey, row.ExternalIssueId];
+      for (const rawKey of rawKeys) {
+        const issueKey = String(rawKey || '').trim();
+        if (!issueKey) continue;
+        issueIds.add(issueKey);
+        if (!detailAddedForKey.has(issueKey)) {
+          issueDetails.push({
+            IssueKey: issueKey,
+            TaskId: Number(row.TaskId),
+            StatusId: row.StatusId === null || row.StatusId === undefined ? null : Number(row.StatusId),
+            StatusName: row.StatusName ? String(row.StatusName) : null,
+          });
+          detailAddedForKey.add(issueKey);
+        }
+      }
+    }
+
+    res.json({ success: true, issueIds: Array.from(issueIds), issueDetails });
   } catch (error) {
     console.error('Get integrated issue IDs error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch integrated issue IDs' });
@@ -3303,7 +3319,7 @@ router.post('/utilities/sync-parent-status/:projectId', authenticateToken, async
 router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, issues, statusMapping, priorityMapping, taskTypeMapping, ticketMappings, importSource } = req.body;
+    const { projectId, issues, statusMapping, priorityMapping, taskTypeMapping, ticketMappings, importSource, allowStatusUpdatesForExisting } = req.body;
 
     const normalizedImportSource = importSource === 'project' || importSource === 'ticket'
       ? importSource
@@ -3394,7 +3410,7 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
 
     // Get existing tasks with Jira issue identifiers to avoid duplicates (organization-wide)
     const [existingTasks] = await pool.execute<RowDataPacket[]>(
-      `SELECT t.JiraIssueKey, t.ExternalIssueId
+      `SELECT t.Id as TaskId, t.ProjectId, t.JiraIssueKey, t.ExternalIssueId, t.Status as CurrentStatusId
        FROM Tasks t
        INNER JOIN Projects p ON t.ProjectId = p.Id
        WHERE p.OrganizationId = ?
@@ -3402,34 +3418,33 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
       [project.OrganizationId]
     );
 
+    const existingTasksByIssueKey = new Map<string, Array<{ taskId: number; projectId: number; currentStatusId: number | null }>>();
     const existingIssueIds = new Set(
       existingTasks
-        .flatMap((t: any) => [t.JiraIssueKey, t.ExternalIssueId])
+        .flatMap((t: any) => {
+          const pairs = [
+            { key: t.JiraIssueKey, taskId: Number(t.TaskId), projectId: Number(t.ProjectId), currentStatusId: t.CurrentStatusId === null || t.CurrentStatusId === undefined ? null : Number(t.CurrentStatusId) },
+            { key: t.ExternalIssueId, taskId: Number(t.TaskId), projectId: Number(t.ProjectId), currentStatusId: t.CurrentStatusId === null || t.CurrentStatusId === undefined ? null : Number(t.CurrentStatusId) },
+          ];
+
+          for (const pair of pairs) {
+            const normalizedKey = String(pair.key || '').trim();
+            if (!normalizedKey) continue;
+            const existing = existingTasksByIssueKey.get(normalizedKey) || [];
+            existing.push({ taskId: pair.taskId, projectId: pair.projectId, currentStatusId: pair.currentStatusId });
+            existingTasksByIssueKey.set(normalizedKey, existing);
+          }
+
+          return [t.JiraIssueKey, t.ExternalIssueId];
+        })
         .filter((value: any) => value !== null && value !== undefined && String(value).trim() !== '')
         .map((value: any) => String(value).trim())
     );
     
     // Filter out issues that are already imported
     const newIssues = issues.filter(issue => !existingIssueIds.has(issue.key));
+    const existingIssues = issues.filter(issue => existingIssueIds.has(issue.key));
     const skippedCount = issues.length - newIssues.length;
-
-    // If no new issues to import, return early
-    if (newIssues.length === 0) {
-      return res.json({
-        success: true,
-        message: `No new tasks to import. All ${issues.length} issues already exist in this organization.`,
-        data: {
-          imported: 0,
-          hierarchyLinked: 0,
-          skipped: skippedCount,
-          total: issues.length
-        }
-      });
-    }
-
-    // Build key to internal ID mapping for created tasks
-    const jiraKeyToTaskId: Record<string, number> = {};
-    const createdTasks: any[] = [];
 
     const resolveMappedStatusId = (jiraStatus: string | undefined) => {
       if (!jiraStatus) return null;
@@ -3499,6 +3514,80 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
       );
       return directMatch?.Id || null;
     };
+
+    const statusNameById = new Map<number, string>(
+      taskStatuses.map((status: any) => [Number(status.Id), String(status.StatusName || '')])
+    );
+
+    let updatedStatusesCount = 0;
+    let unchangedExistingCount = 0;
+
+    if (allowStatusUpdatesForExisting === true) {
+      for (const issue of existingIssues) {
+        const mappedStatusId = resolveMappedStatusId(issue.status) || defaultStatusId;
+        if (!mappedStatusId) {
+          unchangedExistingCount++;
+          continue;
+        }
+
+        const linkedTasks = (existingTasksByIssueKey.get(issue.key) || [])
+          .filter((task) => task.projectId === Number(projectId));
+
+        if (linkedTasks.length === 0) {
+          unchangedExistingCount++;
+          continue;
+        }
+
+        let hasUpdatedAtLeastOne = false;
+        for (const linkedTask of linkedTasks) {
+          if (linkedTask.currentStatusId === mappedStatusId) continue;
+
+          await pool.execute(
+            'UPDATE Tasks SET Status = ? WHERE Id = ?',
+            [mappedStatusId, linkedTask.taskId]
+          );
+
+          await createTaskHistory(
+            linkedTask.taskId,
+            userId!,
+            'updated',
+            'Status',
+            linkedTask.currentStatusId === null ? null : (statusNameById.get(Number(linkedTask.currentStatusId)) || String(linkedTask.currentStatusId)),
+            statusNameById.get(Number(mappedStatusId)) || String(mappedStatusId)
+          );
+
+          updatedStatusesCount++;
+          hasUpdatedAtLeastOne = true;
+        }
+
+        if (!hasUpdatedAtLeastOne) {
+          unchangedExistingCount++;
+        }
+      }
+    }
+
+    // If no new issues to import, return early
+    if (newIssues.length === 0) {
+      const statusUpdateSuffix = updatedStatusesCount > 0
+        ? ` Updated status on ${updatedStatusesCount} existing task(s).`
+        : '';
+      return res.json({
+        success: true,
+        message: `No new tasks to import. ${skippedCount} issue(s) already exist in this organization.${statusUpdateSuffix}`,
+        data: {
+          imported: 0,
+          updatedStatuses: updatedStatusesCount,
+          unchangedExisting: unchangedExistingCount,
+          hierarchyLinked: 0,
+          skipped: Math.max(0, skippedCount - updatedStatusesCount),
+          total: issues.length
+        }
+      });
+    }
+
+    // Build key to internal ID mapping for created tasks
+    const jiraKeyToTaskId: Record<string, number> = {};
+    const createdTasks: any[] = [];
 
     // Cache for customers auto-created from Jira organization names (avoid duplicates)
     const createdCustomersCache: Record<string, number> = {};
@@ -3621,11 +3710,13 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
 
     res.json({ 
       success: true, 
-      message: `Imported ${createdTasks.length} tasks from Jira (${hierarchyUpdateCount} with parent relationships)${skippedCount > 0 ? `, skipped ${skippedCount} already existing` : ''}`,
+      message: `Imported ${createdTasks.length} tasks from Jira (${hierarchyUpdateCount} with parent relationships)${updatedStatusesCount > 0 ? `, updated ${updatedStatusesCount} existing statuses` : ''}${skippedCount > 0 ? `, skipped ${Math.max(0, skippedCount - updatedStatusesCount)} already existing` : ''}`,
       data: {
         imported: createdTasks.length,
+        updatedStatuses: updatedStatusesCount,
+        unchangedExisting: unchangedExistingCount,
         hierarchyLinked: hierarchyUpdateCount,
-        skipped: skippedCount,
+        skipped: Math.max(0, skippedCount - updatedStatusesCount),
         total: issues.length
       }
     });
