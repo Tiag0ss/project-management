@@ -3,6 +3,8 @@ import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { dbProvider, pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import PDFDocument from 'pdfkit';
+import path from 'path';
+import { promises as fs } from 'fs';
 
 const router = Router();
 
@@ -72,6 +74,191 @@ async function syncReleasedVersionTasks(versionId: string | number, applicationI
        WHERE avt.VersionId = ?`,
       [versionId, closedStatusId, versionId]
     );
+  }
+}
+
+type PatchBlock =
+  | { type: 'text'; text: string; bullet: boolean }
+  | { type: 'image'; src: string; alt?: string };
+
+function decodeHtmlEntities(input: string): string {
+  return input
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function htmlToTextLines(html: string): Array<{ text: string; bullet: boolean }> {
+  const normalized = html
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '\n• ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<p[^>]*>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<strong[^>]*>/gi, '')
+    .replace(/<\/strong>/gi, '')
+    .replace(/<em[^>]*>/gi, '')
+    .replace(/<\/em>/gi, '')
+    .replace(/<[^>]*>/g, '');
+
+  return decodeHtmlEntities(normalized)
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => ({
+      text: line,
+      bullet: line.startsWith('•'),
+    }));
+}
+
+function parsePatchBlocks(html: string): PatchBlock[] {
+  const blocks: PatchBlock[] = [];
+  const imgRegex = /<img\b[^>]*>/gi;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = imgRegex.exec(html)) !== null) {
+    const before = html.slice(lastIndex, match.index);
+    const beforeLines = htmlToTextLines(before);
+    for (const line of beforeLines) {
+      blocks.push({ type: 'text', text: line.text, bullet: line.bullet });
+    }
+
+    const imgTag = match[0];
+    const srcMatch = imgTag.match(/src\s*=\s*["']([^"']+)["']/i);
+    const altMatch = imgTag.match(/alt\s*=\s*["']([^"']*)["']/i);
+    const src = srcMatch?.[1]?.trim();
+    if (src) {
+      blocks.push({ type: 'image', src, alt: altMatch?.[1] || '' });
+    }
+
+    lastIndex = imgRegex.lastIndex;
+  }
+
+  const after = html.slice(lastIndex);
+  const afterLines = htmlToTextLines(after);
+  for (const line of afterLines) {
+    blocks.push({ type: 'text', text: line.text, bullet: line.bullet });
+  }
+
+  return blocks;
+}
+
+async function loadPatchImageBuffer(src: string): Promise<Buffer | null> {
+  try {
+    if (!src) return null;
+
+    if (src.startsWith('data:image/')) {
+      const base64Part = src.split(',')[1];
+      if (!base64Part) return null;
+      return Buffer.from(base64Part, 'base64');
+    }
+
+    const normalized = src.trim();
+    const isLocalUploadPath =
+      normalized.startsWith('/uploads/') ||
+      normalized.startsWith('uploads/') ||
+      normalized.startsWith('/attachments/') ||
+      normalized.startsWith('attachments/');
+
+    if (isLocalUploadPath) {
+      const relativePath = normalized.replace(/^\//, '');
+      const absolutePath = path.resolve(process.cwd(), relativePath);
+      return await fs.readFile(absolutePath);
+    }
+
+    if (/^https?:\/\//i.test(normalized)) {
+      const response = await fetch(normalized);
+      if (!response.ok) return null;
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function renderPatchNotesToPdf(
+  doc: PDFKit.PDFDocument,
+  patchHtml: string | null | undefined,
+  options: {
+    textSize: number;
+    x: number;
+    width: number;
+    darkGray: string;
+    midGray: string;
+  }
+): Promise<void> {
+  if (!patchHtml) {
+    doc.fillColor(options.midGray).fontSize(options.textSize).font('Helvetica-Oblique')
+      .text('No patch notes available.', options.x);
+    return;
+  }
+
+  const blocks = parsePatchBlocks(String(patchHtml));
+  if (blocks.length === 0) {
+    doc.fillColor(options.midGray).fontSize(options.textSize).font('Helvetica-Oblique')
+      .text('No patch notes available.', options.x);
+    return;
+  }
+
+  for (const block of blocks) {
+    if (block.type === 'text') {
+      const line = block.text.trim();
+      if (!line) {
+        doc.moveDown(0.25);
+        continue;
+      }
+
+      const textX = block.bullet ? options.x + 8 : options.x;
+      const textWidth = block.bullet ? options.width - 8 : options.width;
+
+      doc.fillColor(options.darkGray)
+        .fontSize(options.textSize)
+        .font('Helvetica')
+        .text(line, textX, doc.y, { width: textWidth, lineGap: 2 });
+      continue;
+    }
+
+    const imageBuffer = await loadPatchImageBuffer(block.src);
+    if (!imageBuffer) {
+      if (block.alt) {
+        doc.fillColor(options.midGray)
+          .fontSize(options.textSize - 1)
+          .font('Helvetica-Oblique')
+          .text(`[Image not available: ${block.alt}]`, options.x, doc.y, { width: options.width });
+      }
+      continue;
+    }
+
+    try {
+      const opened = (doc as any).openImage(imageBuffer);
+      const maxWidth = options.width;
+      const maxHeight = 240;
+      const scale = Math.min(maxWidth / opened.width, maxHeight / opened.height, 1);
+      const renderWidth = Math.max(1, Math.floor(opened.width * scale));
+      const renderHeight = Math.max(1, Math.floor(opened.height * scale));
+
+      const pageBottom = doc.page.height - doc.page.margins.bottom;
+      if (doc.y + renderHeight + 12 > pageBottom) {
+        doc.addPage();
+      }
+
+      doc.image(imageBuffer, options.x, doc.y, { width: renderWidth, height: renderHeight });
+      doc.y += renderHeight + 8;
+    } catch {
+      if (block.alt) {
+        doc.fillColor(options.midGray)
+          .fontSize(options.textSize - 1)
+          .font('Helvetica-Oblique')
+          .text(`[Image could not be rendered: ${block.alt}]`, options.x, doc.y, { width: options.width });
+      }
+    }
   }
 }
 
@@ -1026,55 +1213,13 @@ router.get('/:id/versions/:versionId/pdf', authenticateToken, async (req: AuthRe
       .text('Patch Notes', 40);
     doc.moveDown(0.5);
 
-    if (version.PatchNotes) {
-      // Convert HTML to formatted text
-      let plainText = version.PatchNotes
-        // Convert list items to bullet points
-        .replace(/<li>/gi, '• ')
-        .replace(/<\/li>/gi, '\n')
-        // Convert paragraphs to line breaks
-        .replace(/<p>/gi, '')
-        .replace(/<\/p>/gi, '\n\n')
-        // Convert strong/bold tags
-        .replace(/<strong>/gi, '')
-        .replace(/<\/strong>/gi, '')
-        // Remove other HTML tags
-        .replace(/<[^>]*>/g, '')
-        // Decode HTML entities
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&')
-        // Clean up extra whitespace
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
-
-      if (plainText) {
-        const lines = plainText.split('\n');
-        for (const line of lines) {
-          if (line.trim()) {
-            if (line.trim().startsWith('•')) {
-              // Bullet point
-              doc.fillColor(darkGray).fontSize(10).font('Helvetica')
-                .text(line.trim(), 50, doc.y, { lineGap: 2 });
-            } else {
-              // Regular text
-              doc.fillColor(darkGray).fontSize(10).font('Helvetica')
-                .text(line.trim(), 40, doc.y, { lineGap: 2 });
-            }
-          } else {
-            // Empty line for spacing
-            doc.moveDown(0.3);
-          }
-        }
-      } else {
-        doc.fillColor(midGray).fontSize(10).font('Helvetica-Oblique')
-          .text('No patch notes available.', 40);
-      }
-    } else {
-      doc.fillColor(midGray).fontSize(10).font('Helvetica-Oblique')
-        .text('No patch notes available.', 40);
-    }
+    await renderPatchNotesToPdf(doc, version.PatchNotes, {
+      textSize: 10,
+      x: 40,
+      width: 515,
+      darkGray,
+      midGray,
+    });
 
     // Footer
     doc.fontSize(7).fillColor(midGray)
@@ -1195,55 +1340,13 @@ router.get('/:id/pdf', authenticateToken, async (req: AuthRequest, res: Response
       doc.moveDown(0.8);
 
       // Patch notes
-      if (version.PatchNotes) {
-        // Convert HTML to formatted text
-        let plainText = version.PatchNotes
-          // Convert list items to bullet points
-          .replace(/<li>/gi, '• ')
-          .replace(/<\/li>/gi, '\n')
-          // Convert paragraphs to line breaks
-          .replace(/<p>/gi, '')
-          .replace(/<\/p>/gi, '\n\n')
-          // Convert strong/bold tags
-          .replace(/<strong>/gi, '')
-          .replace(/<\/strong>/gi, '')
-          // Remove other HTML tags
-          .replace(/<[^>]*>/g, '')
-          // Decode HTML entities
-          .replace(/&nbsp;/g, ' ')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&amp;/g, '&')
-          // Clean up extra whitespace
-          .replace(/\n{3,}/g, '\n\n')
-          .trim();
-
-        if (plainText) {
-          const lines = plainText.split('\n');
-          for (const line of lines) {
-            if (line.trim()) {
-              if (line.trim().startsWith('•')) {
-                // Bullet point
-                doc.fillColor(darkGray).fontSize(9).font('Helvetica')
-                  .text(line.trim(), 50, doc.y, { lineGap: 2, width: 500 });
-              } else {
-                // Regular text
-                doc.fillColor(darkGray).fontSize(9).font('Helvetica')
-                  .text(line.trim(), 45, doc.y, { lineGap: 2, width: 505 });
-              }
-            } else {
-              // Empty line for spacing
-              doc.moveDown(0.3);
-            }
-          }
-        } else {
-          doc.fillColor(midGray).fontSize(9).font('Helvetica-Oblique')
-            .text('No patch notes available.', 45);
-        }
-      } else {
-        doc.fillColor(midGray).fontSize(9).font('Helvetica-Oblique')
-          .text('No patch notes available.', 45);
-      }
+      await renderPatchNotesToPdf(doc, version.PatchNotes, {
+        textSize: 9,
+        x: 45,
+        width: 505,
+        darkGray,
+        midGray,
+      });
 
       doc.moveDown(1.5);
 

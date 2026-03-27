@@ -3319,7 +3319,7 @@ router.post('/utilities/sync-parent-status/:projectId', authenticateToken, async
 router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, issues, statusMapping, priorityMapping, taskTypeMapping, ticketMappings, importSource, allowStatusUpdatesForExisting } = req.body;
+    const { projectId, issues, statusMapping, priorityMapping, taskTypeMapping, ticketMappings, importSource, allowStatusUpdatesForExisting, issueStatusOverrides } = req.body;
 
     const normalizedImportSource = importSource === 'project' || importSource === 'ticket'
       ? importSource
@@ -3446,7 +3446,24 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
     const existingIssues = issues.filter(issue => existingIssueIds.has(issue.key));
     const skippedCount = issues.length - newIssues.length;
 
-    const resolveMappedStatusId = (jiraStatus: string | undefined) => {
+    const resolveMappedStatusId = (jiraStatus: string | undefined, issueKey?: string) => {
+      const issueOverrideValue = issueKey && issueStatusOverrides && typeof issueStatusOverrides === 'object'
+        ? issueStatusOverrides[issueKey]
+        : null;
+
+      if (issueOverrideValue !== undefined && issueOverrideValue !== null && String(issueOverrideValue).trim() !== '') {
+        const overrideId = Number(issueOverrideValue);
+        if (!Number.isNaN(overrideId)) {
+          const byId = taskStatuses.find((s: any) => Number(s.Id) === overrideId);
+          if (byId) return byId.Id;
+        }
+
+        const byName = taskStatuses.find(
+          (s: any) => String(s.StatusName).toLowerCase().trim() === String(issueOverrideValue).toLowerCase().trim()
+        );
+        if (byName) return byName.Id;
+      }
+
       if (!jiraStatus) return null;
 
       const mappedValue = statusMapping?.[jiraStatus];
@@ -3524,7 +3541,7 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
 
     if (allowStatusUpdatesForExisting === true) {
       for (const issue of existingIssues) {
-        const mappedStatusId = resolveMappedStatusId(issue.status) || defaultStatusId;
+        const mappedStatusId = resolveMappedStatusId(issue.status, issue.key);
         if (!mappedStatusId) {
           unchangedExistingCount++;
           continue;
@@ -3594,7 +3611,7 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
 
     // First pass: Create all tasks without parent relationships
     for (const issue of newIssues) {
-      const statusId = resolveMappedStatusId(issue.status);
+      const statusId = resolveMappedStatusId(issue.status, issue.key);
       const priorityId = resolveMappedPriorityId(issue.priority);
       const taskTypeId = resolveMappedTaskTypeId(issue.issueType);
       const normalizedDescription = normalizeJiraDescription(issue.description);

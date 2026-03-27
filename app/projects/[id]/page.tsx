@@ -137,6 +137,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [jiraCheckStatusTickets, setJiraCheckStatusTickets] = useState<Array<{issueKey: string; jiraSummary: string; jiraStatus: string; taskId: number; taskName: string; taskStatusId: number | null; taskStatusName: string | null}>>([]);
   const [jiraCheckStatusError, setJiraCheckStatusError] = useState('');
   const [jiraCheckStatusMapping, setJiraCheckStatusMapping] = useState<Record<string, string>>({});
+  const [jiraCheckStatusOverrides, setJiraCheckStatusOverrides] = useState<Record<string, string>>({});
   const [selectedCheckStatusKeys, setSelectedCheckStatusKeys] = useState<Set<string>>(new Set());
   const [isApplyingCheckStatus, setIsApplyingCheckStatus] = useState(false);
   const [checkStatusOnlyChanged, setCheckStatusOnlyChanged] = useState(true);
@@ -1337,12 +1338,38 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     return direct ? { id: Number(direct.Id), name: String(direct.StatusName || '') } : null;
   };
 
+  const resolveCheckStatusTarget = (
+    issueKey: string,
+    jiraStatus: string,
+    mapping: Record<string, string>,
+    overrides: Record<string, string>
+  ): { id: number; name: string } | null => {
+    const overrideValue = String(overrides[issueKey] || '').trim();
+    if (overrideValue) {
+      const byName = taskStatuses.find(s => (s.StatusName || '').toLowerCase() === overrideValue.toLowerCase());
+      if (byName) return { id: Number(byName.Id), name: String(byName.StatusName || '') };
+    }
+    return resolveCheckStatusMapped(jiraStatus, mapping);
+  };
+
+  const hasCheckStatusChange = (
+    ticket: { issueKey: string; jiraStatus: string; taskStatusId: number | null; taskStatusName: string | null },
+    mapping: Record<string, string>,
+    overrides: Record<string, string>
+  ) => {
+    const target = resolveCheckStatusTarget(ticket.issueKey, ticket.jiraStatus, mapping, overrides);
+    if (target) return target.id !== (ticket.taskStatusId === null ? null : Number(ticket.taskStatusId));
+    return (ticket.jiraStatus || '').toLowerCase() !== (ticket.taskStatusName || '').toLowerCase();
+  };
+
   const handleOpenCheckJiraStatus = async () => {
     if (!project || !token) return;
     setShowJiraCheckStatusModal(true);
     setJiraCheckStatusLoading(true);
     setJiraCheckStatusError('');
     setJiraCheckStatusTickets([]);
+    setSelectedCheckStatusKeys(new Set());
+    setJiraCheckStatusOverrides({});
     const initialMapping = parseMappingJson(project.JiraTaskStatusMappingJson);
     setJiraCheckStatusMapping(initialMapping);
     try {
@@ -1357,17 +1384,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       const data = await res.json();
       const tickets = data.tickets || [];
       setJiraCheckStatusTickets(tickets);
-      // Pre-select tickets with status changes (simple name comparison)
-      const changed = new Set<string>(
-        tickets
-          .filter((t: any) => {
-            const mapped = resolveCheckStatusMapped(t.jiraStatus, initialMapping);
-            if (mapped) return mapped.id !== (t.taskStatusId === null ? null : Number(t.taskStatusId));
-            return (t.jiraStatus || '').toLowerCase() !== (t.taskStatusName || '').toLowerCase();
-          })
-          .map((t: any) => t.issueKey)
-      );
-      setSelectedCheckStatusKeys(changed);
     } catch (err: any) {
       setJiraCheckStatusError(err.message || 'Failed to load ticket statuses');
     } finally {
@@ -1384,6 +1400,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         .filter(t => selectedCheckStatusKeys.has(t.issueKey))
         .map(t => ({ key: t.issueKey, status: t.jiraStatus, summary: t.jiraSummary }));
 
+      const selectedIssueStatusOverrides = Object.fromEntries(
+        Array.from(selectedCheckStatusKeys)
+          .map((issueKey) => [issueKey, jiraCheckStatusOverrides[issueKey]])
+          .filter(([, value]) => String(value || '').trim() !== '')
+      );
+
       const res = await fetch(`${getApiUrl()}/api/tasks/import-from-jira`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -1392,6 +1414,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           importSource: 'ticket',
           issues: issuesToUpdate,
           statusMapping: jiraCheckStatusMapping,
+          issueStatusOverrides: selectedIssueStatusOverrides,
           allowStatusUpdatesForExisting: true,
           ticketMappings: {},
         }),
@@ -4415,6 +4438,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     setJiraCheckStatusTickets([]);
                     setJiraCheckStatusError('');
                     setSelectedCheckStatusKeys(new Set());
+                    setJiraCheckStatusOverrides({});
                   }}
                   className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                 >
@@ -4447,20 +4471,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         jiraStatuses={Array.from(new Set(jiraCheckStatusTickets.map(t => t.jiraStatus).filter(Boolean)))}
                         taskStatuses={taskStatuses}
                         mapping={jiraCheckStatusMapping}
-                        onChange={(m) => {
-                          setJiraCheckStatusMapping(m);
-                          // Re-compute selection when mapping changes
-                          const changed = new Set<string>(
-                            jiraCheckStatusTickets
-                              .filter(t => {
-                                const mapped = resolveCheckStatusMapped(t.jiraStatus, m);
-                                if (mapped) return mapped.id !== (t.taskStatusId === null ? null : Number(t.taskStatusId));
-                                return (t.jiraStatus || '').toLowerCase() !== (t.taskStatusName || '').toLowerCase();
-                              })
-                              .map(t => t.issueKey)
-                          );
-                          setSelectedCheckStatusKeys(changed);
-                        }}
+                        onChange={setJiraCheckStatusMapping}
                         defaultExpanded
                       />
                     </div>
@@ -4478,11 +4489,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       Show only tickets with status changes
                     </label>
                     <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {jiraCheckStatusTickets.filter(t => {
-                        const mapped = resolveCheckStatusMapped(t.jiraStatus, jiraCheckStatusMapping);
-                        if (mapped) return mapped.id !== (t.taskStatusId === null ? null : Number(t.taskStatusId));
-                        return (t.jiraStatus || '').toLowerCase() !== (t.taskStatusName || '').toLowerCase();
-                      }).length} ticket(s) with changes
+                      {jiraCheckStatusTickets.filter(t => hasCheckStatusChange(t, jiraCheckStatusMapping, jiraCheckStatusOverrides)).length} ticket(s) with changes
                     </span>
                   </div>
 
@@ -4491,15 +4498,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     {jiraCheckStatusTickets
                       .filter(t => {
                         if (!checkStatusOnlyChanged) return true;
-                        const mapped = resolveCheckStatusMapped(t.jiraStatus, jiraCheckStatusMapping);
-                        if (mapped) return mapped.id !== (t.taskStatusId === null ? null : Number(t.taskStatusId));
-                        return (t.jiraStatus || '').toLowerCase() !== (t.taskStatusName || '').toLowerCase();
+                        return hasCheckStatusChange(t, jiraCheckStatusMapping, jiraCheckStatusOverrides);
                       })
                       .map(t => {
-                        const mapped = resolveCheckStatusMapped(t.jiraStatus, jiraCheckStatusMapping);
-                        const hasChange = mapped
-                          ? mapped.id !== (t.taskStatusId === null ? null : Number(t.taskStatusId))
-                          : (t.jiraStatus || '').toLowerCase() !== (t.taskStatusName || '').toLowerCase();
+                        const mapped = resolveCheckStatusTarget(t.issueKey, t.jiraStatus, jiraCheckStatusMapping, jiraCheckStatusOverrides);
+                        const hasChange = hasCheckStatusChange(t, jiraCheckStatusMapping, jiraCheckStatusOverrides);
                         const isSelected = selectedCheckStatusKeys.has(t.issueKey);
                         return (
                           <div
@@ -4548,6 +4551,28 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                                   <span className="px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">✓ In sync</span>
                                 )}
                               </div>
+
+                              <div className="mt-2 max-w-xs">
+                                <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-1">Target status (override)</label>
+                                <select
+                                  value={jiraCheckStatusOverrides[t.issueKey] || ''}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    setJiraCheckStatusOverrides((prev) => ({
+                                      ...prev,
+                                      [t.issueKey]: value,
+                                    }));
+                                  }}
+                                  className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                >
+                                  <option value="">Use mapping/default</option>
+                                  {taskStatuses.map((statusValue) => (
+                                    <option key={statusValue.Id} value={statusValue.StatusName || ''}>
+                                      {statusValue.StatusName}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
                             </div>
                           </div>
                         );
@@ -4560,20 +4585,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       <button
                         type="button"
                         onClick={() => {
-                          const allChangedKeys = new Set<string>(
-                            jiraCheckStatusTickets
-                              .filter(t => {
-                                const mapped = resolveCheckStatusMapped(t.jiraStatus, jiraCheckStatusMapping);
-                                if (mapped) return mapped.id !== (t.taskStatusId === null ? null : Number(t.taskStatusId));
-                                return (t.jiraStatus || '').toLowerCase() !== (t.taskStatusName || '').toLowerCase();
-                              })
-                              .map(t => t.issueKey)
-                          );
+                          const allChangedKeys = new Set<string>(jiraCheckStatusTickets
+                            .filter(t => hasCheckStatusChange(t, jiraCheckStatusMapping, jiraCheckStatusOverrides))
+                            .map(t => t.issueKey));
                           setSelectedCheckStatusKeys(allChangedKeys);
                         }}
                         className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
                       >
-                        Select all changed
+                        Select all
                       </button>
                       <span className="text-gray-400">|</span>
                       <button
@@ -4581,7 +4600,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         onClick={() => setSelectedCheckStatusKeys(new Set())}
                         className="text-sm text-gray-500 dark:text-gray-400 hover:underline"
                       >
-                        Clear
+                        Deselect all
                       </button>
                     </div>
                     <div className="flex items-center gap-3">
@@ -4590,6 +4609,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                           setShowJiraCheckStatusModal(false);
                           setJiraCheckStatusTickets([]);
                           setSelectedCheckStatusKeys(new Set());
+                          setJiraCheckStatusOverrides({});
                         }}
                         className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
                       >
