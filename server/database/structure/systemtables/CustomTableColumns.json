@@ -1,0 +1,40 @@
+{
+  "TableName": "CustomTableColumns",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "CustomTableId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "ColumnName",
+      "DataType": "varchar(100)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "DataType",
+      "DataType": "varchar(50)",
+      "NotNullable": true,
+      "DefaultValue": "varchar(255)"
+    },
+    {
+      "FieldName": "IsRequired",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "SortOrder",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    }
+  ]
+}

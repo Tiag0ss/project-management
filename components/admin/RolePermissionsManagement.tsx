@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getRolePermissions, updateRolePermission, RolePermission } from '@/lib/api/rolePermissions';
+import { useToast } from '@/contexts/ToastContext';
 
 const ROLE_NAMES = ['Developer', 'Support', 'Manager'];
 
@@ -103,6 +104,7 @@ const PERMISSION_LABELS: { [key: string]: string } = {
 
 export default function RolePermissionsManagement() {
   const { token } = useAuth();
+  const { showToast } = useToast();
   const [permissions, setPermissions] = useState<RolePermission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -225,7 +227,7 @@ export default function RolePermissionsManagement() {
       });
 
       await loadPermissions();
-      showAlert('Success', 'Permissions saved successfully');
+      showToast({ type: 'success', title: 'Permissions Saved', message: 'Permissions saved successfully' });
     } catch (err: any) {
       setError(err.message || 'Failed to save permissions');
     } finally {

@@ -457,7 +457,7 @@ export default function WorkSummaryPage() {
       jiraIssueKey: record.JiraIssueKey || undefined,
       organizationName: record.CustomerName || record.OrganizationName || '-',
       title: record.Subject || record.CallType || 'Call',
-      details: record.Notes || '-',
+      details: record.Notes || record.Subject || '-',
       status: record.CallType || '-',
       id: record.Id,
       taskId: record.TaskId,

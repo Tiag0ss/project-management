@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import SearchableSelect from '@/components/SearchableSelect';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { CustomFieldValues } from '@/lib/customFields';
+import { useToast } from '@/contexts/ToastContext';
 
 interface Organization {
   Id: number;
@@ -106,11 +107,17 @@ export default function CallRecordFormModal({
   onClose,
   onSubmit,
 }: CallRecordFormModalProps) {
+  const { showToast } = useToast();
   const [formData, setFormData] = useState<CallRecordFormValues>(mergeFormData(initialData));
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [error, setError] = useState('');
+
+  const setErrorWithToast = (message: string) => {
+    setError(message);
+    showToast({ type: 'error', title: 'Call Record Error', message });
+  };
 
   const endTime = useMemo(
     () => calculateEndTime(formData.startTime, formData.durationMinutes),
@@ -181,7 +188,7 @@ export default function CallRecordFormModal({
         }
       } catch (err) {
         console.error('Error preparing call record form:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load form data');
+        setErrorWithToast(err instanceof Error ? err.message : 'Failed to load form data');
       }
     })();
   }, [isOpen, token, initialData]);
@@ -209,7 +216,7 @@ export default function CallRecordFormModal({
       await loadProjectsForOrg(value);
     } catch (err) {
       console.error('Error loading projects:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load projects');
+      setErrorWithToast(err instanceof Error ? err.message : 'Failed to load projects');
     }
   };
 
@@ -230,13 +237,13 @@ export default function CallRecordFormModal({
       await loadTasksForProject(value);
     } catch (err) {
       console.error('Error loading tasks:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load tasks');
+      setErrorWithToast(err instanceof Error ? err.message : 'Failed to load tasks');
     }
   };
 
   const handleSubmit = async () => {
     if (!formData.callDate || !formData.startTime) {
-      setError('Date and time are required.');
+      setErrorWithToast('Date and time are required.');
       return;
     }
 
@@ -245,7 +252,7 @@ export default function CallRecordFormModal({
       await onSubmit(formData);
     } catch (err) {
       console.error('Error saving call record:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save call record');
+      setErrorWithToast(err instanceof Error ? err.message : 'Failed to save call record');
     }
   };
 

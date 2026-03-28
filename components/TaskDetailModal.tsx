@@ -13,6 +13,7 @@ import { usersApi, User } from '@/lib/api/users';
 import RichTextEditor from './RichTextEditor';
 import SearchableSelectComponent from './SearchableSelect';
 import { usePermissions } from '@/contexts/PermissionsContext';
+import { useToast } from '@/contexts/ToastContext';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 
@@ -280,6 +281,7 @@ export default function TaskDetailModal({
   onRemovePlanning,
 }: TaskDetailModalProps) {
   const router = useRouter();
+    const { showToast } = useToast();
   // Integration state
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
 
@@ -408,6 +410,11 @@ export default function TaskDetailModal({
 
   const showAlert = (title: string, message: string) => {
     setModalMessage({ type: 'alert', title, message });
+  };
+
+  const setErrorWithToast = (message: string) => {
+    setError(message);
+    showToast({ type: 'error', title: 'Task Error', message });
   };
 
   // Calculate if this task has subtasks
@@ -822,6 +829,7 @@ export default function TaskDetailModal({
       }
     } catch (err) {
       console.error('Failed to load task details:', err);
+      showToast({ type: 'error', title: 'Task Error', message: 'Failed to load task details' });
     } finally {
       setLoadingData(false);
     }
@@ -832,17 +840,17 @@ export default function TaskDetailModal({
     setError('');
 
     if (!formData.taskType) {
-      setError('Task type is required');
+      setErrorWithToast('Task type is required');
       return;
     }
 
     if (formData.dueDateMandatory && !formData.dueDate) {
-      setError('Due date is required when due date is mandatory');
+      setErrorWithToast('Due date is required when due date is mandatory');
       return;
     }
 
     if (isGlobalProject && !formData.customerId) {
-      setError('Customer is required for tasks in global projects');
+      setErrorWithToast('Customer is required for tasks in global projects');
       return;
     }
 
@@ -966,7 +974,7 @@ export default function TaskDetailModal({
       await Promise.resolve(onSaved());
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to save task');
+      setErrorWithToast(err.message || 'Failed to save task');
     } finally {
       setIsLoading(false);
     }
@@ -1028,7 +1036,7 @@ export default function TaskDetailModal({
       setAvailableMoveProjects(organizationProjects);
       setProjectStatusesForMove(projectStatusesResponse.statuses || []);
     } catch (err: any) {
-      setError(err.message || 'Failed to load move options');
+      setErrorWithToast(err.message || 'Failed to load move options');
     } finally {
       setLoadingMoveMetadata(false);
     }
@@ -1077,7 +1085,7 @@ export default function TaskDetailModal({
       onSaved();
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to move task');
+      setErrorWithToast(err.message || 'Failed to move task');
     } finally {
       setIsMovingTask(false);
     }
@@ -1085,7 +1093,7 @@ export default function TaskDetailModal({
 
   const handleConfirmMoveToExistingProject = async () => {
     if (!moveTargetProjectId) {
-      setError('Please select a target project');
+      setErrorWithToast('Please select a target project');
       return;
     }
 
@@ -1095,13 +1103,13 @@ export default function TaskDetailModal({
   const handleCreateProjectAndMove = async () => {
     const projectName = newProjectNameForMove.trim();
     if (!projectName) {
-      setError('Project name is required');
+      setErrorWithToast('Project name is required');
       return;
     }
 
     const defaultStatus = projectStatusesForMove.find((status) => Number(status.IsDefault) === 1) || projectStatusesForMove[0];
     if (!defaultStatus?.Id) {
-      setError('No project status is available for this organization');
+      setErrorWithToast('No project status is available for this organization');
       return;
     }
 
@@ -1121,7 +1129,7 @@ export default function TaskDetailModal({
 
       await moveTaskSubtreeToProject(createResult.projectId);
     } catch (err: any) {
-      setError(err.message || 'Failed to create project and move task');
+      setErrorWithToast(err.message || 'Failed to create project and move task');
       setIsMovingTask(false);
     }
   };

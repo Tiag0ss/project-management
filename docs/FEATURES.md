@@ -1,0 +1,950 @@
+# Project Management App — Feature Reference
+
+Comprehensive documentation of all features available in the application. Use this as the primary reference when implementing new features, writing tests, or onboarding new team members.
+
+---
+
+## Table of Contents
+
+1. [Authentication & User Accounts](#1-authentication--user-accounts)
+2. [Organizations & Members](#2-organizations--members)
+3. [Customers & Customer Portal](#3-customers--customer-portal)
+4. [Applications & Releases](#4-applications--releases)
+5. [Projects](#5-projects)
+6. [Tasks](#6-tasks)
+7. [Tickets](#7-tickets)
+8. [Resource Planning (Gantt & Scheduling)](#8-resource-planning-gantt--scheduling)
+9. [Time Tracking](#9-time-tracking)
+10. [Call Records](#10-call-records)
+11. [Active Timers](#11-active-timers)
+12. [Memos](#12-memos)
+13. [Dashboard & Analytics](#13-dashboard--analytics)
+14. [Portfolio](#14-portfolio)
+15. [Work Summary](#15-work-summary)
+16. [Permissions System](#16-permissions-system)
+17. [Jira Integration](#17-jira-integration)
+18. [Email & Notifications](#18-email--notifications)
+19. [Search & Navigation](#19-search--navigation)
+20. [Administration](#20-administration)
+
+---
+
+## 1. Authentication & User Accounts
+
+### First-Time Setup (Install Wizard)
+When the database is empty and no admin exists, navigating to the app automatically redirects to `/install`. The wizard collects:
+- Admin account credentials (username, email, password, first/last name)
+- Initial organization name
+- Optional SMTP configuration
+
+After completion the wizard is permanently disabled and the app redirects to `/login`.
+
+### Login / Logout
+- Credentials validated against bcrypt hashes stored in `Users.PasswordHash`
+- On success a JWT is issued and stored in an HTTP-only cookie (inaccessible to JavaScript)
+- JWT payload carries `userId`, `isAdmin`, `customerId` (for customer portal users)
+- Logout clears the cookie server-side
+
+### Password Recovery
+1. User visits `/forgot-password` and submits their email address
+2. Server generates a cryptographically random token, stores a bcrypt hash in `PasswordResetTokens` with a 1-hour expiry
+3. A reset link (`/reset-password?token=...`) is emailed to the user
+4. The reset page validates the token, lets the user pick a new password, and invalidates the token (single-use)
+5. Responses are generic — the system never reveals whether an email exists in the database
+
+### User Profile
+Each user can edit their own profile at `/profile`:
+- First name, last name, email, username, password change
+- **Avatar**: Upload a profile picture
+- **Work hours per day**: Per-weekday capacity used by the planning engine (e.g., 8h Mon–Fri, 0h Sat–Sun)
+- **Work start time**: Determines when daily work begins (used for calendar-based planning)
+- **Lunch time**: Inserted as a break in the daily schedule
+- **Hourly rate**: Used in budget calculations (Manager-visible)
+- **Timezone**: IANA timezone for correct date/time display
+- **Email preferences**: Opt in/out of specific notification types (assignment, due-date reminders, work summary, etc.)
+
+---
+
+## 2. Organizations & Members
+
+### Organizations
+Organizations are the top-level grouping entity. Projects, tasks, tickets, and team members all belong to an organization.
+
+- Admin users can create organizations at `/organizations`
+- Each organization has a name and rich-text description
+- Member who creates an org is automatically added as a member
+
+### Members & Roles
+Users are added to organizations with a **role** (`Developer`, `Support`, `Manager`) and an optional **Permission Group**.
+
+- Roles determine global permission sets (see [Permissions System](#16-permissions-system))
+- Permission groups can further restrict or expand individual permissions within this org
+
+### Custom Status Values
+Each organization defines its own status vocabularies used throughout the app:
+
+| Entity | Fields |
+|---|---|
+| **Project Statuses** | Value (name), Color (hex), IsDefault |
+| **Task Statuses** | Value (name), Color (hex), IsDefault |
+| **Task Priorities** | Value (name), Color (hex), IsDefault |
+| **Ticket Statuses** | Value, Color, StatusType (`open`/`in_progress`/`waiting`/`resolved`/`closed`/`other`), IsClosed, IsCancelled |
+| **Ticket Priorities** | Value, Color, IsDefault |
+
+Only one status per type can be `IsDefault` — it is automatically pre-selected in new items.
+
+---
+
+## 3. Customers & Customer Portal
+
+### Customers
+Customer records represent external clients. Fields include:
+- Name, External Name (used in reports), Email, Phone, Address, Website
+- Contact Person, Contact Email, Contact Phone
+- Rich-text notes/description
+- Associated organizations (many-to-many)
+- **Default support user**: Automatically assigned to new tickets for this customer
+
+Customers can be associated with **Applications** (which apps they use) and **Projects** (which projects are for them).
+
+### Customer User Accounts
+Customer users (`CustomerUsers` table) may log in to the **Customer Portal** (`/portal`):
+- Scoped to their customer's data only
+- Can view their own open tickets and project status summaries
+- Can create new tickets (minimal form — no project selection)
+- Cannot access any internal pages (enforced by `CustomerUserGuard`)
+
+### Customer Portal
+`/portal` — visible to customer users only:
+- Stats cards: open tickets, in-progress, resolved
+- Projects grid with status and progress
+- Tickets table with filters and "New Ticket" button
+
+### Change History
+Every meaningful field change to a customer record is logged and visible in the **History** tab of the customer detail page. The history UI renders only in that tab (not in other tabs like Attachments).
+
+---
+
+## 4. Applications & Releases
+
+### Applications
+Applications represent software products that projects may be building or maintaining.
+
+- Created and managed at `/applications`
+- Fields: Name, Description (rich text), Repository URL, Organization, `IsCustomerSpecific` flag
+- Customers are linked via a searchable multi-select (many-to-many)
+- Projects and tasks can reference an application; tasks can further reference a specific **version**
+
+### Application Versions (Releases)
+Each application can have multiple versioned releases:
+
+- Fields: Version Number, Version Name, Status, Release Date, Patch Notes (rich text with images), `IsCustomerSpecific` flag
+- Tasks are linked to a version — once linked, the task disappears from the available pool for other versions
+- Linking tasks auto-sets `Tasks.ReleaseVersionId`
+
+### Patch Notes PDF Export
+Two export modes exist:
+
+**Single version PDF** (`Print to PDF` button on version detail):
+- Application name + version number + release date in header
+- Patch notes rendered from HTML including embedded images (base64, hosted URLs, or local `/uploads/` paths)
+- List of linked tasks with status/priority/assignee
+
+**Date-range PDF** (`Print Date Range`):
+- Aggregates all releases within selected start–end dates
+- Each release on its own section
+- Sorted by release date; page breaks between releases
+
+Images in patch notes are fetched at render time. Supported sources:
+- Inline base64 data URIs (`data:image/...;base64,...`)
+- Local server uploads (`/uploads/...` path)
+- External HTTP/HTTPS URLs
+
+---
+
+## 5. Projects
+
+### Project List & Creation
+- `/projects` — lists all projects the user has access to
+- Filters: organization, status, customer, search
+- Fields: Name, Description (rich text), Organization, Status, Start Date, End Date, Budget, Customer, linked Applications, Jira Board ID (when Projects Jira integration is configured), `IsHobby` flag, `IsGlobal`, `IsVisibleToCustomer`
+- **Global Project rule**: When `IsGlobal = true`, project cannot be associated with a customer and `IsVisibleToCustomer` is forced off
+
+### Project Detail Tabs
+
+#### Overview Tab
+- **RAG health score**: Automatic Red/Amber/Green banner based on overdue tasks, unassigned work, and budget burn
+- **Quick stats**: Dates, estimated hours (leaf tasks only — no double counting), open tickets, team size
+- **Priority breakdown**: High/Medium/Low task counts (all tasks, including subtasks)
+- **Alerts**: Overdue tasks, upcoming tasks (next 7 days), unassigned tasks
+- **Team members grid**: Per-user progress, task counts, hours assigned
+
+#### Kanban Tab
+- Columns represent task statuses (custom or default)
+- Drag-and-drop within and between columns changes task status
+- `DisplayOrder` field persists card order within each column
+- Cards show: task name, priority badge, assignee avatar, completion %, linked Jira badge (if any)
+- **Import Tasks** dropdown: CSV import, Jira import, Check Jira Ticket Status
+
+#### Gantt Tab (Project Gantt)
+- Hierarchical view: parent tasks with indented children
+- Timeline view modes: **Week** (28 days), **Month** (90 days), **Year** (365 days)
+- Navigation adjusts ±28/90/365 days per mode
+- Dependencies (arrows), baseline comparison (drift bars), critical path highlight (red ring)
+- Clicking a bar opens the task detail modal
+
+#### Reporting Tab
+Four sub-tabs:
+- **Summary**: Task table with estimated/allocated/worked hours; totals use **leaf tasks only**; CSV export
+- **By User**: Per-user statistics (allocated hours, worked hours, task count)
+- **Allocations**: All allocation rows with dates, users, and `SplitOrder` / `TaskAllocationHeaderId` identifiers
+- **Time Entries**: All logged time entries with description
+- **Scheduled Reports**: Create/edit/delete schedules to auto-email PDF reports (weekly or monthly) to specified recipients
+
+#### Sprints Tab (🏃 tab)
+- Full sprint/iteration management: create, edit, delete sprints linked to the project
+- Sprint cards show progress bars, date range, task counts
+- Backlog panel with multi-select for moving tasks between sprints
+- Inline task status management within a sprint card
+
+#### Burndown Tab (📉 tab)
+- SVG chart toggling between **Burndown** and **Burnup** modes
+- Data points: date, remaining hours ideal line, actual remaining, cumulative worked
+- Uses `/api/projects/:id/burndown` endpoint
+
+#### Dependencies Tab (🔗 tab)
+- SVG directed acyclic graph (DAG) showing task dependencies
+- Topological layout, colour-coded by task status
+- Bézier arrows between dependent tasks
+- Click a task node to open its detail modal
+
+#### Settings Tab
+- Edit all project fields (name, description, dates, budget, status, applications, customer, Jira Board ID, global flags)
+- Enforced constraint: Global projects cannot have customer association
+- Danger zone: archive or delete project
+
+---
+
+## 6. Tasks
+
+### Task Fields
+- Name, Description (rich text with images)
+- Status (from org's TaskStatusValues), Priority (from org's TaskPriorityValues)
+- **Estimated Hours** — used in planning and reporting
+- **Completion Percentage** — 0–100% slider, independent from status
+- Assigned Users (primary `AssignedTo` + multiple via `TaskAssignees` junction table)
+- Planned Start Date, Planned End Date (managed by planning — read-only in task modal)
+- **Due Date** — hard deadline used for overdue detection and reminders
+- Application + Version (searchable dropdowns)
+- **Parent Task** — establishes a subtask hierarchy (`ParentTaskId`)
+- **Depends On** — task dependency chain (`DependsOnTaskId`)
+- Sprint association (`SprintId`)
+- Jira issue linkage via `TicketId → Tickets.ExternalTicketId`
+
+### Task Hierarchy (Parent / Child)
+- Any task can be a **parent** by having other tasks reference its `Id` as `ParentTaskId`
+- **Leaf tasks** are tasks with no children — these are the only ones included in hour totals (no double counting)
+- Parent tasks appear collapsed/expanded in Kanban and Gantt views
+- When calculating project totals, always filter to leaf tasks:
+  ```
+  taskIdsWithChildren = Set of all ParentTaskId values
+  leafTasks = tasks where Id not in taskIdsWithChildren
+  total = sum(leafTasks.EstimatedHours)
+  ```
+
+### Task Detail Modal — Sections
+- **Header**: Name, status badge, priority badge, Jira badge (links to Jira URL)
+- **Details**: All task fields with inline editing
+- **Description**: Full rich text editor
+- **Timer**: Live elapsed counter, Start/Stop/Discard buttons (see [Active Timers](#11-active-timers))
+- **Checklist** tab: Checklist items with progress bar and checkbox toggles
+- **Comments** tab: Rich text comments with `@mention` support; attachments per comment
+- **Allocations** tab: Group-by-header view of planned allocations with expand/collapse; **Split** button per slice
+- **Attachments** tab: Upload / download / delete file attachments
+- **History** tab: Change log showing all field changes with timestamp and user
+
+### Task Checklists
+- Each task can have a checklist (ordered list of items)
+- Progress bar reflects completed/total items
+- Items added, reordered, checked, unchecked, and deleted
+- API: `/api/task-checklists` (CRUD per task)
+
+### Task Templates
+- Templates (`TaskTemplates` + `TaskTemplateItems`) define a set of tasks to create at once
+- Templates page accessible from the project task tab
+- "Apply Template" copies all template items as real tasks into the project
+- Template items can have predefined fields (name, description, estimated hours, priority)
+
+### Task Attachments
+- Uploaded files stored server-side at `/app/uploads/attachments`
+- Max file size: 5 MB
+- Attachment list in task detail with download and delete actions
+- Attachment manager component (`AttachmentManager.tsx`) used in both tasks and tickets
+
+### Import Tasks from CSV
+1. Download CSV template (project task tab → Import Tasks → CSV)
+2. Fill in task data
+3. Upload filled CSV
+4. Preview shown before import is confirmed
+5. Tasks created with parent/child and dependency relationships inferred from CSV columns
+
+### Import Tasks from Jira
+1. From the project Kanban tab → Import Tasks → Import from Jira
+2. Jira issues fetched from the org's configured Jira (Tickets) instance
+3. Status mapping panel maps Jira statuses → local TaskStatusValues
+4. Selected issues converted to tasks with linked `ExternalTicketId`
+
+### Check Jira Ticket Status (Batch Update)
+From the project Kanban tab → Import Tasks → 🔍 Check Jira Ticket Status:
+1. System queries Jira for current statuses of all tasks that have a linked Jira issue key
+2. Modal shows list of tickets with: Jira status, local task status, and whether they differ
+3. "Show only changed" filter to focus on mismatches
+4. **No tickets selected by default** — user explicitly selects which to update
+5. **Select All / Deselect All** buttons for quick bulk selection
+6. **Global mapping panel**: map Jira status names → local task status values for the whole batch
+7. **Per-ticket override**: each ticket row has an individual status select that overrides the global mapping for that ticket
+8. Click "Apply Updates" to bulk-update selected tickets' statuses
+
+### Split Allocation Button (Task Allocations Tab)
+Within a task's Allocations tab, each allocation slice shows a **Split** button:
+1. Click Split on an existing slice
+2. Choose **Parallel** or **Sequential** split mode
+3. Define per-user entries: user, hours, hours-per-day
+4. Confirm — original allocation header is replaced by multiple headers with incrementing `SplitOrder` values
+5. Planning Gantt shows individual bars per user
+
+---
+
+## 7. Tickets
+
+### Ticket Fields
+- Ticket number: auto-generated in `TKT-ORG-NNN` format
+- Title, Description (rich text), Customer, Project
+- Status (`TicketStatusValues.Id`), Priority (`TicketPriorityValues.Id`)
+- Category, Assigned Support User, Assigned Developer
+- `ExternalTicketId` — Jira issue key if linked
+- Linked Task (`TaskId`) — when the ticket has been converted to a task
+- SLA tracking: `FirstResponseAt` timestamp, per-org SLA rules per priority
+
+### Auto-Assignment
+When creating a ticket for a customer that has a **Default Support User** configured, that user is automatically assigned without manual selection.
+
+### Ticket Status System
+- Statuses are fully custom per organization (`TicketStatusValues`)
+- Each status has a `StatusType`: `open`, `in_progress`, `waiting`, `resolved`, `closed`, or `other`
+- `StatusType` enables robust filtering regardless of custom status names (no hard-coded string matching)
+- Dashboard ticket stats and workflow use `StatusType`-based logic
+- `IsClosed = true` excludes tickets from open counts
+
+### SLA Rules
+- Defined per organization per priority in `SLARules` table: `FirstResponseHours`, `ResolutionHours`
+- `Tickets.FirstResponseAt` auto-set on first staff reply (comment)
+- Ticket list shows color-coded SLA badges: 🟢 on time / 🟡 at risk / 🔴 breached
+
+### Comments & @Mentions
+- Rich text comments with attachments
+- `@username` in comment body creates an in-app notification and sends an email to the mentioned user
+- Comment timestamps and author visible
+
+### Ticket Detail Tabs
+- **Details**: All ticket fields, edit, assign
+- **Comments**: Conversation thread with rich text and attachments
+- **Attachments**: Files directly attached to the ticket
+- **History**: Complete change log (status, priority, assignment changes)
+
+### Convert Ticket to Task
+From the ticket detail page:
+1. Click "Convert to Task"
+2. Select project, fill task details (pre-populated from ticket)
+3. Creates a task linked to the ticket (`Tickets.TaskId` → `Tasks.Id`)
+4. Ticket shows a badge linking to the associated task
+
+---
+
+## 8. Resource Planning (Gantt & Scheduling)
+
+### Overview
+The Planning page (`/planning`) provides a resource-centric Gantt view driven by `TaskAllocationHeaders` and `TaskAllocations`. Every allocation belongs to a header (a logical "slice"), ensuring bars are header-driven — not merged by date proximity.
+
+### View Modes
+| Mode | Days Shown | Navigation Step | Column Headers |
+|---|---|---|---|
+| Week | 28 days | ±28 days | Week number + date range |
+| Month | 90 days | ±90 days | Month + week labels |
+| Year | 365 days | ±365 days | Month labels |
+
+### Resource View vs Task View
+- **Resource View**: Rows grouped by user. Each row shows all tasks allocated to that user across all projects. Ideal for checking individual capacity.
+- **Task View**: Rows grouped by task. Each task row shows which users are allocated and for how long.
+
+### Toolbar Filters
+- Filter by organization, project, user
+- "Show only my tasks" toggle (restricts to current user's allocations)
+- 🔴 **Critical Path** toggle: highlights tasks on the critical path with a red ring (CPM forward/backward pass)
+- 📏 **Baseline** toggle + 📐 **Set Baseline**: captures `BaselineStartDate`/`BaselineEndDate` snapshot; drift bars rendered as coloured thin strips beside each bar (🟢 ahead / 🟡 minor drift / 🟣 late)
+
+### Allocation Mechanics
+
+#### Allocation Headers
+Every group of allocation records belongs to a `TaskAllocationHeader`:
+- `TaskId`, `UserId`, `AllocationMode`, `SplitOrder`, `PlannedHours`, `CreatedBy`
+- One bar per header in the Gantt (never merged across headers)
+- Multiple headers on the same task = split allocations
+
+#### Drag-and-Drop Allocation
+1. Drag an unallocated task from the sidebar onto a user row on a specific date
+2. A dialog collects: allocated hours per day (or total), allocation mode
+3. System checks user availability for each target day:
+   - Daily work capacity (`WorkHoursMonday–Sunday`)
+   - Existing `TaskAllocations` for that user on that day
+   - Existing `TaskChildAllocations` for that user on that day
+   - Recurring tasks scheduled for that user on that day
+4. `TaskAllocationHeader` + `TaskAllocations` records created
+5. `Tasks.PlannedStartDate` / `PlannedEndDate` updated from the allocation range
+
+#### Normal Drag vs Ctrl + Drag
+- **Normal drag**: Moves the **entire allocation slice** (all days in that header) to the new start date
+- **Ctrl + drag**: Opens a **partial slice flow by hours** — user enters how many hours to move; source slice decreases, new slice created for the moved hours at the target date
+
+#### Intelligent Replanning
+When replanning an existing allocation:
+1. System fetches existing `TimeEntries` for that task
+2. Calculates: `remainingHours = estimatedHours - sum(timeEntries hours)`
+3. Shows confirmation dialog displaying remaining hours
+4. **Blocks replanning if remaining ≤ 0**
+5. Only the remaining hours are scheduled — already-worked hours are not re-allocated
+
+### Split Allocations
+A task can be split across multiple users, each with their own allocation slice and `SplitOrder`:
+
+| Mode | Behavior |
+|---|---|
+| **Parallel** | All users share the same date range (concurrent work) |
+| **Sequential** | Users are chained; user N+1 starts after user N finishes |
+
+Split allocations can be created:
+- Via the allocation dialog in Planning (Enable Split toggle)
+- Via the **Split button** in the Task Detail Modal → Allocations tab
+
+For split tasks with multiple users, dropping on the task header row shows an alert; drop on a specific user's day to replan only that user's slice.
+
+### Unscheduled Work
+Leaf tasks with `UnscheduledWork = 1` are treated differently:
+- They have **no traditional allocation bars** on the Gantt
+- Instead, they appear as **ghost markers** on specific dates:
+  - On the date the task transitioned to a closed status ("done" transition date)
+  - Or on today's date if still open
+- Sorted to the bottom of the user's task list
+- Parent tasks with unscheduled children also receive an indicator in the parent row
+- Clicking the marker opens the task detail modal
+
+### Recurring Tasks
+Recurring tasks are created in the user profile (`/profile`):
+- Show in Planning Gantt with a pink background and 🔄 icon
+- Their hours are subtracted from the user's available capacity on those days
+- The push-forward algorithm skips around recurring blocks
+
+### Planning Import (`/planning-import`)
+Batch import of allocation plans from CSV:
+- Upload a CSV specifying task, user, date, and hours columns
+- Column mapping step to match CSV headers to system fields
+- Preview shows per-user/per-task allocations to be created
+- Import creates `TaskAllocationHeaders` + `TaskAllocations` entries
+
+### AllocationHeaderDetail Modal
+Clicking an allocation bar in Planning opens a detail modal showing:
+- Header metadata (task name, user, planned hours, split order, mode)
+- Per-day allocation breakdown (expandable table)
+- Actions: Move, Recalculate, Split, Delete slice
+
+### Child Task Allocations
+Parent tasks with subtasks can have their allocation time split across specific child tasks via `TaskChildAllocations`:
+- Child task gets `PlannedStartDate`/`PlannedEndDate` when child allocations are created
+- When moving a parent slice, only the `TaskChildAllocations` with the same `TaskAllocationHeaderId` are updated
+- Availability checking always includes both `TaskAllocations` and `TaskChildAllocations`
+
+---
+
+## 9. Time Tracking
+
+### Daily Entry Tab
+- Select any date
+- Pick a task from a searchable dropdown
+- Enter hours and a description
+- Click "Save Entry"
+
+### Weekly Grid Tab
+- Rows: tasks with time entries in the selected week
+- Columns: days of the week (Mon–Sun)
+- Each cell is editable inline
+- "Save All Changes" commits the entire grid at once
+- Setting a cell to 0 deletes that time entry
+- Previous/Current/Next week navigation buttons
+
+### All Entries Tab
+- Filterable table: date range, project, task, user (admin only)
+- Totals footer: total hours, billable hours, entry count
+- CSV export with current filters applied
+
+### Approval Workflow
+- `TimeEntries.ApprovalStatus`: `pending`, `approved`, `rejected`
+- Managers navigate to pending entries via the Approvals page
+- Approved entries are locked (cannot be edited)
+- Rejected entries show rejection comment to the user
+
+### Resume Tab
+- Period-based aggregation of time entries: current week, month, quarter, year, or `allTime`
+- Breakdown by project and task
+- Visual summary of worked hours over the selected period
+
+### Scheduled PDF Reports
+From the project Reporting tab → Scheduled Reports sub-tab:
+- Create schedules: frequency (weekly/monthly), recipients (email list), content (summary, tasks, time entries)
+- `pdfReportScheduler.ts` runs hourly, generates PDF with PDFKit, sends via SMTP
+- Schedule CRUD API: `/api/project-report-schedules`
+
+---
+
+## 10. Call Records
+
+### Overview
+Call Records (`/call-records`) track phone calls, meetings, or any communication event linked to a project or task.
+
+### Fields
+- **Call Date**, **Start Time**, **Duration (minutes)**
+- **Call Type** (customizable: Meeting, Call, Support, etc.)
+- **Participants** (free-text list of attendees)
+- **Subject** (title of the call)
+- **Notes** (rich text description)
+- **Organization** (optional link)
+- **Project** (optional link)
+- **Task** (optional link)
+
+### Manual Creation
+Click "New Call Record" → fill the form → Save.  
+The record appears immediately in the list with date, duration, participants, and linked project/task.
+
+### CSV Import
+1. Click "Import CSV" → download the template
+2. Template columns: `callDate`, `startTime`, `durationMinutes`, `callType`, `participants`, `subject`, `notes`
+3. Upload filled CSV → preview shown → confirm import
+4. Success summary shows count of imported records
+5. Invalid rows (missing required fields, bad date format) are flagged with an error
+
+### Microsoft Teams Import
+1. Click "Import from Teams"
+2. Select a period: **7 days**, **30 days**, **90 days**, or **custom date range**
+3. System polls the Teams integration for call data
+4. Duplicate detection skips calls already imported (based on call date + participants hash)
+5. Result summary: imported / skipped / failed counts
+
+### Filtering & Search
+- Filter by date range, call type, project
+- Search by subject or participant name
+- Filters combine (AND logic)
+- "Clear Filters" restores the full unfiltered list
+
+### Call Timer
+Each call record has a timer button. Starting it creates an `ActiveTimers` entry with `TimerType = 'call'`.  
+Stopping the call timer updates the record's `DurationMinutes` field with the elapsed time.  
+Call timers do **not** create `TimeEntries` — they only affect call record duration.
+
+---
+
+## 11. Active Timers
+
+### Overview
+The Active Timer system allows users to time their work or calls in real-time. At most **one active timer per user** is permitted at any time. The system uses the `ActiveTimers` database table with fields: `UserId`, `TaskId` (nullable), `StartedAt`, `TimerType` (`task` or `call`), `CallRecordId` (nullable).
+
+### Starting a Timer
+
+**Task timer**:
+1. Open a task detail modal
+2. In the "Timer" section click **Start Timer**
+3. Server creates an `ActiveTimers` record with `TimerType = 'task'`
+4. The modal shows a live elapsed counter (HH:MM:SS, updated every second)
+
+**Call timer** (see [Call Records](#10-call-records)):
+1. On the Call Records page, click the timer icon on a record
+2. Server creates an `ActiveTimers` record with `TimerType = 'call'`
+
+**Switching context while a timer is already active**:
+1. Open the target task detail (or target call in Call Records)
+2. Start timer in that target context while one is running
+3. Timesheet is not a timer-switch surface; it only reflects persisted time entries after stop/switch
+4. Backend auto-persists the existing timer first
+5. New timer starts after persistence completes
+6. UI labels this as **Switch & Save** in task context
+
+### Navbar Timer Indicator
+When any timer is running, the Navbar displays a persistent **live timer button**:
+- Shows elapsed time in HH:MM:SS format, updated every second via a client-side interval
+- Syncs with server every ~60 seconds (polls `/api/timers/active`) to stay accurate across tabs/reloads
+- For task timers: shows the linked task name
+- For call timers: shows the call subject or type
+- Clicking the indicator opens the **Timer Start Modal** where the user can stop, discard, or start a new timer
+- Starting a new timer from this state preserves previous elapsed work (auto-save), it does not discard previous run
+
+### Stopping a Timer
+1. Click the Navbar timer indicator → Stop Timer
+2. Elapsed seconds calculated from `ActiveTimers.StartedAt` → current time
+3. **Task timers**: A time entry is created automatically for the task. User confirms or adjusts the description.
+4. **Call timers**: The `CallRecords.DurationMinutes` field is updated with elapsed minutes. No time entry is created.
+5. `ActiveTimers` record deleted
+6. Navbar indicator disappears
+
+### Discarding a Timer
+- Clicking "Discard Timer" in the timer modal immediately deletes the `ActiveTimers` record without creating any time entry or updating any call record duration.
+
+### Timer Persistence
+- On page load / refresh the Navbar polls `/api/timers/active`
+- If a record exists, the counter is initialized from the server timestamp (`StartedAt`)
+- Elapsed time is always server-authoritative (not dependent on client clock uptime)
+
+---
+
+## 12. Memos
+
+Memos are personal or shared notes with calendar integration.
+
+### Fields
+- Title, Content (rich text with images)
+- **Visibility**: `private` (creator only), `organizations` (all members of creator's orgs), `public` (all users)
+- Tags (comma-separated; used for filtering)
+- `CreatedAt` timestamp (used for calendar display)
+
+### Calendar Interface
+- Month grid calendar displayed alongside the memo list
+- Bold dates on the calendar indicate days that have memos
+- **Today** highlighted in blue
+- **Selected date** (when date filter active) highlighted in dark blue
+
+### Date Filter (Toggle Behavior)
+- **Default**: Date filter disabled — all memos across all dates shown
+- **Click a date**: Filter activates — only memos from that date shown; selected date highlighted
+- **Click same date again**: Filter deactivates — all memos shown again; date highlight removed
+- "Clear Date Filter" button appears when filter is active
+
+### Other Filters
+- **Visibility filter**: All / Private / Organizations / Public
+- **Tag filter**: Click a tag to activate; click again to remove; multiple tags can be active (AND logic)
+- "Clear All Filters" button appears when any filter is active
+- "Show All Memos" shortcut shown when date filter is active and returns no results
+
+---
+
+## 13. Dashboard & Analytics
+
+### Dashboard (`/dashboard`)
+Tabs:
+- **Overview**: KPI cards (open tasks, overdue tasks, pending time entries, open tickets)
+- **Calendar**: Month view showing tasks due on each day; click a day to see all tasks
+- **Analytics**: Charts and metrics for the current period
+
+### KPI Cards & Drilldown
+- Each KPI card is configurable (widget system via `DashboardKPIs` table)
+- Clicking a card opens a drill-down modal with the backing list of records
+- **Task/TimeEntry** rows in drill-down open the Task Detail Modal
+- **Project** rows navigate to `/projects/:id`
+- **Customer** rows navigate to `/customers/:id`
+- **Ticket** rows navigate to `/tickets/:id`
+- Summary totals on cards are derived from the same dataset as the drill-down (single source of truth)
+
+### Analytics Period Selection
+- Default: current month
+- Period selector: this week, this month, this quarter, this year, **All Time**
+- Charts and totals update for the selected period
+
+---
+
+## 14. Portfolio
+
+`/portfolio` — high-level overview across all projects:
+- **RAG health score** per project (Red/Amber/Green)
+- Progress bars showing % completion
+- Budget burn indicator
+- Open ticket counts
+- Filters: organization, status, RAG score
+- Sort by: name, progress, budget, start/end date
+
+---
+
+## 15. Work Summary
+
+`/work-summary` — aggregated view of a user's work over a period:
+
+- **Period selector**: last 7 days, 30 days, 90 days, custom range
+- **Entries section**: combined list of time entries + call records in chronological order
+  - Time entries: shows task name, project, hours logged, description
+  - Call records: shows subject (falls back to Subject if Notes is empty), duration, participants, linked project/task
+- **Stats cards**: total hours worked, number of tasks touched, calls made
+- **By-project breakdown**: hours grouped by project
+
+### Work Summary Emails
+Automated emails sent by `workSummaryScheduler.ts`:
+- **Daily summary**: sent at end of user's configured work day
+- **Weekly summary**: sent on Friday at end of day (configurable)
+- Each summary breaks down worked hours by project, highlights overdue tasks
+- `WorkSummaryEmailLog` table prevents duplicate sends on server restart
+- Respects user's `work_summary` email preference
+
+---
+
+## 16. Permissions System
+
+Permissions are evaluated at two levels: **Global Role Permissions** and **Organization Permission Groups**.
+
+### Role-Based Permissions (Global)
+Each user has boolean role flags: `IsDeveloper`, `IsSupport`, `IsManager`.  
+The `RolePermissions` table defines allowed actions per role:
+
+| Permission | Description |
+|---|---|
+| `CanViewDashboard` | Access dashboard and analytics |
+| `CanViewPlanning` | Access the planning/Gantt page |
+| `CanViewReports` | Access project reports |
+| `CanViewBudgetInfo` | See budget-related data (project costs, hourly rates) |
+| `CanManageProjects` | Edit existing project details |
+| `CanCreateProjects` | Create new projects |
+| `CanDeleteProjects` | Delete projects |
+| `CanManageTasks` | Edit task details |
+| `CanCreateTasks` | Create new tasks |
+| `CanDeleteTasks` | Delete tasks |
+| `CanAssignTasks` | Assign tasks to users |
+| `CanManageTickets` | Edit ticket details |
+| `CanCreateTickets` | Create new tickets |
+| `CanDeleteTickets` | Delete tickets |
+| `CanAssignTickets` | Assign tickets to users |
+| `CanManageTimeEntries` | Log and edit time entries |
+| `CanManageOrganizations` | Manage organization settings and members |
+| `CanManageUsers` | Create and manage user accounts |
+
+**Default role capabilities:**
+
+| Permission | Developer | Support | Manager |
+|---|---|---|---|
+| CanViewDashboard | ✓ | ✓ | ✓ |
+| CanViewPlanning | ✓ | ✓ | ✓ |
+| CanViewReports | | ✓ | ✓ |
+| CanViewBudgetInfo | | | ✓ |
+| CanManageProjects | ✓ | | ✓ |
+| CanCreateProjects | ✓ | | ✓ |
+| CanDeleteProjects | | | ✓ |
+| CanManageTasks | ✓ | | ✓ |
+| CanCreateTasks | ✓ | | ✓ |
+| CanDeleteTasks | | | ✓ |
+| CanAssignTasks | | | ✓ |
+| CanManageTickets | ✓ | ✓ | ✓ |
+| CanCreateTickets | ✓ | ✓ | ✓ |
+| CanDeleteTickets | | | ✓ |
+| CanAssignTickets | | ✓ | ✓ |
+| CanManageTimeEntries | ✓ | ✓ | ✓ |
+| CanManageOrganizations | | | |
+| CanManageUsers | | | |
+
+### Permission Combination Rule
+A user with **multiple roles** gets the **union** of all permissions (OR logic).  
+A Manager role grants all of the above permissions regardless of other roles.  
+`isAdmin = true` overrides everything — admin users have full access to all features.
+
+### Organization Permission Groups
+Each org can create `PermissionGroups` with org-specific overrides:
+- Fields: `CanManageProjects`, `CanManageTasks`, `CanManageMembers`, `CanManageSettings`, `CanViewBudgetInfo`
+- Assigned to members when adding them to an organization
+- Budget visibility: `canViewBudgetInfo` is `TRUE` if **either** the role permission OR the org group permission allows it
+
+### Frontend Usage
+```typescript
+const { permissions, isLoading } = usePermissions();
+// Conditional UI:
+{permissions?.canCreateProjects && <button>Create Project</button>}
+```
+
+### Backend Validation
+All mutation endpoints check permissions server-side. Unauthorized requests return `403 Forbidden` even if the UI is bypassed.
+
+---
+
+## 17. Jira Integration
+
+### Two-Tier Architecture
+The integration supports **two separate Jira instances** per organization:
+
+| Tier | Purpose | Config Fields |
+|---|---|---|
+| **Jira for Tickets** | Ticket management, issue search, status sync | `JiraUrl`, `JiraEmail`, `JiraApiToken`, `JiraProjectKey` |
+| **Jira for Projects** | Project boards, kanban views | `JiraProjectsUrl`, `JiraProjectsEmail`, `JiraProjectsApiToken` |
+
+Both instances can be the same Jira, but they are configured independently.
+Project issue import prefers **Jira for Projects** credentials and falls back to **Jira for Tickets** credentials when Projects credentials are not configured.
+
+### Configuration
+In Organization Settings → Jira Integration tab:
+1. Enable the integration (`IsEnabled` toggle)
+2. Enter credentials for the Tickets instance
+3. Test the connection
+4. (Optional) Enter credentials for the Projects instance
+5. Save
+
+API tokens are encrypted with AES-256-CBC before storage and never returned in API responses.
+
+### Project-Level Board Association
+- Project Settings → Jira Board ID field (only visible when Projects integration is configured)
+- Links a project to a specific Jira board URL
+- Used to fetch issues from that board for display/import
+
+### Ticket ↔ Task Relationship Chain
+```
+Tasks.TicketId → Tickets.Id
+Tickets.ExternalTicketId → Jira issue key
+Tickets.OrganizationId → OrganizationJiraIntegrations.OrganizationId → JiraUrl
+```
+Task detail modal shows a Jira badge that opens the correct Jira URL in a new tab.
+
+### Features
+- **Search Jira issues** while creating/editing a ticket (queries Tickets Jira instance)
+- **Import tasks from Jira** board (queries Projects Jira instance)
+- **Check Jira Ticket Status**: batch query current Jira statuses for all linked tasks; selectively update local task statuses with global mapping + per-ticket override (see [Tasks section](#6-tasks))
+- **Jira board view** in project detail
+
+### Jira Search Behavior (Configured JQL + Search Text)
+- Organization-level `JiraTicketsJqlFilter` is applied by default
+- If the user provides explicit search text, search can bypass configured JQL to prioritize direct lookup
+- Query supports key, summary, and description matching
+- Default ordering is newest-first unless configured JQL defines an `ORDER BY`
+
+---
+
+## 18. Email & Notifications
+
+### SMTP Configuration
+In Administration → System Settings → Email Settings:
+- SMTP Host, Port, Username, Password (stored encrypted), TLS/SSL toggle
+- FROM Name and FROM email address
+- Test email button to verify settings
+
+Saving an empty SMTP password field clears the stored password (no masked placeholder token returned in API).
+
+### Notification Types
+| Event | Trigger | Recipient |
+|---|---|---|
+| Task assigned | Task `AssignedTo` changed | New assignee |
+| Task priority changed | Priority field updated | Task assignee |
+| Task status changed | Status field updated | Task assignee |
+| Ticket assigned | Support/Developer field changed | Newly assigned user |
+| @mention in comment | `@username` parsed after comment save | Mentioned user |
+| Due date reminder | 1 day before `DueDate` | Task assignee |
+| Work summary | Daily/weekly schedule | Each user |
+| Project PDF report | Scheduled (weekly/monthly) | Configured recipients |
+
+### In-App Notifications
+`createNotification()` inserts a record in `Notifications` and emits a `'notification'` WebSocket event via `socket.io` to the relevant user's connected browser tab. The Navbar shows a badge count and prepends the notification to the bell-icon dropdown without requiring a page refresh.
+
+### Email Preferences
+Each user can opt out of specific notification types in their Profile → Email Preferences panel. Preferences stored per user; disabled types skip email sending while in-app notifications still fire.
+
+---
+
+## 19. Search & Navigation
+
+### Global Search
+Accessible via the search icon in the Navbar:
+- Searches across: Tasks, Projects, Organizations, Users
+- Results appear as-you-type (debounced)
+- Each category shows paginated results with a **Load More** button
+- Clicking a result navigates to the detail page for that entity
+
+### Searchable Dropdowns (`SearchableSelect`)
+Single-select dropdowns with a type-to-filter input:
+- Case-insensitive filtering
+- Matches display label and subtitle
+- Works with large lists (100+ items)
+- Used for: users, projects, tasks, statuses, applications, etc.
+
+### Searchable Multi-Select (`SearchableMultiSelect`)
+Multi-select dropdowns with checkbox selection:
+- Search input filters the checkbox list
+- "Clear all" button removes all selections
+- Selected count badge shown on the trigger button
+- Used for: customer → application associations, organization multi-select, etc.
+
+### Navbar
+- Links adapt based on user permissions (hidden when no access)
+- Active Timer indicator (see [Active Timers](#11-active-timers))
+- Notification bell with real-time badge count
+- User avatar/name with dropdown: Profile link, Logout
+- Theme toggle (light/dark)
+- Global search icon
+
+---
+
+## 20. Administration
+
+### System Settings (`/administration`)
+Admin-only page:
+
+- **General**: App name, logo, branding
+- **Email / SMTP**: Configure mail server (see [Email & Notifications](#18-email--notifications))
+- **Timezone**: Default system timezone
+- **User Management**: Create, edit, activate/deactivate users; assign global roles; set hourly rate; manage admin flag
+- **Activity Logs**: Audit log of all admin actions
+
+### Branding
+- Upload a custom logo displayed in the Navbar and PDF exports
+- Configure accent color for UI elements
+
+### AI Assistant Widget
+- Available as a floating widget on supported views
+- Queries the backend AI assistant (`/api/ai-assistant`) which answers natural language questions about project data
+- Assistant has read access to tasks, allocations, time entries, and org members via database views (see `docs/AI_ASSISTANT_VIEWS.md`)
+
+#### Assistant Modes (Analytics vs Docs)
+- The widget includes a mode toggle:
+  - **Analytics mode**: Answers with organization/project/task/time context from AI backend views.
+  - **Docs mode**: Answers from curated in-app documentation context (module usage, workflows, permissions, settings).
+- Docs mode injects only relevant documentation sections based on query keywords, not the full manual.
+- If the question clearly has documentation intent, backend may route to docs-context response flow.
+- Responses remain English-only by assistant policy.
+
+#### Availability and Access Rules
+- Assistant visibility requires global AI enablement + valid OpenAI configuration in System Settings.
+- Analytics answers still enforce report/visibility permission constraints for business data scope.
+- Budget insights remain hidden when `canViewBudgetInfo` is denied.
+
+---
+
+## Appendix: Key Database Tables
+
+| Table | Purpose |
+|---|---|
+| `Users` | User accounts, roles, work hours, hourly rate |
+| `RolePermissions` | Global capability set per role |
+| `Organizations` | Top-level grouping entity |
+| `OrganizationMembers` | User ↔ Org membership with role and permission group |
+| `PermissionGroups` | Org-specific permission overrides |
+| `Customers` | External client records |
+| `CustomerUsers` | Portal user accounts scoped to a customer |
+| `Applications` | Software products |
+| `ApplicationVersions` | Versioned releases with patch notes |
+| `Projects` | Projects; linked to org, customer, application |
+| `Tasks` | Tasks with hierarchy (ParentTaskId), dependencies, and status |
+| `TaskAssignees` | Multiple assignees per task (junction table) |
+| `TaskChecklists` | Ordered checklist items per task |
+| `TaskTemplates` / `TaskTemplateItems` | Reusable task templates |
+| `TaskAllocationHeaders` | Planning slice identity (per task/user/split) |
+| `TaskAllocations` | Per-day allocated hours (linked to header) |
+| `TaskChildAllocations` | Parent allocation time split across child tasks |
+| `ActiveTimers` | Currently running timers; `TimerType`: `task` or `call` |
+| `TimeEntries` | Actual worked hours per task/user/date |
+| `CallRecords` | Meeting and call logs |
+| `Tickets` | Support tickets with SLA, status, and Jira linkage |
+| `Memos` | Rich-text personal or shared notes |
+| `Sprints` | Iteration planning linked to projects |
+| `Notifications` | In-app notification inbox |
+| `DueDateReminderLog` | Deduplication log for due-date reminder emails |
+| `WorkSummaryEmailLog` | Deduplication log for work summary emails |
+| `PasswordResetTokens` | Single-use tokens for password recovery |
+| `OrganizationJiraIntegrations` | Jira credentials per org (two-tier) |
+| `SLARules` | Per-org per-priority SLA thresholds |
+| `ProjectReportSchedules` | Scheduled PDF report config |
+| `DashboardKPIs` | Configurable KPI widget definitions |

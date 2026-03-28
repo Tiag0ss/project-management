@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { authApi } from '@/lib/api/auth';
+import { useToast } from '@/contexts/ToastContext';
 
 export default function ForgotPasswordPage() {
+  const { showToast } = useToast();
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -18,7 +20,9 @@ export default function ForgotPasswordPage() {
 
     try {
       const result = await authApi.forgotPassword(email);
-      setMessage(result.message || 'If an account with that email exists, a reset link has been sent.');
+      const successMessage = result.message || 'If an account with that email exists, a reset link has been sent.';
+      setMessage(successMessage);
+      showToast({ type: 'success', title: 'Reset Link Sent', message: successMessage });
       setEmail('');
     } catch (err: any) {
       setError(err.message || 'Failed to request password reset');

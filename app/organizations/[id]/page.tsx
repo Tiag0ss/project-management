@@ -6,6 +6,7 @@ import { useState, useEffect, use, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
+import { useToast } from '@/contexts/ToastContext';
 import { organizationsApi, Organization, OrganizationMember, AddMemberData } from '@/lib/api/organizations';
 import { permissionGroupsApi, PermissionGroup, CreatePermissionGroupData } from '@/lib/api/permissionGroups';
 import { statusValuesApi, StatusValue, CreateStatusValueData } from '@/lib/api/statusValues';
@@ -4288,6 +4289,7 @@ function GiteaIntegrationCard({
 
 // Integrations Tab Component
 function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
+  const { showToast } = useToast();
   const [integration, setIntegration] = useState<any>(null);
   const [githubIntegration, setGithubIntegration] = useState<any>(null);
   const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
@@ -4310,6 +4312,11 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
     jiraProjectsEmail: '',
     jiraProjectsApiToken: ''
   });
+
+  const setSuccessWithToast = (message: string, title = 'Success') => {
+    setSuccess(message);
+    showToast({ type: 'success', title, message });
+  };
 
   useEffect(() => {
     loadIntegration();
@@ -4466,10 +4473,10 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
       if (errors.length > 0) {
         setError(errors.join('\n'));
         if (results.length > 0) {
-          setSuccess(results.join('\n'));
+          setSuccessWithToast(results.join('\n'), 'Connection Test');
         }
       } else if (results.length > 0) {
-        setSuccess(results.join('\n'));
+        setSuccessWithToast(results.join('\n'), 'Connection Test');
       }
     } catch (err: any) {
       setError(err.message || 'Failed to test connection');
@@ -4506,7 +4513,7 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
       const data = await response.json();
 
       if (response.ok) {
-        setSuccess('Jira integration saved successfully');
+        setSuccessWithToast('Jira integration saved successfully', 'Integration Saved');
         setShowForm(false);
         loadIntegration();
       } else {
@@ -4532,7 +4539,7 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
       );
 
       if (response.ok) {
-        setSuccess('Integration removed successfully');
+        setSuccessWithToast('Integration removed successfully', 'Integration Removed');
         setIntegration(null);
         setFormData({
           isEnabled: true,
@@ -4572,12 +4579,6 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
       {error && (
         <div className="p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded-lg whitespace-pre-line">
           {error}
-        </div>
-      )}
-
-      {success && (
-        <div className="p-4 bg-green-100 dark:bg-green-900/30 border border-green-400 text-green-700 dark:text-green-400 rounded-lg whitespace-pre-line">
-          {success}
         </div>
       )}
 
@@ -4899,7 +4900,7 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
         orgId={orgId}
         onUpdate={loadIntegration}
         setError={setError}
-        setSuccess={setSuccess}
+          setSuccess={setSuccessWithToast}
       />
 
       {/* Gitea Integration Card */}
@@ -4909,7 +4910,7 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
         orgId={orgId}
         onUpdate={loadIntegration}
         setError={setError}
-        setSuccess={setSuccess}
+          setSuccess={setSuccessWithToast}
       />
     </div>
     {showDeleteConfirm && (

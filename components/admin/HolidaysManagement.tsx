@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getApiUrl } from '@/lib/api/config';
 import { COUNTRY_OPTIONS } from '@/lib/constants/countries';
 import SearchableSelect from '@/components/SearchableSelect';
+import { useToast } from '@/contexts/ToastContext';
 
 interface HolidayItem {
   Id: number;
@@ -18,6 +19,7 @@ interface HolidayItem {
 
 export default function HolidaysManagement() {
   const { token } = useAuth();
+  const { showToast } = useToast();
   const countryOptions = COUNTRY_OPTIONS.map((country) => ({
     value: country.code,
     label: `${country.name} (${country.code})`
@@ -105,6 +107,7 @@ export default function HolidaysManagement() {
       setHolidayDate('');
       setHolidayName('');
       setSuccess('Holiday added successfully');
+      showToast({ type: 'success', title: 'Holiday', message: 'Holiday added successfully' });
       await loadHolidays(holidayYear, holidayCountryCode);
     } catch (err: any) {
       setError(err.message || 'Failed to add holiday');
@@ -131,6 +134,7 @@ export default function HolidaysManagement() {
       }
 
       setSuccess('Holiday deleted successfully');
+      showToast({ type: 'success', title: 'Holiday', message: 'Holiday deleted successfully' });
       await loadHolidays(holidayYear, holidayCountryCode);
     } catch (err: any) {
       setError(err.message || 'Failed to delete holiday');
@@ -165,6 +169,7 @@ export default function HolidaysManagement() {
       }
 
       setSuccess(`Imported ${data.inserted || 0} holidays from Nager.Date`);
+      showToast({ type: 'success', title: 'Holidays Imported', message: `Imported ${data.inserted || 0} holidays from Nager.Date` });
       await loadHolidays(holidayYear, holidayCountryCode);
     } catch (err: any) {
       setError(err.message || 'Failed to import holidays');
@@ -201,6 +206,7 @@ export default function HolidaysManagement() {
       }
 
       setSuccess(`Imported ${data.inserted || 0} holidays from OpenHolidays API`);
+      showToast({ type: 'success', title: 'Holidays Imported', message: `Imported ${data.inserted || 0} holidays from OpenHolidays API` });
       await loadHolidays(holidayYear, holidayCountryCode);
     } catch (err: any) {
       setError(err.message || 'Failed to import holidays');
@@ -219,12 +225,6 @@ export default function HolidaysManagement() {
       {error && (
         <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded">
           {error}
-        </div>
-      )}
-
-      {success && (
-        <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-800 text-green-700 dark:text-green-400 rounded">
-          {success}
         </div>
       )}
 

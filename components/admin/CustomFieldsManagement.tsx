@@ -3,27 +3,38 @@
 import { useState, useEffect } from 'react';
 import { getApiUrl } from '@/lib/api/config';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
+
+interface CustomTable {
+  Id: number;
+  Name: string;
+  Description: string | null;
+}
 
 interface CustomField {
   Id: number;
   TableName: string;
   FieldName: string;
   DisplayName: string;
+  GroupName: string | null;
   DataType: string;
   IsRequired: number;
   Description: string;
   CreatedAt: string;
   CreatedBy: number;
   IsActive: number;
+  CustomTableId: number | null;
 }
 
 interface FormData {
   tableName: string;
   fieldName: string;
   displayName: string;
+  groupName: string;
   dataType: string;
   isRequired: boolean;
   description: string;
+  customTableId: number | null;
 }
 
 const AVAILABLE_DATA_TYPES = [
@@ -51,25 +62,46 @@ const AVAILABLE_TABLES = [
 
 export default function CustomFieldsManagement() {
   const { token } = useAuth();
+  const { showToast } = useToast();
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [customTables, setCustomTables] = useState<CustomTable[]>([]);
   const [selectedTable, setSelectedTable] = useState<string>('Projects');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [editingFieldId, setEditingFieldId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     tableName: 'Projects',
     fieldName: '',
     displayName: '',
+    groupName: '',
     dataType: 'varchar(255)',
     isRequired: false,
     description: '',
+    customTableId: null,
   });
 
   useEffect(() => {
     void loadCustomFields();
+    void loadCustomTables();
   }, [token]);
+
+  const loadCustomTables = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${getApiUrl()}/api/custom-tables`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setCustomTables(data.tables || []);
+      }
+    } catch {
+      // non-critical – ignore
+    }
+  };
 
   const loadCustomFields = async () => {
     if (!token) return;
@@ -96,8 +128,42 @@ export default function CustomFieldsManagement() {
   };
 
   const filteredFields = customFields.filter(field => field.TableName === selectedTable);
+  const existingGroupNames = Array.from(new Set(
+    filteredFields
+      .map((field) => (field.GroupName || '').trim())
+      .filter((name) => name.length > 0)
+  )).sort((a, b) => a.localeCompare(b));
 
-  const handleAddField = async (e: React.FormEvent) => {
+  const resetForm = () => {
+    setEditingFieldId(null);
+    setFormData({
+      tableName: selectedTable,
+      fieldName: '',
+      displayName: '',
+      groupName: '',
+      dataType: 'varchar(255)',
+      isRequired: false,
+      description: '',
+      customTableId: null,
+    });
+  };
+
+  const handleEditField = (field: CustomField) => {
+    setEditingFieldId(field.Id);
+    setShowForm(true);
+    setFormData({
+      tableName: field.TableName,
+      fieldName: field.FieldName,
+      displayName: field.DisplayName,
+      groupName: field.GroupName || '',
+      dataType: field.DataType,
+      isRequired: field.IsRequired === 1,
+      description: field.Description || '',
+      customTableId: field.CustomTableId || null,
+    });
+  };
+
+  const handleSubmitField = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
@@ -115,7 +181,7 @@ export default function CustomFieldsManagement() {
 
     // Check for duplicate field name in the same table
     const isDuplicate = filteredFields.some(
-      field => field.FieldName.toLowerCase() === formData.fieldName.toLowerCase()
+      field => field.FieldName.toLowerCase() === formData.fieldName.toLowerCase() && field.Id !== editingFieldId
     );
 
     if (isDuplicate) {
@@ -126,8 +192,9 @@ export default function CustomFieldsManagement() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${getApiUrl()}/api/custom-fields`, {
-        method: 'POST',
+      const isEditing = editingFieldId !== null;
+      const response = await fetch(`${getApiUrl()}/api/custom-fields${isEditing ? `/${editingFieldId}` : ''}`, {
+        method: isEditing ? 'PUT' : 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -136,32 +203,28 @@ export default function CustomFieldsManagement() {
           tableName: formData.tableName,
           fieldName: formData.fieldName,
           displayName: formData.displayName,
+          groupName: formData.groupName,
           dataType: formData.dataType,
           isRequired: formData.isRequired,
           description: formData.description,
+          customTableId: formData.customTableId,
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to create custom field');
+        throw new Error(data.message || (isEditing ? 'Failed to update custom field' : 'Failed to create custom field'));
       }
 
-      setSuccess('Custom field created successfully');
+      setSuccess(isEditing ? 'Custom field updated successfully' : 'Custom field created successfully');
+      showToast({ type: 'success', title: 'Custom Field', message: isEditing ? 'Custom field updated successfully' : 'Custom field created successfully' });
       await loadCustomFields();
       setShowForm(false);
-      setFormData({
-        tableName: 'Projects',
-        fieldName: '',
-        displayName: '',
-        dataType: 'varchar(255)',
-        isRequired: false,
-        description: '',
-      });
+      resetForm();
       setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
-      setError(err.message || 'Failed to create custom field');
+      setError(err.message || 'Failed to save custom field');
     } finally {
       setIsSubmitting(false);
     }
@@ -185,6 +248,7 @@ export default function CustomFieldsManagement() {
       }
 
       setSuccess('Custom field deleted successfully');
+      showToast({ type: 'success', title: 'Custom Field', message: 'Custom field deleted successfully' });
       await loadCustomFields();
       setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
@@ -214,12 +278,6 @@ export default function CustomFieldsManagement() {
       {error && (
         <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
           {error}
-        </div>
-      )}
-
-      {success && (
-        <div className="mb-4 p-4 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-800 text-green-700 dark:text-green-400 rounded-lg">
-          {success}
         </div>
       )}
 
@@ -268,7 +326,8 @@ export default function CustomFieldsManagement() {
             </div>
             <button
               onClick={() => {
-                setFormData({ ...formData, tableName: selectedTable });
+                setEditingFieldId(null);
+                setFormData({ ...formData, tableName: selectedTable, fieldName: '', displayName: '', groupName: '', dataType: 'varchar(255)', isRequired: false, description: '', customTableId: null });
                 setShowForm(!showForm);
               }}
               className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white transition-colors"
@@ -280,8 +339,13 @@ export default function CustomFieldsManagement() {
           {/* Add Field Form */}
           {showForm && (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6 mb-6">
-              <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Custom Field</h4>
-              <form onSubmit={handleAddField} className="space-y-4">
+              <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">{editingFieldId ? 'Edit Custom Field' : 'Add Custom Field'}</h4>
+              <form onSubmit={handleSubmitField} className="space-y-4">
+                <datalist id="custom-field-groups">
+                  {existingGroupNames.map((groupName) => (
+                    <option key={groupName} value={groupName} />
+                  ))}
+                </datalist>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -291,8 +355,9 @@ export default function CustomFieldsManagement() {
                       type="text"
                       value={formData.fieldName}
                       onChange={(e) => setFormData({ ...formData, fieldName: e.target.value })}
+                      disabled={editingFieldId !== null}
                       placeholder="e.g., BudgetCode"
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${editingFieldId !== null ? 'border-gray-200 dark:border-gray-700 opacity-60 cursor-not-allowed' : 'border-gray-300 dark:border-gray-600'}`}
                     />
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                       Database name: U_{formData.fieldName}
@@ -314,17 +379,39 @@ export default function CustomFieldsManagement() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Group
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.groupName}
+                      onChange={(e) => setFormData({ ...formData, groupName: e.target.value })}
+                      placeholder="e.g., Release Tracking"
+                      list="custom-field-groups"
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Optional. Fields in the same group render together in forms.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Data Type *
                     </label>
                     <select
-                      value={formData.dataType}
+                      value={formData.customTableId ? 'int' : formData.dataType}
                       onChange={(e) => setFormData({ ...formData, dataType: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      disabled={!!formData.customTableId || editingFieldId !== null}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${(formData.customTableId || editingFieldId !== null) ? 'border-gray-200 dark:border-gray-700 opacity-60 cursor-not-allowed' : 'border-gray-300 dark:border-gray-600'}`}
                     >
                       {AVAILABLE_DATA_TYPES.map((type) => (
                         <option key={type} value={type}>{type}</option>
                       ))}
                     </select>
+                    {editingFieldId !== null && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Data type cannot be changed after the field is created.</p>
+                    )}
+                    {formData.customTableId && (
+                      <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">Auto-set to int (stores row Id)</p>
+                    )}
                   </div>
 
                   <div>
@@ -356,10 +443,32 @@ export default function CustomFieldsManagement() {
                   />
                 </div>
 
+                {customTables.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Link to Custom Table
+                      <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">(optional — renders a dropdown in forms)</span>
+                    </label>
+                    <select
+                      value={formData.customTableId ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value ? Number(e.target.value) : null;
+                        setFormData({ ...formData, customTableId: val, dataType: editingFieldId !== null ? formData.dataType : (val ? 'int' : 'varchar(255)') });
+                      }}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="">— None —</option>
+                      {customTables.map((t) => (
+                        <option key={t.Id} value={t.Id}>{t.Name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div className="flex gap-3 pt-4">
                   <button
                     type="button"
-                    onClick={() => setShowForm(false)}
+                    onClick={() => { setShowForm(false); resetForm(); }}
                     className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
                   >
                     Cancel
@@ -369,7 +478,7 @@ export default function CustomFieldsManagement() {
                     disabled={isSubmitting}
                     className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white transition-colors font-medium"
                   >
-                    {isSubmitting ? 'Creating...' : 'Create Field'}
+                    {isSubmitting ? (editingFieldId ? 'Saving...' : 'Creating...') : (editingFieldId ? 'Save Changes' : 'Create Field')}
                   </button>
                 </div>
               </form>
@@ -384,7 +493,8 @@ export default function CustomFieldsManagement() {
               </p>
               <button
                 onClick={() => {
-                  setFormData({ ...formData, tableName: selectedTable });
+                  setEditingFieldId(null);
+                  setFormData({ ...formData, tableName: selectedTable, fieldName: '', displayName: '', groupName: '', dataType: 'varchar(255)', isRequired: false, description: '', customTableId: null });
                   setShowForm(true);
                 }}
                 className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
@@ -411,6 +521,16 @@ export default function CustomFieldsManagement() {
                             Required
                           </span>
                         )}
+                        {field.GroupName && (
+                          <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-1 rounded">
+                            📁 {field.GroupName}
+                          </span>
+                        )}
+                        {field.CustomTableId && (
+                          <span className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-1 rounded">
+                            🗃️ {customTables.find(t => t.Id === field.CustomTableId)?.Name || 'Custom Table'}
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
                         <span className="font-medium">Type:</span> {field.DataType}
@@ -422,6 +542,16 @@ export default function CustomFieldsManagement() {
                         Created: {new Date(field.CreatedAt).toLocaleDateString()}
                       </p>
                     </div>
+                    <button
+                      onClick={() => handleEditField(field)}
+                      className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded transition-colors"
+                      title="Edit custom field"
+                      aria-label="Edit custom field"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
                     <button
                       onClick={() => handleDeleteField(field.Id, field.DisplayName || field.FieldName)}
                       className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"

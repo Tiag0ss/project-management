@@ -11,8 +11,9 @@ import ActivityLogsManagement from '@/components/admin/ActivityLogsManagement';
 import FrontpageEditor from '@/components/admin/FrontpageEditor';
 import HolidaysManagement from '@/components/admin/HolidaysManagement';
 import CustomFieldsManagement from '@/components/admin/CustomFieldsManagement';
+import CustomTablesManagement from '@/components/admin/CustomTablesManagement';
 
-type AdminTab = 'users' | 'permissions' | 'settings' | 'custom-fields' | 'holidays' | 'logs' | 'frontpage';
+type AdminTab = 'users' | 'permissions' | 'settings' | 'custom-fields' | 'custom-tables' | 'holidays' | 'logs' | 'frontpage';
 
 export default function AdministrationPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>('users');
@@ -102,6 +103,18 @@ export default function AdministrationPage() {
             </button>
 
             <button
+              onClick={() => setActiveTab('custom-tables')}
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                activeTab === 'custom-tables'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <span className="text-xl">🗃️</span>
+              <span className="font-medium">Custom Tables</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('holidays')}
               className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
                 activeTab === 'holidays'
@@ -149,6 +162,8 @@ export default function AdministrationPage() {
           {activeTab === 'settings' && <SystemSettings />}
 
           {activeTab === 'custom-fields' && <CustomFieldsManagement />}
+
+          {activeTab === 'custom-tables' && <CustomTablesManagement />}
 
           {activeTab === 'holidays' && <HolidaysManagement />}
           

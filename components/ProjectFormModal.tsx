@@ -9,6 +9,7 @@ import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
+import { useToast } from '@/contexts/ToastContext';
 
 interface ProjectFormModalProps {
   project: Project | null;
@@ -25,6 +26,7 @@ export default function ProjectFormModal({
   token,
   canViewBudgetInfo,
 }: ProjectFormModalProps) {
+  const { showToast } = useToast();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [customers, setCustomers] = useState<{ Id: number; Name: string }[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
@@ -226,7 +228,9 @@ export default function ProjectFormModal({
       }
       onSaved();
     } catch (err: any) {
-      setError(err.message || 'Failed to save project');
+      const message = err.message || 'Failed to save project';
+      setError(message);
+      showToast({ type: 'error', title: 'Project Error', message });
     } finally {
       setIsLoading(false);
     }

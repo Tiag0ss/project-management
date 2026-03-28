@@ -28,6 +28,12 @@
       "Comment": "Display name shown to users in UI"
     },
     {
+      "FieldName": "GroupName",
+      "DataType": "varchar(100)",
+      "NotNullable": false,
+      "Comment": "Optional visual group label used to organize custom fields in forms"
+    },
+    {
       "FieldName": "DataType",
       "DataType": "varchar(50)",
       "NotNullable": true,
@@ -45,6 +51,12 @@
       "DataType": "text",
       "NotNullable": false,
       "Comment": "Description of what this custom field is for"
+    },
+    {
+      "FieldName": "CustomTableId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Optional: link to a CustomTables row; values stored as int (row ID)"
     },
     {
       "FieldName": "CreatedAt",

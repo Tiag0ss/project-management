@@ -6,6 +6,7 @@ import SearchableSelect from '@/components/SearchableSelect';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { CustomFieldValues } from '@/lib/customFields';
 import RichTextEditor from '@/components/RichTextEditor';
+import { useToast } from '@/contexts/ToastContext';
 
 interface Organization {
   Id: number;
@@ -108,11 +109,17 @@ export default function TimeEntryFormModal({
   taskOptions = [],
   useOrganizationProjectTaskFlow = false,
 }: TimeEntryFormModalProps) {
+  const { showToast } = useToast();
   const [formData, setFormData] = useState<TimeEntryFormValues>(mergeFormData(initialData));
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [error, setError] = useState('');
+
+  const setErrorWithToast = (message: string) => {
+    setError(message);
+    showToast({ type: 'error', title: 'Time Entry Error', message });
+  };
 
   const shouldUseOrgProjectFlow = useOrganizationProjectTaskFlow && !!token;
 
@@ -203,7 +210,7 @@ export default function TimeEntryFormModal({
         }
       } catch (err) {
         console.error('Error preparing time entry form:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load form data');
+        setErrorWithToast(err instanceof Error ? err.message : 'Failed to load form data');
       }
     })();
   }, [isOpen, shouldUseOrgProjectFlow, initialData]);
@@ -231,7 +238,7 @@ export default function TimeEntryFormModal({
       await loadProjectsForOrg(value);
     } catch (err) {
       console.error('Error loading projects:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load projects');
+      setErrorWithToast(err instanceof Error ? err.message : 'Failed to load projects');
     }
   };
 
@@ -252,18 +259,18 @@ export default function TimeEntryFormModal({
       await loadTasksForProject(value);
     } catch (err) {
       console.error('Error loading tasks:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load tasks');
+      setErrorWithToast(err instanceof Error ? err.message : 'Failed to load tasks');
     }
   };
 
   const handleSubmit = async () => {
     if (!formData.taskId) {
-      setError('Task is required.');
+      setErrorWithToast('Task is required.');
       return;
     }
 
     if (!formData.workDate) {
-      setError('Work date is required.');
+      setErrorWithToast('Work date is required.');
       return;
     }
 
@@ -273,7 +280,7 @@ export default function TimeEntryFormModal({
     }
 
     if (hours <= 0) {
-      setError('Hours must be greater than 0.');
+      setErrorWithToast('Hours must be greater than 0.');
       return;
     }
 
@@ -286,7 +293,7 @@ export default function TimeEntryFormModal({
       });
     } catch (err) {
       console.error('Error saving time entry:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save time entry');
+      setErrorWithToast(err instanceof Error ? err.message : 'Failed to save time entry');
     }
   };
 

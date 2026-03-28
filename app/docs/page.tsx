@@ -3,7 +3,7 @@
 import Navbar from '@/components/Navbar';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 interface ManualSection {
   id: string;
@@ -13,24 +13,26 @@ interface ManualSection {
   steps: string[];
   tips: string[];
   commonMistakes: string[];
-  imagePlaceholders: { label: string; fileName: string; note: string }[];
+  imagePlaceholders?: { label: string; fileName: string; note: string }[];
 }
 
 interface FeatureDetailSection {
   id: string;
   title: string;
+  shortTitle?: string;
   modulePurpose: string;
   createFlow: string[];
   editFlow: string[];
   deleteFlow: string[];
   optionExplanations: { option: string; meaning: string }[];
   moduleRelations: string[];
-  imagePlaceholders: { label: string; fileName: string; note: string }[];
+  imagePlaceholders?: { label: string; fileName: string; note: string }[];
 }
 
 interface WorkflowPlaybook {
   id: string;
   title: string;
+  shortTitle?: string;
   goal: string;
   modulesInvolved: string[];
   steps: string[];
@@ -61,6 +63,14 @@ interface PermissionMatrixRow {
   support: string;
   developer: string;
   customerUser: string;
+}
+
+interface ModuleBundle {
+  id: string;
+  title: string;
+  quickSectionId?: string;
+  detailSectionIds?: string[];
+  playbookIds?: string[];
 }
 
 const manualSections: ManualSection[] = [
@@ -122,21 +132,29 @@ const manualSections: ManualSection[] = [
       'Open Projects and select the project you will work on.',
       'Use the project tabs (Overview, Kanban, Gantt, Reporting) based on your goal.',
       'Create/update tasks with clear names, ownership, due dates, and estimated hours.',
+      'Use project settings for Global Project behavior when work is cross-customer and should not be tied to one customer.',
       'Use parent-child structure to break large work into subtasks when needed.',
+      'In Task Detail -> Allocations tab, use the Split button to split a planned slice across multiple users.',
+      'Choose split mode (Parallel or Sequential) and validate resulting user slices before saving.',
+      'If Jira integration is enabled, use Jira import and status mapping flows before bulk ticket/task synchronization.',
       'Keep task comments and attachments up to date for handovers and audits.',
     ],
     tips: [
       'Use specific action verbs in task names (for example “Implement”, “Review”, “Validate”).',
+      'Use split slices when one task requires multiple contributors with explicit handoff order.',
       'When work is blocked, update status immediately and document blocker context.',
     ],
     commonMistakes: [
       'Creating parent tasks without actionable subtasks.',
+      'Marking a project as global while still expecting customer association and customer visibility options.',
+      'Splitting allocations without checking each user daily capacity and existing planned work.',
       'Leaving old assignees/statuses unchanged after responsibility transitions.',
     ],
     imagePlaceholders: [
       { label: 'Projects list screen', fileName: 'docs-projects-list.png', note: 'Capture project cards/table and filters.' },
       { label: 'Project detail tabs', fileName: 'docs-project-detail-tabs.png', note: 'Capture Overview/Kanban/Gantt/Reporting tab row.' },
       { label: 'Task detail modal', fileName: 'docs-task-detail-modal.png', note: 'Capture fields for status, assignee, due date, comments, attachments.' },
+      { label: 'Task split allocation action', fileName: 'docs-task-split-allocation-button.png', note: 'Capture the Split button in Task Detail -> Allocations and resulting split dialog.' },
     ],
   },
   {
@@ -146,22 +164,32 @@ const manualSections: ManualSection[] = [
     whenToUse: 'Use for sprint/weekly planning, allocation balancing, and replan actions.',
     steps: [
       'Open Planning and select the relevant date range/view mode (Week, Month, Year).',
+      'Choose the correct board perspective: Resource View (by user) or Task View (by task).',
       'Review current assignments and user capacity before adding allocations.',
-      'Allocate hours to tasks on specific days and monitor availability feedback.',
-      'Use replanning when deadlines shift; confirm the remaining hours strategy.',
+      'Allocate hours to tasks on specific days and monitor availability feedback (direct + child allocations).',
+      'Use split allocations when one task must be distributed across multiple users/slices.',
+      'Move slices with normal drag (full slice) or Ctrl + drag (partial by hours).',
+      'Use replanning when deadlines shift; confirm remaining-hours logic based on already logged time.',
+      'Review unscheduled-work tasks and ghost markers to avoid hidden unplanned workload.',
       'Validate that critical tasks have planned dates and assigned owners.',
     ],
     tips: [
       'Use Week mode for detailed scheduling and Month/Year for macro balancing.',
+      'Treat allocation headers as source of truth (one bar per header/slice) when troubleshooting timeline behavior.',
       'Review current-day highlight to quickly anchor timeline discussions.',
     ],
     commonMistakes: [
       'Planning without checking already allocated hours for the same user/date.',
+      'Dragging split tasks at parent level instead of on the target user row/day for slice-specific replan.',
+      'Ignoring unscheduled-work markers because they do not render as regular timeline bars.',
       'Overallocating parent tasks without validating child task distribution.',
     ],
     imagePlaceholders: [
       { label: 'Planning timeline (week mode)', fileName: 'docs-planning-week-mode.png', note: 'Capture user rows, day columns, and allocations.' },
-      { label: 'Planning allocation modal', fileName: 'docs-planning-allocation-modal.png', note: 'Capture fields for hours/date/user assignment.' },
+      { label: 'Planning allocation modal', fileName: 'docs-planning-allocation-modal.png', note: 'Capture fields for hours/date/user assignment, split mode, and split entries.' },
+      { label: 'Planning split slices', fileName: 'docs-planning-split-slices.png', note: 'Capture one task split across multiple users with separate bars/slices.' },
+      { label: 'Planning move/recalculate actions', fileName: 'docs-planning-move-recalculate.png', note: 'Capture allocation header detail modal with move/recalculate controls.' },
+      { label: 'Planning unscheduled work markers', fileName: 'docs-planning-unscheduled-work.png', note: 'Capture unscheduled-work ghost markers and their day placement.' },
       { label: 'Planning current-day highlight', fileName: 'docs-planning-today-highlight.png', note: 'Capture blue today column and header marker.' },
     ],
   },
@@ -249,21 +277,54 @@ const manualSections: ManualSection[] = [
     whenToUse: 'Use after meetings/calls with customers, stakeholders, or internal teams.',
     steps: [
       'Open Call Records and create a new record after each relevant call.',
-      'Fill participants, call type, subject, time, and concise notes.',
+      'Fill participants, call type, subject, call date/start time, duration, and concise notes.',
       'Link project/task where applicable to keep context centralized.',
+      'Use CSV import for bulk migration or Teams import for external call history sync.',
+      'Use call timer when you need exact elapsed duration and stop it from navbar controls.',
       'Use date filters to review communication history before follow-ups.',
     ],
     tips: [
       'Record action items and owners in the notes field.',
+      'When Notes is empty in summaries, keep Subject meaningful so lists remain readable.',
       'Use consistent subject prefixes for recurring meetings.',
     ],
     commonMistakes: [
       'Saving incomplete records without participants or clear summary.',
+      'Starting a call timer and forgetting to stop/discard it before ending the day.',
       'Keeping call notes outside the platform, breaking traceability.',
     ],
     imagePlaceholders: [
       { label: 'Call records list', fileName: 'docs-calls-list.png', note: 'Capture call history with date filter controls.' },
       { label: 'Call record form', fileName: 'docs-calls-form.png', note: 'Capture key fields including participants/subject/notes.' },
+      { label: 'Call import actions', fileName: 'docs-calls-import-actions.png', note: 'Capture CSV import and Teams import flows with result summary.' },
+      { label: 'Call timer in navbar', fileName: 'docs-calls-navbar-timer.png', note: 'Capture active call timer indicator and stop/discard controls.' },
+    ],
+  },
+  {
+    id: 'active-timers',
+    title: 'Active Timers (Navbar + Task/Call)',
+    purpose: 'Track work and call duration in real time with a single active timer per user.',
+    whenToUse: 'Use when you need precise elapsed time for task execution or calls.',
+    steps: [
+      'Start a timer from Task Detail (task mode) or Call Records (call mode).',
+      'If another timer is already running, starting a new timer saves the existing timer first and then switches context.',
+      'Watch the active timer indicator in the navbar; it persists while you navigate pages.',
+      'Open timer controls from navbar to Stop (save) or Discard (cancel) the running timer.',
+      'For task timers, confirm time entry creation with correct description/date on stop.',
+      'For call timers, confirm call duration update when timer is stopped.',
+    ],
+    tips: [
+      'Use timer for deep-work blocks to reduce manual estimation errors in Timesheet.',
+      'If timer seems off after refresh, use navbar control first; state is server-synced.',
+    ],
+    commonMistakes: [
+      'Running multiple timers mentally; the system supports one active timer per user.',
+      'Confusing Stop vs Discard (Stop records data, Discard removes timer without logging).',
+    ],
+    imagePlaceholders: [
+      { label: 'Task timer controls', fileName: 'docs-active-timers-task-controls.png', note: 'Capture start/stop/discard timer controls inside Task Detail modal.' },
+      { label: 'Navbar active timer indicator', fileName: 'docs-active-timers-navbar-indicator.png', note: 'Capture live timer in navbar while navigating to another page.' },
+      { label: 'Timer start modal', fileName: 'docs-active-timers-start-modal.png', note: 'Capture modal used to start/stop timer and choose task/call context.' },
     ],
   },
   {
@@ -435,10 +496,6 @@ const manualSections: ManualSection[] = [
       'Reporting generic “not working” without reproducible steps.',
       'Ignoring hidden active filters in list views.',
     ],
-    imagePlaceholders: [
-      { label: 'Clear filters example', fileName: 'docs-troubleshooting-clear-filters.png', note: 'Capture active filters + clear button in a list page.' },
-      { label: 'Support-ready bug report example', fileName: 'docs-troubleshooting-report-example.png', note: 'Capture a good issue report template with IDs and context.' },
-    ],
   },
   {
     id: 'tips',
@@ -459,9 +516,6 @@ const manualSections: ManualSection[] = [
       'Batch-updating everything at end of week, causing data drift.',
       'Leaving blockers in comments without status change.',
     ],
-    imagePlaceholders: [
-      { label: 'Example daily workflow checklist', fileName: 'docs-daily-workflow-checklist.png', note: 'Capture a sample checklist card for daily routine.' },
-    ],
   },
   {
     id: 'scope',
@@ -480,9 +534,6 @@ const manualSections: ManualSection[] = [
     commonMistakes: [
       'Using end-user manual for admin configuration tasks.',
     ],
-    imagePlaceholders: [
-      { label: 'Manual scope summary card', fileName: 'docs-manual-scope-summary.png', note: 'Capture top-of-page scope and audience statement.' },
-    ],
   },
 ];
 
@@ -490,15 +541,19 @@ const featureDetails: FeatureDetailSection[] = [
   {
     id: 'detail-projects',
     title: 'Projects and Tasks - Complete Reference',
+    shortTitle: 'Reference',
+
     modulePurpose: 'Plan and execute delivery using projects, tasks, hierarchy, and progress tracking.',
     createFlow: [
       'Create a project from Projects list (name, organization, dates, status).',
+      'Use Global Project only for cross-customer/internal initiatives that should not be attached to a specific customer.',
       'Open project detail and create tasks with status, priority, type, assignee, and estimates.',
       'For large work, create parent tasks and then subtasks using Parent Task relation.',
       'If ticket-driven, link task to ticket or convert from ticket flow where available.',
     ],
     editFlow: [
       'Edit project settings when scope, dates, or status changes.',
+      'When switching to Global Project, remove customer association and keep customer visibility disabled for that project.',
       'Edit task fields in task modal: assignee, status, priority, type, dates, description.',
       'Update dependencies when execution order changes.',
       'Keep comments/attachments current to preserve implementation context.',
@@ -515,6 +570,8 @@ const featureDetails: FeatureDetailSection[] = [
       { option: 'Parent Task', meaning: 'Creates hierarchy; child tasks roll up into parent-level visibility.' },
       { option: 'Depends On Task', meaning: 'Blocks start/progress until predecessor task is completed.' },
       { option: 'Estimated Hours', meaning: 'Planned effort; should represent realistic implementation time.' },
+      { option: 'IsGlobal', meaning: 'Marks project as cross-customer/global scope. Global projects cannot be associated with a customer.' },
+      { option: 'IsVisibleToCustomer', meaning: 'Controls customer portal visibility for non-global projects. It is disabled when project is global.' },
     ],
     moduleRelations: [
       'Organizations -> Projects (project belongs to one organization).',
@@ -522,6 +579,7 @@ const featureDetails: FeatureDetailSection[] = [
       'Tasks -> TaskAllocations (planned effort by date/user).',
       'Tasks -> TimeEntries (actual effort logged by users).',
       'Tasks -> Tickets (optional support-to-delivery linkage).',
+      'Dashboard global analytics (admin) can aggregate project-level trends including global initiatives.',
     ],
     imagePlaceholders: [
       { label: 'Create project modal', fileName: 'docs-detail-project-create-modal.png', note: 'Capture project create fields and status selector.' },
@@ -532,41 +590,142 @@ const featureDetails: FeatureDetailSection[] = [
   {
     id: 'detail-planning',
     title: 'Planning and Allocations - Complete Reference',
+    shortTitle: 'Reference',
+
     modulePurpose: 'Transform task backlog into realistic date/user plans with capacity control.',
     createFlow: [
-      'Open Planning and choose timeline mode (Week, Month, Year).',
-      'Select a task and allocate hours to user/date combinations.',
-      'For parent tasks, distribute planned hours to child tasks when needed.',
+      'Open Planning and choose timeline mode: Week (28 days), Month (90 days), Year (365 days).',
+      'Choose board perspective: Resource View (group by user) or Task View (group by task).',
+      'Create allocations by dropping tasks into user/day slots; confirm daily capacity checks.',
+      'When needed, enable split and create multiple slices (headers) across users with SplitOrder.',
+      'For parent tasks, distribute planned hours to child tasks when needed (child allocations).',
       'Confirm start/end dates auto-adjust according to allocations.',
     ],
     editFlow: [
       'Adjust allocated hours when priorities or team capacity changes.',
+      'Move allocations with normal drag for full-slice movement.',
+      'Use Ctrl + drag to move partial slice hours between users/dates.',
       'Replan tasks considering already worked hours and remaining effort.',
-      'Move allocations across dates carefully to avoid overbooking users.',
+      'Use move/recalculate actions in allocation detail modal for controlled updates.',
+      'Review unscheduled-work markers and done-transition anchors for visibility.',
     ],
     deleteFlow: [
       'Remove wrong allocations rather than creating compensating negative entries.',
+      'Delete by allocation slice/header when possible to avoid collateral removal of adjacent slices.',
       'When deleting parent/child allocations, re-check resulting task dates and capacity.',
     ],
     optionExplanations: [
-      { option: 'View Mode', meaning: 'Week (detailed), Month (mid-range), Year (long-range) timeline granularity.' },
-      { option: 'Allocated Hours', meaning: 'Planned hours for a user on a specific date; affects availability.' },
-      { option: 'Replan', meaning: 'Reschedules remaining hours after accounting for time already worked.' },
+      { option: 'View Mode', meaning: 'Week (28 days), Month (90 days), Year (365 days); navigation jumps by the same day span.' },
+      { option: 'Board Type', meaning: 'Resource View groups by user; Task View groups by task. Use Resource for capacity balancing and Task for delivery sequencing.' },
+      { option: 'TaskAllocationHeaderId', meaning: 'Logical allocation slice identity. Planning bars render per header, not by naive date-gap merge.' },
+      { option: 'Split Mode (Parallel/Sequential)', meaning: 'Parallel keeps slices overlapping in time; Sequential chains slices by split order.' },
+      { option: 'Allocated Hours', meaning: 'Planned hours for a user on a specific date; affects availability checks.' },
+      { option: 'Move (Drag)', meaning: 'Normal drag moves full slice/header. Ctrl + drag moves partial hours from the source slice.' },
+      { option: 'Recalculate', meaning: 'Reschedules remaining hours after subtracting worked time entries from estimated hours.' },
+      { option: 'Unscheduled Work', meaning: 'Task marked as unscheduled renders as marker/anchor dates instead of regular bars.' },
       { option: 'Current Day Highlight', meaning: 'Visual marker to orient planning around today.' },
     ],
     moduleRelations: [
       'Planning consumes Tasks as planning units.',
       'Planning checks User work-hours profile for daily capacity limits.',
+      'Planning availability includes TaskAllocations and TaskChildAllocations.',
+      'Split slices are represented by TaskAllocationHeaders and split order metadata.',
       'Planning data should align with Timesheet actuals for accurate forecasts.',
     ],
     imagePlaceholders: [
       { label: 'Planning allocation interaction', fileName: 'docs-detail-planning-allocation-interaction.png', note: 'Capture assigning hours to a user/day cell.' },
+      { label: 'Planning split allocation', fileName: 'docs-detail-planning-split-allocation.png', note: 'Capture one task split into multiple user slices (parallel vs sequential).' },
+      { label: 'Planning partial move (Ctrl + drag)', fileName: 'docs-detail-planning-ctrl-drag-partial.png', note: 'Capture partial-slice move by hours flow.' },
+      { label: 'Planning unscheduled markers', fileName: 'docs-detail-planning-unscheduled-markers.png', note: 'Capture unscheduled work ghost markers and done-transition anchors.' },
       { label: 'Replan confirmation example', fileName: 'docs-detail-planning-replan-confirmation.png', note: 'Capture replan flow with remaining-hours validation.' },
+    ],
+  },
+  {
+    id: 'detail-call-records',
+    title: 'Call Records - Complete Reference',
+    shortTitle: 'Reference',
+
+    modulePurpose: 'Capture communication history with searchable, reportable links to projects and tasks.',
+    createFlow: [
+      'Create call record manually with call date, start time, duration, participants, subject, and notes.',
+      'Link organization/project/task when the call relates to execution work.',
+      'Use CSV import for historical migration from spreadsheets.',
+      'Use Teams import to pull external calls in selected period windows.',
+    ],
+    editFlow: [
+      'Update subject/participants/notes when meeting context changes after review.',
+      'Adjust linked project/task if call was connected to the wrong work item.',
+      'Use filters to validate imported records and remove duplicates where needed.',
+    ],
+    deleteFlow: [
+      'Delete only duplicate or invalid records; preserve operational history when possible.',
+      'If removing imported batches, validate downstream summaries before finalizing.',
+    ],
+    optionExplanations: [
+      { option: 'Call Type', meaning: 'Categorizes communication (for example Support, Follow-up, Internal, Customer). Useful for analytics and filtering.' },
+      { option: 'Participants', meaning: 'People involved in the call; keep names consistent for search quality.' },
+      { option: 'Subject', meaning: 'Call title shown in summaries when notes are empty; write it clearly.' },
+      { option: 'Notes', meaning: 'Narrative details, decisions, and action items. Prefer concise structured notes.' },
+      { option: 'Teams Import Period', meaning: 'Preset windows (7/30/90 days) or custom range for external call sync.' },
+    ],
+    moduleRelations: [
+      'Call records can link to Projects and Tasks for traceability.',
+      'Work Summary combines call records with time entries in chronological history.',
+      'ActiveTimers supports call-mode timers that update call duration directly.',
+    ],
+    imagePlaceholders: [
+      { label: 'Call record create/edit modal', fileName: 'docs-detail-calls-create-edit.png', note: 'Capture key fields and project/task links.' },
+      { label: 'Teams import modal', fileName: 'docs-detail-calls-teams-import.png', note: 'Capture period picker and import result counters.' },
+      { label: 'Call records filtered list', fileName: 'docs-detail-calls-filtered-list.png', note: 'Capture filters and resulting call history rows.' },
+    ],
+  },
+  {
+    id: 'detail-active-timers',
+    title: 'Active Timers - Complete Reference',
+    shortTitle: 'Reference',
+
+    modulePurpose: 'Provide accurate elapsed-time tracking for task execution and call activity.',
+    createFlow: [
+      'Start timer from Task Detail for task-mode tracking.',
+      'Start timer from Call Records for call-mode tracking.',
+      'If a timer already exists, starting another timer automatically persists the existing one and starts the new context.',
+      'Use navbar active timer indicator to monitor elapsed time while navigating.',
+    ],
+    editFlow: [
+      'Use Switch & Save in task context when moving focus from one task to another without losing tracked work.',
+      'Stop timer to persist tracked duration (time entry for task mode; duration update for call mode).',
+      'Discard timer when tracking was started by mistake and should not be logged.',
+      'If needed, adjust resulting time entry description/date after stop flow.',
+    ],
+    deleteFlow: [
+      'Discard removes active timer without creating a time entry or call duration update.',
+      'Avoid force-removal unless timer is definitely invalid, to preserve accurate tracking history.',
+    ],
+    optionExplanations: [
+      { option: 'Timer Type', meaning: 'Task timer writes to time entries; call timer writes to call record duration.' },
+      { option: 'Navbar Timer Indicator', meaning: 'Persistent live control showing elapsed time across pages.' },
+      { option: 'Switch & Save', meaning: 'When another timer is active, this action saves the current timer first and then starts timing the selected task.' },
+      { option: 'Stop Timer', meaning: 'Finalizes tracking and persists data to the corresponding destination.' },
+      { option: 'Discard Timer', meaning: 'Cancels active timer and drops tracking data for that run.' },
+      { option: 'Single Active Timer Rule', meaning: 'Only one active timer per user can run at a time.' },
+    ],
+    moduleRelations: [
+      'Task timers feed Timesheet/TimeEntries data.',
+      'Call timers feed CallRecords duration data.',
+      'Starting a new timer triggers auto-save for existing active timer at API level.',
+      'Navbar exposes timer controls regardless of current module page.',
+    ],
+    imagePlaceholders: [
+      { label: 'Navbar active timer', fileName: 'docs-detail-active-timers-navbar.png', note: 'Capture live elapsed timer in navbar.' },
+      { label: 'Task timer stop flow', fileName: 'docs-detail-active-timers-task-stop.png', note: 'Capture stop confirmation and resulting time entry creation.' },
+      { label: 'Call timer stop flow', fileName: 'docs-detail-active-timers-call-stop.png', note: 'Capture stop behavior updating call record duration.' },
     ],
   },
   {
     id: 'detail-timesheet',
     title: 'Timesheet and Approvals - Complete Reference',
+    shortTitle: 'Reference',
+
     modulePurpose: 'Track real effort and keep approval/reporting processes accurate.',
     createFlow: [
       'Add entries in Daily or Weekly view with task, date, and hours.',
@@ -601,6 +760,8 @@ const featureDetails: FeatureDetailSection[] = [
   {
     id: 'detail-tickets',
     title: 'Tickets, Statuses, and Conversion - Complete Reference',
+    shortTitle: 'Reference',
+
     modulePurpose: 'Manage service lifecycle with clear ownership, communication, and transition rules.',
     createFlow: [
       'Create ticket with title, description, priority, and category/type.',
@@ -636,8 +797,91 @@ const featureDetails: FeatureDetailSection[] = [
     ],
   },
   {
+    id: 'detail-jira-integration',
+    title: 'Jira Integration (Tickets + Project Boards) - Complete Reference',
+    shortTitle: 'Jira Integration',
+
+    modulePurpose: 'Synchronize Jira issues into tickets/tasks while preserving mapping control and local workflow ownership.',
+    createFlow: [
+      'Configure organization Jira integration with tickets credentials (required) and projects credentials (optional but preferred for board import).',
+      'Set project Jira board URL/ID in project settings when importing issues by board/project context.',
+      'Open Jira import/search flow and fetch issues using configured project key/JQL filters.',
+      'Select issues, review status/priority/type mappings, and import to local tickets/tasks.',
+      'Run Check Ticket Status to compare live Jira status with local mapped status before bulk updates.',
+    ],
+    editFlow: [
+      'Update status mappings when Jira workflow names diverge from local task/ticket status values.',
+      'Use assignee/customer mapping overrides for imported issues when automatic mapping is ambiguous.',
+      'Adjust hide-integrated behavior to avoid duplicate imports while still allowing manual review.',
+      'Rerun status checks after mapping changes to validate proposed updates before applying.',
+    ],
+    deleteFlow: [
+      'Avoid deleting integration unless migration/decommission is planned; disable first when possible.',
+      'Prefer keeping imported tickets/tasks and closing them through local workflow instead of deletion.',
+    ],
+    optionExplanations: [
+      { option: 'JiraTicketsJqlFilter', meaning: 'Organization-level JQL filter for Jira ticket search; used when search text does not explicitly bypass configured JQL.' },
+      { option: 'Ignore Configured JQL', meaning: 'Search can bypass configured filter when explicitly requested or when search text is provided.' },
+      { option: 'Jira Projects Credentials', meaning: 'Optional secondary credentials used for project-board issue import; falls back to tickets credentials if absent.' },
+      { option: 'Check Ticket Status', meaning: 'Compares live Jira issue status with local task/ticket mapped status and prepares update decisions.' },
+      { option: 'Status Mapping', meaning: 'Maps Jira status labels to local status values so imports and status sync remain deterministic.' },
+    ],
+    moduleRelations: [
+      'Organization settings hold Jira credentials and default filters.',
+      'Project settings provide board context (JiraBoardId) for board-centric issue import.',
+      'Tickets and Tasks store external issue keys for future synchronization and dedupe.',
+      'Notifications and reporting consume imported/synced ticket-task lifecycle updates.',
+    ],
+    imagePlaceholders: [
+      { label: 'Organization Jira configuration', fileName: 'docs-detail-jira-org-config.png', note: 'Capture Jira tickets/projects credentials and JQL filter fields.' },
+      { label: 'Project Jira board settings', fileName: 'docs-detail-jira-project-board-settings.png', note: 'Capture Jira board URL/ID in project settings.' },
+      { label: 'Jira import modal with mappings', fileName: 'docs-detail-jira-import-mappings.png', note: 'Capture issue selection and status/priority/type mapping controls.' },
+      { label: 'Jira check status modal', fileName: 'docs-detail-jira-check-status-modal.png', note: 'Capture live Jira status comparison and update actions.' },
+    ],
+  },
+  {
+    id: 'detail-global-projects',
+    title: 'Global Projects and Global Analytics - Complete Reference',
+    shortTitle: 'Global Projects',
+
+    modulePurpose: 'Explain how global projects differ from customer-linked projects and how global metrics are consumed.',
+    createFlow: [
+      'Create project and enable Global Project when the initiative spans multiple customers or is internal platform work.',
+      'Keep customer field empty for global projects (customer association is not allowed).',
+      'Use standard task/planning/timesheet flows inside global projects just like regular projects.',
+      'For admin analytics, review global statistics period filters to monitor cross-organization delivery trends.',
+    ],
+    editFlow: [
+      'When toggling project to global, clear any customer association and verify customer visibility is disabled.',
+      'When reverting from global to customer-specific, explicitly set customer and visibility fields again.',
+      'Maintain consistent status/health updates so global KPI trends stay reliable.',
+    ],
+    deleteFlow: [
+      'Prefer closing global projects instead of deletion to preserve long-running platform history.',
+      'Before deleting, verify no dependent tasks/time entries/reports require historical continuity.',
+    ],
+    optionExplanations: [
+      { option: 'Global Project Badge', meaning: 'Visual indicator in project listings/details that identifies cross-customer global scope.' },
+      { option: 'Customer Association Rule', meaning: 'Global projects cannot have a customer assigned.' },
+      { option: 'Customer Visibility Rule', meaning: 'Global projects force customer visibility off in project settings.' },
+      { option: 'Global Stats Period', meaning: 'Admin dashboard global statistics support period/date-range filtering, including all-time.' },
+    ],
+    moduleRelations: [
+      'Projects list and project detail expose global state and constraints.',
+      'Project forms/import-export include IsGlobal and IsVisibleToCustomer fields.',
+      'Dashboard analytics can aggregate global-level metrics for admin users.',
+      'Ticket/task/plan/time modules operate normally inside global projects after creation rules are satisfied.',
+    ],
+    imagePlaceholders: [
+      { label: 'Projects list global badge', fileName: 'docs-detail-global-project-badge.png', note: 'Capture Global Project badge in project list row/card.' }, 
+      { label: 'Dashboard global analytics period', fileName: 'docs-detail-global-analytics-period.png', note: 'Capture admin global analytics period selector and cards.' },
+    ],
+  },
+  {
     id: 'detail-status-config',
     title: 'Custom Status and Priority Values - User Interpretation',
+    shortTitle: 'Status Config',
+
     modulePurpose: 'Help end users understand what each selectable status/priority/type option means in daily operation.',
     createFlow: [
       'Select values from dropdowns while creating tickets/tasks.',
@@ -671,6 +915,8 @@ const featureDetails: FeatureDetailSection[] = [
   {
     id: 'detail-vacations-holidays',
     title: 'Vacations and Holidays - Complete Reference',
+    shortTitle: 'Reference',
+
     modulePurpose: 'Control user availability, avoid scheduling conflicts, and keep planning realistic.',
     createFlow: [
       'Create vacation requests with start/end dates and verify computed days.',
@@ -707,6 +953,8 @@ const featureDetails: FeatureDetailSection[] = [
   {
     id: 'detail-settings',
     title: 'Global and Organization Settings - Complete Reference',
+    shortTitle: 'Settings Ref',
+
     modulePurpose: 'Clarify setting scope and impact: system-wide vs organization-specific.',
     createFlow: [
       'Global settings (admin): configure system-wide behavior (branding, feature toggles, communications).',
@@ -743,6 +991,8 @@ const featureDetails: FeatureDetailSection[] = [
   {
     id: 'detail-relations',
     title: 'Module Relationships Map',
+    shortTitle: 'Module Map',
+
     modulePurpose: 'Explain how data moves across modules so users understand impact of each action.',
     createFlow: [
       'Create Organizations/Projects to establish work containers.',
@@ -767,10 +1017,7 @@ const featureDetails: FeatureDetailSection[] = [
       'Customers -> Tickets -> (optional) Tasks.',
       'Tasks/Tickets updates -> Notifications + Reports + Dashboard summaries.',
       'Profile work-hours/recurrence -> Planning availability calculations.',
-    ],
-    imagePlaceholders: [
-      { label: 'Cross-module data flow diagram', fileName: 'docs-detail-module-relations-flow.png', note: 'Capture or create a visual relationship map between modules.' },
-    ],
+    ], 
   },
 ];
 
@@ -778,6 +1025,8 @@ const workflowPlaybooks: WorkflowPlaybook[] = [
   {
     id: 'playbook-ticket-to-delivery',
     title: 'Ticket to Delivery Workflow',
+    shortTitle: 'Ticket → Delivery',
+
     goal: 'Turn a support request into delivered and tracked implementation work.',
     modulesInvolved: ['Tickets', 'Projects', 'Planning', 'Timesheet', 'Notifications'],
     steps: [
@@ -797,6 +1046,8 @@ const workflowPlaybooks: WorkflowPlaybook[] = [
   {
     id: 'playbook-planned-vs-actual',
     title: 'Planned vs Actual Control Workflow',
+    shortTitle: 'Planned vs Actual',
+
     goal: 'Keep planning realistic by continuously reconciling allocations and real execution.',
     modulesInvolved: ['Planning', 'Timesheet', 'Dashboard', 'Project Reporting'],
     steps: [
@@ -815,6 +1066,8 @@ const workflowPlaybooks: WorkflowPlaybook[] = [
   {
     id: 'playbook-release-readiness',
     title: 'Release Readiness Workflow (User Perspective)',
+    shortTitle: 'Release Readiness',
+
     goal: 'Prepare a reliable release snapshot from task and ticket progress.',
     modulesInvolved: ['Projects', 'Tasks', 'Tickets', 'Applications/Releases', 'Reports'],
     steps: [
@@ -827,6 +1080,69 @@ const workflowPlaybooks: WorkflowPlaybook[] = [
       'In-scope tasks have final status and proper traceability.',
       'Known exceptions are explicitly documented.',
       'Exported output matches agreed reporting period/scope.',
+    ],
+  },
+  {
+    id: 'playbook-timer-switch-context',
+    title: 'Timer Context Switch Workflow',
+    shortTitle: 'Context Switch',
+
+    goal: 'Switch between tasks/calls without losing tracked time and without creating duplicate active timers.',
+    modulesInvolved: ['Task Detail', 'Call Records', 'Navbar Active Timer'],
+    steps: [
+      'Start timer from current context (task or call) and confirm navbar indicator appears.',
+      'When context changes to another task, open that target task detail and start timer there (Switch & Save).',
+      'When context changes to a call, start timer from Call Records for that call.',
+      'Timesheet is not used to switch timer context; it only shows the resulting persisted entries.',
+      'System saves the existing active timer automatically, then starts the new one.',
+      'At end of work block, stop active timer to persist final duration.',
+      'Review resulting time entry/call duration and fix description/date only when needed.',
+    ],
+    doneCriteria: [
+      'Only one active timer exists for the user at any time.',
+      'Previous timer duration is persisted before new timer starts.',
+      'Timesheet/call history reflects both work blocks without overlap gaps caused by manual loss.',
+    ],
+  },
+  {
+    id: 'playbook-jira-sync-governance',
+    title: 'Jira Import and Status Sync Workflow',
+    shortTitle: 'Jira Sync',
+
+    goal: 'Import and synchronize Jira work while preserving local status/assignee/customer governance.',
+    modulesInvolved: ['Organization Settings', 'Project Settings', 'Project Jira Import', 'Status Mapping', 'Tickets/Tasks'],
+    steps: [
+      'Validate organization Jira credentials and default JQL filter configuration.',
+      'Set project board context and open Jira import/check-status flow for target project.',
+      'Fetch issues, review integrated/hide flags, and select import candidates.',
+      'Configure mappings (status, priority, type, assignee/customer overrides) before applying changes.',
+      'Run check-status and apply approved updates to local tasks/tickets.',
+      'Review project boards and reports for expected status transitions and dedupe behavior.',
+    ],
+    doneCriteria: [
+      'Imported issues are linked by external key with no duplicate active records.',
+      'Mapped statuses reflect expected local workflow states.',
+      'Subsequent status checks show stable alignment between Jira and local records.',
+    ],
+  },
+  {
+    id: 'playbook-global-project-governance',
+    title: 'Global Project Governance Workflow',
+    shortTitle: 'Global Governance',
+
+    goal: 'Create and run global projects with correct customer constraints and reliable global analytics.',
+    modulesInvolved: ['Projects', 'Project Settings', 'Planning', 'Timesheet', 'Dashboard Analytics'],
+    steps: [
+      'Create project and enable Global Project for cross-customer/internal initiative scope.',
+      'Confirm customer association is empty and customer visibility is disabled.',
+      'Plan, execute, and log effort through normal task/planning/timesheet lifecycle.',
+      'Keep status and health updates current so global KPI trends remain meaningful.',
+      'For admin reviews, compare period-based global stats including all-time trend checks.',
+    ],
+    doneCriteria: [
+      'Project remains compliant with global constraints (no customer linkage).',
+      'Delivery data is fully trackable through tasks, allocations, and time entries.',
+      'Dashboard global analytics reflects project activity in selected periods.',
     ],
   },
 ];
@@ -894,6 +1210,62 @@ const fieldDictionary: FieldDictionaryEntry[] = [
     whatItControls: 'Execution structure and sequence constraints.',
     howToChoose: 'Use parent for decomposition; dependency for execution order.',
     commonError: 'Using parent relationship when a dependency relationship is intended.',
+  },
+  {
+    field: 'TaskAllocationHeaderId',
+    whereUsed: 'Planning allocations and allocation detail modal',
+    whatItControls: 'Identity of a logical allocation slice (one planning bar per header).',
+    howToChoose: 'Use header-aware actions when moving/deleting/replanning to avoid touching other slices.',
+    commonError: 'Assuming adjacent dates are one slice when they belong to different headers.',
+  },
+  {
+    field: 'Split Mode / SplitOrder',
+    whereUsed: 'Planning split allocations and task allocation split action',
+    whatItControls: 'Parallel vs sequential execution and user slice ordering.',
+    howToChoose: 'Use Parallel for concurrent contributors; Sequential for explicit handoff order.',
+    commonError: 'Choosing Sequential but expecting all users to start on the same date.',
+  },
+  {
+    field: 'Unscheduled Work',
+    whereUsed: 'Task + Planning timeline',
+    whatItControls: 'Task displays as unscheduled marker/anchor instead of standard planned bar.',
+    howToChoose: 'Enable only for work intentionally tracked outside explicit date allocations.',
+    commonError: 'Marking regular planned tasks as unscheduled and losing timeline visibility.',
+  },
+  {
+    field: 'Timer Type',
+    whereUsed: 'Active Timers (task/call)',
+    whatItControls: 'Destination of tracked time (time entry vs call duration).',
+    howToChoose: 'Use task timer for implementation work; call timer for communication records.',
+    commonError: 'Starting call timer when task time should be logged to Timesheet.',
+  },
+  {
+    field: 'Call Subject vs Notes',
+    whereUsed: 'Call Records + Work Summary entries',
+    whatItControls: 'Readability of call history when descriptions are missing.',
+    howToChoose: 'Always fill Subject clearly; Notes should add actions and decisions.',
+    commonError: 'Leaving both fields empty, producing low-value history lines.',
+  },
+  {
+    field: 'JiraTicketsJqlFilter',
+    whereUsed: 'Organization Jira Integration settings',
+    whatItControls: 'Default Jira issue filter used by ticket search/import when not bypassed by explicit search behavior.',
+    howToChoose: 'Use stable JQL that matches your support scope and workflow (for example project + unresolved + desired status constraints).',
+    commonError: 'Using overly restrictive JQL and assuming Jira has no issues to import.',
+  },
+  {
+    field: 'JiraBoardId / Board URL',
+    whereUsed: 'Project Settings (Jira for Projects)',
+    whatItControls: 'Project-specific Jira context used to derive project key for board-centric issue import.',
+    howToChoose: 'Paste the board URL/identifier from the intended Jira project board for this project.',
+    commonError: 'Using unrelated board URL, causing imports from wrong Jira project scope.',
+  },
+  {
+    field: 'IsGlobal / IsVisibleToCustomer',
+    whereUsed: 'Project create/edit, projects CSV import/export',
+    whatItControls: 'Whether project is global cross-customer scope and whether it can appear in customer-facing visibility contexts.',
+    howToChoose: 'Set IsGlobal for internal/cross-customer work; for non-global projects decide customer visibility based on governance policy.',
+    commonError: 'Trying to keep customer association or customer visibility enabled after switching project to global.',
   },
 ];
 
@@ -1071,6 +1443,95 @@ const permissionMatrixRows: PermissionMatrixRow[] = [
   },
 ];
 
+const moduleBundles: ModuleBundle[] = [
+  {
+    id: 'dashboard',
+    title: 'Dashboard',
+    quickSectionId: 'dashboard',
+    detailSectionIds: ['detail-relations'],
+    playbookIds: ['playbook-planned-vs-actual'],
+  },
+  {
+    id: 'projects',
+    title: 'Projects and Tasks',
+    quickSectionId: 'projects-tasks',
+    detailSectionIds: ['detail-projects', 'detail-global-projects', 'detail-jira-integration'],
+    playbookIds: ['playbook-ticket-to-delivery', 'playbook-release-readiness', 'playbook-global-project-governance', 'playbook-jira-sync-governance'],
+  },
+  {
+    id: 'planning',
+    title: 'Planning',
+    quickSectionId: 'planning',
+    detailSectionIds: ['detail-planning'],
+    playbookIds: ['playbook-planned-vs-actual'],
+  },
+  {
+    id: 'timesheet',
+    title: 'Timesheet and Approvals',
+    quickSectionId: 'timesheet',
+    detailSectionIds: ['detail-timesheet'],
+    playbookIds: ['playbook-planned-vs-actual'],
+  },
+  {
+    id: 'tickets',
+    title: 'Tickets',
+    quickSectionId: 'tickets',
+    detailSectionIds: ['detail-tickets'],
+    playbookIds: ['playbook-ticket-to-delivery'],
+  },
+  {
+    id: 'calls',
+    title: 'Call Records',
+    quickSectionId: 'calls',
+    detailSectionIds: ['detail-call-records'],
+    playbookIds: ['playbook-timer-switch-context'],
+  },
+  {
+    id: 'timers',
+    title: 'Active Timers',
+    quickSectionId: 'active-timers',
+    detailSectionIds: ['detail-active-timers'],
+    playbookIds: ['playbook-timer-switch-context'],
+  },
+  {
+    id: 'memos',
+    title: 'Memos',
+    quickSectionId: 'memos',
+  },
+  {
+    id: 'notifications',
+    title: 'Notifications and Mentions',
+    quickSectionId: 'notifications',
+  },
+  {
+    id: 'profile',
+    title: 'Profile and Preferences',
+    quickSectionId: 'profile',
+  },
+  {
+    id: 'customer-users',
+    title: 'Customer User Experience',
+    quickSectionId: 'customer-users',
+  },
+  {
+    id: 'vacations',
+    title: 'Vacations and Holidays',
+    quickSectionId: 'vacations-holidays',
+    detailSectionIds: ['detail-vacations-holidays'],
+  },
+  {
+    id: 'settings',
+    title: 'Settings and Permissions',
+    quickSectionId: 'settings-overview',
+    detailSectionIds: ['detail-settings', 'detail-status-config'],
+  },
+  {
+    id: 'exports',
+    title: 'Reports and Exports',
+    quickSectionId: 'exports',
+  },
+];
+
 function ImagePlaceholderCard({
   title,
   fileName,
@@ -1080,19 +1541,35 @@ function ImagePlaceholderCard({
   fileName: string;
   note: string;
 }) {
+  const [missing, setMissing] = useState(false);
+  const src = `/img/${fileName}`;
+
   return (
-    <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/40 p-4">
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/40 p-4">
       <div className="flex items-center justify-between gap-3 mb-2">
         <h4 className="text-sm font-semibold text-gray-900 dark:text-white">🖼️ {title}</h4>
-        <span className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200">placeholder</span>
+        {missing && (
+          <span className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200">placeholder</span>
+        )}
       </div>
-      <p className="text-xs text-gray-700 dark:text-gray-300">
-        Suggested filename: <span className="font-semibold">{fileName}</span>
-      </p>
-      <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">{note}</p>
-      <div className="mt-3 h-24 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 flex items-center justify-center text-xs text-gray-500 dark:text-gray-400">
-        Drop screenshot here later
-      </div>
+      {!missing ? (
+        <img
+          src={src}
+          alt={title}
+          className="mt-2 w-full rounded border border-gray-200 dark:border-gray-600 object-contain"
+          onError={() => setMissing(true)}
+        />
+      ) : (
+        <>
+          <p className="text-xs text-gray-700 dark:text-gray-300">
+            Suggested filename: <span className="font-semibold">{fileName}</span>
+          </p>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">{note}</p>
+          <div className="mt-3 h-24 rounded border border-dashed border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 flex items-center justify-center text-xs text-gray-500 dark:text-gray-400">
+            Drop screenshot here later
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1416,6 +1893,18 @@ export default function DocsPage() {
     return null;
   }
 
+  const manualById = new Map(manualSections.map((section) => [section.id, section]));
+  const detailById = new Map(featureDetails.map((detail) => [detail.id, detail]));
+  const playbookById = new Map(workflowPlaybooks.map((playbook) => [playbook.id, playbook]));
+
+  const bundledQuickIds = new Set(moduleBundles.map((bundle) => bundle.quickSectionId).filter(Boolean) as string[]);
+  const bundledDetailIds = new Set(moduleBundles.flatMap((bundle) => bundle.detailSectionIds || []));
+  const bundledPlaybookIds = new Set(moduleBundles.flatMap((bundle) => bundle.playbookIds || []));
+
+  const generalManualSections = manualSections.filter((section) => !bundledQuickIds.has(section.id));
+  const standaloneDetails = featureDetails.filter((detail) => !bundledDetailIds.has(detail.id));
+  const standalonePlaybooks = workflowPlaybooks.filter((playbook) => !bundledPlaybookIds.has(playbook.id));
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Navbar />
@@ -1443,9 +1932,9 @@ export default function DocsPage() {
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Contents</h2>
                 <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
                   <div>
-                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 font-semibold mb-2">Core Guide</p>
+                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 font-semibold mb-2">General</p>
                     <div className="space-y-1">
-                      {manualSections.map((section) => (
+                      {generalManualSections.map((section) => (
                         <a
                           key={section.id}
                           href={`#${section.id}`}
@@ -1458,32 +1947,63 @@ export default function DocsPage() {
                   </div>
 
                   <div>
-                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 font-semibold mb-2">Detailed Reference</p>
-                    <div className="space-y-1">
-                      {featureDetails.map((detail) => (
-                        <a
-                          key={detail.id}
-                          href={`#${detail.id}`}
-                          className="block text-sm px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/50 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                        >
-                          {detail.title}
-                        </a>
+                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 font-semibold mb-2">Modules</p>
+                    <div className="space-y-2">
+                      {moduleBundles.map((bundle) => (
+                        <details key={bundle.id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30" open={bundle.id === 'projects'}>
+                          <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-gray-800 dark:text-gray-100">
+                            {bundle.title}
+                          </summary>
+                          <div className="px-3 pb-3 space-y-1">
+                            <a
+                              href={`#module-${bundle.id}`}
+                              className="block text-xs px-2 py-1.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                            >
+                              Module Overview
+                            </a>
+                            {bundle.quickSectionId && manualById.get(bundle.quickSectionId) && (
+                              <a
+                                href={`#${bundle.quickSectionId}`}
+                                className="block text-xs px-2 py-1.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                              >
+                                Quick Guide
+                              </a>
+                            )}
+                            {(bundle.detailSectionIds || []).map((detailId) => {
+                              const detail = detailById.get(detailId);
+                              if (!detail) return null;
+                              return (
+                                <a
+                                  key={`${bundle.id}-${detailId}`}
+                                  href={`#${detailId}`}
+                                  className="block text-xs px-2 py-1.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors"
+                                >
+                                  {detail.shortTitle || detail.title}
+                                </a>
+                              );
+                            })}
+                            {(bundle.playbookIds || []).map((playbookId) => {
+                              const playbook = playbookById.get(playbookId);
+                              if (!playbook) return null;
+                              return (
+                                <a
+                                  key={`${bundle.id}-${playbookId}`}
+                                  href={`#${playbookId}`}
+                                  className="block text-xs px-2 py-1.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
+                                >
+                                  {playbook.shortTitle || playbook.title}
+                                </a>
+                              );
+                            })}
+                          </div>
+                        </details>
                       ))}
                     </div>
                   </div>
 
                   <div>
-                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 font-semibold mb-2">Operational Playbooks</p>
+                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 font-semibold mb-2">Reference Tables</p>
                     <div className="space-y-1">
-                      {workflowPlaybooks.map((playbook) => (
-                        <a
-                          key={playbook.id}
-                          href={`#${playbook.id}`}
-                          className="block text-sm px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/50 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                        >
-                          {playbook.title}
-                        </a>
-                      ))}
                       <a
                         href="#field-dictionary"
                         className="block text-sm px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/50 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
@@ -1516,16 +2036,16 @@ export default function DocsPage() {
               <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
                 <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-300">How to use this manual</h3>
                 <ul className="mt-2 space-y-1 text-xs text-amber-800 dark:text-amber-200">
-                  <li>1) Start in Core Guide.</li>
-                  <li>2) Use Detailed Reference for exact option behavior.</li>
-                  <li>3) Use Playbooks for end-to-end real workflows.</li>
+                  <li>1) Open the module menu in the sidebar.</li>
+                  <li>2) Use submenus to jump directly to Quick Guide, Detailed Reference, or Workflow.</li>
+                  <li>3) Read one module section at a time (all related info stays together).</li>
                 </ul>
               </div>
             </div>
           </aside>
 
           <main className="xl:col-span-9 space-y-6">
-            {manualSections.map((section) => (
+            {generalManualSections.map((section) => (
               <section
                 key={section.id}
                 id={section.id}
@@ -1542,39 +2062,116 @@ export default function DocsPage() {
                     <ManualList title="Common mistakes to avoid" items={section.commonMistakes} />
                   </div>
 
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Screenshot placeholders</h3>
-                    <div className="space-y-3">
-                      {section.imagePlaceholders.map((placeholder) => (
-                        <ImagePlaceholderCard
-                          key={`${section.id}-${placeholder.fileName}`}
-                          title={placeholder.label}
-                          fileName={placeholder.fileName}
-                          note={placeholder.note}
-                        />
-                      ))}
+                  {section.imagePlaceholders && section.imagePlaceholders.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Screenshot placeholders</h3>
+                      <div className="space-y-3">
+                        {section.imagePlaceholders.map((placeholder) => (
+                          <ImagePlaceholderCard
+                            key={`${section.id}-${placeholder.fileName}`}
+                            title={placeholder.label}
+                            fileName={placeholder.fileName}
+                            note={placeholder.note}
+                          />
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </section>
             ))}
 
-            <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Complete Functionality Reference</h2>
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                Detailed reference by module: how to add, edit, delete, what each option means, and how modules relate to each other.
-              </p>
-            </section>
+            {moduleBundles.map((bundle) => {
+              const quick = bundle.quickSectionId ? manualById.get(bundle.quickSectionId) : null;
+              const details = (bundle.detailSectionIds || [])
+                .map((detailId) => detailById.get(detailId))
+                .filter((detail): detail is FeatureDetailSection => Boolean(detail));
+              const playbooks = (bundle.playbookIds || [])
+                .map((playbookId) => playbookById.get(playbookId))
+                .filter((playbook): playbook is WorkflowPlaybook => Boolean(playbook));
 
-            {featureDetails.map((detail) => (
-              <section
-                key={detail.id}
-                id={detail.id}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
-              >
+              return (
+                <section
+                  key={bundle.id}
+                  id={`module-${bundle.id}`}
+                  className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-5"
+                >
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white">{bundle.title}</h2>
+
+                  {quick && (
+                    <div id={quick.id} className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4">
+                      <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-300">Quick Guide</h3>
+                      <p className="mt-2 text-sm text-blue-800 dark:text-blue-200"><span className="font-semibold">Purpose:</span> {quick.purpose}</p>
+                      <p className="mt-1 text-sm text-blue-800 dark:text-blue-200"><span className="font-semibold">When to use:</span> {quick.whenToUse}</p>
+                      <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <ManualList title="Step-by-step" items={quick.steps} />
+                        <div className="space-y-4">
+                          <ManualList title="Tips" items={quick.tips} />
+                          <ManualList title="Common mistakes to avoid" items={quick.commonMistakes} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {details.map((detail) => (
+                    <div key={detail.id} id={detail.id} className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-700/30">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{detail.title}</h3>
+                      <p className="mt-2 text-sm text-gray-700 dark:text-gray-200"><span className="font-semibold">Purpose:</span> {detail.modulePurpose}</p>
+                      <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-5">
+                        <div className="lg:col-span-2 space-y-4">
+                          <ManualList title="How to add" items={detail.createFlow} />
+                          <ManualList title="How to edit" items={detail.editFlow} />
+                          <ManualList title="How to delete" items={detail.deleteFlow} />
+                          <OptionExplanationList items={detail.optionExplanations} />
+                          <ManualList title="Relationships with other modules" items={detail.moduleRelations} />
+                        </div>
+                        <div>
+                          {detail.imagePlaceholders && detail.imagePlaceholders.length > 0 && (
+                            <>
+                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Screenshot placeholders</h4>
+                              <div className="space-y-3">
+                                {detail.imagePlaceholders.map((placeholder) => (
+                                  <ImagePlaceholderCard
+                                    key={`${detail.id}-${placeholder.fileName}`}
+                                    title={placeholder.label}
+                                    fileName={placeholder.fileName}
+                                    note={placeholder.note}
+                                  />
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {playbooks.map((playbook) => (
+                    <div key={playbook.id} id={playbook.id} className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 p-4">
+                      <h3 className="text-sm font-semibold text-emerald-900 dark:text-emerald-300">Workflow: {playbook.title}</h3>
+                      <p className="mt-2 text-sm text-emerald-800 dark:text-emerald-200"><span className="font-semibold">Goal:</span> {playbook.goal}</p>
+                      <p className="mt-1 text-sm text-emerald-800 dark:text-emerald-200"><span className="font-semibold">Modules:</span> {playbook.modulesInvolved.join(' -> ')}</p>
+                      <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <ManualList title="Workflow steps" items={playbook.steps} />
+                        <ManualList title="Done criteria" items={playbook.doneCriteria} />
+                      </div>
+                    </div>
+                  ))}
+                </section>
+              );
+            })}
+
+            {standaloneDetails.length > 0 && (
+              <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Additional Detailed References</h2>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Extra references not mapped to a specific module block.</p>
+              </section>
+            )}
+
+            {standaloneDetails.map((detail) => (
+              <section key={detail.id} id={detail.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
                 <h2 className="text-xl font-semibold text-gray-900 dark:text-white">{detail.title}</h2>
                 <p className="mt-2 text-sm text-gray-600 dark:text-gray-300"><span className="font-semibold">Purpose:</span> {detail.modulePurpose}</p>
-
                 <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-6">
                   <div className="lg:col-span-2 space-y-5">
                     <ManualList title="How to add" items={detail.createFlow} />
@@ -1583,32 +2180,28 @@ export default function DocsPage() {
                     <OptionExplanationList items={detail.optionExplanations} />
                     <ManualList title="Relationships with other modules" items={detail.moduleRelations} />
                   </div>
-
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Screenshot placeholders</h3>
-                    <div className="space-y-3">
-                      {detail.imagePlaceholders.map((placeholder) => (
-                        <ImagePlaceholderCard
-                          key={`${detail.id}-${placeholder.fileName}`}
-                          title={placeholder.label}
-                          fileName={placeholder.fileName}
-                          note={placeholder.note}
-                        />
-                      ))}
-                    </div>
+                    {detail.imagePlaceholders && detail.imagePlaceholders.length > 0 && (
+                      <>
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Screenshot placeholders</h3>
+                        <div className="space-y-3">
+                          {detail.imagePlaceholders.map((placeholder) => (
+                            <ImagePlaceholderCard
+                              key={`${detail.id}-${placeholder.fileName}`}
+                              title={placeholder.label}
+                              fileName={placeholder.fileName}
+                              note={placeholder.note}
+                            />
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </section>
             ))}
 
-            <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Operational Playbooks</h2>
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                End-to-end scenarios you can follow to execute work consistently across modules.
-              </p>
-            </section>
-
-            {workflowPlaybooks.map((playbook) => (
+            {standalonePlaybooks.map((playbook) => (
               <WorkflowPlaybookCard key={playbook.id} playbook={playbook} />
             ))}
 

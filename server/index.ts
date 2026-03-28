@@ -80,6 +80,7 @@ import { startSlaAutoTransitionScheduler } from './utils/slaAutoTransitionSchedu
 import { initSocketHub } from './utils/socketHub';
 
 const customFieldsRoutes = require(path.join(__dirname, 'routes', 'customFields')).default;
+const customTablesRoutes = require(path.join(__dirname, 'routes', 'customTables')).default;
 
 dotenv.config();
 
@@ -258,6 +259,7 @@ app.prepare().then(async () => {
   server.use('/api/task-templates', taskTemplatesRoutes);
   server.use('/api/sla-rules', slaRulesRoutes);
   server.use('/api/custom-fields', customFieldsRoutes);
+  server.use('/api/custom-tables', customTablesRoutes);
   server.use('/api/sprints', sprintsRoutes);
   server.use('/api/project-milestones', projectMilestonesRoutes);
   server.use('/api/portal', portalRoutes);

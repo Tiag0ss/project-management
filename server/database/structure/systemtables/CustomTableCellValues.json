@@ -1,0 +1,27 @@
+{
+  "TableName": "CustomTableCellValues",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "RowId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "ColumnId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Value",
+      "DataType": "text",
+      "NotNullable": false
+    }
+  ]
+}

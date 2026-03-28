@@ -13,12 +13,14 @@ This document contains comprehensive test scenarios to verify all functionality 
 7. [Tickets](#tickets)
 8. [Resource Planning (Gantt)](#resource-planning-gantt)
 9. [Time Tracking](#time-tracking)
-10. [Memos](#memos)
-11. [Permissions](#permissions)
-12. [Jira Integration](#jira-integration)
-13. [Email Notifications](#email-notifications)
-14. [Search & Navigation](#search--navigation)
-15. [Dark Mode & UI](#dark-mode--ui)
+10. [Call Records](#call-records)
+11. [Active Timers](#active-timers)
+12. [Memos](#memos)
+13. [Permissions](#permissions)
+14. [Jira Integration](#jira-integration)
+15. [Email Notifications](#email-notifications)
+16. [Search & Navigation](#search--navigation)
+17. [Dark Mode & UI](#dark-mode--ui)
 
 ---
 
@@ -611,6 +613,67 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Tasks created successfully
 - Validation errors shown for invalid data
 
+### TC-TASK-009: Task Checklist
+**Steps:**
+1. Open any task detail modal
+2. Go to the "Checklist" tab
+3. Add several checklist items
+4. Check/uncheck items
+5. Delete a checklist item
+
+**Expected:**
+- Checklist items created and listed in order
+- Checking an item marks it complete (strikethrough)
+- Progress bar shows completion percentage of checklist items
+- Unchecking restores an item
+- Delete removes item permanently
+- Checklist progress visible in task detail header
+
+### TC-TASK-010: Task Completion Percentage
+**Steps:**
+1. Open any task detail modal
+2. Find the "Completion" field/slider
+3. Set completion to 50%
+4. Save the task
+
+**Expected:**
+- Completion percentage saved (0–100%)
+- Displayed in task card in kanban and task list
+- Does not affect status (manual status still required)
+- Visible in project reporting
+
+### TC-TASK-011: Task Templates
+**Prerequisites:** User with `CanManageTasks` permission
+**Steps:**
+1. Navigate to a project → Tasks tab
+2. Click "Task Templates" or similar button
+3. Create a template with a name and several template items
+4. Go to a project and click "Apply Template"
+5. Select the template and confirm
+
+**Expected:**
+- Template items are turned into real tasks in the project
+- Each template item creates a task with predefined fields (name, description, estimated hours, etc.)
+- Templates available across all projects
+- Template CRUD (create, edit, delete) works correctly
+
+### TC-TASK-012: Split Allocation Button in Task Detail
+**Steps:**
+1. Open a task that has existing allocations
+2. Go to the "Allocations" tab in the task detail modal
+3. Click the "Split" button on an existing allocation slice
+4. Divide the allocation hours between two or more users
+5. Choose split mode (Parallel or Sequential)
+6. Confirm the split
+
+**Expected:**
+- Original allocation header replaced by multiple new headers (one per assigned user)
+- `SplitOrder` set correctly for each resulting header
+- Parallel mode: both users share the same date range
+- Sequential mode: users are chained in date order
+- Planning Gantt shows separate bars per user for this task
+- Each bar independently movable via drag
+
 ---
 
 ## Tickets
@@ -812,6 +875,96 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Source slice decreases by moved hours and target receives moved hours
 - Availability/capacity checks still apply in both flows
 
+### TC-PLAN-009: Split Allocation Across Multiple Users
+**Steps:**
+1. In the Planning Gantt, open an allocation modal for a task
+2. Enable the "Split" toggle in the allocation form
+3. Choose a split mode: **Parallel** (both users work simultaneously) or **Sequential** (one after the other)
+4. Add entries for each user: specify user, planned hours, and hours-per-day
+5. Confirm the allocation
+
+**Expected:**
+- Multiple `TaskAllocationHeaders` created (one per user per split order)
+- Each header has a distinct `SplitOrder` value
+- Parallel mode: date ranges overlap between users (concurrent work)
+- Sequential mode: dates are chained (user B starts where user A ends)
+- Each user's timeline row shows their individual allocation bar
+- Availability is checked independently per user for their respective date range
+- Reporting tab shows all allocation slices with `SplitOrder` column
+
+### TC-PLAN-010: Unscheduled Work Tasks
+**Steps:**
+1. Mark a leaf task as "Unscheduled Work" (`UnscheduledWork = 1`) in its task details
+2. Navigate to the Planning Gantt
+3. Locate the affected user's rows
+
+**Expected:**
+- Task appears as a special **ghost marker** (distinct visual) on the day the task transitioned to "done" status or on today if still open
+- Unscheduled tasks sorted to the bottom of the user's task list
+- Unscheduled tasks that have a closed status with a recorded done-transition date display an anchor marker on that date
+- Clicking the marker opens the task detail modal (read-only context)
+- Tasks without a done-transition date show on today's column if still open
+- Parent tasks with unscheduled children also appear in the parent row
+
+### TC-PLAN-011: Move / Replan Allocation Slice
+**Steps:**
+1. In the Planning Gantt, find an existing allocation bar for a task
+2. Click the bar to open the allocation detail modal
+3. Click "Move" or drag the bar to a new date range
+4. Confirm the new dates and hours
+
+**Expected:**
+- Old allocation records for that header are deleted
+- New allocation records created at the target dates
+- `TaskAllocationHeader` updated with new `PlannedHours`
+- `Task.PlannedStartDate` / `PlannedEndDate` recalculated from the new allocation range
+- User availability checked for each target day before committing
+- If slice is part of a child allocation, only that slice's child rows are updated (other slices untouched)
+
+### TC-PLAN-012: Recalculate Remaining Hours
+**Steps:**
+1. Create a task with 20h estimate
+2. Log 8h of time entries
+3. Open the allocation detail modal for this task in Planning
+4. Click "Recalculate" or use the intelligent replan flow
+
+**Expected:**
+- System fetches existing time entries for this task
+- Remaining hours shown: `20 - 8 = 12h`
+- Allocation is created/updated for the remaining hours only
+- Confirmation dialog shown if already-worked hours detected
+- Blocks replanning if remaining hours ≤ 0
+
+### TC-PLAN-013: Planning Import Page
+**Steps:**
+1. Navigate to `/planning-import`
+2. Upload a CSV file with allocation data
+3. Map CSV columns to system fields
+4. Preview import results
+5. Confirm import
+
+**Expected:**
+- CSV parsed and columns mapped correctly
+- Preview shows allocations to be created per user/task
+- Import creates `TaskAllocationHeaders` and `TaskAllocations` entries
+- Errors highlighted for missing users, tasks, or invalid dates
+- Success summary shows number of allocations created
+
+### TC-PLAN-014: Planning View Modes (Resource vs Task)
+**Steps:**
+1. Navigate to the Planning Gantt
+2. Switch between "Resource View" and "Task View" modes
+3. Apply filters (organization, project, user, show only assigned)
+
+**Expected:**
+- **Resource View**: Rows grouped by user; shows each user's allocated tasks across projects
+- **Task View**: Rows grouped by task; shows which users are allocated to each task
+- Filter by organization narrows visible users and tasks
+- Filter by project shows only tasks from selected projects
+- "Show only my tasks" toggle restricts view to current user's allocations
+- View mode preference preserved within session
+- Critical path highlighting (🔴 toggle) available in both modes
+- Baseline comparison (📏 toggle) shows original vs current planned dates
 ---
 
 ## Time Tracking
@@ -889,7 +1042,204 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Hours subtracted from totals
 - Task's worked hours reduced
 
+
+## Call Records
+
+### TC-CALL-001: Create Call Record Manually
+**Prerequisites:** User is logged in
+**Steps:**
+1. Navigate to the Call Records page (`/call-records`)
+2. Click "New Call Record"
+3. Fill in: Date, Start Time, Duration (minutes), Call Type, Participants, Subject, Notes
+4. Optionally link to an Organization, Project, or Task
+5. Click "Save"
+
+**Expected:**
+- Call record created successfully
+- All fields saved correctly
+- Record appears in call records list with correct date/time/duration
+- Linked project and task displayed inline
+- Rich text notes preserved with any formatting
+
+### TC-CALL-002: Edit and Delete Call Record
+**Steps:**
+1. Find an existing call record in the list
+2. Click the edit icon
+3. Modify Subject, Notes, Duration, linked Task
+4. Save changes
+5. Delete a different call record using the delete icon
+
+**Expected:**
+- Changes saved and reflected immediately in the list
+- Delete shows a confirmation dialog before removing
+- Deleted record removed from list and database
+
+### TC-CALL-003: Import Call Records from CSV
+**Steps:**
+1. On the Call Records page, click "Import CSV"
+2. Download the CSV template
+3. Fill in call record rows (date, startTime, durationMinutes, callType, participants, subject, notes)
+4. Upload the filled CSV
+5. Review the preview of records to import
+6. Confirm import
+
+**Expected:**
+- Template downloaded with correct headers
+- CSV parsed and preview shown with all rows
+- Records created after confirmation
+- Count of imported records shown in success message
+- Validation errors flagged (missing date, invalid duration, etc.)
+
+### TC-CALL-004: Import Call Records from Microsoft Teams
+**Steps:**
+1. On the Call Records page, click "Import from Teams"
+2. Select a period: 7 days, 30 days, 90 days, or custom date range
+3. Click "Start Import"
+4. Monitor import progress
+
+**Expected:**
+- Integration fetches call data from connected Microsoft Teams instance
+- Progress messages displayed in real-time
+- Result summary shows: imported, skipped (duplicates), failed counts
+- Duplicate calls not re-imported (deduplication logic)
+- Call records appear in list after successful import
+
+### TC-CALL-005: Filter and Search Call Records
+**Steps:**
+1. On the Call Records page, use available filters (date range, call type, project)
+2. Search by subject or participant name
+
+**Expected:**
+- Filters narrow the list correctly
+- Multiple filters combine correctly (AND logic)
+- Clear filters restores full list
+- Empty state shown when no records match
+
+### TC-CALL-006: Start Timer from Call Record
+**Steps:**
+1. On the Call Records page or within a call record detail
+2. Click the "Start Timer" button on a call record
+3. Timer starts and counter is visible in the Navbar
+4. When finished, stop the timer
+
+**Expected:**
+- Timer type set to `call` (not `task`) in `ActiveTimers`
+- Navbar shows live elapsed time for the call timer
+- Duration of the call record auto-updated when timer is stopped
+- Only one active timer allowed at a time (starting a new timer auto-saves existing timer and switches context)
+
 ---
+
+## Active Timers
+
+### TC-TIMER-001: Start Task Timer from TaskDetailModal
+**Prerequisites:** User has an open task
+**Steps:**
+1. Open any task via the task detail modal
+2. Click the "Start Timer" button in the timer section
+3. Observe the elapsed time counter update live
+
+**Expected:**
+- Timer starts immediately
+- Elapsed time displayed in HH:MM:SS format, updating every second
+- `ActiveTimers` record created in database with `TimerType = 'task'` and `TaskId` set
+- Timer is user-specific (other users not affected)
+- Only one active timer per user is permitted (starting a new one persists existing timer, then starts the new timer)
+
+### TC-TIMER-007: Switch & Save from Active Task Timer
+**Prerequisites:** User has an active timer on Task A
+**Steps:**
+1. Open Task B while Task A timer is still running
+2. Click "Switch & Save" in Task B timer area
+3. Confirm switch action is started from Task B detail context (not from Timesheet)
+4. Observe navbar timer and resulting records
+
+**Expected:**
+- Existing timer (Task A) is automatically persisted before Task B timer starts
+- A new active timer is created for Task B only after Task A persistence succeeds
+- Navbar immediately reflects Task B as running timer context
+- Only one `ActiveTimers` row exists for the user at any moment
+- Timesheet reflects persisted results after switch; it is not used to initiate context switch
+
+### TC-TIMER-008: Start New Timer While Another Is Active (API Behavior)
+**Prerequisites:** User has any active timer (task or call)
+**Steps:**
+1. Trigger `POST /api/timers/start` for a different context
+2. Ensure UI trigger is from target task detail or target call context
+3. Inspect resulting persisted data and active timer row
+
+**Expected:**
+- Backend auto-persists previous active timer via timer persistence flow
+- Previous timer writes to the correct destination:
+  - task timer -> new `TimeEntries` row
+  - call timer -> `CallRecords.DurationMinutes` update
+- Previous active timer row removed and replaced by the new active timer
+- Request completes without creating overlapping active timers for same user
+
+### TC-TIMER-002: Navbar Active Timer Indicator
+**Prerequisites:** User has an active timer running
+**Steps:**
+1. Start a timer (task or call)
+2. Navigate away from the task/call modal
+3. Observe the Navbar
+
+**Expected:**
+- Navbar shows a live timer indicator button (e.g., ⏱ HH:MM:SS)
+- Counter continues counting in real-time regardless of current page
+- Timer polls every ~60 seconds to stay in sync with server
+- Clicking the timer indicator opens the timer start/stop modal
+- For task timers: shows linked task name and project
+- For call timers: shows call subject or call type
+
+### TC-TIMER-003: Stop Timer and Log Time
+**Steps:**
+1. With an active task timer, open the timer control (from Navbar or task modal)
+2. Click "Stop Timer"
+3. Confirm the time entry to create
+
+**Expected:**
+- Timer stopped and elapsed seconds recorded
+- Time entry created automatically for the task with the elapsed hours
+- User prompted to confirm/adjust description before saving
+- `ActiveTimers` record deleted after stop
+- Navbar indicator disappears
+- Time entry appears in Timesheet → All Entries
+
+### TC-TIMER-004: Discard Timer
+**Steps:**
+1. With an active timer running, click "Discard Timer"
+2. Confirm the discard action
+
+**Expected:**
+- Timer stopped without creating a time entry
+- `ActiveTimers` record deleted
+- Navbar indicator disappears
+- No time entry recorded
+
+### TC-TIMER-005: Call Record Timer Integration
+**Steps:**
+1. Start a timer from a call record
+2. Navigate to the Navbar timer indicator
+3. Stop the timer
+
+**Expected:**
+- Timer has `TimerType = 'call'` in database
+- On stop, the call record's `DurationMinutes` updated with elapsed time
+- No separate `TimeEntry` created (call timers feed into call record duration, not time entries)
+- Navbar shows call-type timer label
+
+### TC-TIMER-006: Timer Persistence Across Page Reloads
+**Steps:**
+1. Start a task timer
+2. Refresh the browser page
+3. Observe Navbar and task modal
+
+**Expected:**
+- Timer restored from server on reload (polls `/api/timers/active`)
+- Elapsed time calculated from server `StartedAt` timestamp (not client clock)
+- Counter synced correctly even if tab was closed for a while
+- Timer continues from correct elapsed position, not from zero
+
 
 ## Memos
 
@@ -1147,6 +1497,32 @@ This document contains comprehensive test scenarios to verify all functionality 
 - API tokens stored as encrypted values (AES-256-CBC)
 - Decryption occurs only when making API calls
 - Tokens never exposed in logs or API responses
+
+### TC-JIRA-007: Check Jira Ticket Status (Batch Update from Planning)
+**Prerequisites:** Jira integration configured for tickets; project has tasks linked to Jira issues
+**Steps:**
+1. Navigate to project detail page → Tasks/Kanban tab
+2. Click the "Import Tasks" dropdown
+3. Select "🔍 Check Jira Ticket Status"
+4. Modal opens; system fetches current Jira statuses for all linked tickets
+5. View list of tickets grouped by changed vs unchanged
+6. Toggle "Show only changed" filter
+7. Configure global Jira → Task status mapping in the mapping panel
+8. Override the mapping for specific tickets individually using per-ticket status selects
+9. Select tickets to update using checkboxes (Select All / Deselect All)
+10. Click "Apply Updates"
+
+**Expected:**
+- Modal lists each Jira-linked task with: Jira issue key, Jira summary, current Jira status, current task status
+- "Show only changed" filter hides tickets where Jira status already matches task status
+- No tickets pre-selected by default (starts with empty selection)
+- "Select All" selects all visible tickets; "Deselect All" clears selection
+- Global status mapping panel maps Jira status names → local task status values
+- Per-ticket override overrides the global mapping for that specific ticket
+- Per-ticket override dropdown shows only when user interacts with it
+- After clicking "Apply Updates": task statuses updated in bulk for selected tickets
+- Count of updated tasks shown in success message
+- Only selected tickets are updated (unselected tickets unchanged)
 
 ---
 
@@ -1610,7 +1986,7 @@ This document contains comprehensive test scenarios to verify all functionality 
 
 ## Summary
 
-This document contains **150+ test scenarios** covering all major features and edge cases. For a full validation:
+This document contains **190+ test scenarios** covering all major features and edge cases. For a full validation:
 
 1. **Critical Path**: Execute all TC-E2E-* scenarios first
 2. **Feature Coverage**: Run all TC-*-001 scenarios for basic feature validation
@@ -1619,18 +1995,20 @@ This document contains **150+ test scenarios** covering all major features and e
 5. **Regression**: Run all scenarios when making significant changes
 
 **Test Completion Checklist:**
-- [X] All Authentication tests passed
+- [ ] All Authentication tests passed
 - [ ] All Organization tests passed
 - [ ] All Customer tests passed
 - [ ] All Application & Release tests passed
 - [ ] All Project tests passed
-- [ ] All Task tests passed
+- [ ] All Task tests passed (including checklists, templates, split allocation, timers)
 - [ ] All Ticket tests passed
-- [ ] All Planning tests passed
+- [ ] All Planning tests passed (including split, unscheduled, move, recalculate, view modes)
 - [ ] All Time Tracking tests passed
+- [ ] All Call Records tests passed
+- [ ] All Active Timer tests passed
 - [ ] All Memo tests passed
 - [ ] All Permission tests passed
-- [ ] All Jira Integration tests passed
+- [ ] All Jira Integration tests passed (including Check Jira Ticket Status)
 - [ ] All Email tests passed
 - [ ] All Search tests passed
 - [ ] All UI tests passed

@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { authApi } from '@/lib/api/auth';
+import { useToast } from '@/contexts/ToastContext';
 
 export default function ResetPasswordPage() {
+  const { showToast } = useToast();
   const [token, setToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -74,7 +76,9 @@ export default function ResetPasswordPage() {
     try {
       setIsSaving(true);
       const result = await authApi.resetPassword(token, newPassword);
-      setSuccess(result.message || 'Password reset successfully. Redirecting to login...');
+      const message = result.message || 'Password reset successfully. Redirecting to login...';
+      setSuccess(message);
+      showToast({ type: 'success', title: 'Password Reset', message });
       setNewPassword('');
       setConfirmPassword('');
       setTimeout(() => router.push('/login'), 1500);
@@ -99,12 +103,6 @@ export default function ResetPasswordPage() {
           {error && (
             <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded">
               {error}
-            </div>
-          )}
-
-          {success && (
-            <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-800 text-green-700 dark:text-green-400 rounded">
-              {success}
             </div>
           )}
 

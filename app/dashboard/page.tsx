@@ -10,6 +10,7 @@ import { useToast } from '@/contexts/ToastContext';
 import { usersApi, User } from '@/lib/api/users';
 import { tasksApi, Task } from '@/lib/api/tasks';
 import { projectsApi, Project } from '@/lib/api/projects';
+import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import {
   DashboardKpiDetailItem,
   DashboardKpiDetailResult,
@@ -35,6 +36,424 @@ interface TaskWithProject extends Task {
   IsHobby?: boolean;
   SubtaskCount?: number;
   StatusHideFromPlanningAndStatistics?: number | boolean;
+}
+
+function AssignedKanbanTab({
+  tasks,
+  userId,
+  canManage,
+  isLoading,
+  token,
+  onOpenTask,
+  onTasksRefresh,
+  onError,
+}: {
+  tasks: TaskWithProject[];
+  userId: number;
+  canManage: boolean;
+  isLoading: boolean;
+  token: string;
+  onOpenTask: (task: Pick<Task, 'Id' | 'ProjectId'>) => void;
+  onTasksRefresh: () => Promise<TaskWithProject[]>;
+  onError: (message: string) => void;
+}) {
+  const [draggedOverTask, setDraggedOverTask] = useState<number | null>(null);
+  const [localTasks, setLocalTasks] = useState<TaskWithProject[]>([]);
+  const [statusCatalog, setStatusCatalog] = useState<StatusValue[]>([]);
+  const [loadingStatuses, setLoadingStatuses] = useState(false);
+  const [isDraggingTask, setIsDraggingTask] = useState(false);
+
+  const assignedTasks = useMemo(() => {
+    return tasks.filter((task) => {
+      const isPrimaryAssignee = Number(task.AssignedTo || 0) === userId;
+      const hasAssigneeMatch = Array.isArray(task.Assignees)
+        ? task.Assignees.some((assignee) => Number(assignee.UserId) === userId)
+        : false;
+      return isPrimaryAssignee || hasAssigneeMatch;
+    });
+  }, [tasks, userId]);
+
+  useEffect(() => {
+    setLocalTasks(assignedTasks);
+  }, [assignedTasks]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadStatusCatalog = async () => {
+      const organizationIds = Array.from(
+        new Set(
+          assignedTasks
+            .map((task) => Number((task as any).OrganizationId || 0))
+            .filter((organizationId) => Number.isFinite(organizationId) && organizationId > 0)
+        )
+      );
+
+      if (organizationIds.length === 0) {
+        setStatusCatalog([]);
+        return;
+      }
+
+      setLoadingStatuses(true);
+      try {
+        const statusResponses = await Promise.all(
+          organizationIds.map(async (organizationId) => {
+            try {
+              const result = await statusValuesApi.getTaskStatuses(organizationId, token);
+              return result.statuses || [];
+            } catch {
+              return [];
+            }
+          })
+        );
+
+        if (cancelled) return;
+
+        const mergedById = new Map<number, StatusValue>();
+        statusResponses.flat().forEach((status) => {
+          if (!status || !Number.isFinite(Number(status.Id))) return;
+          mergedById.set(Number(status.Id), status);
+        });
+
+        const mergedStatuses = Array.from(mergedById.values()).sort((a, b) => {
+          if (Number(a.SortOrder || 0) !== Number(b.SortOrder || 0)) {
+            return Number(a.SortOrder || 0) - Number(b.SortOrder || 0);
+          }
+          if (Number(a.Id) !== Number(b.Id)) {
+            return Number(a.Id) - Number(b.Id);
+          }
+          return String(a.StatusName || '').localeCompare(String(b.StatusName || ''));
+        });
+
+        setStatusCatalog(mergedStatuses);
+      } finally {
+        if (!cancelled) {
+          setLoadingStatuses(false);
+        }
+      }
+    };
+
+    loadStatusCatalog();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assignedTasks, token]);
+
+  const inferredStatuses = useMemo(() => {
+    const statusMap = new Map<number, { Id: number; StatusName: string; ColorCode?: string; SortOrder: number }>();
+
+    assignedTasks.forEach((task) => {
+      const statusId = Number(task.Status || 0);
+      if (!Number.isFinite(statusId) || statusId <= 0 || statusMap.has(statusId)) {
+        return;
+      }
+
+      statusMap.set(statusId, {
+        Id: statusId,
+        StatusName: task.StatusName || `Status ${statusId}`,
+        ColorCode: task.StatusColor,
+        SortOrder: Number(task.StatusSortOrder || 0),
+      });
+    });
+
+    return Array.from(statusMap.values()).sort((a, b) => {
+      if (a.SortOrder !== b.SortOrder) return a.SortOrder - b.SortOrder;
+      if (a.Id !== b.Id) return a.Id - b.Id;
+      return String(a.StatusName).localeCompare(String(b.StatusName));
+    });
+  }, [assignedTasks]);
+
+  const statuses = useMemo(() => {
+    if (statusCatalog.length > 0) {
+      return statusCatalog.map((status) => ({
+        Id: Number(status.Id),
+        StatusName: status.StatusName,
+        ColorCode: status.ColorCode,
+        SortOrder: Number(status.SortOrder || 0),
+      }));
+    }
+    return inferredStatuses;
+  }, [statusCatalog, inferredStatuses]);
+
+  const getTasksByStatus = (statusId: number) => {
+    return localTasks
+      .filter((task) => Number(task.Status) === statusId)
+      .sort((a, b) => Number(a.DisplayOrder || 0) - Number(b.DisplayOrder || 0));
+  };
+
+  const handleDragStart = (e: React.DragEvent, taskId: number) => {
+    if (!canManage) return;
+    e.dataTransfer.setData('taskId', taskId.toString());
+    e.dataTransfer.effectAllowed = 'move';
+    setIsDraggingTask(true);
+  };
+
+  const handleDragEnd = () => {
+    setIsDraggingTask(false);
+    setDraggedOverTask(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!canManage) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDragOverTask = (e: React.DragEvent, taskId: number) => {
+    if (!canManage) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDraggedOverTask(taskId);
+  };
+
+  const handleDragLeave = () => {
+    setDraggedOverTask(null);
+  };
+
+  const handleDropOnTask = async (e: React.DragEvent, targetTask: TaskWithProject) => {
+    if (!canManage) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDraggedOverTask(null);
+
+    const sourceTaskId = parseInt(e.dataTransfer.getData('taskId'));
+    if (!sourceTaskId || sourceTaskId === targetTask.Id) return;
+
+    const sourceTask = localTasks.find((task) => task.Id === sourceTaskId);
+    if (!sourceTask) return;
+
+    const newStatusId = Number(targetTask.Status || 0);
+    if (!newStatusId) return;
+
+    const columnTasks = localTasks
+      .filter((task) => Number(task.Status) === newStatusId && task.Id !== sourceTaskId)
+      .sort((a, b) => Number(a.DisplayOrder || 0) - Number(b.DisplayOrder || 0));
+
+    const targetIndex = columnTasks.findIndex((task) => task.Id === targetTask.Id);
+    columnTasks.splice(targetIndex, 0, { ...sourceTask, Status: newStatusId });
+
+    const updates = columnTasks.map((task, index) => ({
+      taskId: task.Id,
+      displayOrder: (index + 1) * 10,
+      status: newStatusId,
+    }));
+
+    const previousTasks = localTasks;
+    setLocalTasks((currentTasks) => {
+      const otherTasks = currentTasks.filter((task) => task.Id !== sourceTaskId && Number(task.Status) !== newStatusId);
+      const updatedColumn = columnTasks.map((task, index) => ({
+        ...task,
+        Status: newStatusId,
+        DisplayOrder: (index + 1) * 10,
+      }));
+      return [...otherTasks, ...updatedColumn];
+    });
+
+    try {
+      await tasksApi.reorderKanban(updates, token);
+      await onTasksRefresh();
+    } catch (err: any) {
+      setLocalTasks(previousTasks);
+      onError(err?.message || 'Failed to reorder tasks');
+    }
+  };
+
+  const handleDropOnColumn = async (e: React.DragEvent, newStatusId: number) => {
+    if (!canManage) return;
+    e.preventDefault();
+    setDraggedOverTask(null);
+
+    const sourceTaskId = parseInt(e.dataTransfer.getData('taskId'));
+    const sourceTask = localTasks.find((task) => task.Id === sourceTaskId);
+    if (!sourceTask || Number(sourceTask.Status) === newStatusId) return;
+
+    const targetColumnTasks = localTasks
+      .filter((task) => Number(task.Status) === newStatusId)
+      .sort((a, b) => Number(a.DisplayOrder || 0) - Number(b.DisplayOrder || 0));
+
+    const newDisplayOrder = (targetColumnTasks.length + 1) * 10;
+
+    const previousTasks = localTasks;
+    setLocalTasks((currentTasks) =>
+      currentTasks.map((task) =>
+        task.Id === sourceTaskId
+          ? { ...task, Status: newStatusId, DisplayOrder: newDisplayOrder }
+          : task
+      )
+    );
+
+    try {
+      await tasksApi.reorderKanban([{ taskId: sourceTaskId, displayOrder: newDisplayOrder, status: newStatusId }], token);
+      await onTasksRefresh();
+    } catch (err: any) {
+      setLocalTasks(previousTasks);
+      onError(err?.message || 'Failed to move task');
+    }
+  };
+
+  const getPriorityBorder = (task: TaskWithProject) => {
+    if (task.PriorityColor) {
+      return { borderLeft: `4px solid ${task.PriorityColor}` };
+    }
+    return { borderLeft: '4px solid #d1d5db' };
+  };
+
+  if (isLoading || loadingStatuses) {
+    return <div className="text-center py-12 text-gray-600 dark:text-gray-400">Loading Kanban board...</div>;
+  }
+
+  if (assignedTasks.length === 0) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8">
+        <EmptyState
+          title="No assigned tasks"
+          message="You have no tasks assigned right now."
+          icon="📋"
+        />
+      </div>
+    );
+  }
+
+  const columnsPerRow = Math.min(Math.max(statuses.length, 1), 6);
+
+  return (
+    <div
+      className={`h-[calc(100vh-220px)] min-h-[560px] flex flex-col ${isDraggingTask ? 'select-none' : ''}`}
+      onDragEnterCapture={(e) => {
+        if (!canManage) return;
+        e.preventDefault();
+      }}
+      onDragOverCapture={(e) => {
+        if (!canManage) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      }}
+      onDropCapture={(e) => {
+        if (!canManage) return;
+        e.preventDefault();
+      }}
+      onDragOver={(e) => {
+        if (!canManage) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      }}
+      onDrop={(e) => {
+        if (!canManage) return;
+        e.preventDefault();
+      }}
+    >
+      <div
+        className="flex justify-between items-center mb-4"
+        onDragEnter={(e) => {
+          if (!canManage) return;
+          e.preventDefault();
+        }}
+        onDragOver={(e) => {
+          if (!canManage) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        }}
+      >
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Kanban Board</h1>
+        <span className="px-3 py-1 rounded-full text-sm bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium">
+          {assignedTasks.length} assigned task{assignedTasks.length === 1 ? '' : 's'}
+        </span>
+      </div>
+
+      <div className="w-full overflow-x-auto flex-1 min-h-0">
+        <div
+          className="grid gap-4 h-full"
+          style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(260px, 1fr))` }}
+          onDragEnter={(e) => {
+            if (!canManage) return;
+            e.preventDefault();
+          }}
+          onDragOver={(e) => {
+            if (!canManage) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+          }}
+        >
+          {statuses.map((status) => (
+            <div
+              key={status.Id}
+              className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 h-full min-h-0 flex flex-col overflow-hidden"
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDropOnColumn(e, status.Id)}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3
+                  className="font-bold text-gray-900 dark:text-white"
+                  style={status.ColorCode ? { color: status.ColorCode } : undefined}
+                >
+                  {status.StatusName}
+                </h3>
+                <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-semibold px-2 py-1 rounded-full">
+                  {getTasksByStatus(status.Id).length}
+                </span>
+              </div>
+
+              <div className="space-y-3 flex-1 overflow-y-auto pr-1">
+                {getTasksByStatus(status.Id).map((task) => {
+                  const isDraggedOver = draggedOverTask === task.Id;
+
+                  return (
+                    <div
+                      key={task.Id}
+                      draggable={canManage}
+                      onDragStart={(e) => handleDragStart(e, task.Id)}
+                      onDragEnd={handleDragEnd}
+                      onDragOver={(e) => handleDragOverTask(e, task.Id)}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDropOnTask(e, task)}
+                      onClick={() => onOpenTask({ Id: task.Id, ProjectId: task.ProjectId })}
+                      className={`bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm cursor-pointer hover:shadow-md transition-all ${
+                        isDraggedOver ? 'border-2 border-blue-500 border-dashed' : ''
+                      }`}
+                      style={getPriorityBorder(task)}
+                    >
+                      <h4 className="font-semibold text-gray-900 dark:text-white text-sm mb-2">
+                        {task.TaskName}
+                      </h4>
+
+                      {task.Description && (() => {
+                        const plainText = String(task.Description).replace(/<[^>]*>/g, '').trim();
+                        return plainText ? (
+                          <p className="text-xs text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">{plainText}</p>
+                        ) : null;
+                      })()}
+
+                      <div className="flex items-center flex-wrap gap-2 text-xs mb-2">
+                        <span
+                          className="px-2 py-1 rounded"
+                          style={task.PriorityColor ? { backgroundColor: `${task.PriorityColor}20`, color: task.PriorityColor } : undefined}
+                        >
+                          {task.PriorityName || 'No Priority'}
+                        </span>
+
+                        {task.EstimatedHours && (
+                          <span className="text-gray-500 dark:text-gray-400">⏱️ {task.EstimatedHours}h</span>
+                        )}
+
+                        {task.DueDate && (
+                          <span className="text-gray-500 dark:text-gray-400">
+                            📅 {new Date(task.DueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-xs text-gray-600 dark:text-gray-400 truncate">📁 {task.ProjectName || 'Project'}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 interface TimeEntry {
@@ -96,7 +515,7 @@ interface CalendarTabProps {
   onDataChanged: () => void;
 }
 
-type DashboardTab = 'overview' | 'calendar' | 'analytics';
+type DashboardTab = 'overview' | 'calendar' | 'kanban' | 'analytics';
 type AnalyticsPeriod = 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth' | 'allTime';
 type TaskSortOption = 'dueDate' | 'priority' | 'project';
 type PendingWorkFilter = 'all' | 'scheduled' | 'unscheduled';
@@ -189,7 +608,7 @@ function DashboardContent() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState<DashboardTab>(() => {
-    if (tabParam === 'calendar' || tabParam === 'analytics') return tabParam;
+    if (tabParam === 'calendar' || tabParam === 'kanban' || tabParam === 'analytics') return tabParam;
     return 'overview';
   });
   const [showCalendarInOverview, setShowCalendarInOverview] = useState(true);
@@ -352,6 +771,7 @@ function DashboardContent() {
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [calendarLoading, setCalendarLoading] = useState(false);
+  const [kanbanLoading, setKanbanLoading] = useState(false);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState({
     timeEntries: 0,
@@ -537,7 +957,7 @@ function DashboardContent() {
   // Update active tab when URL param changes
   useEffect(() => {
     if (tabParam) {
-      if (tabParam === 'calendar' || tabParam === 'analytics') {
+      if (tabParam === 'calendar' || tabParam === 'kanban' || tabParam === 'analytics') {
         setActiveTab(tabParam);
       } else {
         setActiveTab('overview');
@@ -1568,6 +1988,22 @@ function DashboardContent() {
 
     loadCalendarData();
   }, [user, token, featureFlagsLoaded, isCustomerUser, activeTab, showCalendarInOverview]);
+
+  useEffect(() => {
+    if (!user || !token || !featureFlagsLoaded || isCustomerUser) return;
+    if (activeTab !== 'kanban') return;
+
+    const loadKanbanTasks = async () => {
+      setKanbanLoading(true);
+      try {
+        await loadMyTasks();
+      } finally {
+        setKanbanLoading(false);
+      }
+    };
+
+    loadKanbanTasks();
+  }, [user, token, featureFlagsLoaded, isCustomerUser, activeTab]);
   
   if (isLoading) {
     return (
@@ -1793,6 +2229,21 @@ function DashboardContent() {
                   <span className="font-medium">Calendar</span>
                 </button>
               )}
+
+              <button
+                onClick={() => {
+                  setActiveTab('kanban');
+                  window.history.pushState({}, '', '/dashboard?tab=kanban');
+                }}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                  activeTab === 'kanban'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="text-xl">📋</span>
+                <span className="font-medium">Kanban Board</span>
+              </button>
 
               {!!user?.isAdmin && (
                 <button
@@ -2524,6 +2975,19 @@ function DashboardContent() {
                 }}
               />
             )
+          )}
+
+          {activeTab === 'kanban' && (
+            <AssignedKanbanTab
+              tasks={myTasks}
+              userId={Number(user?.id || 0)}
+              canManage={Boolean(permissions?.canManageTasks || permissions?.canAssignTasks || user?.isAdmin)}
+              isLoading={kanbanLoading}
+              token={token || ''}
+              onOpenTask={openTaskDetails}
+              onTasksRefresh={loadMyTasks}
+              onError={(message) => showToast({ type: 'error', message })}
+            />
           )}
 
           {/* Resume Tab */}

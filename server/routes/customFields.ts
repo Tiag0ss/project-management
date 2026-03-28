@@ -11,6 +11,7 @@ interface CustomField extends RowDataPacket {
   TableName: string;
   FieldName: string;
   DisplayName: string;
+  GroupName: string | null;
   DataType: string;
   IsRequired: boolean;
   Description: string;
@@ -26,7 +27,7 @@ const AVAILABLE_TABLES = ['Users', 'Projects', 'Tasks', 'Organizations', 'Custom
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const [customFields] = await pool.execute<CustomField[]>(
-      'SELECT * FROM CustomFields WHERE IsActive = 1 ORDER BY TableName, FieldName'
+      'SELECT * FROM CustomFields WHERE IsActive = 1 ORDER BY TableName, COALESCE(GroupName, \"\"), FieldName'
     );
     
     res.json({ success: true, customFields });
@@ -46,7 +47,7 @@ router.get('/:tableName', authenticateToken, async (req: AuthRequest, res: Respo
     }
 
     const [customFields] = await pool.execute<CustomField[]>(
-      'SELECT * FROM CustomFields WHERE TableName = ? AND IsActive = 1 ORDER BY FieldName',
+      'SELECT * FROM CustomFields WHERE TableName = ? AND IsActive = 1 ORDER BY COALESCE(GroupName, \"\"), FieldName',
       [tableName]
     );
 
@@ -59,7 +60,7 @@ router.get('/:tableName', authenticateToken, async (req: AuthRequest, res: Respo
 
 // Create a new custom field
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
-  const { tableName, fieldName, displayName, dataType, isRequired, description } = req.body;
+  const { tableName, fieldName, displayName, groupName, dataType, isRequired, description, customTableId } = req.body;
   const userId = req.user?.userId;
 
   try {
@@ -82,17 +83,20 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: 'Field name already exists for this table' });
     }
 
+    // When linked to a custom table the stored value is always an int (the row ID)
+    const resolvedDataType = customTableId ? 'int' : dataType;
+
     // Create the custom field record
     const dbFieldName = `U_${fieldName}`;
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO CustomFields (TableName, FieldName, DisplayName, DataType, IsRequired, Description, CreatedBy, IsActive, CreatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
-      [tableName, fieldName, displayName, dataType, isRequired ? 1 : 0, description || '', userId]
+      `INSERT INTO CustomFields (TableName, FieldName, DisplayName, GroupName, DataType, IsRequired, Description, CreatedBy, IsActive, CreatedAt, CustomTableId)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), ?)`,
+      [tableName, fieldName, displayName, groupName?.trim() || null, resolvedDataType, isRequired ? 1 : 0, description || '', userId, customTableId || null]
     );
 
     // Now add the column to the actual table in the database
     try {
-      const alterQuery = `ALTER TABLE ${tableName} ADD COLUMN ${dbFieldName} ${dataType} ${isRequired ? 'NOT NULL' : 'NULL'}`;
+      const alterQuery = `ALTER TABLE ${tableName} ADD COLUMN ${dbFieldName} ${resolvedDataType} ${isRequired ? 'NOT NULL' : 'NULL'}`;
       await pool.execute(alterQuery);
     } catch (alterError: any) {
       // If column addition fails, delete the CustomFields record we just inserted
@@ -109,6 +113,87 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error('Error creating custom field:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to create custom field' });
+  }
+});
+
+// Update an existing custom field (metadata + optional custom table association)
+router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const id = typeof req.params.id === 'string' ? parseInt(req.params.id, 10) : NaN;
+  const { displayName, groupName, isRequired, description, customTableId } = req.body;
+
+  try {
+    if (isNaN(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid field ID' });
+    }
+
+    if (!displayName || !String(displayName).trim()) {
+      return res.status(400).json({ success: false, message: 'Display name is required' });
+    }
+
+    const [existingRows] = await pool.execute<CustomField[]>(
+      'SELECT * FROM CustomFields WHERE Id = ? AND IsActive = 1',
+      [id]
+    );
+
+    if (!existingRows || existingRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Custom field not found' });
+    }
+
+    const existing = existingRows[0];
+    const normalizedCustomTableId = customTableId ? Number(customTableId) : null;
+
+    if (normalizedCustomTableId !== null && Number.isNaN(normalizedCustomTableId)) {
+      return res.status(400).json({ success: false, message: 'Invalid custom table ID' });
+    }
+
+    if (normalizedCustomTableId !== null) {
+      const [tableRows] = await pool.execute<RowDataPacket[]>(
+        'SELECT Id FROM CustomTables WHERE Id = ?',
+        [normalizedCustomTableId]
+      );
+      if (!tableRows || tableRows.length === 0) {
+        return res.status(400).json({ success: false, message: 'Selected custom table does not exist' });
+      }
+    }
+
+    // Data type is immutable after field creation
+    const resolvedDataType = String(existing.DataType || '').toLowerCase();
+
+    // Linking to a custom table stores row IDs, so only int fields are eligible
+    if (normalizedCustomTableId !== null && resolvedDataType !== 'int') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only int custom fields can be linked to a custom table. Create a new int field if needed.',
+      });
+    }
+    const dbFieldName = `U_${existing.FieldName}`;
+
+    await pool.execute(
+      `UPDATE CustomFields
+       SET DisplayName = ?, GroupName = ?, IsRequired = ?, Description = ?, CustomTableId = ?
+       WHERE Id = ?`,
+      [
+        String(displayName).trim(),
+        groupName?.trim() || null,
+        isRequired ? 1 : 0,
+        description || '',
+        normalizedCustomTableId,
+        id,
+      ]
+    );
+
+    try {
+      const nullability = isRequired ? 'NOT NULL' : 'NULL';
+      const alterQuery = `ALTER TABLE ${existing.TableName} MODIFY COLUMN ${dbFieldName} ${existing.DataType} ${nullability}`;
+      await pool.execute(alterQuery);
+    } catch (alterError: any) {
+      console.warn('Could not alter physical column type/nullability for custom field update:', alterError?.message || alterError);
+    }
+
+    res.json({ success: true, message: 'Custom field updated successfully' });
+  } catch (error: any) {
+    console.error('Error updating custom field:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to update custom field' });
   }
 });
 

@@ -6,6 +6,7 @@ import React, { useState, useEffect, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
+import { useToast } from '@/contexts/ToastContext';
 import { projectsApi, Project, CreateProjectData, UpdateProjectData } from '@/lib/api/projects';
 import { tasksApi, Task, CreateTaskData } from '@/lib/api/tasks';
 import { organizationsApi, Organization } from '@/lib/api/organizations';
@@ -11490,6 +11491,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
 
 // Settings Tab Component
 function ProjectMappingsTab({ project, token, onSaved }: { project: Project; token: string; onSaved: () => void }) {
+  const { showToast } = useToast();
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
   const [taskTypes, setTaskTypes] = useState<StatusValue[]>([]);
@@ -11609,6 +11611,7 @@ function ProjectMappingsTab({ project, token, onSaved }: { project: Project; tok
       }
 
       setSuccess(true);
+      showToast({ type: 'success', title: 'Mappings Saved', message: 'Task mappings updated successfully.' });
       setTimeout(() => {
         onSaved();
       }, 700);
@@ -11695,12 +11698,6 @@ function ProjectMappingsTab({ project, token, onSaved }: { project: Project; tok
           </div>
         )}
 
-        {success && (
-          <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-800 text-green-700 dark:text-green-400 rounded">
-            Task mappings updated successfully!
-          </div>
-        )}
-
         {isInitializing ? (
           <div className="text-gray-600 dark:text-gray-400">Loading mapping options...</div>
         ) : (
@@ -11724,6 +11721,7 @@ function ProjectMappingsTab({ project, token, onSaved }: { project: Project; tok
 }
 
 function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: Project; token: string; onSaved: () => void; canViewBudgetInfo: boolean }) {
+  const { showToast } = useToast();
   const [formData, setFormData] = useState({
     organizationId: project.OrganizationId,
     projectName: project.ProjectName,
@@ -11928,6 +11926,7 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
 
       await projectsApi.update(project.Id, updateData, token);
       setSuccess(true);
+      showToast({ type: 'success', title: 'Project Updated', message: 'Project updated successfully!' });
       setTimeout(() => {
         onSaved();
       }, 1000);
@@ -11949,12 +11948,6 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
         {error && (
           <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded">
             {error}
-          </div>
-        )}
-
-        {success && (
-          <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-800 text-green-700 dark:text-green-400 rounded">
-            Project updated successfully!
           </div>
         )}
 
@@ -14138,6 +14131,7 @@ function SaveTemplateModal({
   token: string;
   onClose: () => void;
 }) {
+  const { showToast } = useToast();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -14183,6 +14177,7 @@ function SaveTemplateModal({
         throw new Error(data.message || 'Failed to save template');
       }
       setSuccess(true);
+      showToast({ type: 'success', title: 'Template Saved', message: `“${name.trim()}” has been saved as a template.` });
     } catch (err: any) {
       setError(err.message || 'Failed to save template');
     } finally {

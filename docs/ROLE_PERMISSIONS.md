@@ -6,71 +6,21 @@ The Role Permissions system allows fine-grained control over what users can do i
 
 ## Architecture
 
-### Database Tables
-
-- **Users**: Contains role flags (`IsDeveloper`, `IsSupport`, `IsManager`)
-- **RolePermissions**: Defines capabilities for each role
+#### View Permissions
 
 ### Permission Types
 
-#### View Permissions
-- `CanViewDashboard`: Access to dashboard
-- `CanViewPlanning`: Access to planning/Gantt view
-- `CanViewReports`: Access to project reports
-
-#### Project Permissions
-- `CanManageProjects`: Edit project details
-- `CanCreateProjects`: Create new projects
-- `CanDeleteProjects`: Delete projects
-
-#### Task Permissions
-- `CanManageTasks`: Edit task details
-- `CanCreateTasks`: Create new tasks
-- `CanDeleteTasks`: Delete tasks
-- `CanAssignTasks`: Assign tasks to users
-
-#### Ticket Permissions
-- `CanManageTickets`: Edit ticket details
-- `CanCreateTickets`: Create new tickets
-- `CanDeleteTickets`: Delete tickets
-- `CanAssignTickets`: Assign tickets to users
-
-#### Other Permissions
-- `CanManageTimeEntries`: Manage time tracking entries
-- `CanManageOrganizations`: Manage organization settings
-- `CanManageUsers`: User management access
-
-## Setup
-
-### 1. Database Schema
-
-The RolePermissions table is automatically created from:
+**Default permission matrix:**
 ```
 server/database/structure/systemtables/RolePermissions.json
-```
-
-### 2. Default Permissions
 
 Default role permissions are **automatically seeded** when the server starts for the first time.
 
-The seed function (`server/utils/seedRolePermissions.ts`) runs after table creation and only inserts data if the table is empty.
-
-**Default Permission Sets:**
-
 **Developer:**
-- View Dashboard ✓
-- View Planning ✓
-- Manage Tasks ✓
-- Create Tasks ✓
 - Manage Time Entries ✓
 - Manage Tickets ✓
-- Create Tickets ✓
-
 **Support:**
 - View Dashboard ✓
-- View Planning ✓
-- Manage Time Entries ✓
-- View Reports ✓
 - Manage Tickets ✓
 - Create Tickets ✓
 - Assign Tickets ✓
@@ -153,9 +103,10 @@ router.post('/api/projects', authenticateToken, async (req: AuthRequest, res) =>
 ## Permission Combination Rules
 
 1. **Admin Override**: Users with `isAdmin = true` have ALL permissions
-2. **Multiple Roles**: Users can have multiple roles (Developer + Support + Manager)
-3. **Permission Union**: If ANY role grants a permission, the user has it
-4. **No Roles**: Users with no roles have NO permissions
+2. **Multiple Roles**: Users can have multiple role flags (`IsDeveloper + IsSupport + IsManager`)
+3. **Permission Union**: If ANY role grants a permission, the user has it (OR logic)
+4. **No Roles**: Users with no role flags have no permissions and cannot access protected pages
+5. **Budget visibility**: `canViewBudgetInfo` is `TRUE` if either the role permission OR the org permission group allows it
 
 ### Examples
 
@@ -167,7 +118,36 @@ router.post('/api/projects', authenticateToken, async (req: AuthRequest, res) =>
 - Has all permissions
 
 **User with no roles:**
-- No permissions (can only view what's publicly accessible)
+- No permissions (cannot access any protected feature)
+
+## Organization Permission Groups
+
+Organizations can define `PermissionGroups` that are assigned per member, providing **org-scoped overrides** in addition to global role permissions.
+
+### Group-Level Capabilities
+
+| Field | Description |
+|---|---|
+| `CanManageProjects` | Edit/delete projects within this org |
+| `CanManageTasks` | Edit/delete tasks within this org |
+| `CanManageMembers` | Add/remove org members and change their roles |
+| `CanManageSettings` | Change org-level settings and custom statuses |
+| `CanViewBudgetInfo` | See budget and cost data for this org's projects |
+
+### How Groups Apply
+
+- Effective permission = `rolePermission OR groupPermission`
+- Groups **never reduce** permissions: if the role grants access, the group cannot revoke it
+- Groups are **org-scoped** — only apply within the organization they belong to
+- A user in two orgs can have different permission groups in each
+
+### Setup
+
+1. Go to Organization detail page → Settings tab
+2. Scroll to "Permission Groups" section
+3. Click "Create Permission Group"
+4. Enter group name and toggle the desired capabilities
+5. When adding/editing a member, select their permission group from the dropdown
 
 ## Managing Permissions
 
@@ -206,6 +186,13 @@ await updateRolePermission(token, 'Developer', {
 5. **Document permission requirements** for new features
 6. **Test with different role combinations**
 
+## Feature-Specific Permission Notes
+
+- **Planning and split allocations** require planning visibility plus task/project management capabilities according to role and org permission group.
+- **Jira integration actions** (configure integration, import/sync workflows, check status) should be treated as organization/project management operations and restricted to users with the corresponding management access.
+- **Global project edits** (toggling `IsGlobal`, customer association rules) should be limited to users allowed to create/manage projects.
+- **Active timers** are user-scoped runtime actions; users can only manage their own active timer context.
+
 ## Troubleshooting
 
 ### Permissions not updating
@@ -225,8 +212,7 @@ await updateRolePermission(token, 'Developer', {
 
 ## Future Enhancements
 
-- [ ] Organization-level permission overrides
-- [ ] Custom roles beyond Developer/Support/Manager
-- [ ] Permission templates
-- [ ] Audit logging for permission changes
-- [ ] Time-limited permissions
+- [ ] Custom roles beyond Developer / Support / Manager
+- [ ] Permission templates for quick group setup
+- [ ] Audit logging for permission changes in the Admin UI
+- [ ] Time-limited permissions (e.g., temporary elevated access)

@@ -3,6 +3,7 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket } from '../config/database';
 import { decrypt } from '../utils/encryption';
+import { assistantDocumentationSections } from '../utils/assistantDocumentation';
 
 const router = express.Router();
 
@@ -12,6 +13,8 @@ interface ChatMessage {
   role: ChatRole;
   content: string;
 }
+
+type AssistantMode = 'analytics' | 'docs';
 
 interface CombinedPermissions {
   canViewReports: boolean;
@@ -64,6 +67,51 @@ const containsPhrase = (haystack: string, phrase: string): boolean => {
   if (!normalizedPhrase) return false;
   const pattern = new RegExp(`(^|\\s)${escapeRegex(normalizedPhrase)}(\\s|$)`);
   return pattern.test(normalizedHaystack) || normalizedHaystack.includes(normalizedPhrase);
+};
+
+const documentationIntentTerms = [
+  'how to', 'how do i', 'where is', 'where can i', 'what is', 'explain', 'guide', 'documentation', 'docs',
+  'como', 'onde', 'manual', 'fluxo', 'workflow', 'permission', 'permissions', 'setting', 'settings',
+  'module', 'screen', 'page', 'menu', 'submenu'
+];
+
+const analyticsIntentTerms = [
+  'hours', 'overdue', 'capacity', 'allocated', 'allocation', 'tasks', 'open tasks', 'projects',
+  'metrics', 'analytics', 'report', 'worked', 'time entries', 'dashboard', 'contributors', 'schedule'
+];
+
+const detectDocumentationIntent = (normalizedMessage: string): boolean => {
+  const hasDocTerm = documentationIntentTerms.some((term) => normalizedMessage.includes(normalizeSearchText(term)));
+  const hasAnalyticsTerm = analyticsIntentTerms.some((term) => normalizedMessage.includes(normalizeSearchText(term)));
+  return hasDocTerm && !hasAnalyticsTerm;
+};
+
+const buildDocumentationContext = (normalizedMessage: string) => {
+  const scoredSections = assistantDocumentationSections
+    .map((section) => {
+      const score = section.keywords.reduce((total, keyword) => {
+        const normalizedKeyword = normalizeSearchText(keyword);
+        return total + (normalizedMessage.includes(normalizedKeyword) ? 1 : 0);
+      }, 0);
+      return { section, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map((item) => item.section);
+
+  const selectedSections = scoredSections.length > 0
+    ? scoredSections
+    : assistantDocumentationSections.slice(0, 4);
+
+  return {
+    selectedSectionIds: selectedSections.map((section) => section.id),
+    sections: selectedSections.map((section) => ({
+      id: section.id,
+      title: section.title,
+      content: section.content,
+    })),
+  };
 };
 
 const normalizeDbDate = (value: any): string => {
@@ -159,8 +207,8 @@ const getUserOrganizationIds = async (userId: number): Promise<number[]> => {
 
 const getGlobalAssistantConfig = async () => {
   const [globalSettingsRows] = await pool.execute<RowDataPacket[]>(
-    'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?)',
-    ['aiAssistantEnabled', 'openAIApiKey']
+    'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?)',
+    ['aiAssistantEnabled', 'openAIApiKey', 'openAIModel', 'openAIBehavior']
   );
 
   const settingsMap: Record<string, string> = {};
@@ -171,11 +219,15 @@ const getGlobalAssistantConfig = async () => {
   const aiAssistantEnabled = settingsMap.aiAssistantEnabled === 'true';
   const encryptedApiKey = String(settingsMap.openAIApiKey || '').trim();
   const openAiApiKey = encryptedApiKey ? decrypt(encryptedApiKey).trim() : '';
+  const openAIModel = String(settingsMap.openAIModel || '').trim();
+  const openAIBehavior = String(settingsMap.openAIBehavior || '').trim();
 
   return {
     aiAssistantEnabled,
     isConfigured: !!openAiApiKey,
     openAiApiKey,
+    openAIModel,
+    openAIBehavior,
   };
 };
 
@@ -444,7 +496,7 @@ router.get('/availability', authenticateToken, async (req: AuthRequest, res: Res
 
     return res.json({
       success: true,
-      available: config.aiAssistantEnabled && config.isConfigured && permissions.canViewReports,
+      available: config.aiAssistantEnabled && config.isConfigured,
       enabled: config.aiAssistantEnabled,
       configured: config.isConfigured,
       canViewReports: permissions.canViewReports,
@@ -466,6 +518,8 @@ router.post('/chat', authenticateToken, async (req: AuthRequest, res: Response) 
 
     const rawMessage = String(req.body?.message || '').trim();
     const historyInput = Array.isArray(req.body?.history) ? req.body.history : [];
+    const modeInput = String(req.body?.mode || 'analytics').toLowerCase();
+    const requestedMode: AssistantMode = modeInput === 'docs' ? 'docs' : 'analytics';
     const normalizedMessage = normalizeSearchText(rawMessage);
 
     if (!rawMessage) {
@@ -488,6 +542,69 @@ router.post('/chat', authenticateToken, async (req: AuthRequest, res: Response) 
     const openAiApiKey = config.openAiApiKey;
     if (!openAiApiKey) {
       return res.status(400).json({ success: false, message: 'OpenAI API key is invalid or empty in system settings.' });
+    }
+
+    const safeHistory: ChatMessage[] = historyInput
+      .filter((item: any) => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string')
+      .slice(-8)
+      .map((item: any) => ({ role: item.role, content: String(item.content).slice(0, 2000) }));
+
+    const model = config.openAIModel || process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    const behaviorInstruction = config.openAIBehavior
+      ? `Configured behavior: ${config.openAIBehavior}`
+      : '';
+    const docsIntentDetected = detectDocumentationIntent(normalizedMessage);
+
+    if (requestedMode === 'docs' || docsIntentDetected) {
+      const docContext = buildDocumentationContext(normalizedMessage);
+      const docsPrompt = [
+        'You are a product documentation assistant for this project management application.',
+        'Language rule (mandatory): ALWAYS respond in English (EN), regardless of user input language.',
+        'Never answer in Portuguese.',
+        'Use only the provided documentation context.',
+        'If the question is not covered, clearly say what is missing and suggest where the user should look (module/settings/permissions).',
+        'Prefer concise step-by-step guidance when user asks how to do something.',
+        behaviorInstruction,
+      ].join(' ');
+
+      const llmMessages = [
+        { role: 'system', content: `${docsPrompt}\n\nDocumentationContext:\n${JSON.stringify(docContext)}` },
+        ...safeHistory,
+        { role: 'user', content: rawMessage },
+      ];
+
+      const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAiApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model, temperature: 0.2, messages: llmMessages }),
+      });
+
+      if (!llmResponse.ok) {
+        const errorJson = await llmResponse.json().catch(() => ({}));
+        const apiMessage = String(errorJson?.error?.message || errorJson?.message || '').trim();
+        return res.status(502).json({
+          success: false,
+          message: apiMessage || 'OpenAI request failed. Check API key and model configuration.'
+        });
+      }
+
+      const llmJson = await llmResponse.json();
+      const llmAnswer = String(llmJson?.choices?.[0]?.message?.content || '').trim();
+
+      return res.json({
+        success: true,
+        data: {
+          answer: llmAnswer || 'I could not generate a documentation answer right now.',
+          context: {
+            generatedAt: new Date().toISOString(),
+            mode: 'docs',
+            selectedSectionIds: docContext.selectedSectionIds,
+          },
+        },
+      });
     }
 
     const permissions = await buildRolePermissions(userId);
@@ -916,12 +1033,6 @@ router.post('/chat', authenticateToken, async (req: AuthRequest, res: Response) 
         topContributors,
       };
 
-      const safeHistory: ChatMessage[] = historyInput
-        .filter((item: any) => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string')
-        .slice(-8)
-        .map((item: any) => ({ role: item.role, content: String(item.content).slice(0, 2000) }));
-
-      const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
       const systemPrompt = [
         'You are an internal project analytics assistant.',
         'Language rule (mandatory): ALWAYS respond in English (EN), regardless of the user input language.',
@@ -939,7 +1050,8 @@ router.post('/chat', authenticateToken, async (req: AuthRequest, res: Response) 
           : 'Data scope is restricted to the current user only. tasks.totalTasks, tasks.overdueTasks, timeEntries.totalHours30d, projectTaskInsights, and topContributors contain ONLY the current user\'s data. Never mention or infer data about other users.',
         'For schedule/planning questions, use planning.dailySchedule and planning.topTasks directly when present.',
         'Do not claim missing daily allocations if planning.dailySchedule has entries.',
-        'Respond in concise English with short bullet points when useful.'
+        'Respond in concise English with short bullet points when useful.',
+        behaviorInstruction,
       ].join(' ');
 
       const llmMessages = [

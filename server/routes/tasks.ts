@@ -421,6 +421,7 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
     const [tasks] = await pool.execute<RowDataPacket[]>(
       `SELECT DISTINCT t.*, 
               p.ProjectName,
+              p.OrganizationId,
               COALESCE(tc.ExternalName, tc.Name, pc.ExternalName, pc.Name) as CustomerName,
               COALESCE(pc.ExternalName, pc.Name) as ProjectCustomerName,
               p.IsHobby,
@@ -428,6 +429,7 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
               u2.Username as AssigneeName,
               depTask.TaskName as DependsOnTaskName,
               tsv.StatusName, tsv.ColorCode as StatusColor,
+              tsv.SortOrder as StatusSortOrder,
               COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
               COALESCE(tsv.HideFromPlanningAndStatistics, 0) as StatusHideFromPlanningAndStatistics,
               tpv.PriorityName, tpv.ColorCode as PriorityColor, tpv.SortOrder as PrioritySortOrder,
@@ -639,6 +641,9 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 tk.ExternalTicketId,
                 oji.JiraUrl,
                 t.JiraIssueKey,
+                  s.Name as SprintName,
+                s.StartDate as SprintStartDate,
+                s.EndDate as SprintEndDate,
                 '[]' as AssigneesJson
          FROM Tasks t
          INNER JOIN Projects p ON t.ProjectId = p.Id
@@ -649,6 +654,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
          LEFT JOIN Tasks depTask ON t.DependsOnTaskId = depTask.Id
          LEFT JOIN Tickets tk ON t.TicketId = tk.Id
          LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1
+         LEFT JOIN Sprints s ON t.SprintId = s.Id
          LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
          LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
          LEFT JOIN TaskTypeValues ttv ON t.TaskType = ttv.Id
@@ -689,6 +695,9 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 tk.ExternalTicketId,
                 oji.JiraUrl,
                 t.JiraIssueKey,
+                  s.Name as SprintName,
+                s.StartDate as SprintStartDate,
+                s.EndDate as SprintEndDate,
                 '[]' as AssigneesJson
          FROM Tasks t
          INNER JOIN Projects p ON t.ProjectId = p.Id
@@ -699,6 +708,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
          LEFT JOIN Tasks depTask ON t.DependsOnTaskId = depTask.Id
          LEFT JOIN Tickets tk ON t.TicketId = tk.Id
          LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1
+         LEFT JOIN Sprints s ON t.SprintId = s.Id
          LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
          LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
          LEFT JOIN TaskTypeValues ttv ON t.TaskType = ttv.Id

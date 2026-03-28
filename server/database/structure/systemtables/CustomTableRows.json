@@ -1,0 +1,22 @@
+{
+  "TableName": "CustomTableRows",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "CustomTableId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Description",
+      "DataType": "varchar(500)",
+      "NotNullable": true
+    }
+  ]
+}

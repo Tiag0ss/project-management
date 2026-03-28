@@ -18,6 +18,7 @@ import CustomerFormModal, { CustomerFormValues } from './CustomerFormModal';
 import TimerStartModal, { TimerMode, TimerStartCallFormValues } from './TimerStartModal';
 import NavDropdownMenu from './navbar/NavDropdownMenu';
 import TaskDetailModal from './TaskDetailModal';
+import { useToast } from '@/contexts/ToastContext';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { createCustomer, CreateCustomerData } from '@/lib/api/customers';
 import { io, Socket } from 'socket.io-client';
@@ -81,6 +82,7 @@ const buildDefaultCustomerFormValues = (organizations: Organization[]): Customer
 export default function Navbar() {
   const { user, token, logout, isCustomerUser } = useAuth();
   const { permissions, isLoading: permissionsLoading } = usePermissions();
+  const { showToast } = useToast();
   const router = useRouter();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
@@ -213,6 +215,16 @@ export default function Navbar() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const setErrorWithToast = (message: string) => {
+    setError(message);
+    showToast({ type: 'error', title: 'Quick Action Error', message });
+  };
+
+  const setTimerStartErrorWithToast = (message: string) => {
+    setTimerStartError(message);
+    showToast({ type: 'error', title: 'Timer Error', message });
+  };
   
   // Form state
   const [selectedOrgId, setSelectedOrgId] = useState<number | null>(null);
@@ -641,7 +653,7 @@ export default function Navbar() {
         setTimerStartTaskId(Number(tasks[0].Id));
       }
     } catch (err: any) {
-      setTimerStartError(err.message || 'Failed to load timer options');
+      setTimerStartErrorWithToast(err.message || 'Failed to load timer options');
     } finally {
       setIsLoadingTimerStartTasks(false);
     }
@@ -650,11 +662,11 @@ export default function Navbar() {
   const handleNavStartTimer = async () => {
     if (!token) return;
     if (timerStartMode === 'task' && !timerStartTaskId) {
-      setTimerStartError('Please select a task');
+      setTimerStartErrorWithToast('Please select a task');
       return;
     }
     if (!timerStartTime) {
-      setTimerStartError('Please select a start time');
+      setTimerStartErrorWithToast('Please select a start time');
       return;
     }
 
@@ -663,7 +675,7 @@ export default function Navbar() {
     startedAt.setHours(hours || 0, minutes || 0, 0, 0);
 
     if (startedAt.getTime() > Date.now()) {
-      setTimerStartError('Start time cannot be in the future');
+      setTimerStartErrorWithToast('Start time cannot be in the future');
       return;
     }
 
@@ -705,7 +717,7 @@ export default function Navbar() {
       closeNavStartTimerModal();
       window.dispatchEvent(new CustomEvent('timer-changed'));
     } catch (err: any) {
-      setTimerStartError(err.message || 'Failed to start timer');
+      setTimerStartErrorWithToast(err.message || 'Failed to start timer');
     } finally {
       setIsStartingTimer(false);
     }
@@ -922,14 +934,38 @@ export default function Navbar() {
     }, 300);
   };
 
-  const handleSearchResultClick = (type: string, id: number, extra?: any) => {
+  const handleSearchResultClick = async (type: string, id: number, extra?: any) => {
     setSearchOpen(false);
     setSearchQuery('');
     setSearchResults(null);
     
     switch (type) {
       case 'task':
-        window.location.href = `/projects/${extra.ProjectId}?task=${id}`;
+        if (!token) return;
+
+        try {
+          let projectId = Number(extra?.ProjectId || 0);
+
+          if (!Number.isFinite(projectId) || projectId <= 0) {
+            const response = await fetch(`${getApiUrl()}/api/tasks/${id}`, {
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              projectId = Number(data?.task?.ProjectId || 0);
+            }
+          }
+
+          if (Number.isFinite(projectId) && projectId > 0) {
+            await openNavTaskDetail(projectId, id);
+            return;
+          }
+
+          window.location.href = `/projects?task=${id}`;
+        } catch {
+          window.location.href = `/projects?task=${id}`;
+        }
         break;
       case 'project':
         window.location.href = `/projects/${id}`;
@@ -981,7 +1017,7 @@ export default function Navbar() {
       }
     } catch (err) {
       console.error('Failed to load organizations:', err);
-      setError('Failed to load organizations');
+      setErrorWithToast('Failed to load organizations');
     } finally {
       setIsLoadingData(false);
     }
@@ -1000,7 +1036,7 @@ export default function Navbar() {
 
     if (type === 'customer') {
       if (!token) {
-        setError('Authentication token is missing');
+        setErrorWithToast('Authentication token is missing');
         return;
       }
 
@@ -1032,7 +1068,7 @@ export default function Navbar() {
 
         setCustomerForm(buildDefaultCustomerFormValues(loadedOrganizations));
       } catch (err: any) {
-        setError(err.message || 'Failed to load customer quick action data');
+        setErrorWithToast(err.message || 'Failed to load customer quick action data');
       }
 
       return;
@@ -1095,7 +1131,7 @@ export default function Navbar() {
   // Save Organization
   const handleSaveOrganization = async () => {
     if (!orgForm.name.trim()) {
-      setError('Organization name is required');
+      setErrorWithToast('Organization name is required');
       return;
     }
     setIsSaving(true);
@@ -1121,7 +1157,7 @@ export default function Navbar() {
         window.location.reload();
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to create organization');
+      setErrorWithToast(err.message || 'Failed to create organization');
     } finally {
       setIsSaving(false);
     }
@@ -1130,17 +1166,17 @@ export default function Navbar() {
   // Save Customer
   const handleSaveCustomer = async (formValues: CustomerFormValues) => {
     if (!token) {
-      setError('Authentication token is missing');
+      setErrorWithToast('Authentication token is missing');
       return;
     }
 
     if (!formValues.Name.trim()) {
-      setError('Customer name is required');
+      setErrorWithToast('Customer name is required');
       return;
     }
 
     if (formValues.OrganizationIds.length === 0) {
-      setError('At least one organization must be selected');
+      setErrorWithToast('At least one organization must be selected');
       return;
     }
 
@@ -1171,7 +1207,7 @@ export default function Navbar() {
         window.location.reload();
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to create customer');
+      setErrorWithToast(err.message || 'Failed to create customer');
     } finally {
       setIsSaving(false);
     }
@@ -1180,7 +1216,7 @@ export default function Navbar() {
   // Save Time Entry
   const handleSaveTimeEntry = async (timeEntryForm: TimeEntryFormValues) => {
     if (!timeEntryForm.taskId || !timeEntryForm.workDate) {
-      setError('Task and Work Date are required');
+      setErrorWithToast('Task and Work Date are required');
       throw new Error('Task and Work Date are required');
     }
     
@@ -1193,7 +1229,7 @@ export default function Navbar() {
       hours = Math.max(0, (endMinutes - startMinutes) / 60);
     }
     if (hours <= 0) {
-      setError('Hours must be greater than 0');
+      setErrorWithToast('Hours must be greater than 0');
       throw new Error('Hours must be greater than 0');
     }
 
@@ -1225,7 +1261,7 @@ export default function Navbar() {
       }
     } catch (err: any) {
       const message = err.message || 'Failed to create time entry';
-      setError(message);
+      setErrorWithToast(message);
       throw new Error(message);
     } finally {
       setIsSaving(false);
@@ -1266,7 +1302,7 @@ export default function Navbar() {
       }
     } catch (err: any) {
       const message = err.message || 'Failed to create call record';
-      setError(message);
+      setErrorWithToast(message);
       throw new Error(message);
     } finally {
       setIsSaving(false);
@@ -1380,7 +1416,7 @@ export default function Navbar() {
       }
     } catch (err) {
       console.error('Failed to load organization data:', err);
-      setError('Failed to load organization data');
+      setErrorWithToast('Failed to load organization data');
     } finally {
       setIsLoadingData(false);
     }
@@ -1388,7 +1424,7 @@ export default function Navbar() {
 
   const handleSaveTask = async () => {
     if (!taskForm.projectId || !taskForm.taskName.trim() || !taskForm.taskType) {
-      setError('Project, Task Name, and Task Type are required');
+      setErrorWithToast('Project, Task Name, and Task Type are required');
       return;
     }
 
@@ -1442,7 +1478,7 @@ export default function Navbar() {
         window.location.reload();
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to create task');
+      setErrorWithToast(err.message || 'Failed to create task');
     } finally {
       setIsSaving(false);
     }

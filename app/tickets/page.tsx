@@ -142,6 +142,7 @@ export default function TicketsPage() {
   const [jiraIssues, setJiraIssues] = useState<any[]>([]);
   const [searchingJira, setSearchingJira] = useState(false);
   const [jiraSearchQuery, setJiraSearchQuery] = useState('');
+  const [jiraSearchError, setJiraSearchError] = useState('');
   const [jiraIntegrations, setJiraIntegrations] = useState<Map<number, string>>(new Map());
   const [slaRulesMap, setSlaRulesMap] = useState<Map<number, any[]>>(new Map());
   const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
@@ -399,8 +400,31 @@ export default function TicketsPage() {
     }
   };
 
+  const getApiErrorMessage = async (response: Response, fallbackMessage: string) => {
+    try {
+      const contentType = response.headers.get('content-type') || '';
+
+      if (contentType.includes('application/json')) {
+        const data = await response.json();
+        if (data?.message) {
+          return String(data.message);
+        }
+      } else {
+        const text = await response.text();
+        if (text.trim()) {
+          return text.trim();
+        }
+      }
+    } catch {
+      // Ignore parsing errors and fall back to a generic message.
+    }
+
+    return fallbackMessage;
+  };
+
   const handleOpenCreateModal = () => {
     setError('');
+    setJiraSearchError('');
     setShowCreateModal(true);
 
     const fallbackOrgId = organizations.length === 1
@@ -430,6 +454,7 @@ export default function TicketsPage() {
       setJiraIntegration(null);
       setJiraIssues([]);
       setJiraSearchQuery('');
+      setJiraSearchError('');
       return;
     }
 
@@ -442,17 +467,27 @@ export default function TicketsPage() {
     if (!createForm.organizationId || !jiraIntegration) return;
     
     setSearchingJira(true);
+    setJiraSearchError('');
     try {
       const res = await fetch(
         `${getApiUrl()}/api/jira-integrations/organization/${createForm.organizationId}/search?query=${encodeURIComponent(query)}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
-      if (res.ok) {
-        const data = await res.json();
-        setJiraIssues(data.issues || []);
+
+      if (!res.ok) {
+        const message = await getApiErrorMessage(res, 'Failed to search Jira issues');
+        setJiraIssues([]);
+        setJiraSearchError(message);
+        return;
       }
+
+      const data = await res.json();
+      setJiraIssues(data.issues || []);
+      setJiraSearchError('');
     } catch (err) {
       console.error('Failed to search Jira issues:', err);
+      setJiraIssues([]);
+      setJiraSearchError(err instanceof Error ? err.message : 'Failed to search Jira issues');
     } finally {
       setSearchingJira(false);
     }
@@ -576,6 +611,7 @@ export default function TicketsPage() {
       setJiraIntegration(null);
       setJiraIssues([]);
       setJiraSearchQuery('');
+      setJiraSearchError('');
       
       // Navigate to the new ticket
       router.push(`/tickets/${ticketId}`);
@@ -1286,9 +1322,14 @@ export default function TicketsPage() {
                               type="text"
                               value={jiraSearchQuery}
                               onChange={(e) => {
-                                setJiraSearchQuery(e.target.value);
-                                if (e.target.value.length >= 2) {
-                                  searchJiraIssues(e.target.value);
+                                const nextValue = e.target.value;
+                                setJiraSearchQuery(nextValue);
+
+                                if (nextValue.length >= 2) {
+                                  searchJiraIssues(nextValue);
+                                } else {
+                                  setJiraIssues([]);
+                                  setJiraSearchError('');
                                 }
                               }}
                               placeholder="Search by Jira ticket number or summary..."
@@ -1300,6 +1341,12 @@ export default function TicketsPage() {
                               </div>
                             )}
                           </div>
+
+                          {jiraSearchError && (
+                            <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm text-red-700 dark:text-red-400">
+                              {jiraSearchError}
+                            </div>
+                          )}
 
                           {createForm.externalTicketId && (
                             <div className="flex items-center gap-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-2 rounded-lg">
@@ -1364,6 +1411,7 @@ export default function TicketsPage() {
                                     }));
                                     setJiraSearchQuery('');
                                     setJiraIssues([]);
+                                    setJiraSearchError('');
                                   }}
                                   className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-600 border-b border-gray-200 dark:border-gray-600 last:border-0"
                                 >

@@ -6,6 +6,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
+import { useToast } from '@/contexts/ToastContext';
 import { tasksApi, Task } from '@/lib/api/tasks';
 import { projectsApi, Project } from '@/lib/api/projects';
 import { usersApi, User } from '@/lib/api/users';
@@ -115,6 +116,7 @@ const renderMilestoneTypeSvg = (iconSvg: string | null | undefined, className: s
 export default function PlanningPage() {
   const { user, isLoading, token } = useAuth();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
+  const { showToast } = useToast();
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -503,6 +505,18 @@ export default function PlanningPage() {
   const [showOverdueDetails, setShowOverdueDetails] = useState(false);
 
   const showAlert = (title: string, message: string) => {
+    const normalizedTitle = title.trim().toLowerCase();
+    const normalizedMessage = message.trim().toLowerCase();
+    const isSuccessAlert =
+      normalizedTitle === 'success'
+      || normalizedTitle === 'baseline set'
+      || normalizedMessage.includes('successfully');
+
+    if (isSuccessAlert) {
+      showToast({ type: 'success', title, message });
+      return;
+    }
+
     setModalMessage({ type: 'alert', title, message });
   };
 
@@ -1816,7 +1830,7 @@ export default function PlanningPage() {
       const candidateIsLeaf = isLeafTask(candidate.Id);
       const isUnscheduled = Number(candidate.UnscheduledWork || 0) === 1;
       const matchesAssignee = userId === undefined
-        ? hasAnyTaskAssignee(candidate)
+        ? true
         : isTaskAssignedToUser(candidate, userId);
 
       if (candidateIsLeaf && isUnscheduled && matchesAssignee && isRenderableUnscheduledTask(candidate)) {
@@ -6927,6 +6941,49 @@ export default function PlanningPage() {
         : `${(duration / Math.max(1, timelineColumns.length)) * 100}%`,
     };
   };
+  const getTimelineRangePosition = (startDateValue?: string | null, endDateValue?: string | null) => {
+    if (!startDateValue || !endDateValue || timelineColumns.length === 0) return null;
+
+    const parseDate = (value: string) => {
+      const dateOnly = String(value).split('T')[0];
+      const parsed = new Date(`${dateOnly}T12:00:00`);
+      parsed.setHours(0, 0, 0, 0);
+      return parsed;
+    };
+
+    const normalizedStart = parseDate(startDateValue);
+    const normalizedEnd = parseDate(endDateValue);
+    if (Number.isNaN(normalizedStart.getTime()) || Number.isNaN(normalizedEnd.getTime())) {
+      return null;
+    }
+
+    const rangeStart = normalizedStart <= normalizedEnd ? normalizedStart : normalizedEnd;
+    const rangeEnd = normalizedStart <= normalizedEnd ? normalizedEnd : normalizedStart;
+
+    const overlapsColumn = (column: TimelineColumn) => {
+      const columnStart = new Date(column.start);
+      const columnEnd = new Date(column.end);
+      columnStart.setHours(0, 0, 0, 0);
+      columnEnd.setHours(0, 0, 0, 0);
+      return rangeStart <= columnEnd && rangeEnd >= columnStart;
+    };
+
+    const startIndex = timelineColumns.findIndex(overlapsColumn);
+    if (startIndex === -1) return null;
+
+    let endIndex = startIndex;
+    for (let index = startIndex; index < timelineColumns.length; index++) {
+      if (overlapsColumn(timelineColumns[index])) {
+        endIndex = index;
+      }
+    }
+
+    return {
+      startIndex,
+      endIndex,
+      ...getBarStyleFromIndices(startIndex, endIndex),
+    };
+  };
   const isGanttLoading = isLoadingData || loadingAllocations;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -7007,10 +7064,12 @@ export default function PlanningPage() {
       if (t.ParentTaskId) return false;
       const hasPlannedDates = !!(t.PlannedStartDate && t.PlannedEndDate);
       const isRenderableClosedUnscheduled = isClosedUnscheduledWithAnchor(t);
+      const unscheduledRenderDates = getUnscheduledRenderDates(t);
       if (isTaskClosedOrCancelled(t) && !isRenderableClosedUnscheduled && !hasPlannedDates) return false;
       const isAssignedUnscheduled = isRenderableUnscheduledTask(t) && hasAnyTaskAssignee(t);
       const hasUnscheduledDescendants = hasUnscheduledAssignedDescendant(t.Id);
-      if (!(hasPlannedDates || isAssignedUnscheduled || hasUnscheduledDescendants) || !matchesGanttSearch(t)) return false;
+      const hasClosedOrTransitionAnchors = unscheduledRenderDates.length > 0;
+      if (!(hasPlannedDates || isAssignedUnscheduled || hasUnscheduledDescendants || hasClosedOrTransitionAnchors) || !matchesGanttSearch(t)) return false;
 
       const project = projects.find((projectItem) => projectItem.Id === t.ProjectId);
       if (!isProjectActive(project)) return false;
@@ -9001,6 +9060,62 @@ export default function PlanningPage() {
                 const taskRows: { task: Task; row: number }[] = [];
                 let maxRows = 1;
 
+                const groupedSprints = new Map<string, {
+                  id: string;
+                  name: string;
+                  projectName: string;
+                  startDate: string;
+                  endDate: string;
+                }>();
+
+                parentTasks.forEach((task) => {
+                  const sprintId = Number(task.SprintId);
+                  if (!Number.isFinite(sprintId) || sprintId <= 0) return;
+                  if (!task.SprintStartDate || !task.SprintEndDate) return;
+
+                  const sprintKey = `${task.ProjectId}-${sprintId}`;
+                  if (!groupedSprints.has(sprintKey)) {
+                    groupedSprints.set(sprintKey, {
+                      id: sprintKey,
+                      name: String(task.SprintName || `Sprint ${sprintId}`),
+                      projectName: projects.find((projectItem) => projectItem.Id === task.ProjectId)?.ProjectName || `Project #${task.ProjectId}`,
+                      startDate: String(task.SprintStartDate),
+                      endDate: String(task.SprintEndDate),
+                    });
+                  }
+                });
+
+                const sprintItems = Array.from(groupedSprints.values())
+                  .map((sprint) => {
+                    const position = getTimelineRangePosition(sprint.startDate, sprint.endDate);
+                    return position ? { ...sprint, position } : null;
+                  })
+                  .filter((item): item is NonNullable<typeof item> => item !== null)
+                  .sort((a, b) => a.position.startIndex - b.position.startIndex || a.position.endIndex - b.position.endIndex);
+
+                const sprintRows: Array<(typeof sprintItems)[number] & { row: number }> = [];
+                let sprintLaneCount = 0;
+
+                sprintItems.forEach((sprintItem, sprintIndex) => {
+                  let sprintRow = 0;
+
+                  for (let index = 0; index < sprintIndex; index++) {
+                    const otherSprint = sprintItems[index];
+                    const overlaps = !(sprintItem.position.endIndex < otherSprint.position.startIndex || sprintItem.position.startIndex > otherSprint.position.endIndex);
+                    if (!overlaps) continue;
+
+                    const otherSprintRow = sprintRows.find((entry) => entry.id === otherSprint.id);
+                    if (otherSprintRow) {
+                      sprintRow = Math.max(sprintRow, otherSprintRow.row + 1);
+                    }
+                  }
+
+                  sprintRows.push({ ...sprintItem, row: sprintRow });
+                  sprintLaneCount = Math.max(sprintLaneCount, sprintRow + 1);
+                });
+
+                const sprintLaneHeight = sprintLaneCount > 0 ? sprintLaneCount * 16 + 4 : 0;
+
                 parentTasks.forEach((task, taskIdx) => {
                   const position = getTaskPosition(task, timelineColumns, {
                     useFixedPixelColumns,
@@ -9036,7 +9151,7 @@ export default function PlanningPage() {
                   maxRows = Math.max(maxRows, row + 1);
                 });
 
-                const rowHeight = Math.max(maxRows * 24 + 8, 44);
+                const rowHeight = Math.max(sprintLaneHeight + maxRows * 24 + 8, 44);
 
                 return (
                   <div
@@ -9086,6 +9201,9 @@ export default function PlanningPage() {
                           || (task.GitHubIssueNumber ? `#${task.GitHubIssueNumber}` : null)
                           || (task.GiteaIssueNumber ? `#${task.GiteaIssueNumber}` : null)
                           || null;
+                        const sprintLabel = typeof task.SprintName === 'string' && task.SprintName.trim().length > 0
+                          ? task.SprintName.trim()
+                          : null;
 
                         return (
                           <div
@@ -9104,7 +9222,7 @@ export default function PlanningPage() {
                             style={{
                               left: position.left,
                               width: position.width,
-                              top: `${2 + row * 24}px`,
+                              top: `${sprintLaneHeight + 2 + row * 24}px`,
                               ...(statusColor ? { backgroundColor: statusColor } : {}),
                               borderLeft: `4px solid ${priorityBorderHex}`,
                               zIndex: 21,
@@ -9124,6 +9242,22 @@ export default function PlanningPage() {
                           </div>
                         );
                       })}
+
+                      {sprintRows.map((sprintRow) => (
+                        <div
+                          key={`group-sprint-${groupRow.id}-${sprintRow.id}`}
+                          className="absolute h-4 rounded bg-indigo-100/90 dark:bg-indigo-900/40 border border-indigo-300/80 dark:border-indigo-500/60 text-indigo-800 dark:text-indigo-200 text-[10px] px-1 flex items-center"
+                          style={{
+                            left: sprintRow.position.left,
+                            width: sprintRow.position.width,
+                            top: `${1 + sprintRow.row * 16}px`,
+                            zIndex: 15,
+                          }}
+                          title={`Sprint: ${sprintRow.name}\nProject: ${sprintRow.projectName}\nDates: ${String(sprintRow.startDate).split('T')[0]} → ${String(sprintRow.endDate).split('T')[0]}`}
+                        >
+                          <span className="truncate pointer-events-none">🏁 {sprintRow.name}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 );

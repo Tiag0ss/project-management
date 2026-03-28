@@ -9,6 +9,8 @@ type AssistantMessage = {
   content: string;
 };
 
+type AssistantMode = 'analytics' | 'docs';
+
 const ASSISTANT_BUBBLE_SIZE = 56;
 const ASSISTANT_PANEL_WIDTH = 360;
 const ASSISTANT_PANEL_HEIGHT = 460;
@@ -19,6 +21,7 @@ export default function AIAssistantWidget() {
   const [isMinimized, setIsMinimized] = useState(false);
   const [isVisibilityLoading, setIsVisibilityLoading] = useState(true);
   const [isGloballyAvailable, setIsGloballyAvailable] = useState(false);
+  const [mode, setMode] = useState<AssistantMode>('analytics');
   const [bubblePosition, setBubblePosition] = useState({ x: 0, y: 0 });
   const [messages, setMessages] = useState<AssistantMessage[]>([
     {
@@ -67,6 +70,7 @@ export default function AIAssistantWidget() {
         body: JSON.stringify({
           message: trimmed,
           history: nextMessages.slice(-8),
+          mode,
         }),
       });
 
@@ -92,8 +96,9 @@ export default function AIAssistantWidget() {
 
   const placeholder = useMemo(() => {
     if (!canUseAssistant) return 'Login required to ask questions...';
+    if (mode === 'docs') return 'Ask how to use modules, flows, settings, and permissions...';
     return 'Ask about projects, overdue tasks, capacity, hours...';
-  }, [canUseAssistant]);
+  }, [canUseAssistant, mode]);
 
   const expandedPanelPosition = useMemo(() => {
     if (typeof window === 'undefined') {
@@ -116,6 +121,11 @@ export default function AIAssistantWidget() {
       const stored = localStorage.getItem('ai-assistant:minimized');
       if (stored === '1') {
         setIsMinimized(true);
+      }
+
+      const storedMode = localStorage.getItem('ai-assistant:mode');
+      if (storedMode === 'docs' || storedMode === 'analytics') {
+        setMode(storedMode);
       }
 
       const storedPosition = localStorage.getItem('ai-assistant:bubble-position');
@@ -225,6 +235,24 @@ export default function AIAssistantWidget() {
     }
   };
 
+  const setAssistantMode = (nextMode: AssistantMode) => {
+    setMode(nextMode);
+    try {
+      localStorage.setItem('ai-assistant:mode', nextMode);
+    } catch {
+      // Ignore localStorage write errors
+    }
+
+    setMessages([
+      {
+        role: 'assistant',
+        content: nextMode === 'docs'
+          ? 'Documentation mode enabled. Ask how to use features, modules, permissions, and workflows.'
+          : 'Analytics mode enabled. Ask about projects, tasks, workload, and time tracking metrics.',
+      },
+    ]);
+  };
+
   const handleBubblePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     bubbleDragStateRef.current = {
@@ -286,6 +314,35 @@ export default function AIAssistantWidget() {
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
               <path d="M6 12H18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
             </svg>
+          </button>
+        </div>
+      </div>
+
+      <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setAssistantMode('analytics')}
+            className={`h-9 px-3 rounded-lg text-sm font-medium transition-colors ${
+              mode === 'analytics'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
+            }`}
+            aria-pressed={mode === 'analytics'}
+          >
+            Analytics
+          </button>
+          <button
+            type="button"
+            onClick={() => setAssistantMode('docs')}
+            className={`h-9 px-3 rounded-lg text-sm font-medium transition-colors ${
+              mode === 'docs'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
+            }`}
+            aria-pressed={mode === 'docs'}
+          >
+            Docs
           </button>
         </div>
       </div>

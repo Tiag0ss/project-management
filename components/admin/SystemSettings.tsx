@@ -4,6 +4,7 @@ import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 
 // Complete list of IANA timezones
 const TIMEZONES = [
@@ -122,6 +123,8 @@ interface SystemSettings {
   frontpageEnabled?: string;
   aiAssistantEnabled?: string;
   openAIApiKey?: string;
+  openAIModel?: string;
+  openAIBehavior?: string;
   aiViewsAutoCreate?: string;
   aiViewSql_vAI_ProjectOpenTasks?: string;
   aiViewSql_vAI_UserOpenTasks?: string;
@@ -143,6 +146,7 @@ type SettingsTab = 'branding' | 'email' | 'access' | 'features' | 'maintenance';
 
 export default function SystemSettings() {
   const { token } = useAuth();
+  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<SettingsTab>('branding');
   const [settings, setSettings] = useState<SystemSettings>({
     companyName: 'Project Management',
@@ -171,6 +175,8 @@ export default function SystemSettings() {
     frontpageEnabled: 'true',
     aiAssistantEnabled: 'false',
     openAIApiKey: '',
+    openAIModel: 'gpt-4o-mini',
+    openAIBehavior: '',
     aiViewsAutoCreate: 'true',
     aiViewSql_vAI_ProjectOpenTasks: '',
     aiViewSql_vAI_UserOpenTasks: '',
@@ -241,6 +247,8 @@ export default function SystemSettings() {
           frontpageEnabled: data.settings.frontpageEnabled !== undefined ? data.settings.frontpageEnabled : 'true',
           aiAssistantEnabled: data.settings.aiAssistantEnabled || 'false',
           openAIApiKey: data.settings.openAIApiKey || '',
+          openAIModel: data.settings.openAIModel || 'gpt-4o-mini',
+          openAIBehavior: data.settings.openAIBehavior || '',
           aiViewsAutoCreate: data.settings.aiViewsAutoCreate || 'true',
           aiViewSql_vAI_ProjectOpenTasks: data.settings.aiViewSql_vAI_ProjectOpenTasks || '',
           aiViewSql_vAI_UserOpenTasks: data.settings.aiViewSql_vAI_UserOpenTasks || '',
@@ -373,6 +381,7 @@ export default function SystemSettings() {
 
       if (response.ok) {
         setSuccess('Settings saved successfully');
+        showToast({ type: 'success', title: 'Settings Saved', message: 'Settings saved successfully' });
         setTimeout(() => setSuccess(''), 3000);
       } else {
         const data = await response.json();
@@ -398,11 +407,11 @@ export default function SystemSettings() {
   }
 
   const TABS: { id: SettingsTab; label: string; icon: string }[] = [
-    { id: 'branding',     label: 'Branding',       icon: '🏷️' },
-    { id: 'email',        label: 'Email (SMTP)',    icon: '📧' },
-    { id: 'access',       label: 'Access & Auth',   icon: '🔐' },
-    { id: 'features',     label: 'Features & AI',   icon: '🤖' },
-    { id: 'maintenance',  label: 'Maintenance',     icon: '🔧' },
+    { id: 'branding',      label: 'Branding',       icon: '🏷️' },
+    { id: 'email',         label: 'Email (SMTP)',    icon: '📧' },
+    { id: 'access',        label: 'Access & Auth',   icon: '🔐' },
+    { id: 'features',      label: 'Features & AI',   icon: '🤖' },
+    { id: 'maintenance',   label: 'Maintenance',     icon: '🔧' },
   ];
 
   return (
@@ -419,12 +428,6 @@ export default function SystemSettings() {
       {error && (
         <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
           {error}
-        </div>
-      )}
-
-      {success && (
-        <div className="mb-4 p-4 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-800 text-green-700 dark:text-green-400 rounded-lg">
-          {success}
         </div>
       )}
 
@@ -926,6 +929,43 @@ export default function SystemSettings() {
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     Leave blank to keep the existing key. Only fill in to change it.
                   </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      OpenAI Model
+                    </label>
+                    <select
+                      value={settings.openAIModel || 'gpt-4o-mini'}
+                      onChange={(e) => handleChange('openAIModel', e.target.value)}
+                      className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="gpt-4o-mini">gpt-4o-mini (default)</option>
+                      <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+                      <option value="gpt-4.1">gpt-4.1</option>
+                      <option value="o4-mini">o4-mini</option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Select the model used by the AI assistant backend.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Assistant Behavior
+                    </label>
+                    <textarea
+                      value={settings.openAIBehavior || ''}
+                      onChange={(e) => handleChange('openAIBehavior', e.target.value)}
+                      rows={3}
+                      placeholder="Example: Be concise, use bullet points, and include actionable next steps."
+                      className="w-full px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Optional custom instruction appended to assistant system behavior.
+                    </p>
+                  </div>
                 </div>
 
                 <div className="border-t border-gray-200 dark:border-gray-600 pt-4">

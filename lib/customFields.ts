@@ -3,9 +3,12 @@ export interface CustomFieldDefinition {
   TableName: string;
   FieldName: string;
   DisplayName: string;
+  GroupName?: string | null;
   DataType: string;
   IsRequired: number | boolean;
   Description?: string | null;
+  CustomTableId?: number | null;
+  CustomTableName?: string | null;
 }
 
 export type CustomFieldValues = Record<string, string | number | boolean | null | undefined>;

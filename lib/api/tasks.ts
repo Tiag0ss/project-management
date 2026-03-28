@@ -47,6 +47,10 @@ export interface Task {
   StoryPoints?: number;
   PlannedHours?: number;
   WorkedHours?: number;
+  SprintId?: number | null;
+  SprintName?: string | null;
+  SprintStartDate?: string | null;
+  SprintEndDate?: string | null;
   ParentTaskId?: number;
   DisplayOrder: number;
   PlannedStartDate?: string;

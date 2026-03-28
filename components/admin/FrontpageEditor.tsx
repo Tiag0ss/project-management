@@ -3,9 +3,11 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getApiUrl } from '@/lib/api/config';
+import { useToast } from '@/contexts/ToastContext';
 
 export default function FrontpageEditor() {
   const { token } = useAuth();
+  const { showToast } = useToast();
   const [content, setContent] = useState('');
   const [originalContent, setOriginalContent] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -245,6 +247,7 @@ export default function FrontpageEditor() {
 
       setOriginalContent(content);
       setSuccessMessage('Frontpage saved successfully!');
+      showToast({ type: 'success', title: 'Frontpage Saved', message: 'Frontpage saved successfully!' });
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err: any) {
       console.error('Error saving frontpage:', err);
@@ -290,12 +293,6 @@ export default function FrontpageEditor() {
       {error && (
         <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
           {error}
-        </div>
-      )}
-
-      {successMessage && (
-        <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 border border-green-400 text-green-700 dark:text-green-400 rounded">
-          {successMessage}
         </div>
       )}
 
