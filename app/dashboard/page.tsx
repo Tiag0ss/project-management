@@ -10,6 +10,7 @@ import { useToast } from '@/contexts/ToastContext';
 import { usersApi, User } from '@/lib/api/users';
 import { tasksApi, Task } from '@/lib/api/tasks';
 import { projectsApi, Project } from '@/lib/api/projects';
+import { organizationsApi } from '@/lib/api/organizations';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import {
   DashboardKpiDetailItem,
@@ -59,9 +60,34 @@ function AssignedKanbanTab({
 }) {
   const [draggedOverTask, setDraggedOverTask] = useState<number | null>(null);
   const [localTasks, setLocalTasks] = useState<TaskWithProject[]>([]);
-  const [statusCatalog, setStatusCatalog] = useState<StatusValue[]>([]);
+  const [statusCatalogByOrganization, setStatusCatalogByOrganization] = useState<Record<number, StatusValue[]>>({});
+  const [organizationNamesById, setOrganizationNamesById] = useState<Record<number, string>>({});
   const [loadingStatuses, setLoadingStatuses] = useState(false);
   const [isDraggingTask, setIsDraggingTask] = useState(false);
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState<number | null>(null);
+
+  const getTaskOrganizationId = (task: TaskWithProject): number => {
+    const organizationId = Number((task as any).OrganizationId || 0);
+    if (Number.isFinite(organizationId) && organizationId > 0) {
+      return organizationId;
+    }
+    return 0;
+  };
+
+  const getTaskOrganizationName = (task: TaskWithProject): string => {
+    const organizationName = String((task as any).OrganizationName || '').trim();
+    if (organizationName.length > 0) {
+      return organizationName;
+    }
+
+    const organizationId = getTaskOrganizationId(task);
+    const mappedName = organizationId > 0 ? String(organizationNamesById[organizationId] || '').trim() : '';
+    if (mappedName.length > 0) {
+      return mappedName;
+    }
+
+    return 'Unknown Organization';
+  };
 
   const assignedTasks = useMemo(() => {
     return tasks.filter((task) => {
@@ -90,7 +116,7 @@ function AssignedKanbanTab({
       );
 
       if (organizationIds.length === 0) {
-        setStatusCatalog([]);
+        setStatusCatalogByOrganization({});
         return;
       }
 
@@ -109,23 +135,21 @@ function AssignedKanbanTab({
 
         if (cancelled) return;
 
-        const mergedById = new Map<number, StatusValue>();
-        statusResponses.flat().forEach((status) => {
-          if (!status || !Number.isFinite(Number(status.Id))) return;
-          mergedById.set(Number(status.Id), status);
+        const catalogByOrganization: Record<number, StatusValue[]> = {};
+        organizationIds.forEach((organizationId, index) => {
+          const statuses = statusResponses[index] || [];
+          catalogByOrganization[organizationId] = [...statuses].sort((a, b) => {
+            if (Number(a.SortOrder || 0) !== Number(b.SortOrder || 0)) {
+              return Number(a.SortOrder || 0) - Number(b.SortOrder || 0);
+            }
+            if (Number(a.Id) !== Number(b.Id)) {
+              return Number(a.Id) - Number(b.Id);
+            }
+            return String(a.StatusName || '').localeCompare(String(b.StatusName || ''));
+          });
         });
 
-        const mergedStatuses = Array.from(mergedById.values()).sort((a, b) => {
-          if (Number(a.SortOrder || 0) !== Number(b.SortOrder || 0)) {
-            return Number(a.SortOrder || 0) - Number(b.SortOrder || 0);
-          }
-          if (Number(a.Id) !== Number(b.Id)) {
-            return Number(a.Id) - Number(b.Id);
-          }
-          return String(a.StatusName || '').localeCompare(String(b.StatusName || ''));
-        });
-
-        setStatusCatalog(mergedStatuses);
+        setStatusCatalogByOrganization(catalogByOrganization);
       } finally {
         if (!cancelled) {
           setLoadingStatuses(false);
@@ -140,12 +164,67 @@ function AssignedKanbanTab({
     };
   }, [assignedTasks, token]);
 
-  const inferredStatuses = useMemo(() => {
-    const statusMap = new Map<number, { Id: number; StatusName: string; ColorCode?: string; SortOrder: number }>();
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadOrganizationNames = async () => {
+      const organizationIds = Array.from(
+        new Set(
+          assignedTasks
+            .map((task) => Number((task as any).OrganizationId || 0))
+            .filter((organizationId) => Number.isFinite(organizationId) && organizationId > 0)
+        )
+      );
+
+      if (organizationIds.length === 0) {
+        setOrganizationNamesById({});
+        return;
+      }
+
+      try {
+        const response = await organizationsApi.getAll(token);
+        if (cancelled) return;
+
+        const mapped: Record<number, string> = {};
+        (response.organizations || []).forEach((organization) => {
+          const organizationId = Number(organization.Id || 0);
+          const organizationName = String(organization.Name || '').trim();
+          if (organizationId > 0 && organizationName.length > 0) {
+            mapped[organizationId] = organizationName;
+          }
+        });
+
+        setOrganizationNamesById(mapped);
+      } catch {
+        if (!cancelled) {
+          setOrganizationNamesById({});
+        }
+      }
+    };
+
+    loadOrganizationNames();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assignedTasks, token]);
+
+  const inferredStatusesByOrganization = useMemo(() => {
+    const byOrganization = new Map<number, Map<number, { Id: number; StatusName: string; ColorCode?: string; SortOrder: number }>>();
 
     assignedTasks.forEach((task) => {
+      const organizationId = getTaskOrganizationId(task);
       const statusId = Number(task.Status || 0);
-      if (!Number.isFinite(statusId) || statusId <= 0 || statusMap.has(statusId)) {
+      if (!Number.isFinite(statusId) || statusId <= 0) {
+        return;
+      }
+
+      if (!byOrganization.has(organizationId)) {
+        byOrganization.set(organizationId, new Map());
+      }
+
+      const statusMap = byOrganization.get(organizationId)!;
+      if (statusMap.has(statusId)) {
         return;
       }
 
@@ -157,28 +236,75 @@ function AssignedKanbanTab({
       });
     });
 
-    return Array.from(statusMap.values()).sort((a, b) => {
-      if (a.SortOrder !== b.SortOrder) return a.SortOrder - b.SortOrder;
-      if (a.Id !== b.Id) return a.Id - b.Id;
-      return String(a.StatusName).localeCompare(String(b.StatusName));
+    const result: Record<number, { Id: number; StatusName: string; ColorCode?: string; SortOrder: number }[]> = {};
+
+    Array.from(byOrganization.entries()).forEach(([organizationId, statusMap]) => {
+      result[organizationId] = Array.from(statusMap.values()).sort((a, b) => {
+        if (a.SortOrder !== b.SortOrder) return a.SortOrder - b.SortOrder;
+        if (a.Id !== b.Id) return a.Id - b.Id;
+        return String(a.StatusName).localeCompare(String(b.StatusName));
+      });
     });
+
+    return result;
   }, [assignedTasks]);
 
-  const statuses = useMemo(() => {
-    if (statusCatalog.length > 0) {
-      return statusCatalog.map((status) => ({
+  const groupedTasksByOrganization = useMemo(() => {
+    const grouped = new Map<number, { organizationId: number; organizationName: string; tasks: TaskWithProject[] }>();
+
+    localTasks.forEach((task) => {
+      const organizationId = getTaskOrganizationId(task);
+      if (!grouped.has(organizationId)) {
+        grouped.set(organizationId, {
+          organizationId,
+          organizationName: getTaskOrganizationName(task),
+          tasks: [],
+        });
+      }
+
+      grouped.get(organizationId)!.tasks.push(task);
+    });
+
+    return Array.from(grouped.values()).sort((a, b) => {
+      if (a.organizationName !== b.organizationName) {
+        return a.organizationName.localeCompare(b.organizationName);
+      }
+      return a.organizationId - b.organizationId;
+    });
+  }, [localTasks, organizationNamesById]);
+
+  useEffect(() => {
+    if (groupedTasksByOrganization.length === 0) {
+      setSelectedOrganizationId(null);
+      return;
+    }
+
+    const selectedExists = groupedTasksByOrganization.some(
+      (group) => group.organizationId === selectedOrganizationId
+    );
+
+    if (!selectedExists) {
+      setSelectedOrganizationId(groupedTasksByOrganization[0].organizationId);
+    }
+  }, [groupedTasksByOrganization, selectedOrganizationId]);
+
+  const getStatusesForOrganization = (organizationId: number) => {
+    const catalog = statusCatalogByOrganization[organizationId];
+    if (catalog && catalog.length > 0) {
+      return catalog.map((status) => ({
         Id: Number(status.Id),
         StatusName: status.StatusName,
         ColorCode: status.ColorCode,
         SortOrder: Number(status.SortOrder || 0),
       }));
     }
-    return inferredStatuses;
-  }, [statusCatalog, inferredStatuses]);
 
-  const getTasksByStatus = (statusId: number) => {
+    return inferredStatusesByOrganization[organizationId] || [];
+  };
+
+  const getTasksByStatus = (organizationId: number, statusId: number) => {
     return localTasks
-      .filter((task) => Number(task.Status) === statusId)
+      .filter((task) => getTaskOrganizationId(task) === organizationId && Number(task.Status) === statusId)
       .sort((a, b) => Number(a.DisplayOrder || 0) - Number(b.DisplayOrder || 0));
   };
 
@@ -223,11 +349,17 @@ function AssignedKanbanTab({
     const sourceTask = localTasks.find((task) => task.Id === sourceTaskId);
     if (!sourceTask) return;
 
+    const sourceOrganizationId = getTaskOrganizationId(sourceTask);
+    const targetOrganizationId = getTaskOrganizationId(targetTask);
+    if (sourceOrganizationId !== targetOrganizationId) {
+      return;
+    }
+
     const newStatusId = Number(targetTask.Status || 0);
     if (!newStatusId) return;
 
     const columnTasks = localTasks
-      .filter((task) => Number(task.Status) === newStatusId && task.Id !== sourceTaskId)
+      .filter((task) => getTaskOrganizationId(task) === targetOrganizationId && Number(task.Status) === newStatusId && task.Id !== sourceTaskId)
       .sort((a, b) => Number(a.DisplayOrder || 0) - Number(b.DisplayOrder || 0));
 
     const targetIndex = columnTasks.findIndex((task) => task.Id === targetTask.Id);
@@ -259,17 +391,22 @@ function AssignedKanbanTab({
     }
   };
 
-  const handleDropOnColumn = async (e: React.DragEvent, newStatusId: number) => {
+  const handleDropOnColumn = async (e: React.DragEvent, organizationId: number, newStatusId: number) => {
     if (!canManage) return;
     e.preventDefault();
     setDraggedOverTask(null);
 
     const sourceTaskId = parseInt(e.dataTransfer.getData('taskId'));
     const sourceTask = localTasks.find((task) => task.Id === sourceTaskId);
+    if (!sourceTask) return;
+
+    const sourceOrganizationId = getTaskOrganizationId(sourceTask);
+    if (sourceOrganizationId !== organizationId) return;
+
     if (!sourceTask || Number(sourceTask.Status) === newStatusId) return;
 
     const targetColumnTasks = localTasks
-      .filter((task) => Number(task.Status) === newStatusId)
+      .filter((task) => getTaskOrganizationId(task) === organizationId && Number(task.Status) === newStatusId)
       .sort((a, b) => Number(a.DisplayOrder || 0) - Number(b.DisplayOrder || 0));
 
     const newDisplayOrder = (targetColumnTasks.length + 1) * 10;
@@ -315,8 +452,6 @@ function AssignedKanbanTab({
     );
   }
 
-  const columnsPerRow = Math.min(Math.max(statuses.length, 1), 6);
-
   return (
     <div
       className={`h-[calc(100vh-220px)] min-h-[560px] flex flex-col ${isDraggingTask ? 'select-none' : ''}`}
@@ -361,97 +496,140 @@ function AssignedKanbanTab({
         </span>
       </div>
 
-      <div className="w-full overflow-x-auto flex-1 min-h-0">
-        <div
-          className="grid gap-4 h-full"
-          style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(260px, 1fr))` }}
-          onDragEnter={(e) => {
-            if (!canManage) return;
-            e.preventDefault();
-          }}
-          onDragOver={(e) => {
-            if (!canManage) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-          }}
-        >
-          {statuses.map((status) => (
-            <div
-              key={status.Id}
-              className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 h-full min-h-0 flex flex-col overflow-hidden"
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDropOnColumn(e, status.Id)}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3
-                  className="font-bold text-gray-900 dark:text-white"
-                  style={status.ColorCode ? { color: status.ColorCode } : undefined}
-                >
-                  {status.StatusName}
-                </h3>
-                <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-semibold px-2 py-1 rounded-full">
-                  {getTasksByStatus(status.Id).length}
-                </span>
-              </div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {groupedTasksByOrganization.map((group) => (
+          <button
+            key={`kanban-org-menu-${group.organizationId}`}
+            type="button"
+            onClick={() => setSelectedOrganizationId(group.organizationId)}
+            className={`h-9 px-3 rounded-lg text-sm font-medium border transition-colors ${
+              selectedOrganizationId === group.organizationId
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+            }`}
+          >
+            {group.organizationName} ({group.tasks.length})
+          </button>
+        ))}
+      </div>
 
-              <div className="space-y-3 flex-1 overflow-y-auto pr-1">
-                {getTasksByStatus(status.Id).map((task) => {
-                  const isDraggedOver = draggedOverTask === task.Id;
+      {(() => {
+        const activeGroup =
+          groupedTasksByOrganization.find((group) => group.organizationId === selectedOrganizationId) ||
+          groupedTasksByOrganization[0];
 
-                  return (
-                    <div
-                      key={task.Id}
-                      draggable={canManage}
-                      onDragStart={(e) => handleDragStart(e, task.Id)}
-                      onDragEnd={handleDragEnd}
-                      onDragOver={(e) => handleDragOverTask(e, task.Id)}
-                      onDragLeave={handleDragLeave}
-                      onDrop={(e) => handleDropOnTask(e, task)}
-                      onClick={() => onOpenTask({ Id: task.Id, ProjectId: task.ProjectId })}
-                      className={`bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm cursor-pointer hover:shadow-md transition-all ${
-                        isDraggedOver ? 'border-2 border-blue-500 border-dashed' : ''
-                      }`}
-                      style={getPriorityBorder(task)}
-                    >
-                      <h4 className="font-semibold text-gray-900 dark:text-white text-sm mb-2">
-                        {task.TaskName}
-                      </h4>
+        if (!activeGroup) {
+          return null;
+        }
 
-                      {task.Description && (() => {
-                        const plainText = String(task.Description).replace(/<[^>]*>/g, '').trim();
-                        return plainText ? (
-                          <p className="text-xs text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">{plainText}</p>
-                        ) : null;
-                      })()}
+        const statuses = getStatusesForOrganization(activeGroup.organizationId);
+        const columnsPerRow = Math.min(Math.max(statuses.length, 1), 6);
 
-                      <div className="flex items-center flex-wrap gap-2 text-xs mb-2">
-                        <span
-                          className="px-2 py-1 rounded"
-                          style={task.PriorityColor ? { backgroundColor: `${task.PriorityColor}20`, color: task.PriorityColor } : undefined}
-                        >
-                          {task.PriorityName || 'No Priority'}
-                        </span>
+        return (
+          <section className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 overflow-y-auto flex-1 min-h-0">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {activeGroup.organizationName}
+              </h2>
+              <span className="px-2.5 py-1 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium">
+                {activeGroup.tasks.length} task{activeGroup.tasks.length === 1 ? '' : 's'}
+              </span>
+            </div>
 
-                        {task.EstimatedHours && (
-                          <span className="text-gray-500 dark:text-gray-400">⏱️ {task.EstimatedHours}h</span>
-                        )}
-
-                        {task.DueDate && (
-                          <span className="text-gray-500 dark:text-gray-400">
-                            📅 {new Date(task.DueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="text-xs text-gray-600 dark:text-gray-400 truncate">📁 {task.ProjectName || 'Project'}</div>
+            <div className="w-full overflow-x-auto">
+              <div
+                className="grid gap-4"
+                style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(260px, 1fr))` }}
+                onDragEnter={(e) => {
+                  if (!canManage) return;
+                  e.preventDefault();
+                }}
+                onDragOver={(e) => {
+                  if (!canManage) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                }}
+              >
+                {statuses.map((status) => (
+                  <div
+                    key={`${activeGroup.organizationId}-${status.Id}`}
+                    className="bg-gray-50 dark:bg-gray-900/40 rounded-lg p-4 h-[calc(100vh-430px)] min-h-[380px] flex flex-col overflow-hidden"
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDropOnColumn(e, activeGroup.organizationId, status.Id)}
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <h3
+                        className="font-bold text-gray-900 dark:text-white"
+                        style={status.ColorCode ? { color: status.ColorCode } : undefined}
+                      >
+                        {status.StatusName}
+                      </h3>
+                      <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-semibold px-2 py-1 rounded-full">
+                        {getTasksByStatus(activeGroup.organizationId, status.Id).length}
+                      </span>
                     </div>
-                  );
-                })}
+
+                    <div className="space-y-3 flex-1 overflow-y-auto pr-1">
+                      {getTasksByStatus(activeGroup.organizationId, status.Id).map((task) => {
+                        const isDraggedOver = draggedOverTask === task.Id;
+
+                        return (
+                          <div
+                            key={task.Id}
+                            draggable={canManage}
+                            onDragStart={(e) => handleDragStart(e, task.Id)}
+                            onDragEnd={handleDragEnd}
+                            onDragOver={(e) => handleDragOverTask(e, task.Id)}
+                            onDragLeave={handleDragLeave}
+                            onDrop={(e) => handleDropOnTask(e, task)}
+                            onClick={() => onOpenTask({ Id: task.Id, ProjectId: task.ProjectId })}
+                            className={`bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm cursor-pointer hover:shadow-md transition-all ${
+                              isDraggedOver ? 'border-2 border-blue-500 border-dashed' : ''
+                            }`}
+                            style={getPriorityBorder(task)}
+                          >
+                            <h4 className="font-semibold text-gray-900 dark:text-white text-sm mb-2">
+                              {task.TaskName}
+                            </h4>
+
+                            {task.Description && (() => {
+                              const plainText = String(task.Description).replace(/<[^>]*>/g, '').trim();
+                              return plainText ? (
+                                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">{plainText}</p>
+                              ) : null;
+                            })()}
+
+                            <div className="flex items-center flex-wrap gap-2 text-xs mb-2">
+                              <span
+                                className="px-2 py-1 rounded"
+                                style={task.PriorityColor ? { backgroundColor: `${task.PriorityColor}20`, color: task.PriorityColor } : undefined}
+                              >
+                                {task.PriorityName || 'No Priority'}
+                              </span>
+
+                              {task.EstimatedHours && (
+                                <span className="text-gray-500 dark:text-gray-400">⏱️ {task.EstimatedHours}h</span>
+                              )}
+
+                              {task.DueDate && (
+                                <span className="text-gray-500 dark:text-gray-400">
+                                  📅 {new Date(task.DueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="text-xs text-gray-600 dark:text-gray-400 truncate">📁 {task.ProjectName || 'Project'}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
-        </div>
-      </div>
+          </section>
+        );
+      })()}
     </div>
   );
 }
@@ -809,6 +987,19 @@ function DashboardContent() {
   const [kpiConfigLoaded, setKpiConfigLoaded] = useState(false);
   const [kpiAddType, setKpiAddType] = useState<DashboardKpiType | ''>('');
   const [draggingWidgetId, setDraggingWidgetId] = useState<string | null>(null);
+
+  const showPendingApprovalAlert =
+    (pendingApprovals.canApproveTime && pendingApprovals.timeEntries > 0) ||
+    (pendingApprovals.canApproveVacations && pendingApprovals.vacations > 0);
+
+  const selectableKpiTemplates = useMemo(() => {
+    const templates = internalTicketsEnabled
+      ? KPI_TEMPLATES
+      : KPI_TEMPLATES.filter((template) => template.type !== 'myTickets');
+
+    const existingTypes = new Set(kpiWidgets.map((widget) => widget.type));
+    return templates.filter((template) => !existingTypes.has(template.type));
+  }, [internalTicketsEnabled, kpiWidgets]);
 
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setModalMessage({ type: 'confirm', title, message, onConfirm });
@@ -2010,37 +2201,11 @@ function DashboardContent() {
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
         <Navbar />
         <div className="w-full mx-auto py-6 px-4 sm:px-6 lg:px-8">
-          <div className="space-y-5 animate-pulse">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-24" />
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-14" />
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-96" />
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading dashboard...</p>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
-
-  const totalPendingApprovals = pendingApprovals.timeEntries + pendingApprovals.vacations;
-  const showPendingApprovalAlert = totalPendingApprovals > 0 && (pendingApprovals.canApproveTime || pendingApprovals.canApproveVacations);
-  const selectableKpiTemplates = KPI_TEMPLATES.filter(
-    (template) => internalTicketsEnabled || (template.type !== 'myTickets' && template.type !== 'ticketsSlaRisk')
-  );
-
-  if (!isLoadingPermissions && !permissions?.canViewDashboard) {
-    return (
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        <Navbar />
-        <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
-            <div className="text-5xl mb-4">🔒</div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Access Denied</h2>
-            <p className="text-gray-600 dark:text-gray-400">You don&apos;t have permission to view the dashboard.</p>
-          </div>
-        </main>
       </div>
     );
   }

@@ -29,7 +29,7 @@ export default function SearchableSelect({
   className = '',
   disabled = false,
   autoSelectSingleOption = false,
-  dropdownMode = 'inline',
+  dropdownMode = 'portal',
 }: SearchableSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');

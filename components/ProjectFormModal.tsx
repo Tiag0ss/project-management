@@ -456,14 +456,17 @@ export default function ProjectFormModal({
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Budget Type
                   </label>
-                  <select
+                  <SearchableSelect
                     value={formData.budgetType || 'monetary'}
-                    onChange={(e) => setFormData({ ...formData, budgetType: e.target.value === 'hours' ? 'hours' : 'monetary' })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <option value="monetary">Monetary</option>
-                    <option value="hours">Total Hours</option>
-                  </select>
+                    onChange={(value) => setFormData({ ...formData, budgetType: value === 'hours' ? 'hours' : 'monetary' })}
+                    options={[
+                      { value: 'monetary', label: 'Monetary' },
+                      { value: 'hours', label: 'Total Hours' },
+                    ]}
+                    placeholder="Select budget type"
+                    emptyText="No budget type"
+                    autoSelectSingleOption
+                  />
                 </div>
 
                 <div>
@@ -497,19 +500,17 @@ export default function ProjectFormModal({
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Status
               </label>
-              <select
+              <SearchableSelect
                 value={formData.status ?? ''}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value ? parseInt(e.target.value) : null })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                onChange={(value) => setFormData({ ...formData, status: value ? parseInt(value, 10) : null })}
+                options={projectStatuses.map((status) => ({
+                  value: status.Id,
+                  label: status.StatusName,
+                }))}
+                placeholder="Select Status"
+                emptyText="Select Status"
                 disabled={!formData.organizationId || formData.organizationId === 0}
-              >
-                <option value="">Select Status</option>
-                {projectStatuses.map(status => (
-                  <option key={status.Id} value={status.Id}>
-                    {status.StatusName}
-                  </option>
-                ))}
-              </select>
+              />
               {formData.organizationId > 0 && projectStatuses.length === 0 && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   No project statuses available for this organization

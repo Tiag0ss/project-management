@@ -954,6 +954,49 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
           {activeTab === 'overview' && (
           <div className="space-y-6">
+            {/* Contact Information */}
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow">
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4 uppercase tracking-wider">Contact Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Contact Person</div>
+                  <div className="text-sm text-gray-900 dark:text-white">{defaultContact?.Name || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Email</div>
+                  <div className="text-sm text-gray-900 dark:text-white">{defaultContact?.Email || customer.Email || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Phone</div>
+                  <div className="text-sm text-gray-900 dark:text-white">{defaultContact?.Phone || customer.Phone || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Total Contacts</div>
+                  <div className="text-sm text-gray-900 dark:text-white">{customerContacts.length}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Website</div>
+                  <div className="text-sm text-gray-900 dark:text-white">
+                    {(customer as any).Website ? (
+                      <a href={(customer as any).Website} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
+                        {(customer as any).Website}
+                      </a>
+                    ) : '-'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Address</div>
+                  <div className="text-sm text-gray-900 dark:text-white whitespace-pre-line">{customer.Address || '-'}</div>
+                </div>
+              </div>
+              {customer.Notes && (
+                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-1">Notes</div>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{customer.Notes}</p>
+                </div>
+              )}
+            </div>
+
             {/* KPI Stat Cards */}
             <div className={`grid grid-cols-2 ${internalTicketsEnabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
               <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow border-l-4 border-gray-300 dark:border-gray-600">
@@ -1351,48 +1394,6 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               )}
             </div>
 
-            {/* Contact Information */}
-            <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow">
-              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4 uppercase tracking-wider">Contact Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Contact Person</div>
-                  <div className="text-sm text-gray-900 dark:text-white">{defaultContact?.Name || '-'}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Email</div>
-                  <div className="text-sm text-gray-900 dark:text-white">{defaultContact?.Email || customer.Email || '-'}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Phone</div>
-                  <div className="text-sm text-gray-900 dark:text-white">{defaultContact?.Phone || customer.Phone || '-'}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Total Contacts</div>
-                  <div className="text-sm text-gray-900 dark:text-white">{customerContacts.length}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Website</div>
-                  <div className="text-sm text-gray-900 dark:text-white">
-                    {(customer as any).Website ? (
-                      <a href={(customer as any).Website} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
-                        {(customer as any).Website}
-                      </a>
-                    ) : '-'}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Address</div>
-                  <div className="text-sm text-gray-900 dark:text-white whitespace-pre-line">{customer.Address || '-'}</div>
-                </div>
-              </div>
-              {customer.Notes && (
-                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-1">Notes</div>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{customer.Notes}</p>
-                </div>
-              )}
-            </div>
           </div>
         )}
 

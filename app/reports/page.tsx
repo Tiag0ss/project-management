@@ -731,13 +731,7 @@ export default function ReportsPage() {
                 </div>
               </div>
             </div>
-
-            {!internalTicketsEnabled && (
-              <div className="p-4 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-                Ticket reporting is hidden because the internal ticket feature is disabled.
-              </div>
-            )}
-
+ 
             {(currentError || exportError) && (
               <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
                 {currentError || exportError}

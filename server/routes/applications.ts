@@ -5,6 +5,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import { promises as fs } from 'fs';
+import { decrypt } from '../utils/encryption';
 
 const router = Router();
 
@@ -75,6 +76,28 @@ async function syncReleasedVersionTasks(versionId: string | number, applicationI
       [versionId, closedStatusId, versionId]
     );
   }
+}
+
+async function ensureApplicationCustomerAssociation(
+  applicationId: string | number,
+  customerId: number
+): Promise<void> {
+  if (dbProvider === 'mssql') {
+    await pool.execute(
+      `INSERT INTO ApplicationCustomers (ApplicationId, CustomerId, CreatedAt)
+       SELECT ?, ?, CURRENT_TIMESTAMP
+       WHERE NOT EXISTS (
+         SELECT 1 FROM ApplicationCustomers WHERE ApplicationId = ? AND CustomerId = ?
+       )`,
+      [applicationId, customerId, applicationId, customerId]
+    );
+    return;
+  }
+
+  await pool.execute(
+    'INSERT IGNORE INTO ApplicationCustomers (ApplicationId, CustomerId, CreatedAt) VALUES (?, ?, CURRENT_TIMESTAMP)',
+    [applicationId, customerId]
+  );
 }
 
 type PatchBlock =
@@ -324,6 +347,27 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
+// GET /api/applications/ai/availability - checks if OpenAI key is configured
+router.get('/ai/availability', authenticateToken, async (_req: AuthRequest, res: Response) => {
+  try {
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT SettingValue FROM SystemSettings WHERE SettingKey = ? LIMIT 1',
+      ['openAIApiKey']
+    );
+
+    const encryptedKey = String(rows[0]?.SettingValue || '').trim();
+    const decryptedKey = encryptedKey ? decrypt(encryptedKey).trim() : '';
+
+    return res.json({
+      success: true,
+      configured: !!decryptedKey,
+    });
+  } catch (error: any) {
+    console.error('AI availability check error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to check AI availability' });
+  }
+});
+
 // GET /api/applications/:id - get application detail
 router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -369,6 +413,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     // Load versions
     const [versions] = await pool.execute<RowDataPacket[]>(
       `SELECT av.*, u.FirstName, u.LastName,
+              c.Name as CustomerName,
               (
                 SELECT COUNT(DISTINCT avt.TaskId)
                 FROM ApplicationVersionTasks avt
@@ -376,6 +421,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
               ) as TaskCount
        FROM ApplicationVersions av
        LEFT JOIN Users u ON av.CreatedBy = u.Id
+       LEFT JOIN Customers c ON c.Id = av.CustomerId
        WHERE av.ApplicationId = ?
        ORDER BY av.CreatedAt DESC`,
       [id]
@@ -739,10 +785,11 @@ router.get('/:id/versions/:versionId', authenticateToken, async (req: AuthReques
     const { versionId } = req.params;
 
     const [versions] = await pool.execute<RowDataPacket[]>(
-      `SELECT av.*, u.FirstName, u.LastName, a.Name as ApplicationName
+      `SELECT av.*, u.FirstName, u.LastName, a.Name as ApplicationName, c.Name as CustomerName
        FROM ApplicationVersions av
        LEFT JOIN Users u ON av.CreatedBy = u.Id
        LEFT JOIN Applications a ON av.ApplicationId = a.Id
+       LEFT JOIN Customers c ON c.Id = av.CustomerId
        WHERE av.Id = ?`,
       [versionId]
     );
@@ -755,7 +802,7 @@ router.get('/:id/versions/:versionId', authenticateToken, async (req: AuthReques
 
     // Load tasks in this version
     const [tasks] = await pool.execute<RowDataPacket[]>(
-      `SELECT t.Id, t.TaskName, t.Description, t.Status, t.Priority,
+      `SELECT t.Id, t.ProjectId, t.TaskName, t.Description, t.Status, t.Priority,
               tsv.StatusName, tsv.ColorCode as StatusColor,
               tpv.PriorityName, tpv.ColorCode as PriorityColor,
               p.ProjectName,
@@ -786,11 +833,17 @@ router.post('/:id/versions', authenticateToken, async (req: AuthRequest, res: Re
     const userId = req.user?.userId;
     const { id } = req.params;
     const applicationId = Array.isArray(id) ? id[0] : id;
-    const { VersionNumber, VersionName, Status, ReleaseDate, PatchNotes, IsCustomerSpecific } = req.body;
+    const { VersionNumber, VersionName, Status, ReleaseDate, PatchNotes, IsCustomerSpecific, CustomerId } = req.body;
     const normalizedReleaseDate = normalizeDateOnly(ReleaseDate);
+    const isCustomerSpecific = IsCustomerSpecific ? 1 : 0;
+    const normalizedCustomerId = CustomerId === null || CustomerId === undefined || CustomerId === '' ? null : Number(CustomerId);
 
     if (!VersionNumber) {
       return res.status(400).json({ success: false, message: 'VersionNumber is required' });
+    }
+
+    if (isCustomerSpecific === 1 && !normalizedCustomerId) {
+      return res.status(400).json({ success: false, message: 'Customer is required when version is customer-specific' });
     }
 
     // Get application organization ID
@@ -850,10 +903,14 @@ router.post('/:id/versions', authenticateToken, async (req: AuthRequest, res: Re
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO ApplicationVersions (ApplicationId, VersionNumber, VersionName, Status, ReleaseDate, PatchNotes, IsCustomerSpecific, CreatedBy, CreatedAt, UpdatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-      [applicationId, VersionNumber, VersionName || null, Status || 'Planning', normalizedReleaseDate, PatchNotes || null, IsCustomerSpecific ? 1 : 0, userId]
+      `INSERT INTO ApplicationVersions (ApplicationId, VersionNumber, VersionName, Status, ReleaseDate, PatchNotes, IsCustomerSpecific, CustomerId, CreatedBy, CreatedAt, UpdatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [applicationId, VersionNumber, VersionName || null, Status || 'Planning', normalizedReleaseDate, PatchNotes || null, isCustomerSpecific, isCustomerSpecific === 1 ? normalizedCustomerId : null, userId]
     );
+
+    if (isCustomerSpecific === 1 && normalizedCustomerId) {
+      await ensureApplicationCustomerAssociation(applicationId, normalizedCustomerId);
+    }
 
     if ((Status || 'Planning') === 'Released') {
       await syncReleasedVersionTasks(result.insertId, applicationId);
@@ -873,8 +930,9 @@ router.put('/:id/versions/:versionId', authenticateToken, async (req: AuthReques
     const { id, versionId } = req.params;
     const applicationId = Array.isArray(id) ? id[0] : id;
     const normalizedVersionId = Array.isArray(versionId) ? versionId[0] : versionId;
-    const { VersionNumber, VersionName, Status, ReleaseDate, PatchNotes, IsCustomerSpecific } = req.body;
+    const { VersionNumber, VersionName, Status, ReleaseDate, PatchNotes, IsCustomerSpecific, CustomerId } = req.body;
     const normalizedReleaseDate = normalizeDateOnly(ReleaseDate);
+    const normalizedCustomerId = CustomerId === null || CustomerId === undefined || CustomerId === '' ? null : Number(CustomerId);
 
     // Get application organization ID
     const [apps] = await pool.execute<RowDataPacket[]>(
@@ -943,12 +1001,38 @@ router.put('/:id/versions/:versionId', authenticateToken, async (req: AuthReques
 
     const versionIsCustomerSpecificValue = IsCustomerSpecific === undefined ? null : (IsCustomerSpecific ? 1 : 0);
 
+    if (versionIsCustomerSpecificValue === 1 && !normalizedCustomerId) {
+      return res.status(400).json({ success: false, message: 'Customer is required when version is customer-specific' });
+    }
+
     await pool.execute(
       `UPDATE ApplicationVersions
-       SET VersionNumber = ?, VersionName = ?, Status = ?, ReleaseDate = ?, PatchNotes = ?, IsCustomerSpecific = COALESCE(?, IsCustomerSpecific), UpdatedAt = CURRENT_TIMESTAMP
+       SET VersionNumber = ?, VersionName = ?, Status = ?, ReleaseDate = ?, PatchNotes = ?,
+           IsCustomerSpecific = COALESCE(?, IsCustomerSpecific),
+           CustomerId = CASE
+             WHEN ? IS NULL THEN CustomerId
+             WHEN ? = 1 THEN ?
+             ELSE NULL
+           END,
+           UpdatedAt = CURRENT_TIMESTAMP
        WHERE Id = ?`,
-      [VersionNumber, VersionName || null, Status || 'Planning', normalizedReleaseDate, PatchNotes || null, versionIsCustomerSpecificValue, normalizedVersionId]
+      [
+        VersionNumber,
+        VersionName || null,
+        Status || 'Planning',
+        normalizedReleaseDate,
+        PatchNotes || null,
+        versionIsCustomerSpecificValue,
+        versionIsCustomerSpecificValue,
+        versionIsCustomerSpecificValue,
+        normalizedCustomerId,
+        normalizedVersionId,
+      ]
     );
+
+    if (versionIsCustomerSpecificValue === 1 && normalizedCustomerId) {
+      await ensureApplicationCustomerAssociation(applicationId, normalizedCustomerId);
+    }
 
     // If version is being released (status changed to Released), update associated tasks
     if (isNowReleased && !wasReleased) {
@@ -1045,14 +1129,50 @@ router.put('/:id/versions/:versionId/tasks', authenticateToken, async (req: Auth
     const normalizedVersionId = Array.isArray(versionId) ? versionId[0] : versionId;
     const { TaskIds } = req.body;
 
+    const normalizedTaskIds = Array.isArray(TaskIds)
+      ? Array.from(new Set(TaskIds.map((value: any) => Number(value)).filter((value: number) => Number.isFinite(value) && value > 0)))
+      : [];
+
+    const [existingRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT TaskId FROM ApplicationVersionTasks WHERE VersionId = ?',
+      [normalizedVersionId]
+    );
+    const existingTaskIds = existingRows
+      .map((row) => Number(row.TaskId))
+      .filter((value) => Number.isFinite(value) && value > 0);
+
     await pool.execute('DELETE FROM ApplicationVersionTasks WHERE VersionId = ?', [normalizedVersionId]);
-    if (Array.isArray(TaskIds)) {
-      for (const taskId of TaskIds) {
+    if (normalizedTaskIds.length > 0) {
+      for (const taskId of normalizedTaskIds) {
         await pool.execute(
           'INSERT IGNORE INTO ApplicationVersionTasks (VersionId, TaskId) VALUES (?, ?)',
           [normalizedVersionId, taskId]
         );
       }
+    }
+
+    await pool.execute('UPDATE Tasks SET ReleaseVersionId = NULL WHERE ReleaseVersionId = ?', [normalizedVersionId]);
+
+    if (normalizedTaskIds.length > 0) {
+      const placeholders = normalizedTaskIds.map(() => '?').join(',');
+      await pool.execute(
+        `UPDATE Tasks
+         SET ApplicationId = ?, ReleaseVersionId = ?
+         WHERE Id IN (${placeholders})`,
+        [applicationId, normalizedVersionId, ...normalizedTaskIds]
+      );
+    }
+
+    const removedTaskIds = existingTaskIds.filter((taskId) => !normalizedTaskIds.includes(taskId));
+    if (removedTaskIds.length > 0) {
+      const placeholders = removedTaskIds.map(() => '?').join(',');
+      await pool.execute(
+        `UPDATE Tasks
+         SET ReleaseVersionId = NULL,
+             ApplicationId = CASE WHEN ApplicationId = ? THEN NULL ELSE ApplicationId END
+         WHERE Id IN (${placeholders}) AND ReleaseVersionId = ?`,
+        [applicationId, ...removedTaskIds, normalizedVersionId]
+      );
     }
 
     await syncReleasedVersionTasks(normalizedVersionId, applicationId);
@@ -1064,13 +1184,156 @@ router.put('/:id/versions/:versionId/tasks', authenticateToken, async (req: Auth
   }
 });
 
+// POST /api/applications/:id/versions/improve-patch-notes - improve patch notes with AI (bullet format)
+router.post('/:id/versions/improve-patch-notes', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const applicationId = Number(req.params.id);
+    const patchNotes = String(req.body?.patchNotes || '').trim();
+    const taskIdsRaw = Array.isArray(req.body?.taskIds) ? req.body.taskIds : [];
+    const taskIds = taskIdsRaw
+      .map((value: any) => Number(value))
+      .filter((value: number) => Number.isFinite(value) && value > 0);
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    if (!Number.isFinite(applicationId) || applicationId <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid application id' });
+    }
+
+    const [accessRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT a.Id
+       FROM Applications a
+       INNER JOIN OrganizationMembers om ON om.OrganizationId = a.OrganizationId
+       WHERE a.Id = ? AND om.UserId = ?
+       LIMIT 1`,
+      [applicationId, userId]
+    );
+
+    if (!accessRows.length) {
+      return res.status(404).json({ success: false, message: 'Application not found or access denied' });
+    }
+
+    const [settingRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?)',
+      ['openAIApiKey', 'openAIModel']
+    );
+
+    const settingsMap: Record<string, string> = {};
+    for (const row of settingRows) {
+      settingsMap[String(row.SettingKey || '')] = String(row.SettingValue || '');
+    }
+
+    const encryptedKey = String(settingsMap.openAIApiKey || '').trim();
+    const openAiApiKey = encryptedKey ? decrypt(encryptedKey).trim() : '';
+    const model = String(settingsMap.openAIModel || '').trim() || 'gpt-4o-mini';
+
+    if (!openAiApiKey) {
+      return res.status(400).json({ success: false, message: 'OpenAI API key is not configured.' });
+    }
+
+    let taskContext: Array<{ id: number; name: string; project: string }> = [];
+    if (taskIds.length > 0) {
+      const placeholders = taskIds.map(() => '?').join(',');
+      const [taskRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT t.Id, t.TaskName, p.ProjectName
+         FROM Tasks t
+         INNER JOIN Projects p ON p.Id = t.ProjectId
+         WHERE p.OrganizationId = (
+           SELECT OrganizationId FROM Applications WHERE Id = ? LIMIT 1
+         )
+           AND t.Id IN (${placeholders})
+         ORDER BY p.ProjectName ASC, t.TaskName ASC`,
+        [applicationId, ...taskIds]
+      );
+
+      taskContext = taskRows.map((row) => ({
+        id: Number(row.Id),
+        name: String(row.TaskName || ''),
+        project: String(row.ProjectName || ''),
+      }));
+    }
+
+    const systemPrompt = [
+      'You improve software release patch notes.',
+      'Mandatory output format rules:',
+      '- Return HTML only (no markdown, no code fences).',
+      '- Keep bullet structure using <ul><li>...</li></ul>.',
+      '- Use concise, clear bullet points.',
+      '- Preserve factual meaning; do not invent features.',
+      '- If grouping helps, you may use <p><strong>Group</strong></p> before bullet lists.',
+      '- Ensure the final output still contains bullet lists.',
+    ].join('\n');
+
+    const userPrompt = JSON.stringify({
+      currentPatchNotesHtml: patchNotes,
+      selectedTasks: taskContext,
+      instruction: 'Improve clarity and readability while preserving meaning. Keep bullets in the final result.',
+    });
+
+    const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openAiApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+      }),
+    });
+
+    if (!llmResponse.ok) {
+      const errorJson = await llmResponse.json().catch(() => ({}));
+      const apiMessage = String(errorJson?.error?.message || errorJson?.message || '').trim();
+      return res.status(502).json({
+        success: false,
+        message: apiMessage || 'OpenAI request failed. Check API key and model configuration.',
+      });
+    }
+
+    const llmJson = await llmResponse.json();
+    const improved = String(llmJson?.choices?.[0]?.message?.content || '').trim();
+
+    if (!improved) {
+      return res.status(500).json({ success: false, message: 'AI returned empty patch notes.' });
+    }
+
+    const normalized = improved.includes('<li')
+      ? improved
+      : `<ul>${improved
+          .split(/\n+/)
+          .map((line: string) => line.trim())
+          .filter((line: string) => line.length > 0)
+          .map((line: string) => `<li>${line.replace(/^[-•]\s*/, '')}</li>`)
+          .join('')}</ul>`;
+
+    return res.json({ success: true, patchNotes: normalized });
+  } catch (error: any) {
+    console.error('Improve patch notes error:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to improve patch notes' });
+  }
+});
+
 // POST /api/applications/:id/versions/:versionId/tasks/:taskId - add task to version
 router.post('/:id/versions/:versionId/tasks/:taskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { versionId, taskId } = req.params;
+    const { id, versionId, taskId } = req.params;
+    const applicationId = Array.isArray(id) ? id[0] : id;
+    const normalizedTaskId = Number(taskId);
     await pool.execute(
       'INSERT IGNORE INTO ApplicationVersionTasks (VersionId, TaskId) VALUES (?, ?)',
-      [versionId, taskId]
+      [versionId, normalizedTaskId]
+    );
+    await pool.execute(
+      'UPDATE Tasks SET ApplicationId = ?, ReleaseVersionId = ? WHERE Id = ?',
+      [applicationId, versionId, normalizedTaskId]
     );
     res.json({ success: true, message: 'Task added to version' });
   } catch (error) {
@@ -1082,10 +1345,19 @@ router.post('/:id/versions/:versionId/tasks/:taskId', authenticateToken, async (
 // DELETE /api/applications/:id/versions/:versionId/tasks/:taskId - remove task from version
 router.delete('/:id/versions/:versionId/tasks/:taskId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { versionId, taskId } = req.params;
+    const { id, versionId, taskId } = req.params;
+    const applicationId = Array.isArray(id) ? id[0] : id;
+    const normalizedTaskId = Number(taskId);
     await pool.execute(
       'DELETE FROM ApplicationVersionTasks WHERE VersionId = ? AND TaskId = ?',
-      [versionId, taskId]
+      [versionId, normalizedTaskId]
+    );
+    await pool.execute(
+      `UPDATE Tasks
+       SET ReleaseVersionId = NULL,
+           ApplicationId = CASE WHEN ApplicationId = ? THEN NULL ELSE ApplicationId END
+       WHERE Id = ? AND ReleaseVersionId = ?`,
+      [applicationId, normalizedTaskId, versionId]
     );
     res.json({ success: true, message: 'Task removed from version' });
   } catch (error) {

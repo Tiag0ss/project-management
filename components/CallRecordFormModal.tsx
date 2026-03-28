@@ -94,6 +94,14 @@ const calculateDurationMinutes = (startTime: string, endTime: string): number =>
   return diff > 0 ? diff : 30;
 };
 
+const callTypeOptions = [
+  { value: 'Teams', label: 'Teams' },
+  { value: 'Phone', label: 'Phone' },
+  { value: 'Zoom', label: 'Zoom' },
+  { value: 'Meet', label: 'Google Meet' },
+  { value: 'Other', label: 'Other' },
+];
+
 export default function CallRecordFormModal({
   isOpen,
   token,
@@ -375,17 +383,14 @@ export default function CallRecordFormModal({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Type
                 </label>
-                <select
+                <SearchableSelect
+                  options={callTypeOptions}
                   value={formData.callType}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, callType: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="Teams">Teams</option>
-                  <option value="Phone">Phone</option>
-                  <option value="Zoom">Zoom</option>
-                  <option value="Meet">Google Meet</option>
-                  <option value="Other">Other</option>
-                </select>
+                  onChange={(value) => setFormData((prev) => ({ ...prev, callType: value }))}
+                  placeholder="Select call type"
+                  emptyText="No call types available"
+                  autoSelectSingleOption
+                />
               </div>
             </div>
             <div>

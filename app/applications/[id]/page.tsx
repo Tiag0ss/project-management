@@ -7,7 +7,11 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import RichTextEditor from '@/components/RichTextEditor';
+import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
+import TaskDetailModal from '@/components/TaskDetailModal';
+import { Task, tasksApi } from '@/lib/api/tasks';
+import { Project, projectsApi } from '@/lib/api/projects';
 
 type Tab = 'overview' | 'versions';
 
@@ -40,6 +44,8 @@ interface AppVersion {
   VersionNumber: string;
   VersionName: string | null;
   IsCustomerSpecific: number | boolean;
+  CustomerId?: number | null;
+  CustomerName?: string | null;
   Status: string;
   ReleaseDate: string | null;
   PatchNotes: string | null;
@@ -51,6 +57,7 @@ interface AppVersion {
 
 interface VersionTask {
   Id: number;
+  ProjectId: number;
   TaskName: string;
   Description: string | null;
   StatusName: string | null;
@@ -90,10 +97,13 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
   const [showVersionModal, setShowVersionModal] = useState(false);
   const [editingVersion, setEditingVersion] = useState<AppVersion | null>(null);
   const [isSavingVersion, setIsSavingVersion] = useState(false);
+  const [isOpenAIAvailable, setIsOpenAIAvailable] = useState(false);
+  const [isImprovingPatchNotes, setIsImprovingPatchNotes] = useState(false);
   const [versionForm, setVersionForm] = useState({
     VersionNumber: '',
     VersionName: '',
     IsCustomerSpecific: false,
+    CustomerId: null as number | null,
     Status: 'Planning',
     ReleaseDate: '',
     PatchNotes: '',
@@ -106,6 +116,10 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
   const [availableTasks, setAvailableTasks] = useState<AvailableTask[]>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [showPatchNotes, setShowPatchNotes] = useState(false);
+  const [showTaskDetailModal, setShowTaskDetailModal] = useState(false);
+  const [selectedTaskForModal, setSelectedTaskForModal] = useState<Task | null>(null);
+  const [taskModalProject, setTaskModalProject] = useState<Project | null>(null);
+  const [taskModalTasks, setTaskModalTasks] = useState<Task[]>([]);
 
   // Date range print modal
   const [showDateRangePrintModal, setShowDateRangePrintModal] = useState(false);
@@ -137,7 +151,6 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
   useEffect(() => {
     if (token && id) {
       loadApplication();
-      loadAllCustomers();
     }
   }, [token, id]);
 
@@ -150,6 +163,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
       if (!res.ok) throw new Error('Application not found');
       const data = await res.json();
       setApplication(data.application);
+      await loadAllCustomers(data.application?.OrganizationId);
     } catch (err: any) {
       setError(err.message || 'Failed to load application');
     } finally {
@@ -157,14 +171,15 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
     }
   };
 
-  const loadAllCustomers = async () => {
+  const loadAllCustomers = async (organizationId?: number) => {
     try {
-      const res = await fetch(`${getApiUrl()}/api/customers`, {
+      const query = organizationId ? `?organizationId=${organizationId}` : '';
+      const res = await fetch(`${getApiUrl()}/api/customers${query}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
         const data = await res.json();
-        setAllCustomers(data.data || []);
+        setAllCustomers(data.data || data.customers || []);
       }
     } catch (err) {
       console.error('Failed to load customers:', err);
@@ -246,28 +261,53 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
     }
   };
 
+  const loadOpenAiAvailability = async () => {
+    if (!token) {
+      setIsOpenAIAvailable(false);
+      return;
+    }
+    try {
+      const res = await fetch(`${getApiUrl()}/api/applications/ai/availability`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        setIsOpenAIAvailable(false);
+        return;
+      }
+      const data = await res.json();
+      setIsOpenAIAvailable(Boolean(data?.configured));
+    } catch {
+      setIsOpenAIAvailable(false);
+    }
+  };
+
   const openCreateVersionModal = () => {
     setEditingVersion(null);
-    setVersionForm({ VersionNumber: '', VersionName: '', IsCustomerSpecific: false, Status: 'Planning', ReleaseDate: '', PatchNotes: '', TaskIds: [] });
+    setVersionForm({ VersionNumber: '', VersionName: '', IsCustomerSpecific: false, CustomerId: null, Status: 'Planning', ReleaseDate: '', PatchNotes: '', TaskIds: [] });
+    void loadAllCustomers(application?.OrganizationId);
     loadAvailableTasks();
+    void loadOpenAiAvailability();
     setTaskSearch('');
     setShowVersionModal(true);
   };
 
   const openEditVersionModal = (v: AppVersion) => {
     setEditingVersion(v);
+    void loadAllCustomers(application?.OrganizationId);
     // Pre-load current tasks
     const currentTaskIds = versionTasks.map(t => t.Id);
     setVersionForm({
       VersionNumber: v.VersionNumber,
       VersionName: v.VersionName || '',
       IsCustomerSpecific: !!v.IsCustomerSpecific,
+      CustomerId: v.CustomerId ?? null,
       Status: v.Status,
       ReleaseDate: v.ReleaseDate ? v.ReleaseDate.split('T')[0] : '',
       PatchNotes: v.PatchNotes || '',
       TaskIds: currentTaskIds,
     });
     loadAvailableTasks(v.Id); // Pass version ID to exclude tasks from other versions
+    void loadOpenAiAvailability();
     setTaskSearch('');
     setShowVersionModal(true);
   };
@@ -284,6 +324,9 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
     setIsSavingVersion(true);
     try {
       if (!versionForm.VersionNumber.trim()) throw new Error('Version number is required');
+      if (versionForm.IsCustomerSpecific && !versionForm.CustomerId) {
+        throw new Error('Customer is required when version is customer-specific');
+      }
 
       const url = editingVersion
         ? `${getApiUrl()}/api/applications/${id}/versions/${editingVersion.Id}`
@@ -298,6 +341,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
           VersionNumber: versionForm.VersionNumber,
           VersionName: versionForm.VersionName || null,
           IsCustomerSpecific: versionForm.IsCustomerSpecific,
+          CustomerId: versionForm.IsCustomerSpecific ? versionForm.CustomerId : null,
           Status: versionForm.Status,
           ReleaseDate: versionForm.ReleaseDate || null,
           PatchNotes: versionForm.PatchNotes || null,
@@ -457,6 +501,30 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
       });
   };
 
+  const handleOpenTaskDetail = async (versionTask: VersionTask) => {
+    if (!token || !versionTask?.ProjectId) return;
+
+    try {
+      const [projectRes, tasksRes] = await Promise.all([
+        projectsApi.getById(Number(versionTask.ProjectId), token),
+        tasksApi.getByProject(Number(versionTask.ProjectId), token),
+      ]);
+
+      const fullTask = (tasksRes.tasks || []).find((task) => Number(task.Id) === Number(versionTask.Id));
+      if (!fullTask) {
+        setError('Task not found in project context.');
+        return;
+      }
+
+      setTaskModalProject(projectRes.project);
+      setTaskModalTasks(tasksRes.tasks || []);
+      setSelectedTaskForModal(fullTask);
+      setShowTaskDetailModal(true);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to open task details.');
+    }
+  };
+
   const toggleVersionTask = (taskId: number) => {
     setVersionForm((prev) => {
       const newTaskIds = prev.TaskIds.includes(taskId)
@@ -465,9 +533,56 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
       return {
         ...prev,
         TaskIds: newTaskIds,
-        PatchNotes: buildPatchNotes(newTaskIds, availableTasks),
       };
     });
+  };
+
+  const handleGeneratePatchNotes = () => {
+    const generated = buildPatchNotes(versionForm.TaskIds, availableTasks);
+    setVersionForm((prev) => ({
+      ...prev,
+      PatchNotes: generated,
+    }));
+  };
+
+  const handleImprovePatchNotesWithAI = async () => {
+    if (!token || !isOpenAIAvailable || isImprovingPatchNotes) return;
+
+    setIsImprovingPatchNotes(true);
+    setError('');
+    try {
+      const res = await fetch(`${getApiUrl()}/api/applications/${id}/versions/improve-patch-notes`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          patchNotes: versionForm.PatchNotes || '',
+          taskIds: versionForm.TaskIds,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.message || 'Failed to improve patch notes with AI');
+      }
+
+      const data = await res.json();
+      const improvedPatchNotes = String(data?.patchNotes || '').trim();
+      if (!improvedPatchNotes) {
+        throw new Error('AI returned empty patch notes');
+      }
+
+      setVersionForm((prev) => ({
+        ...prev,
+        PatchNotes: improvedPatchNotes,
+      }));
+    } catch (err: any) {
+      setError(err.message || 'Failed to improve patch notes with AI');
+    } finally {
+      setIsImprovingPatchNotes(false);
+    }
   };
 
   const filteredAvailableTasks = availableTasks.filter((t) =>
@@ -738,6 +853,11 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
                         {v.TaskCount} task{v.TaskCount !== 1 ? 's' : ''}
                         {v.ReleaseDate && ` · ${new Date(v.ReleaseDate).toLocaleDateString()}`}
                       </p>
+                      {Boolean(v.IsCustomerSpecific) && (
+                        <p className="text-xs text-violet-600 dark:text-violet-400 mt-1">
+                          Customer-specific{v.CustomerName ? ` · ${v.CustomerName}` : ''}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -766,6 +886,11 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
                         </div>
                         {selectedVersion.VersionName && (
                           <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">{selectedVersion.VersionName}</p>
+                        )}
+                        {Boolean(selectedVersion.IsCustomerSpecific) && (
+                          <p className="text-sm text-violet-600 dark:text-violet-400 mt-1">
+                            Customer-specific{selectedVersion.CustomerName ? ` · ${selectedVersion.CustomerName}` : ''}
+                          </p>
                         )}
                         {selectedVersion.ReleaseDate && (
                           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -855,7 +980,12 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
                     ) : (
                       <div className="space-y-2">
                         {versionTasks.map((task) => (
-                          <div key={task.Id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                          <button
+                            key={task.Id}
+                            type="button"
+                            onClick={() => void handleOpenTaskDetail(task)}
+                            className="w-full text-left flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                          >
                             <div className="min-w-0 flex-1">
                               <p className="font-medium text-gray-900 dark:text-white text-sm">{task.TaskName}</p>
                               <div className="flex items-center gap-2 mt-0.5">
@@ -893,7 +1023,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
                                 </span>
                               )}
                             </div>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -989,12 +1119,41 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
                     <input
                       type="checkbox"
                       checked={versionForm.IsCustomerSpecific}
-                      onChange={(e) => setVersionForm({ ...versionForm, IsCustomerSpecific: e.target.checked })}
+                      onChange={(e) =>
+                        setVersionForm({
+                          ...versionForm,
+                          IsCustomerSpecific: e.target.checked,
+                          CustomerId: e.target.checked ? versionForm.CustomerId : null,
+                        })
+                      }
                       className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                     />
                     <span>Customer-specific version</span>
                   </label>
                 </div>
+
+                {versionForm.IsCustomerSpecific && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Customer <span className="text-red-500">*</span>
+                    </label>
+                    <SearchableSelect
+                      value={versionForm.CustomerId ?? ''}
+                      onChange={(value) =>
+                        setVersionForm({
+                          ...versionForm,
+                          CustomerId: value ? Number(value) : null,
+                        })
+                      }
+                      options={allCustomers.map((customer) => ({
+                        value: customer.Id,
+                        label: customer.Name,
+                      }))}
+                      placeholder="Customer"
+                      emptyText="Select customer..."
+                    />
+                  </div>
+                )}
 
                 {/* Tasks selection */}
                 <div>
@@ -1040,14 +1199,38 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
 
                 {/* Patch Notes */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Patch Notes
-                    {versionForm.Status !== 'Released' && (
-                      <span className="ml-2 text-xs font-normal text-gray-400 dark:text-gray-500">
-                        (visible after release)
-                      </span>
-                    )}
-                  </label>
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Patch Notes
+                      {versionForm.Status !== 'Released' && (
+                        <span className="ml-2 text-xs font-normal text-gray-400 dark:text-gray-500">
+                          (visible after release)
+                        </span>
+                      )}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleGeneratePatchNotes}
+                        disabled={versionForm.TaskIds.length === 0}
+                        className="h-9 px-3 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white transition-colors"
+                        title="Generate patch notes from selected tasks"
+                      >
+                        Generate from Tasks
+                      </button>
+                      {isOpenAIAvailable && (
+                        <button
+                          type="button"
+                          onClick={handleImprovePatchNotesWithAI}
+                          disabled={isImprovingPatchNotes || (!versionForm.PatchNotes && versionForm.TaskIds.length === 0)}
+                          className="h-9 px-3 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white transition-colors"
+                          title="Improve patch notes with AI while preserving bullet points"
+                        >
+                          {isImprovingPatchNotes ? 'Improving...' : 'Improve with AI'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   <RichTextEditor
                     content={versionForm.PatchNotes}
                     onChange={(val) => setVersionForm({ ...versionForm, PatchNotes: val })}
@@ -1075,6 +1258,29 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
             </div>
           </div>
         </div>
+      )}
+
+      {showTaskDetailModal && selectedTaskForModal && taskModalProject && (
+        <TaskDetailModal
+          projectId={taskModalProject.Id}
+          organizationId={taskModalProject.OrganizationId}
+          task={selectedTaskForModal}
+          project={taskModalProject}
+          tasks={taskModalTasks}
+          onClose={() => {
+            setShowTaskDetailModal(false);
+            setSelectedTaskForModal(null);
+          }}
+          onSaved={async () => {
+            await loadApplication();
+            if (selectedVersion) {
+              await loadVersionDetail(selectedVersion);
+            }
+            setShowTaskDetailModal(false);
+            setSelectedTaskForModal(null);
+          }}
+          token={token || ''}
+        />
       )}
 
       {/* Date Range Print Modal */}

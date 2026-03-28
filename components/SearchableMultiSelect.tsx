@@ -29,7 +29,7 @@ export default function SearchableMultiSelect({
   placeholder = 'Select...',
   className = '',
   disabled = false,
-  dropdownMode = 'inline',
+  dropdownMode = 'portal',
   allowCreate = false,
   createLabel = 'Add',
   onCreateOption,

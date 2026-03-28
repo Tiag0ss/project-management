@@ -8,11 +8,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
 import { projectsApi, Project, CreateProjectData, UpdateProjectData } from '@/lib/api/projects';
-import { tasksApi, Task, CreateTaskData } from '@/lib/api/tasks';
+import { tasksApi, Task, CreateTaskData, UpdateTaskData } from '@/lib/api/tasks';
 import { organizationsApi, Organization } from '@/lib/api/organizations';
 import { getCustomersByOrganization, Customer } from '@/lib/api/customers';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { usersApi, User } from '@/lib/api/users';
+import { tagsApi } from '@/lib/api/tags';
 import Navbar from '@/components/Navbar';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
@@ -142,6 +143,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [selectedCheckStatusKeys, setSelectedCheckStatusKeys] = useState<Set<string>>(new Set());
   const [isApplyingCheckStatus, setIsApplyingCheckStatus] = useState(false);
   const [checkStatusOnlyChanged, setCheckStatusOnlyChanged] = useState(true);
+  const [jiraCheckStatusMode, setJiraCheckStatusMode] = useState<'ticket' | 'board'>('ticket');
   const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
   const { user, token, isLoading: authLoading } = useAuth();
@@ -1365,6 +1367,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   const handleOpenCheckJiraStatus = async () => {
     if (!project || !token) return;
+    setJiraCheckStatusMode('ticket');
     setShowJiraCheckStatusModal(true);
     setJiraCheckStatusLoading(true);
     setJiraCheckStatusError('');
@@ -1392,6 +1395,36 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   };
 
+  const handleOpenCheckJiraBoardStatus = async () => {
+    if (!project || !token) return;
+    setJiraCheckStatusMode('board');
+    setShowJiraCheckStatusModal(true);
+    setJiraCheckStatusLoading(true);
+    setJiraCheckStatusError('');
+    setJiraCheckStatusTickets([]);
+    setSelectedCheckStatusKeys(new Set());
+    setJiraCheckStatusOverrides({});
+    const initialMapping = parseMappingJson(project.JiraTaskStatusMappingJson);
+    setJiraCheckStatusMapping(initialMapping);
+    try {
+      const res = await fetch(
+        `${getApiUrl()}/api/jira-integrations/project/${projectId}/check-board-statuses`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to load board statuses');
+      }
+      const data = await res.json();
+      const tickets = data.tickets || [];
+      setJiraCheckStatusTickets(tickets);
+    } catch (err: any) {
+      setJiraCheckStatusError(err.message || 'Failed to load board statuses');
+    } finally {
+      setJiraCheckStatusLoading(false);
+    }
+  };
+
   const handleApplyCheckJiraStatus = async () => {
     if (!project || !token || selectedCheckStatusKeys.size === 0) return;
     setIsApplyingCheckStatus(true);
@@ -1412,7 +1445,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectId: parseInt(projectId),
-          importSource: 'ticket',
+          importSource: jiraCheckStatusMode === 'board' ? 'project' : 'ticket',
           issues: issuesToUpdate,
           statusMapping: jiraCheckStatusMapping,
           issueStatusOverrides: selectedIssueStatusOverrides,
@@ -1426,7 +1459,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       }
       const result = await res.json();
       const updated = result.data?.updatedStatuses || 0;
-      showAlert('Status Update', `Updated status on ${updated} task(s).`);
+      showAlert(
+        jiraCheckStatusMode === 'board' ? 'Board Status Update' : 'Ticket Status Update',
+        `Updated status on ${updated} task(s).`
+      );
       setShowJiraCheckStatusModal(false);
       setSelectedCheckStatusKeys(new Set());
       setJiraCheckStatusTickets([]);
@@ -2429,6 +2465,39 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
 
+          {activeTab !== 'overview' && (
+            <div className="mb-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="h-1 w-full" style={{ background: project.StatusColor || '#6366f1' }} />
+              <div className="px-4 py-2.5">
+                <div className="flex items-center justify-between gap-3 min-w-0">
+                  <div className="min-w-0 flex-1 overflow-x-auto">
+                    <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                      <span className="font-semibold text-gray-900 dark:text-white">{project.ProjectName}</span>
+                      {project.OrganizationName && (
+                        <>
+                          <span className="text-gray-400 dark:text-gray-500">•</span>
+                          <span>{project.OrganizationName}</span>
+                        </>
+                      )}
+                      {project.CustomerName && (
+                        <>
+                          <span className="text-gray-400 dark:text-gray-500">•</span>
+                          <span>{project.CustomerName}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <span
+                    className="inline-flex items-center px-2.5 py-1 rounded-md font-medium text-xs flex-shrink-0"
+                    style={project.StatusColor ? { backgroundColor: project.StatusColor + '22', color: project.StatusColor, border: `1px solid ${project.StatusColor}44` } : undefined}
+                  >
+                    {project.StatusName || 'Unknown'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'overview' && (
             <OverviewTab project={project} tasks={tasks} tickets={tickets} internalTicketsEnabled={internalTicketsEnabled} canViewBudgetInfo={permissions?.canViewBudgetInfo || false} token={token || ''} />
           )}
@@ -2453,6 +2522,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 setShowJiraTicketsModal(true);
               }}
               onCheckJiraTicketStatus={handleOpenCheckJiraStatus}
+              onCheckJiraBoardStatus={handleOpenCheckJiraBoardStatus}
               onImportFromGitHub={() => setShowGitHubImportModal(true)}
               onImportFromGitea={() => setShowGiteaImportModal(true)}
               internalTicketsEnabled={internalTicketsEnabled}
@@ -4431,7 +4501,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                   <span className="text-2xl">🔍</span>
-                  Check Jira Ticket Status
+                  {jiraCheckStatusMode === 'board' ? 'Check Jira Board Status' : 'Check Jira Ticket Status'}
                 </h2>
                 <button
                   onClick={() => {
@@ -4457,11 +4527,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
               {jiraCheckStatusLoading ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="text-gray-500 dark:text-gray-400">Loading ticket statuses from Jira...</div>
+                  <div className="text-gray-500 dark:text-gray-400">
+                    {jiraCheckStatusMode === 'board' ? 'Loading board statuses from Jira...' : 'Loading ticket statuses from Jira...'}
+                  </div>
                 </div>
               ) : jiraCheckStatusTickets.length === 0 && !jiraCheckStatusError ? (
                 <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                  No integrated Jira tickets found for this project.
+                  {jiraCheckStatusMode === 'board'
+                    ? 'No board-linked Jira issues found for this project.'
+                    : 'No integrated Jira tickets found for this project.'}
                 </div>
               ) : (
                 <>
@@ -5454,6 +5528,7 @@ function TasksTab({
   onImportFromGitHub,
   onImportFromGitea,
   onCheckJiraTicketStatus,
+  onCheckJiraBoardStatus,
   internalTicketsEnabled,
   canCreate,
   canManage,
@@ -5478,6 +5553,7 @@ function TasksTab({
   onImportFromGitHub: () => void;
   onImportFromGitea: () => void;
   onCheckJiraTicketStatus?: () => void;
+  onCheckJiraBoardStatus?: () => void;
   internalTicketsEnabled: boolean;
   canCreate: boolean;
   canManage: boolean;
@@ -5486,6 +5562,7 @@ function TasksTab({
 }) {
   const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
   const [showImportDropdown, setShowImportDropdown] = useState(false);
+  const [showCheckStatusDropdown, setShowCheckStatusDropdown] = useState(false);
   const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
   const [showTemplateSaveModal, setShowTemplateSaveModal] = useState(false);
   const [showTemplateApplyModal, setShowTemplateApplyModal] = useState(false);
@@ -5495,7 +5572,7 @@ function TasksTab({
   const [filterAssignee, setFilterAssignee] = useState<number | undefined>(undefined);
   const [filterTaskType, setFilterTaskType] = useState<number | undefined>(undefined);
   const [hideClosed, setHideClosed] = useState(false);
-  const [sortField, setSortField] = useState<string>('task');
+  const [sortField, setSortField] = useState<string>('displayOrder');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [filterTagIds, setFilterTagIds] = useState<number[]>([]);
   const [taskTagMap, setTaskTagMap] = useState<Map<number, Array<{ id: number; name: string; color: string }>>>(new Map());
@@ -5566,6 +5643,33 @@ function TasksTab({
   const [taskColumnsReady, setTaskColumnsReady] = useState(false);
   const [taskDragColumnId, setTaskDragColumnId] = useState<string | null>(null);
   const [taskDragOverInfo, setTaskDragOverInfo] = useState<{ columnKey: string; side: 'left' | 'right' } | null>(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(new Set());
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false);
+  const [isApplyingBulkEdit, setIsApplyingBulkEdit] = useState(false);
+  const [bulkEditError, setBulkEditError] = useState('');
+  const [availableApplications, setAvailableApplications] = useState<Array<{ Id: number; Name: string }>>([]);
+  const [bulkApplicationVersions, setBulkApplicationVersions] = useState<Array<{ Id: number; VersionNumber: string; VersionName: string | null; Status: string }>>([]);
+  const [bulkEditData, setBulkEditData] = useState<{
+    statusId: number | undefined;
+    assignedToId: number | undefined;
+    applicationId: number | undefined;
+    releaseVersionId: number | undefined;
+    parentTaskId: number | undefined;
+  }>({
+    statusId: undefined,
+    assignedToId: undefined,
+    applicationId: undefined,
+    releaseVersionId: undefined,
+    parentTaskId: undefined,
+  });
+  const [bulkTagIds, setBulkTagIds] = useState<number[]>([]);
+
+  // Drag and drop states
+  const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
+  const [dragOverTaskId, setDragOverTaskId] = useState<number | null>(null);
+  const [showDragDropActionModal, setShowDragDropActionModal] = useState(false);
+  const [dragDropSourceTaskId, setDragDropSourceTaskId] = useState<number | null>(null);
+  const [dragDropTargetTaskId, setDragDropTargetTaskId] = useState<number | null>(null);
 
   const additionalTaskColumnKeys = React.useMemo(() => {
     const excludedKeys = new Set<string>([
@@ -5985,6 +6089,19 @@ function TasksTab({
       .filter((columnId) => valid.has(columnId));
     const missing = columnIds.filter((columnId) => !orderedColumnIds.includes(columnId));
     const finalOrder = [...orderedColumnIds, ...missing];
+
+    const selectColumnIndex = finalOrder.indexOf('select');
+    if (selectColumnIndex > 0) {
+      finalOrder.splice(selectColumnIndex, 1);
+      finalOrder.unshift('select');
+    }
+
+    const actionsColumnIndex = finalOrder.indexOf('actions');
+    if (actionsColumnIndex !== -1 && actionsColumnIndex !== finalOrder.length - 1) {
+      finalOrder.splice(actionsColumnIndex, 1);
+      finalOrder.push('actions');
+    }
+
     const hiddenSet = new Set(hiddenTaskColumns);
 
     const rows = Array.from(table.querySelectorAll('tr')) as HTMLTableRowElement[];
@@ -6120,6 +6237,9 @@ function TasksTab({
   // Check which integrations are configured by source type
   const hasJiraBoardIntegration = jiraIntegration?.IsEnabled && jiraIntegration?.JiraProjectsUrl;
   const hasJiraTicketIntegration = jiraIntegration?.IsEnabled && jiraIntegration?.JiraUrl;
+  const hasTaskStatusCheckOption =
+    (hasJiraTicketIntegration && Boolean(onCheckJiraTicketStatus)) ||
+    (hasJiraBoardIntegration && Boolean(onCheckJiraBoardStatus));
   const hasGitHubIntegration = project.GitHubOwner && project.GitHubRepo;
   const hasGiteaIntegration = project.GiteaOwner && project.GiteaRepo;
 
@@ -6191,6 +6311,261 @@ function TasksTab({
     .map((taskTypeOption) => ({ id: Number(taskTypeOption.Id), name: String(taskTypeOption.TypeName || taskTypeOption.StatusName || '') }))
     .filter((taskTypeOption) => !!taskTypeOption.name)
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  useEffect(() => {
+    if (!token || !project?.OrganizationId) return;
+
+    const loadApplications = async () => {
+      try {
+        const response = await fetch(`${getApiUrl()}/api/applications?organizationId=${project.OrganizationId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          setAvailableApplications([]);
+          return;
+        }
+
+        const data = await response.json();
+        setAvailableApplications(data.applications || []);
+      } catch {
+        setAvailableApplications([]);
+      }
+    };
+
+    loadApplications();
+  }, [token, project?.OrganizationId]);
+
+  useEffect(() => {
+    if (!bulkEditData.applicationId || !token) {
+      setBulkApplicationVersions([]);
+      return;
+    }
+
+    const loadVersions = async () => {
+      try {
+        const response = await fetch(`${getApiUrl()}/api/applications/${bulkEditData.applicationId}/versions`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          setBulkApplicationVersions([]);
+          return;
+        }
+
+        const data = await response.json();
+        setBulkApplicationVersions(data.versions || []);
+      } catch {
+        setBulkApplicationVersions([]);
+      }
+    };
+
+    loadVersions();
+  }, [bulkEditData.applicationId, token]);
+
+  useEffect(() => {
+    const validTaskIds = new Set(tasks.map((task) => task.Id));
+    setSelectedTaskIds((previous) => {
+      const next = new Set(Array.from(previous).filter((taskId) => validTaskIds.has(taskId)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [tasks]);
+
+  const toggleTaskSelection = (taskId: number) => {
+    setSelectedTaskIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  };
+
+  const resetBulkEditState = () => {
+    setBulkEditError('');
+    setBulkEditData({
+      statusId: undefined,
+      assignedToId: undefined,
+      applicationId: undefined,
+      releaseVersionId: undefined,
+      parentTaskId: undefined,
+    });
+    setBulkTagIds([]);
+    setBulkApplicationVersions([]);
+  };
+
+  const handleOpenBulkEditModal = () => {
+    resetBulkEditState();
+    setShowBulkEditModal(true);
+  };
+
+  const handleCloseBulkEditModal = () => {
+    if (isApplyingBulkEdit) return;
+    setShowBulkEditModal(false);
+    resetBulkEditState();
+  };
+
+  const handleApplyBulkEdit = async () => {
+    if (!token || selectedTaskIds.size === 0 || isApplyingBulkEdit) return;
+
+    const payload: UpdateTaskData = {};
+    if (bulkEditData.statusId !== undefined) payload.status = bulkEditData.statusId;
+    if (bulkEditData.assignedToId !== undefined) payload.assignedTo = bulkEditData.assignedToId;
+    if (bulkEditData.applicationId !== undefined) payload.applicationId = bulkEditData.applicationId;
+    if (bulkEditData.releaseVersionId !== undefined) payload.releaseVersionId = bulkEditData.releaseVersionId;
+    if (bulkEditData.parentTaskId !== undefined) payload.parentTaskId = bulkEditData.parentTaskId;
+    const hasTagsUpdate = bulkTagIds.length > 0;
+
+    if (Object.keys(payload).length === 0 && !hasTagsUpdate) {
+      setBulkEditError('Select at least one field to update.');
+      return;
+    }
+
+    setIsApplyingBulkEdit(true);
+    setBulkEditError('');
+
+    try {
+      const ids = Array.from(selectedTaskIds);
+      await Promise.all(
+        ids.map(async (taskId) => {
+          if (Object.keys(payload).length > 0) {
+            await tasksApi.update(taskId, payload, token);
+          }
+          if (hasTagsUpdate) {
+            await tagsApi.updateTaskTags(taskId, bulkTagIds, token);
+          }
+        })
+      );
+      await onRefreshTasks();
+
+      if (project?.OrganizationId && project?.Id) {
+        try {
+          const projectTaskTagsRes = await fetch(`${getApiUrl()}/api/tags/project/${project.Id}/tasks`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (projectTaskTagsRes.ok) {
+            const taskTagsData = await projectTaskTagsRes.json();
+            const mapped = new Map<number, Array<{ id: number; name: string; color: string }>>();
+            for (const relation of taskTagsData.taskTags || []) {
+              const taskId = Number(relation.TaskId);
+              const existing = mapped.get(taskId) || [];
+              existing.push({
+                id: Number(relation.TagId),
+                name: String(relation.TagName || ''),
+                color: String(relation.TagColor || '#6B7280'),
+              });
+              mapped.set(taskId, existing);
+            }
+            setTaskTagMap(mapped);
+          }
+        } catch {
+          // ignore task tags refresh errors
+        }
+      }
+
+      setSelectedTaskIds(new Set());
+      setShowBulkEditModal(false);
+      resetBulkEditState();
+    } catch (error) {
+      setBulkEditError(error instanceof Error ? error.message : 'Failed to apply bulk edit.');
+    } finally {
+      setIsApplyingBulkEdit(false);
+    }
+  };
+
+  const onTaskDragStart = (e: React.DragEvent<HTMLTableRowElement>, taskId: number) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', e.currentTarget.innerHTML);
+    setDraggedTaskId(taskId);
+    setDragDropSourceTaskId(taskId);
+  };
+
+  const onTaskDragOver = (e: React.DragEvent<HTMLTableRowElement>, taskId: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverTaskId(taskId);
+  };
+
+  const onTaskDragLeave = (e: React.DragEvent<HTMLTableRowElement>) => {
+    e.preventDefault();
+    setDragOverTaskId(null);
+  };
+
+  const onTaskDrop = (e: React.DragEvent<HTMLTableRowElement>, targetTaskId: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (dragDropSourceTaskId === null || dragDropSourceTaskId === targetTaskId) {
+      setDraggedTaskId(null);
+      setDragOverTaskId(null);
+      setDragDropSourceTaskId(null);
+      return;
+    }
+
+    setDragDropTargetTaskId(targetTaskId);
+    setShowDragDropActionModal(true);
+    setDraggedTaskId(null);
+    setDragOverTaskId(null);
+  };
+
+  const handleDragDropAction = async (action: 'child' | 'reorder') => {
+    if (!token || dragDropSourceTaskId === null || dragDropTargetTaskId === null) return;
+
+    try {
+      if (action === 'child') {
+        // Make source task a child of target task
+        await tasksApi.update(dragDropSourceTaskId, { parentTaskId: dragDropTargetTaskId }, token);
+      } else {
+        // Reorder: move source task to position of target task
+        // Get all parent tasks in current order
+        const orderedParents = getDisplayOrderSortedTasks(parentTasks);
+        
+        // Find indices
+        const sourceIndex = orderedParents.findIndex(t => t.Id === dragDropSourceTaskId);
+        const targetIndex = orderedParents.findIndex(t => t.Id === dragDropTargetTaskId);
+        
+        if (sourceIndex !== -1 && targetIndex !== -1) {
+          // Create new array with source moved to target position
+          const reordered = [...orderedParents];
+          const [movedTask] = reordered.splice(sourceIndex, 1);
+          reordered.splice(targetIndex, 0, movedTask);
+          
+          // Update DisplayOrder sequentially for all affected tasks
+          const tasksToUpdate = reordered.map((task, index) => ({
+            id: task.Id,
+            displayOrder: (index + 1) * 10, // 10, 20, 30, etc.
+          }));
+          
+          // Apply all updates
+          await Promise.all(
+            tasksToUpdate.map(task =>
+              tasksApi.update(task.id, { displayOrder: task.displayOrder }, token)
+            )
+          );
+        }
+      }
+
+      onRefreshTasks();
+    } catch (error) {
+      console.error('Failed to apply drag-drop action:', error);
+    } finally {
+      setShowDragDropActionModal(false);
+      setDragDropSourceTaskId(null);
+      setDragDropTargetTaskId(null);
+    }
+  };
 
   useEffect(() => {
     if (!token || !project?.OrganizationId || !project?.Id) return;
@@ -6352,7 +6727,9 @@ function TasksTab({
 
   const compareTasks = (a: Task, b: Task): number => {
     let comparison = 0;
-    switch (sortField) {
+    const finalSortField = sortField || 'displayOrder';
+    
+    switch (finalSortField) {
       case 'task':
         comparison = (a.TaskName || '').localeCompare(b.TaskName || '');
         break;
@@ -6377,9 +6754,19 @@ function TasksTab({
         else comparison = aTime - bTime;
         break;
       }
+      case 'displayOrder': {
+        const aOrder = Number.isFinite(Number(a.DisplayOrder)) ? Number(a.DisplayOrder) : Number.MAX_SAFE_INTEGER;
+        const bOrder = Number.isFinite(Number(b.DisplayOrder)) ? Number(b.DisplayOrder) : Number.MAX_SAFE_INTEGER;
+        if (aOrder !== bOrder) {
+          comparison = aOrder - bOrder;
+        } else {
+          comparison = Number(a.Id) - Number(b.Id);
+        }
+        break;
+      }
       default: {
-        if (sortField.startsWith('extra:')) {
-          const rawKey = sortField.slice('extra:'.length);
+        if (finalSortField.startsWith('extra:')) {
+          const rawKey = finalSortField.slice('extra:'.length);
           const valueA = (a as unknown as Record<string, unknown>)[rawKey];
           const valueB = (b as unknown as Record<string, unknown>)[rawKey];
           comparison = comparePrimitiveValues(valueA, valueB);
@@ -6442,6 +6829,50 @@ function TasksTab({
       return taskMatchesFilters(parent) || hasMatchingDescendant(parent);
     })
   );
+
+  const collectVisibleTaskIds = (task: Task, ids: number[]) => {
+    const subtasks = getDisplayOrderSortedTasks(getSubtasks(task.Id));
+    const hasAnyMatchingDescendant = hasMatchingDescendant(task);
+
+    if (isFilterActive && !taskMatchesFilters(task) && !hasAnyMatchingDescendant) {
+      return;
+    }
+
+    ids.push(task.Id);
+
+    const isExpanded = shouldAutoExpandForFilters ? true : expandedTasks.has(task.Id);
+    if (isExpanded && subtasks.length > 0) {
+      subtasks.forEach((subtask) => collectVisibleTaskIds(subtask, ids));
+    }
+  };
+
+  const visibleTaskIds = React.useMemo(() => {
+    const ids: number[] = [];
+    visibleParentTasks.forEach((task) => collectVisibleTaskIds(task, ids));
+    return ids;
+  }, [visibleParentTasks, expandedTasks, shouldAutoExpandForFilters, isFilterActive, filterText, filterStatus, filterPriority, filterAssignee, filterTaskType, filterTagIds, hideClosed, sortField, sortDirection]);
+
+  const allVisibleTasksSelected = visibleTaskIds.length > 0 && visibleTaskIds.every((taskId) => selectedTaskIds.has(taskId));
+
+  const toggleSelectAllVisibleTasks = () => {
+    setSelectedTaskIds((previous) => {
+      const next = new Set(previous);
+      if (allVisibleTasksSelected) {
+        visibleTaskIds.forEach((taskId) => next.delete(taskId));
+      } else {
+        visibleTaskIds.forEach((taskId) => next.add(taskId));
+      }
+      return next;
+    });
+  };
+
+  const bulkParentTaskOptions = tasks
+    .filter((task) => !selectedTaskIds.has(task.Id))
+    .map((task) => ({
+      id: task.Id,
+      label: task.TaskName,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   const startInlineEdit = (task: Task) => {
     if (!canManage) return;
@@ -6841,9 +7272,32 @@ function TasksTab({
       <tr 
         key={task.Id} 
         data-task-row-id={task.Id}
-        className={`group ${level > 0 ? 'bg-gray-50 dark:bg-gray-700/30' : ''} hover:bg-gray-100 dark:hover:bg-gray-700/50`}
+        draggable={true}
+        onDragStart={(e) => onTaskDragStart(e, task.Id)}
+        onDragOver={(e) => onTaskDragOver(e, task.Id)}
+        onDragLeave={onTaskDragLeave}
+        onDrop={(e) => onTaskDrop(e, task.Id)}
+        className={`group ${level > 0 ? 'bg-gray-50 dark:bg-gray-700/30' : ''} hover:bg-gray-100 dark:hover:bg-gray-700/50 ${
+          dragOverTaskId === task.Id ? 'bg-blue-100 dark:bg-blue-900/30 border-t-2 border-blue-500' : ''
+        } ${draggedTaskId === task.Id ? 'opacity-50' : ''}`}
         onDoubleClick={() => startInlineEdit(task)}
       >
+        <td className="w-8 min-w-[2rem] max-w-[2rem] px-1 py-2 text-center" onClick={(event) => event.stopPropagation()}>
+          <div className="flex items-center justify-center gap-1">
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity" title="Drag to reorder or change parent">
+              <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-grab active:cursor-grabbing" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M9 3h2v2H9V3zm0 4h2v2H9V7zm0 4h2v2H9v-2zm4-8h2v2h-2V3zm0 4h2v2h-2V7zm0 4h2v2h-2v-2z" />
+              </svg>
+            </div>
+            <input
+              type="checkbox"
+              checked={selectedTaskIds.has(task.Id)}
+              onChange={() => toggleTaskSelection(task.Id)}
+              className="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+              aria-label={`Select task ${task.TaskName}`}
+            />
+          </div>
+        </td>
         <td className="px-2 py-2">
           {isEditingRow ? (
             <SearchableSelect
@@ -7103,6 +7557,7 @@ function TasksTab({
           data-task-new-subtask-parent-id={task.Id}
           className="bg-blue-50/60 dark:bg-blue-900/10"
         >
+          <td className="w-8 min-w-[2rem] max-w-[2rem] px-1 py-2"></td>
           <td className="px-2 py-2">
             <SearchableSelect
               value={newSubtaskData.taskType ?? undefined}
@@ -7239,7 +7694,10 @@ function TasksTab({
               {/* Import Dropdown - always visible, CSV always available */}
               <div className="relative">
                 <button
-                  onClick={() => setShowImportDropdown(!showImportDropdown)}
+                  onClick={() => {
+                    setShowImportDropdown(!showImportDropdown);
+                    setShowCheckStatusDropdown(false);
+                  }}
                   className="h-10 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center gap-2"
                 >
                   <span className="text-base leading-none">📥</span>
@@ -7307,23 +7765,6 @@ function TasksTab({
                             </div>
                           </button>
                         )}
-
-                        {/* Check Jira Ticket Status - only if Jira Tickets integration is configured */}
-                        {hasJiraTicketIntegration && onCheckJiraTicketStatus && (
-                          <button
-                            onClick={() => {
-                              onCheckJiraTicketStatus();
-                              setShowImportDropdown(false);
-                            }}
-                            className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
-                          >
-                            <span className="text-xl">🔍</span>
-                            <div>
-                              <div className="font-medium text-gray-900 dark:text-white">Check Jira Ticket Status</div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">Detect status changes</div>
-                            </div>
-                          </button>
-                        )}
                         
                         {/* GitHub Import - only if configured */}
                         {hasGitHubIntegration && (
@@ -7365,6 +7806,65 @@ function TasksTab({
                   </>
                 )}
               </div>
+
+              {hasTaskStatusCheckOption && (
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setShowCheckStatusDropdown(!showCheckStatusDropdown);
+                      setShowImportDropdown(false);
+                    }}
+                    className="h-10 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center gap-2"
+                  >
+                    <span className="text-base leading-none">🔍</span>
+                    Check Task Status
+                    <svg className={`w-4 h-4 transition-transform ${showCheckStatusDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  {showCheckStatusDropdown && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowCheckStatusDropdown(false)}></div>
+                      <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20">
+                        <div className="py-2">
+                          {hasJiraTicketIntegration && onCheckJiraTicketStatus && (
+                            <button
+                              onClick={() => {
+                                onCheckJiraTicketStatus();
+                                setShowCheckStatusDropdown(false);
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
+                            >
+                              <span className="text-xl">🎫</span>
+                              <div>
+                                <div className="font-medium text-gray-900 dark:text-white">Check Jira Ticket Status</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">Detect ticket status changes</div>
+                              </div>
+                            </button>
+                          )}
+
+                          {hasJiraBoardIntegration && onCheckJiraBoardStatus && (
+                            <button
+                              onClick={() => {
+                                onCheckJiraBoardStatus();
+                                setShowCheckStatusDropdown(false);
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
+                            >
+                              <span className="text-xl">📌</span>
+                              <div>
+                                <div className="font-medium text-gray-900 dark:text-white">Check Jira Board Status</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">Detect board status changes</div>
+                              </div>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
               
               <button
                 onClick={onCreateTask}
@@ -7526,78 +8026,103 @@ function TasksTab({
             </div>
           </div>
 
-          <div className="w-full min-w-0 bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700" ref={tasksGridRef} data-grid-enhancer-ignore="true">
-            <div className="global-grid-controls mb-2 flex justify-end relative p-2 pb-0">
+          {selectedTaskIds.size > 0 && canManage && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+              <span className="text-sm text-blue-800 dark:text-blue-200">
+                {selectedTaskIds.size} task{selectedTaskIds.size !== 1 ? 's' : ''} selected
+              </span>
               <div className="flex items-center gap-2">
-                <div className="h-9 flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
-                  <button
-                    type="button"
-                    onClick={() => setTaskRowDensity('comfortable')}
-                    className={`h-7 px-3 text-sm rounded-md transition-colors ${taskRowDensity === 'comfortable' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
-                  >
-                    Comfy
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTaskRowDensity('compact')}
-                    className={`h-7 px-3 text-sm rounded-md transition-colors ${taskRowDensity === 'compact' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
-                  >
-                    Compact
-                  </button>
-                </div>
                 <button
                   type="button"
-                  onClick={(event) => {
-                    const buttonRect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                    const panelWidth = 448;
-                    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-                    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-                    const top = Math.min(viewportHeight - 20, buttonRect.bottom + 8);
-                    const left = Math.max(8, Math.min(viewportWidth - panelWidth - 8, buttonRect.right - panelWidth));
-                    setTaskColumnsPanelPosition({ top, left });
-                    setShowTaskColumnsPanel((previous) => !previous);
-                  }}
-                  className="h-9 px-3 rounded-lg text-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-colors"
+                  onClick={() => setSelectedTaskIds(new Set())}
+                  className="h-9 px-3 rounded-lg text-sm font-medium bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
-                  Columns
+                  Clear Selection
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenBulkEditModal}
+                  className="h-9 px-3 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  Bulk Edit
                 </button>
               </div>
-              {showTaskColumnsPanel && (
-                <>
-                  <div className="fixed inset-0 z-[2147483646]" onClick={() => setShowTaskColumnsPanel(false)}></div>
-                  <div
-                    className="fixed z-[2147483647] w-[28rem] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3"
-                    style={{ top: `${taskColumnsPanelPosition.top}px`, left: `${taskColumnsPanelPosition.left}px` }}
-                  >
-                    <div className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Table Columns</div>
-                    <div className="text-xs text-gray-600 dark:text-gray-300 mb-2">
-                      {taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length > 0
-                        ? `${taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length} fixed column${taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length > 1 ? 's' : ''}`
-                        : 'No fixed columns'}
-                    </div>
-                    <div className="space-y-2 max-h-80 overflow-y-auto">
-                      {(taskColumnOrder.length > 0 ? taskColumnOrder : taskSelectableColumnIds).map((columnId, index) => {
-                        const option = taskColumnOptions.find((entry) => entry.id === columnId);
-                        if (!option) return null;
-                        const mode = taskColumnSizeMode[option.id] === 'fixed' ? 'fixed' : 'grow';
-                        const widthValue = Number.isFinite(taskColumnSizing[option.id])
-                          ? taskColumnSizing[option.id]
-                          : getTaskColumnCurrentWidth(option.id);
-                        return (
-                          <div key={`task-column-${option.id}`} className="flex items-center gap-2 flex-wrap">
-                            <input
-                              type="checkbox"
-                              checked={isTaskColumnVisible(option.id)}
-                              onChange={() => {
-                                setHiddenTaskColumns((previous) =>
-                                  previous.includes(option.id)
-                                    ? previous.filter((columnKey) => columnKey !== option.id)
-                                    : [...previous, option.id]
-                                );
-                              }}
-                              className="h-4 w-4"
-                            />
-                            <div className="flex-1 text-sm text-gray-800 dark:text-gray-200">{option.label}</div>
+            </div>
+          )}
+
+
+          {/* Grid enhancer controls */}
+          <div className="mb-2 flex justify-end relative p-2 pb-0">
+            <div className="flex items-center gap-2">
+              <div className="h-9 flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+                <button
+                  type="button"
+                  onClick={() => setTaskRowDensity('comfortable')}
+                  className={`h-7 px-3 text-sm rounded-md transition-colors ${taskRowDensity === 'comfortable' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                >
+                  Comfy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTaskRowDensity('compact')}
+                  className={`h-7 px-3 text-sm rounded-md transition-colors ${taskRowDensity === 'compact' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                >
+                  Compact
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={(event) => {
+                  const buttonRect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                  const panelWidth = 448;
+                  const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+                  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+                  const top = Math.min(viewportHeight - 20, buttonRect.bottom + 8);
+                  const left = Math.max(8, Math.min(viewportWidth - panelWidth - 8, buttonRect.right - panelWidth));
+                  setTaskColumnsPanelPosition({ top, left });
+                  setShowTaskColumnsPanel((previous) => !previous);
+                }}
+                className="h-9 px-3 rounded-lg text-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-colors"
+              >
+                Columns
+              </button>
+            </div>
+            {showTaskColumnsPanel && (
+              <>
+                <div className="fixed inset-0 z-[2147483646]" onClick={() => setShowTaskColumnsPanel(false)}></div>
+                <div
+                  className="fixed z-[2147483647] w-[28rem] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3"
+                  style={{ top: `${taskColumnsPanelPosition.top}px`, left: `${taskColumnsPanelPosition.left}px` }}
+                >
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Table Columns</div>
+                  <div className="text-xs text-gray-600 dark:text-gray-300 mb-2">
+                    {taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length > 0
+                      ? `${taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length} fixed column${taskSelectableColumnIds.filter((columnId) => taskColumnSizeMode[columnId] === 'fixed').length > 1 ? 's' : ''}`
+                      : 'No fixed columns'}
+                  </div>
+                  <div className="space-y-2 max-h-80 overflow-y-auto">
+                    {(taskColumnOrder.length > 0 ? taskColumnOrder : taskSelectableColumnIds).map((columnId, index) => {
+                      const option = taskColumnOptions.find((entry) => entry.id === columnId);
+                      if (!option) return null;
+                      const mode = taskColumnSizeMode[option.id] === 'fixed' ? 'fixed' : 'grow';
+                      const widthValue = Number.isFinite(taskColumnSizing[option.id])
+                        ? taskColumnSizing[option.id]
+                        : getTaskColumnCurrentWidth(option.id);
+                      return (
+                        <div key={`task-column-${option.id}`} className="flex items-center gap-2 flex-wrap">
+                          <input
+                            type="checkbox"
+                            checked={isTaskColumnVisible(option.id)}
+                            onChange={() => {
+                              setHiddenTaskColumns((previous) =>
+                                previous.includes(option.id)
+                                  ? previous.filter((columnKey) => columnKey !== option.id)
+                                  : [...previous, option.id]
+                              );
+                            }}
+                            className="h-4 w-4"
+                          />
+                          <div className="flex-1 text-sm text-gray-800 dark:text-gray-200">{option.label}</div>
                             <button
                               type="button"
                               onClick={() => {
@@ -7688,11 +8213,22 @@ function TasksTab({
                   </div>
                 </>
               )}
-            </div>
-          <div className="w-full min-w-0 overflow-x-auto">
+          </div>
+
+          <div className="w-full min-w-0 bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700" ref={tasksGridRef} data-grid-enhancer-ignore="true">
+            <div className="w-full min-w-0 overflow-x-auto">
           <table data-grid-disable-sort="true" data-grid-disable-reorder="true" data-grid-key={`project-tasks-${Number(project.Id)}-v2`} className={`w-full min-w-max divide-y divide-gray-200 dark:divide-gray-700 ${taskRowDensity === 'compact' ? 'grid-density-compact' : ''}`}>
             <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
+                <th data-column-key="select" scope="col" className="w-8 min-w-[2rem] max-w-[2rem] px-1 py-3 text-center">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleTasksSelected}
+                    onChange={toggleSelectAllVisibleTasks}
+                    className="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                    aria-label="Select all visible tasks"
+                  />
+                </th>
                 <th
                   data-column-key="task-type"
                   data-grid-sort-ignore="true"
@@ -7796,6 +8332,7 @@ function TasksTab({
                   {visibleParentTasks.map((task) => renderTaskRow(task))}
                   {creatingRootTaskInline && (
                     <tr data-task-new-root-row="true" className="bg-blue-50/60 dark:bg-blue-900/10">
+                      <td className="w-8 min-w-[2rem] max-w-[2rem] px-1 py-2"></td>
                       <td className="px-2 py-2">
                         <SearchableSelect
                           value={newRootTaskData.taskType ?? undefined}
@@ -7916,7 +8453,7 @@ function TasksTab({
                 </>
               ) : (
                 <tr>
-                  <td colSpan={7 + additionalTaskColumnKeys.length} className="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                  <td colSpan={8 + additionalTaskColumnKeys.length} className="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                     No tasks match the current filters.
                   </td>
                 </tr>
@@ -7924,6 +8461,191 @@ function TasksTab({
             </tbody>
           </table>
           </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Bulk Edit Tasks</h3>
+                <button
+                  type="button"
+                  onClick={handleCloseBulkEditModal}
+                  disabled={isApplyingBulkEdit}
+                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  aria-label="Close"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Updates will be applied to {selectedTaskIds.size} selected task{selectedTaskIds.size !== 1 ? 's' : ''}. Leave fields as "Do not change" to keep current values.
+              </p>
+
+              {bulkEditError && (
+                <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded-lg text-sm">
+                  {bulkEditError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                  <SearchableSelect
+                    value={bulkEditData.statusId}
+                    onChange={(value) => setBulkEditData((prev) => ({ ...prev, statusId: value }))}
+                    options={statusOptions.map((status) => ({ id: status.id, label: status.name }))}
+                    placeholder="Do not change"
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Assignee</label>
+                  <SearchableSelect
+                    value={bulkEditData.assignedToId}
+                    onChange={(value) => setBulkEditData((prev) => ({ ...prev, assignedToId: value }))}
+                    options={assigneeOptions.map((assignee) => ({ id: assignee.id, label: assignee.name }))}
+                    placeholder="Do not change"
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Application</label>
+                  <SearchableSelect
+                    value={bulkEditData.applicationId}
+                    onChange={(value) => setBulkEditData((prev) => ({
+                      ...prev,
+                      applicationId: value,
+                      releaseVersionId: undefined,
+                    }))}
+                    options={availableApplications.map((application) => ({ id: application.Id, label: application.Name }))}
+                    placeholder="Do not change"
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Version</label>
+                  <SearchableSelect
+                    value={bulkEditData.releaseVersionId}
+                    onChange={(value) => setBulkEditData((prev) => ({ ...prev, releaseVersionId: value }))}
+                    options={bulkApplicationVersions.map((version) => ({
+                      id: version.Id,
+                      label: `${version.VersionNumber}${version.VersionName ? ` - ${version.VersionName}` : ''} (${version.Status})`,
+                    }))}
+                    placeholder={bulkEditData.applicationId ? 'Do not change' : 'Select application first'}
+                    className="w-full"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Parent Task</label>
+                  <SearchableSelect
+                    value={bulkEditData.parentTaskId}
+                    onChange={(value) => setBulkEditData((prev) => ({ ...prev, parentTaskId: value }))}
+                    options={bulkParentTaskOptions}
+                    placeholder="Do not change"
+                    className="w-full"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tags</label>
+                  <SearchableMultiSelect
+                    values={bulkTagIds}
+                    onChange={(values) => setBulkTagIds(values.map((value) => Number(value)).filter((value) => Number.isFinite(value)))}
+                    options={tagFilterOptions}
+                    placeholder="Do not change"
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    If you select tags here, selected tasks will have their tags replaced by this set.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={handleCloseBulkEditModal}
+                  disabled={isApplyingBulkEdit}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyBulkEdit}
+                  disabled={isApplyingBulkEdit}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
+                >
+                  {isApplyingBulkEdit ? 'Updating...' : 'Update Selected Tasks'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Drag and Drop Action Modal */}
+      {showDragDropActionModal && dragDropSourceTaskId && dragDropTargetTaskId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[130]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 border border-gray-200 dark:border-gray-700">
+            <div className="p-6">
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                  Move Task
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                  How would you like to move this task?
+                </p>
+              </div>
+
+              <div className="space-y-3 mb-6">
+                <button
+                  type="button"
+                  onClick={() => handleDragDropAction('child')}
+                  className="w-full p-4 text-left border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                >
+                  <div className="font-medium text-gray-900 dark:text-white">Make as Child Task</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    This task will become a subtask of the target task
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleDragDropAction('reorder')}
+                  className="w-full p-4 text-left border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+                >
+                  <div className="font-medium text-gray-900 dark:text-white">Reorder Task</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    Move this task to the same level and position as the target task
+                  </div>
+                </button>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDragDropActionModal(false);
+                    setDragDropSourceTaskId(null);
+                    setDragDropTargetTaskId(null);
+                  }}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

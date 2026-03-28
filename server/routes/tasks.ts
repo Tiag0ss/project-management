@@ -77,6 +77,26 @@ const syncTaskPrimaryAssignee = async (
   );
 };
 
+const syncTaskReleaseVersionLink = async (
+  taskId: number,
+  releaseVersionId: number | null
+): Promise<void> => {
+  await pool.execute('DELETE FROM ApplicationVersionTasks WHERE TaskId = ?', [taskId]);
+
+  if (!releaseVersionId) {
+    return;
+  }
+
+  await pool.execute(
+    `INSERT INTO ApplicationVersionTasks (VersionId, TaskId)
+     SELECT ?, ?
+     WHERE NOT EXISTS (
+       SELECT 1 FROM ApplicationVersionTasks WHERE VersionId = ? AND TaskId = ?
+     )`,
+    [releaseVersionId, taskId, releaseVersionId, taskId]
+  );
+};
+
 // Convert Jira description payloads (plain text, JSON string, or Atlassian Document Format) to HTML for RichTextEditor
 const normalizeJiraDescription = (value: any): string => {
   const escapeHtml = (text: string): string => {
@@ -1090,6 +1110,9 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const normalizedGiteaIssueNumber = giteaIssueNumber === undefined || giteaIssueNumber === null || giteaIssueNumber === ''
       ? null
       : Number(giteaIssueNumber);
+    const normalizedReleaseVersionId = releaseVersionId === undefined || releaseVersionId === null || releaseVersionId === ''
+      ? null
+      : Number(releaseVersionId);
     const finalStoryPointsForInsert =
       (normalizedStoryPoints === null || normalizedStoryPoints === 0) && normalizedEstimatedHours !== null
         ? normalizedEstimatedHours
@@ -1098,8 +1121,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const customFieldData = await prepareCustomFieldData('Tasks', customFields);
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, UnscheduledWork, EstimatedHours, StoryPoints, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, GitHubIssueNumber, GiteaIssueNumber, ApplicationId, CreatedBy${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
+      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, UnscheduledWork, EstimatedHours, StoryPoints, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, GitHubIssueNumber, GiteaIssueNumber, ApplicationId, ReleaseVersionId, CreatedBy${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
       [
         projectId,
         taskName,
@@ -1124,10 +1147,15 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         normalizedGitHubIssueNumber,
         normalizedGiteaIssueNumber,
         applicationId || null,
+        normalizedReleaseVersionId,
         userId,
         ...customFieldData.insertValues
       ]
     );
+
+    if (normalizedReleaseVersionId) {
+      await syncTaskReleaseVersionLink(result.insertId, normalizedReleaseVersionId);
+    }
 
     // If this task has a parent, recalculate parent's estimated hours
     if (parentTaskId) {
@@ -1530,6 +1558,10 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         taskId
       ]
     );
+
+    if (releaseVersionId !== undefined && hasEffectiveChange(oldTask.ReleaseVersionId, finalReleaseVersionId)) {
+      await syncTaskReleaseVersionLink(Number(taskId), finalReleaseVersionId);
+    }
 
     if (assignedTo !== undefined && assignedTo !== null) {
       await syncTaskPrimaryAssignee(Number(taskId), assignedTo, userId);

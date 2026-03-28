@@ -54,6 +54,12 @@
       "Comment": "Whether this version is customer-specific"
     },
     {
+      "FieldName": "CustomerId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Optional customer association for customer-specific versions"
+    },
+    {
       "FieldName": "CreatedBy",
       "DataType": "int",
       "NotNullable": true,

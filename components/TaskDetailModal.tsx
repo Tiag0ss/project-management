@@ -2325,48 +2325,34 @@ export default function TaskDetailModal({
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Status
                   </label>
-                  <select
+                  <SearchableSelect
                     value={formData.status ?? ''}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value ? parseInt(e.target.value) : null })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    {taskStatuses.length > 0 ? (
-                      <>
-                        <option value="">Select a status</option>
-                        {taskStatuses.sort((a, b) => a.SortOrder - b.SortOrder).map((status) => (
-                          <option key={status.Id} value={status.Id}>
-                            {status.StatusName}
-                          </option>
-                        ))}
-                      </>
-                    ) : (
-                      <option value="">No statuses available</option>
-                    )}
-                  </select>
+                    onChange={(value) => setFormData({ ...formData, status: value ? parseInt(value, 10) : null })}
+                    options={taskStatuses.length > 0
+                      ? taskStatuses
+                        .sort((a, b) => a.SortOrder - b.SortOrder)
+                        .map((status) => ({ value: status.Id, label: status.StatusName }))
+                      : []}
+                    placeholder={taskStatuses.length > 0 ? 'Select a status' : 'No statuses available'}
+                    emptyText={taskStatuses.length > 0 ? 'Select a status' : 'No statuses available'}
+                  />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Priority
                   </label>
-                  <select
+                  <SearchableSelect
                     value={formData.priority ?? ''}
-                    onChange={(e) => setFormData({ ...formData, priority: e.target.value ? parseInt(e.target.value) : null })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    {taskPriorities.length > 0 ? (
-                      <>
-                        <option value="">Select a priority</option>
-                        {taskPriorities.sort((a, b) => a.SortOrder - b.SortOrder).map((priority) => (
-                          <option key={priority.Id} value={priority.Id}>
-                            {priority.PriorityName}
-                          </option>
-                        ))}
-                      </>
-                    ) : (
-                      <option value="">No priorities available</option>
-                    )}
-                  </select>
+                    onChange={(value) => setFormData({ ...formData, priority: value ? parseInt(value, 10) : null })}
+                    options={taskPriorities.length > 0
+                      ? taskPriorities
+                        .sort((a, b) => a.SortOrder - b.SortOrder)
+                        .map((priority) => ({ value: priority.Id, label: priority.PriorityName }))
+                      : []}
+                    placeholder={taskPriorities.length > 0 ? 'Select a priority' : 'No priorities available'}
+                    emptyText={taskPriorities.length > 0 ? 'Select a priority' : 'No priorities available'}
+                  />
                 </div>
               </div>
 
@@ -2374,25 +2360,17 @@ export default function TaskDetailModal({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Task Type *
                 </label>
-                <select
+                <SearchableSelect
                   value={formData.taskType ?? ''}
-                  onChange={(e) => setFormData({ ...formData, taskType: e.target.value ? parseInt(e.target.value) : null })}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  {taskTypes.length > 0 ? (
-                    <>
-                      <option value="">Select a task type</option>
-                      {taskTypes.sort((a, b) => a.SortOrder - b.SortOrder).map((type) => (
-                        <option key={type.Id} value={type.Id}>
-                          {type.TypeName}
-                        </option>
-                      ))}
-                    </>
-                  ) : (
-                    <option value="">No task types available</option>
-                  )}
-                </select>
+                  onChange={(value) => setFormData({ ...formData, taskType: value ? parseInt(value, 10) : null })}
+                  options={taskTypes.length > 0
+                    ? taskTypes
+                      .sort((a, b) => a.SortOrder - b.SortOrder)
+                      .map((type) => ({ value: type.Id, label: type.TypeName }))
+                    : []}
+                  placeholder={taskTypes.length > 0 ? 'Select a task type' : 'No task types available'}
+                  emptyText={taskTypes.length > 0 ? 'Select a task type' : 'No task types available'}
+                />
               </div>
 
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-1.5 pt-1">
@@ -3525,18 +3503,19 @@ export default function TaskDetailModal({
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     User *
                   </label>
-                  <select
+                  <SearchableSelect
                     value={manualAllocationModal.userId || ''}
-                    onChange={(e) => setManualAllocationModal(prev => ({ ...prev, userId: parseInt(e.target.value) }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <option value="">Select user...</option>
-                    {users.map(user => (
-                      <option key={user.Id} value={user.Id}>
-                        {user.FirstName} {user.LastName} ({user.Username})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => setManualAllocationModal((prev) => ({
+                      ...prev,
+                      userId: value ? parseInt(value, 10) : null,
+                    }))}
+                    options={users.map((user) => ({
+                      value: user.Id,
+                      label: `${user.FirstName} ${user.LastName} (${user.Username})`,
+                    }))}
+                    placeholder="Select user..."
+                    emptyText="No users available"
+                  />
                 </div>
 
                 {/* Date */}

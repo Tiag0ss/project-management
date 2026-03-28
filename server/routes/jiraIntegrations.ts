@@ -760,6 +760,132 @@ router.get('/project/:projectId/issues', authenticateToken, async (req: AuthRequ
   }
 });
 
+// Check live Jira status for board-linked issues in a project
+router.get('/project/:projectId/check-board-statuses', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.user?.userId;
+
+    const [projects] = await pool.execute<RowDataPacket[]>(
+      `SELECT p.Id, p.OrganizationId, p.JiraBoardId
+       FROM Projects p
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       WHERE p.Id = ? AND om.UserId = ?`,
+      [projectId, userId]
+    );
+
+    if (projects.length === 0) {
+      return res.status(404).json({ success: false, message: 'Project not found or access denied' });
+    }
+
+    const project = projects[0];
+
+    const [integration] = await pool.execute<RowDataPacket[]>(
+      `SELECT IsEnabled, JiraProjectsUrl, JiraProjectsEmail, JiraProjectsApiToken, JiraUrl, JiraEmail, JiraApiToken
+       FROM OrganizationJiraIntegrations
+       WHERE OrganizationId = ? AND IsEnabled = 1`,
+      [project.OrganizationId]
+    );
+
+    if (integration.length === 0) {
+      return res.status(404).json({ success: false, message: 'Jira integration not configured or disabled' });
+    }
+
+    const config = integration[0];
+    const useProjectsConfig = config.JiraProjectsUrl && config.JiraProjectsEmail && config.JiraProjectsApiToken;
+    const jiraUrl = useProjectsConfig ? config.JiraProjectsUrl : config.JiraUrl;
+    const jiraEmail = useProjectsConfig ? config.JiraProjectsEmail : config.JiraEmail;
+    const jiraApiToken = useProjectsConfig ? decrypt(config.JiraProjectsApiToken) : decrypt(config.JiraApiToken);
+
+    const [taskRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.Id as TaskId,
+              t.TaskName,
+              t.ExternalIssueId,
+              t.JiraIssueKey,
+              t.Status as StatusId,
+              tsv.StatusName
+       FROM Tasks t
+       LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+       WHERE t.ProjectId = ?
+         AND (t.ExternalIssueId IS NOT NULL OR t.JiraIssueKey IS NOT NULL)`,
+      [projectId]
+    );
+
+    if (taskRows.length === 0) {
+      return res.json({ success: true, tickets: [] });
+    }
+
+    const issueKeyToTask = new Map<string, { taskId: number; taskName: string; taskStatusId: number | null; taskStatusName: string | null }>();
+    for (const row of taskRows) {
+      const key = String(row.ExternalIssueId || row.JiraIssueKey || '').trim();
+      if (!key || issueKeyToTask.has(key)) continue;
+      issueKeyToTask.set(key, {
+        taskId: Number(row.TaskId),
+        taskName: String(row.TaskName || ''),
+        taskStatusId: row.StatusId === null || row.StatusId === undefined ? null : Number(row.StatusId),
+        taskStatusName: row.StatusName ? String(row.StatusName) : null,
+      });
+    }
+
+    const issueKeys = Array.from(issueKeyToTask.keys());
+    if (issueKeys.length === 0) {
+      return res.json({ success: true, tickets: [] });
+    }
+
+    const keysJql = issueKeys.map((k) => `"${k}"`).join(', ');
+    const jql = `key in (${keysJql}) ORDER BY created DESC`;
+
+    const authHeader = 'Basic ' + Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString('base64');
+    const searchUrl = `${jiraUrl}/rest/api/3/search/jql`;
+
+    const jiraResponse = await fetch(searchUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ jql, maxResults: 500, fields: ['summary', 'status'] }),
+    });
+
+    if (!jiraResponse.ok) {
+      const errorText = await jiraResponse.text();
+      console.error('Jira check-board-statuses search failed:', jiraResponse.status, errorText);
+      return res.status(400).json({ success: false, message: `Failed to query Jira: ${jiraResponse.status} ${jiraResponse.statusText}` });
+    }
+
+    const jiraData = await jiraResponse.json();
+    const jiraIssueMap = new Map<string, { jiraSummary: string; jiraStatus: string }>();
+    for (const issue of (jiraData.issues || [])) {
+      jiraIssueMap.set(String(issue.key), {
+        jiraSummary: String(issue.fields?.summary || ''),
+        jiraStatus: String(issue.fields?.status?.name || ''),
+      });
+    }
+
+    const tickets = issueKeys
+      .filter((key) => jiraIssueMap.has(key))
+      .map((key) => {
+        const task = issueKeyToTask.get(key)!;
+        const jira = jiraIssueMap.get(key)!;
+        return {
+          issueKey: key,
+          jiraSummary: jira.jiraSummary,
+          jiraStatus: jira.jiraStatus,
+          taskId: task.taskId,
+          taskName: task.taskName,
+          taskStatusId: task.taskStatusId,
+          taskStatusName: task.taskStatusName,
+        };
+      });
+
+    res.json({ success: true, tickets });
+  } catch (error: any) {
+    console.error('Check board statuses error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to check board statuses' });
+  }
+});
+
 /**
  * @swagger
  * /api/jira-integrations/organization/{organizationId}:

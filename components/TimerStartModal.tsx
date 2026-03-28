@@ -78,6 +78,14 @@ export default function TimerStartModal({
 }: TimerStartModalProps) {
   if (!isOpen) return null;
 
+  const callTypeOptions = [
+    { value: 'Teams', label: 'Teams' },
+    { value: 'Phone', label: 'Phone' },
+    { value: 'Zoom', label: 'Zoom' },
+    { value: 'Meet', label: 'Google Meet' },
+    { value: 'Other', label: 'Other' },
+  ];
+
   const canStart = timerMode === 'task'
     ? !!selectedTaskId && !!startTime
     : !!startTime;
@@ -161,17 +169,14 @@ export default function TimerStartModal({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Call Type</label>
-                    <select
+                    <SearchableSelect
                       value={callForm.callType}
-                      onChange={(event) => onCallFormChange({ callType: event.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="Teams">Teams</option>
-                      <option value="Phone">Phone</option>
-                      <option value="Zoom">Zoom</option>
-                      <option value="Meet">Google Meet</option>
-                      <option value="Other">Other</option>
-                    </select>
+                      onChange={(value) => onCallFormChange({ callType: value })}
+                      options={callTypeOptions}
+                      placeholder="Select Call Type"
+                      emptyText="No call types available"
+                      autoSelectSingleOption
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Organization</label>
