@@ -21,6 +21,7 @@ const router = Router();
 export const NOTIFICATION_TYPES = [
   { type: 'task_assigned', label: 'Task Assigned to You', category: 'Tasks' },
   { type: 'task_status', label: 'Task Status Changed', category: 'Tasks' },
+  { type: 'task_deleted', label: 'Task Deleted', category: 'Tasks' },
   { type: 'task_comment', label: 'New Comment on Task', category: 'Tasks' },
   { type: 'task_due_soon', label: 'Task Due Soon', category: 'Tasks' },
   { type: 'task_overdue', label: 'Task Overdue', category: 'Tasks' },

@@ -1465,7 +1465,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       for (const member of teamMembers) {
         await createNotification(
           member.UserId,
-          'project_updated',
+          'project_status',
           'Project Status Changed',
           `Project "${projectName || oldProject.ProjectName}" status changed from "${oldStatusName}" to "${newStatusName}"`,
           `/projects/${projectId}`,

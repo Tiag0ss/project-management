@@ -1762,7 +1762,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       if (oldTask.AssignedTo && oldTask.AssignedTo !== userId) {
         await createNotification(
           oldTask.AssignedTo,
-          'task_updated',
+          'task_status',
           'Task Priority Changed',
           `Task "${taskName || oldTask.TaskName}" priority changed from "${oldPriorityName}" to "${newPriorityName}"`,
           `/projects/${oldTask.ProjectId}`,
@@ -1772,7 +1772,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         try {
           const [uRows] = await pool.execute<RowDataPacket[]>('SELECT Email FROM Users WHERE Id = ?', [oldTask.AssignedTo]);
           if (uRows.length > 0) {
-            await sendNotificationEmail(oldTask.AssignedTo, uRows[0].Email, 'task_updated', 'Task Priority Changed',
+            await sendNotificationEmail(oldTask.AssignedTo, uRows[0].Email, 'task_status', 'Task Priority Changed',
               `Task "${taskName || oldTask.TaskName}" priority changed from "${oldPriorityName}" to "${newPriorityName}"`,
               `/projects/${oldTask.ProjectId}`);
           }
@@ -1783,7 +1783,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       if (oldTask.CreatedBy && oldTask.CreatedBy !== userId && oldTask.CreatedBy !== oldTask.AssignedTo) {
         await createNotification(
           oldTask.CreatedBy,
-          'task_updated',
+          'task_status',
           'Task Priority Changed',
           `Task "${taskName || oldTask.TaskName}" priority changed from "${oldPriorityName}" to "${newPriorityName}"`,
           `/projects/${oldTask.ProjectId}`,
@@ -1793,7 +1793,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         try {
           const [uRows] = await pool.execute<RowDataPacket[]>('SELECT Email FROM Users WHERE Id = ?', [oldTask.CreatedBy]);
           if (uRows.length > 0) {
-            await sendNotificationEmail(oldTask.CreatedBy, uRows[0].Email, 'task_updated', 'Task Priority Changed',
+            await sendNotificationEmail(oldTask.CreatedBy, uRows[0].Email, 'task_status', 'Task Priority Changed',
               `Task "${taskName || oldTask.TaskName}" priority changed from "${oldPriorityName}" to "${newPriorityName}"`,
               `/projects/${oldTask.ProjectId}`);
           }
@@ -1836,7 +1836,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       if (oldTask.AssignedTo && oldTask.AssignedTo !== userId) {
         await createNotification(
           oldTask.AssignedTo,
-          'task_updated',
+          'task_status',
           'Task Status Changed',
           `Task "${taskName || oldTask.TaskName}" status changed from "${oldStatusName}" to "${newStatusName}"`,
           `/projects/${oldTask.ProjectId}`,
@@ -1846,7 +1846,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         try {
           const [uRows] = await pool.execute<RowDataPacket[]>('SELECT Email FROM Users WHERE Id = ?', [oldTask.AssignedTo]);
           if (uRows.length > 0) {
-            await sendNotificationEmail(oldTask.AssignedTo, uRows[0].Email, 'task_updated', 'Task Status Changed',
+            await sendNotificationEmail(oldTask.AssignedTo, uRows[0].Email, 'task_status', 'Task Status Changed',
               `Task "${taskName || oldTask.TaskName}" status changed from "${oldStatusName}" to "${newStatusName}"`,
               `/projects/${oldTask.ProjectId}`);
           }
@@ -1857,7 +1857,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       if (oldTask.CreatedBy && oldTask.CreatedBy !== userId && oldTask.CreatedBy !== oldTask.AssignedTo) {
         await createNotification(
           oldTask.CreatedBy,
-          'task_updated',
+          'task_status',
           'Task Status Changed',
           `Task "${taskName || oldTask.TaskName}" status changed from "${oldStatusName}" to "${newStatusName}"`,
           `/projects/${oldTask.ProjectId}`,
@@ -1867,7 +1867,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         try {
           const [uRows] = await pool.execute<RowDataPacket[]>('SELECT Email FROM Users WHERE Id = ?', [oldTask.CreatedBy]);
           if (uRows.length > 0) {
-            await sendNotificationEmail(oldTask.CreatedBy, uRows[0].Email, 'task_updated', 'Task Status Changed',
+            await sendNotificationEmail(oldTask.CreatedBy, uRows[0].Email, 'task_status', 'Task Status Changed',
               `Task "${taskName || oldTask.TaskName}" status changed from "${oldStatusName}" to "${newStatusName}"`,
               `/projects/${oldTask.ProjectId}`);
           }

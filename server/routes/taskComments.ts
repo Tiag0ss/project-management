@@ -141,7 +141,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
             notifiedUsers.add(mentionedUserId);
             await createNotification(
               mentionedUserId,
-              'mention',
+              'task_mentioned',
               `You were mentioned in a comment`,
               `${commenterName} mentioned you in a comment on "${taskName}"`,
               projectId ? `/projects/${projectId}?task=${taskId}` : undefined,

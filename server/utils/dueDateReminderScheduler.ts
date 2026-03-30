@@ -228,7 +228,7 @@ export async function checkAndSendDueDateReminders(): Promise<void> {
         }
 
         // Check user preference
-        const wantsReminder = await shouldSendEmail(userId, 'due_date_reminder');
+        const wantsReminder = await shouldSendEmail(userId, 'task_due_soon');
         if (!wantsReminder) {
           continue;
         }

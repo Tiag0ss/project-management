@@ -1977,7 +1977,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         const totalHours = normalizedAllocations.reduce((sum: number, a: any) => sum + Number(a.hours || 0), 0);
         await createNotification(
           userId,
-          'task_allocated',
+          'allocation_assigned',
           'Task Allocated to You',
           `You have been allocated ${totalHours.toFixed(1)}h on task "${taskInfo[0].TaskName}" in project "${taskInfo[0].ProjectName}"`,
           `/projects/${taskInfo[0].ProjectId}`,
@@ -2782,7 +2782,7 @@ router.delete('/task/:taskId', authenticateToken, async (req: AuthRequest, res: 
         if (allocation.UserId !== req.user?.userId) {
           await createNotification(
             allocation.UserId,
-            'task_updated',
+            'allocation_assigned',
             'Task Allocation Removed',
             `Your allocation on task "${taskInfo[0].TaskName}" has been removed`,
             `/projects/${taskInfo[0].ProjectId}`,

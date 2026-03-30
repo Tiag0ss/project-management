@@ -2326,15 +2326,15 @@ export default function TaskDetailModal({
                     Status
                   </label>
                   <SearchableSelect
-                    value={formData.status ?? ''}
-                    onChange={(value) => setFormData({ ...formData, status: value ? parseInt(value, 10) : null })}
+                    value={typeof formData.status === 'number' ? formData.status : undefined}
+                    onChange={(value) => setFormData({ ...formData, status: value ?? null })}
                     options={taskStatuses.length > 0
                       ? taskStatuses
                         .sort((a, b) => a.SortOrder - b.SortOrder)
-                        .map((status) => ({ value: status.Id, label: status.StatusName }))
+                        .map((status) => ({ id: status.Id, label: status.StatusName }))
                       : []}
                     placeholder={taskStatuses.length > 0 ? 'Select a status' : 'No statuses available'}
-                    emptyText={taskStatuses.length > 0 ? 'Select a status' : 'No statuses available'}
+                    emptyMessage={taskStatuses.length > 0 ? 'Select a status' : 'No statuses available'}
                   />
                 </div>
 
@@ -2343,15 +2343,15 @@ export default function TaskDetailModal({
                     Priority
                   </label>
                   <SearchableSelect
-                    value={formData.priority ?? ''}
-                    onChange={(value) => setFormData({ ...formData, priority: value ? parseInt(value, 10) : null })}
+                    value={typeof formData.priority === 'number' ? formData.priority : undefined}
+                    onChange={(value) => setFormData({ ...formData, priority: value ?? null })}
                     options={taskPriorities.length > 0
                       ? taskPriorities
                         .sort((a, b) => a.SortOrder - b.SortOrder)
-                        .map((priority) => ({ value: priority.Id, label: priority.PriorityName }))
+                        .map((priority) => ({ id: priority.Id, label: priority.PriorityName || `Priority ${priority.Id}` }))
                       : []}
                     placeholder={taskPriorities.length > 0 ? 'Select a priority' : 'No priorities available'}
-                    emptyText={taskPriorities.length > 0 ? 'Select a priority' : 'No priorities available'}
+                    emptyMessage={taskPriorities.length > 0 ? 'Select a priority' : 'No priorities available'}
                   />
                 </div>
               </div>
@@ -2361,15 +2361,15 @@ export default function TaskDetailModal({
                   Task Type *
                 </label>
                 <SearchableSelect
-                  value={formData.taskType ?? ''}
-                  onChange={(value) => setFormData({ ...formData, taskType: value ? parseInt(value, 10) : null })}
+                  value={typeof formData.taskType === 'number' ? formData.taskType : undefined}
+                  onChange={(value) => setFormData({ ...formData, taskType: value ?? null })}
                   options={taskTypes.length > 0
                     ? taskTypes
                       .sort((a, b) => a.SortOrder - b.SortOrder)
-                      .map((type) => ({ value: type.Id, label: type.TypeName }))
+                      .map((type) => ({ id: type.Id, label: type.TypeName || `Type ${type.Id}` }))
                     : []}
                   placeholder={taskTypes.length > 0 ? 'Select a task type' : 'No task types available'}
-                  emptyText={taskTypes.length > 0 ? 'Select a task type' : 'No task types available'}
+                  emptyMessage={taskTypes.length > 0 ? 'Select a task type' : 'No task types available'}
                 />
               </div>
 
@@ -3504,17 +3504,17 @@ export default function TaskDetailModal({
                     User *
                   </label>
                   <SearchableSelect
-                    value={manualAllocationModal.userId || ''}
+                    value={typeof manualAllocationModal.userId === 'number' ? manualAllocationModal.userId : undefined}
                     onChange={(value) => setManualAllocationModal((prev) => ({
                       ...prev,
-                      userId: value ? parseInt(value, 10) : null,
+                      userId: value ?? null,
                     }))}
                     options={users.map((user) => ({
-                      value: user.Id,
+                      id: user.Id,
                       label: `${user.FirstName} ${user.LastName} (${user.Username})`,
                     }))}
                     placeholder="Select user..."
-                    emptyText="No users available"
+                    emptyMessage="No users available"
                   />
                 </div>
 
