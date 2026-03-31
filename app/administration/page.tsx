@@ -12,8 +12,9 @@ import FrontpageEditor from '@/components/admin/FrontpageEditor';
 import HolidaysManagement from '@/components/admin/HolidaysManagement';
 import CustomFieldsManagement from '@/components/admin/CustomFieldsManagement';
 import CustomTablesManagement from '@/components/admin/CustomTablesManagement';
+import ApiTokensManagement from '@/components/admin/ApiTokensManagement';
 
-type AdminTab = 'users' | 'permissions' | 'settings' | 'custom-fields' | 'custom-tables' | 'holidays' | 'logs' | 'frontpage';
+type AdminTab = 'users' | 'permissions' | 'settings' | 'custom-fields' | 'custom-tables' | 'holidays' | 'logs' | 'frontpage' | 'api-tokens';
 
 export default function AdministrationPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>('users');
@@ -149,6 +150,18 @@ export default function AdministrationPage() {
               <span className="text-xl">🏠</span>
               <span className="font-medium">Frontpage</span>
             </button>
+
+            <button
+              onClick={() => setActiveTab('api-tokens')}
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                activeTab === 'api-tokens'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <span className="text-xl">🔑</span>
+              <span className="font-medium">API Tokens</span>
+            </button>
           </nav>
         </aside>
 
@@ -170,6 +183,8 @@ export default function AdministrationPage() {
           {activeTab === 'logs' && <ActivityLogsManagement />}
           
           {activeTab === 'frontpage' && <FrontpageEditor />}
+
+          {activeTab === 'api-tokens' && <ApiTokensManagement />}
             </div>
           </div>
         </main>

@@ -1,0 +1,54 @@
+{
+  "TableName": "ApiTokens",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "TokenName",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "TokenHash",
+      "DataType": "varchar(64)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "TokenPrefix",
+      "DataType": "varchar(16)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "IsActive",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "LastUsedAt",
+      "DataType": "timestamp",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "ExpiresAt",
+      "DataType": "timestamp",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}

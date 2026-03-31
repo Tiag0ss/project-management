@@ -71,6 +71,7 @@ import pdfExportsRoutes from './routes/pdfExports';
 import planningImportRoutes from './routes/planningImport';
 import aiAssistantRoutes from './routes/aiAssistant';
 import outlookCalendarRoutes from './routes/outlookCalendar';
+import apiTokensRoutes from './routes/apiTokens';
 import reportsRoutes from './routes/reports';
 import { ensureAiAssistantViews } from './utils/aiAssistantViews';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
@@ -271,6 +272,7 @@ app.prepare().then(async () => {
   server.use('/api/pdf-exports', pdfExportsRoutes);
   server.use('/api/reports', reportsRoutes);
   server.use('/api/ai-assistant', aiAssistantRoutes);
+  server.use('/api/api-tokens', apiTokensRoutes);
 
   // Error handling middleware
   server.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

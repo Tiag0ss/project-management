@@ -1,10 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import logger from '../utils/logger';
-import { pool } from '../config/database';
+import { pool, RowDataPacket } from '../config/database';
 
 // CRITICAL: JWT_SECRET must be set in environment variables
 const JWT_SECRET = process.env.JWT_SECRET;
+
+const hashToken = (token: string): string =>
+  crypto.createHash('sha256').update(token).digest('hex');
 
 if (!JWT_SECRET) {
   logger.error('FATAL: JWT_SECRET is not defined in environment variables');
@@ -33,6 +37,53 @@ export async function authenticateToken(req: AuthRequest, res: Response, next: N
     });
   }
 
+  // --- API Token path (prefix: pt_) ---
+  if (token.startsWith('pt_')) {
+    try {
+      const tokenHash = hashToken(token);
+      const [rows] = await pool.execute<RowDataPacket[]>(
+        `SELECT t.Id, t.UserId, t.IsActive, t.ExpiresAt,
+                u.Username, u.Email, u.isAdmin, u.CustomerId
+         FROM ApiTokens t
+         INNER JOIN Users u ON t.UserId = u.Id
+         WHERE t.TokenHash = ?`,
+        [tokenHash]
+      );
+
+      if (!rows.length) {
+        logger.warn('API token authentication failed: token not found', { ip: req.ip });
+        return res.status(403).json({ success: false, message: 'Invalid API token' });
+      }
+
+      const row = rows[0];
+
+      if (!row.IsActive) {
+        return res.status(403).json({ success: false, message: 'API token has been revoked' });
+      }
+
+      if (row.ExpiresAt && new Date(row.ExpiresAt) < new Date()) {
+        return res.status(403).json({ success: false, message: 'API token has expired' });
+      }
+
+      // Update LastUsedAt asynchronously (fire-and-forget)
+      pool.execute('UPDATE ApiTokens SET LastUsedAt = CURRENT_TIMESTAMP WHERE Id = ?', [row.Id]).catch(() => {});
+
+      req.user = {
+        userId: row.UserId,
+        username: row.Username,
+        email: row.Email,
+        isAdmin: row.isAdmin === 1,
+        customerId: row.CustomerId || null,
+      };
+
+      return next();
+    } catch (err) {
+      logger.error('API token auth error:', err);
+      return res.status(500).json({ success: false, message: 'Authentication error' });
+    }
+  }
+
+  // --- JWT path ---
   try {
     const decoded = jwt.verify(token, JWT_SECRET!) as any;
     req.user = {
