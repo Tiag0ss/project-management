@@ -36,12 +36,20 @@ const getApprovalStatusForTask = async (taskId: number): Promise<'approved' | 'p
 
 const persistActiveTimer = async (timer: RowDataPacket, userId: number, overrideDescription?: string) => {
   const timerType = String(timer.TimerType || 'task');
-  const startedAt = new Date(timer.StartedAt);
+  // StartedAt is stored in UTC but comes back from MySQL as a plain string without timezone info
+  // (e.g. "2026-04-06 09:30:00"). new Date() would parse that as local time on non-UTC systems,
+  // shifting the value by the UTC offset. Force UTC by appending 'Z' when no offset is present.
+  const rawStartedAt = String(timer.StartedAt || '');
+  const startedAt = /Z$|[+-]\d{2}:\d{2}$/.test(rawStartedAt)
+    ? new Date(rawStartedAt)
+    : new Date(rawStartedAt.replace(' ', 'T') + 'Z');
   const now = new Date();
   const elapsedMs = now.getTime() - startedAt.getTime();
   const elapsedHours = Math.max(0.01, Math.round((elapsedMs / (1000 * 60 * 60)) * 100) / 100);
   const elapsedMinutes = Math.max(1, Math.round(elapsedMs / 60000));
-  const workDate = startedAt.toISOString().split('T')[0];
+  // Use local date/time (not UTC) for workDate/startTime/endTime so they reflect what the user sees
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const workDate = `${startedAt.getFullYear()}-${pad(startedAt.getMonth() + 1)}-${pad(startedAt.getDate())}`;
   const startTime = startedAt.toTimeString().slice(0, 5);
   const endTime = now.toTimeString().slice(0, 5);
   const finalDescription = overrideDescription || timer.Description || '';

@@ -499,7 +499,12 @@ export default function TaskDetailModal({
   useEffect(() => {
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     if (activeTimer && task?.Id && activeTimer.TaskId === task.Id) {
-      const update = () => setTimerSeconds(Math.floor((Date.now() - new Date(activeTimer.StartedAt).getTime()) / 1000));
+      const toUtcMs = (s: string) => {
+        if (!s) return Date.now();
+        if (/Z$|[+-]\d{2}:\d{2}$/.test(s)) return new Date(s).getTime();
+        return new Date(s.replace(' ', 'T') + 'Z').getTime();
+      };
+      const update = () => setTimerSeconds(Math.max(0, Math.floor((Date.now() - toUtcMs(activeTimer.StartedAt)) / 1000)));
       update();
       timerIntervalRef.current = setInterval(update, 1000);
     }

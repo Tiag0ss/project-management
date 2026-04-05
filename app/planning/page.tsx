@@ -479,6 +479,7 @@ export default function PlanningPage() {
     show: boolean;
     milestone: ProjectMilestone | null;
     projectName: string;
+    customerName: string;
     name: string;
     description: string;
     dueDate: string;
@@ -492,6 +493,7 @@ export default function PlanningPage() {
     show: false,
     milestone: null,
     projectName: '',
+    customerName: '',
     name: '',
     description: '',
     dueDate: '',
@@ -503,6 +505,7 @@ export default function PlanningPage() {
     isDeleting: false,
   });
   const [showOverdueDetails, setShowOverdueDetails] = useState(false);
+  const [activeTimerTaskId, setActiveTimerTaskId] = useState<number | null>(null);
 
   const showAlert = (title: string, message: string) => {
     const normalizedTitle = title.trim().toLowerCase();
@@ -595,6 +598,21 @@ export default function PlanningPage() {
     return roundToPlanningStep(totalHours / rangeDays);
   }, []);
 
+  const activeTimerGlowIds = useMemo(() => {
+    if (activeTimerTaskId === null) return new Set<number>();
+    const glowIds = new Set<number>();
+    glowIds.add(activeTimerTaskId);
+    // Walk up the parent chain so parent task bars also glow
+    const parentMap = new Map(tasks.map((t) => [t.Id, t.ParentTaskId ?? null]));
+    let cursor: number | null = activeTimerTaskId;
+    while (cursor !== null) {
+      const parent: number | null = parentMap.get(cursor) ?? null;
+      if (parent !== null) glowIds.add(parent);
+      cursor = parent;
+    }
+    return glowIds;
+  }, [activeTimerTaskId, tasks]);
+
   const allocationHoursByHeaderId = useMemo(() => {
     const totals = new Map<number, number>();
     for (const allocation of allAllocations) {
@@ -617,6 +635,7 @@ export default function PlanningPage() {
       show: false,
       milestone: null,
       projectName: '',
+      customerName: '',
       name: '',
       description: '',
       dueDate: '',
@@ -650,6 +669,7 @@ export default function PlanningPage() {
       show: true,
       milestone,
       projectName: project?.ProjectName || 'Unknown Project',
+      customerName: project?.CustomerName || '',
       name: milestone.Name || '',
       description: milestone.Description || '',
       dueDate: milestone.DueDate ? String(milestone.DueDate).split('T')[0] : '',
@@ -844,6 +864,32 @@ export default function PlanningPage() {
       loadData();
     }
   }, [user, isLoading, router, token]);
+
+  useEffect(() => {
+    if (!token) return;
+    const fetchActiveTimer = async () => {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/timers/active`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setActiveTimerTaskId(data?.timer?.TaskId ?? null);
+        } else {
+          setActiveTimerTaskId(null);
+        }
+      } catch {
+        // silently ignore
+      }
+    };
+    fetchActiveTimer();
+    const interval = setInterval(fetchActiveTimer, 30000);
+    window.addEventListener('timer-changed', fetchActiveTimer);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('timer-changed', fetchActiveTimer);
+    };
+  }, [token]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -7779,21 +7825,32 @@ export default function PlanningPage() {
                               column.isWeekend
                                 ? 'bg-gray-200 dark:bg-gray-600/70'
                                 : ''
-                            } ${useAnnualStyleDensity && column.isMonthStart ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                            } ${useAnnualStyleDensity && column.isMonthStart ? 'bg-blue-50 dark:bg-blue-900/20' : ''} ${
+                              idx === todayIndex ? 'border-l-2 border-l-red-400/70 dark:border-l-red-400/60' : ''
+                            }`}
                             style={useFixedPixelColumns ? { overflow: 'hidden', width: `${dayColumnWidthPx}px` } : { overflow: 'hidden' }}
                           >
-                            {idx === todayIndex && (
-                              <div className="text-[9px] font-semibold text-blue-700 dark:text-blue-300 leading-tight mb-0.5 truncate">
-                                Today
-                              </div>
-                            )}
                             {column.header && (
                               <>
-                                <div className="font-semibold text-gray-900 dark:text-white leading-tight truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>
-                                  {column.header}
+                                <div
+                                  className={`font-semibold leading-tight truncate flex items-center justify-center mx-auto ${
+                                    idx === todayIndex
+                                      ? 'bg-red-500 text-white rounded-full min-w-[18px] w-auto px-1 h-[18px] text-[10px]'
+                                      : 'text-gray-900 dark:text-white'
+                                  }`}
+                                  style={{ fontSize: useAnnualStyleDensity && idx !== todayIndex ? '9px' : undefined }}
+                                >
+                                  {idx === todayIndex ? column.start.getDate() : column.header}
                                 </div>
                                 {column.subheader && (
-                                  <div className="text-gray-600 dark:text-gray-400 leading-tight truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>
+                                  <div
+                                    className={`leading-tight truncate ${
+                                      idx === todayIndex
+                                        ? 'text-red-500 dark:text-red-400 font-semibold'
+                                        : 'text-gray-600 dark:text-gray-400'
+                                    }`}
+                                    style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}
+                                  >
                                     {column.subheader}
                                   </div>
                                 )}
@@ -7821,7 +7878,7 @@ export default function PlanningPage() {
                           className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} border-r border-gray-200 dark:border-gray-700 ${
                             column.isWeekend ? 'bg-gray-100 dark:bg-gray-700/45' : ''
                           } ${
-                            idx === todayIndex ? 'bg-blue-100/70 dark:bg-blue-800/25 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''
+                            idx === todayIndex ? 'border-l-2 border-l-red-400/70 dark:border-l-red-400/60' : ''
                           }`}
                           style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
                         />
@@ -7869,7 +7926,14 @@ export default function PlanningPage() {
                             backgroundColor: milestoneColor,
                             opacity: isCompletedMilestone ? 0.7 : 0.9,
                           }}
-                          title={`Click to edit milestone\n\n${projectName}\n${milestone.Name}\nType: ${milestone.MilestoneTypeName || 'No type'}\nDue: ${new Date(`${dueDate}T12:00:00`).toLocaleDateString()}${isCompletedMilestone ? '\nStatus: Completed' : isOverdueMilestone ? `\nStatus: Open (Overdue by ${Math.max(1, Math.round((today.getTime() - new Date(`${dueDate}T00:00:00`).getTime()) / 86400000))} days)` : '\nStatus: Open'}`}
+                          title={(() => {
+                            const customerLabel = projects.find((p) => Number(p.Id) === Number(milestone.ProjectId))?.CustomerName;
+                            const lines = ['Click to edit milestone', '', projectName];
+                            if (customerLabel) lines.push(`Customer: ${customerLabel}`);
+                            lines.push(milestone.Name, `Type: ${milestone.MilestoneTypeName || 'No type'}`, `Due: ${new Date(`${dueDate}T12:00:00`).toLocaleDateString()}`);
+                            lines.push(isCompletedMilestone ? 'Status: Completed' : isOverdueMilestone ? `Status: Open (Overdue by ${Math.max(1, Math.round((today.getTime() - new Date(`${dueDate}T00:00:00`).getTime()) / 86400000))} days)` : 'Status: Open');
+                            return lines.join('\n');
+                          })()}
                         >
                           <span className="truncate inline-flex items-center gap-1">
                             <span className="inline-flex items-center">{renderMilestoneTypeSvg(milestone.MilestoneTypeIconSvg, 'w-3 h-3')}</span>
@@ -7905,7 +7969,7 @@ export default function PlanningPage() {
                             className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} border-r border-gray-200 dark:border-gray-700 relative ${
                               column.isWeekend ? 'bg-gray-100 dark:bg-gray-700/45' : ''
                             } ${
-                              idx === todayIndex ? 'bg-blue-100/85 dark:bg-blue-800/30 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''
+                              idx === todayIndex ? 'border-l-2 border-l-red-400/70 dark:border-l-red-400/60' : ''
                             }`}
                             style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
                             onDragOver={handleDragOver}
@@ -8006,7 +8070,7 @@ export default function PlanningPage() {
                               }
                               void handleTaskClick(parentTask);
                             }}
-                            className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(parentTask) : ''} opacity-75 hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white text-xs px-2 transition-all ${isResizingTask ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''}`}
+                            className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(parentTask) : ''} opacity-75 hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white text-xs px-2 transition-all ${isResizingTask ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''} ${activeTimerGlowIds.has(parentTask.Id) ? 'timer-active-glow' : ''}`}
                             style={{
                               left: previewBarStyle?.left || (position ? position.left : '0%'),
                               width: previewBarStyle?.width || (position ? position.width : `${(Math.min(5, Math.max(1, timelineColumns.length)) / Math.max(1, timelineColumns.length)) * 100}%`),
@@ -8428,7 +8492,7 @@ export default function PlanningPage() {
                                     : summary.isWeekend
                                     ? 'bg-gray-100 dark:bg-gray-700/45'
                                     : ''
-                                } ${idx === todayIndex ? 'bg-blue-100/60 dark:bg-blue-800/20 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
+                                } ${idx === todayIndex ? 'border-l-2 border-l-red-400/70 dark:border-l-red-400/60' : ''}`}
                                 style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
                                 onDragEnter={(e) => {
                                   if (!draggedTask || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) return;
@@ -8565,7 +8629,7 @@ export default function PlanningPage() {
                           const plannedHours = task.PlannedHours || 0;
                           const workedHours = task.WorkedHours || 0;
                           const remainingHours = Math.max(0, estimatedHours - workedHours);
-                          const isOverPlanned = plannedHours > remainingHours && remainingHours > 0;
+                          const isOverPlanned = plannedHours > estimatedHours && estimatedHours > 0;
                           const isUnderPlanned = plannedHours < remainingHours && plannedHours > 0;
                           const planningCoverage = remainingHours > 0
                             ? `${((plannedHours / remainingHours) * 100).toFixed(0)}% of remaining`
@@ -8761,7 +8825,7 @@ export default function PlanningPage() {
                                       }
                                       void handleTaskClick(task);
                                     }}
-                                    className={`absolute ${subtaskHeight} rounded ${segmentBaseColorClass} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${canDragTaskSegment ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''} ${isResizingThisSegment ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''}`}
+                                    className={`absolute ${subtaskHeight} rounded ${segmentBaseColorClass} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${canDragTaskSegment ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''} ${isResizingThisSegment ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''} ${activeTimerGlowIds.has(task.Id) ? 'timer-active-glow' : ''}`}
                                     style={{
                                       left: segmentPreviewStyle?.left || segmentPosition.left,
                                       width: segmentPreviewStyle?.width || segmentPosition.width,
@@ -8997,7 +9061,7 @@ export default function PlanningPage() {
                                     : summary.isWeekend
                                   ? 'bg-gray-200 dark:bg-gray-600/65'
                                   : ''
-                              } ${idx === todayIndex ? 'bg-blue-100/70 dark:bg-blue-800/25 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
+                              } ${idx === todayIndex ? 'border-l-2 border-l-red-400/70 dark:border-l-red-400/60' : ''}`}
                               title={isOverAllocated ? 'Over allocated day: planned hours exceed configured capacity' : isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
                               style={useFixedPixelColumns ? { overflow: 'hidden', width: `${dayColumnWidthPx}px` } : { overflow: 'hidden' }}
                             >
@@ -9175,7 +9239,7 @@ export default function PlanningPage() {
                             key={idx}
                             className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} border-r border-gray-200 dark:border-gray-700 ${
                               column.isWeekend ? 'bg-gray-100 dark:bg-gray-700/45' : ''
-                            } ${idx === todayIndex ? 'bg-blue-100/60 dark:bg-blue-800/20 ring-1 ring-inset ring-blue-300/90 dark:ring-blue-400/80' : ''}`}
+                            } ${idx === todayIndex ? 'border-l-2 border-l-red-400/70 dark:border-l-red-400/60' : ''}`}
                             style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
                           />
                         ))}
@@ -9711,7 +9775,7 @@ export default function PlanningPage() {
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Milestone</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{milestoneEditor.projectName}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{milestoneEditor.projectName}{milestoneEditor.customerName ? <span className="ml-2 text-gray-400 dark:text-gray-500">— {milestoneEditor.customerName}</span> : null}</p>
                 </div>
                 <button
                   onClick={closeMilestoneEditor}

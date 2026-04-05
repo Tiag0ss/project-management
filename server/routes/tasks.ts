@@ -2196,7 +2196,7 @@ router.post('/reorder-kanban', authenticateToken, async (req: AuthRequest, res: 
     }
 
     const [taskRows] = await pool.execute<RowDataPacket[]>(
-      `SELECT t.Id, t.TaskName, t.Status, t.Description, t.AssignedTo, t.DueDate,
+      `SELECT t.Id, t.TaskName, t.Status, t.DisplayOrder, t.Description, t.AssignedTo, t.DueDate,
               t.EstimatedHours, t.StoryPoints, t.PlannedStartDate, t.PlannedEndDate,
               p.OrganizationId
        FROM Tasks t
@@ -2318,6 +2318,33 @@ router.post('/reorder-kanban', authenticateToken, async (req: AuthRequest, res: 
        WHERE Id IN (${placeholders})`,
       [...orderParams, ...statusParams, ...uniqueIds]
     );
+
+    for (const update of normalizedUpdates) {
+      const previousStatus = Number(update.currentTask.Status);
+      const previousDisplayOrder = Number(update.currentTask.DisplayOrder || 0);
+
+      if (previousStatus !== update.status) {
+        await createTaskHistory(
+          update.taskId,
+          userId!,
+          'updated',
+          'Status',
+          String(previousStatus),
+          String(update.status)
+        );
+      }
+
+      if (previousDisplayOrder !== update.displayOrder) {
+        await createTaskHistory(
+          update.taskId,
+          userId!,
+          'updated',
+          'DisplayOrder',
+          String(previousDisplayOrder),
+          String(update.displayOrder)
+        );
+      }
+    }
 
     res.json({ success: true });
   } catch (error) {

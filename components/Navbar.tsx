@@ -460,7 +460,14 @@ export default function Navbar() {
   useEffect(() => {
     if (navTimerTickRef.current) clearInterval(navTimerTickRef.current);
     if (navTimer) {
-      const tick = () => setNavTimerSeconds(Math.floor((Date.now() - new Date(navTimer.StartedAt).getTime()) / 1000));
+      // StartedAt is stored as UTC in the DB but returned without timezone info (e.g. "2026-04-06 21:30:00").
+      // Append 'Z' to force UTC parsing; otherwise the browser treats it as local time, causing a skewed elapsed time.
+      const toUtcMs = (s: string) => {
+        if (!s) return Date.now();
+        if (/Z$|[+-]\d{2}:\d{2}$/.test(s)) return new Date(s).getTime();
+        return new Date(s.replace(' ', 'T') + 'Z').getTime();
+      };
+      const tick = () => setNavTimerSeconds(Math.max(0, Math.floor((Date.now() - toUtcMs(navTimer.StartedAt)) / 1000)));
       tick();
       navTimerTickRef.current = setInterval(tick, 1000);
     } else {

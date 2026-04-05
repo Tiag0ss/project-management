@@ -81,3 +81,14 @@ table.grid-density-compact td {
   padding-top: 0.5rem !important;
   padding-bottom: 0.5rem !important;
 }
+
+@keyframes timer-glow-pulse {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(74, 222, 128, 0.35); }
+  50%       { box-shadow: 0 0 10px 4px rgba(74, 222, 128, 0.75); }
+}
+
+.timer-active-glow {
+  outline: 2px solid rgba(74, 222, 128, 0.85);
+  outline-offset: -1px;
+  animation: timer-glow-pulse 1.6s ease-in-out infinite;
+}

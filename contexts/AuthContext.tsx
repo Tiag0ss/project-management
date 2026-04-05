@@ -77,8 +77,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const storedUser = localStorage.getItem('authUser');
 
       if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
+        // Decode token and check if it's expired before restoring session
+        try {
+          const payload = JSON.parse(atob(storedToken.split('.')[1]));
+          const isExpired = payload.exp && payload.exp * 1000 < Date.now();
+          if (isExpired) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('authUser');
+            const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/install'];
+            const isPublicPath = publicPaths.some(p => window.location.pathname.startsWith(p));
+            if (!isPublicPath) {
+              window.location.href = '/login';
+              return;
+            }
+          } else {
+            setToken(storedToken);
+            setUser(JSON.parse(storedUser));
+          }
+        } catch {
+          // If token is malformed, clear it
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('authUser');
+        }
       }
 
       setIsLoading(false);
@@ -98,20 +118,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(refreshInterval);
   }, [token]);
 
-  // Check for auto-refreshed token in API responses
+  // Check for auto-refreshed token in API responses, and handle 401 (token expired)
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // Intercept fetch to check for X-New-Token header
     const originalFetch = window.fetch;
     window.fetch = async (...args) => {
       const response = await originalFetch(...args);
-      
+
       const newToken = response.headers.get('X-New-Token');
       if (newToken) {
         updateToken(newToken);
       }
-      
+
+      // If the server returns 401 and the user was logged in, the token expired
+      if (response.status === 401) {
+        const hasStoredToken = localStorage.getItem('authToken');
+        if (hasStoredToken) {
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('authUser');
+          setToken(null);
+          setUser(null);
+
+          const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/install'];
+          const isPublicPath = publicPaths.some(p => window.location.pathname.startsWith(p));
+          if (!isPublicPath) {
+            window.location.href = '/login';
+          }
+        }
+      }
+
       return response;
     };
 

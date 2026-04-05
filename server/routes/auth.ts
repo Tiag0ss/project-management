@@ -595,13 +595,14 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
         const expiresAt = new Date(Date.now() + PASSWORD_RESET_TOKEN_TTL_HOURS * 60 * 60 * 1000);
 
         await pool.execute<ResultSetHeader>(
-          'UPDATE PasswordResetTokens SET UsedAt = NOW() WHERE UserId = ? AND UsedAt IS NULL',
+          'UPDATE PasswordResetTokens SET UsedAt = UTC_TIMESTAMP() WHERE UserId = ? AND UsedAt IS NULL',
           [user.Id]
         );
 
         await pool.execute<ResultSetHeader>(
           `INSERT INTO PasswordResetTokens (UserId, TokenHash, ExpiresAt)
            VALUES (?, ?, ?)`,
+
           [user.Id, tokenHash, expiresAt]
         );
 
@@ -657,7 +658,7 @@ router.get('/reset-password/validate', async (req: Request, res: Response) => {
     const [tokens] = await pool.execute<RowDataPacket[]>(
       `SELECT Id
        FROM PasswordResetTokens
-       WHERE TokenHash = ? AND UsedAt IS NULL AND ExpiresAt > NOW()
+       WHERE TokenHash = ? AND UsedAt IS NULL AND ExpiresAt > UTC_TIMESTAMP()
        LIMIT 1`,
       [tokenHash]
     );
@@ -694,7 +695,7 @@ router.post('/reset-password', async (req: Request, res: Response) => {
     const [tokens] = await pool.execute<RowDataPacket[]>(
       `SELECT Id, UserId
        FROM PasswordResetTokens
-       WHERE TokenHash = ? AND UsedAt IS NULL AND ExpiresAt > NOW()
+       WHERE TokenHash = ? AND UsedAt IS NULL AND ExpiresAt > UTC_TIMESTAMP()
        LIMIT 1`,
       [tokenHash]
     );
@@ -715,12 +716,12 @@ router.post('/reset-password', async (req: Request, res: Response) => {
     );
 
     await pool.execute<ResultSetHeader>(
-      'UPDATE PasswordResetTokens SET UsedAt = NOW() WHERE Id = ?',
+      'UPDATE PasswordResetTokens SET UsedAt = UTC_TIMESTAMP() WHERE Id = ?',
       [resetTokenRow.Id]
     );
 
     await pool.execute<ResultSetHeader>(
-      'UPDATE PasswordResetTokens SET UsedAt = NOW() WHERE UserId = ? AND UsedAt IS NULL',
+      'UPDATE PasswordResetTokens SET UsedAt = UTC_TIMESTAMP() WHERE UserId = ? AND UsedAt IS NULL',
       [resetTokenRow.UserId]
     );
 
