@@ -16,6 +16,7 @@ This CSV template allows you to import multiple tasks into a project at once.
 | **Description** | No | Text | Detailed description of the task | "Create login form with email and password validation" |
 | **Status** | No | Text | Task status (default: "To Do") | To Do, In Progress, Done |
 | **Priority** | No | Text | Task priority (default: "Medium") | Low, Medium, High, Critical |
+| **TaskType** | No | Text | Task type name as defined in your organization | Task, Bug, Feature |
 | **AssignedToUsername** | No | Text | Username of the assigned user | john.doe |
 | **DueDate** | No | Date | Due date in YYYY-MM-DD format | 2026-03-15 |
 | **EstimatedHours** | No | Decimal | Estimated hours (max 2 decimal places) | 8.5 |

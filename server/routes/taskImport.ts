@@ -18,6 +18,7 @@ interface TaskImportRow {
   Description?: string;
   Status?: string;
   Priority?: string;
+  TaskType?: string;
   AssignedToUsername?: string;
   DueDate?: string;
   EstimatedHours?: string;
@@ -212,22 +213,24 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
         }
       }
 
-      // Status/Priority are already mapped to numeric IDs by the frontend
+      // Status/Priority/TaskType are already mapped to numeric IDs by the frontend
       const statusId = task.Status ? (isNaN(parseInt(String(task.Status))) ? null : parseInt(String(task.Status))) : null;
       const priorityId = task.Priority ? (isNaN(parseInt(String(task.Priority))) ? null : parseInt(String(task.Priority))) : null;
+      const taskTypeId = task.TaskType ? (isNaN(parseInt(String(task.TaskType))) ? null : parseInt(String(task.TaskType))) : null;
 
       const [insertResult] = await connection.execute<ResultSetHeader>(
         `INSERT INTO Tasks (
-          ProjectId, TaskName, Description, Status, Priority,
+          ProjectId, TaskName, Description, Status, Priority, TaskType,
           AssignedTo, DueDate, EstimatedHours,
           PlannedStartDate, PlannedEndDate, CreatedBy, DisplayOrder
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           projectId,
           task.TaskName,
           task.Description || null,
           statusId,
           priorityId,
+          taskTypeId,
           assignedTo,
           task.DueDate || null,
           task.EstimatedHours ? parseFloat(task.EstimatedHours) : null,

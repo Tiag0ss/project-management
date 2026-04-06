@@ -1,6 +1,7 @@
 'use client';
 
 import { getApiUrl } from '@/lib/api/config';
+import { parseCsv } from '@/lib/csv';
 
 import React, { useState, useEffect, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
@@ -57,6 +58,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [importPriorityMapping, setImportPriorityMapping] = useState<Record<string, string>>({});
   const [importAvailStatuses, setImportAvailStatuses] = useState<StatusValue[]>([]);
   const [importAvailPriorities, setImportAvailPriorities] = useState<StatusValue[]>([]);
+  const [csvUniqueTaskTypes, setCsvUniqueTaskTypes] = useState<string[]>([]);
+  const [importTaskTypeMapping, setImportTaskTypeMapping] = useState<Record<string, string>>({});
+  const [importAvailTaskTypes, setImportAvailTaskTypes] = useState<StatusValue[]>([]);
+  const [importDefaultTaskType, setImportDefaultTaskType] = useState<string>('');
   const [showJiraImportModal, setShowJiraImportModal] = useState(false);
   const [jiraIssues, setJiraIssues] = useState<any[]>([]);
   const [selectedIssues, setSelectedIssues] = useState<Set<string>>(new Set());
@@ -508,20 +513,25 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     setImportProgress('');
     setCsvUniqueStatuses([]);
     setCsvUniquePriorities([]);
+    setCsvUniqueTaskTypes([]);
     setImportStatusMapping({});
     setImportPriorityMapping({});
+    setImportTaskTypeMapping({});
+    setImportDefaultTaskType('');
 
-    // Load available statuses and priorities for the project's organization
+    // Load available statuses, priorities and task types for the project's organization
     if (project?.OrganizationId && token) {
       try {
-        const [statusRes, priorityRes] = await Promise.all([
+        const [statusRes, priorityRes, typeRes] = await Promise.all([
           statusValuesApi.getTaskStatuses(project.OrganizationId, token),
           statusValuesApi.getTaskPriorities(project.OrganizationId, token),
+          statusValuesApi.getTaskTypes(project.OrganizationId, token),
         ]);
         setImportAvailStatuses(statusRes.statuses || []);
         setImportAvailPriorities(priorityRes.priorities || []);
+        setImportAvailTaskTypes(typeRes.types || []);
       } catch (err) {
-        console.error('Failed to load statuses/priorities for import:', err);
+        console.error('Failed to load statuses/priorities/types for import:', err);
       }
     }
   };
@@ -536,38 +546,31 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     setImportProgress('Reading file...');
     setCsvUniqueStatuses([]);
     setCsvUniquePriorities([]);
+    setCsvUniqueTaskTypes([]);
     setImportStatusMapping({});
     setImportPriorityMapping({});
+    setImportTaskTypeMapping({});
+    setImportDefaultTaskType('');
 
     try {
       const text = await file.text();
-      const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+      const allRows = parseCsv(text);
 
-      if (lines.length < 2) {
+      if (allRows.length === 0) {
         setImportProgress('Error: File is empty or invalid');
         return;
       }
 
-      const headers = lines[0].split(',').map(h => h.trim());
-
-      // Parse ALL rows
-      const allRows = lines.slice(1).map(line => {
-        const values = line.split(',');
-        const obj: any = {};
-        headers.forEach((header, idx) => {
-          obj[header] = values[idx]?.trim() || '';
-        });
-        return obj;
-      });
-
       setImportAllRows(allRows);
       setImportPreview(allRows.slice(0, 5));
 
-      // Extract unique non-empty Status and Priority values
+      // Extract unique non-empty Status, Priority and TaskType values
       const statuses = Array.from(new Set(allRows.map(r => r.Status).filter(Boolean))) as string[];
       const priorities = Array.from(new Set(allRows.map(r => r.Priority).filter(Boolean))) as string[];
+      const taskTypes = Array.from(new Set(allRows.map(r => r.TaskType).filter(Boolean))) as string[];
       setCsvUniqueStatuses(statuses);
       setCsvUniquePriorities(priorities);
+      setCsvUniqueTaskTypes(taskTypes);
 
       // Auto-map: find exact match (case-insensitive) for each unique value
       const autoStatusMap: Record<string, string> = {};
@@ -588,7 +591,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       });
       setImportPriorityMapping(autoPriorityMap);
 
-      setImportProgress(`Ready to import ${lines.length - 1} tasks`);
+      const autoTypeMap: Record<string, string> = {};
+      taskTypes.forEach(csvVal => {
+        const match = importAvailTaskTypes.find(t =>
+          (t.TypeName || t.StatusName).toLowerCase().trim() === csvVal.toLowerCase().trim()
+        );
+        autoTypeMap[csvVal] = match ? String(match.Id) : '';
+      });
+      setImportTaskTypeMapping(autoTypeMap);
+
+      setImportProgress(`Ready to import ${allRows.length} tasks`);
     } catch (err) {
       setImportProgress('Error reading file');
       console.error(err);
@@ -596,18 +608,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const parseCSV = (text: string) => {
-    const lines = text.split('\n').map(line => line.trim()).filter(line => line);
-    if (lines.length < 2) return [];
-
-    const headers = lines[0].split(',').map(h => h.trim());
-    return lines.slice(1).map(line => {
-      const values = line.split(',');
-      const obj: any = {};
-      headers.forEach((header, idx) => {
-        obj[header] = values[idx]?.trim() || '';
-      });
-      return obj;
-    });
+    return parseCsv(text);
   };
 
   const handleImport = async () => {
@@ -619,15 +620,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       const text = await importFile.text();
       const parsed = parseCSV(text);
 
-      // Apply status/priority mappings and add ProjectId
+      // Apply status/priority/type mappings and add ProjectId
       const tasksWithProject = (importAllRows.length > 0 ? importAllRows : parsed).map(task => {
         const mappedStatus = task.Status ? importStatusMapping[task.Status] : undefined;
         const mappedPriority = task.Priority ? importPriorityMapping[task.Priority] : undefined;
+        const mappedTaskType = task.TaskType ? importTaskTypeMapping[task.TaskType] : undefined;
         return {
           ...task,
           ProjectId: projectId,
           Status: mappedStatus || '',
           Priority: mappedPriority || '',
+          TaskType: mappedTaskType || importDefaultTaskType || '',
         };
       });
 
@@ -3959,6 +3962,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         <tr>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Task Name</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Assigned To</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Type (CSV)</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Status (CSV)</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Priority (CSV)</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300">Estimated</th>
@@ -3969,6 +3973,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                           <tr key={idx} className="bg-white dark:bg-gray-800">
                             <td className="px-3 py-2 text-sm text-gray-900 dark:text-white">{row.TaskName}</td>
                             <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.AssignedToUsername || '-'}</td>
+                            <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.TaskType || '-'}</td>
                             <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.Status || '-'}</td>
                             <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.Priority || '-'}</td>
                             <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{row.EstimatedHours || '-'}h</td>
@@ -4050,6 +4055,68 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         )}
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Task Type Mapping */}
+              {importAvailTaskTypes.length > 0 && (
+                <div className="mb-5 p-4 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg">
+                  <h3 className="font-semibold text-gray-900 dark:text-white mb-3">🏷️ Task Type</h3>
+                  {csvUniqueTaskTypes.length > 0 ? (
+                    <>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                        Map each task type from your CSV to an existing type. Unmapped values will use the default below.
+                      </p>
+                      <div className="space-y-2 mb-3">
+                        {csvUniqueTaskTypes.map(csvVal => (
+                          <div key={csvVal} className="flex items-center gap-3">
+                            <span className="w-40 text-sm font-medium text-gray-700 dark:text-gray-300 truncate" title={csvVal}>
+                              <span className="px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded text-xs">{csvVal}</span>
+                            </span>
+                            <span className="text-gray-400">→</span>
+                            <select
+                              value={importTaskTypeMapping[csvVal] || ''}
+                              onChange={e => setImportTaskTypeMapping(prev => ({ ...prev, [csvVal]: e.target.value }))}
+                              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            >
+                              <option value="">— use default below —</option>
+                              {importAvailTaskTypes.map(t => (
+                                <option key={t.Id} value={String(t.Id)}>
+                                  {t.TypeName || t.StatusName}
+                                </option>
+                              ))}
+                            </select>
+                            {importTaskTypeMapping[csvVal] ? (
+                              <span className="text-green-500 text-sm">✓</span>
+                            ) : (
+                              <span className="text-gray-400 text-sm">○</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                      No <code className="bg-gray-200 dark:bg-gray-600 px-1 rounded">TaskType</code> column found in CSV. You can set a default type to apply to all imported tasks.
+                    </p>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                      {csvUniqueTaskTypes.length > 0 ? 'Default (for unmapped):' : 'Apply to all tasks:'}
+                    </span>
+                    <select
+                      value={importDefaultTaskType}
+                      onChange={e => setImportDefaultTaskType(e.target.value)}
+                      className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="">— leave blank —</option>
+                      {importAvailTaskTypes.map(t => (
+                        <option key={t.Id} value={String(t.Id)}>
+                          {t.TypeName || t.StatusName}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               )}
