@@ -7,6 +7,7 @@ import Navbar from '@/components/Navbar';
 import { getApiUrl } from '@/lib/api/config';
 import { useRouter } from 'next/navigation';
 import RichTextEditor from '@/components/RichTextEditor';
+import { useFormatHours } from '@/lib/useFormatHours';
 
 interface PendingEntry {
   Id: number;
@@ -59,15 +60,6 @@ interface VacationTeamMember {
   RejectedDays?: number;
 }
 
-const decimalHoursToHMS = (hours: number): string => {
-  const totalSeconds = Math.round(Math.abs(hours) * 3600);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  const sign = hours < 0 ? '-' : '';
-  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-};
-
 const normalizeDateString = (dateValue: any): string => {
   if (dateValue instanceof Date) return dateValue.toISOString().split('T')[0];
   return String(dateValue).split('T')[0];
@@ -96,6 +88,7 @@ const getApprovalBadge = (status?: string) => {
 };
 
 export default function ApprovalsPage() {
+  const decimalHoursToHMS = useFormatHours();
   const { user, token } = useAuth();
   const { permissions } = usePermissions();
   const router = useRouter();

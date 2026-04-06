@@ -99,7 +99,7 @@ const TIMEZONES = [
 ];
 
 export default function ProfilePage() {
-  const { user, token, isLoading: authLoading, isCustomerUser } = useAuth();
+  const { user, token, isLoading: authLoading, isCustomerUser, updateUser } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'info' | 'attachments' | 'workHours' | 'security' | 'emailAlerts' | 'recurringTasks' | 'vacations'>('info');
   const [attachments, setAttachments] = useState<any[]>([]);
@@ -118,6 +118,7 @@ export default function ProfilePage() {
     navbarLeftMode: 'fixed',
     navbarLeftCollapsed: false,
     dashboardCalendarInOverview: true,
+    hoursDisplayFormat: 'hms',
   });
   const [profileRegions, setProfileRegions] = useState<{ code: string; name: string }[]>([]);
   
@@ -287,6 +288,7 @@ export default function ProfilePage() {
           navbarLeftMode: (profile.NavbarLeftMode || 'fixed') === 'floating' ? 'floating' : 'fixed',
           navbarLeftCollapsed: !!profile.NavbarLeftCollapsed,
           dashboardCalendarInOverview: Number(profile.DashboardCalendarInOverview ?? 1) === 1,
+          hoursDisplayFormat: (profile.HoursDisplayFormat || 'hms') === 'decimal' ? 'decimal' : 'hms',
         });
       }
     } catch (err) {
@@ -874,6 +876,7 @@ export default function ProfilePage() {
       if (response.ok) {
         setMessage('Profile updated successfully!');
         setIsEditingProfile(false);
+        updateUser({ hoursDisplayFormat: profileForm.hoursDisplayFormat });
         // Reload to get updated data
         await loadUserProfile();
         setTimeout(() => setMessage(''), 3000);
@@ -1355,6 +1358,29 @@ export default function ProfilePage() {
                       <span className="text-sm text-gray-700 dark:text-gray-300">
                         {profileForm.dashboardCalendarInOverview ? 'Yes' : 'No'}
                       </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Hours Display Format
+                    </label>
+                    {isEditingProfile ? (
+                      <select
+                        value={profileForm.hoursDisplayFormat}
+                        onChange={(e) => setProfileForm(prev => ({
+                          ...prev,
+                          hoursDisplayFormat: e.target.value === 'decimal' ? 'decimal' : 'hms',
+                        }))}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      >
+                        <option value="hms">hh:MM:ss (e.g. 01:30:00)</option>
+                        <option value="decimal">Decimal (e.g. 1.50h)</option>
+                      </select>
+                    ) : (
+                      <p className="text-gray-900 dark:text-white">
+                        {profileForm.hoursDisplayFormat === 'decimal' ? 'Decimal (e.g. 1.50h)' : 'hh:MM:ss (e.g. 01:30:00)'}
+                      </p>
                     )}
                   </div>
 

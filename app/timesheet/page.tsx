@@ -16,15 +16,7 @@ import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import TimeEntryFormModal, { TimeEntryFormValues } from '@/components/TimeEntryFormModal';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
-
-const decimalHoursToHMS = (hours: number): string => {
-  const totalSeconds = Math.round(Math.abs(hours) * 3600);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  const sign = hours < 0 ? '-' : '';
-  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-};
+import { useFormatHours } from '@/lib/useFormatHours';
 
 interface TaskWithProject extends Task {
   ProjectName?: string;
@@ -85,6 +77,7 @@ interface ResumeByUserRow {
 }
 
 export default function TimesheetPage() {
+  const decimalHoursToHMS = useFormatHours();
   const { user, isLoading, token } = useAuth();
   const { permissions } = usePermissions();
   const [userProfile, setUserProfile] = useState<User | null>(null);

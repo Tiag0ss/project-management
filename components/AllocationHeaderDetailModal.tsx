@@ -2,15 +2,7 @@
 
 import { getApiUrl } from '@/lib/api/config';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-
-const decimalHoursToHMS = (hours: number): string => {
-  const totalSeconds = Math.round(Math.abs(hours) * 3600);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  const sign = hours < 0 ? '-' : '';
-  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-};
+import { useFormatHours } from '@/lib/useFormatHours';
 
 interface AllocationDayRow {
   date: string;
@@ -86,6 +78,7 @@ export default function AllocationHeaderDetailModal({
   onDeleteAllAllocations,
   onSaveReplan,
 }: AllocationHeaderDetailModalProps) {
+  const decimalHoursToHMS = useFormatHours();
   const normalizedHeaderId = useMemo(() => (headerId && Number.isFinite(headerId) && headerId > 0 ? headerId : null), [headerId]);
 
   const [isLoadingData, setIsLoadingData] = useState(false);

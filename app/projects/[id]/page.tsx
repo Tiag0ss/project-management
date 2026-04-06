@@ -30,15 +30,7 @@ import { projectMilestonesApi, ProjectMilestone, SaveProjectMilestoneData } from
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 import SegmentedTagBadge from '@/components/tags/SegmentedTagBadge';
 import JiraStatusMappingPanel from '@/components/projects/JiraStatusMappingPanel';
-
-const decimalHoursToHMS = (hours: number): string => {
-  const totalSeconds = Math.round(Math.abs(hours) * 3600);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  const sign = hours < 0 ? '-' : '';
-  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-};
+import { useFormatHours } from '@/lib/useFormatHours';
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -4788,6 +4780,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
 // Overview Tab Component
 function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewBudgetInfo, token }: { project: Project; tasks: Task[]; tickets: any[]; internalTicketsEnabled: boolean; canViewBudgetInfo: boolean; token: string }) {
+  const decimalHoursToHMS = useFormatHours();
   // Calculate task statistics (all tasks including subtasks)
   const parentTasks = tasks.filter(t => !t.ParentTaskId);
   const totalTasks = tasks.length;
@@ -9806,6 +9799,7 @@ function KanbanTab({
 
 // Reporting Tab Component
 function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projectId: number; organizationId: number; token: string; onOpenTask?: (task: any) => void }) {
+  const decimalHoursToHMS = useFormatHours();
   const [reportTab, setReportTab] = useState<'summary' | 'byUser' | 'allocations' | 'timeEntries' | 'flowMetrics' | 'schedules'>('summary');
   const [allocations, setAllocations] = useState<any[]>([]);
   const [timeEntries, setTimeEntries] = useState<any[]>([]);
@@ -14653,6 +14647,7 @@ function TaskModal({
 
 // ─── Burndown / Burnup Chart Tab ─────────────────────────────────────────────
 function BurndownTab({ projectId, token }: { projectId: number; token: string }) {
+  const decimalHoursToHMS = useFormatHours();
   const [data, setData] = useState<{
     startDate: string;
     endDate: string;

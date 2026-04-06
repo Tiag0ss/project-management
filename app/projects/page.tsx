@@ -16,21 +16,14 @@ import CustomerUserGuard from '@/components/CustomerUserGuard';
 import EmptyState from '@/components/EmptyState';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import ProjectFormModal from '@/components/ProjectFormModal';
+import { useFormatHours } from '@/lib/useFormatHours';
 
 type ProjectSortField = 'name' | 'status' | 'tasks' | 'hours' | 'tickets' | 'startDate' | 'endDate' | 'budget' | 'rag' | 'progress';
 type SortDirection = 'asc' | 'desc';
 type RAGStatus = 'red' | 'amber' | 'green';
 
-const decimalHoursToHMS = (hours: number): string => {
-  const totalSeconds = Math.round(Math.abs(hours) * 3600);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  const sign = hours < 0 ? '-' : '';
-  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-};
-
 export default function ProjectsPage() {
+  const decimalHoursToHMS = useFormatHours();
   const { showToast } = useToast();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
@@ -1136,6 +1129,7 @@ function ProjectCard({
   canEdit: boolean;
   canDelete: boolean;
 }) {
+  const decimalHoursToHMS = useFormatHours();
   const router = useRouter();
 
   const totalTasks      = Number(project.TotalTasks) || 0;

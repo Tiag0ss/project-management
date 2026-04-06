@@ -378,6 +378,13 @@
       "Comment": "User preference: show dashboard calendar inside Overview tab"
     },
     {
+      "FieldName": "HoursDisplayFormat",
+      "DataType": "varchar(10)",
+      "NotNullable": true,
+      "DefaultValue": "hms",
+      "Comment": "User preference for hours display format: hms (hh:MM:ss) or decimal (1.50h)"
+    },
+    {
       "FieldName": "DashboardKpiConfig",
       "DataType": "text",
       "NotNullable": false,

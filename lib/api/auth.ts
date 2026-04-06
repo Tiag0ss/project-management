@@ -180,6 +180,7 @@ export interface User {
   isManager?: boolean;
   customerId?: number | null;
   countryCode?: string | null;
+  hoursDisplayFormat?: string;
 }
 
 export interface AuthResponse {

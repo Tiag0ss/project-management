@@ -359,7 +359,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
     // Find user
     const [users] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id, Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, IsSupport, IsDeveloper, IsManager, CustomerId, UserType, CountryCode FROM Users WHERE Username = ? OR Email = ?',
+      'SELECT Id, Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, IsSupport, IsDeveloper, IsManager, CustomerId, UserType, CountryCode, HoursDisplayFormat FROM Users WHERE Username = ? OR Email = ?',
       [username, username]
     );
 
@@ -410,7 +410,8 @@ router.post('/login', async (req: Request, res: Response) => {
         isDeveloper: user.IsDeveloper,
         isManager: user.IsManager,
         customerId: user.CustomerId,
-        countryCode: user.CountryCode
+        countryCode: user.CountryCode,
+        hoursDisplayFormat: user.HoursDisplayFormat || 'hms'
       },
       JWT_SECRET,
       { expiresIn: '24h' }
@@ -444,7 +445,8 @@ router.post('/login', async (req: Request, res: Response) => {
         lastName: user.LastName,
         isAdmin: user.IsAdmin,
         customerId: user.CustomerId,
-        countryCode: user.CountryCode
+        countryCode: user.CountryCode,
+        hoursDisplayFormat: user.HoursDisplayFormat || 'hms'
       }
     });
   } catch (error) {
@@ -511,7 +513,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
 
     // Verify user still exists and is active
     const [users] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id, Username, Email, IsAdmin, IsSupport, IsDeveloper, IsManager, CustomerId, CountryCode, IsActive FROM Users WHERE Id = ?',
+      'SELECT Id, Username, Email, IsAdmin, IsSupport, IsDeveloper, IsManager, CustomerId, CountryCode, HoursDisplayFormat, IsActive FROM Users WHERE Id = ?',
       [decoded.userId]
     );
 
@@ -544,7 +546,8 @@ router.post('/refresh', async (req: Request, res: Response) => {
         isDeveloper: user.IsDeveloper,
         isManager: user.IsManager,
         customerId: user.CustomerId,
-        countryCode: user.CountryCode
+        countryCode: user.CountryCode,
+        hoursDisplayFormat: user.HoursDisplayFormat || 'hms'
       },
       JWT_SECRET,
       { expiresIn: '24h' }

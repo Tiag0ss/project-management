@@ -11,6 +11,7 @@ import { downloadTablePdf } from '@/lib/api/pdfExport';
 import TimeEntryFormModal, { TimeEntryFormValues } from '@/components/TimeEntryFormModal';
 import CallRecordFormModal, { CallRecordFormValues } from '@/components/CallRecordFormModal';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
+import { useFormatHours } from '@/lib/useFormatHours';
 
 interface TimeEntry {
   Id: number;
@@ -105,15 +106,6 @@ const stripHtml = (value?: string): string => {
     .trim();
 };
 
-const decimalHoursToHMS = (hours: number): string => {
-  const totalSeconds = Math.round(Math.abs(hours) * 3600);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  const sign = hours < 0 ? '-' : '';
-  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-};
-
 const calculateEndTime = (startTime?: string, durationMinutes?: number): string => {
   if (!startTime) return '-';
 
@@ -182,6 +174,7 @@ const parseResumeList = (value?: string): string[] => {
 
 
 export default function WorkSummaryPage() {
+  const decimalHoursToHMS = useFormatHours();
   const { user, token, isLoading } = useAuth();
   const { permissions } = usePermissions();
   const { showToast } = useToast();

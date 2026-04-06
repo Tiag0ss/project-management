@@ -9,6 +9,8 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { getApiUrl } from '@/lib/api/config';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { downloadTablePdf } from '@/lib/api/pdfExport';
+import { decimalHoursToHMS } from '@/lib/formatHours';
+import { useFormatHours } from '@/lib/useFormatHours';
 
 interface ReportColumn {
   key: string;
@@ -317,16 +319,9 @@ const normalizeDateString = (value: unknown): string => {
   return String(value).split('T')[0];
 };
 
-const decimalHoursToHMS = (hours: number): string => {
-  const totalSeconds = Math.round(Math.abs(hours) * 3600);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  const sign = hours < 0 ? '-' : '';
-  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-};
+const decimalHoursToHMSModule = decimalHoursToHMS;
 
-const formatCellValue = (column: ReportColumn, value: unknown): string => {
+const formatCellValue = (column: ReportColumn, value: unknown, hoursFormatter: (h: number) => string = decimalHoursToHMSModule): string => {
   if (value === null || value === undefined || value === '') return '-';
 
   if (column.type === 'date') {
@@ -339,13 +334,13 @@ const formatCellValue = (column: ReportColumn, value: unknown): string => {
   if (column.type === 'hours') {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return '-';
-    return decimalHoursToHMS(numeric);
+    return hoursFormatter(numeric);
   }
 
   if (column.type === 'minutes') {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return '-';
-    return decimalHoursToHMS(numeric / 60);
+    return hoursFormatter(numeric / 60);
   }
 
   if (column.type === 'number') {
@@ -432,6 +427,8 @@ export default function ReportsPage() {
   const router = useRouter();
   const { user, token, isLoading: authLoading } = useAuth();
   const { permissions, isLoading: permissionsLoading } = usePermissions();
+  const formatHours = useFormatHours();
+  const renderCell = (column: ReportColumn, value: unknown) => formatCellValue(column, value, formatHours);
   const [selectedTab, setSelectedTab] = useState<ReportTabKey>('projects');
   const [datasets, setDatasets] = useState<Partial<Record<ReportTabKey, ReportRow[]>>>({});
   const [loadingTabs, setLoadingTabs] = useState<Partial<Record<ReportTabKey, boolean>>>({});
@@ -736,7 +733,7 @@ export default function ReportsPage() {
     const rows = filteredRows.map((row) => {
       const mapped: Record<string, string> = {};
       currentColumns.forEach((column) => {
-        mapped[column.label] = formatCellValue(column, row[column.key]);
+        mapped[column.label] = renderCell(column, row[column.key]);
       });
       return mapped;
     });
@@ -755,7 +752,7 @@ export default function ReportsPage() {
           title: `${currentTab.label} Report`,
           filename: `${currentTab.key}-report`,
           headers: currentColumns.map((column) => column.label),
-          rows: filteredRows.map((row) => currentColumns.map((column) => formatCellValue(column, row[column.key]))),
+          rows: filteredRows.map((row) => currentColumns.map((column) => renderCell(column, row[column.key]))),
         },
         token
       );
@@ -1066,8 +1063,8 @@ export default function ReportsPage() {
                               key={column.key}
                               className={`px-6 py-3 text-sm text-gray-900 dark:text-gray-100 ${column.type === 'number' ? 'text-right' : 'text-left'}`}
                             >
-                              <span className="block max-w-xs truncate" title={formatCellValue(column, row[column.key])}>
-                                {formatCellValue(column, row[column.key])}
+                              <span className="block max-w-xs truncate" title={renderCell(column, row[column.key])}>
+                                {renderCell(column, row[column.key])}
                               </span>
                             </td>
                           ))}

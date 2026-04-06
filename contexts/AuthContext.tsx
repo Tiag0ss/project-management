@@ -14,6 +14,7 @@ interface AuthContextType {
   register: (userData: RegisterData) => Promise<void>;
   logout: () => void;
   refreshToken: () => Promise<void>;
+  updateUser: (updates: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -189,11 +190,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('authUser');
   };
 
+  const updateUser = (updates: Partial<User>) => {
+    setUser(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, ...updates };
+      localStorage.setItem('authUser', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   // Check if user is a customer user (has CustomerId set)
   const isCustomerUser = Boolean(user?.customerId);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, isCustomerUser, login, register, logout, refreshToken }}>
+    <AuthContext.Provider value={{ user, token, isLoading, isCustomerUser, login, register, logout, refreshToken, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -13,15 +13,7 @@ import TaskDetailModal from '@/components/TaskDetailModal';
 import { getCustomer, updateCustomer, Customer } from '@/lib/api/customers';
 import { projectsApi, Project as ApiProject } from '@/lib/api/projects';
 import { tasksApi, Task as ApiTask } from '@/lib/api/tasks';
-
-const decimalHoursToHMS = (hours: number): string => {
-  const totalSeconds = Math.round(Math.abs(hours) * 3600);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  const sign = hours < 0 ? '-' : '';
-  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-};
+import { useFormatHours } from '@/lib/useFormatHours';
 
 interface Project {
   Id: number;
@@ -159,6 +151,7 @@ interface CustomerOverviewData {
 }
 
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const decimalHoursToHMS = useFormatHours();
   const resolvedParams = use(params);
   const customerId = parseInt(resolvedParams.id);
   

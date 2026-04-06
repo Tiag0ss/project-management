@@ -30,15 +30,7 @@ import TaskDetailModal from '@/components/TaskDetailModal';
 import SegmentedTagBadge from '@/components/tags/SegmentedTagBadge';
 import dynamic from 'next/dynamic';
 import CalendarTabComponent from './CalendarTab';
-
-const decimalHoursToHMS = (hours: number): string => {
-  const totalSeconds = Math.round(Math.abs(hours) * 3600);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  const sign = hours < 0 ? '-' : '';
-  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-};
+import { useFormatHours } from '@/lib/useFormatHours';
 
 interface TaskWithProject extends Task {
   ProjectName?: string;
@@ -788,6 +780,7 @@ export default function DashboardPage() {
 }
 
 function DashboardContent() {
+  const decimalHoursToHMS = useFormatHours();
   const { user, isLoading, token, isCustomerUser } = useAuth();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
   const { showToast } = useToast();

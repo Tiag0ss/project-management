@@ -89,7 +89,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
               HobbyHoursMonday, HobbyHoursTuesday, HobbyHoursWednesday, HobbyHoursThursday,
               HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
               Timezone, HourlyRate, AnnualVacationDays, CountryCode, RegionCode, JiraId,
-              NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed, DashboardCalendarInOverview,
+              NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed, DashboardCalendarInOverview, HoursDisplayFormat,
               LastLoginAt, CreatedAt, UpdatedAt 
        FROM Users 
        WHERE Id = ?`,
@@ -157,11 +157,12 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
       navbarLeftMode,
       navbarLeftCollapsed,
       dashboardCalendarInOverview,
+      hoursDisplayFormat,
     } = req.body;
 
     const [oldProfile] = await pool.execute<RowDataPacket[]>(
       `SELECT FirstName, LastName, Email, Timezone, CountryCode, RegionCode, AnnualVacationDays,
-              NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed, DashboardCalendarInOverview
+              NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed, DashboardCalendarInOverview, HoursDisplayFormat
        FROM Users WHERE Id = ?`,
       [userId]
     );
@@ -207,6 +208,11 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
       ? (dashboardCalendarInOverview ? 1 : 0)
       : (oldData.DashboardCalendarInOverview ? 1 : 0);
 
+    const finalHoursDisplayFormatRaw = hoursDisplayFormat !== undefined
+      ? String(hoursDisplayFormat).trim().toLowerCase()
+      : String(oldData.HoursDisplayFormat || 'hms').trim().toLowerCase();
+    const finalHoursDisplayFormat = finalHoursDisplayFormatRaw === 'decimal' ? 'decimal' : 'hms';
+
     const finalAnnualVacationDays = annualVacationDays !== undefined
       ? Math.max(0, parseFloat(String(annualVacationDays || 0)))
       : parseFloat(String(oldData.AnnualVacationDays || 22));
@@ -237,7 +243,7 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
     await pool.execute(
       `UPDATE Users 
        SET FirstName = ?, LastName = ?, Email = ?, Timezone = ?, CountryCode = ?, RegionCode = ?,
-           AnnualVacationDays = ?, NavbarMenuLayout = ?, NavbarLeftMode = ?, NavbarLeftCollapsed = ?, DashboardCalendarInOverview = ?
+           AnnualVacationDays = ?, NavbarMenuLayout = ?, NavbarLeftMode = ?, NavbarLeftCollapsed = ?, DashboardCalendarInOverview = ?, HoursDisplayFormat = ?
        WHERE Id = ?`,
       [
         finalFirstName || null,
@@ -251,6 +257,7 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
         finalNavbarLeftMode,
         finalNavbarLeftCollapsed,
         finalDashboardCalendarInOverview,
+        finalHoursDisplayFormat,
         userId,
       ]
     );
@@ -295,6 +302,9 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
     }
     if (String(finalAnnualVacationDays || '') !== String(oldData.AnnualVacationDays || '')) {
       await logUserHistory(userId!, userId!, 'updated', 'AnnualVacationDays', String(oldData.AnnualVacationDays || ''), String(finalAnnualVacationDays || ''));
+    }
+    if (String(finalHoursDisplayFormat || '') !== String(oldData.HoursDisplayFormat || '')) {
+      await logUserHistory(userId!, userId!, 'updated', 'HoursDisplayFormat', String(oldData.HoursDisplayFormat || 'hms'), String(finalHoursDisplayFormat || 'hms'));
     }
 
     // Log activity

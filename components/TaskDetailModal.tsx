@@ -16,6 +16,7 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
+import { useFormatHours } from '@/lib/useFormatHours';
 
 interface TaskDetailModalProps {
   projectId: number;
@@ -73,15 +74,6 @@ interface Tag {
   Color: string;
   Description?: string;
 }
-
-const decimalHoursToHMS = (hours: number): string => {
-  const totalSeconds = Math.round(Math.abs(hours) * 3600);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  const sign = hours < 0 ? '-' : '';
-  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-};
 
 const clampColorChannel = (value: number): number => Math.max(0, Math.min(255, Math.round(value)));
 
@@ -289,6 +281,7 @@ export default function TaskDetailModal({
   showRemovePlanning = false,
   onRemovePlanning,
 }: TaskDetailModalProps) {
+  const decimalHoursToHMS = useFormatHours();
   const router = useRouter();
     const { showToast } = useToast();
   // Integration state

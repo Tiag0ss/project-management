@@ -17,15 +17,7 @@ import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import SearchableSelect from '@/components/SearchableSelect';
-
-const decimalHoursToHMS = (hours: number): string => {
-  const totalSeconds = Math.round(Math.abs(hours) * 3600);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  const sign = hours < 0 ? '-' : '';
-  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-};
+import { useFormatHours } from '@/lib/useFormatHours';
 
 export default function OrganizationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -587,6 +579,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
 }
 
 function OverviewTab({ organization, orgId, token, internalTicketsEnabled }: { organization: Organization; orgId: number; token: string; internalTicketsEnabled: boolean }) {
+  const decimalHoursToHMS = useFormatHours();
   const [projects, setProjects] = useState<Project[]>([]);
   const [tickets, setTickets] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
