@@ -2056,15 +2056,24 @@ export default function PlanningPage() {
       && isRenderableUnscheduledTask(task);
     const hasUnscheduledDescendant = !task.ParentTaskId && hasUnscheduledAssignedDescendant(task.Id);
     const shouldForcePlannedDates = !!options?.forcePlannedDates;
+    // Whether the task itself is unscheduled (vs. just having unscheduled children)
+    const selfIsUnscheduled = Number(task.UnscheduledWork || 0) === 1;
+
+    const parsePlannedDate = (dateStr: string) => {
+      const dateOnly = String(dateStr).split('T')[0];
+      return new Date(dateOnly + 'T12:00:00');
+    };
 
     if (shouldForcePlannedDates && task.PlannedStartDate && task.PlannedEndDate) {
-      const parseDate = (dateStr: string) => {
-        const dateOnly = String(dateStr).split('T')[0];
-        return new Date(dateOnly + 'T12:00:00');
-      };
-
-      startDate = parseDate(task.PlannedStartDate);
-      endDate = parseDate(task.PlannedEndDate);
+      startDate = parsePlannedDate(task.PlannedStartDate);
+      endDate = parsePlannedDate(task.PlannedEndDate);
+    } else if (!selfIsUnscheduled && task.PlannedStartDate && task.PlannedEndDate) {
+      // Non-unscheduled task with concrete planned dates (e.g. set from allocation dates):
+      // always use those dates directly, even if it has unscheduled children.
+      // Without this check a parent with unscheduled children would enter the unscheduled
+      // anchor path and disappear from the Gantt whenever today is outside the view window.
+      startDate = parsePlannedDate(task.PlannedStartDate);
+      endDate = parsePlannedDate(task.PlannedEndDate);
     } else if (isAssignedUnscheduled || hasUnscheduledDescendant) {
       const unscheduledRenderDates = getUnscheduledRenderDates(task, options?.unscheduledUserId);
       const visibleRenderDate = unscheduledRenderDates.find((entry) => {
@@ -2078,6 +2087,10 @@ export default function PlanningPage() {
         const visibleDate = new Date(`${visibleRenderDate.date}T12:00:00`);
         startDate = new Date(visibleDate);
         endDate = new Date(visibleDate);
+        // Open tasks (tracking today) should still span 3 days for readability
+        if (visibleRenderDate.source === 'openToday') {
+          endDate.setDate(endDate.getDate() + 2);
+        }
       } else {
         const unscheduledAnchorDate = getUnscheduledAnchorDate(task, options?.unscheduledUserId);
         startDate = new Date(unscheduledAnchorDate);
@@ -2086,14 +2099,8 @@ export default function PlanningPage() {
         endDate.setDate(endDate.getDate() + (unscheduledVisualDays - 1));
       }
     } else if (task.PlannedStartDate && task.PlannedEndDate) {
-      // Parse planned dates - handle both 'YYYY-MM-DD' and ISO timestamp formats
-      const parseDate = (dateStr: string) => {
-        const dateOnly = String(dateStr).split('T')[0];
-        return new Date(dateOnly + 'T12:00:00');
-      };
-      
-      startDate = parseDate(task.PlannedStartDate);
-      endDate = parseDate(task.PlannedEndDate);
+      startDate = parsePlannedDate(task.PlannedStartDate);
+      endDate = parsePlannedDate(task.PlannedEndDate);
     } else {
       // Use range start for unplanned tasks when requested (keeps Not Planned readable in any view window)
       startDate = options?.preferRangeStartForUnplanned ? new Date(columns[0].start) : new Date(today);
@@ -8551,7 +8558,18 @@ export default function PlanningPage() {
                               displayedStartDate = unscheduledRenderDates[0].date;
                               displayedEndDate = unscheduledRenderDates[unscheduledRenderDates.length - 1].date;
                               unscheduledRenderDates.forEach((entry) => {
-                                taskBarSegments.push({ headerId: null, startDate: entry.date, endDate: entry.date, source: entry.source });
+                                // Open tasks tracking today get a 3-day visual span for readability
+                                let segmentEndDate = entry.date;
+                                if (entry.source === 'openToday') {
+                                  const entryEndDate = new Date(`${entry.date}T12:00:00`);
+                                  entryEndDate.setDate(entryEndDate.getDate() + 2);
+                                  segmentEndDate = getDateKeyFromDate(entryEndDate);
+                                  // Also extend the displayed end date
+                                  if (!displayedEndDate || segmentEndDate > displayedEndDate) {
+                                    displayedEndDate = segmentEndDate;
+                                  }
+                                }
+                                taskBarSegments.push({ headerId: null, startDate: entry.date, endDate: segmentEndDate, source: entry.source });
                               });
                             } else {
                               const anchorDate = getUnscheduledAnchorDate(task, Number(userRow.Id));
