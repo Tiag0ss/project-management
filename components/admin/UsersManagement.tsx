@@ -350,7 +350,12 @@ export default function UsersManagement() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
                     {u.CountryCode ? (
-                      <span>{getCountryName(u.CountryCode)} ({u.CountryCode})</span>
+                      <div>
+                        <span>{getCountryName(u.CountryCode)} ({u.CountryCode})</span>
+                        {u.RegionCode && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{u.RegionCode}</div>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-gray-400 dark:text-gray-500">—</span>
                     )}
@@ -556,6 +561,7 @@ function CreateUserModal({
     customerId: '',
     teamLeaderId: '',
     countryCode: '',
+    regionCode: '',
     jiraId: '',
     workHoursMonday: '8',
     workHoursTuesday: '8',
@@ -569,7 +575,25 @@ function CreateUserModal({
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [availableRegions, setAvailableRegions] = useState<{ code: string; name: string }[]>([]);
   const [customFields, setCustomFields] = useState<CustomFieldValues>({});
+
+  const loadAvailableRegions = async (cc: string) => {
+    if (!token || !cc) { setAvailableRegions([]); return; }
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/holidays/regions/${cc}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableRegions(data.regions || []);
+      } else {
+        setAvailableRegions([]);
+      }
+    } catch {
+      setAvailableRegions([]);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -598,6 +622,7 @@ function CreateUserModal({
         customerId: formData.customerId ? parseInt(formData.customerId) : undefined,
         teamLeaderId: formData.teamLeaderId ? parseInt(formData.teamLeaderId) : null,
         countryCode: formData.countryCode || null,
+        regionCode: formData.regionCode || null,
         jiraId: formData.jiraId || null,
         workHoursMonday: parseFloat(formData.workHoursMonday),
         workHoursTuesday: parseFloat(formData.workHoursTuesday),
@@ -878,12 +903,38 @@ function CreateUserModal({
               </label>
               <SearchableSelect
                 value={formData.countryCode}
-                onChange={(value) => setFormData({ ...formData, countryCode: value })}
+                onChange={(value) => {
+                  setFormData({ ...formData, countryCode: value, regionCode: '' });
+                  loadAvailableRegions(value);
+                }}
                 options={countryOptions}
                 placeholder="Country"
                 emptyText="No country selected"
                 className="w-full"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Region / Subdivision
+                <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">(regional holidays)</span>
+              </label>
+              {availableRegions.length > 0 ? (
+                <select
+                  value={formData.regionCode}
+                  onChange={(e) => setFormData({ ...formData, regionCode: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="">— National (no region) —</option>
+                  {availableRegions.map((r) => (
+                    <option key={r.code} value={r.code}>{r.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-sm text-gray-400 dark:text-gray-500 italic">
+                  {formData.countryCode ? 'No regional holidays configured for this country' : 'Select a country first'}
+                </p>
+              )}
             </div>
 
             <CustomFieldsFormSection
@@ -950,6 +1001,7 @@ function EditUserModal({
     customerId: user.CustomerId?.toString() || '',
     teamLeaderId: user.TeamLeaderId?.toString() || '',
     countryCode: user.CountryCode || '',
+    regionCode: user.RegionCode || '',
     jiraId: user.JiraId || '',
     workHoursMonday: user.WorkHoursMonday?.toString() || '8',
     workHoursTuesday: user.WorkHoursTuesday?.toString() || '8',
@@ -963,7 +1015,27 @@ function EditUserModal({
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [availableRegions, setAvailableRegions] = useState<{ code: string; name: string }[]>([]);
   const [customFields, setCustomFields] = useState<CustomFieldValues>(() => extractCustomFieldValues(user));
+
+  const loadAvailableRegions = async (cc: string) => {
+    if (!token || !cc) { setAvailableRegions([]); return; }
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/holidays/regions/${cc}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableRegions(data.regions || []);
+      } else {
+        setAvailableRegions([]);
+      }
+    } catch {
+      setAvailableRegions([]);
+    }
+  };
+
+  useEffect(() => { loadAvailableRegions(user.CountryCode || ''); }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -991,6 +1063,7 @@ function EditUserModal({
         customerId: formData.customerId ? parseInt(formData.customerId) : undefined,
         teamLeaderId: formData.teamLeaderId ? parseInt(formData.teamLeaderId) : null,
         countryCode: formData.countryCode || null,
+        regionCode: formData.regionCode || null,
         jiraId: formData.jiraId || null,
         workHoursMonday: parseFloat(formData.workHoursMonday),
         workHoursTuesday: parseFloat(formData.workHoursTuesday),
@@ -1193,12 +1266,38 @@ function EditUserModal({
               </label>
               <SearchableSelect
                 value={formData.countryCode}
-                onChange={(value) => setFormData({ ...formData, countryCode: value })}
+                onChange={(value) => {
+                  setFormData({ ...formData, countryCode: value, regionCode: '' });
+                  loadAvailableRegions(value);
+                }}
                 options={countryOptions}
                 placeholder="Country"
                 emptyText="No country selected"
                 className="w-full"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Region / Subdivision
+                <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">(regional holidays)</span>
+              </label>
+              {availableRegions.length > 0 ? (
+                <select
+                  value={formData.regionCode}
+                  onChange={(e) => setFormData({ ...formData, regionCode: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="">— National (no region) —</option>
+                  {availableRegions.map((r) => (
+                    <option key={r.code} value={r.code}>{r.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-sm text-gray-400 dark:text-gray-500 italic">
+                  {formData.countryCode ? 'No regional holidays configured for this country' : 'Select a country first'}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">

@@ -56,6 +56,7 @@ interface PlannerHoliday {
   Id: number;
   Year: number;
   CountryCode: string;
+  RegionCode?: string | null;
   HolidayDate: string;
   HolidayName: string;
   Source: string;
@@ -1438,8 +1439,16 @@ export default function PlanningPage() {
 
         years.forEach((year) => {
           const holidays = byCountryYear.get(`${countryCode}-${year}`) || [];
+          const userRegionCode = String(planningUser.RegionCode || '').trim();
           holidays
-            .filter((holiday) => Number(holiday.IsActive) === 1)
+            .filter((holiday) => {
+              if (Number(holiday.IsActive) !== 1) return false;
+              // National holidays (no region) are always included
+              const hRegion = String(holiday.RegionCode || '').trim();
+              if (!hRegion) return true;
+              // Regional holidays only match users with the same region
+              return userRegionCode !== '' && hRegion === userRegionCode;
+            })
             .forEach((holiday) => {
               const dateKey = normalizeDateKey(holiday.HolidayDate);
               if (dateKey < startDateKey || dateKey > endDateKey) {

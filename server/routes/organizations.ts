@@ -721,7 +721,7 @@ router.get('/:id/users', authenticateToken, async (req: AuthRequest, res: Respon
 
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT u.Id, u.Username, u.Email, u.FirstName, u.LastName,
-              u.CountryCode, u.JiraId,
+              u.CountryCode, u.RegionCode, u.JiraId,
               u.WorkHoursMonday, u.WorkHoursTuesday, u.WorkHoursWednesday, 
               u.WorkHoursThursday, u.WorkHoursFriday, u.WorkHoursSaturday, u.WorkHoursSunday,
               u.WorkStartMonday, u.WorkStartTuesday, u.WorkStartWednesday,

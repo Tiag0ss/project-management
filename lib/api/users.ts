@@ -53,6 +53,7 @@ export interface User {
   TeamLeaderId?: number | null;
   TeamLeaderName?: string | null;
   CountryCode?: string | null;
+  RegionCode?: string | null;
   JiraId?: string | null;
   DashboardCalendarInOverview?: number | boolean;
   CreatedAt: string;
@@ -83,6 +84,7 @@ export interface UpdateUserData {
   annualVacationDays?: number;
   teamLeaderId?: number | null;
   countryCode?: string | null;
+  regionCode?: string | null;
   jiraId?: string | null;
   customFields?: CustomFieldValues;
 }

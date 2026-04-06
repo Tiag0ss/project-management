@@ -19,6 +19,11 @@
       "NotNullable": true
     },
     {
+      "FieldName": "RegionCode",
+      "DataType": "varchar(20)",
+      "NotNullable": false
+    },
+    {
       "FieldName": "HolidayDate",
       "DataType": "date",
       "NotNullable": true

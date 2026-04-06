@@ -336,6 +336,13 @@
       "Comment": "ISO 3166-1 alpha-2 country code used for user holiday calendars"
     },
     {
+      "FieldName": "RegionCode",
+      "DataType": "varchar(50)",
+      "NotNullable": false,
+      "DefaultValue": null,
+      "Comment": "Regional subdivision code (e.g. PT-20 for Azores) or free-text municipality for user-specific holiday calendar"
+    },
+    {
       "FieldName": "JiraId",
       "DataType": "varchar(100)",
       "NotNullable": false,

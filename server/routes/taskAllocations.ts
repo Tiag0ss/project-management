@@ -41,7 +41,11 @@ const getHolidayDateSetForUser = async (userId: number, startDate: string, endDa
      INNER JOIN Holidays h ON h.CountryCode = COALESCE(NULLIF(UPPER(TRIM(u.CountryCode)), ''), 'PT')
      WHERE u.Id = ?
        AND h.IsActive = 1
-       AND h.HolidayDate BETWEEN ? AND ?`,
+       AND h.HolidayDate BETWEEN ? AND ?
+       AND (
+         COALESCE(TRIM(h.RegionCode), '') = ''
+         OR UPPER(TRIM(h.RegionCode)) = UPPER(COALESCE(NULLIF(TRIM(u.RegionCode), ''), ''))
+       )`,
     [userId, startDate, endDate]
   );
 

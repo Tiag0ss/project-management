@@ -88,7 +88,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
               HobbyStartFriday, HobbyStartSaturday, HobbyStartSunday,
               HobbyHoursMonday, HobbyHoursTuesday, HobbyHoursWednesday, HobbyHoursThursday,
               HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
-              Timezone, HourlyRate, AnnualVacationDays, CountryCode, JiraId,
+              Timezone, HourlyRate, AnnualVacationDays, CountryCode, RegionCode, JiraId,
               NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed, DashboardCalendarInOverview,
               LastLoginAt, CreatedAt, UpdatedAt 
        FROM Users 
@@ -151,6 +151,7 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
       email,
       timezone,
       countryCode,
+      regionCode,
       annualVacationDays,
       navbarMenuLayout,
       navbarLeftMode,
@@ -159,7 +160,7 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
     } = req.body;
 
     const [oldProfile] = await pool.execute<RowDataPacket[]>(
-      `SELECT FirstName, LastName, Email, Timezone, CountryCode, AnnualVacationDays,
+      `SELECT FirstName, LastName, Email, Timezone, CountryCode, RegionCode, AnnualVacationDays,
               NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed, DashboardCalendarInOverview
        FROM Users WHERE Id = ?`,
       [userId]
@@ -183,6 +184,10 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
     if (!isValidCountryCode(normalizedCountryCodeInput)) {
       return res.status(400).json({ success: false, message: 'Country code must be a valid ISO 2-letter code' });
     }
+
+    const finalRegionCode = regionCode !== undefined
+      ? (regionCode ? String(regionCode).trim() : null)
+      : oldData.RegionCode;
 
     const finalNavbarMenuLayoutRaw = navbarMenuLayout !== undefined
       ? String(navbarMenuLayout).trim().toLowerCase()
@@ -231,7 +236,7 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
 
     await pool.execute(
       `UPDATE Users 
-       SET FirstName = ?, LastName = ?, Email = ?, Timezone = ?, CountryCode = ?,
+       SET FirstName = ?, LastName = ?, Email = ?, Timezone = ?, CountryCode = ?, RegionCode = ?,
            AnnualVacationDays = ?, NavbarMenuLayout = ?, NavbarLeftMode = ?, NavbarLeftCollapsed = ?, DashboardCalendarInOverview = ?
        WHERE Id = ?`,
       [
@@ -240,6 +245,7 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
         finalEmail,
         finalTimezone || null,
         normalizedCountryCodeInput,
+        finalRegionCode || null,
         finalAnnualVacationDays,
         finalNavbarMenuLayout,
         finalNavbarLeftMode,
@@ -264,6 +270,9 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
     }
     if (String(normalizedCountryCodeInput || '') !== String(oldData.CountryCode || '')) {
       await logUserHistory(userId!, userId!, 'updated', 'CountryCode', oldData.CountryCode || '', normalizedCountryCodeInput || '');
+    }
+    if (String(finalRegionCode || '') !== String(oldData.RegionCode || '')) {
+      await logUserHistory(userId!, userId!, 'updated', 'RegionCode', oldData.RegionCode || '', finalRegionCode || '');
     }
     if (String(finalNavbarMenuLayout || '') !== String(oldData.NavbarMenuLayout || '')) {
       await logUserHistory(userId!, userId!, 'updated', 'NavbarMenuLayout', oldData.NavbarMenuLayout || '', finalNavbarMenuLayout || '');
@@ -629,8 +638,9 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
 router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.params.id;
-    const { username, email, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, annualVacationDays, teamLeaderId, countryCode, jiraId, customFields } = req.body;
+    const { username, email, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, annualVacationDays, teamLeaderId, countryCode, regionCode, jiraId, customFields } = req.body;
     const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
+    const normalizedRegionCode = regionCode !== undefined ? (regionCode ? String(regionCode).trim() : null) : undefined;
 
     if (!isValidCountryCode(normalizedCountryCode)) {
       return res.status(400).json({ success: false, message: 'Country code must be a valid ISO 2-letter code' });
@@ -750,6 +760,9 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
     if (countryCode !== undefined && String(normalizedCountryCode || '') !== String(oldUser.CountryCode || '')) {
       changes.push({ field: 'CountryCode', oldVal: String(oldUser.CountryCode || ''), newVal: String(normalizedCountryCode || '') });
     }
+    if (regionCode !== undefined && normalizedRegionCode !== undefined && String(normalizedRegionCode || '') !== String(oldUser.RegionCode || '')) {
+      changes.push({ field: 'RegionCode', oldVal: String(oldUser.RegionCode || ''), newVal: String(normalizedRegionCode || '') });
+    }
     if (jiraId !== undefined && String(jiraId || '') !== String(oldUser.JiraId || '')) {
       changes.push({ field: 'JiraId', oldVal: String(oldUser.JiraId || ''), newVal: String(jiraId || '') });
     }
@@ -775,9 +788,9 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
 
     await pool.execute(
       `UPDATE Users 
-       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, UserType = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, AnnualVacationDays = ?, TeamLeaderId = ?, CountryCode = ?, JiraId = ?${customFieldData.updateAssignments.length > 0 ? `, ${customFieldData.updateAssignments.join(', ')}` : ''} 
+       SET Username = ?, Email = ?, FirstName = ?, LastName = ?, IsActive = ?, IsAdmin = ?, UserType = ?, CustomerId = ?, IsDeveloper = ?, IsSupport = ?, IsManager = ?, HourlyRate = ?, AnnualVacationDays = ?, TeamLeaderId = ?, CountryCode = ?, RegionCode = ?, JiraId = ?${customFieldData.updateAssignments.length > 0 ? `, ${customFieldData.updateAssignments.join(', ')}` : ''} 
        WHERE Id = ?`,
-      [username, finalEmail, firstName || null, lastName || null, isActive, isAdmin, finalUserType, finalCustomerId, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, sanitizedAnnualVacationDays, teamLeaderId || null, normalizedCountryCode, jiraId || null, ...customFieldData.updateValues, userId]
+      [username, finalEmail, firstName || null, lastName || null, isActive, isAdmin, finalUserType, finalCustomerId, isDeveloper || false, isSupport || false, isManager || false, sanitizedHourlyRate, sanitizedAnnualVacationDays, teamLeaderId || null, normalizedCountryCode, (normalizedRegionCode !== undefined ? normalizedRegionCode : (oldUser.RegionCode ?? null)), jiraId || null, ...customFieldData.updateValues, userId]
     );
     
     // Log changes to history
@@ -1036,8 +1049,9 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, 
  */
 router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, annualVacationDays, teamLeaderId, countryCode, jiraId, customFields } = req.body;
+    const { username, email, password, firstName, lastName, isActive, isAdmin, customerId, userType, isDeveloper, isSupport, isManager, hourlyRate, annualVacationDays, teamLeaderId, countryCode, regionCode, jiraId, customFields } = req.body;
     const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
+    const normalizedRegionCode = regionCode ? String(regionCode).trim() : null;
 
     if (!isValidCountryCode(normalizedCountryCode)) {
       return res.status(400).json({ success: false, message: 'Country code must be a valid ISO 2-letter code' });
@@ -1119,9 +1133,9 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
     const customFieldData = await prepareCustomFieldData('Users', customFields);
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, AnnualVacationDays, TeamLeaderId, CountryCode, JiraId, NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
-      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, sanitizedAnnualVacationDays, teamLeaderId || null, normalizedCountryCode, jiraId || null, 'left', 'fixed', 1, ...customFieldData.insertValues]
+      `INSERT INTO Users (Username, Email, PasswordHash, FirstName, LastName, IsActive, IsAdmin, UserType, CustomerId, IsDeveloper, IsSupport, IsManager, HourlyRate, AnnualVacationDays, TeamLeaderId, CountryCode, RegionCode, JiraId, NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
+      [username, finalEmail, passwordHash, firstName || null, lastName || null, isActive !== false, isAdmin || false, finalUserType, finalCustomerId, isDeveloper !== false, isSupport || false, isManager || false, sanitizedHourlyRate, sanitizedAnnualVacationDays, teamLeaderId || null, normalizedCountryCode, normalizedRegionCode, jiraId || null, 'left', 'fixed', 1, ...customFieldData.insertValues]
     );
 
     // Log user creation

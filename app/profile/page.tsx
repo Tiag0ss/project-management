@@ -112,11 +112,14 @@ export default function ProfilePage() {
     lastName: '',
     email: '',
     timezone: '',
+    countryCode: '',
+    regionCode: '',
     navbarMenuLayout: 'top',
     navbarLeftMode: 'fixed',
     navbarLeftCollapsed: false,
     dashboardCalendarInOverview: true,
   });
+  const [profileRegions, setProfileRegions] = useState<{ code: string; name: string }[]>([]);
   
   // Password change state
   const [passwordForm, setPasswordForm] = useState({
@@ -212,6 +215,10 @@ export default function ProfilePage() {
     }
   }, [user, authLoading, router, token]);
 
+  useEffect(() => {
+    loadProfileRegions(profileForm.countryCode);
+  }, [profileForm.countryCode, token]);
+
   const loadUserProfile = async () => {
     if (!token) return;
     
@@ -274,6 +281,8 @@ export default function ProfilePage() {
           lastName: profile.LastName || '',
           email: profile.Email || '',
           timezone: profile.Timezone || '',
+          countryCode: profile.CountryCode || '',
+          regionCode: profile.RegionCode || '',
           navbarMenuLayout: (profile.NavbarMenuLayout || 'top') === 'left' ? 'left' : 'top',
           navbarLeftMode: (profile.NavbarLeftMode || 'fixed') === 'floating' ? 'floating' : 'fixed',
           navbarLeftCollapsed: !!profile.NavbarLeftCollapsed,
@@ -879,6 +888,23 @@ export default function ProfilePage() {
     }
   };
 
+  const loadProfileRegions = async (cc: string) => {
+    if (!token || !cc) { setProfileRegions([]); return; }
+    try {
+      const res = await fetch(`${getApiUrl()}/api/holidays/regions/${cc}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setProfileRegions(data.regions || []);
+      } else {
+        setProfileRegions([]);
+      }
+    } catch {
+      setProfileRegions([]);
+    }
+  };
+
   const handleChangePassword = async () => {
     if (!token) return;
     
@@ -1192,6 +1218,55 @@ export default function ProfilePage() {
                       <p className="text-gray-900 dark:text-white">
                         {profileForm.timezone ? TIMEZONES.find(tz => tz.value === profileForm.timezone)?.label || profileForm.timezone : 'System default'}
                       </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Country
+                    </label>
+                    {isEditingProfile ? (
+                      <input
+                        type="text"
+                        value={profileForm.countryCode}
+                        onChange={(e) => {
+                          const val = e.target.value.toUpperCase().slice(0, 2);
+                          setProfileForm(prev => ({ ...prev, countryCode: val, regionCode: '' }));
+                        }}
+                        placeholder="e.g. PT, DE, US"
+                        maxLength={2}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      />
+                    ) : (
+                      <p className="text-gray-900 dark:text-white">{profileForm.countryCode || '—'}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Region / Subdivision
+                    </label>
+                    {isEditingProfile ? (
+                      profileRegions.length > 0 ? (
+                        <select
+                          value={profileForm.regionCode}
+                          onChange={(e) => setProfileForm(prev => ({ ...prev, regionCode: e.target.value }))}
+                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        >
+                          <option value="">— National (no region) —</option>
+                          {profileRegions.map((r) => (
+                            <option key={r.code} value={r.code}>{r.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+                          {profileForm.countryCode
+                            ? 'No regional holidays configured for this country'
+                            : 'Set a country first to see available regions'}
+                        </p>
+                      )
+                    ) : (
+                      <p className="text-gray-900 dark:text-white">{profileForm.regionCode || '—'}</p>
                     )}
                   </div>
 
