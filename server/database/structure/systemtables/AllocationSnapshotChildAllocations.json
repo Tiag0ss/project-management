@@ -1,0 +1,73 @@
+{
+  "TableName": "AllocationSnapshotChildAllocations",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key"
+    },
+    {
+      "FieldName": "SnapshotId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to AllocationSnapshots.Id"
+    },
+    {
+      "FieldName": "OriginalChildAllocId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Original TaskChildAllocations.Id at snapshot time"
+    },
+    {
+      "FieldName": "OriginalHeaderId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Original TaskAllocationHeaders.Id for header remapping on restore"
+    },
+    {
+      "FieldName": "ParentTaskId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to parent Tasks.Id"
+    },
+    {
+      "FieldName": "ChildTaskId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to child Tasks.Id"
+    },
+    {
+      "FieldName": "AllocationDate",
+      "DataType": "date",
+      "NotNullable": true,
+      "Comment": "Date for which hours are allocated"
+    },
+    {
+      "FieldName": "AllocatedHours",
+      "DataType": "decimal(4,2)",
+      "NotNullable": true,
+      "Comment": "Hours allocated from parent to child"
+    },
+    {
+      "FieldName": "Level",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Hierarchy level"
+    },
+    {
+      "FieldName": "StartTime",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "Comment": "Planned start time HH:MM"
+    },
+    {
+      "FieldName": "EndTime",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "Comment": "Planned end time HH:MM"
+    }
+  ]
+}

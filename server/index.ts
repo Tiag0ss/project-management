@@ -69,6 +69,7 @@ import holidaysRoutes from './routes/holidays';
 import vacationsRoutes from './routes/vacations';
 import pdfExportsRoutes from './routes/pdfExports';
 import planningImportRoutes from './routes/planningImport';
+import allocationSnapshotsRoutes from './routes/allocationSnapshots';
 import aiAssistantRoutes from './routes/aiAssistant';
 import outlookCalendarRoutes from './routes/outlookCalendar';
 import apiTokensRoutes from './routes/apiTokens';
@@ -240,6 +241,7 @@ app.prepare().then(async () => {
   server.use('/api/dashboard-kpis', dashboardKpisRoutes);
   server.use('/api/tickets', ticketsRoutes);
   server.use('/api/planning-import', planningImportRoutes);
+  server.use('/api/allocation-snapshots', allocationSnapshotsRoutes);
   server.use('/api/task-import', taskImportRoutes);
   server.use('/api/role-permissions', rolePermissionsRoutes);
   server.use('/api/system-settings', systemSettingsRoutes);

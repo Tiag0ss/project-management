@@ -1,0 +1,80 @@
+{
+  "TableName": "AllocationSnapshotHeaders",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key"
+    },
+    {
+      "FieldName": "SnapshotId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to AllocationSnapshots.Id"
+    },
+    {
+      "FieldName": "OriginalHeaderId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Original TaskAllocationHeaders.Id at snapshot time"
+    },
+    {
+      "FieldName": "TaskId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Tasks.Id"
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id"
+    },
+    {
+      "FieldName": "AllocationMode",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "parallel",
+      "Comment": "parallel or sequential"
+    },
+    {
+      "FieldName": "SplitOrder",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Sequential split position"
+    },
+    {
+      "FieldName": "PlannedHours",
+      "DataType": "decimal(10,2)",
+      "NotNullable": false,
+      "Comment": "Planned hours for this segment"
+    },
+    {
+      "FieldName": "HoursPerDay",
+      "DataType": "decimal(10,2)",
+      "NotNullable": false,
+      "Comment": "Hours per day cap"
+    },
+    {
+      "FieldName": "PlannedStartDate",
+      "DataType": "date",
+      "NotNullable": false,
+      "Comment": "Planned start date"
+    },
+    {
+      "FieldName": "PlannedEndDate",
+      "DataType": "date",
+      "NotNullable": false,
+      "Comment": "Planned end date"
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Original creator of the header"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "TableName": "AllocationSnapshots",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key"
+    },
+    {
+      "FieldName": "Name",
+      "DataType": "varchar(255)",
+      "NotNullable": true,
+      "Comment": "User-defined name for this snapshot"
+    },
+    {
+      "FieldName": "Description",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Optional description for the snapshot"
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Users.Id who created this snapshot"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Timestamp when the snapshot was taken"
+    },
+    {
+      "FieldName": "TotalHeaders",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Number of allocation headers captured in this snapshot"
+    },
+    {
+      "FieldName": "TotalAllocations",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Number of daily allocations captured in this snapshot"
+    },
+    {
+      "FieldName": "TotalChildAllocations",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Number of child allocations captured in this snapshot"
+    }
+  ]
+}

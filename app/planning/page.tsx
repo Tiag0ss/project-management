@@ -154,6 +154,29 @@ export default function PlanningPage() {
   const [showGanttTotals, setShowGanttTotals] = useState(true);
   const [showTaskBarHours, setShowTaskBarHours] = useState(true);
   const [showGanttViewOptions, setShowGanttViewOptions] = useState(false);
+  const [snapshotModal, setSnapshotModal] = useState<{
+    show: boolean;
+    isLoading: boolean;
+    isSaving: boolean;
+    snapshots: any[];
+    newName: string;
+    newDescription: string;
+    error: string;
+  }>({
+    show: false,
+    isLoading: false,
+    isSaving: false,
+    snapshots: [],
+    newName: '',
+    newDescription: '',
+    error: '',
+  });
+  const [showPlanningTools, setShowPlanningTools] = useState(false);
+  const [toolbarSnapshots, setToolbarSnapshots] = useState<any[]>([]);
+  const [isLoadingToolbarSnapshots, setIsLoadingToolbarSnapshots] = useState(false);
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(null);
+  const [snapshotOverlayData, setSnapshotOverlayData] = useState<{ headers: any[]; allocations: any[] } | null>(null);
+  const [isLoadingSnapshotOverlay, setIsLoadingSnapshotOverlay] = useState(false);
   const [selectedGanttUserIds, setSelectedGanttUserIds] = useState<number[]>([]);
   const [hasLoadedGanttViewPrefs, setHasLoadedGanttViewPrefs] = useState(false);
   const [ganttSearch, setGanttSearch] = useState('');
@@ -2327,6 +2350,52 @@ export default function PlanningPage() {
       });
   };
 
+  // Build bar segments from the currently selected snapshot overlay data (same grouping logic as getTaskUserAllocationSegments)
+  const getSnapshotBarSegments = (taskId: number, userId: number): Array<{ headerId: number | null; startDate: string; endDate: string }> => {
+    if (!snapshotOverlayData) return [];
+
+    const headerMap = new Map<number, { plannedStartDate: string | null; plannedEndDate: string | null }>();
+    for (const h of snapshotOverlayData.headers) {
+      headerMap.set(Number(h.OriginalHeaderId), {
+        plannedStartDate: h.PlannedStartDate ? normalizeDateKey(h.PlannedStartDate) : null,
+        plannedEndDate: h.PlannedEndDate ? normalizeDateKey(h.PlannedEndDate) : null,
+      });
+    }
+
+    const taskUserAllocations = snapshotOverlayData.allocations
+      .filter((a) => a.TaskId === taskId && a.UserId === userId)
+      .map((a) => ({
+        headerId: a.OriginalHeaderId ? Number(a.OriginalHeaderId) : null,
+        dateKey: normalizeDateKey(a.AllocationDate),
+      }))
+      .filter((entry) => !!entry.dateKey);
+
+    if (taskUserAllocations.length === 0) return [];
+
+    const groupedByHeader = new Map<string, { headerId: number | null; dates: string[] }>();
+    for (const entry of taskUserAllocations) {
+      const groupKey = entry.headerId !== null ? `header-${entry.headerId}` : `legacy-${taskId}-${userId}`;
+      const existing = groupedByHeader.get(groupKey);
+      if (existing) {
+        existing.dates.push(entry.dateKey);
+      } else {
+        groupedByHeader.set(groupKey, { headerId: entry.headerId, dates: [entry.dateKey] });
+      }
+    }
+
+    return Array.from(groupedByHeader.values())
+      .map((group) => {
+        const sortedDates = Array.from(new Set(group.dates)).sort();
+        const headerInfo = group.headerId !== null ? headerMap.get(group.headerId) : null;
+        return {
+          headerId: group.headerId,
+          startDate: headerInfo?.plannedStartDate || sortedDates[0],
+          endDate: headerInfo?.plannedEndDate || sortedDates[sortedDates.length - 1],
+        };
+      })
+      .sort((a, b) => a.startDate.localeCompare(b.startDate));
+  };
+
   // Calculate dependency lines for SVG overlay
   const getDependencyLines = useCallback(() => {
     const lines: { 
@@ -2827,6 +2896,169 @@ export default function PlanningPage() {
       console.error('Set task baseline error:', error);
       showAlert('Error', error?.message || 'Failed to set task baseline.');
     }
+  };
+
+  const loadSnapshots = async () => {
+    if (!token) return;
+    setSnapshotModal(prev => ({ ...prev, isLoading: true, error: '' }));
+    try {
+      const response = await fetch(`${getApiUrl()}/api/allocation-snapshots`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.message || 'Failed to load snapshots');
+      setSnapshotModal(prev => ({ ...prev, snapshots: data.snapshots || [], isLoading: false }));
+    } catch (err: any) {
+      setSnapshotModal(prev => ({ ...prev, isLoading: false, error: err.message || 'Failed to load snapshots' }));
+    }
+  };
+
+  const openSnapshotModal = async () => {
+    setSnapshotModal(prev => ({ ...prev, show: true, newName: '', newDescription: '', error: '' }));
+    await loadSnapshots();
+  };
+
+  const handleCreateSnapshot = async () => {
+    if (!token) return;
+    const name = snapshotModal.newName.trim();
+    if (!name) {
+      setSnapshotModal(prev => ({ ...prev, error: 'Snapshot name is required' }));
+      return;
+    }
+    setSnapshotModal(prev => ({ ...prev, isSaving: true, error: '' }));
+    try {
+      const response = await fetch(`${getApiUrl()}/api/allocation-snapshots`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, description: snapshotModal.newDescription.trim() || null }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.message || 'Failed to create snapshot');
+      showToast({ type: 'success', message: `Snapshot "${name}" created successfully` });
+      setSnapshotModal(prev => ({ ...prev, isSaving: false, newName: '', newDescription: '' }));
+      await loadSnapshots();
+      await loadToolbarSnapshots();
+    } catch (err: any) {
+      setSnapshotModal(prev => ({ ...prev, isSaving: false, error: err.message || 'Failed to create snapshot' }));
+    }
+  };
+
+  const handleRestoreSnapshot = (snapshot: any) => {
+    showConfirm(
+      'Restore Snapshot',
+      `Restore snapshot "${snapshot.Name}"?\n\nThis will REPLACE all current allocations with the data from this snapshot. This action cannot be undone.`,
+      async () => {
+        if (!token) return;
+        try {
+          const response = await fetch(`${getApiUrl()}/api/allocation-snapshots/${snapshot.Id}/restore`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data?.message || 'Failed to restore snapshot');
+          setSnapshotModal(prev => ({ ...prev, show: false }));
+          showToast({ type: 'success', message: data.message || 'Snapshot restored successfully' });
+          await loadAllAllocations();
+          if (projects.length > 0) await loadAllProjectsTasks(projects);
+        } catch (err: any) {
+          setSnapshotModal(prev => ({ ...prev, error: err.message || 'Failed to restore snapshot' }));
+        }
+      }
+    );
+  };
+
+  const handleDeleteSnapshot = (snapshot: any) => {
+    showConfirm(
+      'Delete Snapshot',
+      `Delete snapshot "${snapshot.Name}"? This action cannot be undone.`,
+      async () => {
+        if (!token) return;
+        try {
+          const response = await fetch(`${getApiUrl()}/api/allocation-snapshots/${snapshot.Id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data?.message || 'Failed to delete snapshot');
+          showToast({ type: 'success', message: 'Snapshot deleted successfully' });
+          if (selectedSnapshotId === Number(snapshot.Id)) handleClearSnapshotOverlay();
+          await loadSnapshots();
+          await loadToolbarSnapshots();
+        } catch (err: any) {
+          setSnapshotModal(prev => ({ ...prev, error: err.message || 'Failed to delete snapshot' }));
+        }
+      }
+    );
+  };
+
+  const loadToolbarSnapshots = async () => {
+    if (!token) return;
+    setIsLoadingToolbarSnapshots(true);
+    try {
+      const response = await fetch(`${getApiUrl()}/api/allocation-snapshots`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (response.ok) setToolbarSnapshots(data.snapshots || []);
+    } catch {}
+    setIsLoadingToolbarSnapshots(false);
+  };
+
+  const loadSnapshotOverlay = async (snapshotId: number) => {
+    if (!token) return;
+    setIsLoadingSnapshotOverlay(true);
+    try {
+      const response = await fetch(`${getApiUrl()}/api/allocation-snapshots/${snapshotId}/data`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setSnapshotOverlayData({ headers: data.headers || [], allocations: data.allocations || [] });
+      }
+    } catch {}
+    setIsLoadingSnapshotOverlay(false);
+  };
+
+  const handleSelectSnapshot = async (snapshotId: number | null) => {
+    setSelectedSnapshotId(snapshotId);
+    setSnapshotOverlayData(null);
+    if (snapshotId !== null) await loadSnapshotOverlay(snapshotId);
+  };
+
+  const handleClearSnapshotOverlay = () => {
+    setSelectedSnapshotId(null);
+    setSnapshotOverlayData(null);
+  };
+
+  const handleRestoreSelectedSnapshot = () => {
+    const snapshot = toolbarSnapshots.find(s => Number(s.Id) === selectedSnapshotId);
+    if (!snapshot) return;
+    showConfirm(
+      'Restore Snapshot',
+      `Restore snapshot "${snapshot.Name}"?\n\nThis will REPLACE all current allocations with the data from this snapshot. This action cannot be undone.`,
+      async () => {
+        if (!token) return;
+        try {
+          const response = await fetch(`${getApiUrl()}/api/allocation-snapshots/${snapshot.Id}/restore`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data?.message || 'Failed to restore snapshot');
+          handleClearSnapshotOverlay();
+          showToast({ type: 'success', message: data.message || 'Snapshot restored successfully' });
+          await loadAllAllocations();
+          if (projects.length > 0) await loadAllProjectsTasks(projects);
+        } catch (err: any) {
+          showAlert('Error', err.message || 'Failed to restore snapshot');
+        }
+      }
+    );
+  };
+
+  const togglePlanningTools = () => {
+    if (!showPlanningTools) loadToolbarSnapshots();
+    setShowPlanningTools(prev => !prev);
   };
 
   const closeExtraTimeModal = () => {
@@ -7689,6 +7921,23 @@ export default function PlanningPage() {
                     </div>
                   )}
                 </div>
+                <button
+                  onClick={togglePlanningTools}
+                  className={`p-2 rounded transition-colors ${showPlanningTools ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                  title={showPlanningTools ? 'Collapse planning tools' : 'Expand planning tools'}
+                  aria-label={showPlanningTools ? 'Collapse planning tools' : 'Expand planning tools'}
+                >
+                  <svg className={`w-5 h-5 transition-transform ${showPlanningTools ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Planning Tools expandable row */}
+            {showPlanningTools && (
+              <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/60 flex items-center gap-3 flex-wrap">
+                {/* Existing action buttons */}
                 {permissions?.canPlanTasks && projects.length > 0 && (
                   <button
                     onClick={() => {
@@ -7704,12 +7953,7 @@ export default function PlanningPage() {
                                 method: 'PUT',
                                 headers: { Authorization: `Bearer ${token!}` },
                               });
-                              const d = await res.json();
-                              if (res.ok) {
-                                successCount++;
-                              } else {
-                                failCount++;
-                              }
+                              if (res.ok) successCount++; else failCount++;
                             }
                             showAlert('Baseline Set', `Baseline snapshot completed. Success: ${successCount}, Failed: ${failCount}`);
                             await loadData();
@@ -7720,16 +7964,77 @@ export default function PlanningPage() {
                         }
                       );
                     }}
-                    className="px-4 py-2 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-purple-100 dark:hover:bg-purple-900 transition-colors"
+                    className="h-8 px-3 rounded text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 hover:border-purple-400 transition-colors"
                     title="Snapshot current planned dates as baseline for all visible projects"
                   >
                     📐 Set Baseline
                   </button>
                 )}
-              </div>
-            </div>
+                <button
+                  onClick={openSnapshotModal}
+                  className="h-8 px-3 rounded text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-400 transition-colors"
+                  title="Manage allocation snapshots"
+                >
+                  📸 Manage Snapshots
+                </button>
 
-            {/* Gantt Chart */}
+                <div className="h-6 w-px bg-gray-300 dark:bg-gray-600 mx-1" />
+
+                {/* Snapshot overlay selector */}
+                <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Overlay:</span>
+                {isLoadingToolbarSnapshots ? (
+                  <span className="text-xs text-gray-400 italic">Loading…</span>
+                ) : (
+                  <select
+                    value={selectedSnapshotId ?? ''}
+                    onChange={(e) => handleSelectSnapshot(e.target.value ? Number(e.target.value) : null)}
+                    className="h-8 px-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 max-w-xs"
+                  >
+                    <option value="">— none —</option>
+                    {toolbarSnapshots.map((s: any) => (
+                      <option key={s.Id} value={s.Id}>
+                        {s.Name} ({new Date(s.CreatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })})
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {isLoadingSnapshotOverlay && (
+                  <svg className="animate-spin w-4 h-4 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                )}
+                {selectedSnapshotId !== null && snapshotOverlayData && !isLoadingSnapshotOverlay && (
+                  <span className="text-xs text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded px-2 py-0.5">
+                    Overlay active — amber ghost bars shown in Gantt
+                  </span>
+                )}
+                {selectedSnapshotId !== null && (
+                  <button
+                    onClick={handleRestoreSelectedSnapshot}
+                    className="h-8 px-3 rounded text-sm bg-amber-600 hover:bg-amber-700 text-white transition-colors inline-flex items-center gap-1.5"
+                    title="Restore this snapshot, replacing all current allocations"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Restore
+                  </button>
+                )}
+                {selectedSnapshotId !== null && (
+                  <button
+                    onClick={handleClearSnapshotOverlay}
+                    className="h-8 w-8 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex items-center justify-center"
+                    title="Clear snapshot overlay"
+                    aria-label="Clear overlay"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
             <div className="flex-1 min-h-0 overflow-auto">
               <div
                 className="relative"
@@ -8452,17 +8757,19 @@ export default function PlanningPage() {
                   });
                   
                   // Calculate row height based on max rows (parent tasks + subtasks)
+                  // ROW_H doubles when snapshot overlay is active so ghost bars render in the bottom half of each row slot.
+                  const ROW_H = snapshotOverlayData ? 48 : 24;
                   // Reserve a dedicated lane for recurring allocations so they don't overlap task bars.
                   const hasRecurringForUser = recurringAllocations.some((recurring) => recurring.UserId === userRow.Id);
                   const hasOutlookForUser = outlookTimelineEvents.some((outlookEvent) => Number(outlookEvent.userId) === Number(userRow.Id));
                   const recurringLaneHeight = hasRecurringForUser ? 18 : 0;
                   const outlookLaneHeight = hasOutlookForUser ? 18 : 0;
-                  const recurringLaneTop = hasRecurringForUser ? Math.max(maxRows * 24 + 4, 24) : 0;
+                  const recurringLaneTop = hasRecurringForUser ? Math.max(maxRows * ROW_H + 4, ROW_H) : 0;
                   const outlookLaneTop = hasOutlookForUser
-                    ? Math.max(maxRows * 24 + 4 + recurringLaneHeight, 24 + recurringLaneHeight)
+                    ? Math.max(maxRows * ROW_H + 4 + recurringLaneHeight, ROW_H + recurringLaneHeight)
                     : 0;
                   const extraLanesHeight = recurringLaneHeight + outlookLaneHeight;
-                  const rowHeight = Math.max(maxRows * 24 + 8 + extraLanesHeight, 44 + extraLanesHeight);
+                  const rowHeight = Math.max(maxRows * ROW_H + 8 + extraLanesHeight, 44 + extraLanesHeight);
                   
                   return (
                     <React.Fragment key={userRow.Id}>
@@ -8775,13 +9082,49 @@ export default function PlanningPage() {
 
                           return (
                             <React.Fragment key={`bar-${task.Id}`}>
+                              {/* Snapshot overlay ghost bars — render in the bottom half of each row slot (offset by 26px) */}
+                              {snapshotOverlayData && getSnapshotBarSegments(task.Id, userRow.Id).map((seg, segIdx) => {
+                                const snapTask = { ...task, PlannedStartDate: seg.startDate, PlannedEndDate: seg.endDate };
+                                const snapPos = getTaskPosition(snapTask, timelineColumns, {
+                                  useFixedPixelColumns,
+                                  columnWidthPx: dayColumnWidthPx,
+                                  forcePlannedDates: true,
+                                });
+                                if (!snapPos) return null;
+                                const snapTop = 2 + (row + segIdx) * ROW_H + 26;
+                                return (
+                                  <div
+                                    key={`snap-${task.Id}-u${userRow.Id}-${segIdx}-${seg.startDate}`}
+                                    className="absolute h-5 rounded cursor-pointer flex items-center overflow-hidden"
+                                    style={{
+                                      left: snapPos.left,
+                                      width: snapPos.width,
+                                      top: `${snapTop}px`,
+                                      backgroundColor: 'rgba(217, 119, 6, 0.20)',
+                                      border: '1.5px dashed #b45309',
+                                      boxSizing: 'border-box',
+                                      zIndex: 10,
+                                    }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void handleTaskClick(task);
+                                    }}
+                                    title={`Snapshot: ${task.TaskName}\n${seg.startDate} → ${seg.endDate}`}
+                                  >
+                                    <span className="truncate text-[10px] px-1.5 font-medium text-amber-800 dark:text-amber-300 pointer-events-none select-none">
+                                      {task.TaskName}
+                                      <span className="ml-1 opacity-70">{seg.startDate} → {seg.endDate}</span>
+                                    </span>
+                                  </div>
+                                );
+                              })}
                               {baselinePosition && (
                                 <div
                                   className="absolute rounded-sm pointer-events-none"
                                   style={{
                                     left: baselinePosition.left,
                                     width: baselinePosition.width,
-                                    top: `${4 + row * 24 + (isSubtask ? 10 : 12)}px`,
+                                    top: `${4 + row * ROW_H + (isSubtask ? 10 : 12)}px`,
                                     height: '4px',
                                     backgroundColor: driftDays === 0 ? '#10b981' : driftDays > 0 ? '#f59e0b' : '#a855f7',
                                     opacity: 0.7,
@@ -8856,7 +9199,7 @@ export default function PlanningPage() {
                                     style={{
                                       left: segmentPreviewStyle?.left || segmentPosition.left,
                                       width: segmentPreviewStyle?.width || segmentPosition.width,
-                                      top: `${2 + (row + segmentIndex) * 24}px`,
+                                      top: `${2 + (row + segmentIndex) * ROW_H}px`,
                                       height: '24px',
                                       ...(segmentStatusColor ? { backgroundColor: segmentStatusColor } : {}),
                                       borderLeft: `${isSubtask ? '3' : '4'}px solid ${priorityBorderHex}`,
@@ -11072,6 +11415,175 @@ export default function PlanningPage() {
                   >
                     {manualAllocationModal.mode === 'add' ? 'Add Allocation' : 'Save Changes'}
                   </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Allocation Snapshots Modal */}
+        {snapshotModal.show && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[130] p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl border border-gray-200 dark:border-gray-700 flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Allocation Snapshots</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Save and restore the complete state of all resource allocations</p>
+                </div>
+                <button
+                  onClick={() => setSnapshotModal(prev => ({ ...prev, show: false }))}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded transition-colors"
+                  aria-label="Close snapshots modal"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {/* Create new snapshot */}
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-3">Take New Snapshot</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Name <span className="text-red-500">*</span></label>
+                      <input
+                        type="text"
+                        value={snapshotModal.newName}
+                        onChange={(e) => setSnapshotModal(prev => ({ ...prev, newName: e.target.value, error: '' }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleCreateSnapshot(); }}
+                        placeholder="e.g. Before Sprint 5 replanning"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
+                        disabled={snapshotModal.isSaving}
+                        maxLength={255}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Description (optional)</label>
+                      <input
+                        type="text"
+                        value={snapshotModal.newDescription}
+                        onChange={(e) => setSnapshotModal(prev => ({ ...prev, newDescription: e.target.value }))}
+                        placeholder="Optional notes about this snapshot"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
+                        disabled={snapshotModal.isSaving}
+                        maxLength={500}
+                      />
+                    </div>
+                    {snapshotModal.error && (
+                      <p className="text-sm text-red-600 dark:text-red-400">{snapshotModal.error}</p>
+                    )}
+                    <button
+                      onClick={handleCreateSnapshot}
+                      disabled={snapshotModal.isSaving || !snapshotModal.newName.trim()}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2"
+                    >
+                      {snapshotModal.isSaving ? (
+                        <>
+                          <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          Saving…
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          Take Snapshot
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Existing snapshots list */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Saved Snapshots</h3>
+                  {snapshotModal.isLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <svg className="animate-spin w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    </div>
+                  ) : snapshotModal.snapshots.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
+                      No snapshots yet. Take the first one above.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {snapshotModal.snapshots.map((snapshot: any) => {
+                        const createdBy = snapshot.FirstName && snapshot.LastName
+                          ? `${snapshot.FirstName} ${snapshot.LastName}`
+                          : snapshot.Username || 'Unknown';
+                        const createdAt = new Date(snapshot.CreatedAt).toLocaleString('en-GB', {
+                          day: '2-digit', month: 'short', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit'
+                        });
+                        return (
+                          <div
+                            key={snapshot.Id}
+                            className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-4"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-gray-900 dark:text-white text-sm truncate">{snapshot.Name}</p>
+                                {snapshot.Description && (
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{snapshot.Description}</p>
+                                )}
+                                <div className="flex flex-wrap gap-3 mt-2">
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">{createdAt} · {createdBy}</span>
+                                </div>
+                                <div className="flex gap-3 mt-1.5">
+                                  <span className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-600 rounded px-1.5 py-0.5">
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                    {snapshot.TotalHeaders} slices
+                                  </span>
+                                  <span className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-600 rounded px-1.5 py-0.5">
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                    {snapshot.TotalAllocations} days
+                                  </span>
+                                  {snapshot.TotalChildAllocations > 0 && (
+                                    <span className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-600 rounded px-1.5 py-0.5">
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" /></svg>
+                                      {snapshot.TotalChildAllocations} child
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  onClick={() => handleRestoreSnapshot(snapshot)}
+                                  className="p-1.5 text-gray-400 hover:text-green-600 dark:hover:text-green-400 rounded transition-colors"
+                                  title="Restore this snapshot"
+                                  aria-label="Restore snapshot"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteSnapshot(snapshot)}
+                                  className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"
+                                  title="Delete this snapshot"
+                                  aria-label="Delete snapshot"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

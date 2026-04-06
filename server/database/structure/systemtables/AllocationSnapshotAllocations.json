@@ -1,0 +1,75 @@
+{
+  "TableName": "AllocationSnapshotAllocations",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key"
+    },
+    {
+      "FieldName": "SnapshotId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to AllocationSnapshots.Id"
+    },
+    {
+      "FieldName": "OriginalAllocationId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Original TaskAllocations.Id at snapshot time"
+    },
+    {
+      "FieldName": "OriginalHeaderId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Original TaskAllocationHeaders.Id for header remapping on restore"
+    },
+    {
+      "FieldName": "TaskId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Tasks.Id"
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id"
+    },
+    {
+      "FieldName": "AllocationDate",
+      "DataType": "date",
+      "NotNullable": true,
+      "Comment": "Date for which hours are allocated"
+    },
+    {
+      "FieldName": "AllocatedHours",
+      "DataType": "decimal(4,2)",
+      "NotNullable": true,
+      "DefaultValue": "0.00",
+      "Comment": "Hours allocated for this date"
+    },
+    {
+      "FieldName": "StartTime",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "Comment": "Planned start time HH:MM"
+    },
+    {
+      "FieldName": "EndTime",
+      "DataType": "varchar(5)",
+      "NotNullable": false,
+      "Comment": "Planned end time HH:MM"
+    },
+    {
+      "FieldName": "IsManual",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Whether allocation was manually set"
+    }
+  ]
+}
