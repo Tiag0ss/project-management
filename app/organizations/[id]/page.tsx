@@ -18,6 +18,15 @@ import ChangeHistory from '@/components/ChangeHistory';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import SearchableSelect from '@/components/SearchableSelect';
 
+const decimalHoursToHMS = (hours: number): string => {
+  const totalSeconds = Math.round(Math.abs(hours) * 3600);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const sign = hours < 0 ? '-' : '';
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+
 export default function OrganizationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const orgId = parseInt(resolvedParams.id);
@@ -825,12 +834,12 @@ function OverviewTab({ organization, orgId, token, internalTicketsEnabled }: { o
             )}
             <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow border-l-4 border-orange-500">
               <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Estimated Hours</div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalEstimated.toFixed(0)}h</div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white">{decimalHoursToHMS(totalEstimated)}</div>
               <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">planned across project totals</div>
             </div>
             <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow border-l-4 border-green-500">
               <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Hours Worked</div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalWorked.toFixed(0)}h</div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white">{decimalHoursToHMS(totalWorked)}</div>
               <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{hoursProgress}% of estimated effort</div>
             </div>
           </div>
@@ -851,7 +860,7 @@ function OverviewTab({ organization, orgId, token, internalTicketsEnabled }: { o
                 <div>
                   <div className="flex justify-between items-center text-sm mb-1">
                     <span className="text-gray-600 dark:text-gray-400">Hours progress</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{totalWorked.toFixed(0)}h / {totalEstimated.toFixed(0)}h</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{decimalHoursToHMS(totalWorked)} / {decimalHoursToHMS(totalEstimated)}</span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
                     <div className={`h-3 rounded-full transition-all ${totalWorked > totalEstimated ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${Math.min(100, totalEstimated > 0 ? (totalWorked / totalEstimated) * 100 : 0)}%` }} />
@@ -972,7 +981,7 @@ function OverviewTab({ organization, orgId, token, internalTicketsEnabled }: { o
                             <div className="text-sm text-gray-500 dark:text-gray-400 mt-1 flex flex-wrap gap-x-3 gap-y-1">
                               <span>{project.CustomerName || 'Internal / no customer'}</span>
                               <span>{Number(project.TotalTasks || 0)} tasks</span>
-                              <span>{Number(project.TotalWorkedHours || 0).toFixed(1)}h worked</span>
+                              <span>{Number(project.TotalWorkedHours || 0).toFixed(1) !== '0.0' ? decimalHoursToHMS(Number(project.TotalWorkedHours || 0)) : '00:00:00'} worked</span>
                               <span>Updated {new Date(project.UpdatedAt).toLocaleDateString()}</span>
                             </div>
                             <div className="mt-3">
@@ -1007,7 +1016,7 @@ function OverviewTab({ organization, orgId, token, internalTicketsEnabled }: { o
                     <div key={customer.name} className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
                       <div className="font-medium text-gray-900 dark:text-white">{customer.name}</div>
                       <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">{customer.projectCount} project{customer.projectCount !== 1 ? 's' : ''}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">{customer.workedHours.toFixed(1)}h worked / {customer.estimatedHours.toFixed(0)}h estimated</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">{decimalHoursToHMS(customer.workedHours)} worked / {decimalHoursToHMS(customer.estimatedHours)} estimated</div>
                     </div>
                   ))}
                 </div>

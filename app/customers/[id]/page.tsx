@@ -14,6 +14,15 @@ import { getCustomer, updateCustomer, Customer } from '@/lib/api/customers';
 import { projectsApi, Project as ApiProject } from '@/lib/api/projects';
 import { tasksApi, Task as ApiTask } from '@/lib/api/tasks';
 
+const decimalHoursToHMS = (hours: number): string => {
+  const totalSeconds = Math.round(Math.abs(hours) * 3600);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const sign = hours < 0 ? '-' : '';
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+
 interface Project {
   Id: number;
   ProjectName: string;
@@ -1023,8 +1032,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               )}
               <div className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow border-l-4 border-orange-500">
                 <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Hours Worked</div>
-                <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">{totalWorkedHours.toFixed(0)}h</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">est. {totalEstimatedHours.toFixed(0)}h</div>
+                <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">{decimalHoursToHMS(totalWorkedHours)}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">est. {decimalHoursToHMS(totalEstimatedHours)}</div>
               </div>
             </div>
 
@@ -1044,7 +1053,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 <div>
                   <div className="flex justify-between items-center text-sm mb-1">
                     <span className="text-gray-600 dark:text-gray-400">Hours progress</span>
-                    <span className="font-semibold text-gray-900 dark:text-white">{totalWorkedHours.toFixed(1)}h / {totalEstimatedHours.toFixed(0)}h</span>
+                    <span className="font-semibold text-gray-900 dark:text-white">{decimalHoursToHMS(totalWorkedHours)} / {decimalHoursToHMS(totalEstimatedHours)}</span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
                     <div
@@ -1296,7 +1305,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                           {initials}
                         </div>
                         <div className="text-sm font-medium text-gray-900 dark:text-white leading-tight">{fullName}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">{Number(member.WorkedHours).toFixed(1)}h · {member.TaskCount} task{Number(member.TaskCount) !== 1 ? 's' : ''}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{decimalHoursToHMS(Number(member.WorkedHours))} · {member.TaskCount} task{Number(member.TaskCount) !== 1 ? 's' : ''}</div>
                       </div>
                     );
                   })}
@@ -1344,7 +1353,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                               )}
                             </td>
                             <td className="py-2 pr-4 text-gray-600 dark:text-gray-400 max-w-[140px] truncate" title={entry.ProjectName}>{entry.ProjectName}</td>
-                            <td className="py-2 text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">{Number(entry.Hours).toFixed(1)}h</td>
+                            <td className="py-2 text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">{decimalHoursToHMS(Number(entry.Hours))}</td>
                           </tr>
                         );
                       })}
@@ -1373,7 +1382,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                           <div className="min-w-0">
                             <div className="font-medium text-gray-900 dark:text-white truncate">{project.ProjectName}</div>
                             <div className="text-sm text-gray-500 dark:text-gray-400">
-                              {project.CompletedTasks}/{project.TotalTasks} tasks · {Number(project.TotalWorkedHours || 0).toFixed(1)}h / {Number(project.TotalEstimatedHours || 0).toFixed(0)}h
+                              {project.CompletedTasks}/{project.TotalTasks} tasks · {decimalHoursToHMS(Number(project.TotalWorkedHours || 0))} / {decimalHoursToHMS(Number(project.TotalEstimatedHours || 0))}
                             </div>
                           </div>
                           <span className="px-2 py-1 text-xs rounded-full whitespace-nowrap flex-shrink-0" style={{ backgroundColor: project.StatusColor ? `${project.StatusColor}20` : '#e5e7eb', color: project.StatusColor || '#374151' }}>

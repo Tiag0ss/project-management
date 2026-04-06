@@ -17,6 +17,15 @@ import TimeEntryFormModal, { TimeEntryFormValues } from '@/components/TimeEntryF
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 
+const decimalHoursToHMS = (hours: number): string => {
+  const totalSeconds = Math.round(Math.abs(hours) * 3600);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const sign = hours < 0 ? '-' : '';
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+
 interface TaskWithProject extends Task {
   ProjectName?: string;
   IsHobby?: boolean;
@@ -1065,7 +1074,7 @@ export default function TimesheetPage() {
                                       {entry.EndTime || '-'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">
-                                      {parseFloat(entry.Hours as any).toFixed(2)}h
+                                      {decimalHoursToHMS(parseFloat(entry.Hours as any))}
                                     </td>
                                     <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
                                       {stripHtml(entry.Description) || '-'}
@@ -1116,7 +1125,7 @@ export default function TimesheetPage() {
                               Total Hours (last 8 days):
                             </span>
                             <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                              {recentEntries.reduce((sum, entry) => sum + parseFloat(entry.Hours as any), 0).toFixed(2)}h
+                              {decimalHoursToHMS(recentEntries.reduce((sum, entry) => sum + parseFloat(entry.Hours as any), 0))}
                             </span>
                           </div>
                         </div>
@@ -1374,7 +1383,7 @@ export default function TimesheetPage() {
                                         );
                                       })}
                                       <td className="px-4 py-3 text-center text-sm font-bold text-blue-600 dark:text-blue-400">
-                                        {totalHours.toFixed(2)}h
+                                        {decimalHoursToHMS(totalHours)}
                                       </td>
                                     </tr>
                                   );
@@ -1494,7 +1503,7 @@ export default function TimesheetPage() {
                                         );
                                       })}
                                       <td className="px-4 py-3 text-center text-sm font-bold text-purple-600 dark:text-purple-400 bg-purple-50/50 dark:bg-purple-900/10">
-                                        {totalHours.toFixed(2)}h
+                                        {decimalHoursToHMS(totalHours)}
                                       </td>
                                     </tr>
                                   );
@@ -1529,7 +1538,7 @@ export default function TimesheetPage() {
                                     );
                                   })}
                                   <td className="px-4 py-3 text-center text-sm font-bold text-green-600 dark:text-green-400">
-                                    {tasksForWeek.reduce((total, task) => {
+                                    {decimalHoursToHMS(tasksForWeek.reduce((total, task) => {
                                       return total + getCurrentWeekDates().reduce((sum, date) => {
                                         const localValue = weeklyHours[task.Id]?.[date];
                                         if (localValue) {
@@ -1546,7 +1555,7 @@ export default function TimesheetPage() {
                                         const totalEntriesHours = entries.reduce((s, e) => s + parseFloat(e.Hours as any), 0);
                                         return sum + totalEntriesHours;
                                       }, 0);
-                                    }, 0).toFixed(2)}h
+                                    }, 0))}
                                   </td>
                                 </tr>
                               </tfoot>
@@ -1890,7 +1899,7 @@ export default function TimesheetPage() {
                                                 📅 {dayLabel}
                                               </span>
                                               <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
-                                                {dayTotal.toFixed(2)}h total
+                                                {decimalHoursToHMS(dayTotal)} total
                                               </span>
                                             </div>
                                           </td>
@@ -1911,7 +1920,7 @@ export default function TimesheetPage() {
                                               {group.taskName}
                                             </td>
                                             <td className="px-6 py-3 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">
-                                              {group.totalHours.toFixed(2)}h
+                                              {decimalHoursToHMS(group.totalHours)}
                                             </td>
                                             <td className="px-6 py-3 text-sm text-gray-600 dark:text-gray-400">
                                               {group.descriptions.length > 0 ? (
@@ -1953,7 +1962,7 @@ export default function TimesheetPage() {
                                         {entry.EndTime || '-'}
                                       </td>
                                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">
-                                        {parseFloat(entry.Hours as any).toFixed(2)}h
+                                        {decimalHoursToHMS(parseFloat(entry.Hours as any))}
                                       </td>
                                       <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
                                         {stripHtml(entry.Description) || '-'}
@@ -2003,7 +2012,7 @@ export default function TimesheetPage() {
                                   Total Hours ({filteredEntries.length} entries across {uniqueDays} days):
                                 </span>
                                 <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                                  {totalFilteredHours.toFixed(2)}h
+                                  {decimalHoursToHMS(totalFilteredHours)}
                                 </span>
                               </div>
                             </div>
@@ -2069,15 +2078,15 @@ export default function TimesheetPage() {
                             </div>
                             <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 border border-purple-100 dark:border-purple-800">
                               <p className="text-sm text-purple-700 dark:text-purple-300">Total Hours</p>
-                              <p className="text-2xl font-bold text-purple-900 dark:text-purple-100">{resumeTotals.totalHours.toFixed(1)}h</p>
+                              <p className="text-2xl font-bold text-purple-900 dark:text-purple-100">{decimalHoursToHMS(resumeTotals.totalHours)}</p>
                             </div>
                             <div className="bg-cyan-50 dark:bg-cyan-900/20 rounded-lg p-4 border border-cyan-100 dark:border-cyan-800">
                               <p className="text-sm text-cyan-700 dark:text-cyan-300">Avg / Entry</p>
-                              <p className="text-2xl font-bold text-cyan-900 dark:text-cyan-100">{resumeTotals.avgHoursPerEntry.toFixed(2)}h</p>
+                              <p className="text-2xl font-bold text-cyan-900 dark:text-cyan-100">{decimalHoursToHMS(resumeTotals.avgHoursPerEntry)}</p>
                             </div>
                             <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 border border-indigo-100 dark:border-indigo-800">
                               <p className="text-sm text-indigo-700 dark:text-indigo-300">Avg / User</p>
-                              <p className="text-2xl font-bold text-indigo-900 dark:text-indigo-100">{resumeTotals.avgHoursPerUser.toFixed(1)}h</p>
+                              <p className="text-2xl font-bold text-indigo-900 dark:text-indigo-100">{decimalHoursToHMS(resumeTotals.avgHoursPerUser)}</p>
                             </div>
                             <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 border border-emerald-100 dark:border-emerald-800">
                               <p className="text-sm text-emerald-700 dark:text-emerald-300">Approval Rate</p>
@@ -2111,7 +2120,7 @@ export default function TimesheetPage() {
                                     <div key={row.UserId}>
                                       <div className="flex justify-between text-xs text-gray-700 dark:text-gray-300 mb-1">
                                         <span>{idx + 1}. {displayName}</span>
-                                        <span>{row.TotalHours.toFixed(2)}h</span>
+                                        <span>{row.TotalHours.toFixed(2) !== '0.00' ? decimalHoursToHMS(row.TotalHours) : '00:00:00'}</span>
                                       </div>
                                       <div className="w-full h-2 rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
                                         <div className="h-2 bg-blue-500 rounded" style={{ width: `${width}%` }} />
@@ -2168,7 +2177,7 @@ export default function TimesheetPage() {
                                         <div className="text-xs text-gray-500 dark:text-gray-400">@{row.Username}</div>
                                       </td>
                                       <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-white">{row.EntryCount}</td>
-                                      <td className="px-4 py-3 text-sm text-right font-semibold text-blue-600 dark:text-blue-400">{row.TotalHours.toFixed(2)}h</td>
+                                      <td className="px-4 py-3 text-sm text-right font-semibold text-blue-600 dark:text-blue-400">{decimalHoursToHMS(row.TotalHours)}</td>
                                       <td className="px-4 py-3 text-sm text-gray-900 dark:text-white min-w-[220px]">
                                         <div className="font-semibold text-xs text-indigo-600 dark:text-indigo-400 mb-1">{row.TaskCount} task{row.TaskCount === 1 ? '' : 's'}</div>
                                         <div className="text-xs text-gray-600 dark:text-gray-400">

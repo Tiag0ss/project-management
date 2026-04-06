@@ -74,6 +74,15 @@ interface Tag {
   Description?: string;
 }
 
+const decimalHoursToHMS = (hours: number): string => {
+  const totalSeconds = Math.round(Math.abs(hours) * 3600);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const sign = hours < 0 ? '-' : '';
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+
 const clampColorChannel = (value: number): number => Math.max(0, Math.min(255, Math.round(value)));
 
 const normalizeHexColor = (color: string | undefined): string => {
@@ -1944,15 +1953,15 @@ export default function TaskDetailModal({
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
                   <div className="px-3 py-1.5 rounded bg-purple-50 dark:bg-purple-900/20">
                     <div className="text-[11px] text-gray-600 dark:text-gray-400">Estimated</div>
-                    <div className="text-sm font-bold text-purple-600 dark:text-purple-400">{parseFloat(task.EstimatedHours as any || 0).toFixed(1)}h</div>
+                    <div className="text-sm font-bold text-purple-600 dark:text-purple-400">{decimalHoursToHMS(parseFloat(task.EstimatedHours as any || 0))}</div>
                   </div>
                   <div className="px-3 py-1.5 rounded bg-blue-50 dark:bg-blue-900/20">
                     <div className="text-[11px] text-gray-600 dark:text-gray-400">Allocated</div>
-                    <div className="text-sm font-bold text-blue-600 dark:text-blue-400">{totalAllocated.toFixed(1)}h</div>
+                    <div className="text-sm font-bold text-blue-600 dark:text-blue-400">{decimalHoursToHMS(totalAllocated)}</div>
                   </div>
                   <div className="px-3 py-1.5 rounded bg-green-50 dark:bg-green-900/20">
                     <div className="text-[11px] text-gray-600 dark:text-gray-400">Worked</div>
-                    <div className="text-sm font-bold text-green-600 dark:text-green-400">{totalWorked.toFixed(1)}h</div>
+                    <div className="text-sm font-bold text-green-600 dark:text-green-400">{decimalHoursToHMS(totalWorked)}</div>
                   </div>
                   <div className="px-3 py-1.5 rounded bg-gray-50 dark:bg-gray-700/40">
                     <div className="text-[11px] text-gray-600 dark:text-gray-400">Completion</div>
@@ -2070,7 +2079,7 @@ export default function TaskDetailModal({
                 title={
                   tab === 'details' ? 'Details' :
                   tab === 'checklist' ? `Checklist (${checklists.length})` :
-                  tab === 'hours' ? `Plan & Deps (${totalWorked.toFixed(1)}h)` :
+                  tab === 'hours' ? `Plan & Deps (${decimalHoursToHMS(totalWorked)})` :
                   tab === 'comments' ? `Comments (${taskComments.length})` :
                   tab === 'attachments' ? `Files (${taskAttachments.length})` :
                   `History (${taskHistory.length})`
@@ -2078,7 +2087,7 @@ export default function TaskDetailModal({
               >
                 {tab === 'details' && '📝 Details'}
                 {tab === 'checklist' && `✅ Checklist (${checklists.length})`}
-                {tab === 'hours' && `📅 Plan & Deps (${totalWorked.toFixed(1)}h)`}
+                {tab === 'hours' && `📅 Plan & Deps (${decimalHoursToHMS(totalWorked)})`}
                 {tab === 'comments' && `💬 Comments (${taskComments.length})`}
                 {tab === 'attachments' && `📎 Files (${taskAttachments.length})`}
                 {tab === 'history' && `📜 History (${taskHistory.length})`}
@@ -2887,7 +2896,7 @@ export default function TaskDetailModal({
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{child.TaskName}</p>
                           <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {child.EstimatedHours ? `${Number(child.EstimatedHours).toFixed(1)}h` : 'No estimate'}
+                            {child.EstimatedHours ? decimalHoursToHMS(Number(child.EstimatedHours)) : 'No estimate'}
                           </p>
                         </div>
                         <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 shrink-0">
@@ -3066,7 +3075,7 @@ export default function TaskDetailModal({
                                     {group.dailySummaries.length}
                                   </td>
                                   <td className="px-5 py-3 text-sm text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">
-                                    {group.totalHours.toFixed(1)}h
+                                    {decimalHoursToHMS(group.totalHours)}
                                   </td>
                                   {!hasChildren && (
                                     <td className="px-5 py-3 text-sm text-center text-gray-400 dark:text-gray-600 whitespace-nowrap">
@@ -3099,7 +3108,7 @@ export default function TaskDetailModal({
                                       {summary.slotCount}
                                     </td>
                                     <td className="px-5 py-3 text-sm text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">
-                                      {summary.totalHours.toFixed(1)}h
+                                      {decimalHoursToHMS(summary.totalHours)}
                                     </td>
                                     {!hasChildren && (
                                       <td className="px-5 py-3 text-sm text-center whitespace-nowrap">
@@ -3207,7 +3216,7 @@ export default function TaskDetailModal({
                                 {entry.Username || `User ${entry.UserId}`}
                               </td>
                               <td className="px-5 py-3 text-sm text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">
-                                {parseFloat(entry.Hours as any).toFixed(1)}h
+                                {decimalHoursToHMS(parseFloat(entry.Hours as any))}
                               </td>
                               <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-400">
                                 {entry.Description || '-'}

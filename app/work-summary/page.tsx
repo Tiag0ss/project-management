@@ -105,6 +105,15 @@ const stripHtml = (value?: string): string => {
     .trim();
 };
 
+const decimalHoursToHMS = (hours: number): string => {
+  const totalSeconds = Math.round(Math.abs(hours) * 3600);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const sign = hours < 0 ? '-' : '';
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+
 const calculateEndTime = (startTime?: string, durationMinutes?: number): string => {
   if (!startTime) return '-';
 
@@ -573,15 +582,15 @@ export default function WorkSummaryPage() {
                         </div>
                         <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 border border-purple-100 dark:border-purple-800">
                           <p className="text-sm text-purple-700 dark:text-purple-300">Total Hours</p>
-                          <p className="text-2xl font-bold text-purple-900 dark:text-purple-100">{resumeTotals.totalHours.toFixed(1)}h</p>
+                          <p className="text-2xl font-bold text-purple-900 dark:text-purple-100">{decimalHoursToHMS(resumeTotals.totalHours)}</p>
                         </div>
                         <div className="bg-cyan-50 dark:bg-cyan-900/20 rounded-lg p-4 border border-cyan-100 dark:border-cyan-800">
                           <p className="text-sm text-cyan-700 dark:text-cyan-300">Avg / Entry</p>
-                          <p className="text-2xl font-bold text-cyan-900 dark:text-cyan-100">{resumeTotals.avgHoursPerEntry.toFixed(2)}h</p>
+                          <p className="text-2xl font-bold text-cyan-900 dark:text-cyan-100">{decimalHoursToHMS(resumeTotals.avgHoursPerEntry)}</p>
                         </div>
                         <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 border border-indigo-100 dark:border-indigo-800">
                           <p className="text-sm text-indigo-700 dark:text-indigo-300">Avg / User</p>
-                          <p className="text-2xl font-bold text-indigo-900 dark:text-indigo-100">{resumeTotals.avgHoursPerUser.toFixed(1)}h</p>
+                          <p className="text-2xl font-bold text-indigo-900 dark:text-indigo-100">{decimalHoursToHMS(resumeTotals.avgHoursPerUser)}</p>
                         </div>
                         <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 border border-emerald-100 dark:border-emerald-800">
                           <p className="text-sm text-emerald-700 dark:text-emerald-300">Approval Rate</p>
@@ -615,7 +624,7 @@ export default function WorkSummaryPage() {
                                 <div key={row.UserId}>
                                   <div className="flex justify-between text-xs text-gray-700 dark:text-gray-300 mb-1">
                                     <span>{idx + 1}. {displayName}</span>
-                                    <span>{Number(row.TotalHours || 0).toFixed(2)}h</span>
+                                    <span>{decimalHoursToHMS(Number(row.TotalHours || 0))}</span>
                                   </div>
                                   <div className="w-full h-2 rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
                                     <div className="h-2 bg-blue-500 rounded" style={{ width: `${width}%` }} />
@@ -663,7 +672,7 @@ export default function WorkSummaryPage() {
                                   {row.FirstName && row.LastName ? `${row.FirstName} ${row.LastName}` : row.Username}
                                 </td>
                                 <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-white">{row.EntryCount}</td>
-                                <td className="px-4 py-3 text-sm text-right font-semibold text-blue-600 dark:text-blue-400">{Number(row.TotalHours || 0).toFixed(2)}h</td>
+                                <td className="px-4 py-3 text-sm text-right font-semibold text-blue-600 dark:text-blue-400">{decimalHoursToHMS(Number(row.TotalHours || 0))}</td>
                                 <td className="px-4 py-3 text-sm text-right text-green-600 dark:text-green-400">{row.ApprovedCount}</td>
                                 <td className="px-4 py-3 text-sm text-right text-yellow-600 dark:text-yellow-400">{row.PendingCount}</td>
                                 <td className="px-4 py-3 text-sm text-right text-red-600 dark:text-red-400">{row.RejectedCount}</td>
@@ -841,7 +850,7 @@ export default function WorkSummaryPage() {
                                         <td colSpan={6} className="px-6 py-2">
                                           <div className="flex items-center justify-between">
                                             <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">📅 {dayLabel}</span>
-                                            <span className="text-sm font-bold text-blue-600 dark:text-blue-400">{dayTotal.toFixed(2)}h total</span>
+                                            <span className="text-sm font-bold text-blue-600 dark:text-blue-400">{decimalHoursToHMS(dayTotal)} total</span>
                                           </div>
                                         </td>
                                       </tr>,
@@ -858,7 +867,7 @@ export default function WorkSummaryPage() {
                                               <div className="text-xs text-blue-600 dark:text-blue-400 font-medium mt-0.5">{group.entries[0]?.jiraIssueKey}</div>
                                             )}
                                           </td>
-                                          <td className="px-6 py-3 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">{Number(group.totalHours || 0).toFixed(2)}h</td>
+                                          <td className="px-6 py-3 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">{decimalHoursToHMS(Number(group.totalHours || 0))}</td>
                                           <td className="px-6 py-3 text-sm text-gray-600 dark:text-gray-400 whitespace-normal break-words">
                                             {group.entries.length > 0 ? (
                                               <div className="space-y-1">
@@ -910,7 +919,7 @@ export default function WorkSummaryPage() {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">{entry.type === 'timeEntry' ? 'Time' : 'Call'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">{entry.startTime}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">{entry.endTime}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">{entry.hours.toFixed(2)}h</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">{decimalHoursToHMS(entry.hours)}</td>
                                     <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">{entry.projectName}</td>
                                     <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
                                       <div>{entry.taskName}</div>

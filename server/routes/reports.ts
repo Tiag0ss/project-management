@@ -10,6 +10,7 @@ type ReportDatasetKey =
   | 'tasks'
   | 'timeEntries'
   | 'callRecords'
+  | 'timeAndCalls'
   | 'customers'
   | 'applications'
   | 'tickets'
@@ -20,6 +21,7 @@ const SUPPORTED_DATASETS = new Set<ReportDatasetKey>([
   'tasks',
   'timeEntries',
   'callRecords',
+  'timeAndCalls',
   'customers',
   'applications',
   'tickets',
@@ -406,6 +408,76 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
           ORDER BY t.CreatedAt DESC
         `;
         params = [userId];
+        break;
+
+      case 'timeAndCalls':
+        query = `
+          SELECT
+            te.Id,
+            te.UserId,
+            t.ProjectId,
+            p.OrganizationId,
+            p.CustomerId,
+            te.WorkDate AS RecordDate,
+            'Time Entry' AS RecordType,
+            te.Hours AS DurationHours,
+            NULL AS Subject,
+            NULL AS CallType,
+            te.Description,
+            te.ApprovalStatus,
+            worker.Username AS UserName,
+            t.TaskName,
+            p.ProjectName,
+            o.Name AS OrganizationName,
+            CASE
+              WHEN c.ExternalName IS NOT NULL AND c.ExternalName <> '' THEN c.ExternalName
+              ELSE c.Name
+            END AS CustomerName
+          FROM TimeEntries te
+          INNER JOIN Tasks t ON te.TaskId = t.Id
+          INNER JOIN Projects p ON t.ProjectId = p.Id
+          INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId AND om.UserId = ?
+          LEFT JOIN Users worker ON te.UserId = worker.Id
+          LEFT JOIN Organizations o ON p.OrganizationId = o.Id
+          LEFT JOIN Customers c ON p.CustomerId = c.Id
+
+          UNION ALL
+
+          SELECT
+            cr.Id,
+            cr.UserId,
+            COALESCE(cr.ProjectId, p.Id) AS ProjectId,
+            COALESCE(cr.OrganizationId, p.OrganizationId) AS OrganizationId,
+            COALESCE(t.CustomerId, p.CustomerId) AS CustomerId,
+            cr.CallDate AS RecordDate,
+            'Call Record' AS RecordType,
+            cr.DurationMinutes / 60.0 AS DurationHours,
+            cr.Subject,
+            cr.CallType,
+            cr.Notes AS Description,
+            NULL AS ApprovalStatus,
+            worker.Username AS UserName,
+            t.TaskName,
+            p.ProjectName,
+            o.Name AS OrganizationName,
+            CASE
+              WHEN tc.ExternalName IS NOT NULL AND tc.ExternalName <> '' THEN tc.ExternalName
+              WHEN tc.Name IS NOT NULL AND tc.Name <> '' THEN tc.Name
+              WHEN pc.ExternalName IS NOT NULL AND pc.ExternalName <> '' THEN pc.ExternalName
+              ELSE pc.Name
+            END AS CustomerName
+          FROM CallRecords cr
+          LEFT JOIN Tasks t ON cr.TaskId = t.Id
+          LEFT JOIN Projects p ON COALESCE(t.ProjectId, cr.ProjectId) = p.Id
+          INNER JOIN OrganizationMembers om2 ON COALESCE(cr.OrganizationId, p.OrganizationId) = om2.OrganizationId AND om2.UserId = ?
+          LEFT JOIN Users worker ON cr.UserId = worker.Id
+          LEFT JOIN Organizations o ON COALESCE(cr.OrganizationId, p.OrganizationId) = o.Id
+          LEFT JOIN Customers tc ON t.CustomerId = tc.Id
+          LEFT JOIN Customers pc ON p.CustomerId = pc.Id
+
+          ORDER BY RecordDate DESC
+        `;
+        params = [userId, userId];
         break;
 
       case 'allocationDates':

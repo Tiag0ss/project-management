@@ -21,6 +21,15 @@ type ProjectSortField = 'name' | 'status' | 'tasks' | 'hours' | 'tickets' | 'sta
 type SortDirection = 'asc' | 'desc';
 type RAGStatus = 'red' | 'amber' | 'green';
 
+const decimalHoursToHMS = (hours: number): string => {
+  const totalSeconds = Math.round(Math.abs(hours) * 3600);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const sign = hours < 0 ? '-' : '';
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+
 export default function ProjectsPage() {
   const { showToast } = useToast();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -943,7 +952,7 @@ export default function ProjectsPage() {
                             </td>
                             <td className="px-6 py-4">
                               <div className="flex flex-col items-center gap-1 min-w-[80px]">
-                                <span className={`text-xs font-medium ${hoursPercent > 100 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>{workedHours.toFixed(1)}h / {estimatedHours.toFixed(1)}h</span>
+                                <span className={`text-xs font-medium ${hoursPercent > 100 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>{decimalHoursToHMS(workedHours)} / {decimalHoursToHMS(estimatedHours)}</span>
                                 {estimatedHours > 0 && <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5"><div className={`h-1.5 rounded-full ${hoursPercent > 100 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${Math.min(100, hoursPercent)}%` }} /></div>}
                               </div>
                             </td>
@@ -1208,7 +1217,7 @@ function ProjectCard({
               <span className="text-gray-500 dark:text-gray-400">Budget {budgetType === 'hours' ? '(hours)' : '(monetary)'}</span>
               <span className="font-semibold text-gray-900 dark:text-white">
                 {budgetType === 'hours'
-                  ? `${budgetSpent.toFixed(1)}${budgetLabel} / ${budgetTotal.toFixed(1)}${budgetLabel}`
+                  ? `${decimalHoursToHMS(budgetSpent)} / ${decimalHoursToHMS(budgetTotal)}`
                   : `${budgetLabel}${budgetSpent.toFixed(0)} / ${budgetLabel}${budgetTotal.toFixed(0)}`}
                 <span className="ml-1 text-gray-400">({budgetPct}%)</span>
               </span>
@@ -1224,7 +1233,7 @@ function ProjectCard({
           <div>
             <div className="text-xs text-gray-500 dark:text-gray-400">Hours</div>
             <div className="text-sm font-semibold text-gray-900 dark:text-white">
-              {workedHours.toFixed(0)}h{estimatedHours > 0 ? ` / ${estimatedHours.toFixed(0)}h` : ''}
+              {workedHours.toFixed(0) !== '0' || estimatedHours > 0 ? decimalHoursToHMS(workedHours) : '0:00:00'}{estimatedHours > 0 ? ` / ${decimalHoursToHMS(estimatedHours)}` : ''}
             </div>
           </div>
           {internalTicketsEnabled && (

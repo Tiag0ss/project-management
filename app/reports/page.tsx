@@ -13,7 +13,7 @@ import { downloadTablePdf } from '@/lib/api/pdfExport';
 interface ReportColumn {
   key: string;
   label: string;
-  type?: 'text' | 'date' | 'number' | 'boolean';
+  type?: 'text' | 'date' | 'number' | 'hours' | 'minutes' | 'boolean';
 }
 
 interface ReportSummaryMetric {
@@ -58,6 +58,7 @@ type ReportTabKey =
   | 'tasks'
   | 'timeEntries'
   | 'callRecords'
+  | 'timeAndCalls'
   | 'customers'
   | 'applications'
   | 'tickets'
@@ -108,8 +109,8 @@ const REPORT_TABS: ReportTabConfig[] = [
       { key: 'TotalTasks', label: 'Total Tasks', type: 'number' },
       { key: 'OpenTasks', label: 'Open Tasks', type: 'number' },
       { key: 'ClosedTasks', label: 'Closed Tasks', type: 'number' },
-      { key: 'TotalEstimatedHours', label: 'Estimation Hours', type: 'number' },
-      { key: 'TotalWorkedHours', label: 'Consumed Hours', type: 'number' },
+      { key: 'TotalEstimatedHours', label: 'Estimation Hours', type: 'hours' },
+      { key: 'TotalWorkedHours', label: 'Consumed Hours', type: 'hours' },
       { key: 'StartDate', label: 'Start', type: 'date' },
       { key: 'EndDate', label: 'End', type: 'date' },
       { key: 'CreatorName', label: 'Created by' },
@@ -137,8 +138,8 @@ const REPORT_TABS: ReportTabConfig[] = [
       { key: 'StatusName', label: 'Status' },
       { key: 'PriorityName', label: 'Priority' },
       { key: 'AssigneeName', label: 'Assignee' },
-      { key: 'EstimatedHours', label: 'Estimated', type: 'number' },
-      { key: 'WorkedHours', label: 'Consumed Hours', type: 'number' },
+      { key: 'EstimatedHours', label: 'Estimated', type: 'hours' },
+      { key: 'WorkedHours', label: 'Consumed Hours', type: 'hours' },
       { key: 'PlannedStartDate', label: 'Planned start', type: 'date' },
       { key: 'PlannedEndDate', label: 'Planned end', type: 'date' },
     ],
@@ -161,7 +162,7 @@ const REPORT_TABS: ReportTabConfig[] = [
       { key: 'TaskName', label: 'Task' },
       { key: 'OrganizationName', label: 'Organization' },
       { key: 'CustomerName', label: 'Customer' },
-      { key: 'Hours', label: 'Hours', type: 'number' },
+      { key: 'Hours', label: 'Hours', type: 'hours' },
       { key: 'ApprovalStatus', label: 'Approval' },
       { key: 'Description', label: 'Description' },
     ],
@@ -185,7 +186,33 @@ const REPORT_TABS: ReportTabConfig[] = [
       { key: 'TaskName', label: 'Task' },
       { key: 'OrganizationName', label: 'Organization' },
       { key: 'CustomerName', label: 'Customer' },
-      { key: 'DurationMinutes', label: 'Minutes', type: 'number' },
+      { key: 'DurationMinutes', label: 'Duration', type: 'minutes' },
+    ],
+  },
+  {
+    key: 'timeAndCalls',
+    label: 'Time & Calls',
+    icon: '🕐',
+    searchFields: ['UserName', 'ProjectName', 'TaskName', 'OrganizationName', 'CustomerName', 'Description', 'Subject', 'CallType', 'ApprovalStatus', 'RecordType'],
+    dateField: 'RecordDate',
+    organizationFilter: { idField: 'OrganizationId', labelField: 'OrganizationName', label: 'Organization' },
+    projectFilter: { idField: 'ProjectId', labelField: 'ProjectName', label: 'Project' },
+    customerFilter: { idField: 'CustomerId', labelField: 'CustomerName', label: 'Customer' },
+    userFilter: { idField: 'UserId', labelField: 'UserName', label: 'User' },
+    statusField: 'RecordType',
+    columns: [
+      { key: 'RecordDate', label: 'Date', type: 'date' },
+      { key: 'RecordType', label: 'Type' },
+      { key: 'UserName', label: 'User' },
+      { key: 'ProjectName', label: 'Project' },
+      { key: 'TaskName', label: 'Task' },
+      { key: 'OrganizationName', label: 'Organization' },
+      { key: 'CustomerName', label: 'Customer' },
+      { key: 'DurationHours', label: 'Duration', type: 'hours' },
+      { key: 'Subject', label: 'Subject' },
+      { key: 'CallType', label: 'Call Type' },
+      { key: 'ApprovalStatus', label: 'Approval' },
+      { key: 'Description', label: 'Description' },
     ],
   },
   {
@@ -206,8 +233,8 @@ const REPORT_TABS: ReportTabConfig[] = [
       { key: 'TotalTasks', label: 'Total Tasks', type: 'number' },
       { key: 'OpenTasks', label: 'Open Tasks', type: 'number' },
       { key: 'ClosedTasks', label: 'Closed Tasks', type: 'number' },
-      { key: 'TotalEstimatedHours', label: 'Estimation Hours', type: 'number' },
-      { key: 'TotalWorkedHours', label: 'Consumed Hours', type: 'number' },
+      { key: 'TotalEstimatedHours', label: 'Estimation Hours', type: 'hours' },
+      { key: 'TotalWorkedHours', label: 'Consumed Hours', type: 'hours' },
       { key: 'OpenTickets', label: 'Open tickets', type: 'number' },
     ],
   },
@@ -276,8 +303,8 @@ const REPORT_TABS: ReportTabConfig[] = [
       { key: 'CustomerName', label: 'Customer' },
       { key: 'AllocationMode', label: 'Mode' },
       { key: 'TaskAllocationHeaderId', label: 'Allocation Id' },
-      { key: 'PlannedHours', label: 'Estimation Hours', type: 'number' },
-      { key: 'AllocatedHours', label: 'Allocation Hours', type: 'number' },
+      { key: 'PlannedHours', label: 'Estimation Hours', type: 'hours' },
+      { key: 'AllocatedHours', label: 'Allocation Hours', type: 'hours' },
     ],
   },
 ];
@@ -290,6 +317,15 @@ const normalizeDateString = (value: unknown): string => {
   return String(value).split('T')[0];
 };
 
+const decimalHoursToHMS = (hours: number): string => {
+  const totalSeconds = Math.round(Math.abs(hours) * 3600);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const sign = hours < 0 ? '-' : '';
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+
 const formatCellValue = (column: ReportColumn, value: unknown): string => {
   if (value === null || value === undefined || value === '') return '-';
 
@@ -298,6 +334,18 @@ const formatCellValue = (column: ReportColumn, value: unknown): string => {
     if (!normalized) return '-';
     const date = new Date(`${normalized}T12:00:00`);
     return Number.isNaN(date.getTime()) ? normalized : date.toLocaleDateString();
+  }
+
+  if (column.type === 'hours') {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '-';
+    return decimalHoursToHMS(numeric);
+  }
+
+  if (column.type === 'minutes') {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '-';
+    return decimalHoursToHMS(numeric / 60);
   }
 
   if (column.type === 'number') {
@@ -393,6 +441,7 @@ export default function ReportsPage() {
     tasks: { ...DEFAULT_FILTERS },
     timeEntries: { ...DEFAULT_FILTERS },
     callRecords: { ...DEFAULT_FILTERS },
+    timeAndCalls: { ...DEFAULT_FILTERS },
     customers: { ...DEFAULT_FILTERS },
     applications: { ...DEFAULT_FILTERS },
     tickets: { ...DEFAULT_FILTERS },
@@ -554,8 +603,8 @@ export default function ReportsPage() {
         { key: 'projects', label: 'Projects', value: formatNumberMetric(filteredRows.length) },
         { key: 'openTasks', label: 'Open Tasks', value: formatNumberMetric(sumField('OpenTasks')) },
         { key: 'closedTasks', label: 'Closed Tasks', value: formatNumberMetric(sumField('ClosedTasks')) },
-        { key: 'estimated', label: 'Estimation Hours', value: formatNumberMetric(sumField('TotalEstimatedHours'), 2) },
-        { key: 'consumed', label: 'Consumed Hours', value: formatNumberMetric(sumField('TotalWorkedHours'), 2) },
+        { key: 'estimated', label: 'Estimation Hours', value: decimalHoursToHMS(sumField('TotalEstimatedHours')) },
+        { key: 'consumed', label: 'Consumed Hours', value: decimalHoursToHMS(sumField('TotalWorkedHours')) },
       ];
     }
 
@@ -566,8 +615,8 @@ export default function ReportsPage() {
         { key: 'tasks', label: 'Tasks', value: formatNumberMetric(filteredRows.length) },
         { key: 'openTasks', label: 'Open Tasks', value: formatNumberMetric(openTasks) },
         { key: 'closedTasks', label: 'Closed Tasks', value: formatNumberMetric(closedTasks) },
-        { key: 'estimated', label: 'Estimation Hours', value: formatNumberMetric(sumField('EstimatedHours'), 2) },
-        { key: 'consumed', label: 'Consumed Hours', value: formatNumberMetric(sumField('WorkedHours'), 2) },
+        { key: 'estimated', label: 'Estimation Hours', value: decimalHoursToHMS(sumField('EstimatedHours')) },
+        { key: 'consumed', label: 'Consumed Hours', value: decimalHoursToHMS(sumField('WorkedHours')) },
       ];
     }
 
@@ -576,8 +625,59 @@ export default function ReportsPage() {
         { key: 'customers', label: 'Customers', value: formatNumberMetric(filteredRows.length) },
         { key: 'openTasks', label: 'Open Tasks', value: formatNumberMetric(sumField('OpenTasks')) },
         { key: 'closedTasks', label: 'Closed Tasks', value: formatNumberMetric(sumField('ClosedTasks')) },
-        { key: 'estimated', label: 'Estimation Hours', value: formatNumberMetric(sumField('TotalEstimatedHours'), 2) },
-        { key: 'consumed', label: 'Consumed Hours', value: formatNumberMetric(sumField('TotalWorkedHours'), 2) },
+        { key: 'estimated', label: 'Estimation Hours', value: decimalHoursToHMS(sumField('TotalEstimatedHours')) },
+        { key: 'consumed', label: 'Consumed Hours', value: decimalHoursToHMS(sumField('TotalWorkedHours')) },
+      ];
+    }
+
+    if (currentTab.key === 'timeEntries') {
+      return [
+        { key: 'records', label: 'Time Entries', value: formatNumberMetric(filteredRows.length) },
+        { key: 'hours', label: 'Total Hours', value: decimalHoursToHMS(sumField('Hours')) },
+      ];
+    }
+
+    if (currentTab.key === 'callRecords') {
+      return [
+        { key: 'records', label: 'Call Records', value: formatNumberMetric(filteredRows.length) },
+        { key: 'duration', label: 'Total Duration', value: decimalHoursToHMS(sumField('DurationMinutes') / 60) },
+      ];
+    }
+
+    if (currentTab.key === 'timeAndCalls') {
+      const timeEntryCount = filteredRows.filter((row) => row.RecordType === 'Time Entry').length;
+      const callRecordCount = filteredRows.filter((row) => row.RecordType === 'Call Record').length;
+      return [
+        { key: 'total', label: 'Total Records', value: formatNumberMetric(filteredRows.length) },
+        { key: 'timeEntries', label: 'Time Entries', value: formatNumberMetric(timeEntryCount) },
+        { key: 'callRecords', label: 'Call Records', value: formatNumberMetric(callRecordCount) },
+        { key: 'duration', label: 'Total Duration', value: decimalHoursToHMS(sumField('DurationHours')) },
+      ];
+    }
+
+    if (currentTab.key === 'applications') {
+      return [
+        { key: 'apps', label: 'Applications', value: formatNumberMetric(filteredRows.length) },
+        { key: 'projects', label: 'Projects', value: formatNumberMetric(sumField('ProjectCount')) },
+        { key: 'customers', label: 'Customers', value: formatNumberMetric(sumField('CustomerCount')) },
+        { key: 'versions', label: 'Versions', value: formatNumberMetric(sumField('VersionCount')) },
+      ];
+    }
+
+    if (currentTab.key === 'tickets') {
+      const openTickets = filteredRows.filter((row) => !row.StatusIsClosed && row.StatusName !== 'Closed').length;
+      return [
+        { key: 'total', label: 'Tickets', value: formatNumberMetric(filteredRows.length) },
+        { key: 'open', label: 'Open', value: formatNumberMetric(openTickets) },
+        { key: 'closed', label: 'Closed', value: formatNumberMetric(filteredRows.length - openTickets) },
+      ];
+    }
+
+    if (currentTab.key === 'allocationDates') {
+      return [
+        { key: 'records', label: 'Allocations', value: formatNumberMetric(filteredRows.length) },
+        { key: 'planned', label: 'Planned Hours', value: decimalHoursToHMS(sumField('PlannedHours')) },
+        { key: 'allocated', label: 'Allocated Hours', value: decimalHoursToHMS(sumField('AllocatedHours')) },
       ];
     }
 

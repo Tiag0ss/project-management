@@ -3,6 +3,15 @@
 import { getApiUrl } from '@/lib/api/config';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
+const decimalHoursToHMS = (hours: number): string => {
+  const totalSeconds = Math.round(Math.abs(hours) * 3600);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const sign = hours < 0 ? '-' : '';
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+
 interface AllocationDayRow {
   date: string;
   hours: number;
@@ -382,7 +391,7 @@ export default function AllocationHeaderDetailModal({
                       {groupedDayRows.map((row) => (
                         <tr key={row.date}>
                           <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{row.date}</td>
-                          <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{row.hours.toFixed(2).replace(/\.00$/, '')}h</td>
+                          <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{decimalHoursToHMS(row.hours)}</td>
                           <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{row.startTime}</td>
                           <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">
                             {row.endTime}

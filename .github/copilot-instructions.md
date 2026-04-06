@@ -1010,6 +1010,19 @@ When generating code, ensure:
 18. **Avoid MySQL-only interval arithmetic in routes** - patterns like `DATE_ADD(..., INTERVAL ? HOUR)` are not portable; prefer app-calculated datetimes or provider-gated SQL
 19. **Password recovery privacy** - never leak account existence in forgot-password responses
 20. **Customer ticket creation rule** - do not allow project selection/assignment for customer users
+21. **Hour display format is always `hh:MM:ss`** - never display hours as `1.5h` or `1.50h`; always use the `decimalHoursToHMS` helper (defined locally in each page that needs it). The helper converts decimal hours to `hh:MM:ss`. Duration in minutes must be divided by 60 before passing to the helper. This applies to all views: dashboard, reports, work summary, and any future page that shows time totals or per-entry hours.
+
+```typescript
+const decimalHoursToHMS = (hours: number): string => {
+  const totalSeconds = Math.round(Math.abs(hours) * 3600);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const sign = hours < 0 ? '-' : '';
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+// Minutes → hh:MM:ss:  decimalHoursToHMS(durationMinutes / 60)
+```
 
 ## Example Files for Reference
 

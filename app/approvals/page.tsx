@@ -59,6 +59,15 @@ interface VacationTeamMember {
   RejectedDays?: number;
 }
 
+const decimalHoursToHMS = (hours: number): string => {
+  const totalSeconds = Math.round(Math.abs(hours) * 3600);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const sign = hours < 0 ? '-' : '';
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+
 const normalizeDateString = (dateValue: any): string => {
   if (dateValue instanceof Date) return dateValue.toISOString().split('T')[0];
   return String(dateValue).split('T')[0];
@@ -666,7 +675,7 @@ export default function ApprovalsPage() {
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
               <div className="text-sm text-blue-600 dark:text-blue-400 font-medium">⏱ Total Hours</div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{totalHours.toFixed(1)}h</div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{decimalHoursToHMS(totalHours)}</div>
               <div className="text-xs text-gray-500 dark:text-gray-400">across {entries.length} entries</div>
             </div>
           </div>
@@ -806,7 +815,7 @@ export default function ApprovalsPage() {
                       </div>
                       <div>
                         <div className="font-semibold text-gray-900 dark:text-white">{getUserDisplayName(entryUser)}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">@{entryUser.Username} · {userEntries.length} entries · {userHours.toFixed(1)}h total</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">@{entryUser.Username} · {userEntries.length} entries · {decimalHoursToHMS(userHours)} total</div>
                       </div>
                     </div>
                     {userPending.length > 0 && (
@@ -893,7 +902,7 @@ export default function ApprovalsPage() {
                             <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{entry.ProjectName}</td>
                             <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{entry.TaskName}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">
-                              {parseFloat(String(entry.Hours)).toFixed(2)}h
+                              {decimalHoursToHMS(parseFloat(String(entry.Hours)))}
                               {entry.StartTime && entry.EndTime && (
                                 <div className="text-xs font-normal text-gray-500 dark:text-gray-400">{entry.StartTime}–{entry.EndTime}</div>
                               )}
@@ -1023,7 +1032,7 @@ export default function ApprovalsPage() {
                       <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{entry.ProjectName}</td>
                       <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{entry.TaskName}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">
-                        {parseFloat(String(entry.Hours)).toFixed(2)}h
+                        {decimalHoursToHMS(parseFloat(String(entry.Hours)))}
                         {entry.StartTime && entry.EndTime && (
                           <div className="text-xs font-normal text-gray-500 dark:text-gray-400">{entry.StartTime}–{entry.EndTime}</div>
                         )}

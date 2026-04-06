@@ -31,6 +31,15 @@ import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields'
 import SegmentedTagBadge from '@/components/tags/SegmentedTagBadge';
 import JiraStatusMappingPanel from '@/components/projects/JiraStatusMappingPanel';
 
+const decimalHoursToHMS = (hours: number): string => {
+  const totalSeconds = Math.round(Math.abs(hours) * 3600);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const sign = hours < 0 ? '-' : '';
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const projectId = resolvedParams.id;
@@ -5086,7 +5095,7 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
             </svg>
             <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Hours</span>
           </div>
-          <div className="text-sm font-bold text-gray-900 dark:text-white">{totalEstimatedHours.toFixed(1)}h</div>
+          <div className="text-sm font-bold text-gray-900 dark:text-white">{decimalHoursToHMS(totalEstimatedHours)}</div>
           <div className="text-xs text-gray-400 mt-0.5">Estimated</div>
         </div>
         {internalTicketsEnabled && (
@@ -5166,9 +5175,9 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
             <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4">{budgetType === 'hours' ? 'Budget (Hours)' : 'Budget'}</h2>
             <div className="mb-4">
               <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
-                <span>Spent: <span className={`font-semibold ${textColor}`}>{budgetType === 'hours' ? `${budgetSpent.toFixed(1)}${budgetUnit}` : `${budgetUnit}${budgetSpent.toFixed(2)}`}</span></span>
+                <span>Spent: <span className={`font-semibold ${textColor}`}>{budgetType === 'hours' ? decimalHoursToHMS(budgetSpent) : `${budgetUnit}${budgetSpent.toFixed(2)}`}</span></span>
                 <span className="font-semibold">{budgetPct}%</span>
-                <span>Total: <span className="font-semibold text-gray-900 dark:text-white">{budgetType === 'hours' ? `${budgetTotal.toFixed(1)}${budgetUnit}` : `${budgetUnit}${budgetTotal.toFixed(2)}`}</span></span>
+                <span>Total: <span className="font-semibold text-gray-900 dark:text-white">{budgetType === 'hours' ? decimalHoursToHMS(budgetTotal) : `${budgetUnit}${budgetTotal.toFixed(2)}`}</span></span>
               </div>
               <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-3">
                 <div className={`${barColor} h-3 rounded-full transition-all`} style={{ width: `${budgetPct}%` }} />
@@ -5177,15 +5186,15 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
             <div className="grid grid-cols-3 gap-4 text-center">
               <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl">
                 <div className="text-xs text-gray-400 mb-1">Total</div>
-                <div className="text-base font-bold text-gray-900 dark:text-white">{budgetType === 'hours' ? `${budgetTotal.toFixed(1)}${budgetUnit}` : `${budgetUnit}${budgetTotal.toFixed(2)}`}</div>
+                <div className="text-base font-bold text-gray-900 dark:text-white">{budgetType === 'hours' ? decimalHoursToHMS(budgetTotal) : `${budgetUnit}${budgetTotal.toFixed(2)}`}</div>
               </div>
               <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl">
                 <div className="text-xs text-gray-400 mb-1">Spent</div>
-                <div className={`text-base font-bold ${textColor}`}>{budgetType === 'hours' ? `${budgetSpent.toFixed(1)}${budgetUnit}` : `${budgetUnit}${budgetSpent.toFixed(2)}`}</div>
+                <div className={`text-base font-bold ${textColor}`}>{budgetType === 'hours' ? decimalHoursToHMS(budgetSpent) : `${budgetUnit}${budgetSpent.toFixed(2)}`}</div>
               </div>
               <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl">
                 <div className="text-xs text-gray-400 mb-1">Remaining</div>
-                <div className={`text-base font-bold ${budgetRemaining < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{budgetType === 'hours' ? `${budgetRemaining.toFixed(1)}${budgetUnit}` : `${budgetUnit}${budgetRemaining.toFixed(2)}`}</div>
+                <div className={`text-base font-bold ${budgetRemaining < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{budgetType === 'hours' ? decimalHoursToHMS(budgetRemaining) : `${budgetUnit}${budgetRemaining.toFixed(2)}`}</div>
               </div>
             </div>
           </div>
@@ -5553,7 +5562,7 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-gray-900 dark:text-white text-sm truncate">{member.name}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">{member.totalHours.toFixed(1)}h · {member.taskCount} task{member.taskCount !== 1 ? 's' : ''}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">{decimalHoursToHMS(member.totalHours)} · {member.taskCount} task{member.taskCount !== 1 ? 's' : ''}</p>
                       <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 mb-1">
                         <div className={`h-1.5 rounded-full transition-all ${completionRate === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
                           style={{ width: `${completionRate}%` }} />
@@ -9939,16 +9948,16 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
           </span>
         </td>
         <td className={`px-4 py-3 text-sm text-right ${level === 0 ? 'text-gray-900 dark:text-gray-100 font-medium' : 'text-gray-700 dark:text-gray-300'}`}>
-          {parseFloat(task.EstimatedHours || 0).toFixed(2)}h
+          {decimalHoursToHMS(parseFloat(task.EstimatedHours || 0))}
         </td>
         <td className={`px-4 py-3 text-sm text-right ${level === 0 ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-blue-500 dark:text-blue-400'}`}>
-          {allocated.toFixed(2)}h
+          {decimalHoursToHMS(allocated)}
         </td>
         <td className={`px-4 py-3 text-sm text-right ${level === 0 ? 'text-orange-600 dark:text-orange-400 font-medium' : 'text-orange-500 dark:text-orange-400'}`}>
-          {toAllocate.toFixed(2)}h
+          {decimalHoursToHMS(toAllocate)}
         </td>
         <td className={`px-4 py-3 text-sm text-right ${level === 0 ? 'text-green-600 dark:text-green-400 font-medium' : 'text-green-500 dark:text-green-400'}`}>
-          {worked.toFixed(2)}h
+          {decimalHoursToHMS(worked)}
         </td>
         <td className="px-4 py-3 text-center">
           <button
@@ -11008,25 +11017,25 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
               <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">Total Estimated Hours</div>
               <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">
-                {totalEstimatedHours.toFixed(2)}h
+                {decimalHoursToHMS(totalEstimatedHours)}
               </div>
             </div>
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
               <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">Total Allocated Hours</div>
               <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
-                {totalTaskAllocatedHours.toFixed(2)}h
+                {decimalHoursToHMS(totalTaskAllocatedHours)}
               </div>
             </div>
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
               <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">To Allocate</div>
               <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">
-                {totalToAllocateHours.toFixed(2)}h
+                {decimalHoursToHMS(totalToAllocateHours)}
               </div>
             </div>
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
               <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">Total Worked Hours</div>
               <div className="text-3xl font-bold text-green-600 dark:text-green-400">
-                {totalTaskWorkedHours.toFixed(2)}h
+                {decimalHoursToHMS(totalTaskWorkedHours)}
               </div>
             </div>
           </div>
@@ -11077,16 +11086,16 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                           Total:
                         </td>
                         <td className="px-4 py-3 text-sm font-bold text-right text-gray-900 dark:text-gray-100">
-                          {totalEstimatedHours.toFixed(2)}h
+                          {decimalHoursToHMS(totalEstimatedHours)}
                         </td>
                         <td className="px-4 py-3 text-sm font-bold text-right text-blue-600 dark:text-blue-400">
-                          {totalTaskAllocatedHours.toFixed(2)}h
+                          {decimalHoursToHMS(totalTaskAllocatedHours)}
                         </td>
                         <td className="px-4 py-3 text-sm font-bold text-right text-orange-600 dark:text-orange-400">
-                          {totalToAllocateHours.toFixed(2)}h
+                          {decimalHoursToHMS(totalToAllocateHours)}
                         </td>
                         <td className="px-4 py-3 text-sm font-bold text-right text-green-600 dark:text-green-400">
-                          {totalTaskWorkedHours.toFixed(2)}h
+                          {decimalHoursToHMS(totalTaskWorkedHours)}
                         </td>
                         <td></td>
                       </tr>
@@ -11150,13 +11159,13 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                       <div className="grid grid-cols-2 gap-4 mb-4">
                         <div className="text-center">
                           <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                            {user.TotalAllocated.toFixed(1)}h
+                            {decimalHoursToHMS(user.TotalAllocated)}
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400">Allocated</div>
                         </div>
                         <div className="text-center">
                           <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                            {user.TotalWorked.toFixed(1)}h
+                            {decimalHoursToHMS(user.TotalWorked)}
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400">Worked</div>
                         </div>
@@ -11200,7 +11209,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                                   </div>
                                 </div>
                                 <div className="font-medium text-green-600 dark:text-green-400 ml-2">
-                                  {parseFloat(entry.Hours).toFixed(1)}h
+                                  {decimalHoursToHMS(parseFloat(entry.Hours))}
                                 </div>
                               </div>
                             ))}
@@ -11249,15 +11258,15 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                             {user.Username}
                           </td>
                           <td className="px-4 py-3 text-sm text-right text-blue-600 dark:text-blue-400">
-                            {user.TotalAllocated.toFixed(2)}h
+                            {decimalHoursToHMS(user.TotalAllocated)}
                           </td>
                           <td className="px-4 py-3 text-sm text-right text-green-600 dark:text-green-400">
-                            {user.TotalWorked.toFixed(2)}h
+                            {decimalHoursToHMS(user.TotalWorked)}
                           </td>
                           <td className={`px-4 py-3 text-sm text-right font-medium ${
                             diff > 0 ? 'text-red-600 dark:text-red-400' : diff < 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'
                           }`}>
-                            {diff > 0 ? '+' : ''}{diff.toFixed(2)}h
+                            {diff > 0 ? '+' : ''}{decimalHoursToHMS(diff)}
                           </td>
                           <td className={`px-4 py-3 text-sm text-right font-medium ${
                             efficiency > 100 ? 'text-red-600 dark:text-red-400' : efficiency > 80 ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400'
@@ -11272,13 +11281,13 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                     <tr>
                       <td className="px-4 py-3 text-sm font-bold text-gray-900 dark:text-white">Total</td>
                       <td className="px-4 py-3 text-sm text-right font-bold text-blue-600 dark:text-blue-400">
-                        {userStats.reduce((sum, u) => sum + u.TotalAllocated, 0).toFixed(2)}h
+                        {decimalHoursToHMS(userStats.reduce((sum, u) => sum + u.TotalAllocated, 0))}
                       </td>
                       <td className="px-4 py-3 text-sm text-right font-bold text-green-600 dark:text-green-400">
-                        {userStats.reduce((sum, u) => sum + u.TotalWorked, 0).toFixed(2)}h
+                        {decimalHoursToHMS(userStats.reduce((sum, u) => sum + u.TotalWorked, 0))}
                       </td>
                       <td className="px-4 py-3 text-sm text-right font-bold text-gray-600 dark:text-gray-400">
-                        {(userStats.reduce((sum, u) => sum + u.TotalWorked, 0) - userStats.reduce((sum, u) => sum + u.TotalAllocated, 0)).toFixed(2)}h
+                        {decimalHoursToHMS(userStats.reduce((sum, u) => sum + u.TotalWorked, 0) - userStats.reduce((sum, u) => sum + u.TotalAllocated, 0))}
                       </td>
                       <td className="px-4 py-3 text-sm text-right font-bold text-gray-600 dark:text-gray-400">
                         {userStats.reduce((sum, u) => sum + u.TotalAllocated, 0) > 0 
@@ -11303,7 +11312,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
               <div className="text-right">
                 <div className="text-sm text-gray-500 dark:text-gray-400">Total Allocated</div>
                 <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                  {totalAllocatedHours.toFixed(2)}h
+                  {decimalHoursToHMS(totalAllocatedHours)}
                 </div>
               </div>
             </div>
@@ -11369,7 +11378,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                             {allocation.StartTime || '-'} - {allocation.EndTime || '-'}
                           </td>
                           <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-gray-100 font-medium">
-                            {parseFloat(allocation.AllocatedHours).toFixed(2)}h
+                            {decimalHoursToHMS(parseFloat(allocation.AllocatedHours))}
                           </td>
                         </tr>
                       );
@@ -11381,7 +11390,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                         Total:
                       </td>
                       <td className="px-4 py-3 text-sm font-bold text-right text-gray-900 dark:text-gray-100">
-                        {totalAllocatedHours.toFixed(2)}h
+                        {decimalHoursToHMS(totalAllocatedHours)}
                       </td>
                     </tr>
                   </tfoot>
@@ -11401,7 +11410,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
               <div className="text-right">
                 <div className="text-sm text-gray-500 dark:text-gray-400">Total Worked</div>
                 <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                  {totalWorkedHours.toFixed(2)}h
+                  {decimalHoursToHMS(totalWorkedHours)}
                 </div>
               </div>
             </div>
@@ -11459,7 +11468,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                             {entry.Description || '-'}
                           </td>
                           <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-gray-100 font-medium">
-                            {parseFloat(entry.Hours).toFixed(2)}h
+                            {decimalHoursToHMS(parseFloat(entry.Hours))}
                           </td>
                         </tr>
                       );
@@ -11471,7 +11480,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                         Total:
                       </td>
                       <td className="px-4 py-3 text-sm font-bold text-right text-gray-900 dark:text-gray-100">
-                        {totalWorkedHours.toFixed(2)}h
+                        {decimalHoursToHMS(totalWorkedHours)}
                       </td>
                     </tr>
                   </tfoot>
@@ -11581,19 +11590,19 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                 <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
                   <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Estimated Hours</div>
                   <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                    {parseFloat(selectedTask.EstimatedHours || 0).toFixed(2)}h
+                    {decimalHoursToHMS(parseFloat(selectedTask.EstimatedHours || 0))}
                   </div>
                 </div>
                 <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                   <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Allocated Hours</div>
                   <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                    {parseFloat(selectedTask.TotalAllocated || 0).toFixed(2)}h
+                    {decimalHoursToHMS(parseFloat(selectedTask.TotalAllocated || 0))}
                   </div>
                 </div>
                 <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
                   <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Worked Hours</div>
                   <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                    {parseFloat(selectedTask.TotalWorked || 0).toFixed(2)}h
+                    {decimalHoursToHMS(parseFloat(selectedTask.TotalWorked || 0))}
                   </div>
                 </div>
               </div>
@@ -11653,7 +11662,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                                 {allocation.StartTime || '-'} - {allocation.EndTime || '-'}
                               </td>
                               <td className="px-4 py-2 text-sm text-right text-gray-900 dark:text-gray-100 font-medium">
-                                {parseFloat(allocation.AllocatedHours).toFixed(2)}h
+                                {decimalHoursToHMS(parseFloat(allocation.AllocatedHours))}
                               </td>
                             </tr>
                           );
@@ -11714,7 +11723,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                                 {entry.Description || '-'}
                               </td>
                               <td className="px-4 py-2 text-sm text-right text-gray-900 dark:text-gray-100 font-medium">
-                                {parseFloat(entry.Hours).toFixed(2)}h
+                                {decimalHoursToHMS(parseFloat(entry.Hours))}
                               </td>
                             </tr>
                           );
@@ -14762,9 +14771,9 @@ function BurndownTab({ projectId, token }: { projectId: number; token: string })
         {/* Stats row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Estimated', value: `${totalEstimatedHours.toFixed(0)}h`, color: 'text-gray-700 dark:text-gray-200' },
-            { label: 'Worked', value: `${workedTotal.toFixed(1)}h`, color: 'text-blue-600 dark:text-blue-400' },
-            { label: 'Remaining', value: `${remainingTotal.toFixed(1)}h`, color: remainingTotal > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400' },
+            { label: 'Estimated', value: decimalHoursToHMS(totalEstimatedHours), color: 'text-gray-700 dark:text-gray-200' },
+            { label: 'Worked', value: decimalHoursToHMS(workedTotal), color: 'text-blue-600 dark:text-blue-400' },
+            { label: 'Remaining', value: decimalHoursToHMS(remainingTotal), color: remainingTotal > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400' },
             { label: 'Complete', value: `${completionPct}%`, color: completionPct >= 100 ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400' },
           ].map(st => (
             <div key={st.label} className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center">
@@ -14890,9 +14899,9 @@ function BurndownTab({ projectId, token }: { projectId: number; token: string })
                   <td className="py-2 pr-4 text-gray-700 dark:text-gray-300">
                     {new Date(s.date).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })}
                   </td>
-                  <td className="py-2 pr-4 text-right font-medium text-gray-900 dark:text-white">{s.worked.toFixed(1)}h</td>
-                  <td className="py-2 pr-4 text-right text-blue-600 dark:text-blue-400">{s.cumulative.toFixed(1)}h</td>
-                  <td className="py-2 text-right text-amber-600 dark:text-amber-400">{s.remaining.toFixed(1)}h</td>
+                  <td className="py-2 pr-4 text-right font-medium text-gray-900 dark:text-white">{decimalHoursToHMS(s.worked)}</td>
+                  <td className="py-2 pr-4 text-right text-blue-600 dark:text-blue-400">{decimalHoursToHMS(s.cumulative)}</td>
+                  <td className="py-2 text-right text-amber-600 dark:text-amber-400">{decimalHoursToHMS(s.remaining)}</td>
                 </tr>
               ))}
             </tbody>
