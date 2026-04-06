@@ -1594,7 +1594,8 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
               HobbyStartMonday, HobbyStartTuesday, HobbyStartWednesday, HobbyStartThursday,
               HobbyStartFriday, HobbyStartSaturday, HobbyStartSunday,
               HobbyHoursMonday, HobbyHoursTuesday, HobbyHoursWednesday, HobbyHoursThursday,
-              HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday
+              HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
+              LunchTime, LunchDuration
        FROM Users WHERE Id = ?`,
       [userId]
     );
@@ -1605,6 +1606,16 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
 
     const user = users[0];
     const holidayDates = await getHolidayDateSetForUser(Number(userId), String(startDate), String(endDate));
+
+    // Pre-compute lunch parameters for window sizing (hobby tasks have no lunch break)
+    const lunchDurForWindow = forHobby
+      ? 0
+      : ((typeof user.LunchDuration === 'number' && user.LunchDuration >= 0) ? user.LunchDuration : 60);
+    const lunchTimeForWindow = (typeof user.LunchTime === 'string' && user.LunchTime.includes(':'))
+      ? user.LunchTime
+      : '13:00';
+    const [lunchWindowH, lunchWindowM] = lunchTimeForWindow.split(':').map(Number);
+    const lunchWindowStartMinutes = lunchWindowH * 60 + lunchWindowM;
 
     // Get existing direct allocations for the date range, optionally excluding a specific task
     // Filter by hobby/work projects
@@ -1737,7 +1748,17 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
       if (!isHoliday && latestEndTime && maxHours > 0 && !skipLatestEndTimeCap) {
         const [slotStartH, slotStartM] = slotStartTime.split(':').map(Number);
         const slotStartMinutes = slotStartH * 60 + slotStartM;
-        const slotEndMinutes = slotStartMinutes + maxHours * 60;
+        // Account for lunch duration when computing the end of the work-day window:
+        // WorkHours = productive hours (not counting lunch), so the calendar window is
+        // WorkHours * 60 + lunchDuration if lunch falls inside the work period.
+        let slotEndMinutes = slotStartMinutes + maxHours * 60;
+        if (
+          lunchDurForWindow > 0 &&
+          slotStartMinutes < lunchWindowStartMinutes &&
+          slotStartMinutes + maxHours * 60 > lunchWindowStartMinutes
+        ) {
+          slotEndMinutes += lunchDurForWindow;
+        }
         
         const [endH, endM] = latestEndTime.split(':').map(Number);
         const latestEndMinutes = endH * 60 + endM;
