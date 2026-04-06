@@ -232,6 +232,27 @@ export default function WebReportsPage() {
       name: 'Dynamic Query Builder',
       endpoint: '/api/dynamic-reports/query',
       fields: [] // Fields will be dynamically determined by user
+    },
+    {
+      id: 'time-entries-and-calls',
+      name: 'Time Entries + Call Records',
+      endpoint: '/api/time-entries/my-entries-and-calls',
+      fields: [
+        { key: 'RecordType', label: 'Record Type', type: 'text' },
+        { key: 'WorkDate', label: 'Date', type: 'date' },
+        { key: 'Hours', label: 'Hours', type: 'number' },
+        { key: 'DurationMinutes', label: 'Duration (min)', type: 'number' },
+        { key: 'TaskName', label: 'Task Name', type: 'text' },
+        { key: 'ProjectName', label: 'Project Name', type: 'text' },
+        { key: 'Description', label: 'Description / Notes', type: 'text' },
+        { key: 'StartTime', label: 'Start Time', type: 'text' },
+        { key: 'EndTime', label: 'End Time', type: 'text' },
+        { key: 'CallType', label: 'Call Type', type: 'text' },
+        { key: 'Subject', label: 'Subject', type: 'text' },
+        { key: 'Participants', label: 'Participants', type: 'text' },
+        { key: 'CustomerName', label: 'Customer', type: 'text' },
+        { key: 'OrganizationName', label: 'Organization', type: 'text' },
+      ]
     }
   ];
 
@@ -367,9 +388,10 @@ export default function WebReportsPage() {
 
   const loadSavedReports = async () => {
     if (!dataSource || !token) return;
-    
+    // For the combined source, load saved reports from time-entries as default baseline
+    const reportSourceKey = dataSource === 'time-entries-and-calls' ? 'time-entries' : dataSource;
     try {
-      const result = await savedReportsApi.getSavedReportsByDataSource(token, dataSource);
+      const result = await savedReportsApi.getSavedReportsByDataSource(token, reportSourceKey);
       if (result.success) {
         setSavedReports(result.reports);
       }

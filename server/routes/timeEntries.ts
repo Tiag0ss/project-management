@@ -169,6 +169,89 @@ router.get('/my-entries', authenticateToken, async (req: AuthRequest, res: Respo
   }
 });
 
+// Combined: time entries + call records for web reports
+router.get('/my-entries-and-calls', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { startDate, endDate } = req.query;
+
+    const teParams: any[] = [userId];
+    let teQuery = `
+      SELECT
+        'TimeEntry'         AS RecordType,
+        te.WorkDate         AS WorkDate,
+        te.Hours            AS Hours,
+        0                   AS DurationMinutes,
+        t.TaskName          AS TaskName,
+        p.ProjectName       AS ProjectName,
+        te.Description      AS Description,
+        te.StartTime        AS StartTime,
+        te.EndTime          AS EndTime,
+        NULL                AS CallType,
+        NULL                AS Subject,
+        NULL                AS Participants,
+        COALESCE(c.ExternalName, c.Name) AS CustomerName,
+        o.Name              AS OrganizationName
+      FROM TimeEntries te
+      INNER JOIN Tasks t ON te.TaskId = t.Id
+      INNER JOIN Projects p ON t.ProjectId = p.Id
+      LEFT JOIN Customers c ON p.CustomerId = c.Id
+      LEFT JOIN Organizations o ON p.OrganizationId = o.Id
+      WHERE te.UserId = ?
+    `;
+    if (startDate && endDate) {
+      teQuery += ` AND te.WorkDate BETWEEN ? AND ?`;
+      teParams.push(startDate, endDate);
+    }
+
+    const crParams: any[] = [userId];
+    let crQuery = `
+      SELECT
+        'CallRecord'        AS RecordType,
+        cr.CallDate         AS WorkDate,
+        ROUND(cr.DurationMinutes / 60.0, 2) AS Hours,
+        cr.DurationMinutes  AS DurationMinutes,
+        t.TaskName          AS TaskName,
+        p.ProjectName       AS ProjectName,
+        cr.Notes            AS Description,
+        cr.StartTime        AS StartTime,
+        NULL                AS EndTime,
+        cr.CallType         AS CallType,
+        cr.Subject          AS Subject,
+        cr.Participants     AS Participants,
+        COALESCE(tc.ExternalName, tc.Name, pc.ExternalName, pc.Name) AS CustomerName,
+        o.Name              AS OrganizationName
+      FROM CallRecords cr
+      LEFT JOIN Tasks t ON cr.TaskId = t.Id
+      LEFT JOIN Projects p ON COALESCE(t.ProjectId, cr.ProjectId) = p.Id
+      LEFT JOIN Organizations o ON COALESCE(cr.OrganizationId, p.OrganizationId) = o.Id
+      LEFT JOIN Customers tc ON t.CustomerId = tc.Id
+      LEFT JOIN Customers pc ON p.CustomerId = pc.Id
+      WHERE cr.UserId = ?
+    `;
+    if (startDate && endDate) {
+      crQuery += ` AND cr.CallDate BETWEEN ? AND ?`;
+      crParams.push(startDate, endDate);
+    }
+
+    const [[teRows], [crRows]] = await Promise.all([
+      pool.execute<RowDataPacket[]>(teQuery, teParams),
+      pool.execute<RowDataPacket[]>(crQuery, crParams),
+    ]);
+
+    const entries = [...(teRows as any[]), ...(crRows as any[])].sort((a, b) => {
+      if (a.WorkDate < b.WorkDate) return 1;
+      if (a.WorkDate > b.WorkDate) return -1;
+      return 0;
+    });
+
+    res.json({ success: true, entries });
+  } catch (error) {
+    console.error('Error fetching time entries + call records:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch combined entries' });
+  }
+});
+
 /**
  * @swagger
  * /api/time-entries/task/{taskId}:
