@@ -92,3 +92,14 @@ table.grid-density-compact td {
   outline-offset: -1px;
   animation: timer-glow-pulse 1.6s ease-in-out infinite;
 }
+
+@keyframes timer-glow-pulse-other {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(250, 204, 21, 0.35); }
+  50%       { box-shadow: 0 0 10px 4px rgba(250, 204, 21, 0.75); }
+}
+
+.timer-active-glow-other {
+  outline: 2px solid rgba(250, 204, 21, 0.85);
+  outline-offset: -1px;
+  animation: timer-glow-pulse-other 1.6s ease-in-out infinite;
+}

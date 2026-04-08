@@ -138,6 +138,33 @@ router.get('/active', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+// GET /api/timers/active-all — return task IDs of all users with active task timers visible to current user
+router.get('/active-all', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      `SELECT at.UserId, at.TaskId
+       FROM ActiveTimers at
+       WHERE at.TaskId IS NOT NULL
+         AND at.UserId != ?
+         AND EXISTS (
+           SELECT 1 FROM OrganizationMembers om1
+           JOIN OrganizationMembers om2 ON om1.OrganizationId = om2.OrganizationId
+           JOIN Tasks t ON at.TaskId = t.Id
+           JOIN Projects p ON t.ProjectId = p.Id
+           WHERE om1.UserId = ? AND om2.UserId = at.UserId
+             AND om1.OrganizationId = p.OrganizationId
+         )`,
+      [userId, userId]
+    );
+    const taskIds: number[] = rows.map((r) => Number(r.TaskId)).filter((id) => id > 0);
+    res.json({ success: true, taskIds });
+  } catch (error) {
+    console.error('Error fetching all active timers:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch timers' });
+  }
+});
+
 /**
  * @swagger
  * /api/timers/start:

@@ -88,7 +88,7 @@ const createDefaultReports = (): DefaultSavedReport[] => {
   ];
 };
 
-const SYSTEM_DEFAULT_REPORTS = createDefaultReports();
+export const SYSTEM_DEFAULT_REPORTS = createDefaultReports();
 
 const normalizeStoredReport = (report: any) => ({
   ...report,

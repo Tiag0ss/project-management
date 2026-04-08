@@ -27,7 +27,8 @@ export type DashboardKpiType =
   | 'throughputThisMonth'
   | 'cycleTimeMedianDays'
   | 'leadTimeMedianDays'
-  | 'ticketsSlaRisk';
+  | 'ticketsSlaRisk'
+  | 'reportKpi';
 
 export interface DashboardKpiWidget {
   id: string;
@@ -37,6 +38,9 @@ export interface DashboardKpiWidget {
   statusValueId?: number | null;
   priorityValueId?: number | null;
   tagId?: number | null;
+  reportId?: number | null;
+  reportAggFunc?: string | null;
+  reportAggField?: string | null;
 }
 
 export interface DashboardKpiMetricValue {
@@ -57,10 +61,11 @@ export interface DashboardKpiDetailItem {
   date?: string;
   hours?: number;
   isClosed?: boolean;
+  rawRow?: Record<string, unknown>;
 }
 
 export interface DashboardKpiDetailResult {
-  type: 'tasks' | 'projects' | 'customers' | 'tickets' | 'timeEntries' | 'unknown';
+  type: 'tasks' | 'projects' | 'customers' | 'tickets' | 'timeEntries' | 'reportRows' | 'unknown';
   items: DashboardKpiDetailItem[];
 }
 

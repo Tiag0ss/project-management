@@ -2733,6 +2733,7 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
     isDefault: !!status?.IsDefault,
     isClosed: !!status?.IsClosed,
     isCancelled: !!status?.IsCancelled,
+    isInProgress: !!status?.IsInProgress,
     hideFromPlanningAndStatistics: !!status?.HideFromPlanningAndStatistics,
     statusType: status?.StatusType || 'other',
   });
@@ -2925,6 +2926,18 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
                       className="w-4 h-4 text-red-600 rounded focus:ring-2 focus:ring-red-500"
                     />
                     <span className="text-sm text-gray-700 dark:text-gray-300">Mark as cancelled status</span>
+                  </label>
+                )}
+
+                {type === 'task' && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!formData.isInProgress}
+                      onChange={(e) => setFormData({ ...formData, isInProgress: e.target.checked })}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Mark as in progress status</span>
                   </label>
                 )}
 

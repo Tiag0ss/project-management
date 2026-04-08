@@ -14,6 +14,7 @@ export interface StatusValue {
   IsDefault: number;
   IsClosed?: number;
   IsCancelled?: number;
+  IsInProgress?: number;
   HideFromPlanningAndStatistics?: number;
   CreatedAt: string;
 }
@@ -28,6 +29,7 @@ export interface CreateStatusValueData {
   isDefault?: boolean;
   isClosed?: boolean;
   isCancelled?: boolean;
+  isInProgress?: boolean;
   hideFromPlanningAndStatistics?: boolean;
 }
 

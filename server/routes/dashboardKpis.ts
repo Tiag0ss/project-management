@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import { pool } from '../config/database';
 import { RowDataPacket } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { executeDynamicQueryConfig } from '../utils/dynamicQueryBuilder';
+import { SYSTEM_DEFAULT_REPORTS } from './savedReports';
 
 const router = Router();
 
@@ -30,7 +32,8 @@ type DashboardKpiType =
   | 'throughputThisMonth'
   | 'cycleTimeMedianDays'
   | 'leadTimeMedianDays'
-  | 'ticketsSlaRisk';
+  | 'ticketsSlaRisk'
+  | 'reportKpi';
 
 interface DashboardKpiWidget {
   id: string;
@@ -40,6 +43,9 @@ interface DashboardKpiWidget {
   statusValueId?: number | null;
   priorityValueId?: number | null;
   tagId?: number | null;
+  reportId?: number | null;
+  reportAggFunc?: string | null;
+  reportAggField?: string | null;
 }
 
 interface KpiMetricValue {
@@ -74,6 +80,7 @@ const ALLOWED_KPI_TYPES = new Set<DashboardKpiType>([
   'cycleTimeMedianDays',
   'leadTimeMedianDays',
   'ticketsSlaRisk',
+  'reportKpi',
 ]);
 
 const KPI_TYPES_REQUIRING_ORG = new Set<DashboardKpiType>([
@@ -149,6 +156,18 @@ const sanitizeWidget = (rawWidget: any, index: number): DashboardKpiWidget | nul
     return null;
   }
 
+  const reportIdNumeric = Number(rawWidget.reportId);
+  const reportId = Number.isInteger(reportIdNumeric) && reportIdNumeric !== 0
+    ? reportIdNumeric
+    : null;
+
+  if (rawType === 'reportKpi' && !reportId) {
+    return null;
+  }
+
+  const reportAggFunc = typeof rawWidget.reportAggFunc === 'string' ? rawWidget.reportAggFunc.trim().slice(0, 60) : null;
+  const reportAggField = typeof rawWidget.reportAggField === 'string' ? rawWidget.reportAggField.trim().slice(0, 120) : null;
+
   return {
     id: widgetId,
     type: rawType,
@@ -157,6 +176,9 @@ const sanitizeWidget = (rawWidget: any, index: number): DashboardKpiWidget | nul
     statusValueId,
     priorityValueId,
     tagId,
+    reportId,
+    reportAggFunc: reportAggFunc || null,
+    reportAggField: reportAggField || null,
   };
 };
 
@@ -333,7 +355,7 @@ const buildMetadata = async (userId: number, accessibleOrgIds: number[]) => {
   };
 };
 
-type KpiDetailType = 'tasks' | 'projects' | 'customers' | 'tickets' | 'timeEntries' | 'unknown';
+type KpiDetailType = 'tasks' | 'projects' | 'customers' | 'tickets' | 'timeEntries' | 'reportRows' | 'unknown';
 
 interface KpiDetailItem {
   id: number;
@@ -347,6 +369,7 @@ interface KpiDetailItem {
   date?: string;
   hours?: number;
   isClosed?: boolean;
+  rawRow?: Record<string, unknown>;
 }
 
 interface KpiDetailResult {
@@ -861,6 +884,198 @@ const getWidgetDetails = async (
     };
   }
 
+  if (widget.type === 'reportKpi') {
+    if (!widget.reportId) {
+      return { type: 'unknown', items: [] };
+    }
+
+    // For system default reports (negative IDs), look up from in-memory list; otherwise query DB
+    let report: Record<string, unknown>;
+    if (widget.reportId <= 0) {
+      const sysReport = SYSTEM_DEFAULT_REPORTS.find((r) => r.Id === widget.reportId);
+      if (!sysReport) return { type: 'unknown', items: [] };
+      report = sysReport as unknown as Record<string, unknown>;
+    } else {
+      const [reportRows] = await pool.execute<RowDataPacket[]>(
+        'SELECT * FROM SavedReports WHERE Id = ?',
+        [widget.reportId]
+      );
+      if (reportRows.length === 0) return { type: 'unknown', items: [] };
+      report = reportRows[0];
+      // Check access: owner, public, or shared with this user
+      const sharedWith = String(report.SharedWith || '').split(',').map((s: string) => Number(s.trim())).filter((n: number) => n > 0);
+      const canAccess = Number(report.UserId) === userId || Number(report.IsPublic) === 1 || sharedWith.includes(userId);
+      if (!canAccess) return { type: 'unknown', items: [] };
+    }
+
+    const dataSource = String(report.DataSource || '');
+    let pivotConfig: any = {};
+    try {
+      pivotConfig = typeof report.PivotConfig === 'string' ? JSON.parse(report.PivotConfig) : (report.PivotConfig || {});
+    } catch {
+      return { type: 'unknown', items: [] };
+    }
+
+    const savedFilters: any[] = (() => {
+      try {
+        if (!report.Filters) return [];
+        return typeof report.Filters === 'string' ? JSON.parse(report.Filters) : (report.Filters || []);
+      } catch { return []; }
+    })();
+
+    // Helper: apply saved report filters to fetched rows (mirrors frontend applyFilters logic)
+    const applyReportFilters = (rows: Record<string, unknown>[], filters: any[]): Record<string, unknown>[] => {
+      if (!filters || filters.length === 0) return rows;
+      return rows.filter((record) => filters.every((filter) => {
+        if (!filter || !filter.field || !filter.operator) return true;
+        const rawValue = record[filter.field];
+        const numericValue = rawValue === null || rawValue === undefined ? 0 : Number(rawValue);
+        const filterNum = Number(filter.value || 0);
+        const filterNum2 = Number(filter.value2 || 0);
+        const fieldStr = String(rawValue ?? '').toLowerCase();
+        const filterStr = String(filter.value || '').toLowerCase();
+        const filterStr2 = String(filter.value2 || '').toLowerCase();
+        switch (filter.operator) {
+          case 'equals':       return fieldStr === filterStr || numericValue === filterNum;
+          case 'notEquals':    return fieldStr !== filterStr && numericValue !== filterNum;
+          case 'contains':     return fieldStr.includes(filterStr);
+          case 'startsWith':   return fieldStr.startsWith(filterStr);
+          case 'endsWith':     return fieldStr.endsWith(filterStr);
+          case 'greaterThan':  return numericValue > filterNum;
+          case 'lessThan':     return numericValue < filterNum;
+          case 'between':      return numericValue >= filterNum && numericValue <= filterNum2;
+          case 'dateRange':    { const d = new Date(String(rawValue || '')); return d >= new Date(filterStr) && d <= new Date(filterStr2); }
+          case 'inList':       return Array.isArray(filter.valueList) && filter.valueList.map((v: any) => String(v).toLowerCase()).includes(fieldStr);
+          case 'notEmpty':     return rawValue !== null && rawValue !== undefined && fieldStr !== '';
+          case 'isEmpty':      return rawValue === null || rawValue === undefined || fieldStr === '';
+          default:             return true;
+        }
+      }));
+    };
+
+    // Helper: build paged KpiDetailItem list from raw rows
+    const toDetailItems = (rawRows: Record<string, unknown>[]): KpiDetailItem[] => {
+      const limit = options?.limit || 1000;
+      const offset = Math.max(0, Number(options?.offset || 0));
+      const paged = rawRows.slice(offset, offset + limit);
+      return paged.map((row, idx) => {
+        const firstStr = Object.values(row).find((v) => typeof v === 'string' && String(v).trim().length > 0);
+        return { id: idx, name: firstStr != null ? String(firstStr) : `Row ${idx + 1}`, rawRow: row };
+      });
+    };
+
+    try {
+      // --- Dynamic (custom SQL) data source ---
+      if (dataSource === 'dynamic') {
+        const queryConfig = pivotConfig.dynamicQueryConfig;
+        if (!queryConfig) return { type: 'unknown', items: [] };
+        const resultRows = await executeDynamicQueryConfig(queryConfig, { limit: 1000 });
+        const filtered = applyReportFilters(resultRows as Record<string, unknown>[], savedFilters);
+        return { type: 'reportRows', items: toDetailItems(filtered) };
+      }
+
+      // --- time-entries (and combined variant) ---
+      if (dataSource === 'time-entries' || dataSource === 'time-entries-and-calls') {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT te.WorkDate, te.Hours, te.Description, te.StartTime, te.EndTime,
+                  t.TaskName, p.ProjectName
+           FROM TimeEntries te
+           JOIN Tasks t ON te.TaskId = t.Id
+           JOIN Projects p ON t.ProjectId = p.Id
+           WHERE te.UserId = ?
+           ORDER BY te.WorkDate DESC`,
+          [userId]
+        );
+        const filtered = applyReportFilters(rows as unknown as Record<string, unknown>[], savedFilters);
+        return { type: 'reportRows', items: toDetailItems(filtered) };
+      }
+
+      // --- tasks ---
+      if (dataSource === 'tasks') {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT t.TaskName, p.ProjectName,
+                  COALESCE(tsv.StatusName, '') AS StatusName,
+                  COALESCE(tpv.PriorityName, '') AS PriorityName,
+                  t.EstimatedHours, t.PlannedStartDate, t.PlannedEndDate,
+                  COALESCE(u.Username, '') AS AssigneeName,
+                  COALESCE((SELECT COUNT(*) FROM Tasks st WHERE st.ParentTaskId = t.Id), 0) AS SubtaskCount
+           FROM Tasks t
+           JOIN Projects p ON t.ProjectId = p.Id
+           JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId AND om.UserId = ?
+           LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+           LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
+           LEFT JOIN Users u ON t.AssignedTo = u.Id
+           ORDER BY t.CreatedAt DESC`,
+          [userId]
+        );
+        const filtered = applyReportFilters(rows as unknown as Record<string, unknown>[], savedFilters);
+        return { type: 'reportRows', items: toDetailItems(filtered) };
+      }
+
+      // --- projects ---
+      if (dataSource === 'projects') {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT p.ProjectName,
+                  COALESCE(psv.StatusName, '') AS StatusName,
+                  p.StartDate, p.EndDate,
+                  o.Name AS OrganizationName,
+                  COALESCE(c.ExternalName, c.Name, '') AS CustomerName
+           FROM Projects p
+           JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId AND om.UserId = ?
+           JOIN Organizations o ON p.OrganizationId = o.Id
+           LEFT JOIN ProjectStatusValues psv ON p.Status = psv.Id
+           LEFT JOIN Customers c ON p.CustomerId = c.Id
+           ORDER BY p.ProjectName`,
+          [userId]
+        );
+        const filtered = applyReportFilters(rows as unknown as Record<string, unknown>[], savedFilters);
+        return { type: 'reportRows', items: toDetailItems(filtered) };
+      }
+
+      // --- task-allocations ---
+      if (dataSource === 'task-allocations') {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT ta.AllocationDate, ta.AllocatedHours, ta.StartTime, ta.EndTime,
+                  t.TaskName, p.ProjectName
+           FROM TaskAllocations ta
+           JOIN Tasks t ON ta.TaskId = t.Id
+           JOIN Projects p ON t.ProjectId = p.Id
+           WHERE ta.UserId = ?
+           ORDER BY ta.AllocationDate DESC`,
+          [userId]
+        );
+        const filtered = applyReportFilters(rows as unknown as Record<string, unknown>[], savedFilters);
+        return { type: 'reportRows', items: toDetailItems(filtered) };
+      }
+
+      // --- tickets ---
+      if (dataSource === 'tickets') {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT tk.Title, tk.CreatedAt, tk.Category AS TypeName,
+                  COALESCE(tsv.StatusName, '') AS StatusName,
+                  COALESCE(tpv.PriorityName, '') AS PriorityName,
+                  COALESCE(p.ProjectName, '') AS ProjectName,
+                  COALESCE(u.Username, '') AS AssigneeName
+           FROM Tickets tk
+           JOIN OrganizationMembers om ON tk.OrganizationId = om.OrganizationId AND om.UserId = ?
+           LEFT JOIN TicketStatusValues tsv ON tk.StatusId = tsv.Id
+           LEFT JOIN TicketPriorityValues tpv ON tk.PriorityId = tpv.Id
+           LEFT JOIN Projects p ON tk.ProjectId = p.Id
+           LEFT JOIN Users u ON tk.AssignedToUserId = u.Id
+           ORDER BY tk.CreatedAt DESC`,
+          [userId]
+        );
+        const filtered = applyReportFilters(rows as unknown as Record<string, unknown>[], savedFilters);
+        return { type: 'reportRows', items: toDetailItems(filtered) };
+      }
+
+      return { type: 'unknown', items: [] };
+    } catch (err) {
+      console.error('Error executing reportKpi query:', err);
+      return { type: 'unknown', items: [] };
+    }
+  }
+
   return { type: 'unknown', items: [] };
 };
 
@@ -941,6 +1156,37 @@ const getWidgetValue = async (
       value: details.items.length,
       subtitle: widget.type === 'throughputThisWeek' ? 'Closed this week' : 'Closed this month',
     };
+  }
+
+  if (widget.type === 'reportKpi') {
+    const items = details.items;
+    const aggFunc = widget.reportAggFunc || '';
+    const aggField = widget.reportAggField || '';
+
+    if (!aggFunc || !aggField) {
+      const count = items.length;
+      return { value: count, subtitle: count === 1 ? '1 row' : `${count} rows` };
+    }
+
+    if (aggFunc === 'distinctCount') {
+      const distinct = new Set(items.map((item) => String(item.rawRow?.[aggField] ?? ''))).size;
+      return { value: distinct, subtitle: `Distinct ${aggField}` };
+    }
+
+    const numericValues = items.map((item) => Number(item.rawRow?.[aggField] ?? 0)).filter((v) => !isNaN(v));
+
+    if (aggFunc === 'sum') {
+      const sum = numericValues.reduce((a, b) => a + b, 0);
+      return { value: Math.round(sum * 100) / 100, subtitle: `Sum of ${aggField}` };
+    }
+
+    if (aggFunc === 'avg') {
+      const avg = numericValues.length > 0 ? numericValues.reduce((a, b) => a + b, 0) / numericValues.length : 0;
+      return { value: Math.round(avg * 100) / 100, subtitle: `Avg of ${aggField}` };
+    }
+
+    const count = items.length;
+    return { value: count, subtitle: count === 1 ? '1 row' : `${count} rows` };
   }
 
   return { value: details.items.length };

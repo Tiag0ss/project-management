@@ -182,6 +182,39 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   const [vacationNotes, setVacationNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  const CALENDAR_HIDDEN_TYPES_KEY = 'dashboard_calendar_hidden_types';
+  type CalendarEventType = CalendarEvent['resource']['type'];
+  const [hiddenTypes, setHiddenTypes] = useState<Set<CalendarEventType>>(() => {
+    try {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem(CALENDAR_HIDDEN_TYPES_KEY) : null;
+      return stored ? new Set<CalendarEventType>(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
+
+  const toggleHiddenType = (type: CalendarEventType) => {
+    setHiddenTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) { next.delete(type); } else { next.add(type); }
+      try { localStorage.setItem(CALENDAR_HIDDEN_TYPES_KEY, JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  const CALENDAR_NO_OVERLAP_KEY = 'dashboard_calendar_no_overlap';
+  const [noOverlap, setNoOverlap] = useState<boolean>(() => {
+    try {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem(CALENDAR_NO_OVERLAP_KEY) : null;
+      return stored ? JSON.parse(stored) : false;
+    } catch { return false; }
+  });
+  const toggleNoOverlap = () => {
+    setNoOverlap((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(CALENDAR_NO_OVERLAP_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (!token) {
       setHolidays([]);
@@ -1267,7 +1300,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
         <div style={{ height: '650px' }} className="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
           <Calendar
             localizer={localizer}
-            events={events}
+            events={events.filter((e) => !hiddenTypes.has(e.resource.type))}
             startAccessor="start"
             endAccessor="end"
             style={{ height: '100%' }}
@@ -1285,31 +1318,47 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
             selectable
             toolbar={false}
             onSelectSlot={handleSelectSlot}
+            dayLayoutAlgorithm={noOverlap ? 'no-overlap' : 'overlap'}
           />
         </div>
 
         {/* Legend */}
-        <div className="mt-4 flex gap-4 text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-blue-500 rounded"></div>
-            <span className="text-gray-700 dark:text-gray-300">Tasks</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-green-500 rounded"></div>
-            <span className="text-gray-700 dark:text-gray-300">Time Entries</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-purple-500 rounded"></div>
-            <span className="text-gray-700 dark:text-gray-300">Calls</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-red-500 rounded"></div>
-            <span className="text-gray-700 dark:text-gray-300">Holidays</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-cyan-500 rounded"></div>
-            <span className="text-gray-700 dark:text-gray-300">Vacations</span>
-          </div>
+        <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2 items-center text-sm">
+          {([
+            { type: 'task' as const,      color: 'bg-blue-500',   label: 'Tasks' },
+            { type: 'timeEntry' as const, color: 'bg-green-500',  label: 'Time Entries' },
+            { type: 'call' as const,      color: 'bg-purple-500', label: 'Calls' },
+            { type: 'lunch' as const,     color: 'bg-amber-400',  label: 'Lunch Break' },
+            { type: 'holiday' as const,   color: 'bg-red-500',    label: 'Holidays' },
+            { type: 'vacation' as const,  color: 'bg-cyan-500',   label: 'Vacations' },
+          ] as { type: CalendarEventType; color: string; label: string }[]).map(({ type, color, label }) => {
+            const hidden = hiddenTypes.has(type);
+            return (
+              <button
+                key={type}
+                type="button"
+                onClick={() => toggleHiddenType(type)}
+                className={`flex items-center gap-2 px-2 py-1 rounded transition-opacity select-none ${
+                  hidden ? 'opacity-40' : 'opacity-100'
+                } hover:opacity-80`}
+                title={hidden ? `Show ${label}` : `Hide ${label}`}
+              >
+                <div className={`w-4 h-4 rounded ${color} ${hidden ? 'opacity-40' : ''}`}></div>
+                <span className={`text-gray-700 dark:text-gray-300 ${hidden ? 'line-through' : ''}`}>{label}</span>
+              </button>
+            );
+          })}
+
+          {/* Overlap toggle */}
+          <label className="flex items-center gap-2 px-2 py-1 rounded cursor-pointer hover:opacity-80 select-none border-l border-gray-200 dark:border-gray-600 ml-1 pl-3" title={noOverlap ? 'Disable separate columns' : 'Show overlapping events in separate columns'}>
+            <input
+              type="checkbox"
+              checked={noOverlap}
+              onChange={toggleNoOverlap}
+              className="w-4 h-4 accent-blue-500 cursor-pointer"
+            />
+            <span className="text-gray-700 dark:text-gray-300">Separate overlapping events</span>
+          </label>
         </div>
       </div>
 

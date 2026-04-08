@@ -530,6 +530,7 @@ export default function PlanningPage() {
   });
   const [showOverdueDetails, setShowOverdueDetails] = useState(false);
   const [activeTimerTaskId, setActiveTimerTaskId] = useState<number | null>(null);
+  const [otherActiveTimerTaskIds, setOtherActiveTimerTaskIds] = useState<Set<number>>(new Set());
 
   const showAlert = (title: string, message: string) => {
     const normalizedTitle = title.trim().toLowerCase();
@@ -636,6 +637,22 @@ export default function PlanningPage() {
     }
     return glowIds;
   }, [activeTimerTaskId, tasks]);
+
+  const otherActiveTimerGlowIds = useMemo(() => {
+    if (otherActiveTimerTaskIds.size === 0) return new Set<number>();
+    const parentMap = new Map(tasks.map((t) => [t.Id, t.ParentTaskId ?? null]));
+    const glowIds = new Set<number>();
+    for (const taskId of otherActiveTimerTaskIds) {
+      glowIds.add(taskId);
+      let cursor: number | null = taskId;
+      while (cursor !== null) {
+        const parent: number | null = parentMap.get(cursor) ?? null;
+        if (parent !== null) glowIds.add(parent);
+        cursor = parent;
+      }
+    }
+    return glowIds;
+  }, [otherActiveTimerTaskIds, tasks]);
 
   const allocationHoursByHeaderId = useMemo(() => {
     const totals = new Map<number, number>();
@@ -893,14 +910,21 @@ export default function PlanningPage() {
     if (!token) return;
     const fetchActiveTimer = async () => {
       try {
-        const res = await fetch(`${getApiUrl()}/api/timers/active`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
+        const [ownRes, othersRes] = await Promise.all([
+          fetch(`${getApiUrl()}/api/timers/active`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${getApiUrl()}/api/timers/active-all`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+        if (ownRes.ok) {
+          const data = await ownRes.json();
           setActiveTimerTaskId(data?.timer?.TaskId ?? null);
         } else {
           setActiveTimerTaskId(null);
+        }
+        if (othersRes.ok) {
+          const data = await othersRes.json();
+          setOtherActiveTimerTaskIds(new Set<number>((data?.taskIds || []).map(Number)));
+        } else {
+          setOtherActiveTimerTaskIds(new Set());
         }
       } catch {
         // silently ignore
@@ -8391,7 +8415,7 @@ export default function PlanningPage() {
                               }
                               void handleTaskClick(parentTask);
                             }}
-                            className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(parentTask) : ''} opacity-75 hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white text-xs px-2 transition-all ${isResizingTask ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''} ${activeTimerGlowIds.has(parentTask.Id) ? 'timer-active-glow' : ''}`}
+                            className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(parentTask) : ''} opacity-75 hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white text-xs px-2 transition-all ${isResizingTask ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''} ${activeTimerGlowIds.has(parentTask.Id) ? 'timer-active-glow' : otherActiveTimerGlowIds.has(parentTask.Id) ? 'timer-active-glow-other' : ''}`}
                             style={{
                               left: previewBarStyle?.left || (position ? position.left : '0%'),
                               width: previewBarStyle?.width || (position ? position.width : `${(Math.min(5, Math.max(1, timelineColumns.length)) / Math.max(1, timelineColumns.length)) * 100}%`),
@@ -9195,7 +9219,7 @@ export default function PlanningPage() {
                                       }
                                       void handleTaskClick(task);
                                     }}
-                                    className={`absolute ${subtaskHeight} rounded ${segmentBaseColorClass} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${canDragTaskSegment ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''} ${isResizingThisSegment ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''} ${activeTimerGlowIds.has(task.Id) ? 'timer-active-glow' : ''}`}
+                                    className={`absolute ${subtaskHeight} rounded ${segmentBaseColorClass} ${isSubtask ? 'opacity-60' : 'opacity-75'} hover:opacity-100 ${canDragTaskSegment ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white ${subtaskTextSize} ${subtaskPadding} transition-all ${!isSubtask && isOverPlanned ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${showCriticalPath && criticalPathIds.has(task.Id) ? 'ring-2 ring-red-400 ring-offset-1 brightness-110' : ''} ${isResizingThisSegment ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''} ${activeTimerGlowIds.has(task.Id) ? 'timer-active-glow' : otherActiveTimerGlowIds.has(task.Id) ? 'timer-active-glow-other' : ''}`}
                                     style={{
                                       left: segmentPreviewStyle?.left || segmentPosition.left,
                                       width: segmentPreviewStyle?.width || segmentPosition.width,
