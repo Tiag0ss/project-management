@@ -1993,16 +1993,25 @@ export default function PlanningPage() {
     return Array.from(uniqueDates).sort((a, b) => a.localeCompare(b));
   };
 
-  const getUnscheduledRenderDates = (task: Task, userId?: number): Array<{ date: string; source: 'done' | 'openToday' }> => {
+  const getUnscheduledRenderDates = (task: Task, userId?: number): Array<{ date: string; source: 'done' | 'openToday'; startDate?: string | null }> => {
     const relevantTasks = getRelevantUnscheduledTasks(task, userId);
     if (relevantTasks.length === 0) {
       return [];
     }
 
-    const doneDates = getUnscheduledDoneTransitionDates(task, userId);
-    const renderDates = new Map<string, { date: string; source: 'done' | 'openToday' }>();
-    doneDates.forEach((date) => {
-      renderDates.set(`done|${date}`, { date, source: 'done' });
+    const renderDates = new Map<string, { date: string; source: 'done' | 'openToday'; startDate?: string | null }>();
+
+    // Collect done transitions with their paired start dates
+    relevantTasks.forEach((candidate) => {
+      const transitions = Array.isArray(candidate.DoneTransitionsByDay) ? candidate.DoneTransitionsByDay : [];
+      transitions.forEach((transition) => {
+        const rawDate = transition?.date;
+        if (!rawDate) return;
+        const normalizedDate = normalizeDateOnly(String(rawDate));
+        if (normalizedDate && !renderDates.has(`done|${normalizedDate}`)) {
+          renderDates.set(`done|${normalizedDate}`, { date: normalizedDate, source: 'done', startDate: transition.startDate ?? null });
+        }
+      });
     });
 
     const hasOpenRelevantTask = relevantTasks.some((candidate) => !isTaskClosedOrCancelled(candidate));
@@ -2134,6 +2143,13 @@ export default function PlanningPage() {
         const visibleDate = new Date(`${visibleRenderDate.date}T12:00:00`);
         startDate = new Date(visibleDate);
         endDate = new Date(visibleDate);
+        // For 'done' bars: stretch back to when this cycle started (in-progress date)
+        if (visibleRenderDate.source === 'done' && visibleRenderDate.startDate) {
+          const ipDate = new Date(`${String(visibleRenderDate.startDate).split('T')[0]}T12:00:00`);
+          if (!Number.isNaN(ipDate.getTime()) && ipDate < visibleDate) {
+            startDate = ipDate;
+          }
+        }
         // Open tasks (tracking today) should still span 3 days for readability
         if (visibleRenderDate.source === 'openToday') {
           endDate.setDate(endDate.getDate() + 2);
@@ -2143,7 +2159,15 @@ export default function PlanningPage() {
         startDate = new Date(unscheduledAnchorDate);
         endDate = new Date(unscheduledAnchorDate);
         const unscheduledVisualDays = isClosedUnscheduledWithAnchor(task) ? 1 : 3;
-        endDate.setDate(endDate.getDate() + (unscheduledVisualDays - 1));
+        // For closed tasks: if we know when it went in-progress, stretch bar back to that date
+        if (isClosedUnscheduledWithAnchor(task) && task.InProgressAt) {
+          const ipDate = new Date(`${String(task.InProgressAt).split('T')[0]}T12:00:00`);
+          if (!Number.isNaN(ipDate.getTime()) && ipDate < endDate) {
+            startDate = ipDate;
+          }
+        } else {
+          endDate.setDate(endDate.getDate() + (unscheduledVisualDays - 1));
+        }
       }
     } else if (task.PlannedStartDate && task.PlannedEndDate) {
       startDate = parsePlannedDate(task.PlannedStartDate);
@@ -8886,9 +8910,17 @@ export default function PlanningPage() {
                             const unscheduledRenderDates = getUnscheduledRenderDates(task, Number(userRow.Id));
 
                             if (unscheduledRenderDates.length > 0) {
-                              displayedStartDate = unscheduledRenderDates[0].date;
+                              displayedStartDate = unscheduledRenderDates[0].startDate || unscheduledRenderDates[0].date;
                               displayedEndDate = unscheduledRenderDates[unscheduledRenderDates.length - 1].date;
                               unscheduledRenderDates.forEach((entry) => {
+                                // 'done' bars: stretch back to when the cycle started (in-progress date)
+                                const segmentStartDate = (entry.source === 'done' && entry.startDate && entry.startDate < entry.date)
+                                  ? entry.startDate
+                                  : entry.date;
+                                // Update overall displayed start if this segment starts earlier
+                                if (!displayedStartDate || segmentStartDate < displayedStartDate) {
+                                  displayedStartDate = segmentStartDate;
+                                }
                                 // Open tasks tracking today get a 3-day visual span for readability
                                 let segmentEndDate = entry.date;
                                 if (entry.source === 'openToday') {
@@ -8900,7 +8932,7 @@ export default function PlanningPage() {
                                     displayedEndDate = segmentEndDate;
                                   }
                                 }
-                                taskBarSegments.push({ headerId: null, startDate: entry.date, endDate: segmentEndDate, source: entry.source });
+                                taskBarSegments.push({ headerId: null, startDate: segmentStartDate, endDate: segmentEndDate, source: entry.source });
                               });
                             } else {
                               const anchorDate = getUnscheduledAnchorDate(task, Number(userRow.Id));

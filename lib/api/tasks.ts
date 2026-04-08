@@ -82,9 +82,11 @@ export interface Task {
   CreatedAt: string;
   UpdatedAt: string;
   ClosedAt?: string | null;
+  InProgressAt?: string | null;
   DoneTransitionsByDay?: Array<{
     date: string;
     count: number;
+    startDate?: string | null;
   }>;
   [key: string]: unknown;
 }

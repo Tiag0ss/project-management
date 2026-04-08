@@ -758,6 +758,20 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
       [organizationId]
     );
 
+    const [inProgressStatuses] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id, StatusName
+       FROM TaskStatusValues
+       WHERE OrganizationId = ?
+         AND COALESCE(IsInProgress, 0) = 1`,
+      [organizationId]
+    );
+
+    const inProgressStatusValues = new Set<string>();
+    inProgressStatuses.forEach((status) => {
+      inProgressStatusValues.add(String(status.Id));
+      inProgressStatusValues.add(String(status.StatusName || '').trim().toLowerCase());
+    });
+
     const closedStatusValues = new Set<string>();
     closedStatuses.forEach((status) => {
       closedStatusValues.add(String(status.Id));
@@ -765,7 +779,10 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
     });
 
     const closedAtByTaskId = new Map<number, string>();
-    const doneTransitionsByTaskId = new Map<number, Map<string, number>>();
+    const inProgressAtByTaskId = new Map<number, string>();
+    // Tracks the most recent in-progress date for a task (resets after each close)
+    const lastInProgressDateByTaskId = new Map<number, string | null>();
+    const doneTransitionsByTaskId = new Map<number, Map<string, { count: number; startDate: string | null }>>();
     if (tasks.length > 0 && closedStatusValues.size > 0) {
       const [statusHistory] = await pool.execute<RowDataPacket[]>(
         `SELECT th.TaskId, th.NewValue, th.CreatedAt
@@ -781,6 +798,20 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
         const taskId = Number(entry.TaskId);
 
         const statusToken = String(entry.NewValue || '').trim();
+
+        // Track in-progress transitions
+        if (inProgressStatusValues.has(statusToken) || inProgressStatusValues.has(statusToken.toLowerCase())) {
+          const ipDate = toDateOnly(entry.CreatedAt);
+          if (ipDate) {
+            // First ever in-progress date for InProgressAt
+            if (!inProgressAtByTaskId.has(taskId)) {
+              inProgressAtByTaskId.set(taskId, ipDate);
+            }
+            // Last in-progress date before next close (resets after each close)
+            lastInProgressDateByTaskId.set(taskId, ipDate);
+          }
+        }
+
         if (!closedStatusValues.has(statusToken) && !closedStatusValues.has(statusToken.toLowerCase())) {
           return;
         }
@@ -792,13 +823,18 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
           }
 
           if (!doneTransitionsByTaskId.has(taskId)) {
-            doneTransitionsByTaskId.set(taskId, new Map<string, number>());
+            doneTransitionsByTaskId.set(taskId, new Map<string, { count: number; startDate: string | null }>());
           }
 
           const dayMap = doneTransitionsByTaskId.get(taskId);
           if (dayMap) {
-            dayMap.set(closedDate, (dayMap.get(closedDate) || 0) + 1);
+            const existing = dayMap.get(closedDate);
+            const startDate = lastInProgressDateByTaskId.get(taskId) ?? null;
+            dayMap.set(closedDate, { count: (existing?.count || 0) + 1, startDate: existing?.startDate ?? startDate });
           }
+
+          // Reset last-in-progress after recording close, so next cycle starts fresh
+          lastInProgressDateByTaskId.set(taskId, null);
         }
       });
     }
@@ -814,12 +850,13 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
       const doneTransitionsByDay = Number(task.UnscheduledWork || 0) === 1
         ? Array.from(doneTransitionsByTaskId.get(Number(task.Id))?.entries() || [])
             .sort((a, b) => a[0].localeCompare(b[0]))
-            .map(([date, count]) => ({ date, count }))
+            .map(([date, entry]) => ({ date, count: entry.count, startDate: entry.startDate }))
         : [];
 
       return {
         ...task,
         ClosedAt: closedAtByTaskId.get(Number(task.Id)) || (isClosedNow ? toDateOnly(task.UpdatedAt) : null),
+        InProgressAt: inProgressAtByTaskId.get(Number(task.Id)) || null,
         DoneTransitionsByDay: doneTransitionsByDay,
       };
     });
