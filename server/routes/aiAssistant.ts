@@ -1125,4 +1125,71 @@ router.post('/chat', authenticateToken, async (req: AuthRequest, res: Response) 
   }
 });
 
+// Translate or summarize a piece of text using the configured OpenAI key
+router.post('/text-action', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const config = await getGlobalAssistantConfig();
+    if (!config.isConfigured) {
+      return res.status(400).json({ success: false, message: 'OpenAI API key is not configured.' });
+    }
+
+    const action = String(req.body?.action || '').toLowerCase();
+    const text = String(req.body?.text || '').trim();
+    const targetLanguage = String(req.body?.targetLanguage || '').trim();
+
+    if (!text) {
+      return res.status(400).json({ success: false, message: 'Text is required.' });
+    }
+    if (text.length > 10000) {
+      return res.status(400).json({ success: false, message: 'Text is too long (max 10000 chars).' });
+    }
+    if (action !== 'translate' && action !== 'summarize') {
+      return res.status(400).json({ success: false, message: 'Invalid action. Must be "translate" or "summarize".' });
+    }
+    if (action === 'translate' && !targetLanguage) {
+      return res.status(400).json({ success: false, message: 'Target language is required for translation.' });
+    }
+
+    const systemPrompt = action === 'translate'
+      ? `You are a professional translator. Translate the following text to ${targetLanguage}. Return only the translated text, preserving any markdown or HTML formatting present in the original.`
+      : 'You are a professional summarizer. Provide a concise summary of the following text. Keep relevant key points. Return only the summary text, without any preamble.';
+
+    const model = config.openAIModel || 'gpt-4o-mini';
+    const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.openAiApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.3,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: text },
+        ],
+        max_tokens: 2000,
+      }),
+    });
+
+    if (!llmResponse.ok) {
+      const errorJson = await llmResponse.json().catch(() => ({}));
+      const apiMessage = String((errorJson as any)?.error?.message || '').trim();
+      return res.status(502).json({ success: false, message: apiMessage || 'OpenAI request failed.' });
+    }
+
+    const llmJson = await llmResponse.json() as any;
+    const result = String(llmJson?.choices?.[0]?.message?.content || '').trim();
+    return res.json({ success: true, result });
+  } catch (error) {
+    console.error('AI text-action error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to process AI request.' });
+  }
+});
+
 export default router;
