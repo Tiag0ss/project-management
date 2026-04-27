@@ -18,6 +18,8 @@ const parseBooleanSetting = (value: unknown): boolean => {
   return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
 };
 
+const isDemoModeEnabled = (): boolean => parseBooleanSetting(process.env.DEMO);
+
 /**
  * @swagger
  * tags:
@@ -62,6 +64,7 @@ router.get('/public', async (req, res: Response) => {
     const companyLogoUrl = settingsObj.companyLogoUrl || '';
     const faviconUrl = settingsObj.faviconUrl || '';
     const frontpageEnabled = settingsObj.frontpageEnabled !== 'false';
+    const demoMode = isDemoModeEnabled();
     res.json({
       success: true,
       allowPublicRegistration,
@@ -69,7 +72,8 @@ router.get('/public', async (req, res: Response) => {
       companyName,
       companyLogoUrl,
       faviconUrl,
-      frontpageEnabled
+      frontpageEnabled,
+      demoMode,
     });
   } catch (error) {
     console.error('Get public registration setting error:', error);
@@ -159,6 +163,10 @@ router.get('/public-frontpage', async (req, res: Response) => {
  */
 router.get('/frontpage', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
+    if (isDemoModeEnabled()) {
+      return res.status(403).json({ success: false, message: 'Frontpage loading is disabled in demo mode' });
+    }
+
     const userId = req.user?.userId;
     
     // Check if user is admin
@@ -213,6 +221,10 @@ router.get('/frontpage', authenticateToken, async (req: AuthRequest, res: Respon
  */
 router.put('/frontpage', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
+    if (isDemoModeEnabled()) {
+      return res.status(403).json({ success: false, message: 'Frontpage editing is disabled in demo mode' });
+    }
+
     const userId = req.user?.userId;
     const { content } = req.body;
 

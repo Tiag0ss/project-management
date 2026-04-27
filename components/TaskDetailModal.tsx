@@ -538,10 +538,11 @@ export default function TaskDetailModal({
   const handleStartTimer = async () => {
     if (!task?.Id) return;
     try {
+      const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const res = await fetch(`${getApiUrl()}/api/timers/start`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId: task.Id }),
+        body: JSON.stringify({ taskId: task.Id, clientTimezone }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -554,9 +555,11 @@ export default function TaskDetailModal({
   const handleStopTimer = async () => {
     if (!activeTimer) return;
     try {
+      const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const res = await fetch(`${getApiUrl()}/api/timers/${activeTimer.Id}/stop`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientTimezone }),
       });
       if (res.ok) {
         setActiveTimer(null);

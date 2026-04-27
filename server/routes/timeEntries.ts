@@ -1003,5 +1003,109 @@ router.put('/:id/admin-description', authenticateToken, async (req: AuthRequest,
   }
 });
 
+// Planning view: time entries + call records for all accessible users in a date range
+// Admins/managers see all users; others see only themselves
+router.get('/planning-view', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const currentUserId = req.user?.userId;
+    const { startDate, endDate } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+    }
+
+    const [callerRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT IsAdmin, IsManager FROM Users WHERE Id = ?`,
+      [currentUserId]
+    );
+    if (callerRows.length === 0) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+    const isAdmin = !!callerRows[0].IsAdmin;
+    const isManager = !!callerRows[0].IsManager;
+    const canViewAll = isAdmin || isManager;
+
+    const teParams: any[] = [startDate, endDate];
+    let teWhere = `te.WorkDate BETWEEN ? AND ?`;
+    if (!canViewAll) {
+      teWhere += ` AND te.UserId = ?`;
+      teParams.push(currentUserId);
+    }
+
+    const [teRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT
+         'TimeEntry' AS RecordType,
+         te.Id,
+         te.UserId,
+         u.Username,
+         u.FirstName,
+         u.LastName,
+         te.WorkDate AS WorkDate,
+         te.Hours AS Hours,
+         0 AS DurationMinutes,
+         t.TaskName,
+         t.Id AS TaskId,
+         p.ProjectName,
+         p.Id AS ProjectId,
+         te.Description,
+         te.StartTime,
+         te.EndTime,
+         COALESCE(c.ExternalName, c.Name) AS CustomerName
+       FROM TimeEntries te
+       INNER JOIN Tasks t ON te.TaskId = t.Id
+       INNER JOIN Projects p ON t.ProjectId = p.Id
+       LEFT JOIN Customers c ON p.CustomerId = c.Id
+       LEFT JOIN Users u ON te.UserId = u.Id
+       WHERE ${teWhere}
+       ORDER BY te.WorkDate, te.UserId, te.StartTime`,
+      teParams
+    );
+
+    const crParams: any[] = [startDate, endDate];
+    let crWhere = `cr.CallDate BETWEEN ? AND ?`;
+    if (!canViewAll) {
+      crWhere += ` AND cr.UserId = ?`;
+      crParams.push(currentUserId);
+    }
+
+    const [crRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT
+         'CallRecord' AS RecordType,
+         cr.Id,
+         cr.UserId,
+         u.Username,
+         u.FirstName,
+         u.LastName,
+         cr.CallDate AS WorkDate,
+         ROUND(cr.DurationMinutes / 60.0, 2) AS Hours,
+         cr.DurationMinutes AS DurationMinutes,
+         COALESCE(t.TaskName, '') AS TaskName,
+         t.Id AS TaskId,
+         COALESCE(p.ProjectName, '') AS ProjectName,
+         COALESCE(p.Id, 0) AS ProjectId,
+         cr.Notes AS Description,
+         cr.StartTime,
+         NULL AS EndTime,
+         cr.Subject,
+         cr.CallType,
+         COALESCE(tc.ExternalName, tc.Name, pc.ExternalName, pc.Name) AS CustomerName
+       FROM CallRecords cr
+       LEFT JOIN Tasks t ON cr.TaskId = t.Id
+       LEFT JOIN Projects p ON COALESCE(t.ProjectId, cr.ProjectId) = p.Id
+       LEFT JOIN Users u ON cr.UserId = u.Id
+       LEFT JOIN Customers tc ON t.CustomerId = tc.Id
+       LEFT JOIN Customers pc ON p.CustomerId = pc.Id
+       WHERE ${crWhere}
+       ORDER BY cr.CallDate, cr.UserId, cr.StartTime`,
+      crParams
+    );
+
+    res.json({ success: true, entries: [...(teRows as any[]), ...(crRows as any[])] });
+  } catch (error) {
+    console.error('Error fetching planning-view time entries:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch planning view data' });
+  }
+});
+
 export default router;
 

@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { usersApi, User } from '@/lib/api/users';
 import { getCustomers } from '@/lib/api/customers';
+import { getApiUrl } from '@/lib/api/config';
 import { COUNTRY_OPTIONS, getCountryName } from '@/lib/constants/countries';
 import SearchableSelect from '@/components/SearchableSelect';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
@@ -581,7 +582,7 @@ function CreateUserModal({
   const loadAvailableRegions = async (cc: string) => {
     if (!token || !cc) { setAvailableRegions([]); return; }
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/holidays/regions/${cc}`, {
+      const res = await fetch(`${getApiUrl()}/api/holidays/regions/${cc}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (res.ok) {
@@ -1021,7 +1022,7 @@ function EditUserModal({
   const loadAvailableRegions = async (cc: string) => {
     if (!token || !cc) { setAvailableRegions([]); return; }
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/holidays/regions/${cc}`, {
+      const res = await fetch(`${getApiUrl()}/api/holidays/regions/${cc}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (res.ok) {

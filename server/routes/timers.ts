@@ -5,6 +5,76 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 
 const router = Router();
 
+const isValidIanaTimezone = (timezone: unknown): timezone is string => {
+  const normalized = String(timezone ?? '').trim();
+  if (!normalized) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: normalized });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const getEffectiveTimezoneForUser = async (userId: number, clientTimezone?: string): Promise<string | null> => {
+  const [userRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT Timezone FROM Users WHERE Id = ? LIMIT 1',
+    [userId]
+  );
+
+  const userTimezone = userRows.length > 0 ? userRows[0].Timezone : null;
+  if (isValidIanaTimezone(userTimezone)) {
+    return userTimezone;
+  }
+
+  if (isValidIanaTimezone(clientTimezone)) {
+    return clientTimezone;
+  }
+
+  const [settingRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT SettingValue FROM SystemSettings WHERE SettingKey = ? LIMIT 1',
+    ['defaultTimezone']
+  );
+
+  const defaultTimezone = settingRows.length > 0 ? settingRows[0].SettingValue : null;
+  if (isValidIanaTimezone(defaultTimezone)) {
+    return defaultTimezone;
+  }
+
+  return null;
+};
+
+const getDateTimePartsForTimezone = (date: Date, timezone: string | null): { date: string; time: string } => {
+  if (!timezone) {
+    // Last-resort fallback when no valid timezone is available.
+    return {
+      date: date.toISOString().slice(0, 10),
+      time: date.toISOString().slice(11, 16),
+    };
+  }
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(date);
+  const values: Record<string, string> = {};
+  for (const part of parts) {
+    values[part.type] = part.value;
+  }
+
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    time: `${values.hour}:${values.minute}`,
+  };
+};
+
 const parseBooleanSetting = (value: unknown): boolean => {
   const normalized = String(value ?? '').trim().toLowerCase();
   return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
@@ -34,7 +104,12 @@ const getApprovalStatusForTask = async (taskId: number): Promise<'approved' | 'p
   return (isHobby || autoApproveTimeEntries) ? 'approved' : 'pending';
 };
 
-const persistActiveTimer = async (timer: RowDataPacket, userId: number, overrideDescription?: string) => {
+const persistActiveTimer = async (
+  timer: RowDataPacket,
+  userId: number,
+  overrideDescription?: string,
+  clientTimezone?: string
+) => {
   const timerType = String(timer.TimerType || 'task');
   // StartedAt is stored in UTC but comes back from MySQL as a plain string without timezone info
   // (e.g. "2026-04-06 09:30:00"). new Date() would parse that as local time on non-UTC systems,
@@ -44,14 +119,15 @@ const persistActiveTimer = async (timer: RowDataPacket, userId: number, override
     ? new Date(rawStartedAt)
     : new Date(rawStartedAt.replace(' ', 'T') + 'Z');
   const now = new Date();
+  const effectiveTimezone = await getEffectiveTimezoneForUser(userId, clientTimezone);
   const elapsedMs = now.getTime() - startedAt.getTime();
   const elapsedHours = Math.max(0.01, Math.round((elapsedMs / (1000 * 60 * 60)) * 100) / 100);
   const elapsedMinutes = Math.max(1, Math.round(elapsedMs / 60000));
-  // Use local date/time (not UTC) for workDate/startTime/endTime so they reflect what the user sees
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const workDate = `${startedAt.getFullYear()}-${pad(startedAt.getMonth() + 1)}-${pad(startedAt.getDate())}`;
-  const startTime = startedAt.toTimeString().slice(0, 5);
-  const endTime = now.toTimeString().slice(0, 5);
+  const startedAtLocal = getDateTimePartsForTimezone(startedAt, effectiveTimezone);
+  const endedAtLocal = getDateTimePartsForTimezone(now, effectiveTimezone);
+  const workDate = startedAtLocal.date;
+  const startTime = startedAtLocal.time;
+  const endTime = endedAtLocal.time;
   const finalDescription = overrideDescription || timer.Description || '';
 
   if (timerType === 'callRecord') {
@@ -210,6 +286,7 @@ router.post('/start', authenticateToken, async (req: AuthRequest, res: Response)
       callType,
       participants,
       subject,
+      clientTimezone,
     } = req.body;
 
     const normalizedTimerType = String(timerType || 'task') === 'callRecord' ? 'callRecord' : 'task';
@@ -298,7 +375,7 @@ router.post('/start', authenticateToken, async (req: AuthRequest, res: Response)
       [userId]
     );
     if (existingTimers.length > 0) {
-      await persistActiveTimer(existingTimers[0], Number(userId));
+      await persistActiveTimer(existingTimers[0], Number(userId), undefined, clientTimezone);
       await pool.execute('DELETE FROM ActiveTimers WHERE UserId = ?', [userId]);
     }
 
@@ -416,7 +493,7 @@ router.post('/:id/stop', authenticateToken, async (req: AuthRequest, res: Respon
   try {
     const userId = req.user?.userId;
     const timerId = req.params.id;
-    const { description: overrideDescription } = req.body;
+    const { description: overrideDescription, clientTimezone } = req.body;
 
     const [timers] = await pool.execute<RowDataPacket[]>(
       'SELECT * FROM ActiveTimers WHERE Id = ? AND UserId = ?',
@@ -427,7 +504,7 @@ router.post('/:id/stop', authenticateToken, async (req: AuthRequest, res: Respon
     }
 
     const timer = timers[0];
-    const persisted = await persistActiveTimer(timer, Number(userId), overrideDescription);
+    const persisted = await persistActiveTimer(timer, Number(userId), overrideDescription, clientTimezone);
 
     // Delete timer
     await pool.execute('DELETE FROM ActiveTimers WHERE Id = ?', [timerId]);

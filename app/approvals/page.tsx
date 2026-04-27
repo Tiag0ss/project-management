@@ -44,6 +44,8 @@ interface VacationRequest {
   VacationDate: string;
   Status: string;
   Notes?: string;
+  HolidayConflict?: boolean;
+  HolidayNames?: string[];
   Username: string;
   FirstName?: string;
   LastName?: string;
@@ -1326,7 +1328,14 @@ export default function ApprovalsPage() {
                               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                                 {userRequests.map((request) => (
                                   <tr key={request.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{String(request.VacationDate).split('T')[0]}</td>
+                                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                                      <div>{String(request.VacationDate).split('T')[0]}</div>
+                                      {request.HolidayConflict && (
+                                        <div className="mt-1 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" title={(request.HolidayNames || []).join(', ')}>
+                                          ⚠ Holiday conflict{(request.HolidayNames || []).length > 0 ? `: ${(request.HolidayNames || []).join(', ')}` : ''}
+                                        </div>
+                                      )}
+                                    </td>
                                     <td className="px-4 py-3 text-sm">
                                       {String(request.Status).toLowerCase() === 'approved' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">✓ Approved</span>}
                                       {String(request.Status).toLowerCase() === 'pending' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">⏳ Pending</span>}
@@ -1385,7 +1394,14 @@ export default function ApprovalsPage() {
                               <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
                                 {(request.FirstName && request.LastName) ? `${request.FirstName} ${request.LastName}` : request.Username}
                               </td>
-                              <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{String(request.VacationDate).split('T')[0]}</td>
+                              <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                                <div>{String(request.VacationDate).split('T')[0]}</div>
+                                {request.HolidayConflict && (
+                                  <div className="mt-1 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" title={(request.HolidayNames || []).join(', ')}>
+                                    ⚠ Holiday conflict{(request.HolidayNames || []).length > 0 ? `: ${(request.HolidayNames || []).join(', ')}` : ''}
+                                  </div>
+                                )}
+                              </td>
                               <td className="px-4 py-3 text-sm">
                                 {String(request.Status).toLowerCase() === 'approved' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">✓ Approved</span>}
                                 {String(request.Status).toLowerCase() === 'pending' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">⏳ Pending</span>}

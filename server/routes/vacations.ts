@@ -335,15 +335,54 @@ router.get('/requests', authenticateToken, async (req: AuthRequest, res: Respons
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const [rows] = await pool.execute<RowDataPacket[]>(
-      `SELECT uv.*, u.Username, u.FirstName, u.LastName, u.TeamLeaderId
+      `SELECT uv.*, u.Username, u.FirstName, u.LastName, u.TeamLeaderId,
+              h.Id as HolidayId, h.HolidayName
        FROM UserVacations uv
        INNER JOIN Users u ON uv.UserId = u.Id
+       LEFT JOIN Holidays h ON h.IsActive = 1
+         AND h.HolidayDate = uv.VacationDate
+         AND h.Year = YEAR(uv.VacationDate)
+         AND h.CountryCode = COALESCE(NULLIF(u.CountryCode, ''), 'PT')
+         AND (
+           h.RegionCode IS NULL
+           OR h.RegionCode = ''
+           OR (
+             u.RegionCode IS NOT NULL
+             AND u.RegionCode <> ''
+             AND h.RegionCode = u.RegionCode
+           )
+         )
        ${whereClause}
        ORDER BY uv.VacationDate DESC, u.Username ASC`,
       params
     );
 
-    res.json({ success: true, requests: rows, year });
+    const requestsById = new Map<number, any>();
+
+    rows.forEach((row) => {
+      const requestId = Number(row.Id);
+      if (!requestsById.has(requestId)) {
+        const baseRequest: any = { ...row, HolidayConflict: false, HolidayNames: [] as string[] };
+        delete baseRequest.HolidayId;
+        delete baseRequest.HolidayName;
+        requestsById.set(requestId, baseRequest);
+      }
+
+      const holidayName = String(row.HolidayName || '').trim();
+      if (!holidayName) {
+        return;
+      }
+
+      const request = requestsById.get(requestId);
+      request.HolidayConflict = true;
+      if (!request.HolidayNames.includes(holidayName)) {
+        request.HolidayNames.push(holidayName);
+      }
+    });
+
+    const requests = Array.from(requestsById.values());
+
+    res.json({ success: true, requests, year });
   } catch (error) {
     console.error('Error loading vacation requests:', error);
     res.status(500).json({ success: false, message: 'Failed to load vacation requests' });

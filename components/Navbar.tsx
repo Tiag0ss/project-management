@@ -112,6 +112,7 @@ export default function Navbar() {
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
   const [memosEnabled, setMemosEnabled] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [companyName, setCompanyName] = useState('Project Management');
   const [companyLogoUrl, setCompanyLogoUrl] = useState('');
   const [navbarMenuLayout, setNavbarMenuLayout] = useState<'top' | 'left'>('top');
@@ -293,9 +294,11 @@ export default function Navbar() {
           const publicData = await publicRes.json();
           setCompanyName(publicData.companyName || 'Project Management');
           setCompanyLogoUrl(publicData.companyLogoUrl || '');
+          setIsDemoMode(publicData.demoMode === true);
         } else {
           setCompanyName('Project Management');
           setCompanyLogoUrl('');
+          setIsDemoMode(false);
         }
 
         if (!token) {
@@ -323,6 +326,7 @@ export default function Navbar() {
         setMemosEnabled(true);
         setCompanyName('Project Management');
         setCompanyLogoUrl('');
+        setIsDemoMode(false);
       }
     };
 
@@ -688,6 +692,7 @@ export default function Navbar() {
 
     setIsStartingTimer(true);
     setTimerStartError('');
+    const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     try {
       const response = await fetch(`${getApiUrl()}/api/timers/start`, {
@@ -712,6 +717,7 @@ export default function Navbar() {
           subject: timerStartMode === 'callRecord' ? (timerStartCallForm.subject || null) : null,
           description: timerStartMode === 'callRecord' ? (timerStartCallForm.notes || null) : null,
           startedAt: startedAt.toISOString(),
+          clientTimezone,
         }),
       });
 
@@ -733,9 +739,11 @@ export default function Navbar() {
   const handleNavStopTimer = async () => {
     if (!navTimer) return;
     try {
+      const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const res = await fetch(`${getApiUrl()}/api/timers/${navTimer.Id}/stop`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientTimezone }),
       });
       if (res.ok) {
         setNavTimer(null);
@@ -1942,6 +1950,14 @@ export default function Navbar() {
                 <h1 className="text-xl font-bold text-gray-900 dark:text-white">
                   {companyName || 'Project Management'}
                 </h1>
+                {isDemoMode && (
+                  <span
+                    className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700"
+                    title="Demo mode is enabled"
+                  >
+                    DEMO MODE
+                  </span>
+                )}
               </div>
               {!shouldUseLeftSidebar && (
               <div className="hidden md:flex space-x-4">

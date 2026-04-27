@@ -14,11 +14,39 @@ export default function FrontpageEditor() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   useEffect(() => {
-    if (token) {
-      loadFrontpageContent();
-    }
+    const initialize = async () => {
+      if (!token) {
+        setError('Authentication required');
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const publicResponse = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        if (publicResponse.ok) {
+          const publicData = await publicResponse.json();
+          const demoMode = publicData?.demoMode === true;
+          setIsDemoMode(demoMode);
+
+          if (demoMode) {
+            setError('Demo mode is enabled. Frontpage loading and editing are disabled.');
+            setIsLoading(false);
+            return;
+          }
+        } else {
+          setIsDemoMode(false);
+        }
+      } catch {
+        setIsDemoMode(false);
+      }
+
+      await loadFrontpageContent();
+    };
+
+    void initialize();
   }, [token]);
 
   const loadFrontpageContent = async () => {
@@ -221,6 +249,10 @@ export default function FrontpageEditor() {
   };
 
   const handleSave = async () => {
+    if (isDemoMode) {
+      setError('Demo mode is enabled. Frontpage editing is disabled.');
+      return;
+    }
     if (!token) {
       setError('Authentication required');
       return;
@@ -300,20 +332,21 @@ export default function FrontpageEditor() {
       <div className="mb-4 flex gap-2">
         <button
           onClick={handleSave}
-          disabled={isSaving || content === originalContent}
+          disabled={isDemoMode || isSaving || content === originalContent}
           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
         >
           {isSaving ? 'Saving...' : 'Save Changes'}
         </button>
         <button
           onClick={handleReset}
-          disabled={content === originalContent}
+          disabled={isDemoMode || content === originalContent}
           className="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
         >
           Reset to Saved
         </button>
         <button
           onClick={handleResetToDefault}
+          disabled={isDemoMode}
           className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors"
         >
           Reset to Default
@@ -330,6 +363,7 @@ export default function FrontpageEditor() {
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
+            disabled={isDemoMode}
             className="w-full h-[600px] px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
             placeholder="Enter HTML content..."
             spellCheck={false}

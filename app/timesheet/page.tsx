@@ -589,6 +589,23 @@ export default function TimesheetPage() {
     setEditCustomFields(extractCustomFieldValues(entry));
   };
 
+  const handleEditTimeChange = (field: 'startTime' | 'endTime', value: string) => {
+    const nextStartTime = field === 'startTime' ? value : editEntry.startTime;
+    const nextEndTime = field === 'endTime' ? value : editEntry.endTime;
+
+    let nextHours = editEntry.hours;
+    if (nextStartTime && nextEndTime) {
+      const calculatedHours = calculateHoursFromTimes(nextStartTime, nextEndTime);
+      nextHours = calculatedHours.toString();
+    }
+
+    setEditEntry(prev => ({
+      ...prev,
+      [field]: value,
+      hours: nextHours,
+    }));
+  };
+
   const handleUpdateTimeEntry = async () => {
     if (!editingEntry) return;
 
@@ -2248,7 +2265,7 @@ export default function TimesheetPage() {
                       <input
                         type="time"
                         value={editEntry.startTime}
-                        onChange={(e) => setEditEntry({ ...editEntry, startTime: e.target.value })}
+                        onChange={(e) => handleEditTimeChange('startTime', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       />
                     </div>
@@ -2257,7 +2274,7 @@ export default function TimesheetPage() {
                       <input
                         type="time"
                         value={editEntry.endTime}
-                        onChange={(e) => setEditEntry({ ...editEntry, endTime: e.target.value })}
+                        onChange={(e) => handleEditTimeChange('endTime', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       />
                     </div>

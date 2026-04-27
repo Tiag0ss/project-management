@@ -153,6 +153,9 @@ export default function PlanningPage() {
   const [showBaseline, setShowBaseline] = useState(false);
   const [showGanttTotals, setShowGanttTotals] = useState(true);
   const [showTaskBarHours, setShowTaskBarHours] = useState(true);
+  const [showTimeEntriesOverlay, setShowTimeEntriesOverlay] = useState(false);
+  const [plannerTimeEntries, setPlannerTimeEntries] = useState<any[]>([]);
+  const [isLoadingPlannerTimeEntries, setIsLoadingPlannerTimeEntries] = useState(false);
   const [showGanttViewOptions, setShowGanttViewOptions] = useState(false);
   const [snapshotModal, setSnapshotModal] = useState<{
     show: boolean;
@@ -188,7 +191,7 @@ export default function PlanningPage() {
     return formatDateForInput(endDate);
   });
   const [activeTab, setActiveTab] = useState<'gantt' | 'allocations'>('gantt');
-  const [ganttGroupBy, setGanttGroupBy] = useState<'resource' | 'customer' | 'project'>('resource');
+  const [ganttGroupBy, setGanttGroupBy] = useState<'resource' | 'customer' | 'project' | 'time-entries'>('resource');
   const [maxVisibleLevel, setMaxVisibleLevel] = useState<number>(0);
   const [allocationFilters, setAllocationFilters] = useState({
     startDate: '',
@@ -1048,6 +1051,7 @@ export default function PlanningPage() {
           showBaseline?: boolean;
           showGanttTotals?: boolean;
           showTaskBarHours?: boolean;
+          showTimeEntriesOverlay?: boolean;
         };
 
         if (typeof parsed.showDependencyLines === 'boolean') setShowDependencyLines(parsed.showDependencyLines);
@@ -1055,6 +1059,7 @@ export default function PlanningPage() {
         if (typeof parsed.showBaseline === 'boolean') setShowBaseline(parsed.showBaseline);
         if (typeof parsed.showGanttTotals === 'boolean') setShowGanttTotals(parsed.showGanttTotals);
         if (typeof parsed.showTaskBarHours === 'boolean') setShowTaskBarHours(parsed.showTaskBarHours);
+        if (typeof parsed.showTimeEntriesOverlay === 'boolean') setShowTimeEntriesOverlay(parsed.showTimeEntriesOverlay);
       }
     } catch (error) {
       console.warn('Failed to load Gantt view options from localStorage:', error);
@@ -1075,6 +1080,7 @@ export default function PlanningPage() {
           showBaseline,
           showGanttTotals,
           showTaskBarHours,
+          showTimeEntriesOverlay,
         })
       );
     } catch (error) {
@@ -1087,6 +1093,7 @@ export default function PlanningPage() {
     showBaseline,
     showGanttTotals,
     showTaskBarHours,
+    showTimeEntriesOverlay,
   ]);
 
   // Re-apply canViewOthersPlanning filter after permissions are resolved
@@ -2646,6 +2653,36 @@ export default function PlanningPage() {
       setHolidayNamesByUserDate({});
     }
   }, [viewStartDate, viewMode, customStartDate, customEndDate, users, token]);
+
+  const loadPlannerTimeEntries = async () => {
+    if (!token) { setPlannerTimeEntries([]); return; }
+    const days = getDaysInView();
+    if (days.length === 0) { setPlannerTimeEntries([]); return; }
+    const startDateKey = getDateKeyFromDate(days[0]);
+    const endDateKey = getDateKeyFromDate(days[days.length - 1]);
+    setIsLoadingPlannerTimeEntries(true);
+    try {
+      const res = await fetch(
+        `${getApiUrl()}/api/time-entries/planning-view?startDate=${startDateKey}&endDate=${endDateKey}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setPlannerTimeEntries(data.entries || []);
+      }
+    } catch {
+      // silently ignore
+    } finally {
+      setIsLoadingPlannerTimeEntries(false);
+    }
+  };
+
+  useEffect(() => {
+    if ((ganttGroupBy === 'time-entries' || showTimeEntriesOverlay) && token) {
+      loadPlannerTimeEntries();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ganttGroupBy, showTimeEntriesOverlay, viewStartDate, viewMode, customStartDate, customEndDate, token]);
 
   const getTasksForUser = (userId: number | null) => {
     let result: Task[];
@@ -7692,7 +7729,7 @@ export default function PlanningPage() {
                 </div>
               </div>
             )}
-            {!isResourceGrouping && (
+            {!isResourceGrouping && ganttGroupBy !== 'time-entries' && (
               <div className="bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-700 p-3">
                 <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200 text-sm">
                   <span>ℹ️</span>
@@ -7847,13 +7884,14 @@ export default function PlanningPage() {
                 </label>
                 <select
                   value={ganttGroupBy}
-                  onChange={(e) => setGanttGroupBy(e.target.value as 'resource' | 'customer' | 'project')}
+                  onChange={(e) => setGanttGroupBy(e.target.value as 'resource' | 'customer' | 'project' | 'time-entries')}
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                   title="Choose how rows are grouped in Gantt"
                 >
                   <option value="resource">Resource</option>
                   <option value="customer">Customer</option>
                   <option value="project">Project</option>
+                  <option value="time-entries">Time Entries</option>
                 </select>
               </div>
 
@@ -7917,6 +7955,17 @@ export default function PlanningPage() {
                         />
                         Show task bar hours
                       </label>
+                      {ganttGroupBy !== 'time-entries' && (
+                        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={showTimeEntriesOverlay}
+                            onChange={(e) => setShowTimeEntriesOverlay(e.target.checked)}
+                            className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500 bg-white dark:bg-gray-700"
+                          />
+                          Show time entries
+                        </label>
+                      )}
                       {isResourceGrouping && (
                         <>
                           <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -8183,7 +8232,7 @@ export default function PlanningPage() {
                   {/* Header with dates */}
                   <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
                     <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[40] bg-gray-50 dark:bg-gray-700 p-3 font-semibold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
-                      {ganttGroupBy === 'resource' ? 'User' : ganttGroupBy === 'customer' ? 'Customer' : 'Project'}
+                      {ganttGroupBy === 'resource' ? 'User' : ganttGroupBy === 'customer' ? 'Customer' : ganttGroupBy === 'time-entries' ? 'User' : 'Project'}
                     </div>
                     <div className="flex-1 flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
                       {timelineColumns.map((column, idx) => {
@@ -8816,7 +8865,47 @@ export default function PlanningPage() {
                   const outlookLaneTop = hasOutlookForUser
                     ? Math.max(maxRows * ROW_H + 4 + recurringLaneHeight, ROW_H + recurringLaneHeight)
                     : 0;
-                  const extraLanesHeight = recurringLaneHeight + outlookLaneHeight;
+                  const userTimeEntries = showTimeEntriesOverlay
+                    ? plannerTimeEntries.filter((e: any) => Number(e.UserId) === Number(userRow.Id))
+                    : [];
+                  const userOverlayItems = userTimeEntries.map((entry: any) => {
+                    const dateKey = String(entry.WorkDate).split('T')[0];
+                    const colIdx = timelineColumns.findIndex((col) => getDateKeyFromDate(col.start) === dateKey);
+                    const startTime = String(entry.StartTime || '00:00');
+                    const [startHourRaw, startMinuteRaw] = startTime.split(':').map(Number);
+                    const startMinuteOfDay = (Number.isFinite(startHourRaw) ? startHourRaw : 0) * 60
+                      + (Number.isFinite(startMinuteRaw) ? startMinuteRaw : 0);
+                    return {
+                      entry,
+                      dateKey,
+                      colIdx,
+                      startMinuteOfDay,
+                    };
+                  }).filter((item) => item.colIdx >= 0);
+                  const sortedUserOverlayItems = [...userOverlayItems].sort((a, b) => (
+                    a.colIdx - b.colIdx
+                    || a.startMinuteOfDay - b.startMinuteOfDay
+                    || String(a.entry.TaskName || a.entry.Subject || '').localeCompare(String(b.entry.TaskName || b.entry.Subject || ''))
+                  ));
+                  const userOverlayLaneCounter = new Map<number, number>();
+                  const positionedUserOverlayItems = sortedUserOverlayItems.map((item) => {
+                    const laneIndex = userOverlayLaneCounter.get(item.colIdx) || 0;
+                    userOverlayLaneCounter.set(item.colIdx, laneIndex + 1);
+                    return { ...item, laneIndex };
+                  });
+                  const maxUserOverlayLanes = positionedUserOverlayItems.reduce((max, item) => Math.max(max, item.laneIndex + 1), 0);
+                  const timeEntriesLaneHeight = maxUserOverlayLanes > 0 ? (maxUserOverlayLanes * 18) + (Math.max(0, maxUserOverlayLanes - 1) * 2) + 4 : 0;
+                  const timeEntriesLaneTop = userTimeEntries.length > 0
+                    ? Math.max(maxRows * ROW_H + 4, ROW_H) + recurringLaneHeight + outlookLaneHeight
+                    : 0;
+                  const decimalHoursToHMSOverlay = (h: number) => {
+                    const total = Math.round(Math.abs(h) * 3600);
+                    const hh = Math.floor(total / 3600);
+                    const mm = Math.floor((total % 3600) / 60);
+                    const ss = total % 60;
+                    return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+                  };
+                  const extraLanesHeight = recurringLaneHeight + outlookLaneHeight + timeEntriesLaneHeight;
                   const rowHeight = Math.max(maxRows * ROW_H + 8 + extraLanesHeight, 44 + extraLanesHeight);
                   
                   return (
@@ -9423,6 +9512,31 @@ export default function PlanningPage() {
                             );
                           })}
 
+                        {positionedUserOverlayItems.map((item, entryIdx: number) => {
+                          const { entry, dateKey, colIdx, laneIndex } = item;
+                          const isCall = entry.RecordType === 'CallRecord';
+                          const hours = parseFloat(entry.Hours || 0);
+                          const label = isCall ? (entry.Subject || entry.CallType || 'Call') : (entry.TaskName || '');
+                          const hoursLabel = isCall ? decimalHoursToHMSOverlay(entry.DurationMinutes / 60) : decimalHoursToHMSOverlay(hours);
+                          const barColor = isCall
+                            ? 'bg-amber-400 dark:bg-amber-500 border-amber-500'
+                            : 'bg-green-500 dark:bg-green-600 border-green-600';
+                          const top = timeEntriesLaneTop + 2 + (laneIndex * 20);
+                          return (
+                            <div
+                              key={`te-lane-${entryIdx}`}
+                              className={`absolute rounded border text-white text-[9px] truncate px-0.5 flex items-center ${barColor}`}
+                              style={
+                                useFixedPixelColumns
+                                  ? { left: `${colIdx * dayColumnWidthPx + 1}px`, width: `${dayColumnWidthPx - 3}px`, top: `${top}px`, height: '18px' }
+                                  : { left: `${(colIdx / Math.max(1, timelineColumns.length)) * 100}%`, width: `${(1 / Math.max(1, timelineColumns.length)) * 100}%`, top: `${top}px`, height: '18px' }
+                              }
+                              title={`${isCall ? '📞' : '⏱'} ${label}\n${dateKey} • ${hoursLabel}${entry.ProjectName ? '\n' + entry.ProjectName : ''}${entry.Description ? '\n' + entry.Description : ''}`}
+                            >
+                              {isCall ? '📞' : '⏱'} {label || hoursLabel}
+                            </div>
+                          );
+                        })}
                         {draggedTask && permissions?.canPlanTasks && ganttSearch.trim().length === 0 && (
                           <div className="absolute inset-0 z-[60] flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
                             {timelineColumns.map((column, idx) => {
@@ -9545,7 +9659,7 @@ export default function PlanningPage() {
                 );
               })}
 
-              {!isResourceGrouping && groupedGanttRows.map((groupRow) => {
+              {!isResourceGrouping && ganttGroupBy !== 'time-entries' && groupedGanttRows.map((groupRow) => {
                 const parentTasks = groupRow.tasks;
                 const taskRows: { task: Task; row: number }[] = [];
                 let maxRows = 1;
@@ -9641,11 +9755,62 @@ export default function PlanningPage() {
                   maxRows = Math.max(maxRows, row + 1);
                 });
 
-                const rowHeight = Math.max(sprintLaneHeight + maxRows * 24 + 8, 44);
+                // Time entries overlay: match by project or customer
+                const groupedEntries = (() => {
+                  if (!showTimeEntriesOverlay) return [];
+                  if (ganttGroupBy === 'project') {
+                    const projectId = Number(groupRow.id.replace('project-', ''));
+                    return plannerTimeEntries.filter((e: any) => Number(e.ProjectId) === projectId);
+                  }
+                  // customer
+                  const customerKey = groupRow.id.replace('customer-', '');
+                  return plannerTimeEntries.filter((e: any) =>
+                    (e.CustomerName || '').toLowerCase() === customerKey
+                  );
+                })();
+
+                const decimalHoursToHMS = (h: number) => {
+                  const total = Math.round(Math.abs(h) * 3600);
+                  const hh = Math.floor(total / 3600);
+                  const mm = Math.floor((total % 3600) / 60);
+                  const ss = total % 60;
+                  return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+                };
+
+                const groupedOverlayItems = groupedEntries.map((entry: any) => {
+                  const dateKey = String(entry.WorkDate).split('T')[0];
+                  const colIdx = timelineColumns.findIndex((col) => getDateKeyFromDate(col.start) === dateKey);
+                  const startTime = String(entry.StartTime || '00:00');
+                  const [startHourRaw, startMinuteRaw] = startTime.split(':').map(Number);
+                  const startMinuteOfDay = (Number.isFinite(startHourRaw) ? startHourRaw : 0) * 60
+                    + (Number.isFinite(startMinuteRaw) ? startMinuteRaw : 0);
+                  return {
+                    entry,
+                    dateKey,
+                    colIdx,
+                    startMinuteOfDay,
+                  };
+                }).filter((item) => item.colIdx >= 0);
+                const sortedGroupedOverlayItems = [...groupedOverlayItems].sort((a, b) => (
+                  a.colIdx - b.colIdx
+                  || a.startMinuteOfDay - b.startMinuteOfDay
+                  || String(a.entry.TaskName || a.entry.Subject || '').localeCompare(String(b.entry.TaskName || b.entry.Subject || ''))
+                ));
+                const groupedOverlayLaneCounter = new Map<number, number>();
+                const positionedGroupedOverlayItems = sortedGroupedOverlayItems.map((item) => {
+                  const laneIndex = groupedOverlayLaneCounter.get(item.colIdx) || 0;
+                  groupedOverlayLaneCounter.set(item.colIdx, laneIndex + 1);
+                  return { ...item, laneIndex };
+                });
+                const maxGroupedOverlayLanes = positionedGroupedOverlayItems.reduce((max, item) => Math.max(max, item.laneIndex + 1), 0);
+
+                const timeEntriesGroupLaneHeight = maxGroupedOverlayLanes > 0 ? (maxGroupedOverlayLanes * 18) + (Math.max(0, maxGroupedOverlayLanes - 1) * 2) + 4 : 0;
+                const timeEntriesGroupLaneTop = sprintLaneHeight + maxRows * 24 + 8;
+                const rowHeight = Math.max(sprintLaneHeight + maxRows * 24 + 8, 44) + timeEntriesGroupLaneHeight;
 
                 return (
+                  <React.Fragment key={groupRow.id}>
                   <div
-                    key={groupRow.id}
                     className="flex border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
                     style={{ minHeight: `${rowHeight}px` }}
                   >
@@ -9748,10 +9913,182 @@ export default function PlanningPage() {
                           <span className="truncate pointer-events-none">🏁 {sprintRow.name}</span>
                         </div>
                       ))}
+                      {positionedGroupedOverlayItems.map((item, entryIdx: number) => {
+                        const { entry, dateKey, colIdx, laneIndex } = item;
+                        const isCall = entry.RecordType === 'CallRecord';
+                        const hours = parseFloat(entry.Hours || 0);
+                        const label = isCall ? (entry.Subject || entry.CallType || 'Call') : (entry.TaskName || '');
+                        const hoursLabel = isCall ? decimalHoursToHMS(entry.DurationMinutes / 60) : decimalHoursToHMS(hours);
+                        const barColor = isCall
+                          ? 'bg-amber-400 dark:bg-amber-500 border-amber-500'
+                          : 'bg-green-500 dark:bg-green-600 border-green-600';
+                        const userName = entry.FirstName && entry.LastName ? `${entry.FirstName} ${entry.LastName}` : entry.Username || '';
+                        const top = timeEntriesGroupLaneTop + 2 + (laneIndex * 20);
+                        return (
+                          <div
+                            key={`grouped-te-${entryIdx}`}
+                            className={`absolute rounded border text-white text-[9px] truncate px-0.5 flex items-center ${barColor}`}
+                            style={
+                              useFixedPixelColumns
+                                ? { left: `${colIdx * dayColumnWidthPx + 1}px`, width: `${dayColumnWidthPx - 3}px`, top: `${top}px`, height: '18px' }
+                                : { left: `${(colIdx / Math.max(1, timelineColumns.length)) * 100}%`, width: `${(1 / Math.max(1, timelineColumns.length)) * 100}%`, top: `${top}px`, height: '18px' }
+                            }
+                            title={`${isCall ? '📞' : '⏱'} ${label}\n${userName}${userName ? ' • ' : ''}${dateKey} • ${hoursLabel}${entry.ProjectName ? '\n' + entry.ProjectName : ''}${entry.Description ? '\n' + entry.Description : ''}`}
+                          >
+                            {isCall ? '📞' : '⏱'} {label || hoursLabel}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
+                  </React.Fragment>
                 );
               })}
+
+              {/* Time Entries view */}
+              {ganttGroupBy === 'time-entries' && (() => {
+                if (isLoadingPlannerTimeEntries) {
+                  return (
+                    <div className="flex items-center justify-center py-10 text-sm text-gray-500 dark:text-gray-400">
+                      Loading time entries…
+                    </div>
+                  );
+                }
+
+                // Group entries by user
+                const userMap = new Map<number, { userId: number; name: string; entries: any[] }>();
+                plannerTimeEntries.forEach((entry: any) => {
+                  const uid = Number(entry.UserId);
+                  if (!userMap.has(uid)) {
+                    const name = entry.FirstName && entry.LastName
+                      ? `${entry.FirstName} ${entry.LastName}`
+                      : entry.Username || `User #${uid}`;
+                    userMap.set(uid, { userId: uid, name, entries: [] });
+                  }
+                  userMap.get(uid)!.entries.push(entry);
+                });
+
+                // Sort by user name
+                const userRows = Array.from(userMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+                if (userRows.length === 0) {
+                  return (
+                    <div className="flex items-center justify-center py-10 text-sm text-gray-500 dark:text-gray-400">
+                      No time entries or call records in this period.
+                    </div>
+                  );
+                }
+
+                return userRows.map((userRow) => {
+                  // One bar per entry; compute column indices
+                  const barItems = userRow.entries.map((entry: any) => {
+                    const dateKey = String(entry.WorkDate).split('T')[0];
+                    const colIdx = timelineColumns.findIndex((col) => {
+                      const colDate = getDateKeyFromDate(col.start);
+                      return colDate === dateKey;
+                    });
+                    if (colIdx < 0) return null;
+                    const isCall = entry.RecordType === 'CallRecord';
+                    const hours = parseFloat(entry.Hours || 0);
+                    const startTime = String(entry.StartTime || '00:00');
+                    const [startHourRaw, startMinuteRaw] = startTime.split(':').map(Number);
+                    const startMinuteOfDay = (Number.isFinite(startHourRaw) ? startHourRaw : 0) * 60
+                      + (Number.isFinite(startMinuteRaw) ? startMinuteRaw : 0);
+                    const label = isCall
+                      ? (entry.Subject || entry.CallType || 'Call')
+                      : (entry.TaskName || '');
+                    return { entry, colIdx, isCall, hours, label, dateKey, startMinuteOfDay };
+                  }).filter(Boolean) as { entry: any; colIdx: number; isCall: boolean; hours: number; label: string; dateKey: string; startMinuteOfDay: number }[];
+
+                  const sortedBarItems = [...barItems].sort((a, b) => (
+                    a.colIdx - b.colIdx
+                    || a.startMinuteOfDay - b.startMinuteOfDay
+                    || String(a.label).localeCompare(String(b.label))
+                  ));
+
+                  const columnLaneCounter = new Map<number, number>();
+                  const positionedBarItems = sortedBarItems.map((item) => {
+                    const laneIndex = columnLaneCounter.get(item.colIdx) || 0;
+                    columnLaneCounter.set(item.colIdx, laneIndex + 1);
+                    return { ...item, laneIndex };
+                  });
+
+                  const maxLaneCount = positionedBarItems.reduce((max, item) => Math.max(max, item.laneIndex + 1), 1);
+                  const barHeightPx = 24;
+                  const laneGapPx = 2;
+                  const laneTopPaddingPx = 2;
+                  const laneBottomPaddingPx = 2;
+                  const rowMinHeight = Math.max(44, laneTopPaddingPx + laneBottomPaddingPx + (maxLaneCount * barHeightPx) + (Math.max(0, maxLaneCount - 1) * laneGapPx));
+
+                  const decimalHoursToHMS = (h: number) => {
+                    const total = Math.round(Math.abs(h) * 3600);
+                    const hh = Math.floor(total / 3600);
+                    const mm = Math.floor((total % 3600) / 60);
+                    const ss = total % 60;
+                    return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+                  };
+
+                  return (
+                    <div
+                      key={`te-user-${userRow.userId}`}
+                      className="flex border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                      style={{ minHeight: `${rowMinHeight}px` }}
+                    >
+                      {/* User label */}
+                      <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[50] bg-white dark:bg-gray-800 p-2 border-r border-gray-200 dark:border-gray-700 flex flex-col justify-center">
+                        <div className="text-sm font-medium text-gray-900 dark:text-white truncate">👤 {userRow.name}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {userRow.entries.length} entr{userRow.entries.length !== 1 ? 'ies' : 'y'}
+                        </div>
+                      </div>
+                      {/* Timeline */}
+                      <div className="flex-1 relative" style={useFixedPixelColumns ? { minHeight: `${rowMinHeight}px`, minWidth: `${timelineDaysWidthPx}px` } : { minHeight: `${rowMinHeight}px` }}>
+                        <div className="flex h-full" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
+                          {timelineColumns.map((column, idx) => (
+                            <div
+                              key={idx}
+                              className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} border-r border-gray-200 dark:border-gray-700 ${
+                                column.isWeekend ? 'bg-gray-100 dark:bg-gray-700/45' : ''
+                              } ${idx === todayIndex ? 'border-l-2 border-l-red-400/70 dark:border-l-red-400/60' : ''}`}
+                              style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
+                            />
+                          ))}
+                        </div>
+                        {/* Entry bars */}
+                        {positionedBarItems.map((item, barIdx) => {
+                          const left = useFixedPixelColumns
+                            ? item.colIdx * dayColumnWidthPx
+                            : `${(item.colIdx / Math.max(1, timelineColumns.length)) * 100}%`;
+                          const width = useFixedPixelColumns
+                            ? dayColumnWidthPx - 2
+                            : `${(1 / Math.max(1, timelineColumns.length)) * 100}%`;
+                          const barColor = item.isCall
+                            ? 'bg-amber-400 dark:bg-amber-500 border-amber-500 dark:border-amber-400'
+                            : 'bg-green-500 dark:bg-green-600 border-green-600 dark:border-green-500';
+                          const top = laneTopPaddingPx + (item.laneIndex * (barHeightPx + laneGapPx));
+                          const hoursLabel = item.isCall
+                            ? decimalHoursToHMS(item.entry.DurationMinutes / 60)
+                            : decimalHoursToHMS(item.hours);
+                          return (
+                            <div
+                              key={barIdx}
+                              className={`absolute rounded border text-white text-[10px] truncate px-1 flex items-center cursor-pointer ${barColor}`}
+                              style={
+                                useFixedPixelColumns
+                                  ? { left: `${left}px`, width: `${width}px`, top: `${top}px`, height: `${barHeightPx}px` }
+                                  : { left: left as string, width: width as string, top: `${top}px`, height: `${barHeightPx}px` }
+                              }
+                              title={`${item.isCall ? '📞 ' : '⏱ '}${item.label}\n${item.dateKey} • ${hoursLabel}${item.entry.ProjectName ? '\n' + item.entry.ProjectName : ''}${item.entry.Description ? '\n' + item.entry.Description : ''}`}
+                            >
+                              {item.label ? `${item.isCall ? '📞' : '⏱'} ${item.label}` : hoursLabel}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
               </div>
               </div>
             </div>

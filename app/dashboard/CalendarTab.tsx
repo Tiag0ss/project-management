@@ -15,14 +15,56 @@ import RichTextEditor from '@/components/RichTextEditor';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
+const mondayEnUS = {
+  ...enUS,
+  options: {
+    ...enUS.options,
+    weekStartsOn: 1,
+  },
+};
+
 const locales = {
-  'en-US': enUS,
+  'en-US': mondayEnUS,
+};
+
+const startOfWeekMonday = (date: Date) => startOfWeek(date, { weekStartsOn: 1 });
+
+const parseDateOnlyToLocalNoon = (value: string | Date): Date | null => {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      return null;
+    }
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 12, 0, 0, 0);
+  }
+
+  const raw = String(value || '');
+  const datePart = raw.split('T')[0];
+  const [yearStr, monthStr, dayStr] = datePart.split('-');
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+
+  if (Number.isFinite(year) && Number.isFinite(month) && Number.isFinite(day)) {
+    return new Date(year, month - 1, day, 12, 0, 0, 0);
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 12, 0, 0, 0);
+};
+
+const getLocalDateKey = (value: string | Date): string | null => {
+  const parsed = parseDateOnlyToLocalNoon(value);
+  return parsed ? parsed.toDateString() : null;
 };
 
 const localizer = dateFnsLocalizer({
   format,
   parse,
-  startOfWeek,
+  startOfWeek: startOfWeekMonday,
   getDay,
   locales,
 });
@@ -205,7 +247,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     try {
       const stored = typeof window !== 'undefined' ? localStorage.getItem(CALENDAR_NO_OVERLAP_KEY) : null;
       return stored ? JSON.parse(stored) : false;
-    } catch { return false; }
+    } catch { return false; } 
   });
   const toggleNoOverlap = () => {
     setNoOverlap((prev) => {
@@ -225,10 +267,10 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       try {
         const visibleStart = currentView === 'month'
           ? startOfMonth(currentDate)
-          : startOfWeek(currentDate);
+          : startOfWeek(currentDate, { weekStartsOn: 1 });
         const visibleEnd = currentView === 'month'
           ? endOfMonth(currentDate)
-          : endOfWeek(currentDate);
+          : endOfWeek(currentDate, { weekStartsOn: 1 });
 
         const years = Array.from(new Set([visibleStart.getFullYear(), visibleEnd.getFullYear()]));
 
@@ -273,10 +315,10 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       try {
         const visibleStart = currentView === 'month'
           ? startOfMonth(currentDate)
-          : startOfWeek(currentDate);
+          : startOfWeek(currentDate, { weekStartsOn: 1 });
         const visibleEnd = currentView === 'month'
           ? endOfMonth(currentDate)
-          : endOfWeek(currentDate);
+          : endOfWeek(currentDate, { weekStartsOn: 1 });
 
         const startDate = format(visibleStart, 'yyyy-MM-dd');
         const endDate = format(visibleEnd, 'yyyy-MM-dd');
@@ -318,10 +360,10 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       try {
         const visibleStart = currentView === 'month'
           ? startOfMonth(currentDate)
-          : startOfWeek(currentDate);
+          : startOfWeek(currentDate, { weekStartsOn: 1 });
         const visibleEnd = currentView === 'month'
           ? endOfMonth(currentDate)
-          : endOfWeek(currentDate);
+          : endOfWeek(currentDate, { weekStartsOn: 1 });
 
         const years = Array.from(new Set([visibleStart.getFullYear(), visibleEnd.getFullYear()]));
 
@@ -400,7 +442,8 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     const allocationsByDate: { [date: string]: TaskAllocation[] } = {};
     taskAllocations.forEach(allocation => {
       if (allocation.AllocationDate) {
-        const dateKey = new Date(allocation.AllocationDate).toDateString();
+        const dateKey = getLocalDateKey(allocation.AllocationDate);
+        if (!dateKey) return;
         if (!allocationsByDate[dateKey]) {
           allocationsByDate[dateKey] = [];
         }
@@ -412,7 +455,8 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     const entriesByDate: { [date: string]: TimeEntry[] } = {};
     timeEntries.forEach(entry => {
       if (entry.WorkDate) {
-        const dateKey = new Date(entry.WorkDate).toDateString();
+        const dateKey = getLocalDateKey(entry.WorkDate);
+        if (!dateKey) return;
         if (!entriesByDate[dateKey]) {
           entriesByDate[dateKey] = [];
         }
@@ -424,7 +468,8 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     const callsByDate: { [date: string]: CallRecord[] } = {};
     callRecords.forEach(call => {
       if (call.CallDate) {
-        const dateKey = new Date(call.CallDate).toDateString();
+        const dateKey = getLocalDateKey(call.CallDate);
+        if (!dateKey) return;
         if (!callsByDate[dateKey]) {
           callsByDate[dateKey] = [];
         }
@@ -436,11 +481,8 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     const recurringByDate: { [date: string]: RecurringAllocationOccurrence[] } = {};
     recurringAllocations.forEach(recurring => {
       if (recurring.OccurrenceDate) {
-        // Use T12:00:00 to avoid timezone issues
-        const dateStr = typeof recurring.OccurrenceDate === 'string' 
-          ? recurring.OccurrenceDate.split('T')[0]
-          : new Date(recurring.OccurrenceDate).toISOString().split('T')[0];
-        const dateKey = new Date(dateStr + 'T12:00:00').toDateString();
+        const dateKey = getLocalDateKey(recurring.OccurrenceDate);
+        if (!dateKey) return;
         if (!recurringByDate[dateKey]) {
           recurringByDate[dateKey] = [];
         }
@@ -451,7 +493,8 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     // Get all dates that need to be processed (including current week for lunch)
     const today = new Date();
     const startOfCurrentWeek = new Date(today);
-    startOfCurrentWeek.setDate(today.getDate() - today.getDay());
+    const weekdayIndexMondayBased = (today.getDay() + 6) % 7;
+    startOfCurrentWeek.setDate(today.getDate() - weekdayIndexMondayBased);
     
     // Generate dates for current week and next 4 weeks
     const datesToProcess = new Set<string>();
