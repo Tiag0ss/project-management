@@ -1,0 +1,13 @@
+---
+description: Database schema changes via JSON structure files
+globs: server/database/**/*
+alwaysApply: false
+---
+
+# Database JSON schema
+
+- Tables live in `server/database/structure/systemtables/{TableName}.json`.
+- New tables: `"PrimaryKeyFields": "Id"` at top level (comma-separated for composite keys).
+- Field shape: `FieldName`, `DataType`, `NotNullable`, optional `DefaultValue` (no extra quotes for strings: `"09:00"` not `"'09:00'"`).
+- Do **not** create manual SQL migration files for add/alter column — sync runs from JSON.
+- Do **not** create temporary TS fix scripts; provide raw SQL for the developer if manual cleanup is needed.

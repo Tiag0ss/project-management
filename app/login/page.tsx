@@ -2,15 +2,16 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { prepareAuthEncryptionSession } from '@/lib/api/auth';
+import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const passwordRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [allowPublicRegistration, setAllowPublicRegistration] = useState(false);
@@ -65,7 +66,8 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      await login({ username, password });
+      await login({ username, password: readPasswordInput(passwordRef) });
+      clearPasswordInput(passwordRef);
       router.push('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Login failed. Please try again.');
@@ -108,13 +110,12 @@ export default function LoginPage() {
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Password
               </label>
-              <input
+              <PasswordInput
+                ref={passwordRef}
                 id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                name="password"
                 required
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                autoComplete="current-password"
                 placeholder="Enter your password"
               />
               <div className="mt-2 text-right">

@@ -1123,25 +1123,21 @@ export default function PlanningPage() {
       projectsRef.current = projectsRes.projects;
       
       if (projectsRes.projects.length > 0) {
-        // Load task status values FIRST so filtering works when tasks render
-        await loadTaskStatusValues(projectsRes.projects);
+        const projectsList = projectsRes.projects;
 
-        await loadAllProjectMilestones(projectsRes.projects);
+        const [, , loadedTasks] = await Promise.all([
+          loadTaskStatusValues(projectsList),
+          loadAllProjectMilestones(projectsList),
+          loadAllProjectsTasks(projectsList),
+          loadAllUsers(projectsList),
+        ]);
 
-        // Load all tasks from all projects
-        const loadedTasks = await loadAllProjectsTasks(projectsRes.projects);
-        
-        // Load users from all organizations
-        await loadAllUsers(projectsRes.projects);
-        
-        // Load recurring allocations (after users are loaded)
-        await loadRecurringAllocations();
-
-        // Load Outlook events for visible timeline range
-        await loadOutlookTimelineEvents();
-        
-        // Load all allocations for the visible period
-        await loadAllAllocations(loadedTasks);
+        const dateRange = getVisibleDateRange();
+        await Promise.all([
+          loadRecurringAllocations(allUsersRef.current),
+          loadOutlookTimelineEvents(),
+          loadAllAllocations(loadedTasks, dateRange?.startDate, dateRange?.endDate),
+        ]);
       }
       if (projectsRes.projects.length === 0) {
         setProjectMilestones([]);
@@ -1182,7 +1178,7 @@ export default function PlanningPage() {
     const allUsers: User[] = [];
     const userOrgsMap: { [userId: number]: number[] } = {};
     
-    for (const orgId of organizationIds) {
+    await Promise.all(organizationIds.map(async (orgId) => {
       try {
         const usersRes = await usersApi.getByOrganization(orgId, token!);
         usersRes.users.forEach(u => {
@@ -1200,7 +1196,7 @@ export default function PlanningPage() {
       } catch (err) {
         console.error(`Failed to load users for org ${orgId}:`, err);
       }
-    }
+    }));
     
     // Apply canViewOthersPlanning filter
     allUsersRef.current = allUsers;
@@ -1215,39 +1211,48 @@ export default function PlanningPage() {
     const organizationIds = [...new Set(projectsList.map(p => p.OrganizationId).filter(Boolean))];
     const statusMap: { [orgId: number]: StatusValue[] } = {};
 
-    for (const orgId of organizationIds) {
+    await Promise.all(organizationIds.map(async (orgId) => {
       try {
         const res = await statusValuesApi.getTaskStatuses(orgId, token!);
         statusMap[orgId] = res.statuses || [];
       } catch (err) {
         console.error(`Failed to load task statuses for org ${orgId}:`, err);
       }
-    }
+    }));
 
     setTaskStatusValues(statusMap);
     taskStatusValuesRef.current = statusMap;
   };
 
   const loadAllProjectsTasks = async (projectsList: Project[]) => {
-    const allTasks: Task[] = [];
-    
-    for (const project of projectsList) {
-      try {
-        const tasksRes = await tasksApi.getByProject(project.Id, token!);
-        allTasks.push(...tasksRes.tasks);
-      } catch (err) {
-        console.error(`Failed to load tasks for project ${project.Id}:`, err);
-      }
-    }
-    
+    const taskResults = await Promise.all(
+      projectsList.map(async (project) => {
+        try {
+          const tasksRes = await tasksApi.getByProject(project.Id, token!);
+          return tasksRes.tasks;
+        } catch (err) {
+          console.error(`Failed to load tasks for project ${project.Id}:`, err);
+          return [] as Task[];
+        }
+      })
+    );
+
+    const allTasks = taskResults.flat();
     setTasks(allTasks);
     return allTasks;
   };
 
-  const loadAllAllocations = async (tasksList?: Task[]) => {
+  const loadAllAllocations = async (tasksList?: Task[], startDate?: string, endDate?: string) => {
     try {
+      const range = startDate && endDate
+        ? { startDate, endDate }
+        : getVisibleDateRange();
+      const query = range
+        ? `?startDate=${encodeURIComponent(range.startDate)}&endDate=${encodeURIComponent(range.endDate)}`
+        : '';
+
       const response = await fetch(
-        `${getApiUrl()}/api/task-allocations`,
+        `${getApiUrl()}/api/task-allocations${query}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -1281,37 +1286,34 @@ export default function PlanningPage() {
         return;
       }
 
-      // Fetch child allocations for each parent
-      const allChildAllocs: any[] = [];
-      
-      for (const parentTask of parentTasks) {
-        const response = await fetch(
-          `${getApiUrl()}/api/task-child-allocations/parent/${parentTask.Id}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.allocations && data.allocations.length > 0) {
-            allChildAllocs.push(...data.allocations);
-          }
-        }
-      }
+      const childAllocationBatches = await Promise.all(
+        parentTasks.map(async (parentTask) => {
+          const response = await fetch(
+            `${getApiUrl()}/api/task-child-allocations/parent/${parentTask.Id}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            }
+          );
 
+          if (!response.ok) return [] as any[];
+          const data = await response.json();
+          return (data.allocations && data.allocations.length > 0) ? data.allocations : [];
+        })
+      );
+
+      const allChildAllocs = childAllocationBatches.flat();
       setChildAllocations(allChildAllocs);
-      console.log(`Loaded ${allChildAllocs.length} child allocations for ${parentTasks.length} parent tasks`);
     } catch (err) {
       console.error('Failed to load child allocations:', err);
     }
   };
 
-  const loadRecurringAllocations = async () => {
-    if (!token || users.length === 0) return;
+  const loadRecurringAllocations = async (usersList?: User[]) => {
+    const planningUsers = usersList ?? (allUsersRef.current.length > 0 ? allUsersRef.current : users);
+    if (!token || planningUsers.length === 0) return;
     
     try {
       const visibleDays = getDaysInView();
@@ -1323,30 +1325,25 @@ export default function PlanningPage() {
       const startDate = getDateKeyFromDate(visibleDays[0]);
       const endDate = getDateKeyFromDate(visibleDays[visibleDays.length - 1]);
       
-      // Fetch recurring allocation occurrences for all visible users
-      const allRecurringOccurrences: any[] = [];
-      
-      for (const user of users) {
-        const response = await fetch(
-          `${getApiUrl()}/api/recurring-allocations/occurrences/user/${user.Id}?startDate=${startDate}&endDate=${endDate}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-        
-        if (response.ok) {
+      const occurrenceBatches = await Promise.all(
+        planningUsers.map(async (planningUser) => {
+          const response = await fetch(
+            `${getApiUrl()}/api/recurring-allocations/occurrences/user/${planningUser.Id}?startDate=${startDate}&endDate=${endDate}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+
+          if (!response.ok) return [] as any[];
           const data = await response.json();
-          if (data.occurrences && data.occurrences.length > 0) {
-            allRecurringOccurrences.push(...data.occurrences);
-          }
-        }
-      }
-      
-      setRecurringAllocations(allRecurringOccurrences);
-      console.log(`Loaded ${allRecurringOccurrences.length} recurring allocation occurrences for ${users.length} users in date range ${startDate} to ${endDate}`);
+          return (data.occurrences && data.occurrences.length > 0) ? data.occurrences : [];
+        })
+      );
+
+      setRecurringAllocations(occurrenceBatches.flat());
     } catch (err) {
       console.error('Failed to load recurring allocations:', err);
     }
@@ -1826,6 +1823,19 @@ export default function PlanningPage() {
       days.push(date);
     }
     return days;
+  };
+
+  const getVisibleDateRange = (paddingDays = 60): { startDate: string; endDate: string } | null => {
+    const visibleDays = getDaysInView();
+    if (visibleDays.length === 0) return null;
+    const rangeStart = new Date(visibleDays[0]);
+    rangeStart.setDate(rangeStart.getDate() - paddingDays);
+    const rangeEnd = new Date(visibleDays[visibleDays.length - 1]);
+    rangeEnd.setDate(rangeEnd.getDate() + paddingDays);
+    return {
+      startDate: getDateKeyFromDate(rangeStart),
+      endDate: getDateKeyFromDate(rangeEnd),
+    };
   };
 
   const getCustomIntervalType = (totalDays: number): 'day' | 'week' | 'month' => {

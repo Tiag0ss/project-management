@@ -2,8 +2,9 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 
 const API_URL = getApiUrl();
 
@@ -17,8 +18,8 @@ export default function InstallPage() {
   // Admin user fields
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
 
@@ -62,6 +63,8 @@ export default function InstallPage() {
       setError('Invalid email format');
       return false;
     }
+    const password = readPasswordInput(passwordRef);
+    const confirmPassword = readPasswordInput(confirmPasswordRef);
     if (!password) {
       setError('Password is required');
       return false;
@@ -114,7 +117,7 @@ export default function InstallPage() {
         body: JSON.stringify({
           username: username.trim(),
           email: email.trim(),
-          password,
+          password: readPasswordInput(passwordRef),
           firstName: firstName.trim() || undefined,
           lastName: lastName.trim() || undefined,
           organizationName: organizationName.trim(),
@@ -297,13 +300,14 @@ export default function InstallPage() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Password <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                  <PasswordInput
+                    ref={passwordRef}
+                    name="password"
                     placeholder="Min. 6 characters"
                     className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     required
+                    autoComplete="new-password"
+                    preventAutofill
                   />
                 </div>
 
@@ -311,13 +315,14 @@ export default function InstallPage() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Confirm Password <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                  <PasswordInput
+                    ref={confirmPasswordRef}
+                    name="confirmPassword"
                     placeholder="Repeat password"
                     className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     required
+                    autoComplete="new-password"
+                    preventAutofill
                   />
                 </div>
               </div>

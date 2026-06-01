@@ -2,7 +2,7 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect, use, useMemo } from 'react';
+import { useState, useEffect, use, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -18,6 +18,7 @@ import ChangeHistory from '@/components/ChangeHistory';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import SearchableSelect from '@/components/SearchableSelect';
 import { useFormatHours } from '@/lib/useFormatHours';
+import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 
 export default function OrganizationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -3751,10 +3752,10 @@ function GitHubIntegrationCard({
   const [showForm, setShowForm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const gitHubTokenRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     isEnabled: true,
     gitHubUrl: '',
-    gitHubToken: ''
   });
 
   useEffect(() => {
@@ -3762,8 +3763,8 @@ function GitHubIntegrationCard({
       setFormData({
         isEnabled: integration.IsEnabled === 1,
         gitHubUrl: integration.GitHubUrl || '',
-        gitHubToken: ''
       });
+      clearPasswordInput(gitHubTokenRef);
     }
   }, [integration]);
 
@@ -3782,13 +3783,18 @@ function GitHubIntegrationCard({
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(formData)
+          body: JSON.stringify({
+            isEnabled: formData.isEnabled,
+            gitHubUrl: formData.gitHubUrl,
+            gitHubToken: readPasswordInput(gitHubTokenRef),
+          })
         }
       );
 
       const data = await response.json();
 
       if (response.ok) {
+        clearPasswordInput(gitHubTokenRef);
         setSuccess('GitHub integration saved successfully');
         setShowForm(false);
         onUpdate();
@@ -3924,13 +3930,14 @@ function GitHubIntegrationCard({
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Personal Access Token {!integration && <span className="text-red-500">*</span>}
               </label>
-              <input
-                type="password"
-                value={formData.gitHubToken}
-                onChange={(e) => setFormData({ ...formData, gitHubToken: e.target.value })}
+              <PasswordInput
+                ref={gitHubTokenRef}
+                name="gitHubToken"
                 placeholder={integration ? "Leave empty to keep current token" : "ghp_xxxxxxxxxxxxxxxxxxxx"}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500"
                 required={!integration}
+                autoComplete="new-password"
+                preventAutofill
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 Token with 'repo' access to read issues and repositories
@@ -3972,8 +3979,8 @@ function GitHubIntegrationCard({
                     setFormData({
                       isEnabled: integration.IsEnabled === 1,
                       gitHubUrl: integration.GitHubUrl || '',
-                      gitHubToken: ''
                     });
+                    clearPasswordInput(gitHubTokenRef);
                   }}
                   className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
                 >
@@ -4036,10 +4043,10 @@ function GiteaIntegrationCard({
   const [showForm, setShowForm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const giteaTokenRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     isEnabled: true,
     giteaUrl: '',
-    giteaToken: ''
   });
 
   useEffect(() => {
@@ -4047,8 +4054,8 @@ function GiteaIntegrationCard({
       setFormData({
         isEnabled: integration.IsEnabled === 1,
         giteaUrl: integration.GiteaUrl || '',
-        giteaToken: ''
       });
+      clearPasswordInput(giteaTokenRef);
     }
   }, [integration]);
 
@@ -4067,13 +4074,18 @@ function GiteaIntegrationCard({
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(formData)
+          body: JSON.stringify({
+            isEnabled: formData.isEnabled,
+            giteaUrl: formData.giteaUrl,
+            giteaToken: readPasswordInput(giteaTokenRef),
+          })
         }
       );
 
       const data = await response.json();
 
       if (response.ok) {
+        clearPasswordInput(giteaTokenRef);
         setSuccess('Gitea integration saved successfully');
         setShowForm(false);
         onUpdate();
@@ -4209,13 +4221,14 @@ function GiteaIntegrationCard({
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Access Token {!integration && <span className="text-red-500">*</span>}
               </label>
-              <input
-                type="password"
-                value={formData.giteaToken}
-                onChange={(e) => setFormData({ ...formData, giteaToken: e.target.value })}
+              <PasswordInput
+                ref={giteaTokenRef}
+                name="giteaToken"
                 placeholder={integration ? "Leave empty to keep current token" : "Your Gitea access token"}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
                 required={!integration}
+                autoComplete="new-password"
+                preventAutofill
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 Token with read access to repositories and issues (Settings → Applications → Generate New Token)
@@ -4257,8 +4270,8 @@ function GiteaIntegrationCard({
                     setFormData({
                       isEnabled: integration.IsEnabled === 1,
                       giteaUrl: integration.GiteaUrl || '',
-                      giteaToken: ''
                     });
+                    clearPasswordInput(giteaTokenRef);
                   }}
                   className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
                 >
@@ -4315,17 +4328,17 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
   const [success, setSuccess] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const jiraApiTokenRef = useRef<HTMLInputElement>(null);
+  const jiraProjectsApiTokenRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     isEnabled: true,
     jiraUrl: '',
     jiraEmail: '',
-    jiraApiToken: '',
     jiraProjectKey: '',
     jiraTicketsJqlFilter: '',
     hideIntegratedJiraTicketsByDefault: false,
     jiraProjectsUrl: '',
     jiraProjectsEmail: '',
-    jiraProjectsApiToken: ''
   });
 
   const setSuccessWithToast = (message: string, title = 'Success') => {
@@ -4359,14 +4372,14 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
             isEnabled: data.integration.IsEnabled === 1,
             jiraUrl: data.integration.JiraUrl || '',
             jiraEmail: data.integration.JiraEmail || '',
-            jiraApiToken: '',
             jiraProjectKey: data.integration.JiraProjectKey || '',
             jiraTicketsJqlFilter: data.integration.JiraTicketsJqlFilter || '',
             hideIntegratedJiraTicketsByDefault: data.integration.HideIntegratedJiraTicketsByDefault === 1,
             jiraProjectsUrl: data.integration.JiraProjectsUrl || '',
             jiraProjectsEmail: data.integration.JiraProjectsEmail || '',
-            jiraProjectsApiToken: ''
           });
+          clearPasswordInput(jiraApiTokenRef);
+          clearPasswordInput(jiraProjectsApiTokenRef);
         }
       }
 
@@ -4411,7 +4424,8 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
   };
 
   const handleTestConnection = async () => {
-    if (!formData.jiraUrl || !formData.jiraEmail || !formData.jiraApiToken) {
+    const jiraApiToken = readPasswordInput(jiraApiTokenRef);
+    if (!formData.jiraUrl || !formData.jiraEmail || !jiraApiToken) {
       setError('Please fill in Jira for Tickets fields to test connection');
       return;
     }
@@ -4437,7 +4451,7 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
             body: JSON.stringify({
               jiraUrl: formData.jiraUrl,
               jiraEmail: formData.jiraEmail,
-              jiraApiToken: formData.jiraApiToken
+              jiraApiToken,
             })
           }
         );
@@ -4454,7 +4468,8 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
       }
 
       // Test Jira for Projects if configured
-      if (formData.jiraProjectsUrl && formData.jiraProjectsEmail && formData.jiraProjectsApiToken) {
+      const jiraProjectsApiToken = readPasswordInput(jiraProjectsApiTokenRef);
+      if (formData.jiraProjectsUrl && formData.jiraProjectsEmail && jiraProjectsApiToken) {
         try {
           const response = await fetch(
             `${getApiUrl()}/api/jira-integrations/organization/${orgId}/test`,
@@ -4467,7 +4482,7 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
               body: JSON.stringify({
                 jiraUrl: formData.jiraProjectsUrl,
                 jiraEmail: formData.jiraProjectsEmail,
-                jiraApiToken: formData.jiraProjectsApiToken
+                jiraApiToken: jiraProjectsApiToken,
               })
             }
           );
@@ -4521,13 +4536,19 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(formData)
+          body: JSON.stringify({
+            ...formData,
+            jiraApiToken: readPasswordInput(jiraApiTokenRef),
+            jiraProjectsApiToken: readPasswordInput(jiraProjectsApiTokenRef),
+          })
         }
       );
 
       const data = await response.json();
 
       if (response.ok) {
+        clearPasswordInput(jiraApiTokenRef);
+        clearPasswordInput(jiraProjectsApiTokenRef);
         setSuccessWithToast('Jira integration saved successfully', 'Integration Saved');
         setShowForm(false);
         loadIntegration();
@@ -4560,14 +4581,14 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
           isEnabled: true,
           jiraUrl: '',
           jiraEmail: '',
-          jiraApiToken: '',
           jiraProjectKey: '',
           jiraTicketsJqlFilter: '',
           hideIntegratedJiraTicketsByDefault: false,
           jiraProjectsUrl: '',
           jiraProjectsEmail: '',
-          jiraProjectsApiToken: ''
         });
+        clearPasswordInput(jiraApiTokenRef);
+        clearPasswordInput(jiraProjectsApiTokenRef);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to delete integration');
@@ -4731,13 +4752,14 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     API Token {!integration && <span className="text-red-500">*</span>}
                   </label>
-                  <input
-                    type="password"
-                    value={formData.jiraApiToken}
-                    onChange={(e) => setFormData({ ...formData, jiraApiToken: e.target.value })}
+                  <PasswordInput
+                    ref={jiraApiTokenRef}
+                    name="jiraApiToken"
                     placeholder={integration ? 'Leave empty to keep current token' : 'Your Jira API Token'}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     required={!integration}
+                    autoComplete="new-password"
+                    preventAutofill
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Create an API token at: <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Atlassian Account</a>
@@ -4833,12 +4855,13 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     API Token
                   </label>
-                  <input
-                    type="password"
-                    value={formData.jiraProjectsApiToken}
-                    onChange={(e) => setFormData({ ...formData, jiraProjectsApiToken: e.target.value })}
+                  <PasswordInput
+                    ref={jiraProjectsApiTokenRef}
+                    name="jiraProjectsApiToken"
                     placeholder="Your Jira API Token for Projects instance"
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
+                    autoComplete="new-password"
+                    preventAutofill
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     API token for the Projects Jira instance
@@ -4888,14 +4911,14 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
                         isEnabled: integration.IsEnabled === 1,
                         jiraUrl: integration.JiraUrl || '',
                         jiraEmail: integration.JiraEmail || '',
-                        jiraApiToken: '',
                         jiraProjectKey: integration.JiraProjectKey || '',
                         jiraTicketsJqlFilter: integration.JiraTicketsJqlFilter || '',
                         hideIntegratedJiraTicketsByDefault: integration.HideIntegratedJiraTicketsByDefault === 1,
                         jiraProjectsUrl: integration.JiraProjectsUrl || '',
                         jiraProjectsEmail: integration.JiraProjectsEmail || '',
-                        jiraProjectsApiToken: ''
                       });
+                      clearPasswordInput(jiraApiTokenRef);
+                      clearPasswordInput(jiraProjectsApiTokenRef);
                     }}
                     className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
                   >

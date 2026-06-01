@@ -9,6 +9,10 @@ Language policy (mandatory):
 - Do not switch to Portuguese even if the user writes in Portuguese; keep understanding requests, but always answer in English.
 - If mixed-language content is required in generated app UI/text, ask explicitly before adding non-English strings.
 
+## Cursor IDE
+
+Cursor agents should read [AGENTS.md](../AGENTS.md) and rules in `.cursor/rules/` (same conventions as this file).
+
 ## Prompt Library (Skills-like)
 
 Use reusable prompt templates from `.github/prompts/` when tasks match these categories:

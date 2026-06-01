@@ -1,16 +1,18 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { authApi } from '@/lib/api/auth';
 import { useToast } from '@/contexts/ToastContext';
+import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 
 export default function ResetPasswordPage() {
   const { showToast } = useToast();
   const [token, setToken] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const newPasswordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
+  const [canSubmit, setCanSubmit] = useState(false);
   const [isCheckingToken, setIsCheckingToken] = useState(true);
   const [isTokenValid, setIsTokenValid] = useState(false);
   const [error, setError] = useState('');
@@ -54,14 +56,28 @@ export default function ResetPasswordPage() {
     validateToken();
   }, [token]);
 
-  const canSubmit = useMemo(() => {
-    return isTokenValid && newPassword.length >= 8 && confirmPassword.length > 0 && newPassword === confirmPassword;
-  }, [isTokenValid, newPassword, confirmPassword]);
+  const syncSubmitState = () => {
+    const newPassword = readPasswordInput(newPasswordRef);
+    const confirmPassword = readPasswordInput(confirmPasswordRef);
+    setCanSubmit(
+      isTokenValid &&
+        newPassword.length >= 8 &&
+        confirmPassword.length > 0 &&
+        newPassword === confirmPassword
+    );
+  };
+
+  useEffect(() => {
+    syncSubmitState();
+  }, [isTokenValid]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
+
+    const newPassword = readPasswordInput(newPasswordRef);
+    const confirmPassword = readPasswordInput(confirmPasswordRef);
 
     if (newPassword.length < 8) {
       setError('Password must be at least 8 characters.');
@@ -79,8 +95,9 @@ export default function ResetPasswordPage() {
       const message = result.message || 'Password reset successfully. Redirecting to login...';
       setSuccess(message);
       showToast({ type: 'success', title: 'Password Reset', message });
-      setNewPassword('');
-      setConfirmPassword('');
+      clearPasswordInput(newPasswordRef);
+      clearPasswordInput(confirmPasswordRef);
+      setCanSubmit(false);
       setTimeout(() => router.push('/login'), 1500);
     } catch (err: any) {
       setError(err.message || 'Failed to reset password.');
@@ -120,14 +137,15 @@ export default function ResetPasswordPage() {
                 <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   New Password
                 </label>
-                <input
+                <PasswordInput
+                  ref={newPasswordRef}
                   id="newPassword"
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
+                  name="newPassword"
+                  onInput={syncSubmitState}
                   required
                   minLength={8}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  autoComplete="new-password"
+                  preventAutofill
                   placeholder="At least 8 characters"
                 />
               </div>
@@ -136,14 +154,15 @@ export default function ResetPasswordPage() {
                 <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Confirm Password
                 </label>
-                <input
+                <PasswordInput
+                  ref={confirmPasswordRef}
                   id="confirmPassword"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  name="confirmPassword"
+                  onInput={syncSubmitState}
                   required
                   minLength={8}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  autoComplete="new-password"
+                  preventAutofill
                   placeholder="Repeat new password"
                 />
               </div>

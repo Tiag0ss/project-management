@@ -3,10 +3,11 @@
 import { getApiUrl } from '@/lib/api/config';
 import { recurringAllocationsApi, RecurringAllocation } from '@/lib/api/recurringAllocations';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
+import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 
 // Complete list of IANA timezones
 const TIMEZONES = [
@@ -122,12 +123,19 @@ export default function ProfilePage() {
   });
   const [profileRegions, setProfileRegions] = useState<{ code: string; name: string }[]>([]);
   
-  // Password change state
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: '',
-  });
+  const currentPasswordRef = useRef<HTMLInputElement>(null);
+  const newPasswordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
+  const [canChangePassword, setCanChangePassword] = useState(false);
+
+  const syncPasswordFormState = () => {
+    const currentPassword = readPasswordInput(currentPasswordRef);
+    const newPassword = readPasswordInput(newPasswordRef);
+    const confirmPassword = readPasswordInput(confirmPasswordRef);
+    setCanChangePassword(
+      currentPassword.length > 0 && newPassword.length > 0 && confirmPassword.length > 0
+    );
+  };
   
   // Work Hours state
   const [workHours, setWorkHours] = useState({
@@ -1039,12 +1047,16 @@ export default function ProfilePage() {
   const handleChangePassword = async () => {
     if (!token) return;
     
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+    const currentPassword = readPasswordInput(currentPasswordRef);
+    const newPassword = readPasswordInput(newPasswordRef);
+    const confirmPassword = readPasswordInput(confirmPasswordRef);
+
+    if (newPassword !== confirmPassword) {
       setMessage('New passwords do not match');
       return;
     }
     
-    if (passwordForm.newPassword.length < 6) {
+    if (newPassword.length < 6) {
       setMessage('Password must be at least 6 characters');
       return;
     }
@@ -1062,19 +1074,18 @@ export default function ProfilePage() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            currentPassword: passwordForm.currentPassword,
-            newPassword: passwordForm.newPassword,
+            currentPassword,
+            newPassword,
           }),
         }
       );
       
       if (response.ok) {
         setMessage('Password changed successfully!');
-        setPasswordForm({
-          currentPassword: '',
-          newPassword: '',
-          confirmPassword: '',
-        });
+        clearPasswordInput(currentPasswordRef);
+        clearPasswordInput(newPasswordRef);
+        clearPasswordInput(confirmPasswordRef);
+        setCanChangePassword(false);
         setTimeout(() => setMessage(''), 3000);
       } else {
         const data = await response.json();
@@ -1541,10 +1552,11 @@ export default function ProfilePage() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Current Password
                     </label>
-                    <input
-                      type="password"
-                      value={passwordForm.currentPassword}
-                      onChange={(e) => setPasswordForm(prev => ({ ...prev, currentPassword: e.target.value }))}
+                    <PasswordInput
+                      ref={currentPasswordRef}
+                      name="currentPassword"
+                      onInput={syncPasswordFormState}
+                      autoComplete="current-password"
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
                   </div>
@@ -1553,10 +1565,12 @@ export default function ProfilePage() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       New Password
                     </label>
-                    <input
-                      type="password"
-                      value={passwordForm.newPassword}
-                      onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                    <PasswordInput
+                      ref={newPasswordRef}
+                      name="newPassword"
+                      onInput={syncPasswordFormState}
+                      autoComplete="new-password"
+                      preventAutofill
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -1568,17 +1582,19 @@ export default function ProfilePage() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Confirm New Password
                     </label>
-                    <input
-                      type="password"
-                      value={passwordForm.confirmPassword}
-                      onChange={(e) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                    <PasswordInput
+                      ref={confirmPasswordRef}
+                      name="confirmPassword"
+                      onInput={syncPasswordFormState}
+                      autoComplete="new-password"
+                      preventAutofill
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
                   </div>
                   
                   <button
                     onClick={handleChangePassword}
-                    disabled={isSaving || !passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword}
+                    disabled={isSaving || !canChangePassword}
                     className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg transition-colors"
                   >
                     {isSaving ? 'Changing Password...' : '🔒 Change Password'}

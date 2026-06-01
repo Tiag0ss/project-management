@@ -2,9 +2,10 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
+import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 
 // Complete list of IANA timezones
 const TIMEZONES = [
@@ -195,6 +196,9 @@ export default function SystemSettings() {
   const [migrationResult, setMigrationResult] = useState<{ created: number; skipped: number } | null>(null);
   const [migrationError, setMigrationError] = useState('');
   const [isSyncingAiViews, setIsSyncingAiViews] = useState(false);
+  const smtpPasswordRef = useRef<HTMLInputElement>(null);
+  const outlookClientSecretRef = useRef<HTMLInputElement>(null);
+  const openAIApiKeyRef = useRef<HTMLInputElement>(null);
   const [aiViewsSyncMessage, setAiViewsSyncMessage] = useState('');
   const [aiViewsSyncError, setAiViewsSyncError] = useState('');
 
@@ -370,6 +374,14 @@ export default function SystemSettings() {
     setIsSaving(true);
 
     try {
+      const settingsToSave: SystemSettings = { ...settings };
+      const smtpPassword = readPasswordInput(smtpPasswordRef);
+      const outlookClientSecret = readPasswordInput(outlookClientSecretRef);
+      const openAIApiKey = readPasswordInput(openAIApiKeyRef);
+      if (smtpPassword) settingsToSave.smtpPassword = smtpPassword;
+      if (outlookClientSecret) settingsToSave.outlookClientSecret = outlookClientSecret;
+      if (openAIApiKey) settingsToSave.openAIApiKey = openAIApiKey;
+
       const response = await fetch(
         `${getApiUrl()}/api/system-settings`,
         {
@@ -378,13 +390,16 @@ export default function SystemSettings() {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ settings }),
+          body: JSON.stringify({ settings: settingsToSave }),
         }
       );
 
       if (response.ok) {
         setSuccess('Settings saved successfully');
         showToast({ type: 'success', title: 'Settings Saved', message: 'Settings saved successfully' });
+        clearPasswordInput(smtpPasswordRef);
+        clearPasswordInput(outlookClientSecretRef);
+        clearPasswordInput(openAIApiKeyRef);
         setTimeout(() => setSuccess(''), 3000);
       } else {
         const data = await response.json();
@@ -556,12 +571,12 @@ export default function SystemSettings() {
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   SMTP Password
                 </label>
-                <input
-                  type="password"
-                  value={settings.smtpPassword}
-                  onChange={(e) => handleChange('smtpPassword', e.target.value)}
+                <PasswordInput
+                  ref={smtpPasswordRef}
+                  name="smtpPassword"
                   placeholder=""
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  autoComplete="new-password"
+                  preventAutofill
                 />
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   Leave blank to keep the existing password. Only fill in to change it.
@@ -662,12 +677,12 @@ export default function SystemSettings() {
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Azure Client Secret
                       </label>
-                      <input
-                        type="password"
-                        value={settings.outlookClientSecret || ''}
-                        onChange={(e) => handleChange('outlookClientSecret', e.target.value)}
+                      <PasswordInput
+                        ref={outlookClientSecretRef}
+                        name="outlookClientSecret"
                         placeholder=""
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        autoComplete="new-password"
+                        preventAutofill
                       />
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                         Leave empty and save to clear the stored Outlook client secret.
@@ -939,11 +954,12 @@ export default function SystemSettings() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     OpenAI API Key
                   </label>
-                  <input
-                    type="password"
-                    value={settings.openAIApiKey || ''}
-                    onChange={(e) => handleChange('openAIApiKey', e.target.value)}
+                  <PasswordInput
+                    ref={openAIApiKeyRef}
+                    name="openAIApiKey"
                     placeholder="sk-..."
+                    autoComplete="new-password"
+                    preventAutofill
                     className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">

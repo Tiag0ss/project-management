@@ -1,0 +1,16 @@
+---
+description: Resource planning / Gantt conventions
+globs: app/planning/**/*
+alwaysApply: false
+---
+
+# Planning / Gantt
+
+See [.github/copilot-instructions.md](../../.github/copilot-instructions.md) § Resource Planning.
+
+- Render bars by `TaskAllocationHeaderId` (one bar per header slice), not naive date-gap grouping.
+- Normal drag: move full slice; Ctrl+drag: partial slice by **hours**.
+- New allocations must set `TaskAllocationHeaderId` on TaskAllocations and TaskChildAllocations.
+- Availability: user day capacity minus TaskAllocations **and** TaskChildAllocations for that date.
+- Prefer date-scoped API queries for initial load (`startDate`/`endDate` on allocations); avoid N+1 per project/user/parent when a bulk or parallel fetch is possible.
+- `app/planning/page.tsx` is large — prefer extracting hooks/components over growing the monolith.

@@ -2,18 +2,19 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { prepareAuthEncryptionSession } from '@/lib/api/auth';
+import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 
 export default function RegisterPage() {
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     username: '',
     email: '',
-    password: '',
-    confirmPassword: '',
     firstName: '',
     lastName: '',
   });
@@ -61,14 +62,15 @@ export default function RegisterPage() {
     e.preventDefault();
     setError('');
 
-    // Validate passwords match
-    if (formData.password !== formData.confirmPassword) {
+    const password = readPasswordInput(passwordRef);
+    const confirmPassword = readPasswordInput(confirmPasswordRef);
+
+    if (password !== confirmPassword) {
       setError('Passwords do not match');
       return;
     }
 
-    // Validate password length
-    if (formData.password.length < 6) {
+    if (password.length < 6) {
       setError('Password must be at least 6 characters long');
       return;
     }
@@ -79,10 +81,12 @@ export default function RegisterPage() {
       await register({
         username: formData.username,
         email: formData.email,
-        password: formData.password,
+        password,
         firstName: formData.firstName || undefined,
         lastName: formData.lastName || undefined,
       });
+      clearPasswordInput(passwordRef);
+      clearPasswordInput(confirmPasswordRef);
       router.push('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Registration failed. Please try again.');
@@ -182,14 +186,13 @@ export default function RegisterPage() {
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Password *
               </label>
-              <input
+              <PasswordInput
+                ref={passwordRef}
                 id="password"
                 name="password"
-                type="password"
-                value={formData.password}
-                onChange={handleChange}
                 required
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                autoComplete="new-password"
+                preventAutofill
                 placeholder="At least 6 characters"
               />
             </div>
@@ -198,14 +201,13 @@ export default function RegisterPage() {
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Confirm Password *
               </label>
-              <input
+              <PasswordInput
+                ref={confirmPasswordRef}
                 id="confirmPassword"
                 name="confirmPassword"
-                type="password"
-                value={formData.confirmPassword}
-                onChange={handleChange}
                 required
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                autoComplete="new-password"
+                preventAutofill
                 placeholder="Re-enter password"
               />
             </div>

@@ -473,6 +473,20 @@ async function replanDependentTasks(taskId: number, newEndDate: string, changedB
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
+    const { startDate, endDate, projectId } = req.query;
+
+    const params: Array<string | number> = [userId as number];
+    let dateFilter = '';
+    if (startDate && endDate) {
+      dateFilter = ' AND ta.AllocationDate BETWEEN ? AND ?';
+      params.push(String(startDate), String(endDate));
+    }
+
+    let projectFilter = '';
+    if (projectId) {
+      projectFilter = ' AND t.ProjectId = ?';
+      params.push(Number(projectId));
+    }
 
     // Get allocations for all tasks the user has access to (through organization membership)
     const [allocations] = await pool.execute<RowDataPacket[]>(
@@ -485,9 +499,9 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        INNER JOIN Projects p ON t.ProjectId = p.Id
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
        LEFT JOIN TaskAllocationHeaders tah ON ta.TaskAllocationHeaderId = tah.Id
-       WHERE om.UserId = ?
+       WHERE om.UserId = ?${projectFilter}${dateFilter}
        ORDER BY ta.AllocationDate`,
-      [userId]
+      params
     );
 
     res.json({ success: true, allocations });

@@ -1,0 +1,35 @@
+---
+description: Core conventions for the project management app (read AGENTS.md and copilot-instructions for full detail)
+alwaysApply: true
+---
+
+# Project Management — core rules
+
+Read [AGENTS.md](../../AGENTS.md) and [.github/copilot-instructions.md](../../.github/copilot-instructions.md) for full context.
+
+## Language (mandatory)
+
+- **Always respond in English (EN)** — summaries, errors, follow-ups, and explanations.
+- The user may write in **European Portuguese (PT)**; understand PT, but **never reply in Portuguese or Brazilian Portuguese (PT-BR)** unless they explicitly ask for Portuguese in that message.
+- Do not switch to PT-BR because the user wrote in PT.
+- Non-English UI copy in the app requires explicit user approval first.
+
+## Stack
+
+Next.js 16 App Router, React 19, Tailwind, Express, MySQL/MSSQL (`server/config/database.ts`).
+
+## Must follow
+
+- TypeScript strict; avoid `any`.
+- SQL: always parameterized; portable SQL for MySQL + MSSQL (no `FIELD()`, `GROUP_CONCAT`, `JSON_ARRAYAGG` in new routes without `dbProvider` branch).
+- DB schema: edit `server/database/structure/systemtables/*.json` only — use `PrimaryKeyFields` (string, not array). Never add one-off TS scripts to fix DB; give SQL to the developer if needed.
+- Auth: `authenticateToken` on protected routes; check permissions server-side.
+- UI: dark mode, `w-full` pages (no `container` unless asked), Applications list pattern for grids, icon-only row actions with `sr-only` Actions header.
+- Dialogs: no `alert()`/`confirm()` — use project modals.
+- Aggregated **hours**: leaf tasks only. Task **counts**: all tasks including subtasks.
+- Planning: allocation slices use `TaskAllocationHeaderId`; child allocations filtered by header when moving slices; check TaskAllocations + TaskChildAllocations for availability.
+- Time display: `hh:MM:ss` via `decimalHoursToHMS`, not decimal hours like `1.5h`.
+
+## Prompt library
+
+For focused tasks, use templates in `.github/prompts/` (frontend, backend route, DB JSON, Jira, KPI drill-down, etc.).

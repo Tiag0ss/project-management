@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -11,6 +11,7 @@ import { COUNTRY_OPTIONS, getCountryName } from '@/lib/constants/countries';
 import SearchableSelect from '@/components/SearchableSelect';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
+import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 
 interface CustomerOption {
   Id: number;
@@ -551,7 +552,6 @@ function CreateUserModal({
     username: '',
     email: '',
     userType: 'internal' as 'internal' | 'customer' | 'fictitious',
-    password: '',
     firstName: '',
     lastName: '',
     isAdmin: false,
@@ -578,6 +578,7 @@ function CreateUserModal({
   const [isLoading, setIsLoading] = useState(false);
   const [availableRegions, setAvailableRegions] = useState<{ code: string; name: string }[]>([]);
   const [customFields, setCustomFields] = useState<CustomFieldValues>({});
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   const loadAvailableRegions = async (cc: string) => {
     if (!token || !cc) { setAvailableRegions([]); return; }
@@ -612,7 +613,7 @@ function CreateUserModal({
         username: formData.username,
         email: formData.email || undefined,
         userType: formData.userType,
-        password: formData.userType === 'fictitious' ? undefined : formData.password,
+        password: formData.userType === 'fictitious' ? undefined : readPasswordInput(passwordRef),
         firstName: formData.firstName || undefined,
         lastName: formData.lastName || undefined,
         isAdmin: formData.isAdmin,
@@ -636,6 +637,7 @@ function CreateUserModal({
         annualVacationDays: parseFloat(formData.annualVacationDays || '0') || 0,
         customFields,
       }, token);
+      clearPasswordInput(passwordRef);
       onUserCreated();
     } catch (err: any) {
       setError(err.message || 'Failed to create user');
@@ -724,12 +726,12 @@ function CreateUserModal({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Password *
                 </label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                <PasswordInput
+                  ref={passwordRef}
+                  name="password"
                   required
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  autoComplete="new-password"
+                  preventAutofill
                 />
               </div>
             ) : (
@@ -1396,14 +1398,17 @@ function ResetPasswordModal({
   onPasswordReset: () => void; 
   token: string;
 }) {
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const newPasswordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    const newPassword = readPasswordInput(newPasswordRef);
+    const confirmPassword = readPasswordInput(confirmPasswordRef);
+
     if (newPassword !== confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -1419,6 +1424,8 @@ function ResetPasswordModal({
 
     try {
       await usersApi.resetPassword(user.Id, newPassword, token);
+      clearPasswordInput(newPasswordRef);
+      clearPasswordInput(confirmPasswordRef);
       onPasswordReset();
     } catch (err: any) {
       setError(err.message || 'Failed to reset password');
@@ -1456,12 +1463,12 @@ function ResetPasswordModal({
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 New Password *
               </label>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
+              <PasswordInput
+                ref={newPasswordRef}
+                name="newPassword"
                 required
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                autoComplete="new-password"
+                preventAutofill
               />
             </div>
 
@@ -1469,12 +1476,12 @@ function ResetPasswordModal({
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Confirm Password *
               </label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+              <PasswordInput
+                ref={confirmPasswordRef}
+                name="confirmPassword"
                 required
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                autoComplete="new-password"
+                preventAutofill
               />
             </div>
 
