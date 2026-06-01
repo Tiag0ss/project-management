@@ -140,6 +140,13 @@ interface VacationCalendarItem {
   Notes?: string;
 }
 
+interface OutOfOfficeCalendarItem {
+  Id: number;
+  OutOfOfficeDate: string;
+  Status: string;
+  Notes?: string;
+}
+
 interface CalendarEvent {
   id: string;
   title: string;
@@ -147,7 +154,7 @@ interface CalendarEvent {
   end: Date;
   allDay?: boolean;
   resource: {
-    type: 'task' | 'timeEntry' | 'call' | 'lunch' | 'recurring' | 'holiday' | 'vacation' | 'outlook';
+    type: 'task' | 'timeEntry' | 'call' | 'lunch' | 'recurring' | 'holiday' | 'vacation' | 'outOfOffice' | 'outlook';
     projectId?: number;
     taskId?: number;
     entryId?: number;
@@ -160,6 +167,8 @@ interface CalendarEvent {
     holidayId?: number;
     vacationId?: number;
     vacationStatus?: string;
+    outOfOfficeId?: number;
+    outOfOfficeStatus?: string;
     source?: string;
     webLink?: string;
     userName?: string;
@@ -209,6 +218,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   const [currentDate, setCurrentDate] = useState(new Date());
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
   const [vacations, setVacations] = useState<VacationCalendarItem[]>([]);
+  const [outOfOfficeEntries, setOutOfOfficeEntries] = useState<OutOfOfficeCalendarItem[]>([]);
   const [outlookEvents, setOutlookEvents] = useState<OutlookCalendarEvent[]>([]);
   const [showTaskDetailsModal, setShowTaskDetailsModal] = useState(false);
   const [detailsTask, setDetailsTask] = useState<ApiTask | null>(null);
@@ -218,7 +228,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   // Slot selection modal state
   const [showSlotModal, setShowSlotModal] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<SlotInfo | null>(null);
-  const [slotAction, setSlotAction] = useState<'choice' | 'timeEntry' | 'call' | 'vacation'>('choice');
+  const [slotAction, setSlotAction] = useState<'choice' | 'timeEntry' | 'call' | 'vacation' | 'outOfOffice'>('choice');
   const [vacationStartDate, setVacationStartDate] = useState<string>('');
   const [vacationEndDate, setVacationEndDate] = useState<string>('');
   const [vacationNotes, setVacationNotes] = useState('');
@@ -396,6 +406,54 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     };
 
     loadVacations();
+  }, [token, currentDate, currentView]);
+
+  useEffect(() => {
+    if (!token) {
+      setOutOfOfficeEntries([]);
+      return;
+    }
+
+    const loadOutOfOfficeEntries = async () => {
+      try {
+        const visibleStart = currentView === 'month'
+          ? startOfMonth(currentDate)
+          : startOfWeek(currentDate, { weekStartsOn: 1 });
+        const visibleEnd = currentView === 'month'
+          ? endOfMonth(currentDate)
+          : endOfWeek(currentDate, { weekStartsOn: 1 });
+
+        const years = Array.from(new Set([visibleStart.getFullYear(), visibleEnd.getFullYear()]));
+
+        const responses = await Promise.all(
+          years.map((year) =>
+            fetch(`${getApiUrl()}/api/out-of-office/my?year=${year}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+          )
+        );
+
+        const outOfOfficeLists = await Promise.all(
+          responses.map(async (response) => {
+            if (!response.ok) {
+              return [] as OutOfOfficeCalendarItem[];
+            }
+            const data = await response.json();
+            return (data.entries || []) as OutOfOfficeCalendarItem[];
+          })
+        );
+
+        const merged = outOfOfficeLists.flat();
+        const uniqueById = new Map<number, OutOfOfficeCalendarItem>();
+        merged.forEach((entry) => uniqueById.set(entry.Id, entry));
+        setOutOfOfficeEntries(Array.from(uniqueById.values()));
+      } catch (error) {
+        console.error('Error loading out-of-office for calendar:', error);
+        setOutOfOfficeEntries([]);
+      }
+    };
+
+    loadOutOfOfficeEntries();
   }, [token, currentDate, currentView]);
   
   // Helper functions for time calculations
@@ -743,6 +801,37 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       });
     });
 
+    outOfOfficeEntries.forEach((outOfOffice) => {
+      const datePart = String(outOfOffice.OutOfOfficeDate).split('T')[0];
+      const [year, month, day] = datePart.split('-').map(Number);
+
+      if (!year || !month || !day) {
+        return;
+      }
+
+      const status = String(outOfOffice.Status || '').toLowerCase();
+      if (status !== 'approved' && status !== 'pending') {
+        return;
+      }
+
+      const start = new Date(year, month - 1, day, 0, 0, 0);
+      const end = new Date(year, month - 1, day + 1, 0, 0, 0);
+
+      calendarEvents.push({
+        id: `out-of-office-${outOfOffice.Id}`,
+        title: `🚫 Out Of Office${status === 'pending' ? ' (Pending)' : ''}`,
+        start,
+        end,
+        allDay: true,
+        resource: {
+          type: 'outOfOffice',
+          outOfOfficeId: outOfOffice.Id,
+          outOfOfficeStatus: status,
+          description: outOfOffice.Notes || '',
+        },
+      });
+    });
+
     outlookEvents.forEach((outlookEvent, index) => {
       const startDate = new Date(outlookEvent.start);
       const endDate = new Date(outlookEvent.end);
@@ -782,7 +871,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
         id: `${baseId}__${count}`,
       };
     });
-  }, [taskAllocations, timeEntries, callRecords, recurringAllocations, holidays, vacations, outlookEvents, workStartTimes, lunchTime, lunchDuration]);
+  }, [taskAllocations, timeEntries, callRecords, recurringAllocations, holidays, vacations, outOfOfficeEntries, outlookEvents, workStartTimes, lunchTime, lunchDuration]);
 
   const calendarScrollToTime = useMemo(() => {
     const dayNames: Array<keyof typeof workStartTimes> = [
@@ -834,7 +923,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   }, [token]);
 
   const handleSelectEvent = useCallback(async (event: CalendarEvent) => {
-    if (event.resource.type === 'holiday' || event.resource.type === 'vacation') {
+    if (event.resource.type === 'holiday' || event.resource.type === 'vacation' || event.resource.type === 'outOfOffice') {
       return;
     }
 
@@ -884,6 +973,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     const isRecurring = event.resource.type === 'recurring';
     const isHoliday = event.resource.type === 'holiday';
     const isVacation = event.resource.type === 'vacation';
+    const isOutOfOffice = event.resource.type === 'outOfOffice';
     const isOutlook = event.resource.type === 'outlook';
     
     let bgColor = '#10b981'; // green for time entries
@@ -907,6 +997,9 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     } else if (isVacation) {
       bgColor = '#06b6d4'; // cyan for vacations
       borderColor = '#0891b2';
+    } else if (isOutOfOffice) {
+      bgColor = '#f43f5e'; // rose for out of office
+      borderColor = '#e11d48';
     } else if (isOutlook) {
       bgColor = '#0ea5e9'; // sky-blue for outlook events
       borderColor = '#0284c7';
@@ -915,10 +1008,9 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     return {
       style: {
         backgroundColor: bgColor,
-        borderColor: borderColor,
+        border: `1px solid ${borderColor}`,
         borderRadius: '4px',
         color: 'white',
-        border: 'none',
         display: 'block',
         fontSize: '12px',
         fontWeight: 500,
@@ -1205,6 +1297,38 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     }
   };
 
+  const handleCreateOutOfOfficeRequest = async () => {
+    if (!selectedSlot || !vacationStartDate || !vacationEndDate) return;
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/out-of-office/my/request`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            startDate: vacationStartDate,
+            endDate: vacationEndDate,
+            notes: vacationNotes,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        closeSlotModal();
+        onDataChanged();
+      }
+    } catch (err) {
+      console.error('Failed to create out-of-office request:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
@@ -1374,6 +1498,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
             { type: 'lunch' as const,     color: 'bg-amber-400',  label: 'Lunch Break' },
             { type: 'holiday' as const,   color: 'bg-red-500',    label: 'Holidays' },
             { type: 'vacation' as const,  color: 'bg-cyan-500',   label: 'Vacations' },
+            { type: 'outOfOffice' as const, color: 'bg-rose-500', label: 'Out Of Office' },
           ] as { type: CalendarEventType; color: string; label: string }[]).map(({ type, color, label }) => {
             const hidden = hiddenTypes.has(type);
             return (
@@ -1415,6 +1540,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                   {slotAction === 'choice' && '📅 Add Entry'}
                   {slotAction === 'vacation' && '🏖️ Add Vacation'}
+                  {slotAction === 'outOfOffice' && '🚫 Add Out Of Office'}
                 </h3>
                 <button
                   onClick={closeSlotModal}
@@ -1468,6 +1594,16 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                     <div className="text-left">
                       <p className="font-medium text-gray-900 dark:text-white">Vacation</p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">Request vacation for selected range</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setSlotAction('outOfOffice')}
+                    className="w-full flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <span className="text-2xl">🚫</span>
+                    <div className="text-left">
+                      <p className="font-medium text-gray-900 dark:text-white">Out Of Office</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">Request out of office for selected range</p>
                     </div>
                   </button>
                 </div>
@@ -1537,6 +1673,75 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                       className="flex-1 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-cyan-400 text-white rounded-lg transition-colors"
                     >
                       {isSaving ? 'Saving...' : 'Request Vacation'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {slotAction === 'outOfOffice' && (
+                <div className="space-y-4">
+                  <button
+                    onClick={() => setSlotAction('choice')}
+                    className="text-sm text-blue-600 hover:text-blue-700 mb-2"
+                  >
+                    ← Back to options
+                  </button>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Start Date *
+                      </label>
+                      <input
+                        type="date"
+                        value={vacationStartDate}
+                        onChange={(e) => setVacationStartDate(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        End Date *
+                      </label>
+                      <input
+                        type="date"
+                        value={vacationEndDate}
+                        onChange={(e) => setVacationEndDate(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Notes
+                    </label>
+                    <input
+                      type="text"
+                      value={vacationNotes}
+                      onChange={(e) => setVacationNotes(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      placeholder="Optional notes"
+                    />
+                  </div>
+
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Non-working days in the selected range are skipped automatically.
+                  </p>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      onClick={closeSlotModal}
+                      className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleCreateOutOfOfficeRequest}
+                      disabled={isSaving || !vacationStartDate || !vacationEndDate}
+                      className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white rounded-lg transition-colors"
+                    >
+                      {isSaving ? 'Saving...' : 'Request Out Of Office'}
                     </button>
                   </div>
                 </div>

@@ -311,6 +311,7 @@ router.post('/setup', async (req: Request, res: Response) => {
         ['memosEnabled', 'true'],
         ['autoApproveTimeEntries', 'false'],
         ['autoApproveVacations', 'false'],
+        ['autoApproveOutOfOffice', 'false'],
         ['companyName', 'Project Management'],
         ['companyLogoUrl', ''],
         ['faviconUrl', ''],

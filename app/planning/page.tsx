@@ -71,6 +71,14 @@ interface PlannerVacationDay {
   Notes?: string;
 }
 
+interface PlannerOutOfOfficeDay {
+  Id: number;
+  UserId: number;
+  OutOfOfficeDate: string;
+  Status: string;
+  Notes?: string;
+}
+
 interface PlannerOutlookEvent {
   id: string;
   subject: string;
@@ -818,8 +826,9 @@ export default function PlanningPage() {
 
   const splitUnavailableLabels = (labels: string[]) => {
     const vacationLabels = labels.filter((label) => /^vacation\b/i.test(String(label || '').trim()));
-    const holidayLabels = labels.filter((label) => !/^vacation\b/i.test(String(label || '').trim()));
-    return { vacationLabels, holidayLabels };
+    const outOfOfficeLabels = labels.filter((label) => /^out\s*of\s*office\b/i.test(String(label || '').trim()));
+    const holidayLabels = labels.filter((label) => !/^vacation\b/i.test(String(label || '').trim()) && !/^out\s*of\s*office\b/i.test(String(label || '').trim()));
+    return { vacationLabels, outOfOfficeLabels, holidayLabels };
   };
 
   const getLatestAllocationDate = (allocations: { date: string }[]): string | null => {
@@ -886,7 +895,7 @@ export default function PlanningPage() {
           // Close the modal
           setSelectedTask(null);
           setTaskAllocations([]);
-          
+
           // Reload tasks and allocations to update the Gantt chart
           if (projects.length > 0) {
             await loadAllProjectsTasks(projects);
@@ -1436,6 +1445,7 @@ export default function PlanningPage() {
 
       const userIds = users.map((u) => u.Id).filter((id): id is number => Number.isInteger(id) && id > 0);
       let approvedVacations: PlannerVacationDay[] = [];
+      let approvedOutOfOffice: PlannerOutOfOfficeDay[] = [];
       if (userIds.length > 0) {
         const vacationQuery = new URLSearchParams({
           startDate: startDateKey,
@@ -1443,16 +1453,29 @@ export default function PlanningPage() {
           userIds: userIds.join(','),
         });
 
-        const vacationResponse = await fetch(`${getApiUrl()}/api/vacations/calendar?${vacationQuery.toString()}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
+        const [vacationResponse, outOfOfficeResponse] = await Promise.all([
+          fetch(`${getApiUrl()}/api/vacations/calendar?${vacationQuery.toString()}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          }),
+          fetch(`${getApiUrl()}/api/out-of-office/calendar?${vacationQuery.toString()}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          }),
+        ]);
 
         if (vacationResponse.ok) {
           const vacationData = await vacationResponse.json();
           approvedVacations = (vacationData.entries || []) as PlannerVacationDay[];
+        }
+
+        if (outOfOfficeResponse.ok) {
+          const outOfOfficeData = await outOfOfficeResponse.json();
+          approvedOutOfOffice = (outOfOfficeData.entries || []) as PlannerOutOfOfficeDay[];
         }
       }
 
@@ -1529,6 +1552,26 @@ export default function PlanningPage() {
             const label = vacation.Notes
               ? `Vacation: ${vacation.Notes}`
               : 'Vacation';
+
+            if (!holidayMapForUser[dateKey].includes(label)) {
+              holidayMapForUser[dateKey].push(label);
+            }
+          });
+
+        approvedOutOfOffice
+          .filter((entry) => Number(entry.UserId) === planningUser.Id)
+          .forEach((entry) => {
+            const dateKey = normalizeDateKey(entry.OutOfOfficeDate);
+            if (dateKey < startDateKey || dateKey > endDateKey) {
+              return;
+            }
+            if (!holidayMapForUser[dateKey]) {
+              holidayMapForUser[dateKey] = [];
+            }
+
+            const label = entry.Notes
+              ? `Out Of Office: ${entry.Notes}`
+              : 'Out Of Office';
 
             if (!holidayMapForUser[dateKey].includes(label)) {
               holidayMapForUser[dateKey].push(label);
@@ -9585,7 +9628,7 @@ export default function PlanningPage() {
                           const isOverAllocated = summary.isOverAllocated;
                           const holidayNames = summary.holidayNames;
                           const isHoliday = summary.isHoliday;
-                          const { vacationLabels, holidayLabels } = splitUnavailableLabels(holidayNames);
+                          const { vacationLabels, outOfOfficeLabels, holidayLabels } = splitUnavailableLabels(holidayNames);
                           
                           const workCapacity = summary.workCapacity;
                           const hobbyCapacity = summary.hobbyCapacity;
@@ -9607,6 +9650,9 @@ export default function PlanningPage() {
                             >
                               {vacationLabels.length > 0 && (
                                 <div className="text-cyan-700 dark:text-cyan-300 font-medium truncate">🏖️</div>
+                              )}
+                              {outOfOfficeLabels.length > 0 && (
+                                <div className="text-rose-700 dark:text-rose-300 font-medium truncate">🚫</div>
                               )}
                               {holidayLabels.length > 0 && (
                                 <div className="text-amber-700 dark:text-amber-300 font-medium truncate">🎉</div>

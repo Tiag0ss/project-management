@@ -42,6 +42,7 @@ interface VacationRequest {
   Id: number;
   UserId: number;
   VacationDate: string;
+  OutOfOfficeDate?: string;
   Status: string;
   Notes?: string;
   HolidayConflict?: boolean;
@@ -56,7 +57,7 @@ interface VacationTeamMember {
   Username: string;
   FirstName?: string;
   LastName?: string;
-  AnnualVacationDays: number;
+  AnnualVacationDays?: number;
   ApprovedDays: number;
   PendingDays: number;
   RejectedDays?: number;
@@ -96,9 +97,10 @@ export default function ApprovalsPage() {
   const router = useRouter();
   const [initialTabFromQuery, setInitialTabFromQuery] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'time' | 'vacations'>('time');
+  const [activeTab, setActiveTab] = useState<'time' | 'vacations' | 'outOfOffice'>('time');
   const [canApproveTime, setCanApproveTime] = useState(false);
   const [canApproveVacations, setCanApproveVacations] = useState(false);
+  const [canApproveOutOfOffice, setCanApproveOutOfOffice] = useState(false);
   const [scopeLoaded, setScopeLoaded] = useState(false);
 
   const [entries, setEntries] = useState<PendingEntry[]>([]);
@@ -127,7 +129,7 @@ export default function ApprovalsPage() {
   const [adminDescriptionDraft, setAdminDescriptionDraft] = useState('');
   const [isSavingDescription, setIsSavingDescription] = useState(false);
 
-  // Vacations tab state
+  // Leave tabs state (vacations and out-of-office share UI state)
   const [vacationMessage, setVacationMessage] = useState('');
   const [vacationIsLoading, setVacationIsLoading] = useState(false);
   const [vacationTeamRequests, setVacationTeamRequests] = useState<VacationRequest[]>([]);
@@ -145,27 +147,39 @@ export default function ApprovalsPage() {
   const [showVacationConfigModal, setShowVacationConfigModal] = useState(false);
   const [vacationDeleteTarget, setVacationDeleteTarget] = useState<VacationRequest | null>(null);
 
+  const isOutOfOfficeTab = activeTab === 'outOfOffice';
+  const leaveApiBase = isOutOfOfficeTab ? 'out-of-office' : 'vacations';
+  const leaveLabel = isOutOfOfficeTab ? 'Out Of Office' : 'Vacation';
+  const leaveLabelPlural = isOutOfOfficeTab ? 'Out Of Office' : 'Vacations';
+  const canApproveCurrentLeave = isOutOfOfficeTab ? canApproveOutOfOffice : canApproveVacations;
+
   useEffect(() => {
     if (!token || !user) return;
     const loadScopes = async () => {
       try {
-        const [timeScopeRes, vacationScopeRes] = await Promise.all([
+        const [timeScopeRes, vacationScopeRes, outOfOfficeScopeRes] = await Promise.all([
           fetch(`${getApiUrl()}/api/time-entries/approval-scope`, {
             headers: { 'Authorization': `Bearer ${token}` },
           }),
           fetch(`${getApiUrl()}/api/vacations/approval-scope`, {
             headers: { 'Authorization': `Bearer ${token}` },
           }),
+          fetch(`${getApiUrl()}/api/out-of-office/approval-scope`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+          }),
         ]);
 
         const canTime = timeScopeRes.ok ? !!(await timeScopeRes.json())?.canApprove : false;
         const canVacation = vacationScopeRes.ok ? !!(await vacationScopeRes.json())?.canApprove : false;
+        const canOutOfOffice = outOfOfficeScopeRes.ok ? !!(await outOfOfficeScopeRes.json())?.canApprove : false;
 
         setCanApproveTime(canTime || !!user.isAdmin);
         setCanApproveVacations(canVacation || !!user.isAdmin);
+        setCanApproveOutOfOffice(canOutOfOffice || !!user.isAdmin);
       } catch {
         setCanApproveTime(!!user.isAdmin);
         setCanApproveVacations(!!user.isAdmin);
+        setCanApproveOutOfOffice(!!user.isAdmin);
       } finally {
         setScopeLoaded(true);
       }
@@ -187,6 +201,10 @@ export default function ApprovalsPage() {
       setActiveTab('vacations');
       return;
     }
+    if (tab === 'out-of-office' && canApproveOutOfOffice) {
+      setActiveTab('outOfOffice');
+      return;
+    }
     if (tab === 'time' && canApproveTime) {
       setActiveTab('time');
       return;
@@ -195,8 +213,12 @@ export default function ApprovalsPage() {
       setActiveTab('vacations');
       return;
     }
+    if (!canApproveTime && !canApproveVacations && canApproveOutOfOffice) {
+      setActiveTab('outOfOffice');
+      return;
+    }
     setActiveTab('time');
-  }, [initialTabFromQuery, canApproveTime, canApproveVacations, scopeLoaded]);
+  }, [initialTabFromQuery, canApproveTime, canApproveVacations, canApproveOutOfOffice, scopeLoaded]);
 
   const loadEntries = useCallback(async () => {
     if (!token || !canApproveTime) {
@@ -249,8 +271,8 @@ export default function ApprovalsPage() {
     setVacationMessage('');
 
     try {
-      if (canApproveVacations) {
-        const teamMembersRes = await fetch(`${getApiUrl()}/api/vacations/team-members?year=${vacationYear}`, {
+      if (canApproveCurrentLeave) {
+        const teamMembersRes = await fetch(`${getApiUrl()}/api/${leaveApiBase}/team-members?year=${vacationYear}`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
 
@@ -267,13 +289,17 @@ export default function ApprovalsPage() {
           }
 
           const teamRequestsRes = await fetch(
-            `${getApiUrl()}/api/vacations/requests?${params.toString()}`,
+            `${getApiUrl()}/api/${leaveApiBase}/requests?${params.toString()}`,
             { headers: { 'Authorization': `Bearer ${token}` } }
           );
 
           if (teamRequestsRes.ok) {
             const teamReqData = await teamRequestsRes.json();
-            setVacationTeamRequests(teamReqData.requests || []);
+            const normalizedRequests = (teamReqData.requests || []).map((request: any) => ({
+              ...request,
+              VacationDate: request.VacationDate || request.OutOfOfficeDate,
+            }));
+            setVacationTeamRequests(normalizedRequests);
           } else {
             setVacationTeamRequests([]);
           }
@@ -282,14 +308,14 @@ export default function ApprovalsPage() {
         setVacationTeamRequests([]);
       }
     } catch (err: any) {
-      setVacationMessage(err.message || 'Failed to load vacations data');
+      setVacationMessage(err.message || `Failed to load ${leaveLabelPlural.toLowerCase()} data`);
     } finally {
       setVacationIsLoading(false);
     }
-  }, [token, vacationYear, vacationStatusFilter, canApproveVacations, selectedMemberId]);
+  }, [token, vacationYear, vacationStatusFilter, canApproveCurrentLeave, selectedMemberId, leaveApiBase, leaveLabelPlural]);
 
   useEffect(() => {
-    if (user && token && activeTab === 'vacations') {
+    if (user && token && (activeTab === 'vacations' || activeTab === 'outOfOffice')) {
       loadVacationData();
     }
   }, [user, token, activeTab, loadVacationData]);
@@ -297,7 +323,7 @@ export default function ApprovalsPage() {
   const handleVacationApproval = async (id: number, status: 'approved' | 'rejected') => {
     if (!token) return;
     try {
-      const response = await fetch(`${getApiUrl()}/api/vacations/${id}/approval`, {
+      const response = await fetch(`${getApiUrl()}/api/${leaveApiBase}/${id}/approval`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -306,18 +332,18 @@ export default function ApprovalsPage() {
         body: JSON.stringify({ status }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to update vacation request');
-      setVacationMessage(`Vacation request ${status}`);
+      if (!response.ok) throw new Error(data.message || `Failed to update ${leaveLabel.toLowerCase()} request`);
+      setVacationMessage(`${leaveLabel} request ${status}`);
       await loadVacationData();
     } catch (err: any) {
-      setVacationMessage(err.message || 'Failed to update vacation request');
+      setVacationMessage(err.message || `Failed to update ${leaveLabel.toLowerCase()} request`);
     }
   };
 
   const handleDeleteVacationDay = async (id: number) => {
     if (!token) return;
     try {
-      const response = await fetch(`${getApiUrl()}/api/vacations/${id}`, {
+      const response = await fetch(`${getApiUrl()}/api/${leaveApiBase}/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -325,11 +351,11 @@ export default function ApprovalsPage() {
         },
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to delete vacation day');
-      setVacationMessage('Vacation day deleted');
+      if (!response.ok) throw new Error(data.message || `Failed to delete ${leaveLabel.toLowerCase()} day`);
+      setVacationMessage(`${leaveLabel} day deleted`);
       await loadVacationData();
     } catch (err: any) {
-      setVacationMessage(err.message || 'Failed to delete vacation day');
+      setVacationMessage(err.message || `Failed to delete ${leaveLabel.toLowerCase()} day`);
     }
   };
 
@@ -345,7 +371,7 @@ export default function ApprovalsPage() {
 
     const pendingVisible = sortedVacationRequests.filter((request) => String(request.Status).toLowerCase() === 'pending');
     if (pendingVisible.length === 0) {
-      setVacationMessage('No pending vacation requests to approve.');
+      setVacationMessage(`No pending ${leaveLabel.toLowerCase()} requests to approve.`);
       return;
     }
 
@@ -357,7 +383,7 @@ export default function ApprovalsPage() {
       await Promise.all(
         pendingVisible.map(async (request) => {
           try {
-            const response = await fetch(`${getApiUrl()}/api/vacations/${request.Id}/approval`, {
+            const response = await fetch(`${getApiUrl()}/api/${leaveApiBase}/${request.Id}/approval`, {
               method: 'PUT',
               headers: {
                 'Authorization': `Bearer ${token}`,
@@ -379,7 +405,7 @@ export default function ApprovalsPage() {
 
       setVacationMessage(failed > 0
         ? `Approved ${approved} request(s), ${failed} failed.`
-        : `Approved ${approved} vacation request(s).`);
+        : `Approved ${approved} ${leaveLabel.toLowerCase()} request(s).`);
       await loadVacationData();
     } finally {
       setVacationIsLoading(false);
@@ -399,7 +425,7 @@ export default function ApprovalsPage() {
     if (!token || !selectedMemberId) return;
     setIsSavingVacationConfig(true);
     try {
-      const response = await fetch(`${getApiUrl()}/api/vacations/team-members/${selectedMemberId}/configure`, {
+      const response = await fetch(`${getApiUrl()}/api/${leaveApiBase}/team-members/${selectedMemberId}/configure`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -413,7 +439,7 @@ export default function ApprovalsPage() {
         }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to configure vacations');
+      if (!response.ok) throw new Error(data.message || `Failed to configure ${leaveLabelPlural.toLowerCase()}`);
       const exceededDates = Array.isArray(data.exceededDates) ? data.exceededDates : [];
       const nonWorkingDates = Array.isArray(data.nonWorkingDates) ? data.nonWorkingDates : [];
       const exceededSuffix = exceededDates.length > 0
@@ -422,12 +448,12 @@ export default function ApprovalsPage() {
       const nonWorkingSuffix = nonWorkingDates.length > 0
         ? ` · Non-working days skipped: ${nonWorkingDates.join(', ')}`
         : '';
-      setVacationMessage(`Configured vacations (${data.created || 0} created, ${data.skipped || 0} skipped${data.exceeded ? `, ${data.exceeded} exceeded` : ''}${data.nonWorkingSkipped ? `, ${data.nonWorkingSkipped} non-working` : ''})${exceededSuffix}${nonWorkingSuffix}`);
+      setVacationMessage(`Configured ${leaveLabelPlural.toLowerCase()} (${data.created || 0} created, ${data.skipped || 0} skipped${data.exceeded ? `, ${data.exceeded} exceeded` : ''}${data.nonWorkingSkipped ? `, ${data.nonWorkingSkipped} non-working` : ''})${exceededSuffix}${nonWorkingSuffix}`);
       setConfigNotes('');
       setShowVacationConfigModal(false);
       await loadVacationData();
     } catch (err: any) {
-      setVacationMessage(err.message || 'Failed to configure vacations');
+      setVacationMessage(err.message || `Failed to configure ${leaveLabelPlural.toLowerCase()}`);
     } finally {
       setIsSavingVacationConfig(false);
     }
@@ -638,11 +664,23 @@ export default function ApprovalsPage() {
           >
             Vacations
           </button>
+          <button
+            onClick={() => {
+              setActiveTab('outOfOffice');
+              router.replace('/approvals?tab=out-of-office');
+            }}
+            disabled={!canApproveOutOfOffice && !user?.isAdmin}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'outOfOffice'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
+          >
+            Out Of Office
+          </button>
         </div>
 
-        {!canApproveTime && !canApproveVacations && (
+        {!canApproveTime && !canApproveVacations && !canApproveOutOfOffice && (
           <div className="mb-6 p-4 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 text-yellow-700 dark:text-yellow-300 rounded-lg">
-            You don't currently have approval scope for time entries or vacations.
+            You don't currently have approval scope for time entries, vacations, or out-of-office.
           </div>
         )}
 
@@ -1145,7 +1183,7 @@ export default function ApprovalsPage() {
               </div>
             )}
 
-            {/* Vacation Stats Cards */}
+            {/* Leave Stats Cards */}
             {!vacationIsLoading && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
@@ -1172,8 +1210,8 @@ export default function ApprovalsPage() {
             )}
 
             {vacationIsLoading ? (
-              <div className="text-gray-600 dark:text-gray-300">Loading vacations…</div>
-            ) : canApproveVacations ? (
+              <div className="text-gray-600 dark:text-gray-300">Loading {leaveLabelPlural.toLowerCase()}…</div>
+            ) : canApproveCurrentLeave ? (
               <>
                 {/* Filters */}
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
@@ -1237,9 +1275,11 @@ export default function ApprovalsPage() {
                       </label>
                       {selectedVacationMember && (
                         <div className="flex flex-wrap gap-2 text-xs">
-                          <span className="px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
-                            Allowed: {selectedVacationMember.AnnualVacationDays}
-                          </span>
+                          {!isOutOfOfficeTab && (
+                            <span className="px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
+                              Allowed: {selectedVacationMember.AnnualVacationDays ?? 0}
+                            </span>
+                          )}
                           <span className="px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300">
                             Approved: {selectedVacationMember.ApprovedDays}
                           </span>
@@ -1254,7 +1294,7 @@ export default function ApprovalsPage() {
 
                 {/* Table — top action bar */}
                 <div className="flex items-center justify-between gap-3 mb-3">
-                  <h2 className="text-base font-semibold text-gray-900 dark:text-white">Team Vacation Requests</h2>
+                  <h2 className="text-base font-semibold text-gray-900 dark:text-white">Team {leaveLabel} Requests</h2>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleApproveAllVisibleVacations}
@@ -1267,7 +1307,7 @@ export default function ApprovalsPage() {
                       onClick={() => setShowVacationConfigModal(true)}
                       className="h-9 px-4 inline-flex items-center rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white transition-colors"
                     >
-                      Add Vacation
+                      Add {leaveLabel}
                     </button>
                   </div>
                 </div>
@@ -1440,7 +1480,7 @@ export default function ApprovalsPage() {
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full mx-4">
                   <div className="p-6 space-y-4">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Add / Configure Vacation</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Add / Configure {leaveLabel}</h3>
                       <button
                         onClick={() => setShowVacationConfigModal(false)}
                         className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
@@ -1518,7 +1558,7 @@ export default function ApprovalsPage() {
                         disabled={!selectedMemberId || isSavingVacationConfig}
                         className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded"
                       >
-                        Add Vacation Days
+                        Add {leaveLabel} Days
                       </button>
                     </div>
                   </div>
@@ -1530,9 +1570,9 @@ export default function ApprovalsPage() {
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[110] p-4">
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
                   <div className="p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete Vacation Day</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete {leaveLabel} Day</h3>
                     <p className="text-sm text-gray-700 dark:text-gray-300 mb-6">
-                      Are you sure you want to delete this vacation day for{' '}
+                      Are you sure you want to delete this {leaveLabel.toLowerCase()} day for{' '}
                       <span className="font-medium">{getUserDisplayName(vacationDeleteTarget)}</span>{' '}
                       on <span className="font-medium">{String(vacationDeleteTarget.VacationDate).split('T')[0]}</span>?
                     </p>

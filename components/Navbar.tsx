@@ -128,6 +128,7 @@ export default function Navbar() {
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [canAccessApprovals, setCanAccessApprovals] = useState(false);
   const [canAccessVacationApprovals, setCanAccessVacationApprovals] = useState(false);
+  const [canAccessOutOfOfficeApprovals, setCanAccessOutOfOfficeApprovals] = useState(false);
 
   // Active timer state
   const [navTimer, setNavTimer] = useState<{
@@ -485,12 +486,14 @@ export default function Navbar() {
       if (!token || !user || isCustomerUser) {
         setCanAccessApprovals(false);
         setCanAccessVacationApprovals(false);
+        setCanAccessOutOfOfficeApprovals(false);
         return;
       }
 
       if (user.isAdmin) {
         setCanAccessApprovals(true);
         setCanAccessVacationApprovals(true);
+        setCanAccessOutOfOfficeApprovals(true);
         return;
       }
 
@@ -522,6 +525,20 @@ export default function Navbar() {
         setCanAccessVacationApprovals(!!vacationData?.canApprove);
       } catch {
         setCanAccessVacationApprovals(false);
+      }
+
+      try {
+        const outOfOfficeRes = await fetch(`${getApiUrl()}/api/out-of-office/approval-scope`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!outOfOfficeRes.ok) {
+          setCanAccessOutOfOfficeApprovals(false);
+          return;
+        }
+        const outOfOfficeData = await outOfOfficeRes.json();
+        setCanAccessOutOfOfficeApprovals(!!outOfOfficeData?.canApprove);
+      } catch {
+        setCanAccessOutOfOfficeApprovals(false);
       }
     };
 
@@ -1577,7 +1594,8 @@ export default function Navbar() {
   const canShowOrganizationsOption = !!permissions?.canManageOrganizations;
   const canShowApprovalsOption = canAccessApprovals;
   const canShowVacationApprovalsOption = canAccessVacationApprovals;
-  const canShowAnyApprovalsOption = canShowApprovalsOption || canShowVacationApprovalsOption;
+  const canShowOutOfOfficeApprovalsOption = canAccessOutOfOfficeApprovals;
+  const canShowAnyApprovalsOption = canShowApprovalsOption || canShowVacationApprovalsOption || canShowOutOfOfficeApprovalsOption;
 
   const canShowDashboardLink = isCustomerUser || (!isCustomerUser && (permissionsLoading || permissions?.canViewDashboard));
   const canShowProjectsLink = !isCustomerUser && (permissionsLoading || permissions?.canViewProjects || permissions?.canManageProjects || permissions?.canCreateProjects);
@@ -2079,7 +2097,9 @@ export default function Navbar() {
                       },
                       {
                         label: '✅ Approvals',
-                        href: canShowApprovalsOption ? '/approvals?tab=time' : '/approvals?tab=vacations',
+                        href: canShowApprovalsOption
+                          ? '/approvals?tab=time'
+                          : (canShowVacationApprovalsOption ? '/approvals?tab=vacations' : '/approvals?tab=out-of-office'),
                         visible: !!canShowAnyApprovalsOption,
                         onClick: () => setManagementMenuOpen(false),
                       },

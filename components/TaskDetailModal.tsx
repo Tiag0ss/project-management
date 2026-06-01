@@ -1839,7 +1839,19 @@ export default function TaskDetailModal({
   const canSaveTask = !!(task?.Id ? permissions?.canManageTasks : permissions?.canCreateTasks);
   const canDeleteTask = !!(task?.Id && permissions?.canDeleteTasks);
   const headerIconButtonClass = 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl';
-  const projectCustomerName = task?.CustomerName || task?.ProjectCustomerName || project?.CustomerName || null;
+  const taskCustomerNameFromDirectory = (() => {
+    const customerId = Number(task?.CustomerId || 0);
+    if (!customerId) return null;
+    const matchedCustomer = customers.find((customer) => Number(customer.Id) === customerId);
+    if (!matchedCustomer) return null;
+    const externalName = String(matchedCustomer.ExternalName || '').trim();
+    return externalName || matchedCustomer.Name || null;
+  })();
+  const taskCustomerName = task?.CustomerName || taskCustomerNameFromDirectory || null;
+  const projectCustomerName = task?.ProjectCustomerName || project?.CustomerName || null;
+  const headerCustomerName = isGlobalProject
+    ? taskCustomerName
+    : (taskCustomerName || projectCustomerName);
   const visibleTabs = (task?.Id
     ? (['details', 'checklist', 'hours', 'comments', 'attachments', 'history'] as const)
     : (['details', 'hours'] as const)
@@ -1941,13 +1953,13 @@ export default function TaskDetailModal({
                     <span aria-hidden="true">↗</span>
                   </button>
 
-                  {!isGlobalProject && projectCustomerName && (
+                  {headerCustomerName && (
                     <span
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300"
-                      title={`Customer: ${projectCustomerName}`}
+                      title={`Customer: ${headerCustomerName}`}
                     >
                       <span>🏢</span>
-                      <span>{projectCustomerName}</span>
+                      <span>{headerCustomerName}</span>
                     </span>
                   )}
                 </div>

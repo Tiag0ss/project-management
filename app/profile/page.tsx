@@ -101,7 +101,7 @@ const TIMEZONES = [
 export default function ProfilePage() {
   const { user, token, isLoading: authLoading, isCustomerUser, updateUser } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'info' | 'attachments' | 'workHours' | 'security' | 'emailAlerts' | 'recurringTasks' | 'vacations'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'attachments' | 'workHours' | 'security' | 'emailAlerts' | 'recurringTasks' | 'vacations' | 'outOfOffice'>('info');
   const [attachments, setAttachments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -190,6 +190,19 @@ export default function ProfilePage() {
   const [vacationNotes, setVacationNotes] = useState('');
   const [isSavingVacation, setIsSavingVacation] = useState(false);
   const [vacationDeleteTarget, setVacationDeleteTarget] = useState<{ id: number; date: string } | null>(null);
+
+  const [outOfOfficeEntries, setOutOfOfficeEntries] = useState<any[]>([]);
+  const [outOfOfficeSummary, setOutOfOfficeSummary] = useState({
+    approvedDays: 0,
+    pendingDays: 0,
+    rejectedDays: 0,
+    reservedDays: 0,
+  });
+  const [outOfOfficeStartDate, setOutOfOfficeStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [outOfOfficeEndDate, setOutOfOfficeEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [outOfOfficeNotes, setOutOfOfficeNotes] = useState('');
+  const [isSavingOutOfOffice, setIsSavingOutOfOffice] = useState(false);
+  const [outOfOfficeDeleteTarget, setOutOfOfficeDeleteTarget] = useState<{ id: number; date: string } | null>(null);
 
   // Recurring Tasks state
   const [recurringAllocations, setRecurringAllocations] = useState<RecurringAllocation[]>([]);
@@ -459,6 +472,121 @@ export default function ProfilePage() {
     const vacationId = vacationDeleteTarget.id;
     setVacationDeleteTarget(null);
     await handleDeleteMyVacation(vacationId);
+  };
+
+  const loadOutOfOfficeData = async () => {
+    if (!token) return;
+    try {
+      const year = new Date().getFullYear();
+      const response = await fetch(`${getApiUrl()}/api/out-of-office/my?year=${year}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load out-of-office');
+      }
+
+      const data = await response.json();
+      const normalizedEntries = (data.entries || []).map((entry: any) => ({
+        ...entry,
+        VacationDate: entry.VacationDate || entry.OutOfOfficeDate,
+      }));
+
+      setOutOfOfficeEntries(normalizedEntries);
+      setOutOfOfficeSummary({
+        approvedDays: Number(data.approvedDays || 0),
+        pendingDays: Number(data.pendingDays || 0),
+        rejectedDays: Number(data.rejectedDays || 0),
+        reservedDays: Number(data.reservedDays || 0),
+      });
+    } catch (err: any) {
+      setMessage(err.message || 'Failed to load out-of-office');
+    }
+  };
+
+  const getOutOfOfficeRequestDays = () => {
+    const start = new Date(`${outOfOfficeStartDate}T12:00:00`);
+    const end = new Date(`${outOfOfficeEndDate}T12:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return 0;
+    const msPerDay = 24 * 60 * 60 * 1000;
+    return Math.floor((end.getTime() - start.getTime()) / msPerDay) + 1;
+  };
+
+  const handleRequestOutOfOffice = async () => {
+    if (!token) return;
+    const requestDays = getOutOfOfficeRequestDays();
+
+    if (requestDays <= 0) {
+      setMessage('Invalid out-of-office date range');
+      return;
+    }
+
+    setIsSavingOutOfOffice(true);
+    try {
+      const response = await fetch(`${getApiUrl()}/api/out-of-office/my/request`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          startDate: outOfOfficeStartDate,
+          endDate: outOfOfficeEndDate,
+          notes: outOfOfficeNotes,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to submit out-of-office request');
+      }
+
+      const nonWorkingDates = Array.isArray(data.nonWorkingDates) ? data.nonWorkingDates : [];
+      const nonWorkingSuffix = nonWorkingDates.length > 0
+        ? ` · Non-working days skipped: ${nonWorkingDates.join(', ')}`
+        : '';
+
+      setMessage(`Out-of-office request submitted (${data.created || 0} added${data.skipped ? `, ${data.skipped} duplicate` : ''}${data.nonWorkingSkipped ? `, ${data.nonWorkingSkipped} non-working` : ''})${nonWorkingSuffix}`);
+      setOutOfOfficeNotes('');
+      await loadOutOfOfficeData();
+    } catch (err: any) {
+      setMessage(err.message || 'Failed to submit out-of-office request');
+    } finally {
+      setIsSavingOutOfOffice(false);
+    }
+  };
+
+  const handleDeleteMyOutOfOffice = async (outOfOfficeId: number) => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${getApiUrl()}/api/out-of-office/${outOfOfficeId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to delete out-of-office day');
+      }
+
+      setMessage('Out-of-office day deleted');
+      await loadOutOfOfficeData();
+    } catch (err: any) {
+      setMessage(err.message || 'Failed to delete out-of-office day');
+    }
+  };
+
+  const confirmDeleteMyOutOfOffice = async () => {
+    if (!outOfOfficeDeleteTarget) return;
+    const outOfOfficeId = outOfOfficeDeleteTarget.id;
+    setOutOfOfficeDeleteTarget(null);
+    await handleDeleteMyOutOfOffice(outOfOfficeId);
   };
 
   const saveEmailPreferences = async () => {
@@ -1019,6 +1147,21 @@ export default function ProfilePage() {
             >
               <span className="text-xl">🏖️</span>
               <span className="font-medium">Vacations</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab('outOfOffice');
+                loadOutOfOfficeData();
+              }}
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                activeTab === 'outOfOffice'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <span className="text-xl">🚫</span>
+              <span className="font-medium">Out Of Office</span>
             </button>
 
             {!isCustomerUser && (
@@ -1964,6 +2107,102 @@ export default function ProfilePage() {
                 </div>
               )}
 
+              {activeTab === 'outOfOffice' && (
+                <div className="space-y-6">
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Out Of Office Management</h2>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Approved</p>
+                      <p className="text-2xl font-bold text-green-600 dark:text-green-400">{outOfOfficeSummary.approvedDays}</p>
+                    </div>
+                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Pending</p>
+                      <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{outOfOfficeSummary.pendingDays}</p>
+                    </div>
+                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Rejected</p>
+                      <p className="text-2xl font-bold text-red-600 dark:text-red-400">{outOfOfficeSummary.rejectedDays}</p>
+                    </div>
+                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Reserved</p>
+                      <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{outOfOfficeSummary.reservedDays}</p>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Request Out Of Office</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
+                        <input
+                          type="date"
+                          value={outOfOfficeStartDate}
+                          onChange={(e) => setOutOfOfficeStartDate(e.target.value)}
+                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
+                        <input
+                          type="date"
+                          value={outOfOfficeEndDate}
+                          onChange={(e) => setOutOfOfficeEndDate(e.target.value)}
+                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
+                      <input
+                        type="text"
+                        value={outOfOfficeNotes}
+                        onChange={(e) => setOutOfOfficeNotes(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        placeholder="Optional notes"
+                      />
+                    </div>
+                    <button
+                      onClick={handleRequestOutOfOffice}
+                      disabled={isSavingOutOfOffice}
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-gray-400 text-white rounded-lg"
+                    >
+                      {isSavingOutOfOffice ? 'Submitting...' : `Request ${getOutOfOfficeRequestDays()} day(s)`}
+                    </button>
+                  </div>
+
+                  <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">My Out Of Office Days</h3>
+                    {outOfOfficeEntries.length === 0 ? (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">No out-of-office records yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {outOfOfficeEntries.map((entry) => (
+                          <div key={entry.Id} className="flex items-center justify-between p-2 rounded bg-gray-50 dark:bg-gray-700/50">
+                            <span className="text-sm text-gray-900 dark:text-white">{String(entry.OutOfOfficeDate || entry.VacationDate).split('T')[0]}</span>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs px-2 py-1 rounded ${String(entry.Status).toLowerCase() === 'approved'
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                : String(entry.Status).toLowerCase() === 'rejected'
+                                  ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                                  : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'}`}>
+                                {entry.Status}
+                              </span>
+                              <button
+                                onClick={() => setOutOfOfficeDeleteTarget({ id: entry.Id, date: String(entry.OutOfOfficeDate || entry.VacationDate).split('T')[0] })}
+                                className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Recurring Task Modal */}
               {showRecurringModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
@@ -2181,6 +2420,34 @@ export default function ProfilePage() {
                         </button>
                         <button
                           onClick={confirmDeleteMyVacation}
+                          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {outOfOfficeDeleteTarget && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[110] p-4">
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+                    <div className="p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete Out Of Office Day</h3>
+                      <p className="text-sm text-gray-700 dark:text-gray-300 mb-6">
+                        Are you sure you want to delete your out-of-office day on{' '}
+                        <span className="font-medium">{outOfOfficeDeleteTarget.date}</span>?
+                      </p>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => setOutOfOfficeDeleteTarget(null)}
+                          className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={confirmDeleteMyOutOfOffice}
                           className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded"
                         >
                           Delete

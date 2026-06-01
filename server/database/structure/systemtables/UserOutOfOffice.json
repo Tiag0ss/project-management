@@ -1,0 +1,63 @@
+{
+  "TableName": "UserOutOfOffice",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "OutOfOfficeDate",
+      "DataType": "date",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Status",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "pending"
+    },
+    {
+      "FieldName": "Notes",
+      "DataType": "text",
+      "NotNullable": false,
+      "DefaultValue": null
+    },
+    {
+      "FieldName": "RequestedBy",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "ApprovedBy",
+      "DataType": "int",
+      "NotNullable": false,
+      "DefaultValue": null
+    },
+    {
+      "FieldName": "ApprovedAt",
+      "DataType": "datetime",
+      "NotNullable": false,
+      "DefaultValue": null
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    }
+  ]
+}

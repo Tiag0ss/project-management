@@ -120,6 +120,7 @@ interface SystemSettings {
   memosEnabled?: string;
   autoApproveTimeEntries?: string;
   autoApproveVacations?: string;
+  autoApproveOutOfOffice?: string;
   frontpageEnabled?: string;
   aiAssistantEnabled?: string;
   openAIApiKey?: string;
@@ -172,6 +173,7 @@ export default function SystemSettings() {
     memosEnabled: 'true',
     autoApproveTimeEntries: 'false',
     autoApproveVacations: 'false',
+    autoApproveOutOfOffice: 'false',
     frontpageEnabled: 'true',
     aiAssistantEnabled: 'false',
     openAIApiKey: '',
@@ -244,6 +246,7 @@ export default function SystemSettings() {
           memosEnabled: data.settings.memosEnabled || 'true',
           autoApproveTimeEntries: data.settings.autoApproveTimeEntries || 'false',
           autoApproveVacations: data.settings.autoApproveVacations || 'false',
+          autoApproveOutOfOffice: data.settings.autoApproveOutOfOffice || 'false',
           frontpageEnabled: data.settings.frontpageEnabled !== undefined ? data.settings.frontpageEnabled : 'true',
           aiAssistantEnabled: data.settings.aiAssistantEnabled || 'false',
           openAIApiKey: data.settings.openAIApiKey || '',
@@ -887,6 +890,23 @@ export default function SystemSettings() {
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
                       New vacation requests are immediately approved.
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.autoApproveOutOfOffice === 'true'}
+                    onChange={(e) => handleChange('autoApproveOutOfOffice', e.target.checked ? 'true' : 'false')}
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      Auto-approve Out Of Office
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      New out-of-office requests are immediately approved.
                     </div>
                   </div>
                 </label>
