@@ -16,6 +16,14 @@ const isAutoApproveVacationsEnabled = async (): Promise<boolean> => {
 
 const normalizeDate = (value: unknown): string => String(value || '').split('T')[0];
 
+const normalizeDayPortion = (value: unknown): 'full' | 'half' => {
+  return String(value || '').toLowerCase() === 'half' ? 'half' : 'full';
+};
+
+const dayPortionWeight = (value: unknown): number => {
+  return normalizeDayPortion(value) === 'half' ? 0.5 : 1;
+};
+
 const toDateRange = (startDate: string, endDate: string): string[] => {
   const start = new Date(`${startDate}T12:00:00`);
   const end = new Date(`${endDate}T12:00:00`);
@@ -128,8 +136,12 @@ router.get('/my', authenticateToken, async (req: AuthRequest, res: Response) => 
       [userId, yearStart, yearEnd]
     );
 
-    const approvedDays = entries.filter((e: any) => String(e.Status).toLowerCase() === 'approved').length;
-    const pendingDays = entries.filter((e: any) => String(e.Status).toLowerCase() === 'pending').length;
+    const approvedDays = entries
+      .filter((e: any) => String(e.Status).toLowerCase() === 'approved')
+      .reduce((sum: number, e: any) => sum + dayPortionWeight(e.DayPortion), 0);
+    const pendingDays = entries
+      .filter((e: any) => String(e.Status).toLowerCase() === 'pending')
+      .reduce((sum: number, e: any) => sum + dayPortionWeight(e.DayPortion), 0);
     const reservedDays = approvedDays + pendingDays;
 
     res.json({
@@ -152,8 +164,10 @@ router.get('/my', authenticateToken, async (req: AuthRequest, res: Response) => 
 router.post('/my/request', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = Number(req.user?.userId || 0);
-    const { startDate, endDate, notes } = req.body;
+    const { startDate, endDate, notes, dayPortion } = req.body;
     const autoApproveVacations = await isAutoApproveVacationsEnabled();
+    const normalizedDayPortion = normalizeDayPortion(dayPortion);
+    const dayWeight = dayPortionWeight(normalizedDayPortion);
 
     const normalizedStart = normalizeDate(startDate);
     const normalizedEnd = normalizeDate(endDate || startDate);
@@ -194,7 +208,8 @@ router.post('/my/request', authenticateToken, async (req: AuthRequest, res: Resp
       const maxYear = Math.max(...years);
 
       const [existingYearCounts] = await pool.execute<RowDataPacket[]>(
-        `SELECT YEAR(VacationDate) as VacationYear, COUNT(*) as ReservedCount
+        `SELECT YEAR(VacationDate) as VacationYear,
+                SUM(CASE WHEN LOWER(COALESCE(DayPortion, 'full')) = 'half' THEN 0.5 ELSE 1 END) as ReservedCount
          FROM UserVacations
          WHERE UserId = ?
            AND VacationDate BETWEEN ? AND ?
@@ -230,18 +245,19 @@ router.post('/my/request', authenticateToken, async (req: AuthRequest, res: Resp
       const reserved = reservedByYear.get(year) || 0;
       const pendingCreation = createdByYear.get(year) || 0;
 
-      if (reserved + pendingCreation + 1 > annualTotal) {
+      if (reserved + pendingCreation + dayWeight > annualTotal) {
         exceeded += 1;
         exceededDates.push(date);
         continue;
       }
 
       await pool.execute<ResultSetHeader>(
-        `INSERT INTO UserVacations (UserId, VacationDate, Status, Notes, RequestedBy, ApprovedBy, ApprovedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO UserVacations (UserId, VacationDate, DayPortion, Status, Notes, RequestedBy, ApprovedBy, ApprovedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           userId,
           date,
+          normalizedDayPortion,
           autoApproveVacations ? 'approved' : 'pending',
           notes || null,
           userId,
@@ -250,7 +266,7 @@ router.post('/my/request', authenticateToken, async (req: AuthRequest, res: Resp
         ]
       );
       created += 1;
-      createdByYear.set(year, pendingCreation + 1);
+      createdByYear.set(year, pendingCreation + dayWeight);
     }
 
     res.json({
@@ -430,7 +446,7 @@ router.get('/calendar', authenticateToken, async (req: AuthRequest, res: Respons
 
     const placeholders = uniqueEffectiveUserIds.map(() => '?').join(',');
     const [rows] = await pool.execute<RowDataPacket[]>(
-      `SELECT Id, UserId, VacationDate, Status, Notes
+      `SELECT Id, UserId, VacationDate, COALESCE(DayPortion, 'full') as DayPortion, Status, Notes
        FROM UserVacations
        WHERE LOWER(Status) = 'approved'
          AND VacationDate BETWEEN ? AND ?
@@ -534,9 +550,9 @@ router.get('/team-members', authenticateToken, async (req: AuthRequest, res: Res
     const year = Number(req.query.year || new Date().getFullYear());
 
     let query = `SELECT u.Id, u.Username, u.FirstName, u.LastName, u.AnnualVacationDays,
-                        (SELECT COUNT(*) FROM UserVacations uv WHERE uv.UserId = u.Id AND YEAR(uv.VacationDate) = ? AND LOWER(uv.Status) = 'approved') as ApprovedDays,
-                        (SELECT COUNT(*) FROM UserVacations uv WHERE uv.UserId = u.Id AND YEAR(uv.VacationDate) = ? AND LOWER(uv.Status) = 'pending') as PendingDays,
-                        (SELECT COUNT(*) FROM UserVacations uv WHERE uv.UserId = u.Id AND YEAR(uv.VacationDate) = ? AND LOWER(uv.Status) = 'rejected') as RejectedDays
+              (SELECT COALESCE(SUM(CASE WHEN LOWER(COALESCE(uv.DayPortion, 'full')) = 'half' THEN 0.5 ELSE 1 END), 0) FROM UserVacations uv WHERE uv.UserId = u.Id AND YEAR(uv.VacationDate) = ? AND LOWER(uv.Status) = 'approved') as ApprovedDays,
+              (SELECT COALESCE(SUM(CASE WHEN LOWER(COALESCE(uv.DayPortion, 'full')) = 'half' THEN 0.5 ELSE 1 END), 0) FROM UserVacations uv WHERE uv.UserId = u.Id AND YEAR(uv.VacationDate) = ? AND LOWER(uv.Status) = 'pending') as PendingDays,
+              (SELECT COALESCE(SUM(CASE WHEN LOWER(COALESCE(uv.DayPortion, 'full')) = 'half' THEN 0.5 ELSE 1 END), 0) FROM UserVacations uv WHERE uv.UserId = u.Id AND YEAR(uv.VacationDate) = ? AND LOWER(uv.Status) = 'rejected') as RejectedDays
                  FROM Users u
                  WHERE u.IsActive = 1`;
     const params: any[] = [year, year, year];
@@ -585,7 +601,7 @@ router.post('/team-members/:userId/configure', authenticateToken, async (req: Au
     const currentUserId = Number(req.user?.userId || 0);
     const isAdmin = !!req.user?.isAdmin;
     const targetUserId = Number(req.params.userId);
-    const { startDate, endDate, notes, status } = req.body;
+    const { startDate, endDate, notes, status, dayPortion } = req.body;
 
     const canManage = await canManageTargetUser(currentUserId, isAdmin, targetUserId);
     if (!canManage) {
@@ -602,6 +618,8 @@ router.post('/team-members/:userId/configure', authenticateToken, async (req: Au
     const normalizedStatus = ['approved', 'pending', 'rejected'].includes(String(status || '').toLowerCase())
       ? String(status).toLowerCase()
       : 'approved';
+    const normalizedDayPortion = normalizeDayPortion(dayPortion);
+    const dayWeight = dayPortionWeight(normalizedDayPortion);
 
     const [users] = await pool.execute<RowDataPacket[]>(
       `SELECT AnnualVacationDays,
@@ -643,7 +661,8 @@ router.post('/team-members/:userId/configure', authenticateToken, async (req: Au
         const maxYear = Math.max(...years);
 
         const [existingYearCounts] = await pool.execute<RowDataPacket[]>(
-          `SELECT YEAR(VacationDate) as VacationYear, COUNT(*) as ReservedCount
+          `SELECT YEAR(VacationDate) as VacationYear,
+                  SUM(CASE WHEN LOWER(COALESCE(DayPortion, 'full')) = 'half' THEN 0.5 ELSE 1 END) as ReservedCount
            FROM UserVacations
            WHERE UserId = ?
              AND VacationDate BETWEEN ? AND ?
@@ -675,7 +694,7 @@ router.post('/team-members/:userId/configure', authenticateToken, async (req: Au
         const reserved = reservedByYear.get(year) || 0;
         const pendingCreation = createdByYear.get(year) || 0;
 
-        if (reserved + pendingCreation + 1 > annualTotal) {
+        if (reserved + pendingCreation + dayWeight > annualTotal) {
           exceeded += 1;
           exceededDates.push(date);
           continue;
@@ -683,11 +702,12 @@ router.post('/team-members/:userId/configure', authenticateToken, async (req: Au
       }
 
       await pool.execute<ResultSetHeader>(
-        `INSERT INTO UserVacations (UserId, VacationDate, Status, Notes, RequestedBy, ApprovedBy, ApprovedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?)` ,
+        `INSERT INTO UserVacations (UserId, VacationDate, DayPortion, Status, Notes, RequestedBy, ApprovedBy, ApprovedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)` ,
         [
           targetUserId,
           date,
+          normalizedDayPortion,
           normalizedStatus,
           notes || null,
           currentUserId,
@@ -699,7 +719,7 @@ router.post('/team-members/:userId/configure', authenticateToken, async (req: Au
 
       if (enforceAnnualLimit) {
         const year = Number(date.split('-')[0]);
-        createdByYear.set(year, (createdByYear.get(year) || 0) + 1);
+        createdByYear.set(year, (createdByYear.get(year) || 0) + dayWeight);
       }
     }
 

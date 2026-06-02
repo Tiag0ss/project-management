@@ -67,6 +67,7 @@ interface PlannerVacationDay {
   Id: number;
   UserId: number;
   VacationDate: string;
+  DayPortion?: 'full' | 'half' | string;
   Status: string;
   Notes?: string;
 }
@@ -75,6 +76,7 @@ interface PlannerOutOfOfficeDay {
   Id: number;
   UserId: number;
   OutOfOfficeDate: string;
+  DayPortion?: 'full' | 'half' | string;
   Status: string;
   Notes?: string;
 }
@@ -820,14 +822,27 @@ export default function PlanningPage() {
     return holidayNamesByUserDate[userId]?.[dateStr] || [];
   };
 
+  const isHalfDayLeaveLabel = (label: unknown): boolean => {
+    const normalized = String(label || '').trim();
+    return /^half-day\s+(vacation|out\s*of\s*office)\b/i.test(normalized);
+  };
+
+  const isUserFullyUnavailable = (userId: number, dateStr: string): boolean => {
+    const labels = getUserHolidayNames(userId, dateStr);
+    if (labels.length === 0) return false;
+    return labels.some((label) => !isHalfDayLeaveLabel(label));
+  };
+
   const isUserHoliday = (userId: number, dateStr: string): boolean => {
-    return getUserHolidayNames(userId, dateStr).length > 0;
+    return isUserFullyUnavailable(userId, dateStr);
   };
 
   const splitUnavailableLabels = (labels: string[]) => {
-    const vacationLabels = labels.filter((label) => /^vacation\b/i.test(String(label || '').trim()));
-    const outOfOfficeLabels = labels.filter((label) => /^out\s*of\s*office\b/i.test(String(label || '').trim()));
-    const holidayLabels = labels.filter((label) => !/^vacation\b/i.test(String(label || '').trim()) && !/^out\s*of\s*office\b/i.test(String(label || '').trim()));
+    const vacationPattern = /^(?:half-day\s+)?vacation\b/i;
+    const outOfOfficePattern = /^(?:half-day\s+)?out\s*of\s*office\b/i;
+    const vacationLabels = labels.filter((label) => vacationPattern.test(String(label || '').trim()));
+    const outOfOfficeLabels = labels.filter((label) => outOfOfficePattern.test(String(label || '').trim()));
+    const holidayLabels = labels.filter((label) => !vacationPattern.test(String(label || '').trim()) && !outOfOfficePattern.test(String(label || '').trim()));
     return { vacationLabels, outOfOfficeLabels, holidayLabels };
   };
 
@@ -1546,9 +1561,12 @@ export default function PlanningPage() {
               holidayMapForUser[dateKey] = [];
             }
 
+            const portionPrefix = String(vacation.DayPortion || '').toLowerCase() === 'half'
+              ? 'Half-day '
+              : '';
             const label = vacation.Notes
-              ? `Vacation: ${vacation.Notes}`
-              : 'Vacation';
+              ? `${portionPrefix}Vacation: ${vacation.Notes}`
+              : `${portionPrefix}Vacation`;
 
             if (!holidayMapForUser[dateKey].includes(label)) {
               holidayMapForUser[dateKey].push(label);
@@ -1566,9 +1584,12 @@ export default function PlanningPage() {
               holidayMapForUser[dateKey] = [];
             }
 
+            const portionPrefix = String(entry.DayPortion || '').toLowerCase() === 'half'
+              ? 'Half-day '
+              : '';
             const label = entry.Notes
-              ? `Out Of Office: ${entry.Notes}`
-              : 'Out Of Office';
+              ? `${portionPrefix}Out Of Office: ${entry.Notes}`
+              : `${portionPrefix}Out Of Office`;
 
             if (!holidayMapForUser[dateKey].includes(label)) {
               holidayMapForUser[dateKey].push(label);
@@ -4582,7 +4603,8 @@ export default function PlanningPage() {
 
     const droppedDateStr = getDateKeyFromDate(day);
     const droppedDateHolidayNames = getUserHolidayNames(userId, droppedDateStr);
-    if (droppedDateHolidayNames.length > 0) {
+    const droppedDateIsFullyUnavailable = droppedDateHolidayNames.some((label) => !isHalfDayLeaveLabel(label));
+    if (droppedDateIsFullyUnavailable) {
       showAlert(
         'Unavailable Day',
         `Cannot plan on unavailable day for this user (${droppedDateStr}): ${droppedDateHolidayNames.join(', ')}`

@@ -99,6 +99,17 @@ const TIMEZONES = [
   { value: 'Pacific/Samoa', label: 'Pacific/Samoa (SST)' },
 ];
 
+type LeaveDayPortion = 'full' | 'half';
+
+const normalizeLeaveDayPortion = (value: unknown): LeaveDayPortion => {
+  return String(value || '').toLowerCase() === 'half' ? 'half' : 'full';
+};
+
+const formatLeaveUnits = (value: number): string => {
+  if (!Number.isFinite(value)) return '0';
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+};
+
 export default function ProfilePage() {
   const { user, token, isLoading: authLoading, isCustomerUser, updateUser } = useAuth();
   const router = useRouter();
@@ -195,6 +206,7 @@ export default function ProfilePage() {
   });
   const [vacationStartDate, setVacationStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [vacationEndDate, setVacationEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [vacationDayPortion, setVacationDayPortion] = useState<LeaveDayPortion>('full');
   const [vacationNotes, setVacationNotes] = useState('');
   const [isSavingVacation, setIsSavingVacation] = useState(false);
   const [vacationDeleteTarget, setVacationDeleteTarget] = useState<{ id: number; date: string } | null>(null);
@@ -208,6 +220,7 @@ export default function ProfilePage() {
   });
   const [outOfOfficeStartDate, setOutOfOfficeStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [outOfOfficeEndDate, setOutOfOfficeEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [outOfOfficeDayPortion, setOutOfOfficeDayPortion] = useState<LeaveDayPortion>('full');
   const [outOfOfficeNotes, setOutOfOfficeNotes] = useState('');
   const [isSavingOutOfOffice, setIsSavingOutOfOffice] = useState(false);
   const [outOfOfficeDeleteTarget, setOutOfOfficeDeleteTarget] = useState<{ id: number; date: string } | null>(null);
@@ -404,6 +417,12 @@ export default function ProfilePage() {
     return Math.floor((end.getTime() - start.getTime()) / msPerDay) + 1;
   };
 
+  const getVacationRequestUnits = () => {
+    const days = getVacationRequestDays();
+    const multiplier = vacationDayPortion === 'half' ? 0.5 : 1;
+    return days * multiplier;
+  };
+
   const handleRequestVacation = async () => {
     if (!token) return;
     const requestDays = getVacationRequestDays();
@@ -424,6 +443,7 @@ export default function ProfilePage() {
         body: JSON.stringify({
           startDate: vacationStartDate,
           endDate: vacationEndDate,
+          dayPortion: vacationDayPortion,
           notes: vacationNotes,
         }),
       });
@@ -444,6 +464,7 @@ export default function ProfilePage() {
 
       setMessage(`Vacation request submitted (${data.created || 0} added${data.skipped ? `, ${data.skipped} duplicate` : ''}${data.exceeded ? `, ${data.exceeded} exceeded` : ''}${data.nonWorkingSkipped ? `, ${data.nonWorkingSkipped} non-working` : ''})${exceededSuffix}${nonWorkingSuffix}`);
       setVacationNotes('');
+      setVacationDayPortion('full');
       await loadVacationData();
     } catch (err: any) {
       setMessage(err.message || 'Failed to submit vacation request');
@@ -523,6 +544,12 @@ export default function ProfilePage() {
     return Math.floor((end.getTime() - start.getTime()) / msPerDay) + 1;
   };
 
+  const getOutOfOfficeRequestUnits = () => {
+    const days = getOutOfOfficeRequestDays();
+    const multiplier = outOfOfficeDayPortion === 'half' ? 0.5 : 1;
+    return days * multiplier;
+  };
+
   const handleRequestOutOfOffice = async () => {
     if (!token) return;
     const requestDays = getOutOfOfficeRequestDays();
@@ -543,6 +570,7 @@ export default function ProfilePage() {
         body: JSON.stringify({
           startDate: outOfOfficeStartDate,
           endDate: outOfOfficeEndDate,
+          dayPortion: outOfOfficeDayPortion,
           notes: outOfOfficeNotes,
         }),
       });
@@ -559,6 +587,7 @@ export default function ProfilePage() {
 
       setMessage(`Out-of-office request submitted (${data.created || 0} added${data.skipped ? `, ${data.skipped} duplicate` : ''}${data.nonWorkingSkipped ? `, ${data.nonWorkingSkipped} non-working` : ''})${nonWorkingSuffix}`);
       setOutOfOfficeNotes('');
+      setOutOfOfficeDayPortion('full');
       await loadOutOfOfficeData();
     } catch (err: any) {
       setMessage(err.message || 'Failed to submit out-of-office request');
@@ -2073,6 +2102,17 @@ export default function ProfilePage() {
                       </div>
                     </div>
                     <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Day Portion</label>
+                      <select
+                        value={vacationDayPortion}
+                        onChange={(e) => setVacationDayPortion(e.target.value as LeaveDayPortion)}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      >
+                        <option value="full">Full Day (default)</option>
+                        <option value="half">Half Day</option>
+                      </select>
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
                       <input
                         type="text"
@@ -2087,7 +2127,7 @@ export default function ProfilePage() {
                       disabled={isSavingVacation}
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg"
                     >
-                      {isSavingVacation ? 'Submitting...' : `Request ${getVacationRequestDays()} day(s)`}
+                      {isSavingVacation ? 'Submitting...' : `Request ${formatLeaveUnits(getVacationRequestUnits())} day(s)`}
                     </button>
                   </div>
 
@@ -2101,6 +2141,9 @@ export default function ProfilePage() {
                           <div key={entry.Id} className="flex items-center justify-between p-2 rounded bg-gray-50 dark:bg-gray-700/50">
                             <span className="text-sm text-gray-900 dark:text-white">{String(entry.VacationDate).split('T')[0]}</span>
                             <div className="flex items-center gap-2">
+                              <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-100">
+                                {normalizeLeaveDayPortion(entry.DayPortion) === 'half' ? 'Half Day' : 'Full Day'}
+                              </span>
                               <span className={`text-xs px-2 py-1 rounded ${String(entry.Status).toLowerCase() === 'approved'
                                 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
                                 : String(entry.Status).toLowerCase() === 'rejected'
@@ -2169,6 +2212,17 @@ export default function ProfilePage() {
                       </div>
                     </div>
                     <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Day Portion</label>
+                      <select
+                        value={outOfOfficeDayPortion}
+                        onChange={(e) => setOutOfOfficeDayPortion(e.target.value as LeaveDayPortion)}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      >
+                        <option value="full">Full Day (default)</option>
+                        <option value="half">Half Day</option>
+                      </select>
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
                       <input
                         type="text"
@@ -2183,7 +2237,7 @@ export default function ProfilePage() {
                       disabled={isSavingOutOfOffice}
                       className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-gray-400 text-white rounded-lg"
                     >
-                      {isSavingOutOfOffice ? 'Submitting...' : `Request ${getOutOfOfficeRequestDays()} day(s)`}
+                      {isSavingOutOfOffice ? 'Submitting...' : `Request ${formatLeaveUnits(getOutOfOfficeRequestUnits())} day(s)`}
                     </button>
                   </div>
 
@@ -2197,6 +2251,9 @@ export default function ProfilePage() {
                           <div key={entry.Id} className="flex items-center justify-between p-2 rounded bg-gray-50 dark:bg-gray-700/50">
                             <span className="text-sm text-gray-900 dark:text-white">{String(entry.OutOfOfficeDate || entry.VacationDate).split('T')[0]}</span>
                             <div className="flex items-center gap-2">
+                              <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-100">
+                                {normalizeLeaveDayPortion(entry.DayPortion) === 'half' ? 'Half Day' : 'Full Day'}
+                              </span>
                               <span className={`text-xs px-2 py-1 rounded ${String(entry.Status).toLowerCase() === 'approved'
                                 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
                                 : String(entry.Status).toLowerCase() === 'rejected'

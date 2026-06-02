@@ -43,6 +43,7 @@ interface VacationRequest {
   UserId: number;
   VacationDate: string;
   OutOfOfficeDate?: string;
+  DayPortion?: 'full' | 'half' | string;
   Status: string;
   Notes?: string;
   HolidayConflict?: boolean;
@@ -63,6 +64,8 @@ interface VacationTeamMember {
   RejectedDays?: number;
 }
 
+type LeaveDayPortion = 'full' | 'half';
+
 const normalizeDateString = (dateValue: any): string => {
   if (dateValue instanceof Date) return dateValue.toISOString().split('T')[0];
   return String(dateValue).split('T')[0];
@@ -77,6 +80,19 @@ const getUserDisplayName = (entry: { FirstName?: string; LastName?: string; User
 const stripHtml = (value?: string) => {
   if (!value) return '';
   return value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+};
+
+const normalizeDayPortion = (value: unknown): 'full' | 'half' => {
+  return String(value || '').toLowerCase() === 'half' ? 'half' : 'full';
+};
+
+const getLeaveDayWeight = (request: VacationRequest): number => {
+  return normalizeDayPortion(request.DayPortion) === 'half' ? 0.5 : 1;
+};
+
+const formatLeaveDays = (value: number): string => {
+  if (!Number.isFinite(value)) return '0';
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 };
 
 const getApprovalBadge = (status?: string) => {
@@ -142,6 +158,7 @@ export default function ApprovalsPage() {
   const [vacationSortDirection, setVacationSortDirection] = useState<'asc' | 'desc'>('desc');
   const [configStartDate, setConfigStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [configEndDate, setConfigEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [configDayPortion, setConfigDayPortion] = useState<LeaveDayPortion>('full');
   const [configNotes, setConfigNotes] = useState('');
   const [isSavingVacationConfig, setIsSavingVacationConfig] = useState(false);
   const [showVacationConfigModal, setShowVacationConfigModal] = useState(false);
@@ -434,6 +451,7 @@ export default function ApprovalsPage() {
         body: JSON.stringify({
           startDate: configStartDate,
           endDate: configEndDate,
+          dayPortion: configDayPortion,
           notes: configNotes,
           status: 'approved',
         }),
@@ -450,6 +468,7 @@ export default function ApprovalsPage() {
         : '';
       setVacationMessage(`Configured ${leaveLabelPlural.toLowerCase()} (${data.created || 0} created, ${data.skipped || 0} skipped${data.exceeded ? `, ${data.exceeded} exceeded` : ''}${data.nonWorkingSkipped ? `, ${data.nonWorkingSkipped} non-working` : ''})${exceededSuffix}${nonWorkingSuffix}`);
       setConfigNotes('');
+      setConfigDayPortion('full');
       setShowVacationConfigModal(false);
       await loadVacationData();
     } catch (err: any) {
@@ -620,10 +639,17 @@ export default function ApprovalsPage() {
 
   const selectedVacationMember = vacationMembers.find((m) => String(m.Id) === selectedMemberId);
   const selectedMemberNotApproved = (selectedVacationMember?.PendingDays || 0) + (selectedVacationMember?.RejectedDays || 0);
-  const pendingVisibleVacationCount = sortedVacationRequests.filter((request) => String(request.Status).toLowerCase() === 'pending').length;
-  const approvedVacationCount = sortedVacationRequests.filter((request) => String(request.Status).toLowerCase() === 'approved').length;
-  const rejectedVacationCount = sortedVacationRequests.filter((request) => String(request.Status).toLowerCase() === 'rejected').length;
-  const totalVacationDays = sortedVacationRequests.length;
+  const pendingVisibleVacationCount = sortedVacationRequests
+    .filter((request) => String(request.Status).toLowerCase() === 'pending')
+    .reduce((sum, request) => sum + getLeaveDayWeight(request), 0);
+  const pendingVisibleVacationRequestCount = sortedVacationRequests.filter((request) => String(request.Status).toLowerCase() === 'pending').length;
+  const approvedVacationCount = sortedVacationRequests
+    .filter((request) => String(request.Status).toLowerCase() === 'approved')
+    .reduce((sum, request) => sum + getLeaveDayWeight(request), 0);
+  const rejectedVacationCount = sortedVacationRequests
+    .filter((request) => String(request.Status).toLowerCase() === 'rejected')
+    .reduce((sum, request) => sum + getLeaveDayWeight(request), 0);
+  const totalVacationDays = sortedVacationRequests.reduce((sum, request) => sum + getLeaveDayWeight(request), 0);
   const uniqueVacationUsers = new Set(sortedVacationRequests.map((r) => r.UserId)).size;
 
   return (
@@ -1188,22 +1214,22 @@ export default function ApprovalsPage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
                   <div className="text-sm text-yellow-600 dark:text-yellow-400 font-medium">⏳ Pending</div>
-                  <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{pendingVisibleVacationCount}</div>
+                  <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{formatLeaveDays(pendingVisibleVacationCount)}</div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">days awaiting approval</div>
                 </div>
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
                   <div className="text-sm text-green-600 dark:text-green-400 font-medium">✓ Approved</div>
-                  <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{approvedVacationCount}</div>
+                  <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{formatLeaveDays(approvedVacationCount)}</div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">days in current view</div>
                 </div>
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
                   <div className="text-sm text-red-600 dark:text-red-400 font-medium">✕ Rejected</div>
-                  <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{rejectedVacationCount}</div>
+                  <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{formatLeaveDays(rejectedVacationCount)}</div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">days in current view</div>
                 </div>
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
                   <div className="text-sm text-blue-600 dark:text-blue-400 font-medium">📅 Total Days</div>
-                  <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{totalVacationDays}</div>
+                  <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{formatLeaveDays(totalVacationDays)}</div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">across {uniqueVacationUsers} member{uniqueVacationUsers !== 1 ? 's' : ''}</div>
                 </div>
               </div>
@@ -1298,13 +1324,16 @@ export default function ApprovalsPage() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleApproveAllVisibleVacations}
-                      disabled={pendingVisibleVacationCount === 0 || vacationIsLoading}
+                      disabled={pendingVisibleVacationRequestCount === 0 || vacationIsLoading}
                       className="h-9 px-4 inline-flex items-center rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white transition-colors"
                     >
-                      Approve All ({pendingVisibleVacationCount})
+                      Approve All ({pendingVisibleVacationRequestCount})
                     </button>
                     <button
-                      onClick={() => setShowVacationConfigModal(true)}
+                      onClick={() => {
+                        setConfigDayPortion('full');
+                        setShowVacationConfigModal(true);
+                      }}
                       className="h-9 px-4 inline-flex items-center rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white transition-colors"
                     >
                       Add {leaveLabel}
@@ -1358,6 +1387,7 @@ export default function ApprovalsPage() {
                                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800" onClick={() => handleVacationSort('date')}>
                                     Date {vacationSortField === 'date' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
                                   </th>
+                                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Portion</th>
                                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800" onClick={() => handleVacationSort('status')}>
                                     Status {vacationSortField === 'status' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
                                   </th>
@@ -1375,6 +1405,9 @@ export default function ApprovalsPage() {
                                           ⚠ Holiday conflict{(request.HolidayNames || []).length > 0 ? `: ${(request.HolidayNames || []).join(', ')}` : ''}
                                         </div>
                                       )}
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+                                      {normalizeDayPortion(request.DayPortion) === 'half' ? 'Half Day' : 'Full Day'}
                                     </td>
                                     <td className="px-4 py-3 text-sm">
                                       {String(request.Status).toLowerCase() === 'approved' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">✓ Approved</span>}
@@ -1421,6 +1454,7 @@ export default function ApprovalsPage() {
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800" onClick={() => handleVacationSort('date')}>
                               Date {vacationSortField === 'date' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
                             </th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Portion</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800" onClick={() => handleVacationSort('status')}>
                               Status {vacationSortField === 'status' ? (vacationSortDirection === 'asc' ? '↑' : '↓') : ''}
                             </th>
@@ -1441,6 +1475,9 @@ export default function ApprovalsPage() {
                                     ⚠ Holiday conflict{(request.HolidayNames || []).length > 0 ? `: ${(request.HolidayNames || []).join(', ')}` : ''}
                                   </div>
                                 )}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+                                {normalizeDayPortion(request.DayPortion) === 'half' ? 'Half Day' : 'Full Day'}
                               </td>
                               <td className="px-4 py-3 text-sm">
                                 {String(request.Status).toLowerCase() === 'approved' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">✓ Approved</span>}
@@ -1533,6 +1570,18 @@ export default function ApprovalsPage() {
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                         />
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Day Portion</label>
+                      <select
+                        value={configDayPortion}
+                        onChange={(e) => setConfigDayPortion(e.target.value as LeaveDayPortion)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      >
+                        <option value="full">Full Day (default)</option>
+                        <option value="half">Half Day</option>
+                      </select>
                     </div>
 
                     <div>

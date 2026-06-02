@@ -136,6 +136,7 @@ interface HolidayItem {
 interface VacationCalendarItem {
   Id: number;
   VacationDate: string;
+  DayPortion?: 'full' | 'half' | string;
   Status: string;
   Notes?: string;
 }
@@ -143,9 +144,12 @@ interface VacationCalendarItem {
 interface OutOfOfficeCalendarItem {
   Id: number;
   OutOfOfficeDate: string;
+  DayPortion?: 'full' | 'half' | string;
   Status: string;
   Notes?: string;
 }
+
+type LeaveDayPortion = 'full' | 'half';
 
 interface CalendarEvent {
   id: string;
@@ -232,6 +236,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   const [vacationStartDate, setVacationStartDate] = useState<string>('');
   const [vacationEndDate, setVacationEndDate] = useState<string>('');
   const [vacationNotes, setVacationNotes] = useState('');
+  const [leaveDayPortion, setLeaveDayPortion] = useState<LeaveDayPortion>('full');
   const [isSaving, setIsSaving] = useState(false);
 
   const CALENDAR_HIDDEN_TYPES_KEY = 'dashboard_calendar_hidden_types';
@@ -786,9 +791,12 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       const start = new Date(year, month - 1, day, 0, 0, 0);
       const end = new Date(year, month - 1, day + 1, 0, 0, 0);
 
+      const dayPortion = normalizeLeaveDayPortion(vacation.DayPortion);
+      const dayPortionLabel = dayPortion === 'half' ? ' (Half Day)' : '';
+
       calendarEvents.push({
         id: `vacation-${vacation.Id}`,
-        title: `🏖️ Vacation${status === 'pending' ? ' (Pending)' : ''}`,
+        title: `🏖️ Vacation${dayPortionLabel}${status === 'pending' ? ' (Pending)' : ''}`,
         start,
         end,
         allDay: true,
@@ -796,7 +804,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
           type: 'vacation',
           vacationId: vacation.Id,
           vacationStatus: status,
-          description: vacation.Notes || '',
+          description: `${dayPortion === 'half' ? 'Half day' : 'Full day'}${vacation.Notes ? ` - ${vacation.Notes}` : ''}`,
         },
       });
     });
@@ -817,9 +825,12 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       const start = new Date(year, month - 1, day, 0, 0, 0);
       const end = new Date(year, month - 1, day + 1, 0, 0, 0);
 
+      const dayPortion = normalizeLeaveDayPortion(outOfOffice.DayPortion);
+      const dayPortionLabel = dayPortion === 'half' ? ' (Half Day)' : '';
+
       calendarEvents.push({
         id: `out-of-office-${outOfOffice.Id}`,
-        title: `🚫 Out Of Office${status === 'pending' ? ' (Pending)' : ''}`,
+        title: `🚫 Out Of Office${dayPortionLabel}${status === 'pending' ? ' (Pending)' : ''}`,
         start,
         end,
         allDay: true,
@@ -827,7 +838,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
           type: 'outOfOffice',
           outOfOfficeId: outOfOffice.Id,
           outOfOfficeStatus: status,
-          description: outOfOffice.Notes || '',
+          description: `${dayPortion === 'half' ? 'Half day' : 'Full day'}${outOfOffice.Notes ? ` - ${outOfOffice.Notes}` : ''}`,
         },
       });
     });
@@ -1019,6 +1030,10 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     };
   }, []);
 
+  function normalizeLeaveDayPortion(value: unknown): LeaveDayPortion {
+    return String(value || '').toLowerCase() === 'half' ? 'half' : 'full';
+  }
+
   const goToToday = () => setCurrentDate(new Date());
   const goBack = () => {
     const newDate = new Date(currentDate);
@@ -1056,6 +1071,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     setVacationStartDate(slotStartDate);
     setVacationEndDate(slotEndDateString);
     setVacationNotes('');
+    setLeaveDayPortion('full');
 
     setShowSlotModal(true);
   }, []);
@@ -1065,6 +1081,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     setSelectedSlot(null);
     setSlotAction('choice');
     setVacationNotes('');
+    setLeaveDayPortion('full');
   };
 
   const closeEditEntryModal = () => {
@@ -1282,6 +1299,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
             startDate: vacationStartDate,
             endDate: vacationEndDate,
             notes: vacationNotes,
+            dayPortion: leaveDayPortion,
           }),
         }
       );
@@ -1314,6 +1332,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
             startDate: vacationStartDate,
             endDate: vacationEndDate,
             notes: vacationNotes,
+            dayPortion: leaveDayPortion,
           }),
         }
       );
@@ -1645,6 +1664,20 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Day Portion
+                    </label>
+                    <select
+                      value={leaveDayPortion}
+                      onChange={(e) => setLeaveDayPortion(e.target.value as LeaveDayPortion)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="full">Full Day (default)</option>
+                      <option value="half">Half Day</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Notes
                     </label>
                     <input
@@ -1710,6 +1743,20 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Day Portion
+                    </label>
+                    <select
+                      value={leaveDayPortion}
+                      onChange={(e) => setLeaveDayPortion(e.target.value as LeaveDayPortion)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="full">Full Day (default)</option>
+                      <option value="half">Half Day</option>
+                    </select>
                   </div>
 
                   <div>

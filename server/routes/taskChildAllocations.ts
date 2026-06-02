@@ -32,12 +32,27 @@ const getHolidayDateSetForUser = async (userId: number, startDate: string, endDa
      FROM UserVacations
      WHERE UserId = ?
        AND LOWER(Status) = 'approved'
+       AND LOWER(COALESCE(DayPortion, 'full')) = 'full'
        AND VacationDate BETWEEN ? AND ?`,
     [userId, startDate, endDate]
   );
 
   for (const row of vacationRows) {
     result.add(normalizeDateKey(row.VacationDate));
+  }
+
+  const [outOfOfficeRows] = await pool.execute<RowDataPacket[]>(
+    `SELECT OutOfOfficeDate
+     FROM UserOutOfOffice
+     WHERE UserId = ?
+       AND LOWER(Status) = 'approved'
+       AND LOWER(COALESCE(DayPortion, 'full')) = 'full'
+       AND OutOfOfficeDate BETWEEN ? AND ?`,
+    [userId, startDate, endDate]
+  );
+
+  for (const row of outOfOfficeRows) {
+    result.add(normalizeDateKey(row.OutOfOfficeDate));
   }
 
   return result;

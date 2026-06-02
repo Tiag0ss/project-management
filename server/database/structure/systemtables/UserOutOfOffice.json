@@ -19,6 +19,12 @@
       "NotNullable": true
     },
     {
+      "FieldName": "DayPortion",
+      "DataType": "varchar(10)",
+      "NotNullable": true,
+      "DefaultValue": "full"
+    },
+    {
       "FieldName": "Status",
       "DataType": "varchar(20)",
       "NotNullable": true,

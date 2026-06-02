@@ -34,7 +34,15 @@ const getTaskUnscheduledFlag = async (taskId: number): Promise<number | null> =>
   return Number(rows[0].UnscheduledWork || 0);
 };
 
-const getHolidayDateSetForUser = async (userId: number, startDate: string, endDate: string): Promise<Set<string>> => {
+const normalizeDayPortion = (value: unknown): 'full' | 'half' => {
+  return String(value || '').toLowerCase() === 'half' ? 'half' : 'full';
+};
+
+const getDayPortionCapacityFactor = (value: unknown): number => {
+  return normalizeDayPortion(value) === 'half' ? 0.5 : 0;
+};
+
+const getDailyCapacityFactorMapForUser = async (userId: number, startDate: string, endDate: string): Promise<Map<string, number>> => {
   const [rows] = await pool.execute<RowDataPacket[]>(
     `SELECT h.HolidayDate
      FROM Users u
@@ -49,13 +57,13 @@ const getHolidayDateSetForUser = async (userId: number, startDate: string, endDa
     [userId, startDate, endDate]
   );
 
-  const result = new Set<string>();
+  const result = new Map<string, number>();
   for (const row of rows) {
-    result.add(normalizeDateKey(row.HolidayDate));
+    result.set(normalizeDateKey(row.HolidayDate), 0);
   }
 
   const [vacationRows] = await pool.execute<RowDataPacket[]>(
-    `SELECT VacationDate
+    `SELECT VacationDate, COALESCE(DayPortion, 'full') as DayPortion
      FROM UserVacations
      WHERE UserId = ?
        AND LOWER(Status) = 'approved'
@@ -64,7 +72,47 @@ const getHolidayDateSetForUser = async (userId: number, startDate: string, endDa
   );
 
   for (const row of vacationRows) {
-    result.add(normalizeDateKey(row.VacationDate));
+    const dateKey = normalizeDateKey(row.VacationDate);
+    const nextFactor = getDayPortionCapacityFactor(row.DayPortion);
+    const existing = result.get(dateKey);
+    if (existing === undefined) {
+      result.set(dateKey, nextFactor);
+    } else {
+      result.set(dateKey, Math.min(existing, nextFactor));
+    }
+  }
+
+  const [outOfOfficeRows] = await pool.execute<RowDataPacket[]>(
+    `SELECT OutOfOfficeDate, COALESCE(DayPortion, 'full') as DayPortion
+     FROM UserOutOfOffice
+     WHERE UserId = ?
+       AND LOWER(Status) = 'approved'
+       AND OutOfOfficeDate BETWEEN ? AND ?`,
+    [userId, startDate, endDate]
+  );
+
+  for (const row of outOfOfficeRows) {
+    const dateKey = normalizeDateKey(row.OutOfOfficeDate);
+    const nextFactor = getDayPortionCapacityFactor(row.DayPortion);
+    const existing = result.get(dateKey);
+    if (existing === undefined) {
+      result.set(dateKey, nextFactor);
+    } else {
+      result.set(dateKey, Math.min(existing, nextFactor));
+    }
+  }
+
+  return result;
+};
+
+const getHolidayDateSetForUser = async (userId: number, startDate: string, endDate: string): Promise<Set<string>> => {
+  const factorMap = await getDailyCapacityFactorMapForUser(userId, startDate, endDate);
+  const result = new Set<string>();
+
+  for (const [dateKey, factor] of factorMap.entries()) {
+    if (factor <= 0) {
+      result.add(dateKey);
+    }
   }
 
   return result;
@@ -879,7 +927,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
     const holidayWindowEnd = new Date(fromDate + 'T12:00:00');
     holidayWindowEnd.setDate(holidayWindowEnd.getDate() + 5475);
     const holidayWindowEndStr = normalizeDateKey(holidayWindowEnd.toISOString());
-    const holidayDates = await getHolidayDateSetForUser(Number(userId), normalizeDateKey(fromDate), holidayWindowEndStr);
+    const dayCapacityFactors = await getDailyCapacityFactorMapForUser(Number(userId), normalizeDateKey(fromDate), holidayWindowEndStr);
 
     const getDateKey = (date: Date): string => {
       return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -887,13 +935,11 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
     
     // Helper function to check if a date is a work day and get max hours
     const getWorkHoursForDay = (date: Date): number => {
-      if (holidayDates.has(getDateKey(date))) {
-        return 0;
-      }
+      const dayFactor = Math.max(0, Math.min(1, Number(dayCapacityFactors.get(getDateKey(date)) ?? 1)));
       const dayOfWeek = date.getDay();
       const dayName = dayNames[dayOfWeek];
       const workHoursKey = `WorkHours${dayName}`;
-      return parseFloat(user[workHoursKey] || 0);
+      return parseFloat(user[workHoursKey] || 0) * dayFactor;
     };
 
     const getWorkStartForDay = (date: Date): string => {
@@ -905,13 +951,11 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
 
     // Hobby helper functions
     const getHobbyHoursForDay = (date: Date): number => {
-      if (holidayDates.has(getDateKey(date))) {
-        return 0;
-      }
+      const dayFactor = Math.max(0, Math.min(1, Number(dayCapacityFactors.get(getDateKey(date)) ?? 1)));
       const dayOfWeek = date.getDay();
       const dayName = dayNames[dayOfWeek];
       const hobbyHoursKey = `HobbyHours${dayName}`;
-      return parseFloat(user[hobbyHoursKey] || 0);
+      return parseFloat(user[hobbyHoursKey] || 0) * dayFactor;
     };
 
     const getHobbyStartForDay = (date: Date): string => {
@@ -1619,7 +1663,7 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
     }
 
     const user = users[0];
-    const holidayDates = await getHolidayDateSetForUser(Number(userId), String(startDate), String(endDate));
+    const dayCapacityFactors = await getDailyCapacityFactorMapForUser(Number(userId), String(startDate), String(endDate));
 
     // Pre-compute lunch parameters for window sizing (hobby tasks have no lunch break)
     const lunchDurForWindow = forHobby
@@ -1743,7 +1787,9 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
 
       // Use local date components to stay consistent with getDay()
       const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-      const isHoliday = holidayDates.has(dateStr);
+      const dayCapacityFactor = Math.max(0, Math.min(1, Number(dayCapacityFactors.get(dateStr) ?? 1)));
+      const adjustedMaxHours = maxHours * dayCapacityFactor;
+      const isHoliday = adjustedMaxHours <= 0;
       
       // Find allocation from merged map (direct + child allocations)
       const allocated = allocationMap.get(dateStr);
@@ -1751,7 +1797,7 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
       const latestEndTime = allocated?.latestEndTime || null;
 
       // Calculate available hours based on remaining time window, not just capacity minus allocated
-      let availableHours = isHoliday ? 0 : Math.max(0, maxHours - allocatedHours);
+      let availableHours = isHoliday ? 0 : Math.max(0, adjustedMaxHours - allocatedHours);
       
       // If there are existing allocations with an end time, cap available hours
       // by the remaining time in the configured window.
@@ -1759,17 +1805,17 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
       // is an independent header that can start at the beginning of the work day, so the
       // latestEndTime from other slices must NOT restrict the window — only raw capacity matters.
       const skipLatestEndTimeCap = !!excludeHeaderId;
-      if (!isHoliday && latestEndTime && maxHours > 0 && !skipLatestEndTimeCap) {
+      if (!isHoliday && latestEndTime && adjustedMaxHours > 0 && !skipLatestEndTimeCap) {
         const [slotStartH, slotStartM] = slotStartTime.split(':').map(Number);
         const slotStartMinutes = slotStartH * 60 + slotStartM;
         // Account for lunch duration when computing the end of the work-day window:
         // WorkHours = productive hours (not counting lunch), so the calendar window is
         // WorkHours * 60 + lunchDuration if lunch falls inside the work period.
-        let slotEndMinutes = slotStartMinutes + maxHours * 60;
+        let slotEndMinutes = slotStartMinutes + adjustedMaxHours * 60;
         if (
           lunchDurForWindow > 0 &&
           slotStartMinutes < lunchWindowStartMinutes &&
-          slotStartMinutes + maxHours * 60 > lunchWindowStartMinutes
+          slotStartMinutes + adjustedMaxHours * 60 > lunchWindowStartMinutes
         ) {
           slotEndMinutes += lunchDurForWindow;
         }
@@ -1788,7 +1834,7 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
       availability.push({
         date: dateStr,
         dayOfWeek: dayName,
-        maxHours: isHoliday ? 0 : maxHours,
+        maxHours: isHoliday ? 0 : adjustedMaxHours,
         allocatedHours,
         availableHours,
         workStartTime: slotStartTime,
@@ -1796,7 +1842,8 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
         // work-day start, not after existing slices — signal this by omitting latestEndTime.
         latestEndTime: skipLatestEndTimeCap ? null : latestEndTime,
         isHobby: forHobby,
-        isHoliday
+        isHoliday,
+        dayCapacityFactor
       });
     }
 
@@ -3069,8 +3116,9 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
     const isHobby = task.IsHobby === 1;
 
     const normalizedAllocationDate = normalizeDateKey(allocationDate);
-    const holidayDates = await getHolidayDateSetForUser(Number(userId), normalizedAllocationDate, normalizedAllocationDate);
-    if (holidayDates.has(normalizedAllocationDate)) {
+    const dayCapacityFactorsForDate = await getDailyCapacityFactorMapForUser(Number(userId), normalizedAllocationDate, normalizedAllocationDate);
+    const dayCapacityFactor = Math.max(0, Math.min(1, Number(dayCapacityFactorsForDate.get(normalizedAllocationDate) ?? 1)));
+    if (dayCapacityFactor <= 0) {
       return res.status(400).json({
         success: false,
         message: `Cannot allocate on holiday date ${normalizedAllocationDate}`
@@ -3103,9 +3151,10 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
     const dayName = dayNames[dayOfWeek];
 
     // Get work hours for this day based on task type
-    const dailyCapacity = isHobby
+    const dailyCapacityBase = isHobby
       ? parseFloat(user[`HobbyHours${dayName}`] || 0)
       : parseFloat(user[`WorkHours${dayName}`] || 0);
+    const dailyCapacity = dailyCapacityBase * dayCapacityFactor;
 
     if (dailyCapacity <= 0) {
       return res.status(400).json({
@@ -3337,8 +3386,9 @@ router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Respo
     }
     const { TaskId, UserId, AllocationDate } = allocation;
     const allocationDateKey = normalizeDateKey(AllocationDate);
-    const holidayDates = await getHolidayDateSetForUser(Number(UserId), allocationDateKey, allocationDateKey);
-    if (holidayDates.has(allocationDateKey)) {
+    const dayCapacityFactorsForDate = await getDailyCapacityFactorMapForUser(Number(UserId), allocationDateKey, allocationDateKey);
+    const dayCapacityFactor = Math.max(0, Math.min(1, Number(dayCapacityFactorsForDate.get(allocationDateKey) ?? 1)));
+    if (dayCapacityFactor <= 0) {
       return res.status(400).json({
         success: false,
         message: `Cannot allocate on holiday date ${allocationDateKey}`
@@ -3381,9 +3431,10 @@ router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Respo
     const dayOfWeek = date.getDay();
     const dayName = dayNames[dayOfWeek];
 
-    const dailyCapacity = isHobby
+    const dailyCapacityBase = isHobby
       ? parseFloat(user[`HobbyHours${dayName}`] || 0)
       : parseFloat(user[`WorkHours${dayName}`] || 0);
+    const dailyCapacity = dailyCapacityBase * dayCapacityFactor;
 
     if (dailyCapacity <= 0) {
       return res.status(400).json({
