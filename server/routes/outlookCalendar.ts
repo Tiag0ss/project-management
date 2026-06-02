@@ -6,6 +6,34 @@ import { decrypt } from '../utils/encryption';
 
 const router = Router();
 
+const INVALID_USER_CACHE_TTL_MS = 15 * 60 * 1000;
+const TOKEN_SAFETY_WINDOW_MS = 30 * 1000;
+
+let graphTokenCache: {
+  accessToken: string;
+  expiresAtMs: number;
+} | null = null;
+
+const invalidOutlookUserCache = new Map<string, number>();
+
+const normalizeCacheEmail = (email: string): string => String(email || '').trim().toLowerCase();
+
+const isInvalidOutlookUserCached = (email: string): boolean => {
+  const key = normalizeCacheEmail(email);
+  const expiresAt = invalidOutlookUserCache.get(key);
+  if (!expiresAt) return false;
+  if (Date.now() >= expiresAt) {
+    invalidOutlookUserCache.delete(key);
+    return false;
+  }
+  return true;
+};
+
+const markInvalidOutlookUserCached = (email: string) => {
+  const key = normalizeCacheEmail(email);
+  invalidOutlookUserCache.set(key, Date.now() + INVALID_USER_CACHE_TTL_MS);
+};
+
 interface OutlookTargetUser {
   Id: number;
   Email: string;
@@ -158,35 +186,46 @@ router.get('/events', authenticateToken, async (req: AuthRequest, res: Response)
     const startDateTime = `${startDate}T00:00:00Z`;
     const endDateTime = `${endDate}T23:59:59Z`;
 
-    const tokenParams = new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: clientId,
-      client_secret: clientSecret,
-      scope: 'https://graph.microsoft.com/.default',
-    });
-
-    const tokenResponse = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: tokenParams.toString(),
-    });
-
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      console.error('[OutlookCalendar] Microsoft Graph token request failed:', errorText);
-      return res.status(502).json({
-        success: false,
-        message: 'Failed to authenticate with Microsoft Graph.',
-        details: errorText,
+    let accessToken = '';
+    if (graphTokenCache && graphTokenCache.expiresAtMs > Date.now() + TOKEN_SAFETY_WINDOW_MS) {
+      accessToken = graphTokenCache.accessToken;
+    } else {
+      const tokenParams = new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: clientId,
+        client_secret: clientSecret,
+        scope: 'https://graph.microsoft.com/.default',
       });
-    }
 
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token as string;
-    if (!accessToken) {
-      return res.status(502).json({ success: false, message: 'Microsoft Graph token was not returned.' });
+      const tokenResponse = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: tokenParams.toString(),
+      });
+
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text();
+        console.error('[OutlookCalendar] Microsoft Graph token request failed:', errorText);
+        return res.status(502).json({
+          success: false,
+          message: 'Failed to authenticate with Microsoft Graph.',
+          details: errorText,
+        });
+      }
+
+      const tokenData = await tokenResponse.json();
+      accessToken = tokenData.access_token as string;
+      if (!accessToken) {
+        return res.status(502).json({ success: false, message: 'Microsoft Graph token was not returned.' });
+      }
+
+      const expiresInSec = Number(tokenData.expires_in || 3600);
+      graphTokenCache = {
+        accessToken,
+        expiresAtMs: Date.now() + Math.max(60, expiresInSec) * 1000,
+      };
     }
 
     const warnings: string[] = [];
@@ -194,6 +233,11 @@ router.get('/events', authenticateToken, async (req: AuthRequest, res: Response)
 
     await Promise.all(targetUsers.map(async (targetUser) => {
       try {
+        if (isInvalidOutlookUserCached(targetUser.Email)) {
+          warnings.push(`Skipped Outlook events for ${targetUser.Email}: cached invalid user.`);
+          return;
+        }
+
         const graphUrl = new URL(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(targetUser.Email)}/calendarView`);
         graphUrl.searchParams.set('startDateTime', startDateTime);
         graphUrl.searchParams.set('endDateTime', endDateTime);
@@ -210,6 +254,9 @@ router.get('/events', authenticateToken, async (req: AuthRequest, res: Response)
 
         if (!eventsResponse.ok) {
           const bodyText = await eventsResponse.text();
+          if (bodyText.includes('ErrorInvalidUser')) {
+            markInvalidOutlookUserCached(targetUser.Email);
+          }
           warnings.push(`Failed to fetch Outlook events for ${targetUser.Email}: ${bodyText}`);
           return;
         }
