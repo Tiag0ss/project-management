@@ -9,6 +9,7 @@ interface TableExportRequestBody {
   filename?: unknown;
   headers?: unknown;
   rows?: unknown;
+  layout?: unknown;
 }
 
 const MAX_COLUMNS = 20;
@@ -25,11 +26,16 @@ function sanitizeFilename(filename: string): string {
   return normalized || 'report';
 }
 
+function sanitizeLayout(layout: unknown): 'portrait' | 'landscape' {
+  return String(layout || '').toLowerCase() === 'portrait' ? 'portrait' : 'landscape';
+}
+
 router.post('/table', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const body = req.body as TableExportRequestBody;
     const title = toSafeString(body.title || 'Report').slice(0, 100);
     const filename = sanitizeFilename(toSafeString(body.filename || 'report'));
+    const layout = sanitizeLayout(body.layout);
 
     if (!Array.isArray(body.headers) || body.headers.length === 0) {
       return res.status(400).json({ success: false, message: 'Headers are required' });
@@ -51,7 +57,7 @@ router.post('/table', authenticateToken, async (req: AuthRequest, res: Response)
       return rowValues;
     });
 
-    const doc = new PDFDocument({ margin: 40, size: 'A4', layout: 'landscape' });
+    const doc = new PDFDocument({ margin: 40, size: 'A4', layout });
     const safeFilename = `${filename}_${new Date().toISOString().split('T')[0]}.pdf`;
 
     res.setHeader('Content-Type', 'application/pdf');

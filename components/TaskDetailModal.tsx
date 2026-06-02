@@ -405,6 +405,7 @@ export default function TaskDetailModal({
   const [moveTargetProjectId, setMoveTargetProjectId] = useState<number | undefined>(undefined);
   const [availableMoveProjects, setAvailableMoveProjects] = useState<Project[]>([]);
   const [isMovingTask, setIsMovingTask] = useState(false);
+  const [isPreparingPrint, setIsPreparingPrint] = useState(false);
   const [newProjectNameForMove, setNewProjectNameForMove] = useState('');
   const [projectStatusesForMove, setProjectStatusesForMove] = useState<StatusValue[]>([]);
   const [loadingMoveMetadata, setLoadingMoveMetadata] = useState(false);
@@ -1857,6 +1858,239 @@ export default function TaskDetailModal({
     : (['details', 'hours'] as const)
   );
 
+  const handleExportTaskPdf = async () => {
+    if (!task?.Id) {
+      showAlert('Print Error', 'Task must be saved before printing.');
+      return;
+    }
+
+    const escapeHtml = (value: unknown): string => String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+    const toDateOnly = (value: unknown): string => {
+      const raw = String(value || '').trim();
+      if (!raw) return '-';
+      return raw.split('T')[0];
+    };
+
+    const toText = (value: unknown): string => {
+      const text = String(value ?? '').trim();
+      return text || '-';
+    };
+
+    const assigneesLabel = taskAssignees.length > 0
+      ? taskAssignees
+          .map((assignee) => {
+            const fullName = `${String(assignee.FirstName || '').trim()} ${String(assignee.LastName || '').trim()}`.trim();
+            return fullName || assignee.Username;
+          })
+          .filter(Boolean)
+          .join(', ')
+      : toText(task.AssigneeName);
+
+    const tagsLabel = taskTags.length > 0
+      ? taskTags.map((tag) => tag.Name).join(', ')
+      : '-';
+
+    const totalAllocatedHours = taskAllocations.reduce((sum, allocation) => sum + (parseFloat(String(allocation.AllocatedHours)) || 0), 0);
+    const totalWorkedHours = timeEntries.reduce((sum, entry) => sum + (parseFloat(String(entry.Hours)) || 0), 0);
+    const descriptionHtml = String(task.Description || '').trim() || '<p>No description provided.</p>';
+
+    const summaryItems = [
+      { label: 'Task ID', value: String(task.Id) },
+      { label: 'Project', value: toText(task.ProjectName || project?.ProjectName || project?.Name) },
+      { label: 'Status', value: toText(task.StatusName || formData.status) },
+      { label: 'Priority', value: toText(task.PriorityName || formData.priority) },
+      { label: 'Type', value: toText(task.TaskTypeName || formData.taskType) },
+      { label: 'Assignees', value: assigneesLabel },
+      { label: 'Tags', value: tagsLabel },
+      { label: 'Customer', value: toText(headerCustomerName) },
+      { label: 'Depends On', value: toText(task.DependsOnTaskName) },
+      { label: 'Due Date', value: toDateOnly(task.DueDate) },
+      { label: 'Planned Start', value: toDateOnly(task.PlannedStartDate) },
+      { label: 'Planned End', value: toDateOnly(task.PlannedEndDate) },
+      { label: 'Estimated', value: decimalHoursToHMS(parseFloat(String(task.EstimatedHours || 0)) || 0) },
+      { label: 'Allocated', value: decimalHoursToHMS(totalAllocatedHours) },
+      { label: 'Worked', value: decimalHoursToHMS(totalWorkedHours) },
+      { label: 'Completion', value: `${Number(task.CompletionPercentage || completionPercentage || 0)}%` },
+      { label: 'Created At', value: toDateOnly(task.CreatedAt) },
+      { label: 'Updated At', value: toDateOnly(task.UpdatedAt) },
+    ];
+
+    const metaRowsHtml = summaryItems
+      .map((item) => `
+        <tr>
+          <th>${escapeHtml(item.label)}</th>
+          <td>${escapeHtml(item.value)}</td>
+        </tr>
+      `)
+      .join('');
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8" />
+        <title>Task ${escapeHtml(task.TaskName)} - Print</title>
+        <style>
+          @page { size: A4 portrait; margin: 12mm; }
+          * { box-sizing: border-box; }
+          body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            color: #111827;
+            margin: 0;
+            line-height: 1.35;
+            background: #ffffff;
+          }
+          .sheet {
+            max-width: 180mm;
+            margin: 0 auto;
+          }
+          .header {
+            border-bottom: 2px solid #d1d5db;
+            padding-bottom: 10px;
+            margin-bottom: 14px;
+          }
+          .title {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 700;
+            color: #0f172a;
+          }
+          .subtitle {
+            margin-top: 4px;
+            font-size: 12px;
+            color: #4b5563;
+          }
+          .section {
+            margin-bottom: 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+            page-break-inside: avoid;
+          }
+          .section-title {
+            margin: 0;
+            padding: 8px 10px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #0f172a;
+            background: #f3f4f6;
+            border-bottom: 1px solid #e5e7eb;
+          }
+          table.meta {
+            width: 100%;
+            border-collapse: collapse;
+          }
+          table.meta th,
+          table.meta td {
+            text-align: left;
+            vertical-align: top;
+            padding: 7px 10px;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 12px;
+          }
+          table.meta th {
+            width: 34%;
+            color: #374151;
+            background: #fafafa;
+            font-weight: 600;
+          }
+          table.meta tr:last-child th,
+          table.meta tr:last-child td {
+            border-bottom: none;
+          }
+          .description {
+            padding: 10px;
+            font-size: 12px;
+            color: #111827;
+          }
+          .description img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+            margin: 8px 0;
+            page-break-inside: avoid;
+          }
+          .description table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 8px 0;
+          }
+          .description table,
+          .description th,
+          .description td {
+            border: 1px solid #d1d5db;
+          }
+          .description th,
+          .description td {
+            padding: 6px;
+          }
+          .description pre,
+          .description code {
+            white-space: pre-wrap;
+            word-break: break-word;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="sheet">
+          <div class="header">
+            <h1 class="title">${escapeHtml(task.TaskName || 'Task Details')}</h1>
+            <div class="subtitle">Generated on ${escapeHtml(new Date().toLocaleString())}</div>
+          </div>
+
+          <section class="section">
+            <h2 class="section-title">Main Fields</h2>
+            <table class="meta">
+              <tbody>
+                ${metaRowsHtml}
+              </tbody>
+            </table>
+          </section>
+
+          <section class="section">
+            <h2 class="section-title">Description</h2>
+            <div class="description">${descriptionHtml}</div>
+          </section>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      showAlert('Print Error', 'Unable to open print window. Please allow popups and try again.');
+      return;
+    }
+
+    setIsPreparingPrint(true);
+    try {
+      printWindow.document.open();
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.focus();
+
+      printWindow.onload = () => {
+        setTimeout(() => {
+          printWindow.print();
+        }, 250);
+      };
+
+      printWindow.onafterprint = () => {
+        printWindow.close();
+      };
+    } catch (err: any) {
+      showAlert('Print Error', err?.message || 'Failed to prepare print preview.');
+    } finally {
+      setIsPreparingPrint(false);
+    }
+  };
+
   const renderTaskTagBadge = (tag: Tag) => {
     const segments = tag.Name
       .split('/')
@@ -2081,6 +2315,18 @@ export default function TaskDetailModal({
             <div ref={taskActionsMenuRef} className="relative ml-4 flex items-center gap-2">
               {task?.Id && (
                 <>
+                  <button
+                    type="button"
+                    onClick={handleExportTaskPdf}
+                    disabled={isPreparingPrint}
+                    className={`${headerIconButtonClass} disabled:opacity-50`}
+                    title={isPreparingPrint ? 'Preparing print...' : 'Print task'}
+                    aria-label="Print task as PDF"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 9V4h12v5M6 14H5a2 2 0 01-2-2v-1a2 2 0 012-2h14a2 2 0 012 2v1a2 2 0 01-2 2h-1M6 14v6h12v-6M9 17h6" />
+                    </svg>
+                  </button>
                   <button
                     type="button"
                     onClick={() => setShowTaskActionsMenu((prev) => !prev)}

@@ -5,6 +5,7 @@ export interface PdfTableExportPayload {
   filename: string;
   headers: string[];
   rows: Array<Array<string | number | boolean | null | undefined>>;
+  layout?: 'portrait' | 'landscape';
 }
 
 export async function downloadTablePdf(payload: PdfTableExportPayload, token: string): Promise<void> {
