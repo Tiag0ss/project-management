@@ -1,0 +1,280 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f141b;
+  --panel: #1a2430;
+  --panel-2: #243241;
+  --text: #dbe6f3;
+  --muted: #9fb3c8;
+  --accent: #d02f3f;
+  --accent-hover: #b82735;
+  --border: #304455;
+}
+
+* {
+  box-sizing: border-box;
+  font-family: 'Segoe UI', Tahoma, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at top right, #1b2a3a, var(--bg) 45%);
+  color: var(--text);
+}
+
+body.compact-mode {
+  overflow: hidden;
+}
+
+.app-shell {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+body.compact-mode .app-shell {
+  padding: 10px;
+  gap: 8px;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.app-header {
+  align-items: flex-start;
+}
+
+.app-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.card {
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+}
+
+.between {
+  justify-content: space-between;
+  align-items: center;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+input,
+select,
+textarea,
+button {
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0f1a25;
+  color: var(--text);
+  padding: 8px;
+}
+
+button {
+  cursor: pointer;
+}
+
+.icon-button {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.icon-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+button.primary:hover {
+  background: var(--accent-hover);
+}
+
+button.danger {
+  background: #751a28;
+  border-color: #8b2535;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.checkbox-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.hidden {
+  display: none;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-card {
+  background: #13202b;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal-card h3 {
+  margin: 0 0 6px;
+}
+
+.modal-card p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.searchable-select {
+  position: relative;
+}
+
+.search-trigger {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.search-trigger-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-trigger-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chevron-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.active-title-wrap {
+  align-items: center;
+}
+
+.timer-elapsed {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.search-menu {
+  position: absolute;
+  z-index: 1000;
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #12202c;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.search-input-wrap {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-input-wrap input {
+  width: 100%;
+}
+
+.search-options {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.search-option,
+.search-empty {
+  padding: 8px;
+  font-size: 13px;
+}
+
+.search-option {
+  cursor: pointer;
+}
+
+.search-option:hover,
+.search-option.selected {
+  background: #1f2d3d;
+}
+
+.search-empty {
+  color: var(--muted);
+}
+
+body.compact-mode .app-header,
+body.compact-mode #loginCard,
+body.compact-mode #startCard {
+  display: none !important;
+}
+
+.session-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}

@@ -26,6 +26,7 @@ yarn-error.log*
 
 # production
 /build
+/release
 
 # misc
 .DS_Store

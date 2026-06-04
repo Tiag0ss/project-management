@@ -1,0 +1,41 @@
+{
+  "name": "pm-desktop-timer",
+  "version": "0.1.0",
+  "description": "Desktop timer app for time entries and call records",
+  "author": "Project Management",
+  "main": "main.js",
+  "private": true,
+  "build": {
+    "appId": "com.projectmanagement.desktop",
+    "productName": "PM Desktop Timer",
+    "directories": {
+      "output": "../release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "electronVersion": "33.2.1",
+    "npmRebuild": false,
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
+  },
+  "dependencies": {
+    "electron-store": "^10.0.1"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1"
+  }
+}

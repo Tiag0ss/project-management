@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PM Desktop Timer</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="app-header row between">
+      <div>
+        <h1>Desktop Timer</h1>
+        <p>Time Entries and Call Records</p>
+      </div>
+      <div class="row">
+        <button id="headerCollapseButton" class="hidden">Collapse</button>
+        <button id="openSettingsButton" class="icon-button hidden" title="Settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+        <button id="minimizeWindowButton" class="icon-button hidden" title="Minimize" aria-label="Minimize">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+        <button id="closeWindowButton" class="icon-button hidden" title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <section id="statusBox" class="card muted">Not authenticated</section>
+
+    <section id="loginCard" class="card">
+      <h2>Login</h2>
+      <label>
+        API URL
+        <input id="apiUrl" type="url" placeholder="http://localhost:3000" />
+      </label>
+      <label>
+        Username
+        <input id="username" type="text" />
+      </label>
+      <label>
+        Password
+        <input id="password" type="password" />
+      </label>
+      <button id="loginButton" class="primary">Sign in</button>
+    </section>
+
+    <section id="timerCard" class="card hidden">
+      <div class="row between">
+        <div class="row active-title-wrap">
+          <h2>Active Timer</h2>
+          <span id="activeTimerElapsed" class="timer-elapsed">00:00:00</span>
+        </div>
+        <div class="row">
+          <button id="toggleCompactButton" class="hidden">Expand</button>
+          <button id="refreshButton">Refresh</button>
+        </div>
+      </div>
+      <div id="activeTimerInfo" class="muted">Task: No active timer</div>
+      <div class="row">
+        <button id="stopButton" class="danger" disabled>Stop</button>
+        <button id="discardButton" disabled>Discard</button>
+      </div>
+    </section>
+
+    <section id="startCard" class="card hidden">
+      <h2>Start Timer</h2>
+      <div class="row">
+        <button id="modeTask" class="primary">Task</button>
+        <button id="modeCall">Call</button>
+      </div>
+
+      <div id="taskForm">
+        <label>
+          Task
+          <div id="taskSearch" class="searchable-select">
+            <button id="taskSearchTrigger" type="button" class="search-trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span id="taskSearchValue" class="search-trigger-value">Select Task</span>
+              <span class="search-trigger-icons">
+                <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </span>
+            </button>
+            <div id="taskSearchMenu" class="search-menu hidden">
+              <div class="search-input-wrap">
+                <input id="taskSearchInput" type="text" placeholder="Search task..." />
+              </div>
+              <div id="taskSearchOptions" class="search-options" role="listbox"></div>
+            </div>
+          </div>
+        </label>
+        <label>
+          Description
+          <textarea id="taskDescription" rows="2"></textarea>
+        </label>
+        <button id="startTaskButton" class="primary">Start Task Timer</button>
+      </div>
+
+      <div id="callForm" class="hidden">
+        <label>
+          Call Type
+          <select id="callType">
+            <option value="Teams">Teams</option>
+            <option value="Phone">Phone</option>
+            <option value="Meeting">Meeting</option>
+          </select>
+        </label>
+        <label>
+          Participants
+          <input id="participants" type="text" placeholder="Client, Teammate" />
+        </label>
+        <label>
+          Subject
+          <input id="subject" type="text" />
+        </label>
+        <label>
+          Notes
+          <textarea id="callDescription" rows="2"></textarea>
+        </label>
+        <button id="startCallButton" class="primary">Start Call Timer</button>
+      </div>
+    </section>
+
+  </main>
+
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="row between">
+        <h3>Settings</h3>
+        <button id="closeSettingsButton" class="icon-button" title="Close" aria-label="Close settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <label>
+        Idle timeout (minutes)
+        <input id="idleMinutes" type="number" min="1" max="240" />
+      </label>
+      <label>
+        Auto-stop grace (seconds)
+        <input id="graceSeconds" type="number" min="10" max="3600" />
+      </label>
+      <label class="checkbox-row">
+        <input id="alwaysOnTop" type="checkbox" />
+        Always on top
+      </label>
+      <div class="row">
+        <button id="saveSettingsButton">Save Settings</button>
+      </div>
+      <div class="session-actions">
+        <span class="muted">Session</span>
+        <button id="logoutButton" class="danger">Logout</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="idleModal" class="modal hidden">
+    <div class="modal-card">
+      <h3>Inactivity detected</h3>
+      <p id="idleMessage"></p>
+      <p id="idleCountdown"></p>
+      <div class="row">
+        <button id="idleContinue" class="primary">Continue</button>
+        <button id="idleStop" class="danger">Stop</button>
+        <button id="idleSwitch">Switch</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./renderer.js"></script>
+</body>
+</html>
