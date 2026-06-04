@@ -399,6 +399,13 @@
       "Comment": "Date and time of the most recent successful login or token refresh"
     },
     {
+      "FieldName": "AzureAdObjectId",
+      "DataType": "varchar(64)",
+      "NotNullable": false,
+      "DefaultValue": null,
+      "Comment": "Azure AD object id (GUID) used to match this user against Microsoft Graph call records and Outlook events without requiring User.Read.All permission"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

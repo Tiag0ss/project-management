@@ -131,6 +131,7 @@ export default function ProfilePage() {
     navbarLeftCollapsed: false,
     dashboardCalendarInOverview: true,
     hoursDisplayFormat: 'hms',
+    azureAdObjectId: '',
   });
   const [profileRegions, setProfileRegions] = useState<{ code: string; name: string }[]>([]);
   
@@ -323,6 +324,7 @@ export default function ProfilePage() {
           navbarLeftCollapsed: !!profile.NavbarLeftCollapsed,
           dashboardCalendarInOverview: Number(profile.DashboardCalendarInOverview ?? 1) === 1,
           hoursDisplayFormat: (profile.HoursDisplayFormat || 'hms') === 'decimal' ? 'decimal' : 'hms',
+          azureAdObjectId: profile.AzureAdObjectId || '',
         });
       }
     } catch (err) {
@@ -1383,6 +1385,34 @@ export default function ProfilePage() {
                       />
                     ) : (
                       <p className="text-gray-900 dark:text-white">{user.email}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Azure AD Object ID
+                    </label>
+                    {isEditingProfile ? (
+                      <>
+                        <input
+                          type="text"
+                          value={profileForm.azureAdObjectId}
+                          onChange={(e) => setProfileForm(prev => ({ ...prev, azureAdObjectId: e.target.value }))}
+                          placeholder="00000000-0000-0000-0000-000000000000"
+                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
+                        />
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          Required to import your Microsoft Teams call records. Find your &quot;oid&quot; at{' '}
+                          <a href="https://myaccount.microsoft.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 underline">
+                            myaccount.microsoft.com
+                          </a>{' '}
+                          → Profile → Show JSON.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-gray-900 dark:text-white font-mono text-sm">
+                        {profileForm.azureAdObjectId || <span className="text-gray-400 italic">Not set</span>}
+                      </p>
                     )}
                   </div>
                   

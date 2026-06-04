@@ -126,6 +126,8 @@ router.get('/events', authenticateToken, async (req: AuthRequest, res: Response)
     const isAdmin = Number(currentUser.IsAdmin || 0) === 1;
     const isManager = Number(currentUser.IsManager || 0) === 1;
 
+    const selfOnly = req.query.selfOnly === 'true' || req.query.selfOnly === '1';
+
     const targetUsersMap = new Map<number, OutlookTargetUser>();
     if (currentUser.Email && String(currentUser.Email).trim()) {
       targetUsersMap.set(Number(currentUser.Id), {
@@ -137,7 +139,7 @@ router.get('/events', authenticateToken, async (req: AuthRequest, res: Response)
       });
     }
 
-    if (includeTeamForManagers && (isAdmin || isManager)) {
+    if (!selfOnly && includeTeamForManagers && (isAdmin || isManager)) {
       const [teamRows] = await pool.execute<RowDataPacket[]>(
         `SELECT DISTINCT u.Id, u.Email, u.Username, u.FirstName, u.LastName
          FROM OrganizationMembers omSelf
@@ -233,10 +235,10 @@ router.get('/events', authenticateToken, async (req: AuthRequest, res: Response)
 
     await Promise.all(targetUsers.map(async (targetUser) => {
       try {
-        if (isInvalidOutlookUserCached(targetUser.Email)) {
+      /*  if (isInvalidOutlookUserCached(targetUser.Email)) {
           warnings.push(`Skipped Outlook events for ${targetUser.Email}: cached invalid user.`);
           return;
-        }
+        }*/
 
         const graphUrl = new URL(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(targetUser.Email)}/calendarView`);
         graphUrl.searchParams.set('startDateTime', startDateTime);
@@ -269,8 +271,17 @@ router.get('/events', authenticateToken, async (req: AuthRequest, res: Response)
           : (targetUser.Username || targetUser.Email);
 
         values.forEach((eventItem: any) => {
-          const start = eventItem?.start?.dateTime || eventItem?.start?.date;
-          const end = eventItem?.end?.dateTime || eventItem?.end?.date;
+          // Graph returns UTC datetimes without a timezone designator (e.g. "2026-06-03T09:00:00.0000000").
+          // Append 'Z' so browsers and Date.parse() always treat them as UTC, not local time.
+          const normalizeGraphDt = (dt: string | undefined): string | undefined => {
+            if (!dt) return dt;
+            if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(dt) && !/[Zz]$/.test(dt) && !/[+-]\d{2}:\d{2}$/.test(dt)) {
+              return dt + 'Z';
+            }
+            return dt;
+          };
+          const start = normalizeGraphDt(eventItem?.start?.dateTime) || eventItem?.start?.date;
+          const end = normalizeGraphDt(eventItem?.end?.dateTime) || eventItem?.end?.date;
           if (!start || !end) return;
 
           events.push({

@@ -23,6 +23,207 @@ const toTimeKey = (value: Date): string => {
 
 const cleanString = (value: unknown): string => String(value || '').trim();
 
+const GUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isGuidLike = (value: string): boolean => GUID_REGEX.test(value.trim());
+const MACHINE_LIKE_NAME_REGEX = /^[A-Z0-9]+(?:-[A-Z0-9]+)+$/;
+const isMachineLikeName = (value: string): boolean => MACHINE_LIKE_NAME_REGEX.test(value.trim());
+
+const pushIdentity = (aadIds: Set<string>, names: Set<string>, identityLike: any): void => {
+  const identity = identityLike?.identity || identityLike;
+  const user = identity?.user || identityLike?.user;
+  const associatedIdentity = identityLike?.associatedIdentity;
+  const phone = identity?.phone || identityLike?.phone;
+  const spoolUser = identity?.spoolUser || identityLike?.spoolUser;
+  const acsUser = identity?.acsUser || identityLike?.acsUser;
+  const applicationInstance = identity?.applicationInstance || identityLike?.applicationInstance;
+  const device = identity?.device || identityLike?.device;
+  const isSystemIdentity = !!(applicationInstance || device || spoolUser || acsUser);
+
+  const aadId = cleanString(
+    user?.id ||
+    associatedIdentity?.id ||
+    phone?.id ||
+    spoolUser?.id ||
+    acsUser?.id ||
+    identityLike?.userId ||
+    identityLike?.id
+  ).toLowerCase();
+
+  const name = cleanString(
+    user?.displayName ||
+    associatedIdentity?.displayName ||
+    phone?.displayName ||
+    spoolUser?.displayName ||
+    acsUser?.displayName ||
+    identityLike?.displayName ||
+    identityLike?.name
+  );
+
+  if (aadId) aadIds.add(aadId);
+  if (name && !isGuidLike(name) && !isMachineLikeName(name) && !isSystemIdentity) names.add(name);
+};
+
+const extractParticipants = (record: any): { aadIds: string[]; names: string[] } => {
+  const aadIds = new Set<string>();
+  const names = new Set<string>();
+
+  if (record?.organizer_v2) {
+    pushIdentity(aadIds, names, record.organizer_v2);
+  }
+
+  if (record?.organizer?.user) {
+    pushIdentity(aadIds, names, record.organizer.user);
+  }
+
+  const participantsRoot = Array.isArray(record?.participants_v2)
+    ? record.participants_v2
+    : Array.isArray(record?.participants)
+    ? record.participants
+    : [];
+  participantsRoot.forEach((p: any) => pushIdentity(aadIds, names, p));
+
+  const sessions = Array.isArray(record?.sessions) ? record.sessions : [];
+  sessions.forEach((session: any) => {
+    if (session?.caller) pushIdentity(aadIds, names, session.caller);
+    if (session?.callee) pushIdentity(aadIds, names, session.callee);
+
+    const sessionParticipants = Array.isArray(session?.participants_v2)
+      ? session.participants_v2
+      : Array.isArray(session?.participants)
+      ? session.participants
+      : [];
+    sessionParticipants.forEach((p: any) => pushIdentity(aadIds, names, p));
+
+    const segments = Array.isArray(session?.segments) ? session.segments : [];
+    segments.forEach((segment: any) => {
+      if (segment?.caller) pushIdentity(aadIds, names, segment.caller);
+      if (segment?.callee) pushIdentity(aadIds, names, segment.callee);
+    });
+  });
+
+  return { aadIds: Array.from(aadIds), names: Array.from(names) };
+};
+
+const getExplicitTeamsSubject = (record: any): string => cleanString(
+  record?.subject ||
+  record?.title ||
+  record?.meetingInfo?.subject ||
+  record?.meetingInfo?.displayName ||
+  record?.meetingSubject ||
+  record?.callInfo?.subject
+);
+
+const escapeODataString = (value: string): string => value.replace(/'/g, "''");
+
+const getCallRecordOrganizerAadId = (record: any): string => cleanString(
+  record?.organizer_v2?.identity?.user?.id ||
+  record?.organizer_v2?.user?.id ||
+  record?.organizer?.user?.id
+).toLowerCase();
+
+/**
+ * Teams meeting titles live on onlineMeeting.subject, not on callRecord.
+ * Resolve via joinWebUrl (see Microsoft Graph callRecord.joinWebUrl).
+ */
+const resolveOnlineMeetingSubjectByJoinWebUrl = async (
+  accessToken: string,
+  joinWebUrl: string,
+  graphUserIds: string[],
+  cache: Map<string, string>
+): Promise<string> => {
+  const normalizedUrl = cleanString(joinWebUrl);
+  if (!normalizedUrl) return '';
+
+  if (cache.has(normalizedUrl)) {
+    return cache.get(normalizedUrl) || '';
+  }
+
+  const filterValue = escapeODataString(normalizedUrl);
+  const uniqueUserIds = Array.from(
+    new Set(graphUserIds.map((id) => cleanString(id).toLowerCase()).filter(Boolean))
+  );
+
+  for (const graphUserId of uniqueUserIds) {
+    const requestUrl =
+      `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(graphUserId)}/onlineMeetings` +
+      `?$filter=${encodeURIComponent(`joinWebUrl eq '${filterValue}'`)}` +
+      '&$select=subject&$top=1';
+
+    try {
+      const response = await fetch(requestUrl, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!response.ok) {
+        continue;
+      }
+
+      const data: any = await response.json();
+      const subject = cleanString(Array.isArray(data?.value) ? data.value[0]?.subject : '');
+      if (subject) {
+        cache.set(normalizedUrl, subject);
+        return subject;
+      }
+    } catch {
+      // try next user scope
+    }
+  }
+
+  cache.set(normalizedUrl, '');
+  return '';
+};
+
+const getTeamsSubject = (
+  record: any,
+  participantNames: string[],
+  currentUserAadId?: string,
+  resolvedMeetingSubject?: string
+): string => {
+  const explicitSubject = getExplicitTeamsSubject(record) || cleanString(resolvedMeetingSubject);
+  if (explicitSubject) return explicitSubject;
+
+  const recordType = cleanString(record?.type).toLowerCase();
+  const organizerName = cleanString(record?.organizer_v2?.identity?.user?.displayName || record?.organizer?.user?.displayName);
+  const participantCount = participantNames.length;
+
+  if (recordType === 'groupcall') {
+    if (participantCount > 0) {
+      const others = participantNames.filter((name) => !!name);
+      const shownNames = others.slice(0, 3).join(', ');
+      if (participantCount > 3) {
+        return `Group call with ${shownNames} +${participantCount - 3} more`;
+      }
+      return `Group call with ${shownNames}`;
+    }
+    if (organizerName) {
+      return `Group call by ${organizerName}`;
+    }
+    return 'Teams Group Call';
+  }
+
+  if (recordType === 'peertopeer') {
+    if (participantCount > 0) {
+      return `Call with ${participantNames[0]}`;
+    }
+    if (organizerName) {
+      return `Call by ${organizerName}`;
+    }
+    return 'Teams Call';
+  }
+
+  if (participantNames.length > 0) {
+    const maxNames = participantNames.slice(0, 3).join(', ');
+    return `Call with ${maxNames}`;
+  }
+
+  if (organizerName) {
+    return `Call by ${organizerName}`;
+  }
+
+  return 'Teams Call';
+};
+
 /**
  * @swagger
  * tags:
@@ -460,9 +661,18 @@ router.post('/import/teams-recent', authenticateToken, async (req: AuthRequest, 
     const { periodType, startDate, endDate } = req.body || {};
 
     const now = new Date();
-    let computedStart = new Date(now);
-    let computedEnd = new Date(now);
-    computedEnd.setHours(23, 59, 59, 999);
+    // Subtract a safety buffer from "now" to absorb clock skew between the Docker container
+    // and Microsoft Graph servers. Graph rejects any endDateTime that is "in the future"
+    // relative to its own clock, so we pull the upper bound back by 5 minutes.
+    const clockSkewBufferMs = 5 * 60 * 1000;
+    const safeNow = new Date(now.getTime() - clockSkewBufferMs);
+    let computedStart = new Date(safeNow);
+    let computedEnd = new Date(safeNow);
+
+    // The Graph /communications/callRecords API only allows filtering within the last 30 days.
+    // Use a 29-day lookback to leave a safety buffer below the strict 30-day boundary.
+    const maxLookbackMs = 29 * 24 * 60 * 60 * 1000;
+    const earliestAllowed = new Date(now.getTime() - maxLookbackMs);
 
     if (periodType === 'custom') {
       const customStart = cleanString(startDate);
@@ -472,19 +682,29 @@ router.post('/import/teams-recent', authenticateToken, async (req: AuthRequest, 
       }
       computedStart = new Date(`${customStart}T00:00:00`);
       computedEnd = new Date(`${customEnd}T23:59:59`);
+      // Never send a future timestamp to Graph (use safeNow which already includes clock-skew buffer)
+      if (computedEnd > safeNow) {
+        computedEnd = new Date(safeNow);
+      }
       if (computedEnd < computedStart) {
         return res.status(400).json({ success: false, message: 'End date must be after or equal to start date.' });
+      }
+      // Clamp to Graph API 30-day limit
+      if (computedStart < earliestAllowed) {
+        computedStart = earliestAllowed;
       }
     } else {
       const periodMap: Record<string, number> = {
         '7d': 7,
         '30d': 30,
-        '90d': 90,
       };
-      const days = periodMap[String(periodType || '30d')] || 30;
-      computedStart = new Date(now);
-      computedStart.setDate(computedStart.getDate() - (days - 1));
-      computedStart.setHours(0, 0, 0, 0);
+      const days = Math.min(periodMap[String(periodType || '30d')] || 30, 30);
+      // Compute start as exactly N*24h ago from safeNow (already buffered for clock skew),
+      // then clamp to the Graph 30-day boundary as an extra safety check.
+      computedStart = new Date(safeNow.getTime() - days * 24 * 60 * 60 * 1000);
+      if (computedStart < earliestAllowed) {
+        computedStart = earliestAllowed;
+      }
     }
 
     const [settingsRows] = await pool.execute<RowDataPacket[]>(
@@ -510,7 +730,7 @@ router.post('/import/teams-recent', authenticateToken, async (req: AuthRequest, 
     }
 
     const [userRows] = await pool.execute<RowDataPacket[]>(
-      `SELECT Id, Email, Username, FirstName, LastName
+      `SELECT Id, Email, Username, FirstName, LastName, AzureAdObjectId
        FROM Users
        WHERE Id = ?`,
       [userId]
@@ -554,68 +774,289 @@ router.post('/import/teams-recent', authenticateToken, async (req: AuthRequest, 
       return res.status(502).json({ success: false, message: 'Microsoft Graph access token was not returned.' });
     }
 
-    const graphUrl = new URL('https://graph.microsoft.com/v1.0/communications/callRecords');
-    graphUrl.searchParams.set('$top', '200');
-    graphUrl.searchParams.set(
-      '$filter',
-      `startDateTime ge ${computedStart.toISOString()} and startDateTime le ${computedEnd.toISOString()}`
-    );
+    const expandPagedParticipants = async (record: any): Promise<any> => {
+      const mergedParticipants = Array.isArray(record?.participants_v2) ? [...record.participants_v2] : [];
+      let nextParticipantsUrl = typeof record?.['participants_v2@odata.nextLink'] === 'string'
+        ? record['participants_v2@odata.nextLink']
+        : null;
 
-    const recordsResponse = await fetch(graphUrl.toString(), {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+      while (nextParticipantsUrl) {
+        const participantsResp = await fetch(nextParticipantsUrl, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
 
-    if (!recordsResponse.ok) {
-      const bodyText = await recordsResponse.text();
-      return res.status(502).json({
+        if (!participantsResp.ok) {
+          break;
+        }
+
+        const participantsData: any = await participantsResp.json();
+        const pageItems = Array.isArray(participantsData?.value) ? participantsData.value : [];
+        mergedParticipants.push(...pageItems);
+        nextParticipantsUrl = typeof participantsData?.['@odata.nextLink'] === 'string'
+          ? participantsData['@odata.nextLink']
+          : null;
+      }
+
+      return {
+        ...record,
+        participants_v2: mergedParticipants,
+      };
+    };
+
+    const expandPagedSessions = async (record: any): Promise<any> => {
+      const mergedSessions = Array.isArray(record?.sessions) ? [...record.sessions] : [];
+      let nextSessionsUrl = typeof record?.['sessions@odata.nextLink'] === 'string'
+        ? record['sessions@odata.nextLink']
+        : null;
+
+      while (nextSessionsUrl) {
+        const sessionsResp = await fetch(nextSessionsUrl, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+
+        if (!sessionsResp.ok) {
+          break;
+        }
+
+        const sessionsData: any = await sessionsResp.json();
+        const pageItems = Array.isArray(sessionsData?.value) ? sessionsData.value : [];
+        mergedSessions.push(...pageItems);
+        nextSessionsUrl = typeof sessionsData?.['@odata.nextLink'] === 'string'
+          ? sessionsData['@odata.nextLink']
+          : null;
+      }
+
+      return {
+        ...record,
+        sessions: mergedSessions,
+      };
+    };
+
+    // Resolve the current user's Azure AD object id. Call records identify participants by
+    // AAD GUID (identity.user.id), NOT by email, so we cannot match against the email alone.
+    // Prefer the value stored on the user profile (no Graph permission required). If absent,
+    // try to look it up via Graph (requires User.ReadBasic.All or User.Read.All app permission).
+    let currentUserAadId = cleanString(currentUser.AzureAdObjectId).toLowerCase();
+    let userLookupError = '';
+
+    if (!currentUserAadId) {
+      const tryFetchUserId = async (url: string): Promise<string> => {
+        try {
+          const resp = await fetch(url, { method: 'GET', headers: { Authorization: `Bearer ${accessToken}` } });
+          if (resp.ok) {
+            const data: any = await resp.json();
+            if (Array.isArray(data?.value) && data.value.length > 0) {
+              return cleanString(data.value[0]?.id).toLowerCase();
+            }
+            return cleanString(data?.id).toLowerCase();
+          }
+          const body = await resp.text();
+          userLookupError = `${resp.status} ${body.slice(0, 300)}`;
+          return '';
+        } catch (err: any) {
+          userLookupError = String(err?.message || err);
+          return '';
+        }
+      };
+
+      currentUserAadId = await tryFetchUserId(
+        `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(currentUserEmail)}?$select=id`
+      );
+      if (!currentUserAadId) {
+        currentUserAadId = await tryFetchUserId(
+          `https://graph.microsoft.com/v1.0/users?$filter=${encodeURIComponent(`mail eq '${currentUserEmail}'`)}&$select=id&$top=1`
+        );
+      }
+      if (!currentUserAadId) {
+        currentUserAadId = await tryFetchUserId(
+          `https://graph.microsoft.com/v1.0/users?$filter=${encodeURIComponent(`userPrincipalName eq '${currentUserEmail}'`)}&$select=id&$top=1`
+        );
+      }
+      if (!currentUserAadId) {
+        currentUserAadId = await tryFetchUserId(
+          `https://graph.microsoft.com/v1.0/users?$filter=${encodeURIComponent(`proxyAddresses/any(p:p eq 'SMTP:${currentUserEmail}')`)}&$select=id&$top=1`
+        );
+      }
+
+      // Persist successful lookup so subsequent imports skip the Graph call entirely.
+      if (currentUserAadId) {
+        try {
+          await pool.execute(
+            `UPDATE Users SET AzureAdObjectId = ? WHERE Id = ?`,
+            [currentUserAadId, userId]
+          );
+        } catch {
+          // non-fatal
+        }
+      }
+    }
+
+    if (!currentUserAadId) {
+      return res.status(400).json({
         success: false,
-        message: 'Failed to fetch Teams call records from Microsoft Graph.',
-        details: bodyText,
+        message: `Unable to resolve Azure AD user id for ${currentUserEmail}. Set the AzureAdObjectId on your user profile (you can find your "oid" at https://myaccount.microsoft.com → Profile → Show JSON), or have an admin grant User.ReadBasic.All application permission to the app registration.`,
+        details: userLookupError || 'No matching user found in Azure AD via UPN, mail, or proxyAddresses lookup.',
       });
     }
 
-    const recordsData = await recordsResponse.json();
-    const records = Array.isArray(recordsData.value) ? recordsData.value : [];
+    // Filter by participant id at the Graph level so we fetch only the current user's calls.
+    const firstUrl = new URL('https://graph.microsoft.com/v1.0/communications/callRecords');
+    firstUrl.searchParams.set(
+      '$filter',
+      `startDateTime ge ${computedStart.toISOString()} and startDateTime lt ${computedEnd.toISOString()} and participants_v2/any(p:p/id eq '${currentUserAadId}')`
+    );
+
+    const records: any[] = [];
+    let nextUrl: string | null = firstUrl.toString();
+    const MAX_PAGES = 20; // safety cap
+    let pagesFetched = 0;
+
+    while (nextUrl && pagesFetched < MAX_PAGES) {
+      const recordsResponse: Awaited<ReturnType<typeof fetch>> = await fetch(nextUrl, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Prefer: 'odata.maxpagesize=130',
+        },
+      });
+
+      if (!recordsResponse.ok) {
+        const bodyText = await recordsResponse.text();
+        return res.status(502).json({
+          success: false,
+          message: 'Failed to fetch Teams call records from Microsoft Graph.',
+          details: bodyText,
+        });
+      }
+
+      const recordsData: any = await recordsResponse.json();
+      const pageRecords = Array.isArray(recordsData.value) ? recordsData.value : [];
+      records.push(...pageRecords);
+      nextUrl = typeof recordsData['@odata.nextLink'] === 'string' ? recordsData['@odata.nextLink'] : null;
+      pagesFetched++;
+    }
 
     let imported = 0;
     let skipped = 0;
     let failed = 0;
+    let detailFetches = 0;
+    let sessionsFetches = 0;
+    let detailFetchFailures = 0;
+    let sessionsFetchFailures = 0;
+    const detailFetchSamples: Array<{ id: string; status: number; body: string }> = [];
+    const sessionsFetchSamples: Array<{ id: string; status: number; body: string }> = [];
+    const skipReasons: Record<string, number> = {
+      invalidPayload: 0,
+      notInvolved: 0,
+      invalidStartDate: 0,
+      duplicateExternal: 0,
+      duplicateNatural: 0,
+    };
+    const meetingSubjectCache = new Map<string, string>();
+    let meetingSubjectLookups = 0;
+    let meetingSubjectHits = 0;
+    const currentUserDisplayName = cleanString(
+      [currentUser.FirstName, currentUser.LastName].filter(Boolean).join(' ') || currentUser.Username
+    ).toLowerCase();
+
+    const makeNaturalKey = (callDate: string, startTime: string, durationMinutes: number, subject: string): string =>
+      `${callDate}|${startTime}|${durationMinutes}|Teams|${subject}`;
+
+    const existingExternalIds = new Set<string>();
+    const existingNaturalKeys = new Set<string>();
+    const [existingRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT ExternalCallId, CallDate, StartTime, COALESCE(DurationMinutes, 0) AS DurationMinutes, COALESCE(Subject, '') AS Subject
+       FROM CallRecords
+       WHERE UserId = ?
+         AND ExternalSource = ?
+         AND CallDate >= ?
+         AND CallDate <= ?`,
+      [userId, 'teams', toDateKey(computedStart), toDateKey(computedEnd)]
+    );
+
+    existingRows.forEach((row) => {
+      const externalId = cleanString(row.ExternalCallId);
+      if (externalId) {
+        existingExternalIds.add(externalId);
+      }
+      const callDate = cleanString(row.CallDate);
+      const startTime = cleanString(row.StartTime);
+      const durationMinutes = Number(row.DurationMinutes || 0);
+      const subject = cleanString(row.Subject);
+      if (callDate && startTime) {
+        existingNaturalKeys.add(makeNaturalKey(callDate, startTime, durationMinutes, subject));
+      }
+    });
 
     for (const callRecord of records) {
       try {
         const externalCallId = cleanString(callRecord?.id);
-        const startDateTime = cleanString(callRecord?.startDateTime);
-        const endDateTime = cleanString(callRecord?.endDateTime);
+        let startDateTime = cleanString(callRecord?.startDateTime);
+        let endDateTime = cleanString(callRecord?.endDateTime);
         if (!externalCallId || !startDateTime) {
+          skipReasons.invalidPayload++;
           skipped++;
           continue;
         }
 
-        const organizerEmail = cleanString(callRecord?.organizer?.user?.id || callRecord?.organizer?.user?.email).toLowerCase();
+        let sourceRecord = callRecord;
+        let extracted = extractParticipants(sourceRecord);
 
-        const participantsRaw = Array.isArray(callRecord?.participants_v2)
-          ? callRecord.participants_v2
-          : Array.isArray(callRecord?.participants)
-          ? callRecord.participants
-          : [];
-
-        const participantEmails = participantsRaw
-          .map((participant: any) => cleanString(participant?.identity?.user?.id || participant?.identity?.user?.email || participant?.userId).toLowerCase())
-          .filter((email: string) => !!email);
-
-        const participantNames = participantsRaw
-          .map((participant: any) => cleanString(participant?.identity?.user?.displayName || participant?.displayName))
-          .filter((name: string) => !!name);
-
-        const involved = organizerEmail === currentUserEmail || participantEmails.includes(currentUserEmail);
-        if (!involved) {
-          skipped++;
-          continue;
+        // The list endpoint of /communications/callRecords does NOT include the participants_v2
+        // relationship, so we must always fetch the detail with $expand. Microsoft Graph allows
+        // only ONE $expand at a time on this endpoint, so we expand participants_v2 (sessions
+        // would need a separate call).
+        const detailResp = await fetch(
+          `https://graph.microsoft.com/v1.0/communications/callRecords/${encodeURIComponent(externalCallId)}?$expand=participants_v2`,
+          { method: 'GET', headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        detailFetches++;
+        if (detailResp.ok) {
+          sourceRecord = await detailResp.json();
+          sourceRecord = await expandPagedParticipants(sourceRecord);
+        } else {
+          detailFetchFailures++;
+          const failBody = await detailResp.text().catch(() => '');
+          if (detailFetchSamples.length < 3) {
+            detailFetchSamples.push({ id: externalCallId, status: detailResp.status, body: failBody.slice(0, 500) });
+          }
+          console.error('Teams call detail fetch failed', externalCallId, detailResp.status, failBody.slice(0, 500));
         }
+
+        // Graph only allows a single $expand item on this endpoint. Fetch sessions/segments
+        // in a second call and merge into the same source record before extraction/subject logic.
+        const sessionsResp = await fetch(
+          `https://graph.microsoft.com/v1.0/communications/callRecords/${encodeURIComponent(externalCallId)}?$expand=sessions($expand=segments)`,
+          { method: 'GET', headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        sessionsFetches++;
+        if (sessionsResp.ok) {
+          const sessionsRecord = await sessionsResp.json();
+          const expandedSessionsRecord = await expandPagedSessions(sessionsRecord);
+          sourceRecord = {
+            ...sourceRecord,
+            sessions: Array.isArray(expandedSessionsRecord?.sessions)
+              ? expandedSessionsRecord.sessions
+              : sourceRecord?.sessions,
+          };
+        } else {
+          sessionsFetchFailures++;
+          const failBody = await sessionsResp.text().catch(() => '');
+          if (sessionsFetchSamples.length < 3) {
+            sessionsFetchSamples.push({ id: externalCallId, status: sessionsResp.status, body: failBody.slice(0, 500) });
+          }
+          console.error('Teams call sessions fetch failed', externalCallId, sessionsResp.status, failBody.slice(0, 500));
+        }
+
+        startDateTime = cleanString(sourceRecord?.startDateTime || startDateTime);
+        endDateTime = cleanString(sourceRecord?.endDateTime || endDateTime);
+        extracted = extractParticipants(sourceRecord);
 
         const start = new Date(startDateTime);
         if (Number.isNaN(start.getTime())) {
+          skipReasons.invalidStartDate++;
           skipped++;
           continue;
         }
@@ -627,36 +1068,43 @@ router.post('/import/teams-recent', authenticateToken, async (req: AuthRequest, 
 
         const callDate = toDateKey(start);
         const startTime = toTimeKey(start);
-        const participants = participantNames.join(', ') || null;
-        const subject = cleanString(callRecord?.type || 'Teams Call') || 'Teams Call';
+        const participants = extracted.names.join(', ') || null;
 
-        const [existingByExternal] = await pool.execute<RowDataPacket[]>(
-          `SELECT Id
-           FROM CallRecords
-           WHERE UserId = ? AND ExternalSource = ? AND ExternalCallId = ?
-           LIMIT 1`,
-          [userId, 'teams', externalCallId]
+        const participantNamesForSubject = extracted.names.filter(
+          (name) => cleanString(name).toLowerCase() !== currentUserDisplayName
         );
 
-        if (existingByExternal.length > 0) {
+        const joinWebUrl = cleanString(sourceRecord?.joinWebUrl);
+        let resolvedMeetingSubject = '';
+        if (joinWebUrl) {
+          meetingSubjectLookups++;
+          resolvedMeetingSubject = await resolveOnlineMeetingSubjectByJoinWebUrl(
+            accessToken,
+            joinWebUrl,
+            [currentUserAadId, getCallRecordOrganizerAadId(sourceRecord)],
+            meetingSubjectCache
+          );
+          if (resolvedMeetingSubject) {
+            meetingSubjectHits++;
+          }
+        }
+
+        const subject = getTeamsSubject(
+          sourceRecord,
+          participantNamesForSubject.length > 0 ? participantNamesForSubject : extracted.names,
+          currentUserAadId,
+          resolvedMeetingSubject
+        );
+        const naturalKey = makeNaturalKey(callDate, startTime, durationMinutes, subject);
+
+        if (existingExternalIds.has(externalCallId)) {
+          skipReasons.duplicateExternal++;
           skipped++;
           continue;
         }
 
-        const [existingByNatural] = await pool.execute<RowDataPacket[]>(
-          `SELECT Id
-           FROM CallRecords
-           WHERE UserId = ?
-             AND CallDate = ?
-             AND StartTime = ?
-             AND COALESCE(DurationMinutes, 0) = ?
-             AND COALESCE(CallType, '') = ?
-             AND COALESCE(Subject, '') = ?
-           LIMIT 1`,
-          [userId, callDate, startTime, durationMinutes, 'Teams', subject]
-        );
-
-        if (existingByNatural.length > 0) {
+        if (existingNaturalKeys.has(naturalKey)) {
+          skipReasons.duplicateNatural++;
           skipped++;
           continue;
         }
@@ -679,6 +1127,9 @@ router.post('/import/teams-recent', authenticateToken, async (req: AuthRequest, 
           ]
         );
 
+        existingExternalIds.add(externalCallId);
+        existingNaturalKeys.add(naturalKey);
+
         imported++;
       } catch (error) {
         failed++;
@@ -692,6 +1143,16 @@ router.post('/import/teams-recent', authenticateToken, async (req: AuthRequest, 
       imported,
       skipped,
       failed,
+      detailFetches,
+      sessionsFetches,
+      detailFetchFailures,
+      sessionsFetchFailures,
+      detailFetchSamples,
+      sessionsFetchSamples,
+      skipReasons,
+      meetingSubjectLookups,
+      meetingSubjectHits,
+      recordsFetched: records.length,
       period: {
         startDate: toDateKey(computedStart),
         endDate: toDateKey(computedEnd),

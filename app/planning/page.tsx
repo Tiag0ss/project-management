@@ -6633,6 +6633,19 @@ export default function PlanningPage() {
 
       console.log('Planning with settings:', { isHobby, maxHoursPerDay, userLunchTime, userLunchDuration, lunchStartMinutes, lunchEndMinutes, userId: user.Id, totalHoursToAllocate: remainingHoursToWork });
       
+      // Pre-compute Outlook-blocked hours per date for this user (non-all-day events only)
+      const outlookBlockedHoursByDate = new Map<string, number>();
+      for (const evt of outlookTimelineEvents) {
+        if (Number(evt.userId) !== userId || evt.isAllDay) continue;
+        const evtDateStr = normalizeDateKey(evt.start);
+        if (!evtDateStr) continue;
+        const startMs = new Date(evt.start).getTime();
+        const endMs = new Date(evt.end).getTime();
+        if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) continue;
+        const durationHours = (endMs - startMs) / 3600000;
+        outlookBlockedHoursByDate.set(evtDateStr, (outlookBlockedHoursByDate.get(evtDateStr) || 0) + durationHours);
+      }
+
       while (remainingHours > 0 && daysProcessed < maxDaysToProcess) {
         const dateStr = currentDate.toISOString().split('T')[0];
 
@@ -6642,6 +6655,11 @@ export default function PlanningPage() {
         }
 
         const dayAvailability = availability.find((a: any) => a.date === dateStr);
+        // Reduce available hours by time blocked by Outlook calendar events
+        if (dayAvailability) {
+          const outlookBlocked = outlookBlockedHoursByDate.get(dateStr) || 0;
+          dayAvailability.availableHours = Math.max(0, dayAvailability.availableHours - outlookBlocked);
+        }
         
         if (dayAvailability && dayAvailability.availableHours > 0) {
           // Get start time for this day - use hobby or work start depending on task type
@@ -6971,11 +6989,11 @@ export default function PlanningPage() {
 
   // Calculate daily totals for a specific user using actual allocations
   const getUserDailyTotals = (userId: number, days: Date[]) => {
-    const totals: { [dateStr: string]: { work: number; hobby: number; recurring: number } } = {};
+    const totals: { [dateStr: string]: { work: number; hobby: number; recurring: number; outlook: number } } = {};
     
     days.forEach(day => {
       const dateStr = getDateKeyFromDate(day);
-      totals[dateStr] = { work: 0, hobby: 0, recurring: 0 };
+      totals[dateStr] = { work: 0, hobby: 0, recurring: 0, outlook: 0 };
     });
     
     // Use actual allocations for this user
@@ -7003,6 +7021,21 @@ export default function PlanningPage() {
       if (totals[dateStr] !== undefined) {
         const hours = Number(recurring.AllocatedHours) || 0;
         totals[dateStr].recurring += hours;
+      }
+    });
+
+    // Add Outlook calendar event blocked hours (non-all-day events only)
+    const userOutlookEvts = outlookTimelineEvents.filter(ev => Number(ev.userId) === userId && !ev.isAllDay);
+    userOutlookEvts.forEach(ev => {
+      const startMs = new Date(ev.start).getTime();
+      const endMs = new Date(ev.end).getTime();
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return;
+      const durationHours = (endMs - startMs) / 3600000;
+      // Use local date from the UTC-parsed Date object
+      const evtDate = new Date(ev.start);
+      const dateStr = getDateKeyFromDate(evtDate);
+      if (totals[dateStr] !== undefined) {
+        totals[dateStr].outlook += durationHours;
       }
     });
     
@@ -8719,7 +8752,7 @@ export default function PlanningPage() {
                   };
 
                   const getTimelineColumnSummary = (column: TimelineColumn) => {
-                    const totals = { work: 0, hobby: 0, recurring: 0 };
+                    const totals = { work: 0, hobby: 0, recurring: 0, outlook: 0 };
                     let workCapacity = 0;
                     let hobbyCapacity = 0;
                     let isOverAllocated = false;
@@ -8732,16 +8765,17 @@ export default function PlanningPage() {
 
                     while (cursor <= end) {
                       const dateStr = getDateKeyFromDate(cursor);
-                      const dayTotals = userDailyTotals[dateStr] || { work: 0, hobby: 0, recurring: 0 };
+                      const dayTotals = userDailyTotals[dateStr] || { work: 0, hobby: 0, recurring: 0, outlook: 0 };
                       totals.work += dayTotals.work;
                       totals.hobby += dayTotals.hobby;
                       totals.recurring += dayTotals.recurring;
+                      totals.outlook += dayTotals.outlook || 0;
 
                       const dayCapacities = getDayCapacities(cursor);
                       workCapacity += dayCapacities.workCapacity;
                       hobbyCapacity += dayCapacities.hobbyCapacity;
 
-                      const totalWorkUsed = dayTotals.work + dayTotals.recurring;
+                      const totalWorkUsed = dayTotals.work + dayTotals.recurring + (dayTotals.outlook || 0);
                       const dayOverAllocated =
                         (dayCapacities.workCapacity > 0 && totalWorkUsed > dayCapacities.workCapacity + 0.001) ||
                         (dayCapacities.hobbyCapacity > 0 && dayTotals.hobby > dayCapacities.hobbyCapacity + 0.001);
@@ -8935,7 +8969,23 @@ export default function PlanningPage() {
                   const hasRecurringForUser = recurringAllocations.some((recurring) => recurring.UserId === userRow.Id);
                   const hasOutlookForUser = outlookTimelineEvents.some((outlookEvent) => Number(outlookEvent.userId) === Number(userRow.Id));
                   const recurringLaneHeight = hasRecurringForUser ? 18 : 0;
-                  const outlookLaneHeight = hasOutlookForUser ? 18 : 0;
+                  // Compute per-column lane indices for Outlook events so multiple events on the same day stack vertically.
+                  const userOutlookEvents = outlookTimelineEvents.filter((ev) => Number(ev.userId) === Number(userRow.Id));
+                  const outlookColLaneCounter = new Map<number, number>();
+                  const outlookEventLanes = userOutlookEvents.map((ev) => {
+                    const evDateStr = normalizeDateKey(ev.start);
+                    const colIdx = timelineColumns.findIndex((col) => {
+                      const s = getDateKeyFromDate(col.start);
+                      const e = getDateKeyFromDate(col.end);
+                      return evDateStr >= s && evDateStr <= e;
+                    });
+                    const laneIndex = outlookColLaneCounter.get(colIdx) || 0;
+                    outlookColLaneCounter.set(colIdx, laneIndex + 1);
+                    return { evId: ev.id, laneIndex };
+                  });
+                  const maxOutlookLanes = Math.max(1, ...Array.from(outlookColLaneCounter.values()));
+                  const OUTLOOK_LANE_H = 20;
+                  const outlookLaneHeight = hasOutlookForUser ? maxOutlookLanes * OUTLOOK_LANE_H + 4 : 0;
                   const recurringLaneTop = hasRecurringForUser ? Math.max(maxRows * ROW_H + 4, ROW_H) : 0;
                   const outlookLaneTop = hasOutlookForUser
                     ? Math.max(maxRows * ROW_H + 4 + recurringLaneHeight, ROW_H + recurringLaneHeight)
@@ -9527,9 +9577,9 @@ export default function PlanningPage() {
                             );
                           })}
 
-                        {outlookTimelineEvents
-                          .filter((outlookEvent) => Number(outlookEvent.userId) === Number(userRow.Id))
+                        {userOutlookEvents
                           .map((outlookEvent, outlookIdx) => {
+                            const outlookEventLane = outlookEventLanes[outlookIdx]?.laneIndex || 0;
                             const startDateStr = normalizeDateKey(outlookEvent.start);
                             const endDateStr = normalizeDateKey(outlookEvent.end);
                             if (!startDateStr || !endDateStr) return null;
@@ -9563,26 +9613,44 @@ export default function PlanningPage() {
                               : `${(duration / timelineColumns.length) * 100}%`;
 
                             const ownerLabel = outlookEvent.userName || outlookEvent.userEmail || userRow.Username;
+                            const isSelf = Number(outlookEvent.userId) === Number(user?.id);
+                            const displaySubject = isSelf ? outlookEvent.subject : 'Busy';
+
+                            // Compute local time range and duration for tooltip
+                            const evtStartDate = new Date(outlookEvent.start);
+                            const evtEndDate = new Date(outlookEvent.end);
+                            const durationMs = evtEndDate.getTime() - evtStartDate.getTime();
+                            const durationTotalMins = Math.round(durationMs / 60000);
+                            const durationHrs = Math.floor(durationTotalMins / 60);
+                            const durationMins = durationTotalMins % 60;
+                            const durationStr = durationHrs > 0
+                              ? (durationMins > 0 ? `${durationHrs}h ${durationMins}min` : `${durationHrs}h`)
+                              : `${durationMins}min`;
+                            const timeRangeStr = outlookEvent.isAllDay
+                              ? `All day${Number.isFinite(durationMs) && durationMs > 0 ? ` (${durationStr})` : ''}`
+                              : Number.isFinite(durationMs) && durationMs > 0
+                                ? `${evtStartDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} → ${evtEndDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${durationStr})`
+                                : `${eventStart} → ${eventEnd}`;
 
                             return (
                               <div
                                 key={`outlook-${outlookEvent.id}-${outlookIdx}`}
                                 onClick={() => {
-                                  if (outlookEvent.webLink) {
+                                  if (isSelf && outlookEvent.webLink) {
                                     window.open(outlookEvent.webLink, '_blank', 'noopener,noreferrer');
                                   }
                                 }}
-                                className={`absolute h-6 rounded bg-sky-500 dark:bg-sky-600 opacity-45 hover:opacity-75 flex items-center text-white text-[10px] px-1 border-l-3 border-sky-700 dark:border-sky-800 ${outlookEvent.webLink ? 'cursor-pointer' : 'cursor-default'}`}
+                                className={`absolute h-6 rounded bg-sky-500 dark:bg-sky-600 opacity-45 hover:opacity-75 flex items-center text-white text-[10px] px-1 border-l-3 border-sky-700 dark:border-sky-800 ${isSelf && outlookEvent.webLink ? 'cursor-pointer' : 'cursor-default'}`}
                                 style={{
                                   left,
                                   width,
-                                  top: `${outlookLaneTop}px`,
+                                  top: `${outlookLaneTop + outlookEventLane * OUTLOOK_LANE_H}px`,
                                   borderLeftWidth: '3px',
                                   zIndex: 29,
                                 }}
-                                title={`📅 ${outlookEvent.subject}\n${ownerLabel}\n${eventStart} → ${eventEnd}${outlookEvent.webLink ? '\nClick to open in Outlook' : ''}`}
+                                title={isSelf ? `📅 ${outlookEvent.subject}\n${ownerLabel}\n${timeRangeStr}${outlookEvent.webLink ? '\nClick to open in Outlook' : ''}` : `📅 Busy\n${timeRangeStr}`}
                               >
-                                <span className="truncate">📅 {outlookEvent.subject}</span>
+                                <span className="truncate">📅 {displaySubject}</span>
                               </div>
                             );
                           })}
@@ -9657,6 +9725,7 @@ export default function PlanningPage() {
                           const hasWork = totals.work > 0;
                           const hasHobby = totals.hobby > 0;
                           const hasRecurring = totals.recurring > 0;
+                          const hasOutlook = (totals.outlook || 0) > 0;
                           const isOverAllocated = summary.isOverAllocated;
                           const holidayNames = summary.holidayNames;
                           const isHoliday = summary.isHoliday;
@@ -9688,6 +9757,11 @@ export default function PlanningPage() {
                               )}
                               {holidayLabels.length > 0 && (
                                 <div className="text-amber-700 dark:text-amber-300 font-medium truncate">🎉</div>
+                              )}
+                              {hasOutlook && (
+                                <div className="text-sky-600 dark:text-sky-400 font-medium truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>
+                                  {useAnnualStyleDensity ? `📅${(totals.outlook || 0).toFixed(0)}` : `📅 ${(totals.outlook || 0).toFixed(1)}h`}
+                                </div>
                               )}
                               {hasRecurring && (
                                 <div className="text-pink-600 dark:text-pink-400 font-medium truncate" style={{ fontSize: useAnnualStyleDensity ? '9px' : undefined }}>

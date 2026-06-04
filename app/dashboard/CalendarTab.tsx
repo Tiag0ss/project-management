@@ -339,7 +339,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
         const endDate = format(visibleEnd, 'yyyy-MM-dd');
 
         const response = await fetch(
-          `${getApiUrl()}/api/outlook-calendar/events?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+          `${getApiUrl()}/api/outlook-calendar/events?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&selfOnly=true`,
           {
             headers: { Authorization: `Bearer ${token}` },
           }

@@ -90,6 +90,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
               HobbyHoursFriday, HobbyHoursSaturday, HobbyHoursSunday,
               Timezone, HourlyRate, AnnualVacationDays, CountryCode, RegionCode, JiraId,
               NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed, DashboardCalendarInOverview, HoursDisplayFormat,
+              AzureAdObjectId,
               LastLoginAt, CreatedAt, UpdatedAt 
        FROM Users 
        WHERE Id = ?`,
@@ -158,11 +159,12 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
       navbarLeftCollapsed,
       dashboardCalendarInOverview,
       hoursDisplayFormat,
+      azureAdObjectId,
     } = req.body;
 
     const [oldProfile] = await pool.execute<RowDataPacket[]>(
       `SELECT FirstName, LastName, Email, Timezone, CountryCode, RegionCode, AnnualVacationDays,
-              NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed, DashboardCalendarInOverview, HoursDisplayFormat
+              NavbarMenuLayout, NavbarLeftMode, NavbarLeftCollapsed, DashboardCalendarInOverview, HoursDisplayFormat, AzureAdObjectId
        FROM Users WHERE Id = ?`,
       [userId]
     );
@@ -213,6 +215,14 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
       : String(oldData.HoursDisplayFormat || 'hms').trim().toLowerCase();
     const finalHoursDisplayFormat = finalHoursDisplayFormatRaw === 'decimal' ? 'decimal' : 'hms';
 
+    const finalAzureAdObjectIdRaw = azureAdObjectId !== undefined
+      ? String(azureAdObjectId || '').trim().toLowerCase()
+      : String(oldData.AzureAdObjectId || '').trim().toLowerCase();
+    if (finalAzureAdObjectIdRaw && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(finalAzureAdObjectIdRaw)) {
+      return res.status(400).json({ success: false, message: 'Azure AD Object Id must be a valid GUID (e.g. 00000000-0000-0000-0000-000000000000)' });
+    }
+    const finalAzureAdObjectId = finalAzureAdObjectIdRaw || null;
+
     const finalAnnualVacationDays = annualVacationDays !== undefined
       ? Math.max(0, parseFloat(String(annualVacationDays || 0)))
       : parseFloat(String(oldData.AnnualVacationDays || 22));
@@ -243,7 +253,7 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
     await pool.execute(
       `UPDATE Users 
        SET FirstName = ?, LastName = ?, Email = ?, Timezone = ?, CountryCode = ?, RegionCode = ?,
-           AnnualVacationDays = ?, NavbarMenuLayout = ?, NavbarLeftMode = ?, NavbarLeftCollapsed = ?, DashboardCalendarInOverview = ?, HoursDisplayFormat = ?
+           AnnualVacationDays = ?, NavbarMenuLayout = ?, NavbarLeftMode = ?, NavbarLeftCollapsed = ?, DashboardCalendarInOverview = ?, HoursDisplayFormat = ?, AzureAdObjectId = ?
        WHERE Id = ?`,
       [
         finalFirstName || null,
@@ -258,6 +268,7 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
         finalNavbarLeftCollapsed,
         finalDashboardCalendarInOverview,
         finalHoursDisplayFormat,
+        finalAzureAdObjectId,
         userId,
       ]
     );
