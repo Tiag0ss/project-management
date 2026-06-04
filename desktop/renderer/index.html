@@ -109,12 +109,80 @@
 
       <div id="callForm" class="hidden">
         <label>
+          Organization
+          <div id="callOrganizationSearch" class="searchable-select">
+            <button id="callOrganizationTrigger" type="button" class="search-trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span id="callOrganizationValue" class="search-trigger-value muted">Select organization</span>
+              <span class="search-trigger-icons">
+                <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </span>
+            </button>
+            <div id="callOrganizationMenu" class="search-menu hidden">
+              <div class="search-input-wrap">
+                <input id="callOrganizationInput" type="text" placeholder="Search organization..." />
+              </div>
+              <div id="callOrganizationOptions" class="search-options" role="listbox"></div>
+            </div>
+          </div>
+        </label>
+        <label>
+          Project
+          <div id="callProjectSearch" class="searchable-select">
+            <button id="callProjectTrigger" type="button" class="search-trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span id="callProjectValue" class="search-trigger-value muted">Select project</span>
+              <span class="search-trigger-icons">
+                <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </span>
+            </button>
+            <div id="callProjectMenu" class="search-menu hidden">
+              <div class="search-input-wrap">
+                <input id="callProjectInput" type="text" placeholder="Search project..." />
+              </div>
+              <div id="callProjectOptions" class="search-options" role="listbox"></div>
+            </div>
+          </div>
+        </label>
+        <label>
+          Task
+          <div id="callTaskSearch" class="searchable-select">
+            <button id="callTaskTrigger" type="button" class="search-trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span id="callTaskValue" class="search-trigger-value muted">Select task (optional)</span>
+              <span class="search-trigger-icons">
+                <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </span>
+            </button>
+            <div id="callTaskMenu" class="search-menu hidden">
+              <div class="search-input-wrap">
+                <input id="callTaskInput" type="text" placeholder="Search task..." />
+              </div>
+              <div id="callTaskOptions" class="search-options" role="listbox"></div>
+            </div>
+          </div>
+        </label>
+        <label>
           Call Type
-          <select id="callType">
-            <option value="Teams">Teams</option>
-            <option value="Phone">Phone</option>
-            <option value="Meeting">Meeting</option>
-          </select>
+          <div id="callTypeSearch" class="searchable-select">
+            <button id="callTypeTrigger" type="button" class="search-trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span id="callTypeValue" class="search-trigger-value">Teams</span>
+              <span class="search-trigger-icons">
+                <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </span>
+            </button>
+            <div id="callTypeMenu" class="search-menu hidden">
+              <div class="search-input-wrap">
+                <input id="callTypeInput" type="text" placeholder="Search call type..." />
+              </div>
+              <div id="callTypeOptions" class="search-options" role="listbox"></div>
+            </div>
+          </div>
         </label>
         <label>
           Participants

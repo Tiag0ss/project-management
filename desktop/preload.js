@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('desktopApi', {
 
   getActiveTimer: () => ipcRenderer.invoke('timer:getActive'),
   getAvailableTasks: () => ipcRenderer.invoke('timer:getAvailableTasks'),
+  getOrganizations: () => ipcRenderer.invoke('organizations:get'),
+  getProjectsByOrganization: (organizationId) => ipcRenderer.invoke('projects:getByOrganization', organizationId),
+  getTasksByProject: (projectId) => ipcRenderer.invoke('tasks:getByProject', projectId),
   startTimer: (payload) => ipcRenderer.invoke('timer:start', payload),
   stopTimer: (timerId) => ipcRenderer.invoke('timer:stop', timerId),
   discardTimer: (timerId) => ipcRenderer.invoke('timer:discard', timerId),

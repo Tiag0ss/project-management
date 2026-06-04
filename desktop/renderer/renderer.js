@@ -37,11 +37,38 @@ const taskSearchOptions = document.getElementById('taskSearchOptions');
 const taskDescription = document.getElementById('taskDescription');
 const startTaskButton = document.getElementById('startTaskButton');
 
-const callType = document.getElementById('callType');
+const callTypeSearch = document.getElementById('callTypeSearch');
+const callTypeTrigger = document.getElementById('callTypeTrigger');
+const callTypeValue = document.getElementById('callTypeValue');
+const callTypeMenu = document.getElementById('callTypeMenu');
+const callTypeInput = document.getElementById('callTypeInput');
+const callTypeOptions = document.getElementById('callTypeOptions');
+
+const callOrganizationSearch = document.getElementById('callOrganizationSearch');
+const callOrganizationTrigger = document.getElementById('callOrganizationTrigger');
+const callOrganizationValue = document.getElementById('callOrganizationValue');
+const callOrganizationMenu = document.getElementById('callOrganizationMenu');
+const callOrganizationInput = document.getElementById('callOrganizationInput');
+const callOrganizationOptions = document.getElementById('callOrganizationOptions');
+
+const callProjectSearch = document.getElementById('callProjectSearch');
+const callProjectTrigger = document.getElementById('callProjectTrigger');
+const callProjectValue = document.getElementById('callProjectValue');
+const callProjectMenu = document.getElementById('callProjectMenu');
+const callProjectInput = document.getElementById('callProjectInput');
+const callProjectOptions = document.getElementById('callProjectOptions');
+
+const callTaskSearch = document.getElementById('callTaskSearch');
+const callTaskTrigger = document.getElementById('callTaskTrigger');
+const callTaskValue = document.getElementById('callTaskValue');
+const callTaskMenu = document.getElementById('callTaskMenu');
+const callTaskInput = document.getElementById('callTaskInput');
+const callTaskOptions = document.getElementById('callTaskOptions');
 const participants = document.getElementById('participants');
 const subject = document.getElementById('subject');
 const callDescription = document.getElementById('callDescription');
 const startCallButton = document.getElementById('startCallButton');
+const appHeader = document.querySelector('.app-header');
 
 const idleMinutesInput = document.getElementById('idleMinutes');
 const graceSecondsInput = document.getElementById('graceSeconds');
@@ -66,6 +93,18 @@ let expandedForSwitch = false;
 let activeWindowLayout = null;
 let isDraggingWindow = false;
 let fitResizeRafId = null;
+let availableOrganizations = [];
+let availableCallProjects = [];
+let availableCallTasks = [];
+const callTypeChoices = [
+  { value: 'Teams', label: 'Teams' },
+  { value: 'Phone', label: 'Phone' },
+  { value: 'Meeting', label: 'Meeting' },
+];
+let selectedCallType = 'Teams';
+let selectedCallOrganizationId = '';
+let selectedCallProjectId = '';
+let selectedCallTaskId = '';
 
 const formatElapsed = (startedAt) => {
   const value = String(startedAt || '');
@@ -225,6 +264,245 @@ const loadTasks = async () => {
   renderTaskSearch();
 };
 
+const closeCallMenus = () => {
+  callTypeMenu.classList.add('hidden');
+  callTypeTrigger.setAttribute('aria-expanded', 'false');
+  callOrganizationMenu.classList.add('hidden');
+  callOrganizationTrigger.setAttribute('aria-expanded', 'false');
+  callProjectMenu.classList.add('hidden');
+  callProjectTrigger.setAttribute('aria-expanded', 'false');
+  callTaskMenu.classList.add('hidden');
+  callTaskTrigger.setAttribute('aria-expanded', 'false');
+};
+
+const openCallMenu = (menu, trigger, input) => {
+  closeCallMenus();
+  menu.classList.remove('hidden');
+  trigger.setAttribute('aria-expanded', 'true');
+  input.value = '';
+  input.focus();
+};
+
+const renderCallTypeOptions = (searchText) => {
+  const query = String(searchText || '').toLowerCase().trim();
+  const filtered = callTypeChoices.filter((option) => option.label.toLowerCase().includes(query));
+
+  callTypeOptions.innerHTML = '';
+  if (filtered.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'search-empty';
+    empty.textContent = query ? 'No results found' : 'No options available';
+    callTypeOptions.appendChild(empty);
+    return;
+  }
+
+  for (const option of filtered) {
+    const row = document.createElement('div');
+    row.className = 'search-option';
+    if (option.value === selectedCallType) {
+      row.classList.add('selected');
+    }
+    row.textContent = option.label;
+    row.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      selectedCallType = option.value;
+      renderCallType();
+      closeCallMenus();
+    });
+    callTypeOptions.appendChild(row);
+  }
+};
+
+const renderCallType = () => {
+  const selected = callTypeChoices.find((option) => option.value === selectedCallType);
+  callTypeValue.textContent = selected?.label || 'Select call type';
+  renderCallTypeOptions(callTypeInput.value);
+};
+
+const renderCallOrganizations = (searchText = callOrganizationInput.value) => {
+  const selected = availableOrganizations.find((item) => String(item.Id) === String(selectedCallOrganizationId));
+  if (selected) {
+    callOrganizationValue.textContent = selected.Name || `Organization ${selected.Id}`;
+    callOrganizationValue.classList.remove('muted');
+  } else {
+    selectedCallOrganizationId = '';
+    callOrganizationValue.textContent = 'Select organization';
+    callOrganizationValue.classList.add('muted');
+  }
+
+  const query = String(searchText || '').toLowerCase().trim();
+  const filtered = availableOrganizations.filter((item) => String(item.Name || '').toLowerCase().includes(query));
+  callOrganizationOptions.innerHTML = '';
+  if (filtered.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'search-empty';
+    empty.textContent = query ? 'No results found' : 'No organizations available';
+    callOrganizationOptions.appendChild(empty);
+    return;
+  }
+
+  for (const organization of filtered) {
+    const row = document.createElement('div');
+    row.className = 'search-option';
+    if (String(organization.Id) === String(selectedCallOrganizationId)) {
+      row.classList.add('selected');
+    }
+    row.textContent = String(organization.Name || `Organization ${organization.Id}`);
+    row.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      selectedCallOrganizationId = String(organization.Id);
+      selectedCallProjectId = '';
+      selectedCallTaskId = '';
+      availableCallProjects = [];
+      availableCallTasks = [];
+      renderCallProjects();
+      renderCallTasks();
+      renderCallOrganizations('');
+      closeCallMenus();
+      void loadCallProjects(selectedCallOrganizationId);
+    });
+    callOrganizationOptions.appendChild(row);
+  }
+};
+
+const renderCallProjects = (searchText = callProjectInput.value) => {
+  callProjectTrigger.disabled = !selectedCallOrganizationId;
+  const selected = availableCallProjects.find((item) => String(item.Id) === String(selectedCallProjectId));
+  if (selected) {
+    callProjectValue.textContent = selected.ProjectName || `Project ${selected.Id}`;
+    callProjectValue.classList.remove('muted');
+  } else {
+    selectedCallProjectId = '';
+    callProjectValue.textContent = 'Select project';
+    callProjectValue.classList.add('muted');
+  }
+
+  const query = String(searchText || '').toLowerCase().trim();
+  const filtered = availableCallProjects.filter((item) => String(item.ProjectName || '').toLowerCase().includes(query));
+  callProjectOptions.innerHTML = '';
+  if (filtered.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'search-empty';
+    empty.textContent = query ? 'No results found' : 'No projects available';
+    callProjectOptions.appendChild(empty);
+    return;
+  }
+
+  for (const project of filtered) {
+    const row = document.createElement('div');
+    row.className = 'search-option';
+    if (String(project.Id) === String(selectedCallProjectId)) {
+      row.classList.add('selected');
+    }
+    row.textContent = String(project.ProjectName || `Project ${project.Id}`);
+    row.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      selectedCallProjectId = String(project.Id);
+      selectedCallTaskId = '';
+      availableCallTasks = [];
+      renderCallTasks();
+      renderCallProjects('');
+      closeCallMenus();
+      void loadCallTasks(selectedCallProjectId);
+    });
+    callProjectOptions.appendChild(row);
+  }
+};
+
+const renderCallTasks = (searchText = callTaskInput.value) => {
+  callTaskTrigger.disabled = !selectedCallProjectId;
+  const selected = availableCallTasks.find((item) => String(item.Id) === String(selectedCallTaskId));
+  if (selected) {
+    callTaskValue.textContent = selected.TaskName || `Task ${selected.Id}`;
+    callTaskValue.classList.remove('muted');
+  } else {
+    selectedCallTaskId = '';
+    callTaskValue.textContent = 'Select task (optional)';
+    callTaskValue.classList.add('muted');
+  }
+
+  const query = String(searchText || '').toLowerCase().trim();
+  const filtered = availableCallTasks.filter((item) => String(item.TaskName || '').toLowerCase().includes(query));
+  callTaskOptions.innerHTML = '';
+
+  const clearOption = document.createElement('div');
+  clearOption.className = 'search-option';
+  clearOption.textContent = 'No task';
+  if (!selectedCallTaskId) {
+    clearOption.classList.add('selected');
+  }
+  clearOption.addEventListener('mousedown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    selectedCallTaskId = '';
+    renderCallTasks('');
+    closeCallMenus();
+  });
+  callTaskOptions.appendChild(clearOption);
+
+  if (filtered.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'search-empty';
+    empty.textContent = query ? 'No results found' : 'No tasks available';
+    callTaskOptions.appendChild(empty);
+    return;
+  }
+
+  for (const task of filtered) {
+    const row = document.createElement('div');
+    row.className = 'search-option';
+    if (String(task.Id) === String(selectedCallTaskId)) {
+      row.classList.add('selected');
+    }
+    row.textContent = String(task.TaskName || `Task ${task.Id}`);
+    row.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      selectedCallTaskId = String(task.Id);
+      renderCallTasks('');
+      closeCallMenus();
+    });
+    callTaskOptions.appendChild(row);
+  }
+};
+
+const loadCallOrganizations = async () => {
+  if (!currentSession?.token) return;
+  availableOrganizations = await window.desktopApi.getOrganizations();
+  renderCallOrganizations('');
+};
+
+const loadCallProjects = async (organizationId) => {
+  const id = Number(organizationId);
+  if (!id) {
+    availableCallProjects = [];
+    availableCallTasks = [];
+    renderCallProjects('');
+    renderCallTasks('');
+    return;
+  }
+
+  availableCallProjects = await window.desktopApi.getProjectsByOrganization(id);
+  availableCallTasks = [];
+  renderCallProjects('');
+  renderCallTasks('');
+};
+
+const loadCallTasks = async (projectId) => {
+  const id = Number(projectId);
+  if (!id) {
+    availableCallTasks = [];
+    renderCallTasks('');
+    return;
+  }
+
+  availableCallTasks = await window.desktopApi.getTasksByProject(id);
+  renderCallTasks('');
+};
+
 const getTaskLabel = (task) => `${task.TaskName}${task.ProjectName ? ` — ${task.ProjectName}` : ''}`;
 
 const renderTaskSearchOptions = (searchText) => {
@@ -252,6 +530,7 @@ const renderTaskSearchOptions = (searchText) => {
     option.textContent = getTaskLabel(task);
     option.addEventListener('mousedown', (event) => {
       event.preventDefault();
+      event.stopPropagation();
       selectedTaskId = Number(task.Id);
       renderTaskSearch();
       closeTaskMenu();
@@ -310,7 +589,7 @@ loginButton.addEventListener('click', async () => {
     });
     currentSession = session;
     renderAuthState();
-    await Promise.all([loadSettings(), loadTasks(), loadActiveTimer()]);
+    await Promise.all([loadSettings(), loadTasks(), loadCallOrganizations(), loadActiveTimer()]);
   } catch (error) {
     setStatus(error instanceof Error ? error.message : 'Login failed', true);
   }
@@ -320,6 +599,17 @@ logoutButton.addEventListener('click', async () => {
   await window.desktopApi.logout();
   currentSession = null;
   settingsModal.classList.add('hidden');
+  availableOrganizations = [];
+  availableCallProjects = [];
+  availableCallTasks = [];
+  selectedCallOrganizationId = '';
+  selectedCallProjectId = '';
+  selectedCallTaskId = '';
+  selectedCallType = 'Teams';
+  renderCallType();
+  renderCallOrganizations('');
+  renderCallProjects('');
+  renderCallTasks('');
   renderAuthState();
 });
 
@@ -327,7 +617,80 @@ headerLogoutButton.addEventListener('click', async () => {
   await window.desktopApi.logout();
   currentSession = null;
   settingsModal.classList.add('hidden');
+  availableOrganizations = [];
+  availableCallProjects = [];
+  availableCallTasks = [];
+  selectedCallOrganizationId = '';
+  selectedCallProjectId = '';
+  selectedCallTaskId = '';
+  selectedCallType = 'Teams';
+  renderCallType();
+  renderCallOrganizations('');
+  renderCallProjects('');
+  renderCallTasks('');
   renderAuthState();
+});
+
+callTypeTrigger.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (callTypeMenu.classList.contains('hidden')) {
+    openCallMenu(callTypeMenu, callTypeTrigger, callTypeInput);
+    renderCallTypeOptions('');
+  } else {
+    closeCallMenus();
+  }
+});
+
+callTypeInput.addEventListener('input', (event) => {
+  renderCallTypeOptions(event.target.value);
+});
+
+callOrganizationTrigger.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (callOrganizationMenu.classList.contains('hidden')) {
+    openCallMenu(callOrganizationMenu, callOrganizationTrigger, callOrganizationInput);
+    renderCallOrganizations('');
+  } else {
+    closeCallMenus();
+  }
+});
+
+callOrganizationInput.addEventListener('input', (event) => {
+  renderCallOrganizations(event.target.value);
+});
+
+callProjectTrigger.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (!selectedCallOrganizationId) {
+    return;
+  }
+  if (callProjectMenu.classList.contains('hidden')) {
+    openCallMenu(callProjectMenu, callProjectTrigger, callProjectInput);
+    renderCallProjects('');
+  } else {
+    closeCallMenus();
+  }
+});
+
+callProjectInput.addEventListener('input', (event) => {
+  renderCallProjects(event.target.value);
+});
+
+callTaskTrigger.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (!selectedCallProjectId) {
+    return;
+  }
+  if (callTaskMenu.classList.contains('hidden')) {
+    openCallMenu(callTaskMenu, callTaskTrigger, callTaskInput);
+    renderCallTasks('');
+  } else {
+    closeCallMenus();
+  }
+});
+
+callTaskInput.addEventListener('input', (event) => {
+  renderCallTasks(event.target.value);
 });
 
 openSettingsButton.addEventListener('click', async () => {
@@ -374,6 +737,12 @@ document.addEventListener('click', (event) => {
   const target = event.target;
   if (taskSearch && !taskSearch.contains(target)) {
     closeTaskMenu();
+  }
+  if (callTypeSearch && !callTypeSearch.contains(target)
+    && callOrganizationSearch && !callOrganizationSearch.contains(target)
+    && callProjectSearch && !callProjectSearch.contains(target)
+    && callTaskSearch && !callTaskSearch.contains(target)) {
+    closeCallMenus();
   }
 });
 
@@ -449,9 +818,16 @@ startTaskButton.addEventListener('click', async () => {
 
 startCallButton.addEventListener('click', async () => {
   try {
+    const organizationId = Number(selectedCallOrganizationId || 0) || null;
+    const projectId = Number(selectedCallProjectId || 0) || null;
+    const taskId = Number(selectedCallTaskId || 0) || null;
+
     await window.desktopApi.startTimer({
       timerType: 'callRecord',
-      callType: callType.value,
+      organizationId,
+      projectId,
+      taskId,
+      callType: selectedCallType,
       participants: participants.value || null,
       subject: subject.value || null,
       description: callDescription.value || null,
@@ -563,7 +939,11 @@ const canStartWindowDrag = (target) => {
     return false;
   }
 
-  if (target.closest('button, input, textarea, select, a, [role="listbox"], [contenteditable="true"]')) {
+  if (!appHeader || !appHeader.contains(target)) {
+    return false;
+  }
+
+  if (target.closest('button, input, textarea, select, a, [role="listbox"], [contenteditable="true"], .searchable-select, .search-menu, .search-option')) {
     return false;
   }
 
@@ -606,8 +986,13 @@ const bootstrap = async () => {
   renderAuthState();
   selectMode('task');
 
+  renderCallOrganizations();
+  renderCallProjects();
+  renderCallTasks();
+  renderCallType();
+
   if (currentSession?.token) {
-    await Promise.all([loadSettings(), loadTasks(), loadActiveTimer()]);
+    await Promise.all([loadSettings(), loadTasks(), loadCallOrganizations(), loadActiveTimer()]);
   }
 };
 

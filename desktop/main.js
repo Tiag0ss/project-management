@@ -424,6 +424,25 @@ ipcMain.handle('timer:getAvailableTasks', async () => {
   return data?.tasks || [];
 });
 
+ipcMain.handle('organizations:get', async () => {
+  const data = await apiRequest('GET', '/api/organizations');
+  return data?.organizations || [];
+});
+
+ipcMain.handle('projects:getByOrganization', async (_event, organizationId) => {
+  const id = Number(organizationId);
+  if (!id) return [];
+  const data = await apiRequest('GET', `/api/projects?organizationId=${id}`);
+  return data?.projects || [];
+});
+
+ipcMain.handle('tasks:getByProject', async (_event, projectId) => {
+  const id = Number(projectId);
+  if (!id) return [];
+  const data = await apiRequest('GET', `/api/tasks/project/${id}`);
+  return data?.tasks || [];
+});
+
 ipcMain.handle('timer:start', async (_event, payload) => {
   const data = await apiRequest('POST', '/api/timers/start', {
     ...payload,
