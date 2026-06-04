@@ -3,6 +3,8 @@ import http from 'http';
 import next from 'next';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
+import { promises as fsPromises } from 'fs';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -300,6 +302,40 @@ app.prepare().then(async () => {
 
   server.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // Download latest generated Desktop App installer (.exe) from release folder
+  server.get('/api/downloads/desktop-app', async (req, res) => {
+    try {
+      const releaseDir = path.join(process.cwd(), 'release');
+      if (!fs.existsSync(releaseDir)) {
+        return res.status(404).json({ success: false, message: 'Desktop installer folder not found' });
+      }
+
+      const entries = await fsPromises.readdir(releaseDir);
+      const exeCandidates = entries
+        .filter((entry) => entry.toLowerCase().endsWith('.exe'))
+        .filter((entry) => entry.toLowerCase().includes('desktop timer'));
+
+      if (exeCandidates.length === 0) {
+        return res.status(404).json({ success: false, message: 'Desktop installer not found' });
+      }
+
+      const withStats = await Promise.all(
+        exeCandidates.map(async (fileName) => {
+          const absolutePath = path.join(releaseDir, fileName);
+          const stats = await fsPromises.stat(absolutePath);
+          return { fileName, absolutePath, mtimeMs: stats.mtimeMs };
+        })
+      );
+
+      withStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
+      const latest = withStats[0];
+      return res.download(latest.absolutePath, latest.fileName);
+    } catch (error) {
+      logger.error('Failed to provide desktop installer download', { error });
+      return res.status(500).json({ success: false, message: 'Failed to download desktop installer' });
+    }
   });
 
   // Catch-all for undefined API routes

@@ -4,6 +4,7 @@ const timerCard = document.getElementById('timerCard');
 const startCard = document.getElementById('startCard');
 const openSettingsButton = document.getElementById('openSettingsButton');
 const headerCollapseButton = document.getElementById('headerCollapseButton');
+const headerLogoutButton = document.getElementById('headerLogoutButton');
 const minimizeWindowButton = document.getElementById('minimizeWindowButton');
 const closeWindowButton = document.getElementById('closeWindowButton');
 const settingsModal = document.getElementById('settingsModal');
@@ -130,6 +131,7 @@ const applyShellLayout = () => {
   startCard.classList.toggle('hidden', !signedIn || compact);
   openSettingsButton.classList.toggle('hidden', !signedIn || compact);
   headerCollapseButton.classList.toggle('hidden', !signedIn || compact || !hasActiveTimer);
+  headerLogoutButton.classList.toggle('hidden', !signedIn || compact);
   minimizeWindowButton.classList.toggle('hidden', !signedIn || compact);
   closeWindowButton.classList.toggle('hidden', compact);
 
@@ -315,6 +317,13 @@ loginButton.addEventListener('click', async () => {
 });
 
 logoutButton.addEventListener('click', async () => {
+  await window.desktopApi.logout();
+  currentSession = null;
+  settingsModal.classList.add('hidden');
+  renderAuthState();
+});
+
+headerLogoutButton.addEventListener('click', async () => {
   await window.desktopApi.logout();
   currentSession = null;
   settingsModal.classList.add('hidden');

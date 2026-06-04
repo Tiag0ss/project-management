@@ -1914,13 +1914,22 @@ export default function Navbar() {
 
             <div className="p-2 border-t border-gray-200 dark:border-gray-700">
               {canShowDocsLink && shouldUseLeftSidebar && (
-                <a
-                  href="/docs"
-                  className={`${sidebarItemClass} mb-2`}
-                  onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}
-                >
-                  <span className="w-5 text-center">📘</span>{!isSidebarEffectivelyCollapsed && <span>User Manual</span>}
-                </a>
+                <>
+                  <a
+                    href={`${getApiUrl()}/api/downloads/desktop-app`}
+                    className={sidebarItemClass}
+                    onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}
+                  >
+                    <span className="w-5 text-center">💻</span>{!isSidebarEffectivelyCollapsed && <span>Download Desktop App</span>}
+                  </a>
+                  <a
+                    href="/docs"
+                    className={`${sidebarItemClass} mb-2`}
+                    onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}
+                  >
+                    <span className="w-5 text-center">📘</span>{!isSidebarEffectivelyCollapsed && <span>User Manual</span>}
+                  </a>
+                </>
               )}
               {!isSidebarEffectivelyCollapsed && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 px-1">Mode: {navbarLeftMode === 'floating' ? 'Floating' : 'Fixed'}</p>
@@ -2587,13 +2596,22 @@ export default function Navbar() {
                       👤 My Profile
                     </a>
                     {!shouldUseLeftSidebar && (
-                      <a
-                        href="/docs"
-                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                        onClick={() => setDropdownOpen(false)}
-                      >
-                        📘 User Manual
-                      </a>
+                      <>
+                        <a
+                          href={`${getApiUrl()}/api/downloads/desktop-app`}
+                          className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          onClick={() => setDropdownOpen(false)}
+                        >
+                          💻 Download Desktop App
+                        </a>
+                        <a
+                          href="/docs"
+                          className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          onClick={() => setDropdownOpen(false)}
+                        >
+                          📘 User Manual
+                        </a>
+                      </>
                     )}
                     {!isCustomerUser && !shouldUseLeftSidebar && (
                     <>

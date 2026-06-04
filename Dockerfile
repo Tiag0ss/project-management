@@ -20,6 +20,9 @@ RUN npm ci
 
 COPY . .
 
+# Ensure release directory exists so runtime image copy does not fail when no installer is present
+RUN mkdir -p release
+
 # Build Next.js and TypeScript server separately to ensure both succeed
 RUN npx next build && npx tsc --project server/tsconfig.json
 
@@ -37,6 +40,7 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public
+COPY --from=builder /app/release ./release
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/server/database ./dist/server/database
 
