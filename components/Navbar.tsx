@@ -409,14 +409,15 @@ export default function Navbar() {
   useEffect(() => {
     if (!token) return;
 
-    const apiBase = getApiUrl() || 'http://localhost:3000';
-    const socket: Socket = io(apiBase, {
+    const apiBase = getApiUrl();
+    const socketOptions = {
       path: '/api/socket.io',
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 5,
       reconnectionDelay: 2000,
-    });
+    };
+    const socket: Socket = apiBase ? io(apiBase, socketOptions) : io(socketOptions);
 
     socket.on('connect', () => {
       console.debug('[Socket] Connected for real-time notifications');
