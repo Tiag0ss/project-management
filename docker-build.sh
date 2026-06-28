@@ -20,6 +20,52 @@ NC='\033[0m' # No Color
 echo -e "${GREEN}Docker Build and Push Script${NC}"
 echo "======================================"
 
+# Preflight: Docker daemon reachable (common Linux issue after joining docker group)
+if ! docker info >/dev/null 2>&1; then
+    echo -e "${RED}ERROR: Cannot connect to the Docker daemon${NC}"
+    echo ""
+
+    if getent group docker >/dev/null 2>&1 && id -nG "$USER" 2>/dev/null | grep -qw docker; then
+        echo -e "${YELLOW}You are in the docker group but this shell session does not have it yet.${NC}"
+        echo "Run one of:"
+        echo "  newgrp docker          # refresh group in this terminal (bash/zsh)"
+        echo "  sg docker -c \"\$0 $*\"  # run this script with docker group (works in fish too)"
+        echo "  # or open a new terminal / log out and back in"
+    elif getent group docker >/dev/null 2>&1 && grep -q "^docker:.*\b${USER}\b" /etc/group 2>/dev/null; then
+        echo -e "${YELLOW}You were added to the docker group but this shell was opened before that.${NC}"
+        echo "Open a new terminal, or run:"
+        echo "  sg docker -c \"./docker-build.sh${1:+ $1}\""
+    else
+        echo "On Linux, try:"
+        echo "  sudo systemctl start docker"
+        echo "  sudo usermod -aG docker \$USER   # then open a new terminal"
+    fi
+
+    if ! systemctl is-active --quiet docker 2>/dev/null; then
+        echo ""
+        echo -e "${YELLOW}Docker service is not running. Start it with:${NC}"
+        echo "  sudo systemctl start docker"
+    fi
+
+    echo ""
+    if [[ "$(pwd)" == /run/media/* ]] || [[ "$(df -T . 2>/dev/null | tail -1)" == *ntfs* ]]; then
+        echo -e "${YELLOW}Note: this project is on an NTFS/external drive.${NC}"
+        echo "Even with Docker working, builds from NTFS often fail."
+        echo "Copy to a native Linux path first, e.g.:"
+        echo "  rsync -a --exclude node_modules --exclude .next --exclude dist . ~/project-management/"
+        echo "  cd ~/project-management && ./docker-build.sh"
+    fi
+    exit 1
+fi
+
+# Warn when building from NTFS/FUSE mounts (Docker daemon may fail reading the context)
+FS_TYPE="$(df -T . 2>/dev/null | awk 'NR==2 {print $2}')"
+if [[ "$(pwd)" == /run/media/* ]] || [[ "$FS_TYPE" == ntfs* ]] || [[ "$FS_TYPE" == fuse* ]]; then
+    echo -e "${YELLOW}[WARN] Building from $FS_TYPE at $(pwd)${NC}"
+    echo -e "${YELLOW}       If the build fails with tar/pipe errors, copy the project to an ext4 path first.${NC}"
+    echo ""
+fi
+
 # Get Docker Hub username from environment variable or prompt
 if [ -z "$DOCKER_USERNAME" ]; then
     read -p "Enter your Docker Hub username: " DOCKER_USERNAME
@@ -44,45 +90,95 @@ echo ""
 
 # Login to Docker Hub
 echo -e "${BLUE}Logging in to Docker Hub...${NC}"
-docker login
+if ! docker login; then
+    echo -e "${RED}ERROR: Docker login failed${NC}"
+    exit 1
+fi
 
 # Run tests (optional)
 echo ""
 echo -e "${BLUE}Running tests...${NC}"
-if npm test 2>/dev/null; then
+TEST_OUTPUT="$(npm test 2>&1)" || TEST_EXIT=$?
+if [[ "${TEST_OUTPUT:-}" == *"FAIL"* ]]; then
+    echo -e "${YELLOW}[WARN] Some tests failed - continuing with build${NC}"
+elif [[ "${TEST_OUTPUT:-}" == *"PASS"* ]]; then
     echo -e "${GREEN}[OK] Tests passed${NC}"
 else
     echo -e "${YELLOW}[WARN] Tests failed or not configured - continuing with build${NC}"
 fi
 
-# Build Docker image
+# Build and push (buildx + provenance matches Docker Desktop on Windows)
 echo ""
-echo -e "${BLUE}Building Docker image...${NC}"
-docker build -t "$IMAGE_TAG" .
+echo -e "${BLUE}Building and pushing Docker image...${NC}"
 
-# Also tag as latest if version is specified
-if [ "$VERSION" != "latest" ]; then
-    echo -e "${BLUE}Tagging as latest...${NC}"
-    docker tag "$IMAGE_TAG" "${IMAGE_NAME}:latest"
+build_with_buildx() {
+    local -a tags=(-t "$IMAGE_TAG")
+    if [ "$VERSION" != "latest" ]; then
+        tags+=(-t "${IMAGE_NAME}:latest")
+    fi
+
+    # Ensure a buildx builder exists (creates Image Index + provenance attestation on push)
+    if ! docker buildx inspect --bootstrap >/dev/null 2>&1; then
+        echo -e "${BLUE}Creating buildx builder...${NC}"
+        docker buildx create --name project-management-builder --use --bootstrap >/dev/null
+    fi
+
+    docker buildx build \
+        "${tags[@]}" \
+        --push \
+        --provenance=true \
+        .
+}
+
+if docker buildx version >/dev/null 2>&1; then
+    if ! build_with_buildx; then
+        echo -e "${RED}ERROR: Docker build/push failed${NC}"
+        exit 1
+    fi
+else
+    echo -e "${YELLOW}[WARN] docker buildx not installed — output will differ from Docker Desktop${NC}"
+    echo -e "${YELLOW}       Windows creates 3 registry entries (index + image + attestation).${NC}"
+    echo -e "${YELLOW}       Install buildx for the same result: sudo pacman -S docker-buildx${NC}"
+    echo ""
+    DOCKER_BUILDKIT=0 docker build -t "$IMAGE_TAG" .
+
+    if [ "$VERSION" != "latest" ]; then
+        echo -e "${BLUE}Tagging as latest...${NC}"
+        docker tag "$IMAGE_TAG" "${IMAGE_NAME}:latest"
+    fi
+
+    echo -e "${GREEN}[OK] Image built successfully${NC}"
+    echo ""
+    echo "Image details:"
+    docker images "$IMAGE_NAME"
+
+    echo ""
+    echo -e "${BLUE}Pushing to Docker Hub...${NC}"
+    if ! docker push "$IMAGE_TAG"; then
+        echo -e "${RED}ERROR: Docker push failed${NC}"
+        exit 1
+    fi
+
+    if [ "$VERSION" != "latest" ]; then
+        docker push "${IMAGE_NAME}:latest"
+    fi
 fi
 
-echo -e "${GREEN}[OK] Image built successfully${NC}"
+echo -e "${GREEN}[OK] Image built and pushed successfully${NC}"
 
-# Show image info
-echo ""
-echo "Image details:"
-docker images "$IMAGE_NAME"
-
-# Push to Docker Hub
-echo ""
-echo -e "${BLUE}Pushing to Docker Hub...${NC}"
-docker push "$IMAGE_TAG"
-
-if [ "$VERSION" != "latest" ]; then
-    docker push "${IMAGE_NAME}:latest"
+# Show local image info when buildx was used (--push does not populate local docker images)
+if docker buildx version >/dev/null 2>&1; then
+    echo ""
+    echo "Registry tags pushed:"
+    echo "  $IMAGE_TAG"
+    if [ "$VERSION" != "latest" ]; then
+        echo "  ${IMAGE_NAME}:latest"
+    fi
+else
+    echo ""
+    echo "Image details:"
+    docker images "$IMAGE_NAME"
 fi
-
-echo -e "${GREEN}[OK] Image pushed successfully${NC}"
 
 # Create deployment instructions
 echo ""

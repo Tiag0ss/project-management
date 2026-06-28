@@ -38,6 +38,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~
@@ -65,6 +66,10 @@ backups/
 *.sql
 *.sql.gz
 *.backup
+
+# Electron/desktop build output — include installer .exe only (not win-unpacked, blockmaps, yaml)
+release/**
+!release/*.exe
 
 # Deployment scripts (not needed in container)
 deploy.sh

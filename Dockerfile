@@ -20,7 +20,7 @@ RUN npm ci
 
 COPY . .
 
-# Ensure release directory exists so runtime image copy does not fail when no installer is present
+# Ensure release/ exists even when no .exe was built yet (download endpoint expects the folder)
 RUN mkdir -p release
 
 # Build Next.js and TypeScript server separately to ensure both succeed
