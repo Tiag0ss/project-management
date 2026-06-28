@@ -69,6 +69,19 @@ const subject = document.getElementById('subject');
 const callDescription = document.getElementById('callDescription');
 const startCallButton = document.getElementById('startCallButton');
 const appHeader = document.querySelector('.app-header');
+const compactDragBar = document.getElementById('compactDragBar');
+const timerCardHeader = document.querySelector('.timer-card-header');
+
+const tabStartTimer = document.getElementById('tabStartTimer');
+const tabOpenTasks = document.getElementById('tabOpenTasks');
+const tabRecentTasks = document.getElementById('tabRecentTasks');
+const startTimerPanel = document.getElementById('startTimerPanel');
+const openTasksPanel = document.getElementById('openTasksPanel');
+const recentTasksPanel = document.getElementById('recentTasksPanel');
+const openTasksList = document.getElementById('openTasksList');
+const recentTasksList = document.getElementById('recentTasksList');
+const refreshOpenTasksButton = document.getElementById('refreshOpenTasksButton');
+const refreshRecentTasksButton = document.getElementById('refreshRecentTasksButton');
 
 const idleMinutesInput = document.getElementById('idleMinutes');
 const graceSecondsInput = document.getElementById('graceSeconds');
@@ -88,7 +101,10 @@ let timerTickInterval = null;
 let timerPollInterval = null;
 let idleCountdownInterval = null;
 let availableTasks = [];
+let openTasks = [];
+let recentTasks = [];
 let selectedTaskId = null;
+let activeStartTab = 'timer';
 let expandedForSwitch = false;
 let activeWindowLayout = null;
 let isDraggingWindow = false;
@@ -505,6 +521,97 @@ const loadCallTasks = async (projectId) => {
 
 const getTaskLabel = (task) => `${task.TaskName}${task.ProjectName ? ` — ${task.ProjectName}` : ''}`;
 
+const renderTaskList = (container, tasks, emptyMessage) => {
+  container.innerHTML = '';
+  if (!tasks.length) {
+    container.textContent = emptyMessage;
+    container.classList.add('muted');
+    return;
+  }
+
+  container.classList.remove('muted');
+  for (const task of tasks) {
+    const item = document.createElement('div');
+    item.className = 'task-list-item';
+
+    const title = document.createElement('div');
+    title.className = 'task-list-item-title';
+    title.textContent = task.TaskName || `Task ${task.Id}`;
+
+    const meta = document.createElement('div');
+    meta.className = 'task-list-item-meta';
+    meta.textContent = task.ProjectName || 'No project';
+
+    const startButton = document.createElement('button');
+    startButton.type = 'button';
+    startButton.className = 'primary';
+    startButton.textContent = 'Start Timer';
+    startButton.addEventListener('click', async () => {
+      try {
+        await window.desktopApi.startTimer({
+          timerType: 'task',
+          taskId: Number(task.Id),
+          description: null,
+        });
+        expandedForSwitch = false;
+        selectedTaskId = Number(task.Id);
+        renderTaskSearch();
+        await loadActiveTimer();
+        setStatus('Task timer started');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to start task timer', true);
+      }
+    });
+
+    item.appendChild(title);
+    item.appendChild(meta);
+    item.appendChild(startButton);
+    container.appendChild(item);
+  }
+};
+
+const loadOpenTasks = async () => {
+  if (!currentSession?.token) return;
+  openTasksList.textContent = 'Loading...';
+  openTasksList.classList.add('muted');
+  openTasks = await window.desktopApi.getMyOpenTasks();
+  renderTaskList(openTasksList, openTasks, 'No open tasks found.');
+};
+
+const loadRecentTasks = async () => {
+  if (!currentSession?.token) return;
+  recentTasksList.textContent = 'Loading...';
+  recentTasksList.classList.add('muted');
+  recentTasks = await window.desktopApi.getRecentTasks();
+  renderTaskList(recentTasksList, recentTasks, 'No recent tasks found.');
+};
+
+const selectStartTab = (tabName) => {
+  activeStartTab = tabName;
+  const isTimer = tabName === 'timer';
+  const isOpen = tabName === 'open';
+  const isRecent = tabName === 'recent';
+
+  tabStartTimer.classList.toggle('primary', isTimer);
+  tabOpenTasks.classList.toggle('primary', isOpen);
+  tabRecentTasks.classList.toggle('primary', isRecent);
+  tabStartTimer.setAttribute('aria-selected', String(isTimer));
+  tabOpenTasks.setAttribute('aria-selected', String(isOpen));
+  tabRecentTasks.setAttribute('aria-selected', String(isRecent));
+
+  startTimerPanel.classList.toggle('hidden', !isTimer);
+  openTasksPanel.classList.toggle('hidden', !isOpen);
+  recentTasksPanel.classList.toggle('hidden', !isRecent);
+
+  if (isOpen) {
+    void loadOpenTasks();
+  } else if (isRecent) {
+    void loadRecentTasks();
+  }
+
+  fitWindowToCurrentContent();
+};
+
 const renderTaskSearchOptions = (searchText) => {
   const query = String(searchText || '').toLowerCase().trim();
   const filtered = availableTasks.filter((task) => {
@@ -590,6 +697,7 @@ loginButton.addEventListener('click', async () => {
     currentSession = session;
     renderAuthState();
     await Promise.all([loadSettings(), loadTasks(), loadCallOrganizations(), loadActiveTimer()]);
+    selectStartTab('timer');
   } catch (error) {
     setStatus(error instanceof Error ? error.message : 'Login failed', true);
   }
@@ -795,6 +903,12 @@ discardButton.addEventListener('click', async () => {
 modeTask.addEventListener('click', () => selectMode('task'));
 modeCall.addEventListener('click', () => selectMode('call'));
 
+tabStartTimer.addEventListener('click', () => selectStartTab('timer'));
+tabOpenTasks.addEventListener('click', () => selectStartTab('open'));
+tabRecentTasks.addEventListener('click', () => selectStartTab('recent'));
+refreshOpenTasksButton.addEventListener('click', () => { void loadOpenTasks(); });
+refreshRecentTasksButton.addEventListener('click', () => { void loadRecentTasks(); });
+
 startTaskButton.addEventListener('click', async () => {
   const taskId = Number(selectedTaskId);
   if (!taskId) {
@@ -939,11 +1053,21 @@ const canStartWindowDrag = (target) => {
     return false;
   }
 
-  if (!appHeader || !appHeader.contains(target)) {
+  if (target.closest('button, input, textarea, select, a, [role="listbox"], [contenteditable="true"], .searchable-select, .search-menu, .search-option')) {
     return false;
   }
 
-  if (target.closest('button, input, textarea, select, a, [role="listbox"], [contenteditable="true"], .searchable-select, .search-menu, .search-option')) {
+  if (document.body.classList.contains('compact-mode')) {
+    if (compactDragBar && compactDragBar.contains(target)) {
+      return true;
+    }
+    if (timerCardHeader && timerCardHeader.contains(target)) {
+      return true;
+    }
+    return false;
+  }
+
+  if (!appHeader || !appHeader.contains(target)) {
     return false;
   }
 
@@ -985,6 +1109,7 @@ const bootstrap = async () => {
   apiUrlInput.value = currentSession?.apiUrl || 'http://localhost:3000';
   renderAuthState();
   selectMode('task');
+  selectStartTab('timer');
 
   renderCallOrganizations();
   renderCallProjects();
@@ -993,6 +1118,7 @@ const bootstrap = async () => {
 
   if (currentSession?.token) {
     await Promise.all([loadSettings(), loadTasks(), loadCallOrganizations(), loadActiveTimer()]);
+    selectStartTab('timer');
   }
 };
 

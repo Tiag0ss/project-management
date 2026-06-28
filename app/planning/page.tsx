@@ -156,6 +156,9 @@ export default function PlanningPage() {
   const [taskTimeEntries, setTaskTimeEntries] = useState<any[]>([]);
   const [recurringAllocations, setRecurringAllocations] = useState<any[]>([]);
   const [outlookTimelineEvents, setOutlookTimelineEvents] = useState<PlannerOutlookEvent[]>([]);
+  const [selectedOutlookEvent, setSelectedOutlookEvent] = useState<PlannerOutlookEvent | null>(null);
+  const [showOutlookActionModal, setShowOutlookActionModal] = useState(false);
+  const [isStartingOutlookTimer, setIsStartingOutlookTimer] = useState(false);
   const [holidayNamesByUserDate, setHolidayNamesByUserDate] = useState<Record<number, Record<string, string[]>>>({});
   const [loadingAllocations, setLoadingAllocations] = useState(false);
   const [showDependencyLines, setShowDependencyLines] = useState(true);
@@ -7487,27 +7490,34 @@ export default function PlanningPage() {
   const isResourceGrouping = ganttGroupBy === 'resource';
   const availableGanttUsers = users.filter((planningUser) => Number(planningUser.Id) > 0);
   const allGanttUserIds = availableGanttUsers.map((planningUser) => Number(planningUser.Id));
-  const normalizedSelectedGanttUserIds = selectedGanttUserIds.length === 0
-    ? allGanttUserIds
-    : selectedGanttUserIds.filter((id) => allGanttUserIds.includes(id));
+  const normalizedSelectedGanttUserIds = selectedGanttUserIds.includes(-1)
+    ? []
+    : selectedGanttUserIds.length === 0
+      ? allGanttUserIds
+      : selectedGanttUserIds.filter((id) => allGanttUserIds.includes(id));
   const selectedGanttUserIdSet = new Set(normalizedSelectedGanttUserIds);
   const visibleGanttUsers = availableGanttUsers.filter((planningUser) => selectedGanttUserIdSet.has(Number(planningUser.Id)));
+  const GANTT_NONE_SELECTED = -1;
+  const isGanttNoneSelected = selectedGanttUserIds.includes(GANTT_NONE_SELECTED);
   const isAllGanttUsersSelected =
-    availableGanttUsers.length > 0
+    !isGanttNoneSelected
+    && availableGanttUsers.length > 0
     && normalizedSelectedGanttUserIds.length === availableGanttUsers.length;
 
   const toggleGanttUserSelection = (targetUserId: number) => {
     setSelectedGanttUserIds((previousSelectedIds) => {
-      const currentSelection = previousSelectedIds.length === 0
-        ? [...allGanttUserIds]
-        : previousSelectedIds.filter((id) => allGanttUserIds.includes(id));
+      const currentSelection = previousSelectedIds.includes(GANTT_NONE_SELECTED)
+        ? []
+        : previousSelectedIds.length === 0
+          ? [...allGanttUserIds]
+          : previousSelectedIds.filter((id) => allGanttUserIds.includes(id));
 
       const nextSelection = currentSelection.includes(targetUserId)
         ? currentSelection.filter((id) => id !== targetUserId)
         : [...currentSelection, targetUserId];
 
       if (nextSelection.length === 0) {
-        return currentSelection;
+        return [GANTT_NONE_SELECTED];
       }
 
       if (nextSelection.length >= allGanttUserIds.length) {
@@ -7518,8 +7528,86 @@ export default function PlanningPage() {
     });
   };
 
+  const toggleGanttUserSelectAll = () => {
+    if (isAllGanttUsersSelected) {
+      setSelectedGanttUserIds([GANTT_NONE_SELECTED]);
+      return;
+    }
+    setSelectedGanttUserIds([]);
+  };
+
   const resetGanttUserSelectionToAll = () => {
     setSelectedGanttUserIds([]);
+  };
+
+  const closeOutlookActionModal = () => {
+    setShowOutlookActionModal(false);
+    setSelectedOutlookEvent(null);
+  };
+
+  const handleOpenOutlookEvent = () => {
+    if (selectedOutlookEvent?.webLink) {
+      window.open(selectedOutlookEvent.webLink, '_blank', 'noopener,noreferrer');
+    }
+    closeOutlookActionModal();
+  };
+
+  const handleStartOutlookCallTimer = async () => {
+    if (!selectedOutlookEvent || !token) return;
+
+    setIsStartingOutlookTimer(true);
+    try {
+      const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const response = await fetch(`${getApiUrl()}/api/timers/start`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          timerType: 'callRecord',
+          callType: 'Teams',
+          subject: selectedOutlookEvent.subject || null,
+          startedAt: new Date().toISOString(),
+          clientTimezone,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to start call timer');
+      }
+      window.dispatchEvent(new CustomEvent('timer-changed'));
+      showToast({ type: 'success', message: 'Call timer started' });
+      closeOutlookActionModal();
+    } catch (error) {
+      showToast({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Failed to start call timer',
+      });
+    } finally {
+      setIsStartingOutlookTimer(false);
+    }
+  };
+
+  const formatOutlookEventDate = (value: string) => {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleString('en-GB', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatOutlookEventTimeRange = (event: PlannerOutlookEvent) => {
+    if (event.isAllDay) return 'All day';
+    const start = new Date(event.start);
+    const end = new Date(event.end);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '';
+    return `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   };
 
   const matchesGanttSearch = (task: Task) => {
@@ -8091,7 +8179,7 @@ export default function PlanningPage() {
                               <input
                                 type="checkbox"
                                 checked={isAllGanttUsersSelected}
-                                onChange={resetGanttUserSelectionToAll}
+                                onChange={toggleGanttUserSelectAll}
                                 className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
                               />
                               Select all users
@@ -9636,11 +9724,12 @@ export default function PlanningPage() {
                               <div
                                 key={`outlook-${outlookEvent.id}-${outlookIdx}`}
                                 onClick={() => {
-                                  if (isSelf && outlookEvent.webLink) {
-                                    window.open(outlookEvent.webLink, '_blank', 'noopener,noreferrer');
+                                  if (isSelf) {
+                                    setSelectedOutlookEvent(outlookEvent);
+                                    setShowOutlookActionModal(true);
                                   }
                                 }}
-                                className={`absolute h-6 rounded bg-sky-500 dark:bg-sky-600 opacity-45 hover:opacity-75 flex items-center text-white text-[10px] px-1 border-l-3 border-sky-700 dark:border-sky-800 ${isSelf && outlookEvent.webLink ? 'cursor-pointer' : 'cursor-default'}`}
+                                className={`absolute h-6 rounded bg-sky-500 dark:bg-sky-600 opacity-45 hover:opacity-75 flex items-center text-white text-[10px] px-1 border-l-3 border-sky-700 dark:border-sky-800 ${isSelf ? 'cursor-pointer' : 'cursor-default'}`}
                                 style={{
                                   left,
                                   width,
@@ -9648,7 +9737,7 @@ export default function PlanningPage() {
                                   borderLeftWidth: '3px',
                                   zIndex: 29,
                                 }}
-                                title={isSelf ? `📅 ${outlookEvent.subject}\n${ownerLabel}\n${timeRangeStr}${outlookEvent.webLink ? '\nClick to open in Outlook' : ''}` : `📅 Busy\n${timeRangeStr}`}
+                                title={isSelf ? `📅 ${outlookEvent.subject}\n${ownerLabel}\n${timeRangeStr}\nClick to open or start timer` : `📅 Busy\n${timeRangeStr}`}
                               >
                                 <span className="truncate">📅 {displaySubject}</span>
                               </div>
@@ -12135,6 +12224,71 @@ export default function PlanningPage() {
           </div>
         )}
       </main>
+
+      {showOutlookActionModal && selectedOutlookEvent && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">📅 Outlook Event</h3>
+                <button
+                  onClick={closeOutlookActionModal}
+                  className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="mb-4 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                  {selectedOutlookEvent.subject}
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  📆 {formatOutlookEventDate(selectedOutlookEvent.start)}
+                </p>
+                {!selectedOutlookEvent.isAllDay && (
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    🕐 {formatOutlookEventTimeRange(selectedOutlookEvent)}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  What would you like to do?
+                </p>
+                {selectedOutlookEvent.webLink && (
+                  <button
+                    onClick={handleOpenOutlookEvent}
+                    className="w-full flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <span className="text-2xl">🌐</span>
+                    <div className="text-left">
+                      <p className="font-medium text-gray-900 dark:text-white">Open in Outlook</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">View the meeting in Office / Outlook</p>
+                    </div>
+                  </button>
+                )}
+                <button
+                  onClick={() => void handleStartOutlookCallTimer()}
+                  disabled={isStartingOutlookTimer}
+                  className="w-full flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-60"
+                >
+                  <span className="text-2xl">📞</span>
+                  <div className="text-left">
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      {isStartingOutlookTimer ? 'Starting...' : 'Start Call Timer'}
+                    </p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Start a call record timer with the meeting subject
+                    </p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </CustomerUserGuard>
   );

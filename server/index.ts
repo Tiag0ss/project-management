@@ -304,7 +304,7 @@ app.prepare().then(async () => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // Download latest generated Desktop App installer (.exe) from release folder
+  // Download latest generated Desktop App installer from release folder
   server.get('/api/downloads/desktop-app', async (req, res) => {
     try {
       const releaseDir = path.join(process.cwd(), 'release');
@@ -312,17 +312,24 @@ app.prepare().then(async () => {
         return res.status(404).json({ success: false, message: 'Desktop installer folder not found' });
       }
 
+      const platform = String(req.query.platform || 'win').toLowerCase();
+      const isLinux = platform === 'linux';
+      const extension = isLinux ? '.appimage' : '.exe';
+
       const entries = await fsPromises.readdir(releaseDir);
-      const exeCandidates = entries
-        .filter((entry) => entry.toLowerCase().endsWith('.exe'))
+      const candidates = entries
+        .filter((entry) => entry.toLowerCase().endsWith(extension))
         .filter((entry) => entry.toLowerCase().includes('desktop timer'));
 
-      if (exeCandidates.length === 0) {
-        return res.status(404).json({ success: false, message: 'Desktop installer not found' });
+      if (candidates.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: isLinux ? 'Linux desktop installer not found' : 'Desktop installer not found',
+        });
       }
 
       const withStats = await Promise.all(
-        exeCandidates.map(async (fileName) => {
+        candidates.map(async (fileName) => {
           const absolutePath = path.join(releaseDir, fileName);
           const stats = await fsPromises.stat(absolutePath);
           return { fileName, absolutePath, mtimeMs: stats.mtimeMs };

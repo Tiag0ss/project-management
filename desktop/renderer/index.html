@@ -56,7 +56,11 @@
     </section>
 
     <section id="timerCard" class="card hidden">
-      <div class="row between">
+      <div class="compact-drag-bar" id="compactDragBar" title="Drag to move window">
+        <span class="compact-drag-grip" aria-hidden="true">⠿</span>
+        <span class="compact-drag-label">Desktop Timer</span>
+      </div>
+      <div class="row between timer-card-header">
         <div class="row active-title-wrap">
           <h2>Active Timer</h2>
           <span id="activeTimerElapsed" class="timer-elapsed">00:00:00</span>
@@ -74,6 +78,13 @@
     </section>
 
     <section id="startCard" class="card hidden">
+      <div class="row tab-bar" role="tablist" aria-label="Desktop timer views">
+        <button id="tabStartTimer" type="button" class="tab-button primary" role="tab" aria-selected="true">Start Timer</button>
+        <button id="tabOpenTasks" type="button" class="tab-button" role="tab" aria-selected="false">My Open Tasks</button>
+        <button id="tabRecentTasks" type="button" class="tab-button" role="tab" aria-selected="false">Recent Tasks</button>
+      </div>
+
+      <div id="startTimerPanel">
       <h2>Start Timer</h2>
       <div class="row">
         <button id="modeTask" class="primary">Task</button>
@@ -197,6 +208,23 @@
           <textarea id="callDescription" rows="2"></textarea>
         </label>
         <button id="startCallButton" class="primary">Start Call Timer</button>
+      </div>
+      </div>
+
+      <div id="openTasksPanel" class="hidden task-list-panel">
+        <div class="row between">
+          <h2>My Open Tasks</h2>
+          <button id="refreshOpenTasksButton" type="button">Refresh</button>
+        </div>
+        <div id="openTasksList" class="task-list muted">Loading...</div>
+      </div>
+
+      <div id="recentTasksPanel" class="hidden task-list-panel">
+        <div class="row between">
+          <h2>Recent Tasks</h2>
+          <button id="refreshRecentTasksButton" type="button">Refresh</button>
+        </div>
+        <div id="recentTasksList" class="task-list muted">Loading...</div>
       </div>
     </section>
 

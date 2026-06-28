@@ -424,6 +424,42 @@ ipcMain.handle('timer:getAvailableTasks', async () => {
   return data?.tasks || [];
 });
 
+ipcMain.handle('tasks:getMyOpenTasks', async () => {
+  const data = await apiRequest('GET', '/api/tasks/my-tasks');
+  const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
+  return tasks.filter((task) => Number(task.StatusIsClosed || 0) === 0 && Number(task.StatusIsCancelled || 0) === 0);
+});
+
+ipcMain.handle('tasks:getRecentTasks', async () => {
+  const endDate = new Date().toISOString().split('T')[0];
+  const start = new Date();
+  start.setDate(start.getDate() - 30);
+  const startDate = start.toISOString().split('T')[0];
+  const data = await apiRequest('GET', `/api/time-entries/my-entries?startDate=${startDate}&endDate=${endDate}`);
+  const entries = Array.isArray(data?.entries) ? data.entries : [];
+  const seen = new Set();
+  const recent = [];
+
+  for (const entry of entries) {
+    const taskId = Number(entry.TaskId);
+    if (!taskId || seen.has(taskId)) {
+      continue;
+    }
+    seen.add(taskId);
+    recent.push({
+      Id: taskId,
+      TaskName: entry.TaskName,
+      ProjectName: entry.ProjectName,
+      ProjectId: entry.ProjectId,
+    });
+    if (recent.length >= 20) {
+      break;
+    }
+  }
+
+  return recent;
+});
+
 ipcMain.handle('organizations:get', async () => {
   const data = await apiRequest('GET', '/api/organizations');
   return data?.organizations || [];

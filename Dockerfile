@@ -1,6 +1,24 @@
 # Production Dockerfile for Project Management App
 FROM node:20-alpine AS base
 
+# Build Linux desktop AppImage (Electron requires glibc — use Debian, not Alpine)
+FROM node:20-bookworm-slim AS desktop-builder
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    git \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json* ./
+COPY desktop ./desktop
+COPY scripts/ensure-electron.mjs ./scripts/
+
+RUN npm ci \
+    && node scripts/ensure-electron.mjs \
+    && npm run desktop:build:linux
+
 # Install dependencies only when needed
 FROM base AS deps
 WORKDIR /app
@@ -20,11 +38,11 @@ RUN npm ci
 
 COPY . .
 
-# Ensure release/ exists even when no .exe was built yet (download endpoint expects the folder)
-RUN mkdir -p release
-
 # Build Next.js and TypeScript server separately to ensure both succeed
 RUN npx next build && npx tsc --project server/tsconfig.json
+
+# Include desktop Linux installer produced in desktop-builder stage
+COPY --from=desktop-builder /app/release ./release
 
 # Production image, copy all the files and run
 FROM base AS runner

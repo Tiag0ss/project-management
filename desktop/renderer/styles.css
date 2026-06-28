@@ -23,6 +23,7 @@ body {
 
 body.compact-mode {
   overflow: hidden;
+  background: var(--panel);
 }
 
 .app-shell {
@@ -30,11 +31,6 @@ body.compact-mode {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-body.compact-mode .app-shell {
-  padding: 10px;
-  gap: 8px;
 }
 
 .app-header h1 {
@@ -266,10 +262,94 @@ button:disabled {
   color: var(--muted);
 }
 
+body.compact-mode .app-shell {
+  padding: 0;
+  gap: 0;
+}
+
+body.compact-mode #timerCard {
+  border: none;
+  border-radius: 0;
+  padding: 8px 10px 10px;
+}
+
 body.compact-mode .app-header,
 body.compact-mode #loginCard,
 body.compact-mode #startCard {
   display: none !important;
+}
+
+.compact-drag-bar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 6px;
+  margin: 0 0 4px;
+  cursor: move;
+  user-select: none;
+}
+
+body.compact-mode .compact-drag-bar {
+  display: flex;
+}
+
+.compact-drag-grip {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.compact-drag-label {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.tab-bar {
+  margin-bottom: 4px;
+}
+
+.tab-button {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  padding: 6px 8px;
+}
+
+.task-list-panel h2 {
+  margin: 0;
+}
+
+.task-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.task-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(15, 20, 27, 0.35);
+}
+
+.task-list-item-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.task-list-item-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.task-list-item button {
+  align-self: flex-start;
 }
 
 .session-actions {

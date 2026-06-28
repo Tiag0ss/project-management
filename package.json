@@ -19,10 +19,12 @@
     "test:integration": "jest --testPathPattern=integration",
     "prebuild": "npm run lint",
     "postbuild": "echo Build completed successfully!",
-    "desktop:start": "electron desktop/main.js",
-    "desktop:dev": "electron desktop/main.js",
+    "desktop:start": "node scripts/ensure-electron.mjs && electron desktop/main.js",
+    "desktop:dev": "node scripts/ensure-electron.mjs && electron desktop/main.js",
+    "desktop:prepare": "node scripts/ensure-electron.mjs",
     "desktop:pack": "electron-builder --projectDir desktop --dir",
-    "desktop:build": "electron-builder --projectDir desktop --win nsis"
+    "desktop:build": "electron-builder --projectDir desktop --win nsis",
+    "desktop:build:linux": "electron-builder --projectDir desktop --linux AppImage"
   },
   "dependencies": {
     "@floating-ui/dom": "^1.7.5",

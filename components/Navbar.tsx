@@ -186,6 +186,7 @@ export default function Navbar() {
 
   // Quick Actions dropdown state
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  const [showDesktopDownloadModal, setShowDesktopDownloadModal] = useState(false);
   
   // Modal type: 'task' | 'organization' | 'project' | 'customer' | 'timeEntry' | 'callRecord' | null
   const [activeModal, setActiveModal] = useState<string | null>(null);
@@ -1342,9 +1343,24 @@ export default function Navbar() {
     }
   };
 
+  const handleDesktopDownload = (platform: 'win' | 'linux') => {
+    window.location.href = `${getApiUrl()}/api/downloads/desktop-app?platform=${platform}`;
+    setShowDesktopDownloadModal(false);
+    setDropdownOpen(false);
+  };
+
+  const openDesktopDownloadModal = () => {
+    setShowDesktopDownloadModal(true);
+    setDropdownOpen(false);
+    if (isFloatingMode) {
+      setIsFloatingSidebarOpen(false);
+    }
+  };
+
   // Close all modals and reset forms
   const closeAllModals = () => {
     setActiveModal(null);
+    setShowDesktopDownloadModal(false);
     setShowQuickTaskModal(false);
     setQuickTaskCreateModalState({ show: false, isLoading: false, project: null, tasks: [], error: '' });
     setError('');
@@ -1916,13 +1932,13 @@ export default function Navbar() {
             <div className="p-2 border-t border-gray-200 dark:border-gray-700">
               {canShowDocsLink && shouldUseLeftSidebar && (
                 <>
-                  <a
-                    href={`${getApiUrl()}/api/downloads/desktop-app`}
+                  <button
+                    type="button"
                     className={sidebarItemClass}
-                    onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}
+                    onClick={openDesktopDownloadModal}
                   >
                     <span className="w-5 text-center">💻</span>{!isSidebarEffectivelyCollapsed && <span>Download Desktop App</span>}
-                  </a>
+                  </button>
                   <a
                     href="/docs"
                     className={`${sidebarItemClass} mb-2`}
@@ -2598,13 +2614,13 @@ export default function Navbar() {
                     </a>
                     {!shouldUseLeftSidebar && (
                       <>
-                        <a
-                          href={`${getApiUrl()}/api/downloads/desktop-app`}
-                          className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          onClick={() => setDropdownOpen(false)}
+                        <button
+                          type="button"
+                          className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          onClick={openDesktopDownloadModal}
                         >
                           💻 Download Desktop App
-                        </a>
+                        </button>
                         <a
                           href="/docs"
                           className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -3051,6 +3067,55 @@ export default function Navbar() {
         onClose={closeAllModals}
         onSubmit={handleSaveCallRecord}
       />
+
+      {showDesktopDownloadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Download Desktop App</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowDesktopDownloadModal(false)}
+                  className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Choose your platform:
+              </p>
+
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => handleDesktopDownload('win')}
+                  className="w-full flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
+                >
+                  <span className="text-2xl">🪟</span>
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white">Windows</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Installer (.exe)</p>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDesktopDownload('linux')}
+                  className="w-full flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
+                >
+                  <span className="text-2xl">🐧</span>
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white">Linux</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">AppImage (CachyOS, Ubuntu, etc.)</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

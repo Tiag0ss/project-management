@@ -2230,11 +2230,8 @@ export default function TimesheetPage() {
           submitLabel="Add Entry"
           onClose={() => setShowCreateTimeEntryModal(false)}
           onSubmit={handleCreateTimeEntry}
-                    token={token || undefined}
-          taskOptions={myTasks.map((task) => ({
-            value: task.Id,
-            label: `${task.ProjectName} - ${task.TaskName} (${task.StatusName || 'Unknown'})`,
-          }))}
+          token={token || undefined}
+          useOrganizationProjectTaskFlow
         />
 
         {/* Edit Time Entry Modal */}

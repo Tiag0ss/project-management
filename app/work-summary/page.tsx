@@ -688,7 +688,7 @@ export default function WorkSummaryPage() {
                         <button
                           onClick={async () => {
                             const filtered = combinedEntries;
-                            const header = ['Date', 'Type', 'Start', 'End', 'Hours', 'Project', 'Task', 'Organization', 'Title', 'Details'];
+                            const header = ['Date', 'Type', 'Start', 'End', 'Hours', 'Project', 'Task', 'JIRA Ticket', 'Organization', 'Title', 'Details'];
                             const rows = filtered.map(e => [
                               new Date(`${e.date}T12:00:00`).toLocaleDateString(),
                               e.type === 'timeEntry' ? 'Time' : 'Call',
@@ -697,6 +697,7 @@ export default function WorkSummaryPage() {
                               decimalHoursToHMS(e.hours),
                               e.projectName,
                               e.taskName,
+                              e.jiraIssueKey || '',
                               e.organizationName,
                               e.title,
                               stripHtml(e.details),
@@ -725,6 +726,7 @@ export default function WorkSummaryPage() {
                               decimalHoursToHMS(e.hours),
                               e.projectName,
                               e.taskName,
+                              e.jiraIssueKey || '',
                               e.organizationName,
                               e.title,
                               stripHtml(e.details),
@@ -733,7 +735,7 @@ export default function WorkSummaryPage() {
                               await downloadTablePdf({
                                 title: 'Work Summary',
                                 filename: `work-summary-${dateFrom}-${dateTo}`,
-                                headers: ['Date', 'Type', 'Start', 'End', 'Hours', 'Project', 'Task', 'Org', 'Title', 'Details'],
+                                headers: ['Date', 'Type', 'Start', 'End', 'Hours', 'Project', 'Task', 'JIRA', 'Org', 'Title', 'Details'],
                                 rows,
                               }, token!);
                             } catch (err) {

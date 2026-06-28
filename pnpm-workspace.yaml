@@ -1,0 +1,6 @@
+allowBuilds:
+  '@scarf/scarf': true
+  bcrypt: true
+  electron: true
+  sharp: true
+  unrs-resolver: true

@@ -1,6 +1,6 @@
 {
   "name": "pm-desktop-timer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Desktop timer app for time entries and call records",
   "author": "Project Management",
   "main": "main.js",
@@ -30,6 +30,17 @@
           ]
         }
       ]
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Office"
     }
   },
   "dependencies": {

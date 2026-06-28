@@ -177,6 +177,7 @@ interface CalendarEvent {
     webLink?: string;
     userName?: string;
     userEmail?: string;
+    outlookSubject?: string;
   };
 }
 
@@ -238,6 +239,9 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   const [vacationNotes, setVacationNotes] = useState('');
   const [leaveDayPortion, setLeaveDayPortion] = useState<LeaveDayPortion>('full');
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedOutlookEvent, setSelectedOutlookEvent] = useState<CalendarEvent | null>(null);
+  const [showOutlookActionModal, setShowOutlookActionModal] = useState(false);
+  const [isStartingOutlookTimer, setIsStartingOutlookTimer] = useState(false);
 
   const CALENDAR_HIDDEN_TYPES_KEY = 'dashboard_calendar_hidden_types';
   type CalendarEventType = CalendarEvent['resource']['type'];
@@ -863,6 +867,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
           webLink: outlookEvent.webLink || undefined,
           userName: outlookEvent.userName,
           userEmail: outlookEvent.userEmail,
+          outlookSubject: outlookEvent.subject,
         },
       });
     });
@@ -939,9 +944,8 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     }
 
     if (event.resource.type === 'outlook') {
-      if (event.resource.webLink) {
-        window.open(event.resource.webLink, '_blank', 'noopener,noreferrer');
-      }
+      setSelectedOutlookEvent(event);
+      setShowOutlookActionModal(true);
       return;
     }
 
@@ -1092,6 +1096,54 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   const closeEditCallModal = () => {
     setShowEditCallModal(false);
     setEditingCallRecord(null);
+  };
+
+  const closeOutlookActionModal = () => {
+    setShowOutlookActionModal(false);
+    setSelectedOutlookEvent(null);
+  };
+
+  const handleOpenOutlookEvent = () => {
+    if (selectedOutlookEvent?.resource.webLink) {
+      window.open(selectedOutlookEvent.resource.webLink, '_blank', 'noopener,noreferrer');
+    }
+    closeOutlookActionModal();
+  };
+
+  const handleStartOutlookCallTimer = async () => {
+    if (!selectedOutlookEvent) return;
+
+    const subjectText = selectedOutlookEvent.resource.outlookSubject
+      || selectedOutlookEvent.title.replace(/^📅\s*/, '').split(' • ')[0];
+
+    setIsStartingOutlookTimer(true);
+    try {
+      const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const response = await fetch(`${getApiUrl()}/api/timers/start`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          timerType: 'callRecord',
+          callType: 'Teams',
+          subject: subjectText || null,
+          startedAt: new Date().toISOString(),
+          clientTimezone,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to start call timer');
+      }
+      window.dispatchEvent(new CustomEvent('timer-changed'));
+      closeOutlookActionModal();
+    } catch (error) {
+      console.error('Failed to start call timer from Outlook event:', error);
+    } finally {
+      setIsStartingOutlookTimer(false);
+    }
   };
 
   const handleCreateTimeEntry = async (entryData: TimeEntryFormValues) => {
@@ -1549,6 +1601,73 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
         </div>
       </div>
 
+      {/* Outlook Event Action Modal */}
+      {showOutlookActionModal && selectedOutlookEvent && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">📅 Outlook Event</h3>
+                <button
+                  onClick={closeOutlookActionModal}
+                  className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="mb-4 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                  {selectedOutlookEvent.resource.outlookSubject
+                    || selectedOutlookEvent.title.replace(/^📅\s*/, '').split(' • ')[0]}
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  📆 {format(selectedOutlookEvent.start, 'EEEE, MMMM d, yyyy')}
+                </p>
+                {!selectedOutlookEvent.allDay && (
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    🕐 {format(selectedOutlookEvent.start, 'HH:mm')} - {format(selectedOutlookEvent.end, 'HH:mm')}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  What would you like to do?
+                </p>
+                {selectedOutlookEvent.resource.webLink && (
+                  <button
+                    onClick={handleOpenOutlookEvent}
+                    className="w-full flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <span className="text-2xl">🌐</span>
+                    <div className="text-left">
+                      <p className="font-medium text-gray-900 dark:text-white">Open in Outlook</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">View the meeting in Office / Outlook</p>
+                    </div>
+                  </button>
+                )}
+                <button
+                  onClick={() => void handleStartOutlookCallTimer()}
+                  disabled={isStartingOutlookTimer}
+                  className="w-full flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-60"
+                >
+                  <span className="text-2xl">📞</span>
+                  <div className="text-left">
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      {isStartingOutlookTimer ? 'Starting...' : 'Start Call Timer'}
+                    </p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Start a call record timer with the meeting subject
+                    </p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Slot Selection Modal */}
       {showSlotModal && selectedSlot && slotAction !== 'call' && slotAction !== 'timeEntry' && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
@@ -1803,6 +1922,8 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
         title="⏱️ Add Time Entry"
         submitLabel="Add Entry"
         isSubmitting={isSaving}
+        token={token}
+        useOrganizationProjectTaskFlow
         initialData={selectedSlot ? {
           workDate: format(selectedSlot.start, 'yyyy-MM-dd'),
           startTime: format(selectedSlot.start, 'HH:mm'),
@@ -1819,10 +1940,6 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
         onBack={() => setSlotAction('choice')}
         onClose={closeSlotModal}
         onSubmit={handleCreateTimeEntry}
-        taskOptions={tasks.map((task) => ({
-          value: task.Id,
-          label: task.ProjectName ? `${task.ProjectName} - ${task.TaskName}` : task.TaskName,
-        }))}
       />
 
       <CallRecordFormModal
