@@ -8912,7 +8912,8 @@ export default function PlanningPage() {
                       const hasUnscheduledChildForUser = hasUnscheduledAssignedDescendant(currentTask.Id, Number(userRow.Id));
 
                       if (hasUnscheduledSelfForUser || hasUnscheduledChildForUser) {
-                        unscheduledSpan = getUnscheduledRenderDates(currentTask, Number(userRow.Id)).length;
+                        // Unscheduled render dates are spread horizontally across days, not stacked vertically.
+                        unscheduledSpan = 1;
                       }
                     }
 
@@ -9438,6 +9439,8 @@ export default function PlanningPage() {
                             })
                             .filter((entry): entry is { segment: typeof mergedTaskBarSegments[number]; segmentPosition: NonNullable<ReturnType<typeof getTaskPosition>> } => entry !== null);
 
+                          const usesSingleVerticalLane = isUnscheduledForUser || hasUnscheduledAssignedChildForUser;
+
                           return (
                             <React.Fragment key={`bar-${task.Id}`}>
                               {/* Snapshot overlay ghost bars — render in the bottom half of each row slot (offset by 26px) */}
@@ -9557,7 +9560,7 @@ export default function PlanningPage() {
                                     style={{
                                       left: segmentPreviewStyle?.left || segmentPosition.left,
                                       width: segmentPreviewStyle?.width || segmentPosition.width,
-                                      top: `${2 + (row + segmentIndex) * ROW_H}px`,
+                                      top: `${2 + (row + (usesSingleVerticalLane ? 0 : segmentIndex)) * ROW_H}px`,
                                       height: '24px',
                                       ...(segmentStatusColor ? { backgroundColor: segmentStatusColor } : {}),
                                       borderLeft: `${isSubtask ? '3' : '4'}px solid ${priorityBorderHex}`,

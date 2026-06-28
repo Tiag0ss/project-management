@@ -58,6 +58,11 @@ npm run build:server  # Compile TypeScript server to JavaScript
 
 ---
 
+### Docker Deploy in Linux
+```bash
+sg docker -c "./docker-build.sh"
+```
+
 ## 3. Database Setup
 
 ### Initial Setup
