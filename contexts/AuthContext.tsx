@@ -2,8 +2,18 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { authApi, User, LoginCredentials, RegisterData } from '@/lib/api/auth';
+import {
+  AUTH_TOKEN_KEY,
+  AUTH_USER_KEY,
+  clearStoredSession,
+  isAuthFailureStatus,
+  isPublicAuthPath,
+  persistStoredSession,
+  readStoredSession,
+} from '@/lib/auth/session';
 
 interface AuthContextType {
   user: User | null;
@@ -19,109 +29,146 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+let authFailureInProgress = false;
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const hasInitializedRef = useRef(false);
 
-  // Function to update token
-  const updateToken = (newToken: string) => {
+  const clearAuthState = useCallback(() => {
+    clearStoredSession();
+    setToken(null);
+    setUser(null);
+  }, []);
+
+  const redirectToLoginIfNeeded = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (isPublicAuthPath(window.location.pathname)) {
+      return;
+    }
+    if (authFailureInProgress) {
+      return;
+    }
+    authFailureInProgress = true;
+    router.replace('/login');
+    window.setTimeout(() => {
+      authFailureInProgress = false;
+    }, 1500);
+  }, [router]);
+
+  const handleInvalidSession = useCallback(() => {
+    clearAuthState();
+    redirectToLoginIfNeeded();
+  }, [clearAuthState, redirectToLoginIfNeeded]);
+
+  const updateToken = useCallback((newToken: string) => {
     setToken(newToken);
-    localStorage.setItem('authToken', newToken);
-  };
+    localStorage.setItem(AUTH_TOKEN_KEY, newToken);
+  }, []);
 
-  // Function to refresh token
-  const refreshToken = async () => {
-    const currentToken = localStorage.getItem('authToken');
-    if (!currentToken) return;
-
+  const validateSessionWithServer = useCallback(async (currentToken: string): Promise<string | null> => {
     try {
       const response = await fetch(`${getApiUrl()}/api/auth/refresh`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${currentToken}`,
-          'Content-Type': 'application/json'
-        }
+          Authorization: `Bearer ${currentToken}`,
+          'Content-Type': 'application/json',
+        },
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.token) {
-          updateToken(data.token);
-        }
+      if (!response.ok) {
+        return null;
       }
-    } catch (error) {
-      console.error('Token refresh failed:', error);
+
+      const data = await response.json();
+      if (data?.success && typeof data.token === 'string' && data.token.length > 0) {
+        return data.token;
+      }
+      return null;
+    } catch {
+      return null;
     }
-  };
+  }, []);
+
+  const refreshToken = useCallback(async () => {
+    const currentToken = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (!currentToken) {
+      return;
+    }
+
+    const refreshedToken = await validateSessionWithServer(currentToken);
+    if (refreshedToken) {
+      updateToken(refreshedToken);
+      return;
+    }
+
+    handleInvalidSession();
+  }, [handleInvalidSession, updateToken, validateSessionWithServer]);
 
   useEffect(() => {
-    // Check if system needs installation
-    const checkInstall = async () => {
+    if (hasInitializedRef.current) {
+      return;
+    }
+    hasInitializedRef.current = true;
+
+    const initializeAuth = async () => {
       try {
-        const response = await fetch(
-          `${getApiUrl()}/api/install/check`
-        );
+        const response = await fetch(`${getApiUrl()}/api/install/check`);
         if (response.ok) {
           const data = await response.json();
           if (data.needsInstall && !window.location.pathname.startsWith('/install')) {
-            window.location.href = '/install';
+            router.replace('/install');
             return;
           }
         }
-      } catch (err) {
-        // If check fails, continue normally
+      } catch {
+        // Continue when install check is unavailable.
       }
 
-      // Load token and user from localStorage on mount
-      const storedToken = localStorage.getItem('authToken');
-      const storedUser = localStorage.getItem('authUser');
-
-      if (storedToken && storedUser) {
-        // Decode token and check if it's expired before restoring session
-        try {
-          const payload = JSON.parse(atob(storedToken.split('.')[1]));
-          const isExpired = payload.exp && payload.exp * 1000 < Date.now();
-          if (isExpired) {
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('authUser');
-            const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/install'];
-            const isPublicPath = publicPaths.some(p => window.location.pathname.startsWith(p));
-            if (!isPublicPath) {
-              window.location.href = '/login';
-              return;
-            }
-          } else {
-            setToken(storedToken);
-            setUser(JSON.parse(storedUser));
-          }
-        } catch {
-          // If token is malformed, clear it
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('authUser');
-        }
+      const session = readStoredSession();
+      if (!session) {
+        setIsLoading(false);
+        return;
       }
 
+      const refreshedToken = await validateSessionWithServer(session.token);
+      if (!refreshedToken) {
+        clearAuthState();
+        redirectToLoginIfNeeded();
+        setIsLoading(false);
+        return;
+      }
+
+      setToken(refreshedToken);
+      setUser(session.user);
+      persistStoredSession(refreshedToken, session.user);
       setIsLoading(false);
     };
 
-    checkInstall();
-  }, []);
+    void initializeAuth();
+  }, [clearAuthState, redirectToLoginIfNeeded, router, validateSessionWithServer]);
 
-  // Periodic token refresh check (every 30 minutes if user is logged in)
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      return;
+    }
 
-    const refreshInterval = setInterval(() => {
-      refreshToken();
-    }, 30 * 60 * 1000); // 30 minutes
+    const refreshInterval = window.setInterval(() => {
+      void refreshToken();
+    }, 30 * 60 * 1000);
 
-    return () => clearInterval(refreshInterval);
-  }, [token]);
+    return () => window.clearInterval(refreshInterval);
+  }, [token, refreshToken]);
 
-  // Check for auto-refreshed token in API responses, and handle 401 (token expired)
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined') {
+      return;
+    }
 
     const originalFetch = window.fetch;
     window.fetch = async (...args) => {
@@ -132,20 +179,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         updateToken(newToken);
       }
 
-      // If the server returns 401 and the user was logged in, the token expired
-      if (response.status === 401) {
-        const hasStoredToken = localStorage.getItem('authToken');
-        if (hasStoredToken) {
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('authUser');
-          setToken(null);
-          setUser(null);
+      const hadStoredToken = Boolean(localStorage.getItem(AUTH_TOKEN_KEY));
+      if (!hadStoredToken) {
+        return response;
+      }
 
-          const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/install'];
-          const isPublicPath = publicPaths.some(p => window.location.pathname.startsWith(p));
-          if (!isPublicPath) {
-            window.location.href = '/login';
-          }
+      if (response.status === 401 || response.status === 403) {
+        let message = '';
+        try {
+          const payload = await response.clone().json() as { message?: string };
+          message = typeof payload?.message === 'string' ? payload.message : '';
+        } catch {
+          message = '';
+        }
+
+        if (isAuthFailureStatus(response.status, message)) {
+          handleInvalidSession();
         }
       }
 
@@ -155,51 +204,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       window.fetch = originalFetch;
     };
-  }, []);
+  }, [handleInvalidSession, updateToken]);
 
   const login = async (credentials: LoginCredentials) => {
-    try {
-      const response = await authApi.login(credentials);
-      
-      if (response.success && response.token && response.user) {
-        setToken(response.token);
-        setUser(response.user);
-        
-        localStorage.setItem('authToken', response.token);
-        localStorage.setItem('authUser', JSON.stringify(response.user));
-      }
-    } catch (error) {
-      throw error;
+    const response = await authApi.login(credentials);
+
+    if (response.success && response.token && response.user) {
+      setToken(response.token);
+      setUser(response.user);
+      persistStoredSession(response.token, response.user);
+      authFailureInProgress = false;
     }
   };
 
   const register = async (userData: RegisterData) => {
-    try {
-      await authApi.register(userData);
-      // Auto-login after registration
-      await login({ username: userData.username, password: userData.password });
-    } catch (error) {
-      throw error;
-    }
+    await authApi.register(userData);
+    await login({ username: userData.username, password: userData.password });
   };
 
   const logout = () => {
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('authUser');
+    authFailureInProgress = false;
+    clearAuthState();
   };
 
   const updateUser = (updates: Partial<User>) => {
-    setUser(prev => {
-      if (!prev) return prev;
+    setUser((prev) => {
+      if (!prev) {
+        return prev;
+      }
       const updated = { ...prev, ...updates };
-      localStorage.setItem('authUser', JSON.stringify(updated));
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(updated));
       return updated;
     });
   };
 
-  // Check if user is a customer user (has CustomerId set)
   const isCustomerUser = Boolean(user?.customerId);
 
   return (
