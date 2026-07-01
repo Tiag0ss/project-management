@@ -75,6 +75,7 @@ import planningImportRoutes from './routes/planningImport';
 import allocationSnapshotsRoutes from './routes/allocationSnapshots';
 import aiAssistantRoutes from './routes/aiAssistant';
 import outlookCalendarRoutes from './routes/outlookCalendar';
+import emailTaskQueueRoutes, { webhookRouter as emailTaskQueueWebhookRoutes } from './routes/emailTaskQueue';
 import apiTokensRoutes from './routes/apiTokens';
 import reportsRoutes from './routes/reports';
 import { ensureAiAssistantViews } from './utils/aiAssistantViews';
@@ -166,6 +167,14 @@ app.prepare().then(async () => {
     legacyHeaders: false,
   });
 
+  const webhookLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 100,
+    message: 'Too many webhook requests, please try again later',
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
   // Middleware - increase limit for base64 file uploads (10MB files become ~13.5MB in base64)
   server.use(express.json({ limit: '50mb' }));
   server.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -216,6 +225,7 @@ app.prepare().then(async () => {
   // API routes - apply rate limiting
   server.use('/api/install', installRoutes);
   server.use('/api/auth', authLimiter, authRoutes);
+  server.use('/api/webhooks', webhookLimiter, emailTaskQueueWebhookRoutes);
   server.use('/api', apiLimiter); // Apply to all other API routes
   server.use('/api/user', userRoutes);
   server.use('/api/projects', projectsRoutes);
@@ -249,6 +259,7 @@ app.prepare().then(async () => {
   server.use('/api/role-permissions', rolePermissionsRoutes);
   server.use('/api/system-settings', systemSettingsRoutes);
   server.use('/api/outlook-calendar', outlookCalendarRoutes);
+  server.use('/api/email-task-queue', emailTaskQueueRoutes);
   server.use('/api/activity-logs', activityLogsRoutes);
   server.use('/api/change-history', changeHistoryRoutes);
   server.use('/api/email-preferences', emailPreferencesRoutes);

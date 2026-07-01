@@ -139,6 +139,22 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [isJiraPriorityMappingOpen, setIsJiraPriorityMappingOpen] = useState(false);
   const [isJiraAssigneeMappingOpen, setIsJiraAssigneeMappingOpen] = useState(false);
   const [isJiraTicketMappingOpen, setIsJiraTicketMappingOpen] = useState(false);
+  // Outlook Email Queue Import State
+  const [showOutlookQueueModal, setShowOutlookQueueModal] = useState(false);
+  const [outlookQueueItems, setOutlookQueueItems] = useState<Array<{
+    Id: number;
+    Subject: string | null;
+    BodyText: string | null;
+    BodyHtml: string | null;
+    FromEmail: string;
+    ReceivedAt: string;
+  }>>([]);
+  const [selectedOutlookQueueIds, setSelectedOutlookQueueIds] = useState<Set<number>>(new Set());
+  const [outlookQueueLoading, setOutlookQueueLoading] = useState(false);
+  const [outlookQueueImporting, setOutlookQueueImporting] = useState(false);
+  const [outlookQueueError, setOutlookQueueError] = useState('');
+  const [outlookQueueMappings, setOutlookQueueMappings] = useState<Record<number, { assigneeId?: number }>>({});
+  const [hasOutlookQueueItems, setHasOutlookQueueItems] = useState(false);
   // Check Jira Ticket Status modal state
   const [showJiraCheckStatusModal, setShowJiraCheckStatusModal] = useState(false);
   const [jiraCheckStatusLoading, setJiraCheckStatusLoading] = useState(false);
@@ -357,6 +373,31 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     loadFeatureFlags();
   }, [token]);
 
+  const refreshOutlookQueueAvailability = async () => {
+    if (!token) {
+      setHasOutlookQueueItems(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${getApiUrl()}/api/email-task-queue?limit=1`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        setHasOutlookQueueItems(false);
+        return;
+      }
+
+      const data = await response.json();
+      setHasOutlookQueueItems(Array.isArray(data.items) && data.items.length > 0);
+    } catch {
+      setHasOutlookQueueItems(false);
+    }
+  };
+
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login');
@@ -365,6 +406,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     if (user && token && featureFlagsLoaded) {
       loadProject();
       loadTasks();
+      refreshOutlookQueueAvailability();
       if (internalTicketsEnabled) {
         loadTickets();
       } else {
@@ -372,6 +414,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       }
     }
   }, [user, token, authLoading, projectId, router, featureFlagsLoaded, internalTicketsEnabled]);
+
+  useEffect(() => {
+    if (activeTab === 'tasks' && token) {
+      refreshOutlookQueueAvailability();
+    }
+  }, [activeTab, token]);
 
   const loadProject = async () => {
     if (!token) return;
@@ -2206,6 +2254,136 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   }, [showJiraTicketsModal, project, jiraIntegration]);
 
+  const loadOutlookQueueItems = async () => {
+    if (!token) return;
+
+    setOutlookQueueLoading(true);
+    setOutlookQueueError('');
+
+    try {
+      const response = await fetch(`${getApiUrl()}/api/email-task-queue?limit=50`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to load Outlook queue');
+      }
+
+      const data = await response.json();
+      const items = data.items || [];
+      setOutlookQueueItems(items);
+      setHasOutlookQueueItems(items.length > 0);
+      setSelectedOutlookQueueIds(new Set());
+      setOutlookQueueMappings({});
+    } catch (err: any) {
+      setOutlookQueueError(err.message || 'Failed to load Outlook queue');
+      setOutlookQueueItems([]);
+      setHasOutlookQueueItems(false);
+    } finally {
+      setOutlookQueueLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showOutlookQueueModal && project && token) {
+      loadOutlookQueueItems();
+    }
+  }, [showOutlookQueueModal, project, token]);
+
+  const handleDismissOutlookQueueItem = async (queueItemId: number) => {
+    if (!token) return;
+
+    try {
+      const response = await fetch(`${getApiUrl()}/api/email-task-queue/${queueItemId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to dismiss queue item');
+      }
+
+      setOutlookQueueItems((prev) => {
+        const next = prev.filter((item) => item.Id !== queueItemId);
+        setHasOutlookQueueItems(next.length > 0);
+        return next;
+      });
+      setSelectedOutlookQueueIds((prev) => {
+        const next = new Set(prev);
+        next.delete(queueItemId);
+        return next;
+      });
+    } catch (err: any) {
+      setOutlookQueueError(err.message || 'Failed to dismiss queue item');
+    }
+  };
+
+  const handleImportOutlookQueue = async () => {
+    if (!token || !project) return;
+
+    const selectedIds = Array.from(selectedOutlookQueueIds);
+    if (selectedIds.length === 0) return;
+
+    setOutlookQueueImporting(true);
+    setOutlookQueueError('');
+
+    try {
+      const response = await fetch(`${getApiUrl()}/api/email-task-queue/import`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectId: parseInt(projectId),
+          queueItemIds: selectedIds,
+          defaults: {
+            assignedTo: user?.id,
+          },
+          itemOverrides: Object.fromEntries(
+            selectedIds.map((id) => [
+              id,
+              {
+                assigneeId: outlookQueueMappings[id]?.assigneeId ?? user?.id ?? null,
+              },
+            ])
+          ),
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to import from Outlook queue');
+      }
+
+      const result = await response.json();
+      const imported = result.data?.imported || 0;
+      const skipped = result.data?.skipped || 0;
+
+      let message = `Successfully imported ${imported} task(s) from Outlook queue.`;
+      if (skipped > 0) {
+        message += ` ${skipped} item(s) were skipped.`;
+      }
+
+      showAlert('Import Successful', message);
+      setShowOutlookQueueModal(false);
+      setSelectedOutlookQueueIds(new Set());
+      setOutlookQueueMappings({});
+      await loadTasks();
+      await refreshOutlookQueueAvailability();
+    } catch (err: any) {
+      setOutlookQueueError(err.message || 'Failed to import from Outlook queue');
+    } finally {
+      setOutlookQueueImporting(false);
+    }
+  };
+
   useEffect(() => {
     if (!showJiraTicketsModal || jiraTickets.length === 0) return;
 
@@ -2525,6 +2703,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               onImportFromJiraTicket={() => {
                 setShowJiraTicketsModal(true);
               }}
+              onImportFromOutlookQueue={() => setShowOutlookQueueModal(true)}
+              hasOutlookQueueItems={hasOutlookQueueItems}
               onCheckJiraTicketStatus={handleOpenCheckJiraStatus}
               onCheckJiraBoardStatus={handleOpenCheckJiraBoardStatus}
               onImportFromGitHub={() => setShowGitHubImportModal(true)}
@@ -4561,6 +4741,165 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
+      {/* Outlook Email Queue Import Modal */}
+      {showOutlookQueueModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <span className="text-2xl">📧</span>
+                  Import from Outlook Queue
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowOutlookQueueModal(false);
+                    setSelectedOutlookQueueIds(new Set());
+                    setOutlookQueueError('');
+                    setOutlookQueueMappings({});
+                  }}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <p className="text-sm text-blue-800 dark:text-blue-400">
+                  Select queued emails sent from your Outlook address to the queue configured in Cloudflare and import them as tasks in this project.
+                </p>
+              </div>
+
+              {outlookQueueError && (
+                <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
+                  {outlookQueueError}
+                </div>
+              )}
+
+              {outlookQueueLoading && (
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">Loading queue...</div>
+              )}
+
+              {!outlookQueueLoading && outlookQueueItems.length > 0 && (
+                <div className="space-y-3">
+                  {outlookQueueItems.map((item) => {
+                    const isSelected = selectedOutlookQueueIds.has(item.Id);
+                    const preview = (item.BodyText || item.BodyHtml || '')
+                      .replace(/<[^>]+>/g, ' ')
+                      .replace(/\s+/g, ' ')
+                      .trim()
+                      .slice(0, 180);
+
+                    return (
+                      <div
+                        key={item.Id}
+                        className={`border rounded-lg p-4 transition-colors ${
+                          isSelected
+                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                            : 'border-gray-200 dark:border-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              setSelectedOutlookQueueIds((prev) => {
+                                const next = new Set(prev);
+                                if (e.target.checked) next.add(item.Id);
+                                else next.delete(item.Id);
+                                return next;
+                              });
+                            }}
+                            className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <h3 className="font-semibold text-gray-900 dark:text-white">
+                                  {item.Subject?.trim() || 'Email task'}
+                                </h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                  {item.FromEmail} · {new Date(item.ReceivedAt).toLocaleString()}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleDismissOutlookQueueItem(item.Id)}
+                                className="text-xs text-red-600 dark:text-red-400 hover:underline whitespace-nowrap"
+                              >
+                                Dismiss
+                              </button>
+                            </div>
+                            {preview && (
+                              <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">{preview}{preview.length >= 180 ? '…' : ''}</p>
+                            )}
+                            {isSelected && (
+                              <div className="mt-3">
+                                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Assignee</label>
+                                <SearchableSelect
+                                  value={outlookQueueMappings[item.Id]?.assigneeId ?? user?.id}
+                                  onChange={(value) => {
+                                    setOutlookQueueMappings((prev) => ({
+                                      ...prev,
+                                      [item.Id]: {
+                                        ...prev[item.Id],
+                                        assigneeId: value,
+                                      },
+                                    }));
+                                  }}
+                                  options={taskEditorUsers.map((u) => ({
+                                    id: u.Id,
+                                    label: `${u.Username}${u.FirstName && u.LastName ? ` (${u.FirstName} ${u.LastName})` : ''}`,
+                                  }))}
+                                  placeholder="Select assignee..."
+                                  emptyMessage="No users available"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {!outlookQueueLoading && !outlookQueueError && outlookQueueItems.length === 0 && (
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                  No queued emails found. Send an email from your Outlook address to the configured queue address.
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    setShowOutlookQueueModal(false);
+                    setSelectedOutlookQueueIds(new Set());
+                    setOutlookQueueError('');
+                    setOutlookQueueMappings({});
+                  }}
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleImportOutlookQueue}
+                  disabled={outlookQueueImporting || selectedOutlookQueueIds.size === 0}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
+                >
+                  {outlookQueueImporting
+                    ? 'Importing...'
+                    : `Import Selected (${selectedOutlookQueueIds.size})`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Check Jira Ticket Status Modal */}
       {showJiraCheckStatusModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
@@ -5594,6 +5933,8 @@ function TasksTab({
   onImportClick,
   onImportFromJira,
   onImportFromJiraTicket,
+  onImportFromOutlookQueue,
+  hasOutlookQueueItems,
   onImportFromGitHub,
   onImportFromGitea,
   onCheckJiraTicketStatus,
@@ -5619,6 +5960,8 @@ function TasksTab({
   onImportClick: () => void;
   onImportFromJira: () => void;
   onImportFromJiraTicket: () => void;
+  onImportFromOutlookQueue: () => void;
+  hasOutlookQueueItems: boolean;
   onImportFromGitHub: () => void;
   onImportFromGitea: () => void;
   onCheckJiraTicketStatus?: () => void;
@@ -7831,6 +8174,22 @@ function TasksTab({
                             <div>
                               <div className="font-medium text-gray-900 dark:text-white">Import from Jira Ticket</div>
                               <div className="text-xs text-gray-500 dark:text-gray-400">Tickets import</div>
+                            </div>
+                          </button>
+                        )}
+
+                        {hasOutlookQueueItems && (
+                          <button
+                            onClick={() => {
+                              onImportFromOutlookQueue();
+                              setShowImportDropdown(false);
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
+                          >
+                            <span className="text-xl">📧</span>
+                            <div>
+                              <div className="font-medium text-gray-900 dark:text-white">Import from Outlook Queue</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">Emails sent to the queue address</div>
                             </div>
                           </button>
                         )}

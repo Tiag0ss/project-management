@@ -1,0 +1,95 @@
+{
+  "TableName": "EmailTaskQueue",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique email queue item identifier"
+    },
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id (queue owner matched by sender email)"
+    },
+    {
+      "FieldName": "ExternalMessageId",
+      "DataType": "varchar(500)",
+      "NotNullable": true,
+      "Unique": true,
+      "Comment": "Unique email Message-ID header for deduplication"
+    },
+    {
+      "FieldName": "FromEmail",
+      "DataType": "varchar(255)",
+      "NotNullable": true,
+      "Comment": "Normalized sender email address"
+    },
+    {
+      "FieldName": "ToEmail",
+      "DataType": "varchar(255)",
+      "NotNullable": false,
+      "Comment": "Destination email address that received the message"
+    },
+    {
+      "FieldName": "Subject",
+      "DataType": "varchar(500)",
+      "NotNullable": false,
+      "Comment": "Email subject line"
+    },
+    {
+      "FieldName": "BodyText",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Plain text email body"
+    },
+    {
+      "FieldName": "BodyHtml",
+      "DataType": "mediumtext",
+      "NotNullable": false,
+      "Comment": "HTML email body"
+    },
+    {
+      "FieldName": "Status",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "pending",
+      "Comment": "Queue status: pending, imported, or rejected"
+    },
+    {
+      "FieldName": "ImportedTaskId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Tasks.Id after import"
+    },
+    {
+      "FieldName": "ImportedProjectId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Projects.Id after import"
+    },
+    {
+      "FieldName": "ImportedAt",
+      "DataType": "timestamp",
+      "NotNullable": false,
+      "Comment": "Timestamp when item was imported as a task"
+    },
+    {
+      "FieldName": "ReceivedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Timestamp when webhook received the email"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Row creation timestamp"
+    }
+  ]
+}
