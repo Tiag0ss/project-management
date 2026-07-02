@@ -43,7 +43,7 @@ This project is a work in progress — bugs may still be found; please report th
 ## Additional Notes
 
 - This README is intentionally concise to comply with Docker Hub overview size limits.
-- For feature walkthroughs and conventions, see [AGENTS.md](AGENTS.md) and [.github/copilot-instructions.md](.github/copilot-instructions.md).
+- For feature walkthroughs and conventions, see [AGENTS.md](AGENTS.md), [docs/FEATURES.md](docs/FEATURES.md), and the in-app user manual at `/docs`.
 - API documentation (Swagger): `http://localhost:3000/api-docs` when the server is running.
 
 ## Tech Stack

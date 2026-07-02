@@ -105,7 +105,8 @@ const manualSections: ManualSection[] = [
     whenToUse: 'Open at the start of every day and before planning weekly priorities.',
     steps: [
       'Review Overview for active tasks and current activity indicators.',
-      'Open Calendar tab to inspect planned allocations, time entries, and events by date.',
+      'Open Calendar tab to inspect planned allocations, time entries, Outlook events (when enabled), and holidays.',
+      'Use Kanban tab to triage tasks by status; task type icons help scan work categories quickly.',
       'Use Analytics tab and switch period filters to compare trends.',
       'Open linked tasks directly from dashboard widgets to take action quickly.',
     ],
@@ -137,6 +138,9 @@ const manualSections: ManualSection[] = [
       'In Task Detail -> Allocations tab, use the Split button to split a planned slice across multiple users.',
       'Choose split mode (Parallel or Sequential) and validate resulting user slices before saving.',
       'If Jira integration is enabled, use Jira import and status mapping flows before bulk ticket/task synchronization.',
+      'If GitHub/Gitea integration is enabled, import issues from the project import menu.',
+      'If you have pending Outlook queue items, use Import from Outlook Queue to create tasks from email.',
+      'Confirm task type is set correctly — icons appear in Kanban, Gantt, and Planning for quick recognition.',
       'Keep task comments and attachments up to date for handovers and audits.',
     ],
     tips: [
@@ -171,6 +175,8 @@ const manualSections: ManualSection[] = [
       'Move slices with normal drag (full slice) or Ctrl + drag (partial by hours).',
       'Use replanning when deadlines shift; confirm remaining-hours logic based on already logged time.',
       'Review unscheduled-work tasks and ghost markers to avoid hidden unplanned workload.',
+      'When Outlook calendar is enabled, wait for the loading banner to finish — events then reduce available hours on affected days.',
+      'Click Outlook event blocks on your row to open the meeting or start a call timer.',
       'Validate that critical tasks have planned dates and assigned owners.',
     ],
     tips: [
@@ -182,6 +188,7 @@ const manualSections: ManualSection[] = [
       'Planning without checking already allocated hours for the same user/date.',
       'Dragging split tasks at parent level instead of on the target user row/day for slice-specific replan.',
       'Ignoring unscheduled-work markers because they do not render as regular timeline bars.',
+      'Ignoring the Outlook calendar loading state and overbooking before busy blocks appear.',
       'Overallocating parent tasks without validating child task distribution.',
     ],
     imagePlaceholders: [
@@ -191,6 +198,8 @@ const manualSections: ManualSection[] = [
       { label: 'Planning move/recalculate actions', fileName: 'docs-planning-move-recalculate.png', note: 'Capture allocation header detail modal with move/recalculate controls.' },
       { label: 'Planning unscheduled work markers', fileName: 'docs-planning-unscheduled-work.png', note: 'Capture unscheduled-work ghost markers and their day placement.' },
       { label: 'Planning current-day highlight', fileName: 'docs-planning-today-highlight.png', note: 'Capture blue today column and header marker.' },
+      { label: 'Outlook calendar loading banner', fileName: 'docs-planning-outlook-loading.png', note: 'Capture "Still loading Outlook calendar…" near overdue milestones.' },
+      { label: 'Outlook events on timeline', fileName: 'docs-planning-outlook-events.png', note: 'Capture event blocks on user row with availability impact.' },
     ],
   },
   {
@@ -361,6 +370,7 @@ const manualSections: ManualSection[] = [
       'Review personal details and update as needed.',
       'Set work hours correctly for each weekday.',
       'Set recurring allocation blocks if your team uses scheduled routines.',
+      'Create API tokens (Profile → API Tokens) only for integrations you manage; revoke when no longer needed.',
       'Review theme and navigation preferences for your workflow.',
     ],
     tips: [
@@ -374,6 +384,33 @@ const manualSections: ManualSection[] = [
     imagePlaceholders: [
       { label: 'Profile account settings', fileName: 'docs-profile-account-settings.png', note: 'Capture personal details section.' },
       { label: 'Profile work hours + recurring', fileName: 'docs-profile-work-hours-recurring.png', note: 'Capture availability and recurring allocation controls.' },
+      { label: 'Profile API tokens', fileName: 'docs-profile-api-tokens.png', note: 'Capture API token list and create dialog.' },
+    ],
+  },
+  {
+    id: 'integrations-user',
+    title: 'Integrations (Outlook Queue, API Tokens)',
+    purpose: 'Use optional integrations to create tasks from email or automate API access.',
+    whenToUse: 'When your organization enabled Outlook email queue, GitHub/Gitea import, or you need a personal API token.',
+    steps: [
+      'For email-to-task: send from your registered email to the queue address configured by your admin.',
+      'Open a project → Import Tasks → Import from Outlook Queue when pending items exist.',
+      'Review subject/body preview, import into the correct project, or dismiss unwanted items.',
+      'For API access: Profile → API Tokens → create token, copy `pt_...` once, use as Bearer token.',
+      'Revoke tokens you no longer use (deactivate or delete).',
+    ],
+    tips: [
+      'Queue import only appears when you have pending items — send a test email first if empty.',
+      'Never share API tokens in chat or email; treat them like passwords.',
+    ],
+    commonMistakes: [
+      'Sending queue email from an address that does not match your user account email.',
+      'Expecting imported tasks to appear in Planning without refreshing or reopening the project.',
+      'Losing the API token secret because it is only shown at creation time.',
+    ],
+    imagePlaceholders: [
+      { label: 'Import from Outlook Queue', fileName: 'docs-import-outlook-queue.png', note: 'Capture project import menu with queue modal.' },
+      { label: 'API token creation', fileName: 'docs-api-token-create.png', note: 'Capture one-time secret display after create.' },
     ],
   },
   {
@@ -485,6 +522,7 @@ const manualSections: ManualSection[] = [
       'If a page is missing, verify organization and permissions first.',
       'If a task/ticket cannot be edited, check status/approval/ownership constraints.',
       'If filters return unexpected results, clear all filters and reapply one by one.',
+      'If a new task does not appear in project or Planning, refresh the page once (cache may need a moment after create).',
       'If exports look wrong, validate selected period and active filters before retrying.',
       'Escalate with screenshots, entity IDs, and timestamp of issue reproduction.',
     ],
@@ -524,7 +562,8 @@ const manualSections: ManualSection[] = [
     whenToUse: 'Read once to understand boundaries of this documentation.',
     steps: [
       'This manual focuses on end-user operations and day-to-day workflows.',
-      'Administration, server setup, and database internals are intentionally excluded.',
+      'User-facing integrations (Outlook queue, API tokens, Jira/GitHub import) are covered where relevant.',
+      'Server setup, Redis, and database administration are documented in README and FEATURES.md — not here.',
       'Permission differences are expected; your organization can enable/disable modules.',
       'Use this guide together with team-specific SOPs when available.',
     ],
@@ -547,9 +586,10 @@ const featureDetails: FeatureDetailSection[] = [
     createFlow: [
       'Create a project from Projects list (name, organization, dates, status).',
       'Use Global Project only for cross-customer/internal initiatives that should not be attached to a specific customer.',
-      'Open project detail and create tasks with status, priority, type, assignee, and estimates.',
+      'Open project detail and create tasks with status, priority, type (icon + color), assignee, and estimates.',
       'For large work, create parent tasks and then subtasks using Parent Task relation.',
       'If ticket-driven, link task to ticket or convert from ticket flow where available.',
+      'Import from Jira, GitHub, Gitea, CSV, or Outlook email queue when integrations are enabled.',
     ],
     editFlow: [
       'Edit project settings when scope, dates, or status changes.',
@@ -566,7 +606,7 @@ const featureDetails: FeatureDetailSection[] = [
     optionExplanations: [
       { option: 'Task Status', meaning: 'Execution stage of a task (for example To Do, In Progress, Done). Status values are organization-specific and can include closed/cancelled semantics.' },
       { option: 'Task Priority', meaning: 'Business urgency (for example Low, Medium, High). Use consistently for triage and reports.' },
-      { option: 'Task Type', meaning: 'Nature of work (for example Feature, Bug, Support, Chore), used for filtering and analytics.' },
+      { option: 'Task Type', meaning: 'Nature of work (for example Feature, Bug, Support). Includes color and Lucide icon shown in Kanban, Gantt, and Planning.' },
       { option: 'Parent Task', meaning: 'Creates hierarchy; child tasks roll up into parent-level visibility.' },
       { option: 'Depends On Task', meaning: 'Blocks start/progress until predecessor task is completed.' },
       { option: 'Estimated Hours', meaning: 'Planned effort; should represent realistic implementation time.' },
@@ -599,6 +639,7 @@ const featureDetails: FeatureDetailSection[] = [
       'Create allocations by dropping tasks into user/day slots; confirm daily capacity checks.',
       'When needed, enable split and create multiple slices (headers) across users with SplitOrder.',
       'For parent tasks, distribute planned hours to child tasks when needed (child allocations).',
+      'When Outlook is enabled, review calendar blocks after the loading banner clears — they affect availability.',
       'Confirm start/end dates auto-adjust according to allocations.',
     ],
     editFlow: [
@@ -901,6 +942,7 @@ const featureDetails: FeatureDetailSection[] = [
       { option: 'Resolved / Done', meaning: 'Work is completed and ready for validation/closure.' },
       { option: 'Closed / Cancelled', meaning: 'Terminal state; no further action expected unless reopened.' },
       { option: 'Priority Low/Medium/High/Critical', meaning: 'Relative urgency and impact; align with SLA expectations and business risk.' },
+      { option: 'Task Type + Icon', meaning: 'Visual category for work (Lucide icon + color). Helps scan boards and planning bars.' },
     ],
     moduleRelations: [
       'Status and priority selections affect filtering, dashboards, and reports.',
@@ -908,8 +950,98 @@ const featureDetails: FeatureDetailSection[] = [
       'Shared option semantics improve cross-team communication and metric quality.',
     ],
     imagePlaceholders: [
-      { label: 'Task status + priority selector example', fileName: 'docs-detail-task-status-priority-selector.png', note: 'Capture both selectors in task modal.' },
       { label: 'Ticket status type interpretation guide', fileName: 'docs-detail-ticket-status-type-guide.png', note: 'Capture status list with type meaning annotation.' },
+      { label: 'Task type icon picker', fileName: 'docs-detail-task-type-icon-picker.png', note: 'Capture organization task type settings with icon search.' },
+    ],
+  },
+  {
+    id: 'detail-api-tokens',
+    title: 'API Tokens - Complete Reference',
+    shortTitle: 'API Tokens',
+
+    modulePurpose: 'Authenticate API requests and webhooks as yourself without sharing your login password.',
+    createFlow: [
+      'Open Profile → API Tokens.',
+      'Click create, enter name and optional expiry.',
+      'Copy the `pt_...` secret immediately — it is not shown again.',
+    ],
+    editFlow: [
+      'Deactivate token when integration no longer needs access.',
+      'Delete token permanently when retiring an integration.',
+    ],
+    deleteFlow: [
+      'Delete removes the token record; integrations using it will receive 403.',
+    ],
+    optionExplanations: [
+      { option: 'Token prefix', meaning: 'First characters shown in list for identification (`pt_xxxxxxxx`).' },
+      { option: 'Expires At', meaning: 'Optional expiry; expired tokens are rejected like revoked ones.' },
+      { option: 'Last Used At', meaning: 'Updated when token authenticates a request.' },
+    ],
+    moduleRelations: [
+      'Used by Cloudflare email queue webhook, Outlook add-in, and custom scripts.',
+      'Token acts as the owning user for permission checks.',
+    ],
+    imagePlaceholders: [
+      { label: 'API token list', fileName: 'docs-detail-api-tokens-list.png', note: 'Capture token table with prefix and status.' },
+    ],
+  },
+  {
+    id: 'detail-outlook-calendar',
+    title: 'Outlook Calendar in Planning - Complete Reference',
+    shortTitle: 'Outlook Calendar',
+
+    modulePurpose: 'Show real calendar busy time on the planning timeline and reduce over-allocation.',
+    createFlow: [
+      'Admin enables Outlook in System Settings with Microsoft Graph app credentials.',
+      'User opens Planning — Gantt loads first; calendar fetches in background.',
+    ],
+    editFlow: [
+      'Wait for "Still loading Outlook calendar…" banner to disappear.',
+      'Review event blocks on your row; other users see Busy only.',
+      'Click own event to open Outlook or start call timer.',
+    ],
+    deleteFlow: [
+      'Admin disables integration in System Settings to stop calendar overlay.',
+    ],
+    optionExplanations: [
+      { option: 'All-day event', meaning: 'Shown on timeline but does not subtract hourly availability.' },
+      { option: 'Busy (other user)', meaning: 'Privacy mask — you see time blocked, not subject.' },
+    ],
+    moduleRelations: [
+      'Reduces daily available hours alongside allocations, recurring blocks, and holidays.',
+      'Call timer from event can create call record / time tracking context.',
+    ],
+    imagePlaceholders: [
+      { label: 'Outlook loading banner', fileName: 'docs-detail-outlook-loading-banner.png', note: 'Capture banner near overdue milestones.' },
+    ],
+  },
+  {
+    id: 'detail-email-queue',
+    title: 'Outlook Email Task Queue - Complete Reference',
+    shortTitle: 'Email Queue',
+
+    modulePurpose: 'Turn emails into tasks via Cloudflare routing without manual copy-paste.',
+    createFlow: [
+      'Send email from your registered user address to the organization queue address.',
+      'Verify item appears (admin may check Activity Log).',
+      'Project → Import Tasks → Import from Outlook Queue → select item → import.',
+    ],
+    editFlow: [
+      'Dismiss queue items you do not want to import.',
+    ],
+    deleteFlow: [
+      'Imported items leave the queue; dismissed items are removed without creating tasks.',
+    ],
+    optionExplanations: [
+      { option: 'Subject', meaning: 'Becomes task name on import.' },
+      { option: 'Body', meaning: 'Normalized to task description (HTML/plain cleaned).' },
+    ],
+    moduleRelations: [
+      'Requires Cloudflare Worker + API token (see repository cloudflare/README.md).',
+      'Distinct from Outlook add-in which creates tasks directly from Outlook UI.',
+    ],
+    imagePlaceholders: [
+      { label: 'Queue import modal', fileName: 'docs-detail-email-queue-import.png', note: 'Capture pending items list and import action.' },
     ],
   },
   {
@@ -1145,6 +1277,25 @@ const workflowPlaybooks: WorkflowPlaybook[] = [
       'Dashboard global analytics reflects project activity in selected periods.',
     ],
   },
+  {
+    id: 'playbook-email-to-task',
+    title: 'Email to Task Workflow',
+    shortTitle: 'Email → Task',
+
+    goal: 'Capture work from email into the correct project task with minimal manual entry.',
+    modulesInvolved: ['Email Task Queue', 'Projects', 'Tasks', 'Planning'],
+    steps: [
+      'Send email from your registered address to the queue inbox (or use Outlook add-in for direct create).',
+      'Open target project → Import from Outlook Queue when the menu appears.',
+      'Import into the correct project; verify task name and description.',
+      'Assign owner, set status/priority/type, and plan in Gantt if needed.',
+    ],
+    doneCriteria: [
+      'Task exists in project with accurate title and description.',
+      'Queue item cleared from pending list.',
+      'Task visible in Kanban/Planning after refresh.',
+    ],
+  },
 ];
 
 const fieldDictionary: FieldDictionaryEntry[] = [
@@ -1175,6 +1326,13 @@ const fieldDictionary: FieldDictionaryEntry[] = [
     whatItControls: 'Work classification for filtering and analytics segmentation.',
     howToChoose: 'Choose the category that best describes the implementation nature.',
     commonError: 'Using type as priority indicator instead of work category.',
+  },
+  {
+    field: 'Task Type Icon',
+    whereUsed: 'Organization task types; shown on Kanban, Gantt, Planning bars',
+    whatItControls: 'Visual scan aid — Lucide icon with type color.',
+    howToChoose: 'Pick a distinct icon per type in organization settings; avoid duplicates.',
+    commonError: 'Leaving default types without icons when team relies on visual boards.',
   },
   {
     field: 'Assignee',
@@ -1455,14 +1613,14 @@ const moduleBundles: ModuleBundle[] = [
     id: 'projects',
     title: 'Projects and Tasks',
     quickSectionId: 'projects-tasks',
-    detailSectionIds: ['detail-projects', 'detail-global-projects', 'detail-jira-integration'],
-    playbookIds: ['playbook-ticket-to-delivery', 'playbook-release-readiness', 'playbook-global-project-governance', 'playbook-jira-sync-governance'],
+    detailSectionIds: ['detail-projects', 'detail-global-projects', 'detail-jira-integration', 'detail-email-queue'],
+    playbookIds: ['playbook-ticket-to-delivery', 'playbook-release-readiness', 'playbook-global-project-governance', 'playbook-jira-sync-governance', 'playbook-email-to-task'],
   },
   {
     id: 'planning',
     title: 'Planning',
     quickSectionId: 'planning',
-    detailSectionIds: ['detail-planning'],
+    detailSectionIds: ['detail-planning', 'detail-outlook-calendar'],
     playbookIds: ['playbook-planned-vs-actual'],
   },
   {
@@ -1507,6 +1665,14 @@ const moduleBundles: ModuleBundle[] = [
     id: 'profile',
     title: 'Profile and Preferences',
     quickSectionId: 'profile',
+    detailSectionIds: ['detail-api-tokens'],
+  },
+  {
+    id: 'integrations',
+    title: 'Integrations',
+    quickSectionId: 'integrations-user',
+    detailSectionIds: ['detail-email-queue', 'detail-api-tokens'],
+    playbookIds: ['playbook-email-to-task'],
   },
   {
     id: 'customer-users',
@@ -1913,10 +2079,10 @@ export default function DocsPage() {
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">User Manual</h1>
           <p className="mt-2 text-gray-600 dark:text-gray-300">
-            Detailed manual for end users. This guide explains daily workflows step by step and includes screenshot placeholders so you can add real images later.
+            Detailed manual for end users. Covers daily workflows, integrations (Outlook queue, API tokens), and planning behaviour including background calendar load.
           </p>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Audience: final users (internal and customer users). This page intentionally avoids administration/server setup instructions.
+            Audience: final users (internal and customer users). Server/Redis setup: see README and <code className="text-xs">docs/FEATURES.md</code>.
           </p>
           {isCustomerUser && (
             <div className="mt-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-sm">

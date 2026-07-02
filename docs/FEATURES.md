@@ -2,6 +2,10 @@
 
 Comprehensive documentation of all features available in the application. Use this as the primary reference when implementing new features, writing tests, or onboarding new team members.
 
+**End-user manual (in-app):** `/docs` — step-by-step workflows, playbooks, and permission matrices.  
+**Test scenarios:** [TESTING_SCENARIOS.md](../TESTING_SCENARIOS.md)  
+**Deploy/ops:** [README.md](../README.md), [DEPLOYMENT.md](../DEPLOYMENT.md)
+
 ---
 
 ## Table of Contents
@@ -26,6 +30,11 @@ Comprehensive documentation of all features available in the application. Use th
 18. [Email & Notifications](#18-email--notifications)
 19. [Search & Navigation](#19-search--navigation)
 20. [Administration](#20-administration)
+21. [API Tokens](#21-api-tokens)
+22. [Outlook Calendar Integration](#22-outlook-calendar-integration)
+23. [Email Task Queue (Cloudflare)](#23-email-task-queue-cloudflare)
+24. [GitHub & Gitea Integration](#24-github--gitea-integration)
+25. [Redis Cache (Optional)](#25-redis-cache-optional)
 
 ---
 
@@ -88,6 +97,7 @@ Each organization defines its own status vocabularies used throughout the app:
 | **Project Statuses** | Value (name), Color (hex), IsDefault |
 | **Task Statuses** | Value (name), Color (hex), IsDefault |
 | **Task Priorities** | Value (name), Color (hex), IsDefault |
+| **Task Types** | Value (name), Color (hex), Icon (Lucide name), IsDefault |
 | **Ticket Statuses** | Value, Color, StatusType (`open`/`in_progress`/`waiting`/`resolved`/`closed`/`other`), IsClosed, IsCancelled |
 | **Ticket Priorities** | Value, Color, IsDefault |
 
@@ -294,6 +304,24 @@ Four sub-tabs:
 3. Status mapping panel maps Jira statuses → local TaskStatusValues
 4. Selected issues converted to tasks with linked `ExternalTicketId`
 
+### Import Tasks from GitHub / Gitea
+1. From the project task import menu → Import from GitHub or Import from Gitea (when org integration is enabled)
+2. Search issues from the configured repository instance
+3. Selected issues become tasks with `GitHubIssueNumber` or `GiteaIssueNumber` reference
+4. Duplicate imports for the same issue are prevented
+
+### Import Tasks from Outlook Email Queue
+1. Send email from your registered user address to the configured Cloudflare queue address (see [Email Task Queue](#23-email-task-queue-cloudflare))
+2. When pending items exist, project Import Tasks shows **Import from Outlook Queue**
+3. Select queued item → import as task (subject → name, normalized body → description)
+4. Dismiss items you do not want to import
+
+### Task Type Icons
+- Each organization defines **Task Types** with name, color, and Lucide icon
+- Icons appear in: project Kanban, project Gantt, Planning Gantt bars, dashboard Kanban, task grids
+- Default task type is used when creating tasks without an explicit type
+- Icon picker in organization settings is searchable
+
 ### Check Jira Ticket Status (Batch Update)
 From the project Kanban tab → Import Tasks → 🔍 Check Jira Ticket Status:
 1. System queries Jira for current statuses of all tasks that have a linked Jira issue key
@@ -443,6 +471,14 @@ Recurring tasks are created in the user profile (`/profile`):
 - Show in Planning Gantt with a pink background and 🔄 icon
 - Their hours are subtracted from the user's available capacity on those days
 - The push-forward algorithm skips around recurring blocks
+
+### Outlook Calendar Overlay
+When enabled in System Settings (Microsoft Graph credentials):
+- Planning loads Outlook events **in the background** after the Gantt renders (does not block initial page load)
+- Banner **"Still loading Outlook calendar…"** shown near overdue milestones while fetching
+- Non-all-day events appear as blocks on user rows; other users' events show as **Busy**
+- Event hours reduce daily availability in capacity calculations
+- Click own event → open in Outlook or start call timer
 
 ### Planning Import (`/planning-import`)
 Batch import of allocation plans from CSV:
@@ -883,11 +919,16 @@ Multi-select dropdowns with checkbox selection:
 ### System Settings (`/administration`)
 Admin-only page:
 
-- **General**: App name, logo, branding
+- **General**: App name, logo, branding, demo mode flag
 - **Email / SMTP**: Configure mail server (see [Email & Notifications](#18-email--notifications))
+- **Outlook calendar**: Microsoft Graph credentials and enable toggle
+- **Jira / GitHub / Gitea**: Organization-level integration credentials (see respective sections)
+- **AI Assistant**: OpenAI API key and enable toggle
 - **Timezone**: Default system timezone
 - **User Management**: Create, edit, activate/deactivate users; assign global roles; set hourly rate; manage admin flag
 - **Activity Logs**: Audit log of all admin actions
+
+Server operators may also set `REDIS_ENABLED` and related env vars (see [Redis Cache](#25-redis-cache-optional)); not configured in the UI.
 
 ### Branding
 - Upload a custom logo displayed in the Navbar and PDF exports
@@ -910,6 +951,103 @@ Admin-only page:
 - Assistant visibility requires global AI enablement + valid OpenAI configuration in System Settings.
 - Analytics answers still enforce report/visibility permission constraints for business data scope.
 - Budget insights remain hidden when `canViewBudgetInfo` is denied.
+
+---
+
+## 21. API Tokens
+
+Personal integration tokens for scripts, Cloudflare Workers, and the Outlook add-in.
+
+### Creating Tokens
+1. Profile → **API Tokens**
+2. Create token with name and optional expiry
+3. Copy the `pt_...` secret immediately (shown only once)
+
+### Using Tokens
+- Send as `Authorization: Bearer pt_...` on API requests
+- Authenticates as the token owner (same effective access as that user)
+- Webhooks (e.g. email task queue) require a valid active token
+
+### Revoking Tokens
+- **Deactivate** — immediate revocation; cached auth invalidated
+- **Delete** — permanent removal from list
+
+Admins can view all tokens; regular users see only their own.
+
+---
+
+## 22. Outlook Calendar Integration
+
+### Admin Configuration
+System Settings → Outlook calendar:
+- Enable integration toggle
+- Azure AD: Tenant ID, Client ID, Client Secret (**Value**, not Secret ID)
+- Credentials encrypted at rest (`ENCRYPTION_KEY` or `JWT_SECRET`)
+
+### User Experience
+- Dashboard Calendar tab can include Outlook events (when enabled)
+- Planning Gantt overlays events for the visible date range
+- Load is asynchronous; planning remains usable while calendar syncs
+
+### Privacy
+- Users see full details for their own events
+- Other users' events display as **Busy** on the planning timeline
+
+---
+
+## 23. Email Task Queue (Cloudflare)
+
+Per-user queue for turning emails into tasks. Setup: [cloudflare/README.md](../cloudflare/README.md).
+
+### Flow
+1. Cloudflare Email Routing delivers mail to a Worker
+2. Worker POSTs to `/api/webhooks/email-task-queue` with API token auth
+3. Server queues row in `EmailTaskQueue` when sender matches active `Users.Email`
+4. User imports from project → **Import from Outlook Queue**
+
+### Idempotency & Security
+- `ExternalMessageId` (Message-ID header) deduplicates retries
+- Unknown senders accepted with 202 but not queued
+- API token required on webhook; queue owner resolved from email From address
+
+### Outlook Add-in (Alternative)
+The [outlook-addin](../outlook-addin/README.md) creates tasks directly from Outlook via API token — no email queue involved.
+
+---
+
+## 24. GitHub & Gitea Integration
+
+Per-organization integration (Organization settings):
+
+| Integration | Config | Import |
+|---|---|---|
+| **GitHub** | URL + personal access token | Project → Import from GitHub |
+| **Gitea** | URL + API token | Project → Import from Gitea |
+
+Tokens encrypted like Jira credentials. Issue search and import follow the same pattern as Jira board import.
+
+---
+
+## 25. Redis Cache (Optional)
+
+Optional read-through cache for performance on a single VPS. **Disabled by default** (`REDIS_ENABLED=false`).
+
+### Behaviour
+- MySQL/MSSQL remain the only source of truth
+- Reads cached for lists, planning bootstrap, settings, KPIs (short TTL for aggregates)
+- **Invalidate-on-write** after every create/update/delete — next read is fresh
+- Active timers and live notification counts are not cached
+- If Redis is down, app falls back to database (`/health` still reports `redis: error` without failing)
+
+### Configuration
+```env
+REDIS_ENABLED=true
+REDIS_URL=redis://localhost:6379
+REDIS_KEY_PREFIX=pm:
+REDIS_DEFAULT_TTL_SECONDS=300
+```
+
+Docker: `docker compose --profile redis up -d`
 
 ---
 
@@ -945,6 +1083,8 @@ Admin-only page:
 | `WorkSummaryEmailLog` | Deduplication log for work summary emails |
 | `PasswordResetTokens` | Single-use tokens for password recovery |
 | `OrganizationJiraIntegrations` | Jira credentials per org (two-tier) |
+| `ApiTokens` | Personal API tokens (`TokenHash`, prefix, expiry) |
+| `EmailTaskQueue` | Pending emails for task import per user |
 | `SLARules` | Per-org per-priority SLA thresholds |
 | `ProjectReportSchedules` | Scheduled PDF report config |
 | `DashboardKPIs` | Configurable KPI widget definitions |
