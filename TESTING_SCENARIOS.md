@@ -1,6 +1,6 @@
 # Testing Scenarios - Project Management App
 
-This document contains comprehensive test scenarios to verify all functionality is working correctly. Test scenarios are organized by feature area with detailed steps and expected results.
+This document contains comprehensive test scenarios to verify all functionality is working correctly. Test scenarios are organized by feature area with detailed steps and expected results. Updated for Redis cache, API tokens, Outlook calendar/queue, task type icons, and GitHub/Gitea integrations.
 
 ## Table of Contents
 
@@ -18,9 +18,20 @@ This document contains comprehensive test scenarios to verify all functionality 
 12. [Memos](#memos)
 13. [Permissions](#permissions)
 14. [Jira Integration](#jira-integration)
-15. [Email Notifications](#email-notifications)
-16. [Search & Navigation](#search--navigation)
-17. [Dark Mode & UI](#dark-mode--ui)
+15. [API Tokens](#api-tokens)
+16. [Outlook Calendar Integration](#outlook-calendar-integration)
+17. [Email Task Queue (Cloudflare)](#email-task-queue-cloudflare)
+18. [GitHub & Gitea Integration](#github--gitea-integration)
+19. [Redis Cache](#redis-cache)
+20. [Email Notifications](#email-notifications)
+21. [Search & Navigation](#search--navigation)
+22. [Dark Mode & UI](#dark-mode--ui)
+23. [Integration & End-to-End Scenarios](#integration--end-to-end-scenarios)
+24. [Performance & Stress Testing](#performance--stress-testing)
+25. [Security Testing](#security-testing)
+26. [Backup & Recovery](#backup--recovery)
+27. [Edge Cases & Error Handling](#edge-cases--error-handling)
+28. [Browser Compatibility](#browser-compatibility)
 
 ---
 
@@ -86,6 +97,22 @@ This document contains comprehensive test scenarios to verify all functionality 
 - User remains logged in
 - Session persists across page refreshes
 - Session persists until logout or token expiry
+
+### TC-AUTH-006: API Token Authentication
+**Prerequisites:** User logged in  
+**Steps:**
+1. Navigate to Profile → API Tokens
+2. Create a token with a name (e.g. `Test Integration`)
+3. Copy the `pt_...` value (shown only once)
+4. Call a protected API endpoint with `Authorization: Bearer pt_...`
+5. Deactivate the token from Profile → API Tokens
+6. Retry the same API call
+
+**Expected:**
+- Token created and listed with prefix only (not full secret)
+- Valid token authenticates requests like a JWT
+- Deactivated token returns 403
+- Revoked token no longer accepted after cache invalidation
 
 ---
 
@@ -174,6 +201,21 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Default status automatically selected in new items
 - Colors displayed correctly in dropdowns and labels
 - Only one IsDefault per type allowed
+
+### TC-ORG-007: Manage Task Types with Icons
+**Steps:**
+1. Navigate to organization detail page → Settings tab
+2. Open "Task Types" section
+3. Create a task type with name, color, and icon (searchable Lucide icon picker)
+4. Set one type as default
+5. Edit an existing type and change its icon
+6. Save changes
+
+**Expected:**
+- Task types saved with `IconSvg` (Lucide icon name)
+- Icon picker is searchable and shows preview with type color
+- Default type auto-selected on new tasks when type not specified
+- Icons visible in project Kanban, project Gantt, planning bars, and dashboard Kanban
 
 ---
 
@@ -453,6 +495,7 @@ This document contains comprehensive test scenarios to verify all functionality 
 
 **Expected:**
 - Tasks organized by status
+- Task type icon shown before task name (colored Lucide icon)
 - Drag-and-drop moves task to new status
 - Task count per column updated
 - Visual feedback during drag
@@ -466,6 +509,7 @@ This document contains comprehensive test scenarios to verify all functionality 
 
 **Expected:**
 - All project tasks displayed (not filtered by user)
+- Task type icon shown in task name column and unplanned list
 - Tasks shown with start/end dates
 - Parent-child relationships visible
 - Dependencies indicated
@@ -495,7 +539,7 @@ This document contains comprehensive test scenarios to verify all functionality 
 **Steps:**
 1. From project Kanban or directly from Tasks
 2. Click "Create Task"
-3. Fill in: Name, Description (rich text), Status, Priority
+3. Fill in: Name, Description (rich text), Status, Priority, Task Type
 4. Set estimated hours
 5. Assign to user
 6. Set planned start/end dates
@@ -673,6 +717,34 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Sequential mode: users are chained in date order
 - Planning Gantt shows separate bars per user for this task
 - Each bar independently movable via drag
+
+### TC-TASK-013: Import Task from Outlook Email Queue
+**Prerequisites:** Cloudflare Email Worker configured; user has pending queue items ([cloudflare/README.md](cloudflare/README.md))  
+**Steps:**
+1. Send an email from your registered user address to the configured queue address
+2. Verify webhook accepted (Activity Log: `EMAIL_QUEUE_RECEIVED`)
+3. Open a project → Import Tasks → **Import from Outlook Queue**
+4. Select the queued item and import as a new task
+5. Dismiss a different queued item without importing
+
+**Expected:**
+- Import option only visible when user has pending queue items
+- Imported task created with subject as name and normalized email body as description
+- Queue item removed after import
+- Dismissed item removed from queue without creating a task
+- Duplicate `messageId` is idempotent (no duplicate queue rows)
+
+### TC-TASK-014: Task Visible After Create (Cache Coherence)
+**Prerequisites:** `REDIS_ENABLED=true` (optional but recommended for this test)  
+**Steps:**
+1. Note current task count on project Kanban and Planning Gantt
+2. Create a new task in the project
+3. Without waiting, refresh project Kanban and open Planning
+
+**Expected:**
+- New task appears immediately in project task list/Kanban
+- New task appears in Planning Gantt (if within filters and permissions)
+- No stale list from Redis cache (invalidate-on-write)
 
 ---
 
@@ -965,6 +1037,41 @@ This document contains comprehensive test scenarios to verify all functionality 
 - View mode preference preserved within session
 - Critical path highlighting (🔴 toggle) available in both modes
 - Baseline comparison (📏 toggle) shows original vs current planned dates
+
+### TC-PLAN-015: Outlook Calendar Overlay (Non-Blocking Load)
+**Prerequisites:** Outlook calendar enabled in System Settings with valid Microsoft Graph credentials  
+**Steps:**
+1. Open Planning Gantt with Outlook integration enabled
+2. Observe page load behaviour while `/api/outlook-calendar/events` runs
+3. Check banner near overdue milestones area during load
+
+**Expected:**
+- Planning Gantt renders without waiting for Outlook API
+- Banner shows **"Still loading Outlook calendar…"** while fetch is in progress
+- Banner disappears when events load or request completes
+- Outlook events appear as calendar blocks on user rows (non-all-day events reduce available hours)
+- Clicking own event opens modal (open in Outlook / start call timer)
+
+### TC-PLAN-016: Task Type Icon on Planning Bars
+**Prerequisites:** Tasks with configured task types (icons + colors)  
+**Steps:**
+1. Open Planning Gantt
+2. Locate allocated task bars for tasks with different types
+
+**Expected:**
+- Task type icon appears first on the bar (before HOBBY, issue ref, emojis)
+- Icon uses task type color (not black/dark background box)
+- Icon visible in Resource and Task view modes
+
+### TC-PLAN-017: Dashboard Kanban Task Type Icons
+**Steps:**
+1. Navigate to Dashboard → Kanban (if available for user)
+2. View tasks with different task types
+
+**Expected:**
+- Task type icon shown before task name on each card
+- Icon color matches organization task type configuration
+
 ---
 
 ## Time Tracking
@@ -1526,6 +1633,215 @@ This document contains comprehensive test scenarios to verify all functionality 
 
 ---
 
+## API Tokens
+
+### TC-API-001: Create and List API Tokens
+**Steps:**
+1. Navigate to Profile → API Tokens
+2. Create token with name and optional expiry
+3. Copy full `pt_...` secret on creation
+4. Refresh token list
+
+**Expected:**
+- Full secret shown only once at creation
+- List shows prefix, name, active status, last used, expiry
+- Admin users can see all tokens; regular users see only their own
+
+### TC-API-002: Revoke API Token
+**Steps:**
+1. Create a token and verify it works on an API call
+2. Deactivate token from Profile → API Tokens
+3. Retry API call
+4. Delete token permanently
+
+**Expected:**
+- Deactivated token returns 403 immediately (cache invalidated)
+- Deleted token cannot be reactivated
+- Activity/security: token no longer listed after delete
+
+### TC-API-003: Webhook Authentication with API Token
+**Prerequisites:** Email task queue or custom webhook integration  
+**Steps:**
+1. `POST /api/webhooks/email-task-queue` without token → expect 401
+2. POST with invalid `pt_...` → expect 403
+3. POST with valid active token and valid body → expect 201/200
+
+**Expected:**
+- Webhook rejects missing/invalid tokens
+- Valid token allows request; business rules still apply (registered sender email, etc.)
+
+---
+
+## Outlook Calendar Integration
+
+### TC-OUTLOOK-001: Enable Outlook Calendar in System Settings
+**Prerequisites:** Admin access; Azure app registration with Calendar.Read permissions  
+**Steps:**
+1. Navigate to Administration → System Settings
+2. Enable Outlook calendar integration
+3. Enter Tenant ID, Client ID, Client Secret (Secret **Value**, not Secret ID)
+4. Save settings
+
+**Expected:**
+- Credentials encrypted at rest (`ENCRYPTION_KEY` or `JWT_SECRET`)
+- Settings masked on GET (secrets not returned in plain text)
+- Integration can be disabled without deleting stored credentials
+
+### TC-OUTLOOK-002: Outlook Events in Planning
+**Prerequisites:** TC-OUTLOOK-001; users have mailbox with calendar events in visible date range  
+**Steps:**
+1. Open Planning Gantt
+2. Wait for Outlook events to load
+3. Verify events on user rows for the planning date range
+
+**Expected:**
+- Events fetched for visible planning window only
+- Other users' events shown as "Busy" (privacy)
+- Own events show subject and time range
+- Non-all-day events reduce daily availability hours
+
+### TC-OUTLOOK-003: Start Timer from Outlook Event
+**Steps:**
+1. Click an Outlook event block on your own row in Planning
+2. Choose "Start Call Timer" in the modal
+
+**Expected:**
+- Active timer started with event subject as context
+- Timer visible in navbar indicator
+- Can stop timer and log time entry
+
+---
+
+## Email Task Queue (Cloudflare)
+
+### TC-QUEUE-001: Webhook Receives Email
+**Prerequisites:** Cloudflare Worker deployed per [cloudflare/README.md](cloudflare/README.md)  
+**Steps:**
+1. Send email from registered user to queue address
+2. Check Activity Logs for `EMAIL_QUEUE_RECEIVED`
+3. Query `EmailTaskQueue` table or use GET `/api/email-task-queue`
+
+**Expected:**
+- Row created with subject, normalized body, sender, `ExternalMessageId`
+- Status `pending`
+- Duplicate Message-ID returns 200 (idempotent)
+
+### TC-QUEUE-002: Import Queued Email as Task
+**Steps:**
+1. Open project with import permission
+2. Import Tasks → Import from Outlook Queue
+3. Select item and confirm import
+
+**Expected:**
+- Task created in selected project
+- Queue item marked imported / removed from pending list
+- User's queue cache invalidated
+
+### TC-QUEUE-003: Dismiss Queue Item
+**Steps:**
+1. Open Import from Outlook Queue
+2. Dismiss an item without importing
+
+**Expected:**
+- Item removed from pending queue
+- No task created
+
+### TC-QUEUE-004: Unregistered Sender Rejected
+**Steps:**
+1. Send email from address not matching any active `Users.Email`
+2. Check webhook response
+
+**Expected:**
+- Webhook returns 202 (accepted but not queued) or equivalent non-create response
+- No queue row for unknown sender
+
+---
+
+## GitHub & Gitea Integration
+
+### TC-GH-001: Configure GitHub Integration per Organization
+**Steps:**
+1. Navigate to organization settings → Integrations
+2. Enable GitHub integration
+3. Enter GitHub URL and personal access token
+4. Save
+
+**Expected:**
+- Token encrypted at rest
+- Integration can be disabled independently of Jira
+
+### TC-GH-002: Import Tasks from GitHub Issues
+**Prerequisites:** GitHub integration configured; project linked  
+**Steps:**
+1. Open project → Import Tasks → GitHub
+2. Search/select issues
+3. Import selected issues as tasks
+
+**Expected:**
+- Tasks created with GitHub issue number reference
+- Duplicate import prevented for same issue
+- GitHub fields shown only when integration enabled
+
+### TC-GITEA-001: Configure and Import from Gitea
+**Steps:**
+1. Configure Gitea integration (URL + token) at organization level
+2. Import issues into a project (same flow as GitHub)
+
+**Expected:**
+- Gitea issues imported as tasks with `GiteaIssueNumber`
+- Search/import UI mirrors GitHub pattern
+
+---
+
+## Redis Cache
+
+### TC-REDIS-001: Application Runs Without Redis
+**Prerequisites:** `REDIS_ENABLED=false` or Redis unavailable  
+**Steps:**
+1. Start application
+2. `GET /health`
+3. Create/read tasks, projects, planning data
+
+**Expected:**
+- Health returns `redis: disabled` (or `error` without failing overall health)
+- All features work via direct database reads
+- No errors in logs related to cache
+
+### TC-REDIS-002: Redis Enabled — Health and Reads
+**Prerequisites:** Redis running; `REDIS_ENABLED=true`  
+**Steps:**
+1. Start app with Redis connected
+2. `GET /health` → verify `redis: connected`
+3. Load Planning, project Kanban, dashboard KPIs twice
+
+**Expected:**
+- Second load may be faster (cache hit)
+- Data identical to database
+- `/health` still healthy if Redis later goes down (degraded reads)
+
+### TC-REDIS-003: Invalidate-on-Write (Tasks)
+**Prerequisites:** `REDIS_ENABLED=true`  
+**Steps:**
+1. Load project tasks (populates cache)
+2. Create, edit, and delete a task
+3. Reload project tasks and Planning after each operation
+
+**Expected:**
+- Changes visible on next read without waiting for TTL
+- Scoped cache keys cleared (e.g. `project:{id}:tasks:all`)
+- No ghost tasks after delete
+
+### TC-REDIS-004: Real-Time Endpoints Not Cached
+**Steps:**
+1. With Redis enabled, start active timer
+2. Poll `/api/timers/active` and `/api/notifications/count` rapidly
+
+**Expected:**
+- Responses always reflect current state (not served from entity cache)
+- Timer start/stop immediately visible
+
+---
+
 ## Email Notifications
 
 ### TC-EMAIL-001: Configure SMTP
@@ -1795,6 +2111,19 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Real-time updates where applicable
 - No race conditions
 
+### TC-PERF-003: Redis Cache Performance (Optional)
+**Prerequisites:** `REDIS_ENABLED=true`, Redis connected  
+**Steps:**
+1. Cold-load Planning page (clear Redis or restart app)
+2. Note load time
+3. Reload Planning without data changes
+4. Create a task and reload again
+
+**Expected:**
+- Repeat read faster on cache hit (Planning bootstrap, task lists)
+- After task create, next load shows new data (invalidation, not stale TTL)
+- Redis failure falls back to DB without user-visible error
+
 ---
 
 ## Security Testing
@@ -1840,7 +2169,18 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Original password never stored in plaintext
 - Hash not reversible
 
-### TC-SEC-005: JWT Token Security
+### TC-SEC-005: API Token Security
+**Steps:**
+1. Create API token; verify full secret not stored in database (only hash)
+2. Attempt to use revoked/expired token
+3. Try accessing another user's resources with a valid token (scope = token owner only)
+
+**Expected:**
+- Only `TokenHash` stored server-side
+- Revoked/expired tokens rejected
+- Token authenticates as owning user only (no privilege escalation)
+
+### TC-SEC-006: JWT Token Security
 **Steps:**
 1. Login and capture JWT token
 2. Modify token payload
@@ -1855,7 +2195,7 @@ This document contains comprehensive test scenarios to verify all functionality 
 
 ## Backup & Recovery
 
-### TC-BCK-001: Database Backup
+### TC-BCK-001: Database Backup (MySQL)
 **Steps:**
 1. Create mysqldump backup
 2. Verify backup file created
@@ -1865,6 +2205,16 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Backup file created successfully
 - Contains all tables and data
 - No corruption
+
+### TC-BCK-001b: Database Backup (MSSQL)
+**Prerequisites:** `DB_PROVIDER=mssql`  
+**Steps:**
+1. Run `BACKUP DATABASE` to a `.bak` file
+2. Verify backup file size and completion
+
+**Expected:**
+- Backup completes without errors
+- Restore possible on same or compatible SQL Server instance
 
 ### TC-BCK-002: Database Restore
 **Steps:**
@@ -1986,40 +2336,47 @@ This document contains comprehensive test scenarios to verify all functionality 
 
 ## Summary
 
-This document contains **190+ test scenarios** covering all major features and edge cases. For a full validation:
+This document contains **220+ test scenarios** covering all major features and edge cases. For a full validation:
 
 1. **Critical Path**: Execute all TC-E2E-* scenarios first
 2. **Feature Coverage**: Run all TC-*-001 scenarios for basic feature validation
 3. **Security**: Run all TC-SEC-* scenarios
-4. **Edge Cases**: Run TC-EDGE-* scenarios
-5. **Regression**: Run all scenarios when making significant changes
+4. **Cache (if Redis enabled)**: Run all TC-REDIS-* scenarios
+5. **Integrations**: Run TC-JIRA-*, TC-API-*, TC-OUTLOOK-*, TC-QUEUE-*, TC-GH-* as applicable
+6. **Edge Cases**: Run TC-EDGE-* scenarios
+7. **Regression**: Run all scenarios when making significant changes
 
 **Test Completion Checklist:**
-- [ ] All Authentication tests passed
-- [ ] All Organization tests passed
+- [ ] All Authentication tests passed (including API tokens)
+- [ ] All Organization tests passed (including task types with icons)
 - [ ] All Customer tests passed
 - [ ] All Application & Release tests passed
 - [ ] All Project tests passed
-- [ ] All Task tests passed (including checklists, templates, split allocation, timers)
+- [ ] All Task tests passed (including Outlook queue import, cache coherence)
 - [ ] All Ticket tests passed
-- [ ] All Planning tests passed (including split, unscheduled, move, recalculate, view modes)
+- [ ] All Planning tests passed (including Outlook overlay, task type icons)
 - [ ] All Time Tracking tests passed
 - [ ] All Call Records tests passed
 - [ ] All Active Timer tests passed
 - [ ] All Memo tests passed
 - [ ] All Permission tests passed
-- [ ] All Jira Integration tests passed (including Check Jira Ticket Status)
-- [ ] All Email tests passed
+- [ ] All Jira Integration tests passed
+- [ ] All API Token tests passed
+- [ ] All Outlook Calendar tests passed
+- [ ] All Email Task Queue tests passed
+- [ ] All GitHub/Gitea tests passed (if used)
+- [ ] All Redis Cache tests passed (if `REDIS_ENABLED=true`)
+- [ ] All Email notification tests passed
 - [ ] All Search tests passed
 - [ ] All UI tests passed
 - [ ] All E2E scenarios passed
 - [ ] All Security tests passed
 - [ ] Browser compatibility verified
 
-**Estimated Testing Time:** 8-12 hours for complete coverage
+**Estimated Testing Time:** 10-14 hours for complete coverage (add 1-2h if testing Redis + Cloudflare queue)
 
 **Priority Levels:**
-- **P0 (Critical)**: Authentication, Authorization, Data Integrity
+- **P0 (Critical)**: Authentication, Authorization, Data Integrity, Cache invalidation (if Redis on)
 - **P1 (High)**: Core features (Projects, Tasks, Planning, Time Tracking)
-- **P2 (Medium)**: Secondary features (Memos, Jira, Email)
-- **P3 (Low)**: UI polish, edge cases, browser compatibility
+- **P2 (Medium)**: Integrations (Jira, Outlook, Email Queue, GitHub/Gitea, Memos)
+- **P3 (Low)**: UI polish, Browser compatibility edge cases
