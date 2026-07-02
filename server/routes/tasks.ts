@@ -390,10 +390,10 @@ const getTaskProjectInfo = async (taskId: number): Promise<{ projectId: number; 
 };
 
 const DEFAULT_TASK_TYPES = [
-  { name: 'Feature', color: '#3b82f6', order: 1, isDefault: 1 },
-  { name: 'Bug', color: '#ef4444', order: 2, isDefault: 0 },
-  { name: 'Improvement', color: '#f59e0b', order: 3, isDefault: 0 },
-  { name: 'Chore', color: '#6b7280', order: 4, isDefault: 0 },
+  { name: 'Feature', color: '#3b82f6', icon: 'feature', order: 1, isDefault: 1 },
+  { name: 'Bug', color: '#ef4444', icon: 'bug', order: 2, isDefault: 0 },
+  { name: 'Improvement', color: '#f59e0b', icon: 'improvement', order: 3, isDefault: 0 },
+  { name: 'Chore', color: '#6b7280', icon: 'chore', order: 4, isDefault: 0 },
 ];
 
 const ensureTaskTypesForOrg = async (organizationId: number): Promise<RowDataPacket[]> => {
@@ -406,9 +406,9 @@ const ensureTaskTypesForOrg = async (organizationId: number): Promise<RowDataPac
 
   for (const type of DEFAULT_TASK_TYPES) {
     await pool.execute(
-      `INSERT INTO TaskTypeValues (OrganizationId, TypeName, ColorCode, SortOrder, IsDefault)
-       VALUES (?, ?, ?, ?, ?)`,
-      [organizationId, type.name, type.color, type.order, type.isDefault]
+      `INSERT INTO TaskTypeValues (OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [organizationId, type.name, type.icon, type.color, type.order, type.isDefault]
     );
   }
 
@@ -453,7 +453,7 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
               COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
               COALESCE(tsv.HideFromPlanningAndStatistics, 0) as StatusHideFromPlanningAndStatistics,
               tpv.PriorityName, tpv.ColorCode as PriorityColor, tpv.SortOrder as PrioritySortOrder,
-              ttv.TypeName as TaskTypeName, ttv.ColorCode as TaskTypeColor,
+              ttv.TypeName as TaskTypeName, ttv.IconSvg as TaskTypeIconSvg, ttv.ColorCode as TaskTypeColor,
               COALESCE((SELECT COUNT(*) FROM Tasks st WHERE st.ParentTaskId = t.Id), 0) as SubtaskCount,
               COALESCE((SELECT SUM(Hours) FROM TimeEntries WHERE TaskId = t.Id), 0) as TotalWorked,
               tk.Id as TicketIdRef,
@@ -552,7 +552,7 @@ router.get('/project/:projectId/summary', authenticateToken, async (req: AuthReq
         tsv.StatusName, tsv.ColorCode as StatusColor,
         COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
         tpv.PriorityName, tpv.ColorCode as PriorityColor,
-        ttv.TypeName as TaskTypeName, ttv.ColorCode as TaskTypeColor,
+        ttv.TypeName as TaskTypeName, ttv.IconSvg as TaskTypeIconSvg, ttv.ColorCode as TaskTypeColor,
         COALESCE(alloc.TotalAllocated, 0) as TotalAllocated,
         COALESCE(workedAgg.TotalWorked, 0) as TotalWorked,
         '[]' as AssigneesJson
@@ -652,7 +652,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
                 COALESCE(tsv.HideFromPlanningAndStatistics, 0) as StatusHideFromPlanningAndStatistics,
                 tpv.PriorityName, tpv.ColorCode as PriorityColor, tpv.SortOrder as PrioritySortOrder,
-                ttv.TypeName as TaskTypeName, ttv.ColorCode as TaskTypeColor,
+                ttv.TypeName as TaskTypeName, ttv.IconSvg as TaskTypeIconSvg, ttv.ColorCode as TaskTypeColor,
                 COALESCE(alloc.TotalAllocated, 0) as PlannedHours,
                 COALESCE(workedAgg.TotalWorked, 0) as WorkedHours,
                 tk.Id as TicketIdRef,
@@ -706,7 +706,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
                 COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
                 COALESCE(tsv.HideFromPlanningAndStatistics, 0) as StatusHideFromPlanningAndStatistics,
                 tpv.PriorityName, tpv.ColorCode as PriorityColor, tpv.SortOrder as PrioritySortOrder,
-                ttv.TypeName as TaskTypeName, ttv.ColorCode as TaskTypeColor,
+                ttv.TypeName as TaskTypeName, ttv.IconSvg as TaskTypeIconSvg, ttv.ColorCode as TaskTypeColor,
                 COALESCE(alloc.TotalAllocated, 0) as PlannedHours,
                 COALESCE(workedAgg.TotalWorked, 0) as WorkedHours,
                 tk.Id as TicketIdRef,
@@ -972,7 +972,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
               tsv.StatusName, tsv.ColorCode as StatusColor,
               COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
               tpv.PriorityName, tpv.ColorCode as PriorityColor,
-              ttv.TypeName as TaskTypeName, ttv.ColorCode as TaskTypeColor,
+              ttv.TypeName as TaskTypeName, ttv.IconSvg as TaskTypeIconSvg, ttv.ColorCode as TaskTypeColor,
               (SELECT SUM(AllocatedHours) FROM TaskAllocations WHERE TaskId = t.Id) as TotalAllocated,
               (SELECT SUM(Hours) FROM TimeEntries WHERE TaskId = t.Id) as TotalWorked,
               tk.Id as TicketIdRef,

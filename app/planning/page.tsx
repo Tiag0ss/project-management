@@ -19,6 +19,7 @@ import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
+import { TaskTypeIconMark } from '@/lib/taskTypeIcons';
 
 // Week days constant - reused throughout the component
 const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -8705,13 +8706,19 @@ export default function PlanningPage() {
                                 title="Hold Shift and drag to resize start"
                               />
                             )}
+                            <TaskTypeIconMark
+                              name={parentTask.TaskTypeName}
+                              iconSvg={parentTask.TaskTypeIconSvg}
+                              color={parentTask.TaskTypeColor}
+                              className="w-3 h-3 shrink-0 mr-1"
+                            />
                             {taskIsHobbyProject && (
                               <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0 pointer-events-none">HOBBY</span>
                             )}
                             {parentIssueRef && (
                               <span className="mr-1 bg-black/30 text-white text-[9px] px-1 py-0.5 rounded font-bold flex-shrink-0 pointer-events-none">{parentIssueRef}</span>
                             )}
-                            <span className="truncate flex-1 pointer-events-none">
+                            <span className="truncate flex-1 pointer-events-none flex items-center gap-1 min-w-0">
                               {!hasEstimatedHours && <span className="mr-1">⚠️</span>}
                               {hasSubtasks && <span className="mr-1">📁</span>}
                               {hasDependency ? '🔗 ' : ''}
@@ -9586,6 +9593,12 @@ export default function PlanningPage() {
                                         title="Hold Shift and drag to resize start"
                                       />
                                     )}
+                                    <TaskTypeIconMark
+                                      name={task.TaskTypeName}
+                                      iconSvg={task.TaskTypeIconSvg}
+                                      color={task.TaskTypeColor}
+                                      className="w-3 h-3 shrink-0 mr-1"
+                                    />
                                     {!isSubtask && isOverPlanned && <span className="mr-1">⚠️</span>}
                                     {!isSubtask && taskIsHobbyProject && (
                                       <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0 pointer-events-none">HOBBY</span>
@@ -9593,7 +9606,7 @@ export default function PlanningPage() {
                                     {taskIssueRef && (
                                       <span className="mr-1 bg-black/30 text-white text-[9px] px-1 py-0.5 rounded font-bold flex-shrink-0 pointer-events-none">{taskIssueRef}</span>
                                     )}
-                                    <span className="truncate flex-1 pointer-events-none">
+                                    <span className="truncate flex-1 pointer-events-none flex items-center gap-1 min-w-0">
                                       {indentPrefix}
                                       {!isSubtask && hasDependency ? '🔗 ' : ''}
                                       {task.TaskName}
@@ -10128,13 +10141,21 @@ export default function PlanningPage() {
                             }}
                             title={`Project: ${project?.ProjectName || 'Unknown'}\nTask: ${task.TaskName}\nStatus: ${task.StatusName || 'Unknown'}\nPriority: ${task.PriorityName || 'Unknown'}\nDates: ${task.PlannedStartDate || 'Not planned'} → ${task.PlannedEndDate || 'Not planned'}`}
                           >
+                            <TaskTypeIconMark
+                              name={task.TaskTypeName}
+                              iconSvg={task.TaskTypeIconSvg}
+                              color={task.TaskTypeColor}
+                              className="w-3 h-3 shrink-0 mr-1"
+                            />
                             {taskIsHobbyProject && (
                               <span className="mr-1 bg-purple-700 text-white text-[9px] px-1 py-0.5 rounded font-semibold flex-shrink-0 pointer-events-none">HOBBY</span>
                             )}
                             {groupedIssueRef && (
                               <span className="mr-1 bg-black/30 text-white text-[9px] px-1 py-0.5 rounded font-bold flex-shrink-0 pointer-events-none">{groupedIssueRef}</span>
                             )}
-                            <span className="truncate flex-1 pointer-events-none">{task.TaskName}</span>
+                            <span className="truncate flex-1 pointer-events-none flex items-center gap-1 min-w-0">
+                              {task.TaskName}
+                            </span>
                             {showTaskBarHours && (
                               <span className="ml-1 text-[10px] whitespace-nowrap opacity-80 pointer-events-none">{hoursDisplay}</span>
                             )}

@@ -35,6 +35,7 @@ export interface Task {
   PrioritySortOrder?: number | null;
   TaskType?: number | null;
   TaskTypeName?: string;
+  TaskTypeIconSvg?: string;
   TaskTypeColor?: string;
   AssignedTo?: number;
   AssigneeName?: string;

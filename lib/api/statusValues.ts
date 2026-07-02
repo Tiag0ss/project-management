@@ -8,7 +8,7 @@ export interface StatusValue {
   StatusName: string;
   PriorityName?: string; // For task priorities
   TypeName?: string; // For task types
-  IconSvg?: string; // For milestone types
+  IconSvg?: string; // For task types and milestone types
   ColorCode?: string;
   SortOrder: number;
   IsDefault: number;

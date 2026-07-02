@@ -32,6 +32,7 @@ import SearchableSelect from '@/components/SearchableSelect';
 import dynamic from 'next/dynamic';
 import CalendarTabComponent from './CalendarTab';
 import { useFormatHours } from '@/lib/useFormatHours';
+import { TaskTypeIconMark } from '@/lib/taskTypeIcons';
 
 interface TaskWithProject extends Task {
   ProjectName?: string;
@@ -590,8 +591,14 @@ function AssignedKanbanTab({
                             }`}
                             style={getPriorityBorder(task)}
                           >
-                            <h4 className="font-semibold text-gray-900 dark:text-white text-sm mb-2">
-                              {task.TaskName}
+                            <h4 className="font-semibold text-gray-900 dark:text-white text-sm mb-2 flex items-center gap-1.5 min-w-0">
+                              <TaskTypeIconMark
+                                name={task.TaskTypeName}
+                                iconSvg={task.TaskTypeIconSvg}
+                                color={task.TaskTypeColor}
+                                className="w-3.5 h-3.5"
+                              />
+                              <span className="truncate">{task.TaskName}</span>
                             </h4>
 
                             {task.Description && (() => {

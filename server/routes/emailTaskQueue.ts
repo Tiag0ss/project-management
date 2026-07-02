@@ -10,10 +10,10 @@ const router = Router();
 const webhookRouter = Router();
 
 const DEFAULT_TASK_TYPES = [
-  { name: 'Feature', color: '#3b82f6', order: 1, isDefault: 1 },
-  { name: 'Bug', color: '#ef4444', order: 2, isDefault: 0 },
-  { name: 'Improvement', color: '#f59e0b', order: 3, isDefault: 0 },
-  { name: 'Chore', color: '#6b7280', order: 4, isDefault: 0 },
+  { name: 'Feature', color: '#3b82f6', icon: 'feature', order: 1, isDefault: 1 },
+  { name: 'Bug', color: '#ef4444', icon: 'bug', order: 2, isDefault: 0 },
+  { name: 'Improvement', color: '#f59e0b', icon: 'improvement', order: 3, isDefault: 0 },
+  { name: 'Chore', color: '#6b7280', icon: 'chore', order: 4, isDefault: 0 },
 ];
 
 const extractEmailAddress = (raw: unknown): string => {
@@ -37,9 +37,9 @@ const ensureTaskTypesForOrg = async (organizationId: number): Promise<RowDataPac
 
   for (const type of DEFAULT_TASK_TYPES) {
     await pool.execute(
-      `INSERT INTO TaskTypeValues (OrganizationId, TypeName, ColorCode, SortOrder, IsDefault)
-       VALUES (?, ?, ?, ?, ?)`,
-      [organizationId, type.name, type.color, type.order, type.isDefault]
+      `INSERT INTO TaskTypeValues (OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [organizationId, type.name, type.icon, type.color, type.order, type.isDefault]
     );
   }
 

@@ -28,6 +28,12 @@
       "Comment": "Color code in hex format (e.g., #FF5733) for UI display"
     },
     {
+      "FieldName": "IconSvg",
+      "DataType": "varchar(50)",
+      "NotNullable": false,
+      "Comment": "Identifier of selected SVG icon for this task type"
+    },
+    {
       "FieldName": "SortOrder",
       "DataType": "int",
       "NotNullable": true,

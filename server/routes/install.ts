@@ -288,18 +288,18 @@ router.post('/setup', async (req: Request, res: Response) => {
 
       // 8. Create default task type values
       const defaultTaskTypes = [
-        { name: 'Feature', color: '#3b82f6', order: 1, isDefault: 1 },
-        { name: 'Bug', color: '#ef4444', order: 2, isDefault: 0 },
-        { name: 'Improvement', color: '#f59e0b', order: 3, isDefault: 0 },
-        { name: 'Chore', color: '#6b7280', order: 4, isDefault: 0 },
+        { name: 'Feature', color: '#3b82f6', icon: 'feature', order: 1, isDefault: 1 },
+        { name: 'Bug', color: '#ef4444', icon: 'bug', order: 2, isDefault: 0 },
+        { name: 'Improvement', color: '#f59e0b', icon: 'improvement', order: 3, isDefault: 0 },
+        { name: 'Chore', color: '#6b7280', icon: 'chore', order: 4, isDefault: 0 },
       ];
 
       for (const type of defaultTaskTypes) {
         await connection.execute(
           `INSERT INTO TaskTypeValues 
-           (OrganizationId, TypeName, ColorCode, SortOrder, IsDefault) 
-           VALUES (?, ?, ?, ?, ?)`,
-          [organizationId, type.name, type.color, type.order, type.isDefault]
+           (OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault) 
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [organizationId, type.name, type.icon, type.color, type.order, type.isDefault]
         );
       }
 

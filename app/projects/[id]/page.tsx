@@ -13,6 +13,7 @@ import { tasksApi, Task, CreateTaskData, UpdateTaskData } from '@/lib/api/tasks'
 import { organizationsApi, Organization } from '@/lib/api/organizations';
 import { getCustomersByOrganization, Customer } from '@/lib/api/customers';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
+import { TaskTypeBadge, TaskTypeIconMark } from '@/lib/taskTypeIcons';
 import { usersApi, User } from '@/lib/api/users';
 import { tagsApi } from '@/lib/api/tags';
 import Navbar from '@/components/Navbar';
@@ -7726,9 +7727,11 @@ function TasksTab({
             />
           ) : task.TaskTypeName ? (
             <div className="flex w-full items-center justify-between gap-2">
-              <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={task.TaskTypeColor ? { backgroundColor: task.TaskTypeColor + '20', color: task.TaskTypeColor } : undefined}>
-                {task.TaskTypeName}
-              </span>
+              <TaskTypeBadge
+                name={task.TaskTypeName}
+                color={task.TaskTypeColor}
+                iconSvg={task.TaskTypeIconSvg}
+              />
               {canCreate && canManage && (
                 <button
                   type="button"
@@ -9748,8 +9751,14 @@ function GanttViewTab({ tasks }: { tasks: Task[] }) {
                         )}
                         {level > 0 && <span className="text-gray-400 mt-0.5">↳</span>}
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <div className={`text-sm ${level > 0 ? 'text-gray-800 dark:text-gray-200' : 'font-medium text-gray-900 dark:text-white'}`}>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <TaskTypeIconMark
+                              name={task.TaskTypeName}
+                              iconSvg={task.TaskTypeIconSvg}
+                              color={task.TaskTypeColor}
+                              className="w-3.5 h-3.5"
+                            />
+                            <div className={`text-sm truncate ${level > 0 ? 'text-gray-800 dark:text-gray-200' : 'font-medium text-gray-900 dark:text-white'}`}>
                               {task.TaskName}
                             </div>
                             {hasSubtasks && (
@@ -9808,8 +9817,14 @@ function GanttViewTab({ tasks }: { tasks: Task[] }) {
                   className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
                 >
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {task.TaskName}
+                    <div className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-1.5 min-w-0">
+                      <TaskTypeIconMark
+                        name={task.TaskTypeName}
+                        iconSvg={task.TaskTypeIconSvg}
+                        color={task.TaskTypeColor}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span className="truncate">{task.TaskName}</span>
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                       {task.AssigneeName || 'Unassigned'} • {task.EstimatedHours ? `${task.EstimatedHours}h` : 'No estimate'}
@@ -10073,8 +10088,14 @@ function KanbanTab({
                       </div>
                     )}
 
-                    <h4 className="font-semibold text-gray-900 dark:text-white text-sm mb-2">
-                      {task.TaskName}
+                    <h4 className="font-semibold text-gray-900 dark:text-white text-sm mb-2 flex items-center gap-1.5 min-w-0">
+                      <TaskTypeIconMark
+                        name={task.TaskTypeName}
+                        iconSvg={task.TaskTypeIconSvg}
+                        color={task.TaskTypeColor}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span className="truncate">{task.TaskName}</span>
                     </h4>
                     
                     {task.Description && (() => {

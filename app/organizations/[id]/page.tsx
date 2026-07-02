@@ -19,6 +19,7 @@ import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import SearchableSelect from '@/components/SearchableSelect';
 import { useFormatHours } from '@/lib/useFormatHours';
 import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
+import { TaskTypeIcon, TaskTypeIconPicker, resolveTaskTypeIcon } from '@/lib/taskTypeIcons';
 
 export default function OrganizationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -2229,6 +2230,17 @@ function StatusesTab({
                         {renderMilestoneTypeIcon(status.IconSvg || 'flag', 'w-4 h-4')}
                       </span>
                     )}
+                    {activeType === 'type' && (
+                      <span
+                        className="inline-flex items-center"
+                        style={status.ColorCode ? { color: status.ColorCode } : undefined}
+                      >
+                        <TaskTypeIcon
+                          iconSvg={resolveTaskTypeIcon(status.IconSvg, status.TypeName)}
+                          className="w-4 h-4"
+                        />
+                      </span>
+                    )}
                     {(activeType === 'priority' || activeType === 'ticket-priority')
                       ? status.PriorityName
                       : (activeType === 'type' || activeType === 'milestone-type')
@@ -2716,6 +2728,7 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
   const isPriority = type === 'priority' || type === 'ticket-priority';
   const isTaskType = type === 'type' || type === 'milestone-type';
   const isMilestoneType = type === 'milestone-type';
+  const isTaskTypeOnly = type === 'type';
   const isTicketStatus = type === 'ticket';
   const STATUS_TYPE_OPTIONS = [
     { value: 'open',        label: 'Open — new tickets awaiting action' },
@@ -2729,7 +2742,11 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
     organizationId: orgId,
     statusName: isPriority ? (status?.PriorityName || '') : isTaskType ? (status?.TypeName || '') : (status?.StatusName || ''),
     colorCode: status?.ColorCode || status?.Color || '#3b82f6',
-    iconSvg: isMilestoneType ? (status?.IconSvg || 'flag') : undefined,
+    iconSvg: isMilestoneType
+      ? (status?.IconSvg || 'flag')
+      : isTaskTypeOnly
+        ? resolveTaskTypeIcon(status?.IconSvg, status?.TypeName)
+        : undefined,
     sortOrder: status?.SortOrder || 0,
     isDefault: !!status?.IsDefault,
     isClosed: !!status?.IsClosed,
@@ -2808,7 +2825,7 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+      <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-h-[90vh] overflow-y-auto ${isTaskTypeOnly ? 'max-w-xl' : 'max-w-md'}`}>
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -2855,6 +2872,19 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
               />
             </div>
 
+            {isTaskTypeOnly && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Icon
+                </label>
+                <TaskTypeIconPicker
+                  value={formData.iconSvg || ''}
+                  color={formData.colorCode}
+                  onChange={(iconId) => setFormData({ ...formData, iconSvg: iconId })}
+                />
+              </div>
+            )}
+
             {isMilestoneType && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -2873,6 +2903,7 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
                             ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
                             : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
                         }`}
+                        style={formData.colorCode ? { color: formData.colorCode } : undefined}
                         title={iconOption.label}
                         aria-label={iconOption.label}
                       >

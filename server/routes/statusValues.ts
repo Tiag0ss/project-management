@@ -1078,11 +1078,68 @@ const DEFAULT_TICKET_PRIORITIES = [
   { name: 'Urgent', color: '#ef4444', order: 4, isDefault: 0 },
 ];
 
+const ALLOWED_TASK_TYPE_ICONS = new Set([
+  'task', 'feature', 'bug', 'improvement', 'wrench', 'epic', 'story', 'subtask', 'spike', 'research',
+  'support', 'hotfix', 'blocker', 'idea', 'design', 'code', 'test', 'deploy', 'security', 'performance',
+  'refactor', 'document', 'meeting', 'email', 'phone', 'users', 'building', 'chart', 'clock', 'calendar',
+  'bell', 'link', 'flag', 'check-circle', 'star', 'heart', 'bookmark', 'trophy', 'rocket', 'target',
+  'milestone', 'puzzle', 'settings', 'shield', 'lightning', 'megaphone', 'clipboard', 'plus-circle', 'exclamation',
+]);
+
+const TASK_TYPE_NAME_ICON_DEFAULTS: Record<string, string> = {
+  feature: 'feature',
+  bug: 'bug',
+  improvement: 'improvement',
+  chore: 'wrench',
+  epic: 'epic',
+  story: 'story',
+  subtask: 'subtask',
+  spike: 'spike',
+  task: 'task',
+};
+
+const inferTaskTypeIconFromName = (typeName: string | null | undefined): string => {
+  const normalized = String(typeName || '').trim().toLowerCase();
+  return TASK_TYPE_NAME_ICON_DEFAULTS[normalized] || 'task';
+};
+
+const normalizeTaskTypeIcon = (iconSvg?: string, typeName?: string | null): string => {
+  const raw = String(iconSvg ?? '').trim().toLowerCase();
+  if (raw && ALLOWED_TASK_TYPE_ICONS.has(raw)) {
+    return raw;
+  }
+  if (typeName) {
+    return inferTaskTypeIconFromName(typeName);
+  }
+  return 'task';
+};
+
+async function backfillTaskTypeIcons(orgId: number): Promise<void> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT Id, TypeName, IconSvg
+     FROM TaskTypeValues
+     WHERE OrganizationId = ?`,
+    [orgId]
+  );
+
+  for (const row of rows) {
+    const current = String(row.IconSvg ?? '').trim().toLowerCase();
+    const inferred = inferTaskTypeIconFromName(row.TypeName);
+    const shouldBackfill =
+      !current ||
+      (current === 'task' && inferred !== 'task' && TASK_TYPE_NAME_ICON_DEFAULTS[String(row.TypeName || '').trim().toLowerCase()]);
+
+    if (shouldBackfill) {
+      await pool.execute('UPDATE TaskTypeValues SET IconSvg = ? WHERE Id = ?', [inferred, row.Id]);
+    }
+  }
+}
+
 const DEFAULT_TASK_TYPES = [
-  { name: 'Feature', color: '#3b82f6', order: 1, isDefault: 1 },
-  { name: 'Bug', color: '#ef4444', order: 2, isDefault: 0 },
-  { name: 'Improvement', color: '#f59e0b', order: 3, isDefault: 0 },
-  { name: 'Chore', color: '#6b7280', order: 4, isDefault: 0 },
+  { name: 'Feature', color: '#3b82f6', icon: 'feature', order: 1, isDefault: 1 },
+  { name: 'Bug', color: '#ef4444', icon: 'bug', order: 2, isDefault: 0 },
+  { name: 'Improvement', color: '#f59e0b', icon: 'improvement', order: 3, isDefault: 0 },
+  { name: 'Chore', color: '#6b7280', icon: 'wrench', order: 4, isDefault: 0 },
 ];
 
 const DEFAULT_MILESTONE_TYPES = [
@@ -1098,12 +1155,19 @@ async function ensureTaskTypes(orgId: number): Promise<RowDataPacket[]> {
     [orgId]
   );
 
-  if (rows.length > 0) return rows;
+  if (rows.length > 0) {
+    await backfillTaskTypeIcons(orgId);
+    const [updatedRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM TaskTypeValues WHERE OrganizationId = ? ORDER BY SortOrder, TypeName',
+      [orgId]
+    );
+    return updatedRows;
+  }
 
   for (const t of DEFAULT_TASK_TYPES) {
     await pool.execute(
-      'INSERT INTO TaskTypeValues (OrganizationId, TypeName, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?)',
-      [orgId, t.name, t.color, t.order, t.isDefault]
+      'INSERT INTO TaskTypeValues (OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?, ?)',
+      [orgId, t.name, t.icon, t.color, t.order, t.isDefault]
     );
   }
 
@@ -1163,7 +1227,7 @@ router.get('/type/:orgId', authenticateToken, async (req: AuthRequest, res: Resp
 router.post('/type', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { organizationId, typeName, statusName, colorCode, sortOrder, isDefault } = req.body;
+    const { organizationId, typeName, statusName, colorCode, iconSvg, sortOrder, isDefault } = req.body;
     const resolvedTypeName = typeName || statusName;
 
     if (!organizationId || !resolvedTypeName) {
@@ -1187,8 +1251,8 @@ router.post('/type', authenticateToken, async (req: AuthRequest, res: Response) 
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      'INSERT INTO TaskTypeValues (OrganizationId, TypeName, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?)',
-      [organizationId, resolvedTypeName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
+      'INSERT INTO TaskTypeValues (OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?, ?)',
+      [organizationId, resolvedTypeName, normalizeTaskTypeIcon(iconSvg, resolvedTypeName), colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
     );
 
     res.status(201).json({ success: true, typeId: result.insertId });
@@ -1203,10 +1267,10 @@ router.put('/type/:id', authenticateToken, async (req: AuthRequest, res: Respons
   try {
     const userId = req.user?.userId;
     const typeId = req.params.id;
-    const { typeName, statusName, colorCode, sortOrder, isDefault } = req.body;
+    const { typeName, statusName, colorCode, iconSvg, sortOrder, isDefault } = req.body;
 
     const [rows] = await pool.execute<RowDataPacket[]>(
-      'SELECT OrganizationId, TypeName, ColorCode, SortOrder, IsDefault FROM TaskTypeValues WHERE Id = ?',
+      'SELECT OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault FROM TaskTypeValues WHERE Id = ?',
       [typeId]
     );
 
@@ -1218,6 +1282,9 @@ router.put('/type/:id', authenticateToken, async (req: AuthRequest, res: Respons
     const currentType = rows[0];
 
     const nextTypeName = typeName ?? statusName ?? currentType.TypeName;
+    const nextIconSvg = iconSvg !== undefined
+      ? normalizeTaskTypeIcon(iconSvg, nextTypeName)
+      : normalizeTaskTypeIcon(currentType.IconSvg, currentType.TypeName);
     const nextColorCode = colorCode ?? currentType.ColorCode ?? '#3b82f6';
     const nextSortOrder = sortOrder ?? currentType.SortOrder ?? 0;
     const nextIsDefault = typeof isDefault === 'boolean'
@@ -1241,8 +1308,8 @@ router.put('/type/:id', authenticateToken, async (req: AuthRequest, res: Respons
     }
 
     await pool.execute(
-      'UPDATE TaskTypeValues SET TypeName = ?, ColorCode = ?, SortOrder = ?, IsDefault = ? WHERE Id = ?',
-      [nextTypeName, nextColorCode, nextSortOrder, nextIsDefault ? 1 : 0, typeId]
+      'UPDATE TaskTypeValues SET TypeName = ?, IconSvg = ?, ColorCode = ?, SortOrder = ?, IsDefault = ? WHERE Id = ?',
+      [nextTypeName, nextIconSvg, nextColorCode, nextSortOrder, nextIsDefault ? 1 : 0, typeId]
     );
 
     res.json({ success: true });
