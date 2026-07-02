@@ -2,6 +2,9 @@ import { Router, Response } from 'express';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -116,23 +119,31 @@ router.get('/:gridKey', authenticateToken, async (req: AuthRequest, res: Respons
     const gridKeyParam = typeof rawGridKey === 'string' ? rawGridKey : rawGridKey?.[0] || '';
     const gridKey = decodeURIComponent(gridKeyParam);
 
-    const [rows] = await pool.execute<RowDataPacket[]>(
-      'SELECT PreferencesJson FROM UserGridPreferences WHERE UserId = ? AND GridKey = ?',
-      [userId, gridKey]
+    const payload = await cachedJson(
+      cacheKeys.userGridPref(userId, gridKey),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          'SELECT PreferencesJson FROM UserGridPreferences WHERE UserId = ? AND GridKey = ?',
+          [userId, gridKey]
+        );
+
+        if (rows.length === 0) {
+          return { success: true, preference: null };
+        }
+
+        let preference: GridPreferencesPayload = {};
+        try {
+          preference = sanitizePreferences(JSON.parse(String(rows[0].PreferencesJson || '{}')));
+        } catch {
+          preference = {};
+        }
+
+        return { success: true, preference };
+      }
     );
 
-    if (rows.length === 0) {
-      return res.json({ success: true, preference: null });
-    }
-
-    let preference: GridPreferencesPayload = {};
-    try {
-      preference = sanitizePreferences(JSON.parse(String(rows[0].PreferencesJson || '{}')));
-    } catch {
-      preference = {};
-    }
-
-    res.json({ success: true, preference });
+    res.json(payload);
   } catch (error) {
     console.error('Error fetching grid preference:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch grid preference' });
@@ -173,6 +184,8 @@ router.put('/:gridKey', authenticateToken, async (req: AuthRequest, res: Respons
         [userId, gridKey, preferencesJson]
       );
     }
+
+    await invalidateByEntity('gridPreference', { userId, gridKey });
 
     res.json({ success: true, message: 'Grid preferences saved' });
   } catch (error) {

@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import { cachedJson, AGGREGATE_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
 
 const router = Router();
 
@@ -17,76 +19,84 @@ router.get('/overview', authenticateToken, async (req: AuthRequest, res: Respons
       return res.status(403).json({ success: false, message: 'Access denied: not a customer user' });
     }
 
-    // Customer info
-    const [customers] = await pool.execute<RowDataPacket[]>(
-      `SELECT Id, Name, Email, Phone, Address, Website, ContactPerson, ContactEmail, ContactPhone
-       FROM Customers WHERE Id = ? AND IsActive = 1`,
-      [customerId]
+    const payload = await cachedJson(
+      cacheKeys.portalOverview(String(customerId)),
+      AGGREGATE_TTL_SECONDS,
+      async () => {
+        const [customers] = await pool.execute<RowDataPacket[]>(
+          `SELECT Id, Name, Email, Phone, Address, Website, ContactPerson, ContactEmail, ContactPhone
+           FROM Customers WHERE Id = ? AND IsActive = 1`,
+          [customerId]
+        );
+        if (customers.length === 0) {
+          return { notFound: true as const };
+        }
+        const customer = customers[0];
+
+        const [statsRows] = await pool.execute<RowDataPacket[]>(
+          `SELECT
+             COUNT(*) as total,
+             SUM(CASE WHEN COALESCE(tsv.IsClosed, 0) = 0 THEN 1 ELSE 0 END) as open,
+             SUM(CASE WHEN COALESCE(tsv.IsClosed, 0) = 1 THEN 1 ELSE 0 END) as closed,
+             SUM(CASE WHEN COALESCE(tsv.StatusType, '') = 'in_progress' THEN 1 ELSE 0 END) as inProgress,
+             SUM(CASE WHEN tpv.PriorityName IN ('Urgent', 'Critical') OR tpv.SortOrder = (SELECT MIN(SortOrder) FROM TicketPriorityValues WHERE OrganizationId = t.OrganizationId) THEN 1 ELSE 0 END) as urgent
+           FROM Tickets t
+           LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
+           LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
+           WHERE t.CustomerId = ?`,
+          [customerId]
+        );
+        const stats = statsRows[0] || { total: 0, open: 0, closed: 0, inProgress: 0, urgent: 0 };
+
+        const [tickets] = await pool.execute<RowDataPacket[]>(
+          `SELECT t.Id, t.Title, t.Category, t.CreatedAt, t.UpdatedAt,
+                  tsv.StatusName, tsv.Color as StatusColor, COALESCE(tsv.IsClosed, 0) as IsClosed,
+                  tpv.PriorityName, tpv.Color as PriorityColor,
+                  p.ProjectName,
+                  u.Username as AssigneeName, u.FirstName as AssigneeFirst, u.LastName as AssigneeLast
+           FROM Tickets t
+           LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
+           LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
+           LEFT JOIN Projects p ON t.ProjectId = p.Id
+           LEFT JOIN Users u ON t.AssignedToUserId = u.Id
+           WHERE t.CustomerId = ?
+           ORDER BY t.UpdatedAt DESC
+           LIMIT 20`,
+          [customerId]
+        );
+
+        const [projects] = await pool.execute<RowDataPacket[]>(
+          `SELECT p.Id, p.ProjectName, p.Description, p.Status, p.StartDate, p.EndDate,
+                  psv.StatusName as StatusLabel, psv.ColorCode as StatusColor,
+                  o.Name as OrganizationName,
+                  COUNT(DISTINCT t.Id) as TotalTasks,
+                  SUM(CASE WHEN COALESCE(tsv.IsClosed, 0) = 1 THEN 1 ELSE 0 END) as CompletedTasks
+           FROM Projects p
+           LEFT JOIN ProjectStatusValues psv ON p.Status = psv.Id
+           LEFT JOIN Organizations o ON p.OrganizationId = o.Id
+           LEFT JOIN Tasks t ON t.ProjectId = p.Id
+           LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+           WHERE p.CustomerId = ? AND p.IsVisibleToCustomer = 1
+           GROUP BY p.Id
+           ORDER BY p.UpdatedAt DESC`,
+          [customerId]
+        );
+
+        return {
+          success: true,
+          customer,
+          stats,
+          tickets,
+          projects,
+        };
+      }
     );
-    if (customers.length === 0) {
+
+    if ('notFound' in payload && payload.notFound) {
       return res.status(404).json({ success: false, message: 'Customer not found' });
     }
-    const customer = customers[0];
 
-    // Ticket stats
-    const [statsRows] = await pool.execute<RowDataPacket[]>(
-      `SELECT
-         COUNT(*) as total,
-         SUM(CASE WHEN COALESCE(tsv.IsClosed, 0) = 0 THEN 1 ELSE 0 END) as open,
-         SUM(CASE WHEN COALESCE(tsv.IsClosed, 0) = 1 THEN 1 ELSE 0 END) as closed,
-         SUM(CASE WHEN COALESCE(tsv.StatusType, '') = 'in_progress' THEN 1 ELSE 0 END) as inProgress,
-         SUM(CASE WHEN tpv.PriorityName IN ('Urgent', 'Critical') OR tpv.SortOrder = (SELECT MIN(SortOrder) FROM TicketPriorityValues WHERE OrganizationId = t.OrganizationId) THEN 1 ELSE 0 END) as urgent
-       FROM Tickets t
-       LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
-       LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
-       WHERE t.CustomerId = ?`,
-      [customerId]
-    );
-    const stats = statsRows[0] || { total: 0, open: 0, closed: 0, inProgress: 0, urgent: 0 };
-
-    // Recent tickets (last 20)
-    const [tickets] = await pool.execute<RowDataPacket[]>(
-      `SELECT t.Id, t.Title, t.Category, t.CreatedAt, t.UpdatedAt,
-              tsv.StatusName, tsv.Color as StatusColor, COALESCE(tsv.IsClosed, 0) as IsClosed,
-              tpv.PriorityName, tpv.Color as PriorityColor,
-              p.ProjectName,
-              u.Username as AssigneeName, u.FirstName as AssigneeFirst, u.LastName as AssigneeLast
-       FROM Tickets t
-       LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
-       LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
-       LEFT JOIN Projects p ON t.ProjectId = p.Id
-       LEFT JOIN Users u ON t.AssignedToUserId = u.Id
-       WHERE t.CustomerId = ?
-       ORDER BY t.UpdatedAt DESC
-       LIMIT 20`,
-      [customerId]
-    );
-
-    // Projects linked to this customer
-    const [projects] = await pool.execute<RowDataPacket[]>(
-      `SELECT p.Id, p.ProjectName, p.Description, p.Status, p.StartDate, p.EndDate,
-              psv.StatusName as StatusLabel, psv.ColorCode as StatusColor,
-              o.Name as OrganizationName,
-              COUNT(DISTINCT t.Id) as TotalTasks,
-              SUM(CASE WHEN COALESCE(tsv.IsClosed, 0) = 1 THEN 1 ELSE 0 END) as CompletedTasks
-       FROM Projects p
-       LEFT JOIN ProjectStatusValues psv ON p.Status = psv.Id
-       LEFT JOIN Organizations o ON p.OrganizationId = o.Id
-       LEFT JOIN Tasks t ON t.ProjectId = p.Id
-       LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
-       WHERE p.CustomerId = ? AND p.IsVisibleToCustomer = 1
-       GROUP BY p.Id
-       ORDER BY p.UpdatedAt DESC`,
-      [customerId]
-    );
-
-    res.json({
-      success: true,
-      customer,
-      stats,
-      tickets,
-      projects,
-    });
+    res.json(payload);
   } catch (error) {
     console.error('Portal overview error:', error);
     res.status(500).json({ success: false, message: 'Failed to load portal data' });

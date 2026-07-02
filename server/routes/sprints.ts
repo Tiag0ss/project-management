@@ -2,6 +2,9 @@ import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -32,35 +35,42 @@ const router = Router();
 router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
-    const [sprints] = await pool.execute<RowDataPacket[]>(
-      `SELECT s.*,
-              u.Username as CreatedByUsername,
-              COALESCE((SELECT COUNT(*) FROM Tasks t WHERE t.SprintId = s.Id), 0) as TotalTasks,
-              COALESCE((
-                SELECT SUM(CASE WHEN tsv.IsClosed = 1 THEN 1 ELSE 0 END)
-                FROM Tasks t
-                LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
-                WHERE t.SprintId = s.Id
-              ), 0) as CompletedTasks,
-              COALESCE((SELECT SUM(COALESCE(t.EstimatedHours, 0)) FROM Tasks t WHERE t.SprintId = s.Id), 0) as TotalEstimatedHours,
-              COALESCE((SELECT SUM(COALESCE(t.StoryPoints, 0)) FROM Tasks t WHERE t.SprintId = s.Id), 0) as TotalStoryPoints,
-              COALESCE((
-                SELECT SUM(CASE WHEN tsv.IsClosed = 1 THEN COALESCE(t.EstimatedHours, 0) ELSE 0 END)
-                FROM Tasks t
-                LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
-                WHERE t.SprintId = s.Id
-              ), 0) as CompletedHours,
-              COALESCE((
-                SELECT SUM(CASE WHEN tsv.IsClosed = 1 THEN COALESCE(t.StoryPoints, 0) ELSE 0 END)
-                FROM Tasks t
-                LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
-                WHERE t.SprintId = s.Id
-              ), 0) as CompletedStoryPoints
-       FROM Sprints s
-       LEFT JOIN Users u ON s.CreatedBy = u.Id
-       WHERE s.ProjectId = ?
-       ORDER BY s.StartDate ASC, s.Id ASC`,
-      [projectId]
+    const sprints = await cachedJson(
+      cacheKeys.projectSprints(String(projectId)),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT s.*,
+                  u.Username as CreatedByUsername,
+                  COALESCE((SELECT COUNT(*) FROM Tasks t WHERE t.SprintId = s.Id), 0) as TotalTasks,
+                  COALESCE((
+                    SELECT SUM(CASE WHEN tsv.IsClosed = 1 THEN 1 ELSE 0 END)
+                    FROM Tasks t
+                    LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+                    WHERE t.SprintId = s.Id
+                  ), 0) as CompletedTasks,
+                  COALESCE((SELECT SUM(COALESCE(t.EstimatedHours, 0)) FROM Tasks t WHERE t.SprintId = s.Id), 0) as TotalEstimatedHours,
+                  COALESCE((SELECT SUM(COALESCE(t.StoryPoints, 0)) FROM Tasks t WHERE t.SprintId = s.Id), 0) as TotalStoryPoints,
+                  COALESCE((
+                    SELECT SUM(CASE WHEN tsv.IsClosed = 1 THEN COALESCE(t.EstimatedHours, 0) ELSE 0 END)
+                    FROM Tasks t
+                    LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+                    WHERE t.SprintId = s.Id
+                  ), 0) as CompletedHours,
+                  COALESCE((
+                    SELECT SUM(CASE WHEN tsv.IsClosed = 1 THEN COALESCE(t.StoryPoints, 0) ELSE 0 END)
+                    FROM Tasks t
+                    LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
+                    WHERE t.SprintId = s.Id
+                  ), 0) as CompletedStoryPoints
+           FROM Sprints s
+           LEFT JOIN Users u ON s.CreatedBy = u.Id
+           WHERE s.ProjectId = ?
+           ORDER BY s.StartDate ASC, s.Id ASC`,
+          [projectId]
+        );
+        return rows;
+      }
     );
     res.json({ success: true, sprints });
   } catch (error) {
@@ -276,6 +286,14 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [projectId, name, goal || null, startDate || null, endDate || null, status, userId]
     );
+    const [projectRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM Projects WHERE Id = ?',
+      [projectId]
+    );
+    await invalidateByEntity('sprint', {
+      projectId: Number(projectId),
+      orgId: projectRows[0]?.OrganizationId,
+    });
     res.status(201).json({ success: true, id: result.insertId });
   } catch (error) {
     console.error('Error creating sprint:', error);
@@ -339,6 +357,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
        WHERE Id = ?`,
       [name, goal || null, startDate || null, endDate || null, status, velocity || null, id]
     );
+    const [projectRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM Projects WHERE Id = ?',
+      [existing[0].ProjectId]
+    );
+    await invalidateByEntity('sprint', {
+      projectId: Number(existing[0].ProjectId),
+      orgId: projectRows[0]?.OrganizationId,
+    });
     res.json({ success: true });
   } catch (error) {
     console.error('Error updating sprint:', error);
@@ -366,9 +392,23 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT ProjectId FROM Sprints WHERE Id = ?',
+      [id]
+    );
     // Unassign tasks before deleting
     await pool.execute('UPDATE Tasks SET SprintId = NULL WHERE SprintId = ?', [id]);
     await pool.execute('DELETE FROM Sprints WHERE Id = ?', [id]);
+    if (existing.length > 0) {
+      const [projectRows] = await pool.execute<RowDataPacket[]>(
+        'SELECT OrganizationId FROM Projects WHERE Id = ?',
+        [existing[0].ProjectId]
+      );
+      await invalidateByEntity('sprint', {
+        projectId: Number(existing[0].ProjectId),
+        orgId: projectRows[0]?.OrganizationId,
+      });
+    }
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting sprint:', error);
@@ -416,6 +456,20 @@ router.post('/:id/tasks', authenticateToken, async (req: AuthRequest, res: Respo
       `UPDATE Tasks SET SprintId = ? WHERE Id IN (${placeholders})`,
       [id, ...taskIds]
     );
+    const [sprintRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT ProjectId FROM Sprints WHERE Id = ?',
+      [id]
+    );
+    if (sprintRows.length > 0) {
+      const [projectRows] = await pool.execute<RowDataPacket[]>(
+        'SELECT OrganizationId FROM Projects WHERE Id = ?',
+        [sprintRows[0].ProjectId]
+      );
+      await invalidateByEntity('sprint', {
+        projectId: Number(sprintRows[0].ProjectId),
+        orgId: projectRows[0]?.OrganizationId,
+      });
+    }
     res.json({ success: true, updated: taskIds.length });
   } catch (error) {
     console.error('Error assigning tasks to sprint:', error);
@@ -463,6 +517,20 @@ router.post('/:id/tasks/remove', authenticateToken, async (req: AuthRequest, res
       `UPDATE Tasks SET SprintId = NULL WHERE SprintId = ? AND Id IN (${placeholders})`,
       [id, ...taskIds]
     );
+    const [sprintRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT ProjectId FROM Sprints WHERE Id = ?',
+      [id]
+    );
+    if (sprintRows.length > 0) {
+      const [projectRows] = await pool.execute<RowDataPacket[]>(
+        'SELECT OrganizationId FROM Projects WHERE Id = ?',
+        [sprintRows[0].ProjectId]
+      );
+      await invalidateByEntity('sprint', {
+        projectId: Number(sprintRows[0].ProjectId),
+        orgId: projectRows[0]?.OrganizationId,
+      });
+    }
     res.json({ success: true });
   } catch (error) {
     console.error('Error removing tasks from sprint:', error);

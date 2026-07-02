@@ -6,6 +6,9 @@ import PDFDocument from 'pdfkit';
 import path from 'path';
 import { promises as fs } from 'fs';
 import { decrypt } from '../utils/encryption';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -293,6 +296,11 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const userId = req.user?.userId;
     const { organizationId } = req.query;
 
+    const listKey = organizationId
+      ? cacheKeys.orgApplications(parseInt(organizationId as string))
+      : `${cacheKeys.userOrganizations(userId!)}:applications`;
+
+    const apps = await cachedJson(listKey, ENTITY_TTL_SECONDS, async () => {
     let query = `
       SELECT a.*,
              u.FirstName, u.LastName, u.Username as CreatorUsername,
@@ -327,10 +335,10 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     query += ' ORDER BY a.Name ASC';
 
-    const [apps] = await pool.execute<RowDataPacket[]>(query, params);
+    const [appRows] = await pool.execute<RowDataPacket[]>(query, params);
 
     // Load customers for each app
-    for (const app of apps) {
+    for (const app of appRows) {
       const [customers] = await pool.execute<RowDataPacket[]>(
         `SELECT c.Id, c.Name FROM Customers c
          INNER JOIN ApplicationCustomers ac ON c.Id = ac.CustomerId
@@ -339,6 +347,9 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       );
       app.Customers = customers;
     }
+
+    return appRows;
+    });
 
     res.json({ success: true, applications: apps });
   } catch (error) {
@@ -374,6 +385,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const userId = req.user?.userId;
     const { id } = req.params;
 
+    const app = await cachedJson(cacheKeys.application(id), ENTITY_TTL_SECONDS, async () => {
     const [apps] = await pool.execute<RowDataPacket[]>(
       `SELECT a.*, u.FirstName, u.LastName, u.Username as CreatorUsername, o.Name as OrganizationName
        FROM Applications a
@@ -385,10 +397,10 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     );
 
     if (apps.length === 0) {
-      return res.status(404).json({ success: false, message: 'Application not found' });
+      return null;
     }
 
-    const app = apps[0];
+    const record = apps[0];
 
     // Load customers
     const [customers] = await pool.execute<RowDataPacket[]>(
@@ -397,7 +409,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
        WHERE ac.ApplicationId = ?`,
       [id]
     );
-    app.Customers = customers;
+    record.Customers = customers;
 
     // Load projects
     const [projects] = await pool.execute<RowDataPacket[]>(
@@ -408,7 +420,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
        WHERE ap.ApplicationId = ?`,
       [id]
     );
-    app.Projects = projects;
+    record.Projects = projects;
 
     // Load versions
     const [versions] = await pool.execute<RowDataPacket[]>(
@@ -426,7 +438,14 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
        ORDER BY av.CreatedAt DESC`,
       [id]
     );
-    app.Versions = versions;
+    record.Versions = versions;
+
+    return record;
+    });
+
+    if (!app) {
+      return res.status(404).json({ success: false, message: 'Application not found' });
+    }
 
     res.json({ success: true, application: app });
   } catch (error) {
@@ -506,6 +525,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         );
       }
     }
+
+    await invalidateByEntity('application', { applicationId: appId, orgId: OrganizationId });
 
     res.status(201).json({ success: true, id: appId, message: 'Application created' });
   } catch (error) {
@@ -601,6 +622,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       }
     }
 
+    await invalidateByEntity('application', { applicationId: id, orgId: organizationId });
+
     res.json({ success: true, message: 'Application updated' });
   } catch (error) {
     console.error('Error updating application:', error);
@@ -671,6 +694,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     }
 
     await pool.execute('UPDATE Applications SET IsActive = 0 WHERE Id = ?', [id]);
+    await invalidateByEntity('application', { applicationId: id, orgId: organizationId });
     res.json({ success: true, message: 'Application deleted' });
   } catch (error) {
     console.error('Error deleting application:', error);
@@ -686,6 +710,11 @@ router.put('/:id/projects', authenticateToken, async (req: AuthRequest, res: Res
     const { id } = req.params;
     const { ProjectIds } = req.body;
 
+    const [apps] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM Applications WHERE Id = ?',
+      [id]
+    );
+
     await pool.execute('DELETE FROM ApplicationProjects WHERE ApplicationId = ?', [id]);
     if (Array.isArray(ProjectIds)) {
       for (const projectId of ProjectIds) {
@@ -695,6 +724,11 @@ router.put('/:id/projects', authenticateToken, async (req: AuthRequest, res: Res
         );
       }
     }
+
+    await invalidateByEntity('application', {
+      applicationId: id,
+      orgId: apps[0]?.OrganizationId,
+    });
 
     res.json({ success: true, message: 'Project associations updated' });
   } catch (error) {
@@ -710,7 +744,14 @@ router.get('/:id/tasks', authenticateToken, async (req: AuthRequest, res: Respon
     const { excludeVersion } = req.query;
 
     const appId = parseInt(Array.isArray(id) ? id[0] : id);
+    const excludeVersionKey = excludeVersion
+      ? `:exclude-${parseInt(String(Array.isArray(excludeVersion) ? excludeVersion[0] : excludeVersion))}`
+      : '';
 
+    const tasks = await cachedJson(
+      `${cacheKeys.applicationTasks(appId)}${excludeVersionKey}`,
+      ENTITY_TTL_SECONDS,
+      async () => {
     // Build query to exclude tasks already in other versions
     let query = `
       SELECT t.Id, t.TaskName, t.Description, t.Status, t.Priority, t.ProjectId,
@@ -742,7 +783,10 @@ router.get('/:id/tasks', authenticateToken, async (req: AuthRequest, res: Respon
       )
       ORDER BY p.ProjectName, t.DisplayOrder, t.Id`;
 
-    const [tasks] = await pool.execute<RowDataPacket[]>(query, params);
+    const [taskRows] = await pool.execute<RowDataPacket[]>(query, params);
+
+    return taskRows;
+    });
 
     res.json({ success: true, tasks });
   } catch (error) {
@@ -758,7 +802,8 @@ router.get('/:id/versions', authenticateToken, async (req: AuthRequest, res: Res
   try {
     const { id } = req.params;
 
-    const [versions] = await pool.execute<RowDataPacket[]>(
+    const versions = await cachedJson(cacheKeys.applicationVersions(id), ENTITY_TTL_SECONDS, async () => {
+    const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT av.*, u.FirstName, u.LastName,
               (
                 SELECT COUNT(DISTINCT avt.TaskId)
@@ -771,6 +816,9 @@ router.get('/:id/versions', authenticateToken, async (req: AuthRequest, res: Res
        ORDER BY av.CreatedAt DESC`,
       [id]
     );
+
+    return rows;
+    });
 
     res.json({ success: true, versions });
   } catch (error) {
@@ -916,6 +964,8 @@ router.post('/:id/versions', authenticateToken, async (req: AuthRequest, res: Re
       await syncReleasedVersionTasks(result.insertId, applicationId);
     }
 
+    await invalidateByEntity('application', { applicationId, orgId: organizationId });
+
     res.status(201).json({ success: true, id: result.insertId, message: 'Version created' });
   } catch (error) {
     console.error('Error creating version:', error);
@@ -1039,6 +1089,8 @@ router.put('/:id/versions/:versionId', authenticateToken, async (req: AuthReques
       await syncReleasedVersionTasks(normalizedVersionId, applicationId);
     }
 
+    await invalidateByEntity('application', { applicationId, orgId: organizationId });
+
     res.json({ success: true, message: 'Version updated' });
   } catch (error) {
     console.error('Error updating version:', error);
@@ -1112,6 +1164,7 @@ router.delete('/:id/versions/:versionId', authenticateToken, async (req: AuthReq
     // Set ReleaseVersionId to null on tasks that reference this version
     await pool.execute('UPDATE Tasks SET ReleaseVersionId = NULL WHERE ReleaseVersionId = ?', [versionId]);
     await pool.execute('DELETE FROM ApplicationVersions WHERE Id = ?', [versionId]);
+    await invalidateByEntity('application', { applicationId: id, orgId: organizationId });
     res.json({ success: true, message: 'Version deleted' });
   } catch (error) {
     console.error('Error deleting version:', error);
@@ -1176,6 +1229,15 @@ router.put('/:id/versions/:versionId/tasks', authenticateToken, async (req: Auth
     }
 
     await syncReleasedVersionTasks(normalizedVersionId, applicationId);
+
+    const [apps] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM Applications WHERE Id = ?',
+      [applicationId]
+    );
+    await invalidateByEntity('application', {
+      applicationId,
+      orgId: apps[0]?.OrganizationId,
+    });
 
     res.json({ success: true, message: 'Version tasks updated' });
   } catch (error) {
@@ -1335,6 +1397,11 @@ router.post('/:id/versions/:versionId/tasks/:taskId', authenticateToken, async (
       'UPDATE Tasks SET ApplicationId = ?, ReleaseVersionId = ? WHERE Id = ?',
       [applicationId, versionId, normalizedTaskId]
     );
+    const [apps] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM Applications WHERE Id = ?',
+      [applicationId]
+    );
+    await invalidateByEntity('application', { applicationId, orgId: apps[0]?.OrganizationId });
     res.json({ success: true, message: 'Task added to version' });
   } catch (error) {
     console.error('Error adding task to version:', error);
@@ -1359,6 +1426,11 @@ router.delete('/:id/versions/:versionId/tasks/:taskId', authenticateToken, async
        WHERE Id = ? AND ReleaseVersionId = ?`,
       [applicationId, normalizedTaskId, versionId]
     );
+    const [apps] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM Applications WHERE Id = ?',
+      [applicationId]
+    );
+    await invalidateByEntity('application', { applicationId, orgId: apps[0]?.OrganizationId });
     res.json({ success: true, message: 'Task removed from version' });
   } catch (error) {
     console.error('Error removing task from version:', error);

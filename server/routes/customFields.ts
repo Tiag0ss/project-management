@@ -1,7 +1,9 @@
 import { Router, Response } from 'express';
-import { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
-import { pool } from '../config/database';
+import { pool, RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -26,11 +28,18 @@ const AVAILABLE_TABLES = ['Users', 'Projects', 'Tasks', 'Organizations', 'Custom
 // Get all custom fields (optionally filtered by table)
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const [customFields] = await pool.execute<CustomField[]>(
-      'SELECT * FROM CustomFields WHERE IsActive = 1 ORDER BY TableName, COALESCE(GroupName, \"\"), FieldName'
+    const payload = await cachedJson(
+      cacheKeys.orgCustomFields('all'),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [customFields] = await pool.execute<CustomField[]>(
+          'SELECT * FROM CustomFields WHERE IsActive = 1 ORDER BY TableName, COALESCE(GroupName, \"\"), FieldName'
+        );
+        return { success: true, customFields };
+      }
     );
-    
-    res.json({ success: true, customFields });
+
+    res.json(payload);
   } catch (error: any) {
     console.error('Error fetching custom fields:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch custom fields' });
@@ -46,12 +55,19 @@ router.get('/:tableName', authenticateToken, async (req: AuthRequest, res: Respo
       return res.status(400).json({ success: false, message: 'Invalid table name' });
     }
 
-    const [customFields] = await pool.execute<CustomField[]>(
-      'SELECT * FROM CustomFields WHERE TableName = ? AND IsActive = 1 ORDER BY COALESCE(GroupName, \"\"), FieldName',
-      [tableName]
+    const payload = await cachedJson(
+      cacheKeys.orgCustomFields(`table:${tableName}`),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [customFields] = await pool.execute<CustomField[]>(
+          'SELECT * FROM CustomFields WHERE TableName = ? AND IsActive = 1 ORDER BY COALESCE(GroupName, \"\"), FieldName',
+          [tableName]
+        );
+        return { success: true, customFields };
+      }
     );
 
-    res.json({ success: true, customFields });
+    res.json(payload);
   } catch (error: any) {
     console.error('Error fetching custom fields:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch custom fields' });
@@ -103,6 +119,9 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       await pool.execute('DELETE FROM CustomFields WHERE Id = ?', [result.insertId]);
       throw new Error(`Failed to add column to database: ${alterError.message}`);
     }
+
+    await invalidateByEntity('customField', { orgId: 'all' });
+    await invalidateByEntity('customField', { orgId: `table:${tableName}` });
 
     res.status(201).json({
       success: true,
@@ -190,6 +209,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       console.warn('Could not alter physical column type/nullability for custom field update:', alterError?.message || alterError);
     }
 
+    await invalidateByEntity('customField', { orgId: 'all' });
+    await invalidateByEntity('customField', { orgId: `table:${existing.TableName}` });
+
     res.json({ success: true, message: 'Custom field updated successfully' });
   } catch (error: any) {
     console.error('Error updating custom field:', error);
@@ -233,6 +255,9 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       console.warn(`Could not drop column ${dbFieldName} from ${fieldInfo.TableName}:`, dropError);
       // Don't fail the delete if column drop fails
     }
+
+    await invalidateByEntity('customField', { orgId: 'all' });
+    await invalidateByEntity('customField', { orgId: `table:${fieldInfo.TableName}` });
 
     res.json({ success: true, message: 'Custom field deleted successfully' });
   } catch (error: any) {

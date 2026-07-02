@@ -1,9 +1,12 @@
 import { Router, Response } from 'express';
+import { createHash } from 'crypto';
 import { pool } from '../config/database';
 import { RowDataPacket } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { executeDynamicQueryConfig } from '../utils/dynamicQueryBuilder';
 import { SYSTEM_DEFAULT_REPORTS } from './savedReports';
+import { cachedJson, AGGREGATE_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
 
 const router = Router();
 
@@ -1192,6 +1195,9 @@ const getWidgetValue = async (
   return { value: details.items.length };
 };
 
+const hashPayload = (value: unknown): string =>
+  createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -1199,32 +1205,40 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    const accessibleOrgIds = await getAccessibleOrganizationIds(userId);
-    const [rows] = await pool.execute<RowDataPacket[]>(
-      'SELECT DashboardKpiConfig FROM Users WHERE Id = ?',
-      [userId]
+    const payload = await cachedJson(
+      cacheKeys.kpi(`config:${userId}`),
+      AGGREGATE_TTL_SECONDS,
+      async () => {
+        const accessibleOrgIds = await getAccessibleOrganizationIds(userId);
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          'SELECT DashboardKpiConfig FROM Users WHERE Id = ?',
+          [userId]
+        );
+
+        const rawConfig = rows.length > 0 ? rows[0].DashboardKpiConfig : null;
+        const hasCustomConfig = rawConfig !== null && String(rawConfig).trim().length > 0;
+
+        let widgets: DashboardKpiWidget[] = [];
+        if (hasCustomConfig) {
+          try {
+            widgets = sanitizeWidgets(JSON.parse(String(rawConfig)));
+          } catch {
+            widgets = [];
+          }
+        }
+
+        const metadata = await buildMetadata(userId, accessibleOrgIds);
+
+        return {
+          success: true,
+          widgets,
+          hasCustomConfig,
+          metadata,
+        };
+      }
     );
 
-    const rawConfig = rows.length > 0 ? rows[0].DashboardKpiConfig : null;
-    const hasCustomConfig = rawConfig !== null && String(rawConfig).trim().length > 0;
-
-    let widgets: DashboardKpiWidget[] = [];
-    if (hasCustomConfig) {
-      try {
-        widgets = sanitizeWidgets(JSON.parse(String(rawConfig)));
-      } catch {
-        widgets = [];
-      }
-    }
-
-    const metadata = await buildMetadata(userId, accessibleOrgIds);
-
-    res.json({
-      success: true,
-      widgets,
-      hasCustomConfig,
-      metadata,
-    });
+    res.json(payload);
   } catch (error) {
     console.error('Error loading dashboard KPI config:', error);
     res.status(500).json({ success: false, message: 'Failed to load dashboard KPI config' });
@@ -1273,19 +1287,27 @@ router.post('/values', authenticateToken, async (req: AuthRequest, res: Response
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    const accessibleOrgIds = await getAccessibleOrganizationIds(userId);
     const widgets = sanitizeWidgets(req.body?.widgets || []);
+    const payload = await cachedJson(
+      cacheKeys.kpi(`values:${userId}:${hashPayload(widgets)}`),
+      AGGREGATE_TTL_SECONDS,
+      async () => {
+        const accessibleOrgIds = await getAccessibleOrganizationIds(userId);
 
-    const values: Record<string, KpiMetricValue> = {};
-    const detailsByWidget: Record<string, KpiDetailResult> = {};
+        const values: Record<string, KpiMetricValue> = {};
+        const detailsByWidget: Record<string, KpiDetailResult> = {};
 
-    for (const widget of widgets) {
-      const details = await getWidgetDetails(widget, userId, accessibleOrgIds);
-      detailsByWidget[widget.id] = details;
-      values[widget.id] = await getWidgetValue(widget, userId, accessibleOrgIds, details);
-    }
+        for (const widget of widgets) {
+          const details = await getWidgetDetails(widget, userId, accessibleOrgIds);
+          detailsByWidget[widget.id] = details;
+          values[widget.id] = await getWidgetValue(widget, userId, accessibleOrgIds, details);
+        }
 
-    res.json({ success: true, values, detailsByWidget });
+        return { success: true, values, detailsByWidget };
+      }
+    );
+
+    res.json(payload);
   } catch (error) {
     console.error('Error loading dashboard KPI values:', error);
     res.status(500).json({ success: false, message: 'Failed to load dashboard KPI values' });
@@ -1310,17 +1332,26 @@ router.post('/:widgetId/details', authenticateToken, async (req: AuthRequest, re
       return res.status(400).json({ success: false, message: 'Invalid widget' });
     }
 
-    const accessibleOrgIds = await getAccessibleOrganizationIds(userId);
-
-    if (accessibleOrgIds.length === 0) {
-      return res.json({ success: true, items: [], type: 'unknown' });
-    }
-
     const limit = 100;
     const offset = Math.max(0, Number(req.body?.offset || 0));
+    const widgetId = String(req.params.widgetId || '');
 
-    const details = await getWidgetDetails(widget, userId, accessibleOrgIds, { limit, offset });
-    res.json({ success: true, items: details.items, type: details.type });
+    const payload = await cachedJson(
+      cacheKeys.kpi(`details:${userId}:${widgetId}:${offset}:${hashPayload(widget)}`),
+      AGGREGATE_TTL_SECONDS,
+      async () => {
+        const accessibleOrgIds = await getAccessibleOrganizationIds(userId);
+
+        if (accessibleOrgIds.length === 0) {
+          return { success: true, items: [], type: 'unknown' };
+        }
+
+        const details = await getWidgetDetails(widget, userId, accessibleOrgIds, { limit, offset });
+        return { success: true, items: details.items, type: details.type };
+      }
+    );
+
+    res.json(payload);
   } catch (error) {
     console.error('Error loading KPI details:', error);
     res.status(500).json({ success: false, message: 'Failed to load KPI details' });

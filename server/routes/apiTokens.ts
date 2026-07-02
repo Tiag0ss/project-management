@@ -4,6 +4,7 @@ import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth';
 import logger from '../utils/logger';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -104,7 +105,7 @@ router.patch('/:id/deactivate', authenticateToken, async (req: AuthRequest, res:
     const tokenId = parseInt(String(req.params.id), 10);
 
     const [existing] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id, UserId FROM ApiTokens WHERE Id = ?',
+      'SELECT Id, UserId, TokenHash FROM ApiTokens WHERE Id = ?',
       [tokenId]
     );
 
@@ -117,6 +118,7 @@ router.patch('/:id/deactivate', authenticateToken, async (req: AuthRequest, res:
     }
 
     await pool.execute('UPDATE ApiTokens SET IsActive = 0 WHERE Id = ?', [tokenId]);
+    await invalidateByEntity('authToken', { tokenHash: existing[0].TokenHash });
 
     res.json({ success: true, message: 'Token revoked successfully' });
   } catch (error) {
@@ -136,7 +138,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     const tokenId = parseInt(String(req.params.id), 10);
 
     const [existing] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id, UserId FROM ApiTokens WHERE Id = ?',
+      'SELECT Id, UserId, TokenHash FROM ApiTokens WHERE Id = ?',
       [tokenId]
     );
 
@@ -149,6 +151,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     }
 
     await pool.execute('DELETE FROM ApiTokens WHERE Id = ?', [tokenId]);
+    await invalidateByEntity('authToken', { tokenHash: existing[0].TokenHash });
 
     res.json({ success: true, message: 'Token deleted successfully' });
   } catch (error) {

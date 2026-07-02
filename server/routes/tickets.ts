@@ -7,8 +7,22 @@ import { logActivity } from './activityLogs';
 import { sanitizeRichText } from '../utils/sanitize';
 import { resolveHistoryValues } from '../utils/changeLog';
 import { prepareCustomFieldData } from '../utils/customFields';
+import { createHash } from 'crypto';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
+
+const ticketsListCacheKey = (
+  userId: number,
+  customerId: number | null | undefined,
+  query: Record<string, unknown>
+): string => {
+  const scope = String(query.organizationId ?? customerId ?? userId);
+  const hash = createHash('md5').update(JSON.stringify(query)).digest('hex').slice(0, 16);
+  return `${cacheKeys.orgTickets(scope)}:list:${hash}`;
+};
 
 const isInternalTicketsEnabled = async (): Promise<boolean> => {
   const [rows] = await pool.execute<RowDataPacket[]>(
@@ -226,7 +240,11 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     query += ` ORDER BY t.CreatedAt DESC`;
 
-    const [tickets] = await pool.execute<RowDataPacket[]>(query, params);
+    const listKey = ticketsListCacheKey(userId!, customerId, req.query as Record<string, unknown>);
+    const tickets = await cachedJson(listKey, ENTITY_TTL_SECONDS, async () => {
+      const [rows] = await pool.execute<RowDataPacket[]>(query, params);
+      return rows;
+    });
 
     res.json({ success: true, tickets });
   } catch (error) {
@@ -253,8 +271,9 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 // MUST be before /:id to avoid route conflict
 router.get('/my-tickets', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.userId!;
 
+    const tickets = await cachedJson(cacheKeys.userMyTickets(userId), ENTITY_TTL_SECONDS, async () => {
     const query = `
       SELECT 
         t.*,
@@ -290,7 +309,9 @@ router.get('/my-tickets', authenticateToken, async (req: AuthRequest, res: Respo
       ORDER BY t.CreatedAt DESC
     `;
 
-    const [tickets] = await pool.execute<RowDataPacket[]>(query, [userId, userId]);
+    const [rows] = await pool.execute<RowDataPacket[]>(query, [userId, userId]);
+    return rows;
+    });
 
     res.json({ success: true, tickets });
   } catch (error) {
@@ -330,7 +351,11 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const userId = req.user?.userId;
     const customerId = req.user?.customerId;
 
-    const [tickets] = await pool.execute<RowDataPacket[]>(`
+    const ticketData = await cachedJson(
+      `${cacheKeys.ticket(id)}:${customerId ?? userId ?? 'anon'}`,
+      ENTITY_TTL_SECONDS,
+      async () => {
+    const [ticketRows] = await pool.execute<RowDataPacket[]>(`
       SELECT 
         t.*,
         o.Name as OrganizationName,
@@ -364,18 +389,12 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       WHERE t.Id = ?
     `, [id]);
 
-    if (tickets.length === 0) {
-      return res.status(404).json({ success: false, message: 'Ticket not found' });
+    if (ticketRows.length === 0) {
+      return null;
     }
 
-    const ticket = tickets[0];
+    const ticket = ticketRows[0];
 
-    // Check access
-    if (customerId && ticket.CustomerId !== customerId) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
-    }
-
-    // Get comments (filter internal comments for customer users)
     let commentsQuery = `
       SELECT 
         tc.*,
@@ -396,7 +415,18 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     const [comments] = await pool.execute<RowDataPacket[]>(commentsQuery, [id]);
 
-    res.json({ success: true, ticket, comments });
+    return { ticket, comments };
+    });
+
+    if (!ticketData) {
+      return res.status(404).json({ success: false, message: 'Ticket not found' });
+    }
+
+    if (customerId && ticketData.ticket.CustomerId !== customerId) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    res.json({ success: true, ticket: ticketData.ticket, comments: ticketData.comments });
   } catch (error) {
     console.error('Error fetching ticket:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch ticket' });
@@ -651,6 +681,13 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     } else {
       console.log('[Ticket Creation] No notification sent. AssignedUser:', assignedToUserId, 'CreatedBy:', userId);
     }
+
+    await invalidateByEntity('ticket', {
+      ticketId,
+      orgId: organizationId,
+      userId: userId ?? undefined,
+      userIds: assignedToUserId ? [assignedToUserId] : undefined,
+    });
 
     res.json({ 
       success: true, 
@@ -977,6 +1014,18 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       );
     }
 
+    await invalidateByEntity('ticket', {
+      ticketId,
+      orgId: ticket.OrganizationId,
+      userId: userId ?? undefined,
+      userIds: [
+        ticket.AssignedToUserId,
+        ticket.DeveloperUserId,
+        assignedToUserId,
+        developerUserId,
+      ].filter((uid): uid is number => uid !== null && uid !== undefined),
+    });
+
     res.json({ success: true, message: 'Ticket updated successfully' });
   } catch (error) {
     console.error('Error updating ticket:', error);
@@ -1133,6 +1182,15 @@ router.post('/:id/comments', authenticateToken, async (req: AuthRequest, res: Re
       }
     }
 
+    await invalidateByEntity('ticket', {
+      ticketId: id,
+      orgId: ticket.OrganizationId,
+      userId: userId ?? undefined,
+      userIds: [ticket.CreatedByUserId, ticket.AssignedToUserId, ticket.DeveloperUserId].filter(
+        (uid): uid is number => uid !== null && uid !== undefined
+      ),
+    });
+
     res.json({ 
       success: true, 
       message: 'Comment added successfully',
@@ -1170,6 +1228,11 @@ router.get('/stats/summary', authenticateToken, async (req: AuthRequest, res: Re
     const customerId = req.user?.customerId;
     const { organizationId } = req.query;
 
+    const statsKey = organizationId
+      ? cacheKeys.ticketsStats(String(organizationId))
+      : `${cacheKeys.ticketsStats(customerId ?? userId!)}:summary`;
+
+    const formattedStats = await cachedJson(statsKey, ENTITY_TTL_SECONDS, async () => {
     let baseCondition = '';
     const params: any[] = [];
 
@@ -1203,7 +1266,7 @@ router.get('/stats/summary', authenticateToken, async (req: AuthRequest, res: Re
     `, params);
 
     const rawStats = stats[0] || {};
-    const formattedStats = {
+    return {
       total: Number(rawStats.total || 0),
       open: Number(rawStats.openCount || 0),
       inProgress: Number(rawStats.inProgressCount || 0),
@@ -1213,6 +1276,7 @@ router.get('/stats/summary', authenticateToken, async (req: AuthRequest, res: Re
       urgent: Number(rawStats.urgentCount || 0),
       high: Number(rawStats.highCount || 0),
     };
+    });
 
     res.json({ success: true, stats: formattedStats });
   } catch (error) {
@@ -1268,7 +1332,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     // Get ticket info before deletion
     const [ticket] = await pool.execute<RowDataPacket[]>(
-      'SELECT TicketNumber, Title FROM Tickets WHERE Id = ?',
+      'SELECT TicketNumber, Title, OrganizationId FROM Tickets WHERE Id = ?',
       [id]
     );
 
@@ -1282,6 +1346,14 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     
     // Delete ticket
     await pool.execute('DELETE FROM Tickets WHERE Id = ?', [id]);
+
+    if (ticket.length > 0) {
+      await invalidateByEntity('ticket', {
+        ticketId: id,
+        orgId: ticket[0].OrganizationId,
+        userId: requestingUserId ?? undefined,
+      });
+    }
 
     // Log activity
     if (ticketInfo) {
@@ -1563,6 +1635,18 @@ router.put('/:id/applications', authenticateToken, async (req: AuthRequest, res:
         oldAppIds.join(',') || null,
         applicationIds.join(',') || null
       );
+    }
+
+    const [ticketRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM Tickets WHERE Id = ?',
+      [id]
+    );
+    if (ticketRows.length > 0) {
+      await invalidateByEntity('ticket', {
+        ticketId: id,
+        orgId: ticketRows[0].OrganizationId,
+        userId: userId ?? undefined,
+      });
     }
 
     res.json({ success: true, message: 'Ticket applications updated successfully' });

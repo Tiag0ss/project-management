@@ -2,6 +2,9 @@ import { Router, Response } from 'express';
 import { pool } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -210,6 +213,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     // Generate occurrences
     await generateOccurrences(recurringAllocationId, userId, recurrenceType, recurrenceInterval, daysOfWeek, startDate, endDate, startTime, endTime, allocatedHours);
 
+    await invalidateByEntity('recurringAllocation', { userId: Number(userId) });
+
     res.json({
       success: true,
       message: 'Recurring allocation created',
@@ -361,6 +366,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       );
     }
 
+    await invalidateByEntity('recurringAllocation', { userId: Number(allocation.UserId) });
+
     res.json({ success: true, message: 'Recurring allocation updated' });
   } catch (error) {
     console.error('Error updating recurring allocation:', error);
@@ -396,6 +403,11 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
   try {
     const { id } = req.params;
 
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      `SELECT UserId FROM RecurringAllocations WHERE Id = ?`,
+      [id]
+    );
+
     // Delete occurrences first
     await pool.execute(
       `DELETE FROM RecurringAllocationOccurrences WHERE RecurringAllocationId = ?`,
@@ -410,6 +422,10 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ success: false, message: 'Recurring allocation not found' });
+    }
+
+    if (existing.length > 0) {
+      await invalidateByEntity('recurringAllocation', { userId: Number(existing[0].UserId) });
     }
 
     res.json({ success: true, message: 'Recurring allocation deleted' });
@@ -457,28 +473,36 @@ router.get('/occurrences/user/:userId', authenticateToken, async (req: AuthReque
   try {
     const { userId } = req.params;
     const { startDate, endDate } = req.query;
+    const cacheScope = `user:${userId}:start:${String(startDate || 'all')}:end:${String(endDate || 'all')}`;
 
-    let query = `
-      SELECT rao.*, ra.Title, ra.Description
-      FROM RecurringAllocationOccurrences rao
-      INNER JOIN RecurringAllocations ra ON rao.RecurringAllocationId = ra.Id
-      WHERE rao.UserId = ?
-    `;
-    const params: any[] = [userId];
+    const occurrences = await cachedJson(
+      cacheKeys.recurringAllocations(cacheScope),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        let query = `
+          SELECT rao.*, ra.Title, ra.Description
+          FROM RecurringAllocationOccurrences rao
+          INNER JOIN RecurringAllocations ra ON rao.RecurringAllocationId = ra.Id
+          WHERE rao.UserId = ?
+        `;
+        const params: Array<string | number> = [String(userId)];
 
-    if (startDate) {
-      query += ` AND rao.OccurrenceDate >= ?`;
-      params.push(startDate);
-    }
+        if (startDate) {
+          query += ` AND rao.OccurrenceDate >= ?`;
+          params.push(String(startDate));
+        }
 
-    if (endDate) {
-      query += ` AND rao.OccurrenceDate <= ?`;
-      params.push(endDate);
-    }
+        if (endDate) {
+          query += ` AND rao.OccurrenceDate <= ?`;
+          params.push(String(endDate));
+        }
 
-    query += ` ORDER BY rao.OccurrenceDate ASC, rao.StartTime ASC`;
+        query += ` ORDER BY rao.OccurrenceDate ASC, rao.StartTime ASC`;
 
-    const [occurrences] = await pool.execute<RowDataPacket[]>(query, params);
+        const [rows] = await pool.execute<RowDataPacket[]>(query, params);
+        return rows;
+      }
+    );
 
     res.json({ success: true, occurrences });
   } catch (error) {

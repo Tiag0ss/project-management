@@ -2,8 +2,32 @@ import express, { Request, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { dbProvider, pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = express.Router();
+
+const getParentTaskPlanningContext = async (parentTaskId: number) => {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT t.Id as TaskId, t.ProjectId, p.OrganizationId
+     FROM Tasks t
+     INNER JOIN Projects p ON t.ProjectId = p.Id
+     WHERE t.Id = ?`,
+    [parentTaskId]
+  );
+  return rows[0] || null;
+};
+
+const invalidateChildAllocationWrites = async (parentTaskId: number) => {
+  const context = await getParentTaskPlanningContext(parentTaskId);
+  await invalidateByEntity('childAllocation', {
+    parentAllocationId: parentTaskId,
+    orgId: context?.OrganizationId,
+    projectId: context?.ProjectId,
+    taskId: context?.TaskId,
+  });
+};
 
 const normalizeDateKey = (value: unknown): string => String(value || '').split('T')[0];
 
@@ -196,6 +220,8 @@ router.post('/batch', authenticateToken, async (req: AuthRequest, res: Response)
 
     await connection.commit();
 
+    await invalidateChildAllocationWrites(Number(parentTaskId));
+
     res.json({ 
       success: true, 
       message: `Saved ${allocations.length} child allocations`,
@@ -240,18 +266,25 @@ router.get('/parent/:parentTaskId', authenticateToken, async (req: AuthRequest, 
   try {
     const { parentTaskId } = req.params;
 
-    const [rows] = await pool.execute<RowDataPacket[]>(
-      `SELECT 
-        tca.*,
-        t.TaskName as ChildTaskName
-      FROM TaskChildAllocations tca
-      JOIN Tasks t ON t.Id = tca.ChildTaskId
-      WHERE tca.ParentTaskId = ?
-      ORDER BY tca.AllocationDate, tca.Level, tca.ChildTaskId`,
-      [parentTaskId]
+    const allocations = await cachedJson(
+      cacheKeys.childAllocations(String(parentTaskId)),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT 
+            tca.*,
+            t.TaskName as ChildTaskName
+          FROM TaskChildAllocations tca
+          JOIN Tasks t ON t.Id = tca.ChildTaskId
+          WHERE tca.ParentTaskId = ?
+          ORDER BY tca.AllocationDate, tca.Level, tca.ChildTaskId`,
+          [parentTaskId]
+        );
+        return rows;
+      }
     );
 
-    res.json({ success: true, allocations: rows });
+    res.json({ success: true, allocations });
 
   } catch (error) {
     console.error('Error fetching child allocations:', error);
@@ -385,7 +418,7 @@ router.delete('/header/:headerId', authenticateToken, async (req: AuthRequest, r
     }
 
     const [affectedChildren] = await pool.execute<RowDataPacket[]>(
-      `SELECT DISTINCT ChildTaskId
+      `SELECT DISTINCT ChildTaskId, ParentTaskId
        FROM TaskChildAllocations
        WHERE TaskAllocationHeaderId = ?`,
       [headerId]
@@ -434,6 +467,11 @@ router.delete('/header/:headerId', authenticateToken, async (req: AuthRequest, r
           );
         }
       }
+    }
+
+    const parentTaskId = Number(affectedChildren[0]?.ParentTaskId || 0);
+    if (parentTaskId > 0) {
+      await invalidateChildAllocationWrites(parentTaskId);
     }
 
     res.json({
@@ -554,6 +592,8 @@ router.delete('/parent/:parentTaskId/dates', authenticateToken, async (req: Auth
 
     const deletedCount = Number((deleteResult as any)?.affectedRows || 0);
 
+    await invalidateChildAllocationWrites(parentTaskId);
+
     res.json({
       success: true,
       message: 'Child allocations deleted for selected dates',
@@ -660,6 +700,8 @@ router.delete('/parent/:parentTaskId', authenticateToken, async (req: AuthReques
         );
       }
     }
+
+    await invalidateChildAllocationWrites(Number(parentTaskId));
 
     res.json({ 
       success: true, 

@@ -2,8 +2,190 @@ import express, { Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = express.Router();
+
+const emptyUserPermissions = {
+  canViewDashboard: false,
+  canViewPlanning: false,
+  canViewProjects: false,
+  canViewBudgetInfo: false,
+  canManageProjects: false,
+  canCreateProjects: false,
+  canDeleteProjects: false,
+  canManageTasks: false,
+  canCreateTasks: false,
+  canDeleteTasks: false,
+  canAssignTasks: false,
+  canManageTimeEntries: false,
+  canViewReports: false,
+  canManageOrganizations: false,
+  canViewCustomers: false,
+  canManageCustomers: false,
+  canCreateCustomers: false,
+  canDeleteCustomers: false,
+  canManageUsers: false,
+  canManageTickets: false,
+  canCreateTickets: false,
+  canDeleteTickets: false,
+  canAssignTickets: false,
+  canPlanTasks: false,
+  canViewOthersPlanning: false,
+  canCreateTaskFromTicket: false,
+  canViewApplications: false,
+  canManageApplications: false,
+  canCreateApplications: false,
+  canDeleteApplications: false,
+  canManageReleases: false,
+};
+
+const adminUserPermissions = {
+  canViewDashboard: true,
+  canViewPlanning: true,
+  canViewProjects: true,
+  canViewBudgetInfo: true,
+  canManageProjects: true,
+  canCreateProjects: true,
+  canDeleteProjects: true,
+  canViewTasks: true,
+  canManageTasks: true,
+  canCreateTasks: true,
+  canDeleteTasks: true,
+  canAssignTasks: true,
+  canManageTimeEntries: true,
+  canViewReports: true,
+  canManageOrganizations: true,
+  canViewCustomers: true,
+  canManageCustomers: true,
+  canCreateCustomers: true,
+  canDeleteCustomers: true,
+  canManageUsers: true,
+  canManageTickets: true,
+  canCreateTickets: true,
+  canDeleteTickets: true,
+  canAssignTickets: true,
+  canPlanTasks: true,
+  canViewOthersPlanning: true,
+  canViewApplications: true,
+  canManageApplications: true,
+  canCreateApplications: true,
+  canDeleteApplications: true,
+  canManageReleases: true,
+};
+
+const fetchUserPermissions = async (userId: number) => {
+  const [userRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT IsDeveloper, IsSupport, IsManager, isAdmin FROM Users WHERE Id = ?',
+    [userId]
+  );
+
+  if (!userRows.length) {
+    return null;
+  }
+
+  const user = userRows[0];
+
+  if (user.isAdmin) {
+    return adminUserPermissions;
+  }
+
+  const roles: string[] = [];
+  if (user.IsDeveloper) roles.push('Developer');
+  if (user.IsSupport) roles.push('Support');
+  if (user.IsManager) roles.push('Manager');
+
+  if (!roles.length) {
+    return { ...emptyUserPermissions };
+  }
+
+  const placeholders = roles.map(() => '?').join(',');
+  const [permissions] = await pool.execute<RowDataPacket[]>(
+    `SELECT * FROM RolePermissions WHERE RoleName IN (${placeholders})`,
+    roles
+  );
+
+  const combined = { ...emptyUserPermissions, canViewTasks: false };
+
+  permissions.forEach((perm: RowDataPacket) => {
+    if (perm.CanViewDashboard) combined.canViewDashboard = true;
+    if (perm.CanViewPlanning) combined.canViewPlanning = true;
+    if (perm.CanViewProjects) combined.canViewProjects = true;
+    if (perm.CanManageProjects) combined.canManageProjects = true;
+    if (perm.CanCreateProjects) combined.canCreateProjects = true;
+    if (perm.CanDeleteProjects) combined.canDeleteProjects = true;
+    if (perm.CanViewTasks) combined.canViewTasks = true;
+    if (perm.CanManageTasks) combined.canManageTasks = true;
+    if (perm.CanCreateTasks) combined.canCreateTasks = true;
+    if (perm.CanDeleteTasks) combined.canDeleteTasks = true;
+    if (perm.CanAssignTasks) combined.canAssignTasks = true;
+    if (perm.CanManageTimeEntries) combined.canManageTimeEntries = true;
+    if (perm.CanViewReports) combined.canViewReports = true;
+    if (perm.CanViewBudgetInfo) combined.canViewBudgetInfo = true;
+    if (perm.CanManageOrganizations) combined.canManageOrganizations = true;
+    if (perm.CanViewCustomers) combined.canViewCustomers = true;
+    if (perm.CanManageCustomers) combined.canManageCustomers = true;
+    if (perm.CanCreateCustomers) combined.canCreateCustomers = true;
+    if (perm.CanDeleteCustomers) combined.canDeleteCustomers = true;
+    if (perm.CanManageUsers) combined.canManageUsers = true;
+    if (perm.CanManageTickets) combined.canManageTickets = true;
+    if (perm.CanCreateTickets) combined.canCreateTickets = true;
+    if (perm.CanDeleteTickets) combined.canDeleteTickets = true;
+    if (perm.CanAssignTickets) combined.canAssignTickets = true;
+    if (perm.CanPlanTasks) combined.canPlanTasks = true;
+    if (perm.CanViewOthersPlanning) combined.canViewOthersPlanning = true;
+    if (perm.CanCreateTaskFromTicket) combined.canCreateTaskFromTicket = true;
+    if (perm.CanViewApplications) combined.canViewApplications = true;
+    if (perm.CanManageApplications) combined.canManageApplications = true;
+    if (perm.CanCreateApplications) combined.canCreateApplications = true;
+    if (perm.CanDeleteApplications) combined.canDeleteApplications = true;
+    if (perm.CanManageReleases) combined.canManageReleases = true;
+  });
+
+  const [orgGroupPerms] = await pool.execute<RowDataPacket[]>(
+    `SELECT pg.* FROM PermissionGroups pg
+     INNER JOIN OrganizationMembers om ON om.PermissionGroupId = pg.Id
+     WHERE om.UserId = ?`,
+    [userId]
+  );
+
+  orgGroupPerms.forEach((perm: RowDataPacket) => {
+    if (perm.CanViewBudgetInfo) combined.canViewBudgetInfo = true;
+    if (perm.CanManageProjects) combined.canManageProjects = true;
+    if (perm.CanCreateProjects) combined.canCreateProjects = true;
+    if (perm.CanDeleteProjects) combined.canDeleteProjects = true;
+    if (perm.CanManageTasks) combined.canManageTasks = true;
+    if (perm.CanCreateTasks) combined.canCreateTasks = true;
+    if (perm.CanDeleteTasks) combined.canDeleteTasks = true;
+    if (perm.CanAssignTasks) combined.canAssignTasks = true;
+    if (perm.CanPlanTasks) combined.canPlanTasks = true;
+    if (perm.CanManageTimeEntries) combined.canManageTimeEntries = true;
+    if (perm.CanViewReports) combined.canViewReports = true;
+    if (perm.CanManageTickets) combined.canManageTickets = true;
+    if (perm.CanCreateTickets) combined.canCreateTickets = true;
+    if (perm.CanDeleteTickets) combined.canDeleteTickets = true;
+    if (perm.CanAssignTickets) combined.canAssignTickets = true;
+    if (perm.CanCreateTaskFromTicket) combined.canCreateTaskFromTicket = true;
+    if (perm.CanViewOthersPlanning) combined.canViewOthersPlanning = true;
+    if (perm.CanViewApplications) combined.canViewApplications = true;
+    if (perm.CanManageApplications) combined.canManageApplications = true;
+    if (perm.CanCreateApplications) combined.canCreateApplications = true;
+    if (perm.CanDeleteApplications) combined.canDeleteApplications = true;
+    if (perm.CanManageReleases) combined.canManageReleases = true;
+  });
+
+  return combined;
+};
+
+const invalidateGlobalUserPermissions = async (): Promise<void> => {
+  const [users] = await pool.execute<RowDataPacket[]>('SELECT Id FROM Users');
+  await invalidateByEntity('permission', {
+    orgId: 'global',
+    userIds: users.map((user) => Number(user.Id)),
+  });
+};
 
 /**
  * @swagger
@@ -374,6 +556,8 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
       );
     }
 
+    await invalidateGlobalUserPermissions();
+
     res.json({ success: true, message: 'Role permissions updated successfully' });
   } catch (error) {
     console.error('Error updating role permissions:', error);
@@ -422,222 +606,17 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
       }
     }
 
-    // Get user's roles
-    const [userRows] = await pool.execute<RowDataPacket[]>(
-      'SELECT IsDeveloper, IsSupport, IsManager, isAdmin FROM Users WHERE Id = ?',
-      [userId]
+    const data = await cachedJson(
+      cacheKeys.userPerms(userId, 'global'),
+      ENTITY_TTL_SECONDS,
+      () => fetchUserPermissions(userId)
     );
 
-    if (!userRows.length) {
+    if (data === null) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const user = userRows[0];
-
-    // Admin has all permissions
-    if (user.isAdmin) {
-      return res.json({
-        success: true,
-        data: {
-          canViewDashboard: true,
-          canViewPlanning: true,
-          canViewProjects: true,
-          canViewBudgetInfo: true,
-          canManageProjects: true,
-          canCreateProjects: true,
-          canDeleteProjects: true,
-          canViewTasks: true,
-          canManageTasks: true,
-          canCreateTasks: true,
-          canDeleteTasks: true,
-          canAssignTasks: true,
-          canManageTimeEntries: true,
-          canViewReports: true,
-          canManageOrganizations: true,
-          canViewCustomers: true,
-          canManageCustomers: true,
-          canCreateCustomers: true,
-          canDeleteCustomers: true,
-          canManageUsers: true,
-          canManageTickets: true,
-          canCreateTickets: true,
-          canDeleteTickets: true,
-          canAssignTickets: true,
-          canPlanTasks: true,
-          canViewOthersPlanning: true,
-          canViewApplications: true,
-          canManageApplications: true,
-          canCreateApplications: true,
-          canDeleteApplications: true,
-          canManageReleases: true
-        }
-      });
-    }
-
-    // Get permissions for each role the user has
-    const roles: string[] = [];
-    if (user.IsDeveloper) roles.push('Developer');
-    if (user.IsSupport) roles.push('Support');
-    if (user.IsManager) roles.push('Manager');
-/*
-    console.log('User roles:', roles);
-    console.log('User data:', user);
-*/
-    if (!roles.length) {
-      // No roles, no permissions
-      return res.json({
-        success: true,
-        data: {
-          canViewDashboard: false,
-          canViewPlanning: false,
-          canViewProjects: false,
-          canViewBudgetInfo: false,
-          canManageProjects: false,
-          canCreateProjects: false,
-          canDeleteProjects: false,
-          canManageTasks: false,
-          canCreateTasks: false,
-          canDeleteTasks: false,
-          canAssignTasks: false,
-          canManageTimeEntries: false,
-          canViewReports: false,
-          canManageOrganizations: false,
-          canViewCustomers: false,
-          canManageCustomers: false,
-          canCreateCustomers: false,
-          canDeleteCustomers: false,
-          canManageUsers: false,
-          canManageTickets: false,
-          canCreateTickets: false,
-          canDeleteTickets: false,
-          canAssignTickets: false,
-          canPlanTasks: false,
-          canViewOthersPlanning: false,
-          canCreateTaskFromTicket: false,
-          canViewApplications: false,
-          canManageApplications: false,
-          canCreateApplications: false,
-          canDeleteApplications: false,
-          canManageReleases: false
-        }
-      });
-    }
-
-    // Build placeholders for IN clause
-    const placeholders = roles.map(() => '?').join(',');
-    const [permissions] = await pool.execute<RowDataPacket[]>(
-      `SELECT * FROM RolePermissions WHERE RoleName IN (${placeholders})`,
-      roles
-    );
-
-    //console.log('Permissions from DB:', permissions);
-
-    // Combine permissions (user has permission if ANY of their roles has it)
-    const combined = {
-      canViewDashboard: false,
-      canViewPlanning: false,
-      canViewProjects: false,
-      canViewBudgetInfo: false,
-      canManageProjects: false,
-      canCreateProjects: false,
-      canDeleteProjects: false,
-      canViewTasks: false,
-      canManageTasks: false,
-      canCreateTasks: false,
-      canDeleteTasks: false,
-      canAssignTasks: false,
-      canManageTimeEntries: false,
-      canViewReports: false,
-      canManageOrganizations: false,
-      canViewCustomers: false,
-      canManageCustomers: false,
-      canCreateCustomers: false,
-      canDeleteCustomers: false,
-      canManageUsers: false,
-      canManageTickets: false,
-      canCreateTickets: false,
-      canDeleteTickets: false,
-      canAssignTickets: false,
-      canPlanTasks: false,
-      canViewOthersPlanning: false,
-      canCreateTaskFromTicket: false,
-      canViewApplications: false,
-      canManageApplications: false,
-      canCreateApplications: false,
-      canDeleteApplications: false,
-      canManageReleases: false
-    };
-
-    permissions.forEach((perm: any) => {
-      if (perm.CanViewDashboard) combined.canViewDashboard = true;
-      if (perm.CanViewPlanning) combined.canViewPlanning = true;
-      if (perm.CanViewProjects) combined.canViewProjects = true;
-      if (perm.CanManageProjects) combined.canManageProjects = true;
-      if (perm.CanCreateProjects) combined.canCreateProjects = true;
-      if (perm.CanDeleteProjects) combined.canDeleteProjects = true;
-      if (perm.CanViewTasks) combined.canViewTasks = true;
-      if (perm.CanManageTasks) combined.canManageTasks = true;
-      if (perm.CanCreateTasks) combined.canCreateTasks = true;
-      if (perm.CanDeleteTasks) combined.canDeleteTasks = true;
-      if (perm.CanAssignTasks) combined.canAssignTasks = true;
-      if (perm.CanManageTimeEntries) combined.canManageTimeEntries = true;
-      if (perm.CanViewReports) combined.canViewReports = true;
-      if (perm.CanViewBudgetInfo) combined.canViewBudgetInfo = true;
-      if (perm.CanManageOrganizations) combined.canManageOrganizations = true;
-      if (perm.CanViewCustomers) combined.canViewCustomers = true;
-      if (perm.CanManageCustomers) combined.canManageCustomers = true;
-      if (perm.CanCreateCustomers) combined.canCreateCustomers = true;
-      if (perm.CanDeleteCustomers) combined.canDeleteCustomers = true;
-      if (perm.CanManageUsers) combined.canManageUsers = true;
-      if (perm.CanManageTickets) combined.canManageTickets = true;
-      if (perm.CanCreateTickets) combined.canCreateTickets = true;
-      if (perm.CanDeleteTickets) combined.canDeleteTickets = true;
-      if (perm.CanAssignTickets) combined.canAssignTickets = true;
-      if (perm.CanPlanTasks) combined.canPlanTasks = true;
-      if (perm.CanViewOthersPlanning) combined.canViewOthersPlanning = true;
-      if (perm.CanCreateTaskFromTicket) combined.canCreateTaskFromTicket = true;
-      if (perm.CanViewApplications) combined.canViewApplications = true;
-      if (perm.CanManageApplications) combined.canManageApplications = true;
-      if (perm.CanCreateApplications) combined.canCreateApplications = true;
-      if (perm.CanDeleteApplications) combined.canDeleteApplications = true;
-      if (perm.CanManageReleases) combined.canManageReleases = true;
-    });
-
-    // Also merge in org-level permission groups assigned to this user
-    // (via OrganizationMembers.PermissionGroupId — these can extend or override global defaults per org)
-    const [orgGroupPerms] = await pool.execute<RowDataPacket[]>(
-      `SELECT pg.* FROM PermissionGroups pg
-       INNER JOIN OrganizationMembers om ON om.PermissionGroupId = pg.Id
-       WHERE om.UserId = ?`,
-      [userId]
-    );
-
-    orgGroupPerms.forEach((perm: any) => {
-      if (perm.CanViewBudgetInfo) combined.canViewBudgetInfo = true;
-      if (perm.CanManageProjects) combined.canManageProjects = true;
-      if (perm.CanCreateProjects) combined.canCreateProjects = true;
-      if (perm.CanDeleteProjects) combined.canDeleteProjects = true;
-      if (perm.CanManageTasks) combined.canManageTasks = true;
-      if (perm.CanCreateTasks) combined.canCreateTasks = true;
-      if (perm.CanDeleteTasks) combined.canDeleteTasks = true;
-      if (perm.CanAssignTasks) combined.canAssignTasks = true;
-      if (perm.CanPlanTasks) combined.canPlanTasks = true;
-      if (perm.CanManageTimeEntries) combined.canManageTimeEntries = true;
-      if (perm.CanViewReports) combined.canViewReports = true;
-      if (perm.CanManageTickets) combined.canManageTickets = true;
-      if (perm.CanCreateTickets) combined.canCreateTickets = true;
-      if (perm.CanDeleteTickets) combined.canDeleteTickets = true;
-      if (perm.CanAssignTickets) combined.canAssignTickets = true;
-      if (perm.CanCreateTaskFromTicket) combined.canCreateTaskFromTicket = true;
-      if (perm.CanViewOthersPlanning) combined.canViewOthersPlanning = true;
-      if (perm.CanViewApplications) combined.canViewApplications = true;
-      if (perm.CanManageApplications) combined.canManageApplications = true;
-      if (perm.CanCreateApplications) combined.canCreateApplications = true;
-      if (perm.CanDeleteApplications) combined.canDeleteApplications = true;
-      if (perm.CanManageReleases) combined.canManageReleases = true;
-    });
-
-    res.json({ success: true, data: combined });
+    res.json({ success: true, data });
   } catch (error) {
     console.error('Error fetching user permissions:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch user permissions' });

@@ -7,6 +7,9 @@ import { randomBytes } from 'crypto';
 import { logActivity } from './activityLogs';
 import { logUserHistory } from '../utils/changeLog';
 import { prepareCustomFieldData } from '../utils/customFields';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 const SALT_ROUNDS = 10;
@@ -598,14 +601,17 @@ router.put('/work-hours', authenticateToken, async (req: AuthRequest, res: Respo
 // Get all users (admin only)
 router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const [users] = await pool.execute<RowDataPacket[]>(
+    const users = await cachedJson(cacheKeys.usersList(), ENTITY_TTL_SECONDS, async () => {
+      const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT u.*, c.Name as CustomerName, CONCAT(tl.FirstName, ' ', tl.LastName) as TeamLeaderName,
               u.CreatedAt, u.UpdatedAt 
        FROM Users u
        LEFT JOIN Customers c ON u.CustomerId = c.Id
        LEFT JOIN Users tl ON u.TeamLeaderId = tl.Id
        ORDER BY u.CreatedAt DESC`
-    );
+      );
+      return rows;
+    });
 
     res.json({
       success: true,
@@ -839,6 +845,8 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
       req.get('user-agent')
     );
 
+    await invalidateByEntity('user');
+
     res.json({
       success: true,
       message: 'User updated successfully'
@@ -1021,6 +1029,8 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, 
       null
     );
 
+    await invalidateByEntity('user');
+
     res.json({
       success: true,
       message: 'User deleted successfully'
@@ -1181,6 +1191,8 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
       null,
       null
     );
+
+    await invalidateByEntity('user');
 
     res.status(201).json({
       success: true,

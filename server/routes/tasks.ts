@@ -9,8 +9,68 @@ import { sanitizeRichText } from '../utils/sanitize';
 import { computeCompletionPercentages } from '../utils/taskCompletion';
 import { sendNotificationEmail } from '../utils/emailService';
 import { resolveHistoryValues } from '../utils/changeLog';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
+
+const getProjectContextForTask = async (
+  projectId: number | string | string[]
+): Promise<{ OrganizationId: number; CustomerId: number | null } | null> => {
+  const normalizedProjectId = Array.isArray(projectId) ? projectId[0] : projectId;
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT OrganizationId, CustomerId FROM Projects WHERE Id = ?',
+    [normalizedProjectId]
+  );
+  return rows.length > 0 ? (rows[0] as { OrganizationId: number; CustomerId: number | null }) : null;
+};
+
+const invalidateTaskWriteCaches = async (payload: {
+  taskId?: number | string | string[];
+  projectId?: number | string | string[];
+  orgId?: number | string | string[];
+  userId?: number;
+  userIds?: number[];
+}): Promise<void> => {
+  await invalidateByEntity('task', payload);
+};
+
+const invalidateTasksByIds = async (taskIds: number[], userId?: number): Promise<void> => {
+  if (taskIds.length === 0) {
+    return;
+  }
+
+  const placeholders = taskIds.map(() => '?').join(', ');
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT DISTINCT t.Id as TaskId, t.ProjectId, p.OrganizationId
+     FROM Tasks t
+     INNER JOIN Projects p ON t.ProjectId = p.Id
+     WHERE t.Id IN (${placeholders})`,
+    taskIds
+  );
+
+  for (const row of rows) {
+    await invalidateTaskWriteCaches({
+      taskId: row.TaskId,
+      projectId: row.ProjectId,
+      orgId: row.OrganizationId,
+      userId,
+    });
+  }
+};
+
+const invalidateTaskProjectCaches = async (projectId: number | string | string[], userId?: number): Promise<void> => {
+  const ctx = await getProjectContextForTask(projectId);
+  if (!ctx) {
+    return;
+  }
+  await invalidateTaskWriteCaches({
+    projectId,
+    orgId: ctx.OrganizationId,
+    userId,
+  });
+};
 
 /**
  * @swagger
@@ -435,10 +495,11 @@ const ensureTaskTypesForOrg = async (organizationId: number): Promise<RowDataPac
 // Get all tasks assigned to current user across all organizations
 router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.userId!;
 
+    const tasks = await cachedJson(cacheKeys.userMyTasks(userId), ENTITY_TTL_SECONDS, async () => {
     // Get all tasks assigned to this user or tasks with subtasks allocated to them
-    const [tasks] = await pool.execute<RowDataPacket[]>(
+    const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT DISTINCT t.*, 
               p.ProjectName,
               p.OrganizationId,
@@ -486,12 +547,15 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
       [userId, userId, userId, userId]
     );
 
-    await populateAssigneesJson(tasks);
-    await populateTaskTagsJson(tasks);
+    await populateAssigneesJson(rows);
+    await populateTaskTagsJson(rows);
+
+    return computeCompletionPercentages(parseTaskTagsJson(parseAssigneesJson(rows)));
+    });
 
     res.json({
       success: true,
-      tasks: computeCompletionPercentages(parseTaskTagsJson(parseAssigneesJson(tasks)))
+      tasks
     });
   } catch (error) {
     console.error('Get my tasks error:', error);
@@ -543,8 +607,9 @@ router.get('/project/:projectId/summary', authenticateToken, async (req: AuthReq
       });
     }
 
+    const tasks = await cachedJson(cacheKeys.projectTasksSummary(projectId), ENTITY_TTL_SECONDS, async () => {
     // Get tasks with aggregated allocations and time entries using subqueries to avoid cartesian product
-    const [tasks] = await pool.execute<RowDataPacket[]>(
+    const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT 
         t.*,
         u1.Username as CreatorName,
@@ -577,11 +642,14 @@ router.get('/project/:projectId/summary', authenticateToken, async (req: AuthReq
       [projectId]
     );
 
-    await populateAssigneesJson(tasks);
+    await populateAssigneesJson(rows);
+
+    return computeCompletionPercentages(parseAssigneesJson(rows));
+    });
 
     res.json({
       success: true,
-      tasks: computeCompletionPercentages(parseAssigneesJson(tasks))
+      tasks
     });
   } catch (error) {
     console.error('Get project tasks summary error:', error);
@@ -638,7 +706,9 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
     const canManageTasks = access[0].Role === 'Owner' || access[0].Role === 'Admin' || access[0].CanManageTasks === 1;
     const canPlanTasks = canManageTasks || access[0].CanPlanTasks === 1;
 
-    let tasks;
+    const tasksCacheKey = `${cacheKeys.projectTasks(projectId)}:${canPlanTasks ? 'all' : `user-${userId}`}`;
+    const tasks = await cachedJson(tasksCacheKey, ENTITY_TTL_SECONDS, async () => {
+    let taskRows;
     if (canPlanTasks) {
       // Can see all tasks (either manage or plan permission)
       const [allTasks] = await pool.execute<RowDataPacket[]>(
@@ -692,7 +762,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
          ORDER BY t.CreatedAt DESC`,
         [projectId]
       );
-      tasks = allTasks;
+      taskRows = allTasks;
     } else {
       // Can only see tasks assigned to them
       const [myTasks] = await pool.execute<RowDataPacket[]>(
@@ -746,7 +816,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
          ORDER BY t.CreatedAt DESC`,
         [projectId, userId, userId]
       );
-      tasks = myTasks;
+      taskRows = myTasks;
     }
 
     const organizationId = Number(access[0].OrganizationId);
@@ -783,7 +853,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
     // Tracks the most recent in-progress date for a task (resets after each close)
     const lastInProgressDateByTaskId = new Map<number, string | null>();
     const doneTransitionsByTaskId = new Map<number, Map<string, { count: number; startDate: string | null }>>();
-    if (tasks.length > 0 && closedStatusValues.size > 0) {
+    if (taskRows.length > 0 && closedStatusValues.size > 0) {
       const [statusHistory] = await pool.execute<RowDataPacket[]>(
         `SELECT th.TaskId, th.NewValue, th.CreatedAt
          FROM TaskHistory th
@@ -839,7 +909,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
       });
     }
 
-    tasks = tasks.map((task) => {
+    taskRows = taskRows.map((task) => {
       const currentStatusToken = String(task.Status ?? '').trim();
       const isClosedNow =
         Number(task.StatusIsClosed || 0) === 1 ||
@@ -861,11 +931,14 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
       };
     });
 
-    await populateAssigneesJson(tasks);
+    await populateAssigneesJson(taskRows);
+
+    return computeCompletionPercentages(parseAssigneesJson(taskRows));
+    });
 
     res.json({
       success: true,
-      tasks: computeCompletionPercentages(parseAssigneesJson(tasks))
+      tasks
     });
   } catch (error) {
     console.error('Get tasks error:', error);
@@ -1238,6 +1311,13 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         projectId
       );
     }
+
+    await invalidateTaskWriteCaches({
+      taskId: result.insertId,
+      projectId,
+      orgId: projects[0].OrganizationId,
+      userId: userId ?? undefined,
+    });
 
     res.status(201).json({
       success: true,
@@ -1912,6 +1992,13 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       }
     }
 
+    await invalidateTaskWriteCaches({
+      taskId,
+      projectId: oldTask.ProjectId,
+      orgId: access[0].OrganizationId,
+      userId: userId ?? undefined,
+    });
+
     res.json({
       success: true,
       message: 'Task updated successfully'
@@ -2080,6 +2167,8 @@ router.post('/:id/assignees', authenticateToken, async (req: AuthRequest, res: R
     // Track in history
     await createTaskHistory(Number(taskId), userId!, 'updated', 'Assignees', null, String(assigneeUserId));
 
+    await invalidateTasksByIds([Number(taskId)], userId ?? undefined);
+
     res.json({ success: true, message: 'Assignee added' });
   } catch (error) {
     console.error('Add task assignee error:', error);
@@ -2154,6 +2243,8 @@ router.delete('/:id/assignees/:assigneeUserId', authenticateToken, async (req: A
 
     // Track in history
     await createTaskHistory(Number(taskId), userId!, 'updated', 'Assignees', String(assigneeUserId), null);
+
+    await invalidateTasksByIds([Number(taskId)], userId ?? undefined);
 
     res.json({ success: true, message: 'Assignee removed' });
   } catch (error) {
@@ -2383,6 +2474,8 @@ router.post('/reorder-kanban', authenticateToken, async (req: AuthRequest, res: 
       }
     }
 
+    await invalidateTasksByIds(uniqueIds, userId ?? undefined);
+
     res.json({ success: true });
   } catch (error) {
     console.error('Error in reorder-kanban:', error);
@@ -2468,6 +2561,8 @@ router.put('/:id/order', authenticateToken, async (req: AuthRequest, res: Respon
 
     // Create task history entry for display order change
     await createTaskHistory(Number(taskId), userId!, 'updated', 'DisplayOrder', null, String(displayOrder));
+
+    await invalidateTasksByIds([Number(taskId)], userId ?? undefined);
 
     res.json({
       success: true,
@@ -2602,6 +2697,14 @@ router.post('/:id/move-project', authenticateToken, async (req: AuthRequest, res
       req.ip,
       req.get('user-agent')
     );
+
+    await invalidateTaskWriteCaches({
+      taskId,
+      projectId: sourceTask.ProjectId,
+      orgId: sourceTask.OrganizationId,
+      userId: userId ?? undefined,
+    });
+    await invalidateTaskProjectCaches(targetProjectId, userId ?? undefined);
 
     res.json({
       success: true,
@@ -2774,6 +2877,14 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       );
     }
 
+    const projectContext = taskData ? await getProjectContextForTask(taskData.ProjectId) : null;
+    await invalidateTaskWriteCaches({
+      taskId,
+      projectId: taskData?.ProjectId,
+      orgId: projectContext?.OrganizationId,
+      userId: userId ?? undefined,
+    });
+
     res.json({
       success: true,
       message: deleteSubtasks
@@ -2846,6 +2957,11 @@ router.post('/reorder-subtasks', authenticateToken, async (req: AuthRequest, res
         String(update.displayOrder)
       );
     }
+
+    await invalidateTasksByIds(
+      updates.map((update: { taskId: number }) => Number(update.taskId)).filter((id: number) => Number.isFinite(id)),
+      userId ?? undefined
+    );
 
     res.json({ success: true, message: 'Subtasks reordered successfully' });
   } catch (error) {
@@ -2961,6 +3077,8 @@ router.post('/utilities/recalculate-hours/:projectId', authenticateToken, async 
       }
     }
 
+    await invalidateTaskProjectCaches(projectId, userId ?? undefined);
+
     res.json({ success: true, message: `Updated ${updatedCount} parent tasks`, updates });
   } catch (error) {
     console.error('Error recalculating hours:', error);
@@ -3073,6 +3191,8 @@ router.post('/utilities/reassign-from-planning/:projectId', authenticateToken, a
       updatedCount++;
     }
 
+    await invalidateTaskProjectCaches(projectId, userId ?? undefined);
+
     res.json({ success: true, message: `Reassigned ${updatedCount} tasks`, updates });
   } catch (error) {
     console.error('Error reassigning tasks:', error);
@@ -3161,6 +3281,8 @@ router.post('/utilities/update-due-dates/:projectId', authenticateToken, async (
       });
       updatedCount++;
     }
+
+    await invalidateTaskProjectCaches(projectId, userId ?? undefined);
 
     res.json({ success: true, message: `Updated ${updatedCount} task due dates`, updates });
   } catch (error) {
@@ -3252,6 +3374,8 @@ router.post('/utilities/clear-planning/:projectId', authenticateToken, async (re
         null
       );
     }
+
+    await invalidateTaskProjectCaches(projectId, userId ?? undefined);
 
     res.json({
       success: true,
@@ -3385,6 +3509,8 @@ router.post('/utilities/sync-parent-status/:projectId', authenticateToken, async
         updatedCount++;
       }
     }
+
+    await invalidateTaskProjectCaches(projectId, userId ?? undefined);
 
     res.json({ success: true, message: `Updated ${updatedCount} parent task statuses`, updates });
   } catch (error) {

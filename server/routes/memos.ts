@@ -3,6 +3,9 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { sanitizeRichText } from '../utils/sanitize';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = express.Router();
 
@@ -49,138 +52,149 @@ const router = express.Router();
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
 
-    console.log('[Memos] Fetching memos for userId:', userId);
+    const payload = await cachedJson(
+      cacheKeys.orgMemos(`user-${userId}`),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        console.log('[Memos] Fetching memos for userId:', userId);
 
-    // Get user's organizations
-    const [userOrgs] = await pool.execute<RowDataPacket[]>(
-      'SELECT OrganizationId FROM OrganizationMembers WHERE UserId = ?',
-      [userId]
+        // Get user's organizations
+        const [userOrgs] = await pool.execute<RowDataPacket[]>(
+          'SELECT OrganizationId FROM OrganizationMembers WHERE UserId = ?',
+          [userId]
+        );
+        const orgIds = userOrgs.map(o => o.OrganizationId);
+        console.log('[Memos] User organizations:', orgIds);
+
+        // Get memos:
+        // - Private: only user's own
+        // - Organizations: user's own + memos from users in same organizations
+        // - Public: all public memos
+        let query = `
+          SELECT DISTINCT m.*, 
+            u.Username, u.FirstName, u.LastName
+          FROM Memos m
+          LEFT JOIN Users u ON m.UserId = u.Id
+          WHERE 
+            (m.Visibility = 'public')
+            OR (m.Visibility = 'private' AND m.UserId = ?)
+        `;
+        const params: any[] = [userId];
+
+        if (orgIds.length > 0) {
+          // Build placeholders for IN clause
+          const placeholders = orgIds.map(() => '?').join(',');
+          query += `
+            OR (m.Visibility = 'organizations' AND m.UserId IN (
+              SELECT DISTINCT UserId FROM OrganizationMembers WHERE OrganizationId IN (${placeholders})
+            ))
+          `;
+          params.push(...orgIds);
+        }
+
+        query += ' ORDER BY m.CreatedAt DESC';
+
+        console.log('[Memos] Query params:', params);
+        const [memos] = await pool.execute<RowDataPacket[]>(query, params);
+        console.log('[Memos] Found memos:', memos.length);
+
+        const memoIds = memos.map((memo) => memo.Id).filter((memoId) => memoId !== null && memoId !== undefined);
+        const tagsByMemoId = new Map<number, string[]>();
+        const relatedByMemoId = new Map<number, Array<{ Id: number; Title: string; Visibility: string; CreatedAt: string }>>();
+
+        if (memoIds.length > 0) {
+          const placeholders = memoIds.map(() => '?').join(',');
+          const [tagRows] = await pool.execute<RowDataPacket[]>(
+            `SELECT MemoId, TagName
+             FROM MemoTags
+             WHERE MemoId IN (${placeholders})
+             ORDER BY MemoId, TagName`,
+            memoIds
+          );
+
+          for (const row of tagRows) {
+            const memoId = Number(row.MemoId);
+            if (!tagsByMemoId.has(memoId)) {
+              tagsByMemoId.set(memoId, []);
+            }
+            tagsByMemoId.get(memoId)?.push(String(row.TagName));
+          }
+        }
+
+        if (memoIds.length > 0) {
+          const memoIdPlaceholders = memoIds.map(() => '?').join(',');
+          const relationVisibilityClause = orgIds.length > 0
+            ? `(rm.Visibility = 'public' OR (rm.Visibility = 'private' AND rm.UserId = ?) OR (rm.Visibility = 'organizations' AND rm.UserId IN (SELECT DISTINCT UserId FROM OrganizationMembers WHERE OrganizationId IN (${orgIds.map(() => '?').join(',')}))))`
+            : `(rm.Visibility = 'public' OR (rm.Visibility = 'private' AND rm.UserId = ?))`;
+
+          const relationSql = `
+            SELECT mr.MemoId AS SourceMemoId, rm.Id, rm.Title, rm.Visibility, rm.CreatedAt
+            FROM MemoRelations mr
+            INNER JOIN Memos rm ON rm.Id = mr.RelatedMemoId
+            WHERE mr.MemoId IN (${memoIdPlaceholders})
+              AND ${relationVisibilityClause}
+
+            UNION ALL
+
+            SELECT mr.RelatedMemoId AS SourceMemoId, rm.Id, rm.Title, rm.Visibility, rm.CreatedAt
+            FROM MemoRelations mr
+            INNER JOIN Memos rm ON rm.Id = mr.MemoId
+            WHERE mr.RelatedMemoId IN (${memoIdPlaceholders})
+              AND ${relationVisibilityClause}
+          `;
+
+          const relationParams = [
+            ...memoIds,
+            userId,
+            ...orgIds,
+            ...memoIds,
+            userId,
+            ...orgIds,
+          ];
+
+          const [relationRows] = await pool.execute<RowDataPacket[]>(relationSql, relationParams);
+
+          for (const row of relationRows) {
+            const sourceMemoId = Number(row.SourceMemoId);
+            const relatedMemo = {
+              Id: Number(row.Id),
+              Title: String(row.Title || ''),
+              Visibility: String(row.Visibility || 'private'),
+              CreatedAt: String(row.CreatedAt || ''),
+            };
+
+            if (!relatedByMemoId.has(sourceMemoId)) {
+              relatedByMemoId.set(sourceMemoId, []);
+            }
+
+            const existing = relatedByMemoId.get(sourceMemoId) || [];
+            if (!existing.some((item) => item.Id === relatedMemo.Id)) {
+              existing.push(relatedMemo);
+              relatedByMemoId.set(sourceMemoId, existing);
+            }
+          }
+        }
+
+        // Get attachments for each memo
+        for (const memo of memos) {
+          const [attachments] = await pool.execute<RowDataPacket[]>(
+            'SELECT * FROM MemoAttachments WHERE MemoId = ?',
+            [memo.Id]
+          );
+          memo.Attachments = attachments;
+          memo.Tags = (tagsByMemoId.get(Number(memo.Id)) || []).join(',');
+          memo.RelatedMemos = relatedByMemoId.get(Number(memo.Id)) || [];
+        }
+
+        return { success: true, memos };
+      }
     );
-    const orgIds = userOrgs.map(o => o.OrganizationId);
-    console.log('[Memos] User organizations:', orgIds);
 
-    // Get memos:
-    // - Private: only user's own
-    // - Organizations: user's own + memos from users in same organizations
-    // - Public: all public memos
-    let query = `
-      SELECT DISTINCT m.*, 
-        u.Username, u.FirstName, u.LastName
-      FROM Memos m
-      LEFT JOIN Users u ON m.UserId = u.Id
-      WHERE 
-        (m.Visibility = 'public')
-        OR (m.Visibility = 'private' AND m.UserId = ?)
-    `;
-    const params: any[] = [userId];
-
-    if (orgIds.length > 0) {
-      // Build placeholders for IN clause
-      const placeholders = orgIds.map(() => '?').join(',');
-      query += `
-        OR (m.Visibility = 'organizations' AND m.UserId IN (
-          SELECT DISTINCT UserId FROM OrganizationMembers WHERE OrganizationId IN (${placeholders})
-        ))
-      `;
-      params.push(...orgIds);
-    }
-
-    query += ' ORDER BY m.CreatedAt DESC';
-
-    console.log('[Memos] Query params:', params);
-    const [memos] = await pool.execute<RowDataPacket[]>(query, params);
-    console.log('[Memos] Found memos:', memos.length);
-
-    const memoIds = memos.map((memo) => memo.Id).filter((memoId) => memoId !== null && memoId !== undefined);
-    const tagsByMemoId = new Map<number, string[]>();
-    const relatedByMemoId = new Map<number, Array<{ Id: number; Title: string; Visibility: string; CreatedAt: string }>>();
-
-    if (memoIds.length > 0) {
-      const placeholders = memoIds.map(() => '?').join(',');
-      const [tagRows] = await pool.execute<RowDataPacket[]>(
-        `SELECT MemoId, TagName
-         FROM MemoTags
-         WHERE MemoId IN (${placeholders})
-         ORDER BY MemoId, TagName`,
-        memoIds
-      );
-
-      for (const row of tagRows) {
-        const memoId = Number(row.MemoId);
-        if (!tagsByMemoId.has(memoId)) {
-          tagsByMemoId.set(memoId, []);
-        }
-        tagsByMemoId.get(memoId)?.push(String(row.TagName));
-      }
-    }
-
-    if (memoIds.length > 0) {
-      const memoIdPlaceholders = memoIds.map(() => '?').join(',');
-      const relationVisibilityClause = orgIds.length > 0
-        ? `(rm.Visibility = 'public' OR (rm.Visibility = 'private' AND rm.UserId = ?) OR (rm.Visibility = 'organizations' AND rm.UserId IN (SELECT DISTINCT UserId FROM OrganizationMembers WHERE OrganizationId IN (${orgIds.map(() => '?').join(',')}))))`
-        : `(rm.Visibility = 'public' OR (rm.Visibility = 'private' AND rm.UserId = ?))`;
-
-      const relationSql = `
-        SELECT mr.MemoId AS SourceMemoId, rm.Id, rm.Title, rm.Visibility, rm.CreatedAt
-        FROM MemoRelations mr
-        INNER JOIN Memos rm ON rm.Id = mr.RelatedMemoId
-        WHERE mr.MemoId IN (${memoIdPlaceholders})
-          AND ${relationVisibilityClause}
-
-        UNION ALL
-
-        SELECT mr.RelatedMemoId AS SourceMemoId, rm.Id, rm.Title, rm.Visibility, rm.CreatedAt
-        FROM MemoRelations mr
-        INNER JOIN Memos rm ON rm.Id = mr.MemoId
-        WHERE mr.RelatedMemoId IN (${memoIdPlaceholders})
-          AND ${relationVisibilityClause}
-      `;
-
-      const relationParams = [
-        ...memoIds,
-        userId,
-        ...orgIds,
-        ...memoIds,
-        userId,
-        ...orgIds,
-      ];
-
-      const [relationRows] = await pool.execute<RowDataPacket[]>(relationSql, relationParams);
-
-      for (const row of relationRows) {
-        const sourceMemoId = Number(row.SourceMemoId);
-        const relatedMemo = {
-          Id: Number(row.Id),
-          Title: String(row.Title || ''),
-          Visibility: String(row.Visibility || 'private'),
-          CreatedAt: String(row.CreatedAt || ''),
-        };
-
-        if (!relatedByMemoId.has(sourceMemoId)) {
-          relatedByMemoId.set(sourceMemoId, []);
-        }
-
-        const existing = relatedByMemoId.get(sourceMemoId) || [];
-        if (!existing.some((item) => item.Id === relatedMemo.Id)) {
-          existing.push(relatedMemo);
-          relatedByMemoId.set(sourceMemoId, existing);
-        }
-      }
-    }
-
-    // Get attachments for each memo
-    for (const memo of memos) {
-      const [attachments] = await pool.execute<RowDataPacket[]>(
-        'SELECT * FROM MemoAttachments WHERE MemoId = ?',
-        [memo.Id]
-      );
-      memo.Attachments = attachments;
-      memo.Tags = (tagsByMemoId.get(Number(memo.Id)) || []).join(',');
-      memo.RelatedMemos = relatedByMemoId.get(Number(memo.Id)) || [];
-    }
-
-    res.json({ success: true, memos });
+    res.json(payload);
   } catch (error) {
     console.error('Error fetching memos:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch memos' });
@@ -416,6 +430,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       }
     }
 
+    await invalidateByEntity('memo', { orgId: `user-${userId}` });
+
     res.json({ success: true, memoId, message: 'Memo created successfully' });
   } catch (error) {
     console.error('Error creating memo:', error);
@@ -537,6 +553,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       }
     }
 
+    await invalidateByEntity('memo', { orgId: `user-${userId}` });
+
     res.json({ success: true, message: 'Memo updated successfully' });
   } catch (error) {
     console.error('Error updating memo:', error);
@@ -598,6 +616,8 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     
     // Delete memo
     await pool.execute('DELETE FROM Memos WHERE Id = ?', [id]);
+
+    await invalidateByEntity('memo', { orgId: `user-${userId}` });
 
     res.json({ success: true, message: 'Memo deleted successfully' });
   } catch (error) {

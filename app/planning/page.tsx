@@ -157,6 +157,7 @@ export default function PlanningPage() {
   const [taskTimeEntries, setTaskTimeEntries] = useState<any[]>([]);
   const [recurringAllocations, setRecurringAllocations] = useState<any[]>([]);
   const [outlookTimelineEvents, setOutlookTimelineEvents] = useState<PlannerOutlookEvent[]>([]);
+  const [isLoadingOutlookCalendar, setIsLoadingOutlookCalendar] = useState(false);
   const [selectedOutlookEvent, setSelectedOutlookEvent] = useState<PlannerOutlookEvent | null>(null);
   const [showOutlookActionModal, setShowOutlookActionModal] = useState(false);
   const [isStartingOutlookTimer, setIsStartingOutlookTimer] = useState(false);
@@ -1154,9 +1155,9 @@ export default function PlanningPage() {
         const dateRange = getVisibleDateRange();
         await Promise.all([
           loadRecurringAllocations(allUsersRef.current),
-          loadOutlookTimelineEvents(),
           loadAllAllocations(loadedTasks, dateRange?.startDate, dateRange?.endDate),
         ]);
+        void loadOutlookTimelineEvents();
       }
       if (projectsRes.projects.length === 0) {
         setProjectMilestones([]);
@@ -1371,9 +1372,11 @@ export default function PlanningPage() {
   const loadOutlookTimelineEvents = async () => {
     if (!token) {
       setOutlookTimelineEvents([]);
+      setIsLoadingOutlookCalendar(false);
       return;
     }
 
+    setIsLoadingOutlookCalendar(true);
     try {
       const visibleDays = getDaysInView();
       if (visibleDays.length === 0) {
@@ -1422,6 +1425,8 @@ export default function PlanningPage() {
     } catch (err) {
       console.error('Failed to load Outlook timeline events:', err);
       setOutlookTimelineEvents([]);
+    } finally {
+      setIsLoadingOutlookCalendar(false);
     }
   };
 
@@ -7851,58 +7856,69 @@ export default function PlanningPage() {
               </div>
             </div>
 
-            {overdueMilestones.length > 0 && (
-              <div className="bg-amber-50/60 dark:bg-amber-900/10 border-b border-amber-200/50 dark:border-amber-800/30 px-4 py-2">
-                <button
-                  type="button"
-                  onClick={() => setShowOverdueDetails(!showOverdueDetails)}
-                  className="flex items-center gap-2 text-sm hover:opacity-75 transition-opacity"
-                >
-                  <span className="text-amber-700 dark:text-amber-600">⚠️</span>
-                  <span className="font-medium text-amber-800 dark:text-amber-300">
-                    {overdueMilestones.length} overdue milestone{overdueMilestones.length === 1 ? '' : 's'}
-                  </span>
-                  <svg className={`w-4 h-4 text-amber-600 dark:text-amber-400 transition-transform ${showOverdueDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7-7-7 7" />
-                  </svg>
-                </button>
+            {(isLoadingOutlookCalendar || overdueMilestones.length > 0) && (
+              <div className="bg-amber-50/60 dark:bg-amber-900/10 border-b border-amber-200/50 dark:border-amber-800/30 px-4 py-2 space-y-2">
+                {isLoadingOutlookCalendar && (
+                  <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
+                    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-amber-600 border-t-transparent dark:border-amber-400 dark:border-t-transparent" aria-hidden="true" />
+                    <span>Still loading Outlook calendar…</span>
+                  </div>
+                )}
 
-                {showOverdueDetails && (
-                  <div className="mt-2 space-y-1 max-h-64 overflow-y-auto">
-                    {overdueMilestonesPreview.map((entry) => (
-                      <div key={`overdue-milestone-${entry.milestone.Id}`} className="flex items-center justify-between gap-2 text-xs py-1 px-2 rounded bg-white/50 dark:bg-gray-800/30 hover:bg-white/80 dark:hover:bg-gray-800/50 transition-colors">
-                        <div className="min-w-0 flex-1">
-                          <div className="font-medium text-gray-900 dark:text-white truncate">{entry.milestone.Name}</div>
-                          <div className="text-xs text-gray-600 dark:text-gray-400 truncate">
-                            {entry.projectName} • {entry.daysOverdue}d overdue
+                {overdueMilestones.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowOverdueDetails(!showOverdueDetails)}
+                      className="flex items-center gap-2 text-sm hover:opacity-75 transition-opacity"
+                    >
+                      <span className="text-amber-700 dark:text-amber-600">⚠️</span>
+                      <span className="font-medium text-amber-800 dark:text-amber-300">
+                        {overdueMilestones.length} overdue milestone{overdueMilestones.length === 1 ? '' : 's'}
+                      </span>
+                      <svg className={`w-4 h-4 text-amber-600 dark:text-amber-400 transition-transform ${showOverdueDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7-7-7 7" />
+                      </svg>
+                    </button>
+
+                    {showOverdueDetails && (
+                      <div className="mt-2 space-y-1 max-h-64 overflow-y-auto">
+                        {overdueMilestonesPreview.map((entry) => (
+                          <div key={`overdue-milestone-${entry.milestone.Id}`} className="flex items-center justify-between gap-2 text-xs py-1 px-2 rounded bg-white/50 dark:bg-gray-800/30 hover:bg-white/80 dark:hover:bg-gray-800/50 transition-colors">
+                            <div className="min-w-0 flex-1">
+                              <div className="font-medium text-gray-900 dark:text-white truncate">{entry.milestone.Name}</div>
+                              <div className="text-xs text-gray-600 dark:text-gray-400 truncate">
+                                {entry.projectName} • {entry.daysOverdue}d overdue
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button 
+                                type="button"
+                                onClick={() => { setActiveTab('gantt'); focusTimelineDate(entry.dueDate); }}
+                                className="px-2 py-0.5 text-xs bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors"
+                                title="Show in Gantt"
+                              >
+                                Show
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void openMilestoneEditor(entry.milestone)}
+                                className="px-2 py-0.5 text-xs bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded transition-colors"
+                                title="Edit milestone"
+                              >
+                                ✎
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button 
-                            type="button"
-                            onClick={() => { setActiveTab('gantt'); focusTimelineDate(entry.dueDate); }}
-                            className="px-2 py-0.5 text-xs bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors"
-                            title="Show in Gantt"
-                          >
-                            Show
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void openMilestoneEditor(entry.milestone)}
-                            className="px-2 py-0.5 text-xs bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded transition-colors"
-                            title="Edit milestone"
-                          >
-                            ✎
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    {overdueMilestones.length > overdueMilestonesPreview.length && (
-                      <div className="text-xs text-amber-700 dark:text-amber-400 py-1 px-2">
-                        +{overdueMilestones.length - overdueMilestonesPreview.length} more
+                        ))}
+                        {overdueMilestones.length > overdueMilestonesPreview.length && (
+                          <div className="text-xs text-amber-700 dark:text-amber-400 py-1 px-2">
+                            +{overdueMilestones.length - overdueMilestonesPreview.length} more
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
+                  </>
                 )}
               </div>
             )}

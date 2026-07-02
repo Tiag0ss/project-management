@@ -10,6 +10,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
 import { dbProvider, testConnection } from './config/database';
+import { getRedisStatus, testRedisConnection } from './config/redis';
 import { buildAllTables } from './utils/schemaBuilder';
 import { seedRolePermissions } from './utils/seedRolePermissions';
 import { runMigrations } from './utils/migrations';
@@ -192,6 +193,10 @@ app.prepare().then(async () => {
   server.get('/health', async (req, res) => {
     try {
       const dbHealthy = await testConnection();
+      const redisStatus = getRedisStatus();
+      if (redisStatus !== 'disabled') {
+        await testRedisConnection();
+      }
       const status = dbHealthy ? 'healthy' : 'unhealthy';
       const httpStatus = dbHealthy ? 200 : 503;
       
@@ -200,6 +205,7 @@ app.prepare().then(async () => {
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
         database: dbHealthy ? 'connected' : 'disconnected',
+        redis: getRedisStatus(),
       });
     } catch (error) {
       logger.error('Health check failed', { error });

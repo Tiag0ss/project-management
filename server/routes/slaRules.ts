@@ -2,6 +2,9 @@ import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -31,19 +34,27 @@ const router = Router();
  */
 router.get('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { organizationId } = req.params;
-    const [rules] = await pool.execute<RowDataPacket[]>(
-      `SELECT sr.*, tpv.PriorityName, tpv.Color as PriorityColor,
-              tsv.StatusName as AutoTransitionStatusName,
-              tsv.Color as AutoTransitionStatusColor
-       FROM SLARules sr
-       LEFT JOIN TicketPriorityValues tpv ON sr.PriorityId = tpv.Id
-       LEFT JOIN TicketStatusValues tsv ON sr.AutoTransitionStatusId = tsv.Id
-       WHERE sr.OrganizationId = ?
-       ORDER BY sr.IsActive DESC, sr.Id ASC`,
-      [organizationId]
+    const rawOrgId = req.params.organizationId;
+    const organizationId = typeof rawOrgId === 'string' ? rawOrgId : rawOrgId[0];
+    const payload = await cachedJson(
+      cacheKeys.orgSla(organizationId),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [rules] = await pool.execute<RowDataPacket[]>(
+          `SELECT sr.*, tpv.PriorityName, tpv.Color as PriorityColor,
+                  tsv.StatusName as AutoTransitionStatusName,
+                  tsv.Color as AutoTransitionStatusColor
+           FROM SLARules sr
+           LEFT JOIN TicketPriorityValues tpv ON sr.PriorityId = tpv.Id
+           LEFT JOIN TicketStatusValues tsv ON sr.AutoTransitionStatusId = tsv.Id
+           WHERE sr.OrganizationId = ?
+           ORDER BY sr.IsActive DESC, sr.Id ASC`,
+          [organizationId]
+        );
+        return { success: true, rules };
+      }
     );
-    res.json({ success: true, rules });
+    res.json(payload);
   } catch (error) {
     console.error('Error fetching SLA rules:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch SLA rules' });
@@ -232,6 +243,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         isActive ? 1 : 0,
       ]
     );
+    await invalidateByEntity('sla', { orgId: organizationId });
     res.status(201).json({ success: true, id: result.insertId });
   } catch (error) {
     console.error('Error creating SLA rule:', error);
@@ -269,6 +281,15 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       isActive,
     } = req.body;
 
+    const [existingRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM SLARules WHERE Id = ?',
+      [id]
+    );
+    if (existingRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'SLA rule not found' });
+    }
+    const orgId = existingRows[0].OrganizationId;
+
     const autoHours = autoTransitionHours != null ? Number(autoTransitionHours) : null;
     const autoStatusId = autoTransitionStatusId != null ? Number(autoTransitionStatusId) : null;
 
@@ -300,6 +321,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         id,
       ]
     );
+    await invalidateByEntity('sla', { orgId });
     res.json({ success: true });
   } catch (error) {
     console.error('Error updating SLA rule:', error);
@@ -327,7 +349,17 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const [existingRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM SLARules WHERE Id = ?',
+      [id]
+    );
+    if (existingRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'SLA rule not found' });
+    }
+    const orgId = existingRows[0].OrganizationId;
+
     await pool.execute('DELETE FROM SLARules WHERE Id = ?', [id]);
+    await invalidateByEntity('sla', { orgId });
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting SLA rule:', error);

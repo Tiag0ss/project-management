@@ -4,6 +4,9 @@ import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { encrypt, isEncrypted } from '../utils/encryption';
 import { ensureAiAssistantViews } from '../utils/aiAssistantViews';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 // Keys that should be encrypted in the database
 const ENCRYPTED_KEYS = ['smtpPassword', 'openAIApiKey', 'outlookTenantId', 'outlookClientId', 'outlookClientSecret'];
@@ -19,6 +22,22 @@ const parseBooleanSetting = (value: unknown): boolean => {
 };
 
 const isDemoModeEnabled = (): boolean => parseBooleanSetting(process.env.DEMO);
+
+const fetchSettingsMap = async (): Promise<Record<string, string>> => {
+  const [settings] = await pool.execute<RowDataPacket[]>(
+    'SELECT SettingKey, SettingValue FROM SystemSettings'
+  );
+
+  const settingsObj: Record<string, string> = {};
+  settings.forEach(setting => {
+    settingsObj[setting.SettingKey] = setting.SettingValue;
+  });
+
+  return settingsObj;
+};
+
+const getCachedSettingsMap = (): Promise<Record<string, string>> =>
+  cachedJson(cacheKeys.settingsGlobal(), ENTITY_TTL_SECONDS, fetchSettingsMap);
 
 /**
  * @swagger
@@ -41,39 +60,42 @@ const isDemoModeEnabled = (): boolean => parseBooleanSetting(process.env.DEMO);
 // Get public registration setting (no auth required)
 router.get('/public', async (req, res: Response) => {
   try {
-    const [settings] = await pool.execute<RowDataPacket[]>(
-      'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?, ?, ?)',
-      [
-        'allowPublicRegistration',
-        'publicRegistrationType',
-        'companyName',
-        'companyLogoUrl',
-        'faviconUrl',
-        'frontpageEnabled'
-      ]
+    const cached = await cachedJson(
+      cacheKeys.settingsPublic(),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [settings] = await pool.execute<RowDataPacket[]>(
+          'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?, ?, ?)',
+          [
+            'allowPublicRegistration',
+            'publicRegistrationType',
+            'companyName',
+            'companyLogoUrl',
+            'faviconUrl',
+            'frontpageEnabled'
+          ]
+        );
+
+        const settingsObj: Record<string, string> = {};
+        settings.forEach(setting => {
+          settingsObj[setting.SettingKey] = setting.SettingValue;
+        });
+
+        return {
+          allowPublicRegistration: parseBooleanSetting(settingsObj.allowPublicRegistration),
+          publicRegistrationType: settingsObj.publicRegistrationType || 'internal',
+          companyName: settingsObj.companyName || 'Project Management',
+          companyLogoUrl: settingsObj.companyLogoUrl || '',
+          faviconUrl: settingsObj.faviconUrl || '',
+          frontpageEnabled: settingsObj.frontpageEnabled !== 'false',
+        };
+      }
     );
 
-    const settingsObj: Record<string, string> = {};
-    settings.forEach(setting => {
-      settingsObj[setting.SettingKey] = setting.SettingValue;
-    });
-
-    const allowPublicRegistration = parseBooleanSetting(settingsObj.allowPublicRegistration);
-    const publicRegistrationType = settingsObj.publicRegistrationType || 'internal';
-    const companyName = settingsObj.companyName || 'Project Management';
-    const companyLogoUrl = settingsObj.companyLogoUrl || '';
-    const faviconUrl = settingsObj.faviconUrl || '';
-    const frontpageEnabled = settingsObj.frontpageEnabled !== 'false';
-    const demoMode = isDemoModeEnabled();
     res.json({
       success: true,
-      allowPublicRegistration,
-      publicRegistrationType,
-      companyName,
-      companyLogoUrl,
-      faviconUrl,
-      frontpageEnabled,
-      demoMode,
+      ...cached,
+      demoMode: isDemoModeEnabled(),
     });
   } catch (error) {
     console.error('Get public registration setting error:', error);
@@ -87,29 +109,33 @@ router.get('/public', async (req, res: Response) => {
 // Get authenticated user flags (requires login)
 router.get('/user-flags', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const [settings] = await pool.execute<RowDataPacket[]>(
-      'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?, ?)',
-      ['autoApproveTimeEntries', 'autoApproveVacations', 'autoApproveOutOfOffice', 'internalTicketsEnabled', 'memosEnabled']
+    const flags = await cachedJson(
+      cacheKeys.settingsUserFlags(),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [settings] = await pool.execute<RowDataPacket[]>(
+          'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?, ?)',
+          ['autoApproveTimeEntries', 'autoApproveVacations', 'autoApproveOutOfOffice', 'internalTicketsEnabled', 'memosEnabled']
+        );
+
+        const settingsObj: Record<string, string> = {};
+        settings.forEach(setting => {
+          settingsObj[setting.SettingKey] = setting.SettingValue;
+        });
+
+        return {
+          autoApproveTimeEntries: parseBooleanSetting(settingsObj.autoApproveTimeEntries),
+          autoApproveVacations: parseBooleanSetting(settingsObj.autoApproveVacations),
+          autoApproveOutOfOffice: parseBooleanSetting(settingsObj.autoApproveOutOfOffice),
+          internalTicketsEnabled: settingsObj.internalTicketsEnabled !== 'false',
+          memosEnabled: settingsObj.memosEnabled !== 'false',
+        };
+      }
     );
-
-    const settingsObj: Record<string, string> = {};
-    settings.forEach(setting => {
-      settingsObj[setting.SettingKey] = setting.SettingValue;
-    });
-
-    const autoApproveTimeEntries = parseBooleanSetting(settingsObj.autoApproveTimeEntries);
-    const autoApproveVacations = parseBooleanSetting(settingsObj.autoApproveVacations);
-    const autoApproveOutOfOffice = parseBooleanSetting(settingsObj.autoApproveOutOfOffice);
-    const internalTicketsEnabled = settingsObj.internalTicketsEnabled !== 'false';
-    const memosEnabled = settingsObj.memosEnabled !== 'false';
 
     res.json({
       success: true,
-      autoApproveTimeEntries,
-      autoApproveVacations,
-      autoApproveOutOfOffice,
-      internalTicketsEnabled,
-      memosEnabled,
+      ...flags,
     });
   } catch (error) {
     console.error('Get user flags error:', error);
@@ -134,12 +160,8 @@ router.get('/user-flags', authenticateToken, async (req: AuthRequest, res: Respo
 // Get public frontpage content (no auth required)
 router.get('/public-frontpage', async (req, res: Response) => {
   try {
-    const [settings] = await pool.execute<RowDataPacket[]>(
-      'SELECT SettingValue FROM SystemSettings WHERE SettingKey = ?',
-      ['frontpage_content']
-    );
-
-    const content = settings.length > 0 ? settings[0].SettingValue : null;
+    const settingsMap = await getCachedSettingsMap();
+    const content = settingsMap.frontpage_content ?? null;
 
     res.json({ success: true, content });
   } catch (error) {
@@ -185,12 +207,8 @@ router.get('/frontpage', authenticateToken, async (req: AuthRequest, res: Respon
     }
 
     // Get frontpage content from SystemSettings
-    const [settings] = await pool.execute<RowDataPacket[]>(
-      'SELECT SettingValue FROM SystemSettings WHERE SettingKey = ?',
-      ['frontpage_content']
-    );
-
-    const content = settings.length > 0 ? settings[0].SettingValue : null;
+    const settingsMap = await getCachedSettingsMap();
+    const content = settingsMap.frontpage_content ?? null;
 
     res.json({ success: true, content });
   } catch (error) {
@@ -267,6 +285,8 @@ router.put('/frontpage', authenticateToken, async (req: AuthRequest, res: Respon
       );
     }
 
+    await invalidateByEntity('settings');
+
     res.json({ success: true, message: 'Frontpage content updated successfully' });
   } catch (error) {
     console.error('Error updating frontpage content:', error);
@@ -306,18 +326,13 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const [settings] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM SystemSettings'
-    );
-
-    // Convert to key-value object
+    const settingsMap = await getCachedSettingsMap();
     const settingsObj: Record<string, string> = {};
-    settings.forEach(setting => {
-      // Never send sensitive values to the frontend
-      if (MASKED_KEYS.includes(setting.SettingKey) && setting.SettingValue) {
-        settingsObj[setting.SettingKey] = '';
+    Object.entries(settingsMap).forEach(([key, value]) => {
+      if (MASKED_KEYS.includes(key) && value) {
+        settingsObj[key] = '';
       } else {
-        settingsObj[setting.SettingKey] = setting.SettingValue;
+        settingsObj[key] = value;
       }
     });
 
@@ -414,6 +429,8 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         );
       }
     }
+
+    await invalidateByEntity('settings');
 
     res.json({
       success: true,

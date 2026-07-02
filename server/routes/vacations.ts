@@ -1,7 +1,9 @@
 import express, { Response } from 'express';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
-import { pool } from '../config/database';
+import { pool, RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = express.Router();
 
@@ -269,6 +271,8 @@ router.post('/my/request', authenticateToken, async (req: AuthRequest, res: Resp
       createdByYear.set(year, pendingCreation + dayWeight);
     }
 
+    await invalidateByEntity('vacation', { userId });
+
     res.json({
       success: true,
       message: autoApproveVacations ? 'Vacation request submitted and auto-approved' : 'Vacation request submitted',
@@ -444,18 +448,26 @@ router.get('/calendar', authenticateToken, async (req: AuthRequest, res: Respons
       return res.json({ success: true, entries: [] });
     }
 
-    const placeholders = uniqueEffectiveUserIds.map(() => '?').join(',');
-    const [rows] = await pool.execute<RowDataPacket[]>(
-      `SELECT Id, UserId, VacationDate, COALESCE(DayPortion, 'full') as DayPortion, Status, Notes
-       FROM UserVacations
-       WHERE LOWER(Status) = 'approved'
-         AND VacationDate BETWEEN ? AND ?
-         AND UserId IN (${placeholders})
-       ORDER BY VacationDate ASC`,
-      [startDate, endDate, ...uniqueEffectiveUserIds]
+    const cacheScope = `viewer:${currentUserId}:admin:${isAdmin ? 1 : 0}:users:${uniqueEffectiveUserIds.sort((a, b) => a - b).join(',')}:start:${startDate}:end:${endDate}`;
+    const entries = await cachedJson(
+      cacheKeys.vacations(cacheScope),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const placeholders = uniqueEffectiveUserIds.map(() => '?').join(',');
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT Id, UserId, VacationDate, COALESCE(DayPortion, 'full') as DayPortion, Status, Notes
+           FROM UserVacations
+           WHERE LOWER(Status) = 'approved'
+             AND VacationDate BETWEEN ? AND ?
+             AND UserId IN (${placeholders})
+           ORDER BY VacationDate ASC`,
+          [startDate, endDate, ...uniqueEffectiveUserIds]
+        );
+        return rows;
+      }
     );
 
-    res.json({ success: true, entries: rows });
+    res.json({ success: true, entries });
   } catch (error) {
     console.error('Error loading vacation calendar entries:', error);
     res.status(500).json({ success: false, message: 'Failed to load vacation calendar entries' });
@@ -492,6 +504,8 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     }
 
     await pool.execute('DELETE FROM UserVacations WHERE Id = ?', [vacationId]);
+
+    await invalidateByEntity('vacation', { userId: targetUserId });
 
     res.json({ success: true, message: 'Vacation day deleted' });
   } catch (error) {
@@ -531,10 +545,12 @@ router.put('/:id/approval', authenticateToken, async (req: AuthRequest, res: Res
 
     await pool.execute(
       `UPDATE UserVacations
-       SET Status = ?, ApprovedBy = ?, ApprovedAt = NOW()
+       SET Status = ?, ApprovedBy = ?, ApprovedAt = CURRENT_TIMESTAMP
        WHERE Id = ?`,
       [String(status).toLowerCase(), userId, vacationId]
     );
+
+    await invalidateByEntity('vacation', { userId: targetUserId });
 
     res.json({ success: true, message: `Vacation request ${status}` });
   } catch (error) {
@@ -722,6 +738,8 @@ router.post('/team-members/:userId/configure', authenticateToken, async (req: Au
         createdByYear.set(year, (createdByYear.get(year) || 0) + dayWeight);
       }
     }
+
+    await invalidateByEntity('vacation', { userId: targetUserId });
 
     res.json({
       success: true,

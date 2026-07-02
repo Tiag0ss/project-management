@@ -4,6 +4,9 @@ import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { logCustomerHistory } from '../utils/changeLog';
 import { prepareCustomFieldData } from '../utils/customFields';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -85,6 +88,20 @@ const getCustomerContacts = async (customerId: number) => {
   return contacts;
 };
 
+const getCustomerOrgIds = async (customerId: number): Promise<number[]> => {
+  const [orgs] = await pool.execute<RowDataPacket[]>(
+    'SELECT OrganizationId FROM CustomerOrganizations WHERE CustomerId = ?',
+    [customerId]
+  );
+  return orgs.map((row) => Number(row.OrganizationId));
+};
+
+const invalidateCustomerCachesForOrgs = async (customerId: number, orgIds: number[]): Promise<void> => {
+  for (const orgId of orgIds) {
+    await invalidateByEntity('customer', { customerId, orgId });
+  }
+};
+
 /**
  * @swagger
  * tags:
@@ -115,9 +132,14 @@ const getCustomerContacts = async (customerId: number) => {
 // Get all customers for the current user's organizations
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.userId!;
     const { organizationId } = req.query;
 
+    const listKey = organizationId
+      ? cacheKeys.orgCustomers(parseInt(organizationId as string))
+      : `${cacheKeys.userOrganizations(userId)}:customers`;
+
+    const customers = await cachedJson(listKey, ENTITY_TTL_SECONDS, async () => {
     let query: string;
     let params: (number | string)[];
 
@@ -131,7 +153,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         WHERE om.UserId = ? AND co.OrganizationId = ? AND c.IsActive = 1
         ORDER BY c.Name ASC
       `;
-      params = [userId!, parseInt(organizationId as string)];
+      params = [userId, parseInt(organizationId as string)];
     } else {
       // Get all customers from user's organizations
       query = `
@@ -142,12 +164,11 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         WHERE om.UserId = ? AND c.IsActive = 1
         ORDER BY c.Name ASC
       `;
-      params = [userId!];
+      params = [userId];
     }
 
-    const [customers] = await pool.execute<RowDataPacket[]>(query, params);
-
-    const statsParams: (number | string)[] = [userId!, userId!];
+    const [customerRows] = await pool.execute<RowDataPacket[]>(query, params);
+    const statsParams: (number | string)[] = [userId, userId];
     let customerStatsQuery = `
       SELECT c.Id as CustomerId,
              COUNT(DISTINCT CASE
@@ -198,7 +219,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     });
 
     // Get organization associations and open ticket count for each customer
-    for (const customer of customers) {
+    for (const customer of customerRows) {
       const [orgs] = await pool.execute<RowDataPacket[]>(
         `SELECT co.CustomerId, co.OrganizationId, o.Name as OrganizationName, co.CreatedAt
          FROM CustomerOrganizations co
@@ -233,6 +254,9 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       customer.TotalTasks = customerStats?.totalTasks || 0;
       customer.CompletedTasks = customerStats?.completedTasks || 0;
     }
+
+    return customerRows;
+    });
 
     res.json({
       success: true,
@@ -276,42 +300,48 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const userId = req.user?.userId;
     const customerId = parseInt(req.params.id as string);
 
-    // Check if user has access to this customer through their organizations
-    const [customers] = await pool.execute<RowDataPacket[]>(
-      `SELECT DISTINCT c.*
-       FROM Customers c
-       INNER JOIN CustomerOrganizations co ON c.Id = co.CustomerId
-       INNER JOIN OrganizationMembers om ON co.OrganizationId = om.OrganizationId
-       WHERE om.UserId = ? AND c.Id = ?`,
-      [userId, customerId]
-    );
+    const customer = await cachedJson(cacheKeys.customer(customerId), ENTITY_TTL_SECONDS, async () => {
+      const [rows] = await pool.execute<RowDataPacket[]>(
+        `SELECT DISTINCT c.*
+         FROM Customers c
+         INNER JOIN CustomerOrganizations co ON c.Id = co.CustomerId
+         INNER JOIN OrganizationMembers om ON co.OrganizationId = om.OrganizationId
+         WHERE om.UserId = ? AND c.Id = ?`,
+        [userId, customerId]
+      );
 
-    if (customers.length === 0) {
+      if (rows.length === 0) {
+        return null;
+      }
+
+      const record = rows[0];
+
+      const [orgs] = await pool.execute<RowDataPacket[]>(
+        `SELECT co.CustomerId, co.OrganizationId, o.Name as OrganizationName, co.CreatedAt
+         FROM CustomerOrganizations co
+         INNER JOIN Organizations o ON co.OrganizationId = o.Id
+         WHERE co.CustomerId = ?`,
+        [customerId]
+      );
+      record.Organizations = orgs;
+
+      const contacts = await getCustomerContacts(customerId);
+      record.Contacts = contacts;
+      if (contacts.length > 0) {
+        const defaultContact = contacts.find((c: any) => c.IsDefault === 1) || contacts[0];
+        record.ContactPerson = defaultContact.Name || record.ContactPerson || null;
+        record.ContactEmail = defaultContact.Email || record.ContactEmail || null;
+        record.ContactPhone = defaultContact.Phone || record.ContactPhone || null;
+      }
+
+      return record;
+    });
+
+    if (!customer) {
       return res.status(404).json({
         success: false,
         message: 'Customer not found'
       });
-    }
-
-    const customer = customers[0];
-
-    // Get organization associations
-    const [orgs] = await pool.execute<RowDataPacket[]>(
-      `SELECT co.CustomerId, co.OrganizationId, o.Name as OrganizationName, co.CreatedAt
-       FROM CustomerOrganizations co
-       INNER JOIN Organizations o ON co.OrganizationId = o.Id
-       WHERE co.CustomerId = ?`,
-      [customerId]
-    );
-    customer.Organizations = orgs;
-
-    const contacts = await getCustomerContacts(customerId);
-    customer.Contacts = contacts;
-    if (contacts.length > 0) {
-      const defaultContact = contacts.find((c: any) => c.IsDefault === 1) || contacts[0];
-      customer.ContactPerson = defaultContact.Name || customer.ContactPerson || null;
-      customer.ContactEmail = defaultContact.Email || customer.ContactEmail || null;
-      customer.ContactPhone = defaultContact.Phone || customer.ContactPhone || null;
     }
 
     res.json({
@@ -483,6 +513,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     customer.Organizations = orgs;
 
     customer.Contacts = await getCustomerContacts(customerId);
+
+    await invalidateCustomerCachesForOrgs(customerId, OrganizationIds);
 
     res.status(201).json({
       success: true,
@@ -823,6 +855,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     customer.Organizations = orgs;
     customer.Contacts = await getCustomerContacts(customerId);
 
+    const orgIds = await getCustomerOrgIds(customerId);
+    await invalidateCustomerCachesForOrgs(customerId, orgIds);
+
     res.json({
       success: true,
       data: customer,
@@ -889,6 +924,9 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       [customerId]
     );
 
+    const orgIds = await getCustomerOrgIds(customerId);
+    await invalidateCustomerCachesForOrgs(customerId, orgIds);
+
     res.json({
       success: true,
       message: 'Customer deleted successfully'
@@ -944,8 +982,9 @@ router.get('/:id/projects', authenticateToken, async (req: AuthRequest, res: Res
       return res.status(404).json({ success: false, message: 'Customer not found' });
     }
 
+    const projects = await cachedJson(cacheKeys.customerProjects(customerId), ENTITY_TTL_SECONDS, async () => {
     // Get projects for this customer with statistics
-    const [projects] = await pool.execute<RowDataPacket[]>(
+    const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT p.Id, p.ProjectName, p.Status, p.StartDate, p.EndDate,
               psv.StatusName, psv.ColorCode as StatusColor, psv.IsClosed as StatusIsClosed, psv.IsCancelled as StatusIsCancelled,
               COUNT(CASE WHEN COALESCE(tsv.HideFromPlanningAndStatistics, 0) = 0 THEN t.Id END) as TotalTasks,
@@ -973,6 +1012,8 @@ router.get('/:id/projects', authenticateToken, async (req: AuthRequest, res: Res
        ORDER BY p.ProjectName`,
       [customerId, customerId, customerId]
     );
+    return rows;
+    });
 
     res.json({ success: true, data: projects });
   } catch (error) {
@@ -1120,6 +1161,9 @@ router.post('/:id/users', authenticateToken, async (req: AuthRequest, res: Respo
       [customerId, userId, role || 'User']
     );
 
+    const orgIds = await getCustomerOrgIds(customerId);
+    await invalidateCustomerCachesForOrgs(customerId, orgIds);
+
     res.status(201).json({ success: true, message: 'User added to customer successfully' });
   } catch (error) {
     console.error('Add customer user error:', error);
@@ -1180,6 +1224,9 @@ router.delete('/:id/users/:userId', authenticateToken, async (req: AuthRequest, 
       [customerId, userIdToRemove]
     );
 
+    const orgIds = await getCustomerOrgIds(customerId);
+    await invalidateCustomerCachesForOrgs(customerId, orgIds);
+
     res.json({ success: true, message: 'User removed from customer successfully' });
   } catch (error) {
     console.error('Remove customer user error:', error);
@@ -1206,6 +1253,7 @@ router.get('/:id/overview', authenticateToken, async (req: AuthRequest, res: Res
       return res.status(404).json({ success: false, message: 'Customer not found' });
     }
 
+    const overviewData = await cachedJson(cacheKeys.customerOverview(customerId), ENTITY_TTL_SECONDS, async () => {
     // Calculate date boundaries in app layer to stay DB-agnostic
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
@@ -1346,9 +1394,7 @@ router.get('/:id/overview', authenticateToken, async (req: AuthRequest, res: Res
       ),
     ]);
 
-    res.json({
-      success: true,
-      data: {
+    return {
         tasksByStatus,
         tasksByPriority,
         recentTimeEntries,
@@ -1356,7 +1402,12 @@ router.get('/:id/overview', authenticateToken, async (req: AuthRequest, res: Res
         pendingTasks,
         overdueTasks,
         upcomingTasks,
-      },
+      };
+    });
+
+    res.json({
+      success: true,
+      data: overviewData,
     });
   } catch (error) {
     console.error('Get customer overview error:', error);

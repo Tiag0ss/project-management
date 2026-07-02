@@ -5,6 +5,9 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { logActivity } from './activityLogs';
 import { logOrganizationHistory } from '../utils/changeLog';
 import { prepareCustomFieldData } from '../utils/customFields';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -90,9 +93,13 @@ const getOrganizationPermissionSnapshot = async (orgId: string | string[], userI
 // Get all organizations for the current user
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.userId!;
 
-    const [organizations] = await pool.execute<RowDataPacket[]>(
+    const organizations = await cachedJson(
+      cacheKeys.userOrganizations(userId),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [rows] = await pool.execute<RowDataPacket[]>(
             `SELECT o.*, om.Role, om.PermissionGroupId,
               COALESCE(pg.CanManageSettings, 0) as CanManageSettings,
               COALESCE(pg.CanManageMembers, 0) as CanManageMembers,
@@ -124,7 +131,10 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        ) taskStats ON o.Id = taskStats.OrganizationId
        WHERE om.UserId = ?
        ORDER BY o.CreatedAt DESC`,
-      [userId]
+          [userId]
+        );
+        return rows;
+      }
     );
 
     res.json({
@@ -165,17 +175,24 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const userId = req.user?.userId;
     const orgId = req.params.id;
 
-    const [organizations] = await pool.execute<RowDataPacket[]>(
-      `SELECT o.*, om.Role, om.PermissionGroupId,
-          COALESCE(pg.CanManageSettings, 0) as CanManageSettings,
-          COALESCE(pg.CanManageMembers, 0) as CanManageMembers,
-          u.Username as CreatorName
-       FROM Organizations o
-       INNER JOIN OrganizationMembers om ON o.Id = om.OrganizationId
-       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
-       LEFT JOIN Users u ON o.CreatedBy = u.Id
-       WHERE o.Id = ? AND om.UserId = ?`,
-      [orgId, userId]
+    const organizations = await cachedJson(
+      cacheKeys.org(orgId),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT o.*, om.Role, om.PermissionGroupId,
+              COALESCE(pg.CanManageSettings, 0) as CanManageSettings,
+              COALESCE(pg.CanManageMembers, 0) as CanManageMembers,
+              u.Username as CreatorName
+           FROM Organizations o
+           INNER JOIN OrganizationMembers om ON o.Id = om.OrganizationId
+           LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+           LEFT JOIN Users u ON o.CreatedBy = u.Id
+           WHERE o.Id = ? AND om.UserId = ?`,
+          [orgId, userId]
+        );
+        return rows;
+      }
     );
 
     if (organizations.length === 0) {
@@ -384,6 +401,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       null
     );
 
+    await invalidateByEntity('organization', { orgId, userId });
+
     res.status(201).json({
       success: true,
       message: 'Organization created successfully',
@@ -523,6 +542,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       req.get('user-agent')
     );
 
+    await invalidateByEntity('organization', { orgId, userId });
+
     res.json({
       success: true,
       message: 'Organization updated successfully'
@@ -609,6 +630,8 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       null
     );
 
+    await invalidateByEntity('organization', { orgId, userId });
+
     res.json({
       success: true,
       message: 'Organization deleted successfully'
@@ -658,14 +681,21 @@ router.get('/:id/members', authenticateToken, async (req: AuthRequest, res: Resp
       });
     }
 
-    const [members] = await pool.execute<RowDataPacket[]>(
-      `SELECT om.*, u.Username, u.Email, pg.GroupName
-       FROM OrganizationMembers om
-       INNER JOIN Users u ON om.UserId = u.Id
-       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
-       WHERE om.OrganizationId = ?
-       ORDER BY om.JoinedAt DESC`,
-      [orgId]
+    const members = await cachedJson(
+      cacheKeys.orgMembers(orgId),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT om.*, u.Username, u.Email, pg.GroupName
+           FROM OrganizationMembers om
+           INNER JOIN Users u ON om.UserId = u.Id
+           LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+           WHERE om.OrganizationId = ?
+           ORDER BY om.JoinedAt DESC`,
+          [orgId]
+        );
+        return rows;
+      }
     );
 
     res.json({
@@ -946,6 +976,8 @@ router.post('/:id/members', authenticateToken, async (req: AuthRequest, res: Res
       req.get('user-agent')
     );
 
+    await invalidateByEntity('organization', { orgId, userId: requesterId, userIds: [newUserId!] });
+
     res.status(201).json({
       success: true,
       message: 'Member added successfully'
@@ -1019,7 +1051,7 @@ router.put('/:id/members/:memberId', authenticateToken, async (req: AuthRequest,
 
     // Get member info for logging
     const [memberInfo] = await pool.execute<RowDataPacket[]>(
-      `SELECT u.Username, om.Role as OldRole FROM OrganizationMembers om
+      `SELECT u.Username, u.Id as UserId, om.Role as OldRole FROM OrganizationMembers om
        JOIN Users u ON om.UserId = u.Id
        WHERE om.Id = ? AND om.OrganizationId = ?`,
       [memberId, orgId]
@@ -1039,6 +1071,13 @@ router.put('/:id/members/:memberId', authenticateToken, async (req: AuthRequest,
       req.ip,
       req.get('user-agent')
     );
+
+    const affectedUserId = memberInfo.length > 0 ? Number(memberInfo[0].UserId) : undefined;
+    await invalidateByEntity('organization', {
+      orgId,
+      userId,
+      userIds: affectedUserId !== undefined ? [affectedUserId] : undefined,
+    });
 
     res.json({
       success: true,
@@ -1111,7 +1150,7 @@ router.delete('/:id/members/:memberId', authenticateToken, async (req: AuthReque
 
     // Get member info before deletion
     const [memberInfo] = await pool.execute<RowDataPacket[]>(
-      `SELECT u.Username, om.Role FROM OrganizationMembers om
+      `SELECT u.Username, u.Id as UserId, om.Role FROM OrganizationMembers om
        JOIN Users u ON om.UserId = u.Id
        WHERE om.Id = ? AND om.OrganizationId = ?`,
       [memberId, orgId]
@@ -1136,6 +1175,13 @@ router.delete('/:id/members/:memberId', authenticateToken, async (req: AuthReque
       req.ip,
       req.get('user-agent')
     );
+
+    const removedUserId = memberInfo.length > 0 ? Number(memberInfo[0].UserId) : undefined;
+    await invalidateByEntity('organization', {
+      orgId,
+      userId,
+      userIds: removedUserId !== undefined ? [removedUserId] : undefined,
+    });
 
     res.json({
       success: true,

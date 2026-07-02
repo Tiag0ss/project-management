@@ -2,6 +2,9 @@ import { Router, Response } from 'express';
 import { pool } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -55,7 +58,8 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
   try {
     const organizationId = parseInt(req.params.organizationId as string);
     
-    const [tags] = await pool.execute<RowDataPacket[]>(
+    const tags = await cachedJson(cacheKeys.orgTags(organizationId), ENTITY_TTL_SECONDS, async () => {
+    const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT t.*, u.FirstName, u.LastName, u.Username
        FROM Tags t
        LEFT JOIN Users u ON t.CreatedBy = u.Id
@@ -63,6 +67,8 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
        ORDER BY t.Name ASC`,
       [organizationId]
     );
+    return rows;
+    });
     
     res.json({ success: true, tags });
   } catch (error) {
@@ -96,7 +102,8 @@ router.get('/organization/:organizationId/usage', authenticateToken, async (req:
   try {
     const organizationId = parseInt(req.params.organizationId as string);
 
-    const [tags] = await pool.execute<RowDataPacket[]>(
+    const tags = await cachedJson(`${cacheKeys.orgTags(organizationId)}:usage`, ENTITY_TTL_SECONDS, async () => {
+    const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT
          t.Id,
          t.OrganizationId,
@@ -117,6 +124,9 @@ router.get('/organization/:organizationId/usage', authenticateToken, async (req:
        ORDER BY TaskCount DESC, t.Name ASC`,
       [organizationId]
     );
+
+    return rows;
+    });
 
     res.json({ success: true, tags });
   } catch (error) {
@@ -168,6 +178,8 @@ router.post('/organization/:organizationId/import-defaults', authenticateToken, 
       importedCount += 1;
       importedTags.push(tag.name);
     }
+
+    await invalidateByEntity('tag', { orgId: organizationId });
 
     res.json({
       success: true,
@@ -332,6 +344,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       [organizationId, name.trim(), color || '#6B7280', description || null, userId]
     );
     
+    await invalidateByEntity('tag', { orgId: organizationId });
+
     res.status(201).json({ 
       success: true, 
       message: 'Tag created successfully',
@@ -414,6 +428,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       [name.trim(), color || '#6B7280', description || null, tagId]
     );
     
+    await invalidateByEntity('tag', { orgId: organizationId });
+
     res.json({ success: true, message: 'Tag updated successfully' });
   } catch (error) {
     console.error('Error updating tag:', error);
@@ -448,12 +464,21 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const tagId = parseInt(req.params.id as string);
+
+    const [tagRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM Tags WHERE Id = ?',
+      [tagId]
+    );
     
     // Delete all task associations first
     await pool.execute('DELETE FROM TaskTags WHERE TagId = ?', [tagId]);
     
     // Delete the tag
     await pool.execute('DELETE FROM Tags WHERE Id = ?', [tagId]);
+
+    if (tagRows.length > 0) {
+      await invalidateByEntity('tag', { orgId: tagRows[0].OrganizationId });
+    }
     
     res.json({ success: true, message: 'Tag deleted successfully' });
   } catch (error) {

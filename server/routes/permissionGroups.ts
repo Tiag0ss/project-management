@@ -2,6 +2,9 @@ import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -59,6 +62,22 @@ const canManageOrganizationSettings = async (organizationId: number | string, us
   );
 };
 
+const invalidatePermissionGroupCaches = async (orgId: number | string): Promise<void> => {
+  await invalidateByEntity('permissionGroup', { orgId });
+
+  const [members] = await pool.execute<RowDataPacket[]>(
+    'SELECT UserId FROM OrganizationMembers WHERE OrganizationId = ?',
+    [orgId]
+  );
+
+  if (members.length > 0) {
+    await invalidateByEntity('permission', {
+      orgId: 'global',
+      userIds: members.map((member) => Number(member.UserId)),
+    });
+  }
+};
+
 /**
  * @swagger
  * tags:
@@ -108,13 +127,21 @@ router.get('/organization/:orgId', authenticateToken, async (req: AuthRequest, r
       });
     }
 
-    const [groups] = await pool.execute<RowDataPacket[]>(
-      `SELECT pg.*, 
-              (SELECT COUNT(*) FROM OrganizationMembers WHERE PermissionGroupId = pg.Id) as MemberCount
-       FROM PermissionGroups pg
-       WHERE pg.OrganizationId = ?
-       ORDER BY pg.GroupName`,
-      [orgId]
+    const groups = await cachedJson(
+      cacheKeys.orgPermissionGroups(String(orgId)),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT pg.*, 
+                  (SELECT COUNT(*) FROM OrganizationMembers WHERE PermissionGroupId = pg.Id) as MemberCount
+           FROM PermissionGroups pg
+           WHERE pg.OrganizationId = ?
+           ORDER BY pg.GroupName`,
+          [orgId]
+        );
+
+        return rows;
+      }
     );
 
     res.json({
@@ -256,6 +283,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         canManageReleases ? 1 : 0
       ]
     );
+
+    await invalidatePermissionGroupCaches(organizationId);
 
     res.status(201).json({
       success: true,
@@ -415,6 +444,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       ]
     );
 
+    await invalidatePermissionGroupCaches(orgId);
+
     res.json({
       success: true,
       message: 'Permission group updated successfully'
@@ -491,6 +522,8 @@ router.post('/:id/sync-from-global', authenticateToken, async (req: AuthRequest,
         groupId
       ]
     );
+
+    await invalidatePermissionGroupCaches(orgId);
 
     res.json({ success: true, message: `Permission group synced from global ${groups[0].LinkedRole} role defaults` });
   } catch (error) {
@@ -574,6 +607,8 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     }
 
     await pool.execute('DELETE FROM PermissionGroups WHERE Id = ?', [groupId]);
+
+    await invalidatePermissionGroupCaches(orgId);
 
     res.json({
       success: true,

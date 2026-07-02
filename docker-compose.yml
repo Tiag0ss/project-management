@@ -72,6 +72,23 @@ services:
       timeout: 5s
       retries: 5
 
+  # Optional Redis — enable with REDIS_ENABLED=true in app env
+  redis:
+    image: redis:7-alpine
+    container_name: project-management-redis
+    restart: unless-stopped
+    profiles:
+      - redis
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   mysql-data:
     driver: local

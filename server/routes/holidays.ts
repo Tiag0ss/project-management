@@ -2,6 +2,9 @@ import { Router, Response } from 'express';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { dbProvider, pool } from '../config/database';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -80,33 +83,39 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     }
 
     const regionCode = req.query.regionCode !== undefined ? String(req.query.regionCode || '') : null;
+    const cacheScope = `year:${year}:country:${countryCode}:region:${regionCode === null ? 'all' : regionCode}`;
 
-    let queryStr: string;
-    let queryParams: (string | number)[];
+    const holidays = await cachedJson(
+      cacheKeys.holidays(cacheScope),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        let queryStr: string;
+        let queryParams: (string | number)[];
 
-    if (regionCode === null) {
-      // No filter — return all (national + regional)
-      queryStr = `SELECT Id, Year, CountryCode, RegionCode, DATE_FORMAT(HolidayDate, '%Y-%m-%d') as HolidayDate, HolidayName, Source, IsActive
-       FROM Holidays
-       WHERE Year = ? AND CountryCode = ?
-       ORDER BY COALESCE(RegionCode, ''), HolidayDate ASC`;
-      queryParams = [year, countryCode];
-    } else if (regionCode === '') {
-      // Explicitly national only
-      queryStr = `SELECT Id, Year, CountryCode, RegionCode, DATE_FORMAT(HolidayDate, '%Y-%m-%d') as HolidayDate, HolidayName, Source, IsActive
-       FROM Holidays
-       WHERE Year = ? AND CountryCode = ? AND (RegionCode IS NULL OR RegionCode = '')
-       ORDER BY HolidayDate ASC`;
-      queryParams = [year, countryCode];
-    } else {
-      queryStr = `SELECT Id, Year, CountryCode, RegionCode, DATE_FORMAT(HolidayDate, '%Y-%m-%d') as HolidayDate, HolidayName, Source, IsActive
-       FROM Holidays
-       WHERE Year = ? AND CountryCode = ? AND RegionCode = ?
-       ORDER BY HolidayDate ASC`;
-      queryParams = [year, countryCode, regionCode];
-    }
+        if (regionCode === null) {
+          queryStr = `SELECT Id, Year, CountryCode, RegionCode, DATE_FORMAT(HolidayDate, '%Y-%m-%d') as HolidayDate, HolidayName, Source, IsActive
+           FROM Holidays
+           WHERE Year = ? AND CountryCode = ?
+           ORDER BY COALESCE(RegionCode, ''), HolidayDate ASC`;
+          queryParams = [year, countryCode];
+        } else if (regionCode === '') {
+          queryStr = `SELECT Id, Year, CountryCode, RegionCode, DATE_FORMAT(HolidayDate, '%Y-%m-%d') as HolidayDate, HolidayName, Source, IsActive
+           FROM Holidays
+           WHERE Year = ? AND CountryCode = ? AND (RegionCode IS NULL OR RegionCode = '')
+           ORDER BY HolidayDate ASC`;
+          queryParams = [year, countryCode];
+        } else {
+          queryStr = `SELECT Id, Year, CountryCode, RegionCode, DATE_FORMAT(HolidayDate, '%Y-%m-%d') as HolidayDate, HolidayName, Source, IsActive
+           FROM Holidays
+           WHERE Year = ? AND CountryCode = ? AND RegionCode = ?
+           ORDER BY HolidayDate ASC`;
+          queryParams = [year, countryCode, regionCode];
+        }
 
-    const [holidays] = await pool.execute<RowDataPacket[]>(queryStr, queryParams);
+        const [rows] = await pool.execute<RowDataPacket[]>(queryStr, queryParams);
+        return rows;
+      }
+    );
 
     res.json({ success: true, holidays });
   } catch (error) {
@@ -176,6 +185,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       ]
     );
 
+    await invalidateByEntity('holiday', {});
+
     res.status(201).json({ success: true, holidayId: result.insertId });
   } catch (error) {
     console.error('Create holiday error:', error);
@@ -207,6 +218,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       ]
     );
 
+    await invalidateByEntity('holiday', {});
+
     res.json({ success: true, message: 'Holiday updated successfully' });
   } catch (error) {
     console.error('Update holiday error:', error);
@@ -226,6 +239,8 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     const holidayId = Number(req.params.id);
 
     await pool.execute('DELETE FROM Holidays WHERE Id = ?', [holidayId]);
+
+    await invalidateByEntity('holiday', {});
 
     res.json({ success: true, message: 'Holiday deleted successfully' });
   } catch (error) {
@@ -329,6 +344,8 @@ router.post('/import/nager-date', authenticateToken, async (req: AuthRequest, re
       }
 
       await connection.commit();
+
+      await invalidateByEntity('holiday', {});
 
       res.json({
         success: true,
@@ -446,6 +463,8 @@ router.post('/import/openholidays', authenticateToken, async (req: AuthRequest, 
       }
 
       await connection.commit();
+
+      await invalidateByEntity('holiday', {});
 
       res.json({
         success: true,
@@ -583,6 +602,7 @@ router.post('/import/openholidays-regional', authenticateToken, async (req: Auth
       }
 
       await connection.commit();
+      await invalidateByEntity('holiday', {});
       res.json({
         success: true,
         message: 'Regional holidays imported',
@@ -780,6 +800,7 @@ router.post('/import/nager-regional', authenticateToken, async (req: AuthRequest
       }
 
       await connection.commit();
+      await invalidateByEntity('holiday', {});
       res.json({ success: true, message: 'Regional holidays imported', inserted, subdivisionCode: normalizedSubdivision });
     } catch (error) {
       await connection.rollback();

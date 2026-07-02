@@ -2,6 +2,9 @@ import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
 import { ResultSetHeader, RowDataPacket } from '../config/database';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -36,13 +39,21 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
       return res.status(404).json({ success: false, message: 'Project not found or access denied' });
     }
 
-    const [milestones] = await pool.execute<RowDataPacket[]>(
-      `SELECT pm.*, mtv.TypeName as MilestoneTypeName, mtv.IconSvg as MilestoneTypeIconSvg, mtv.ColorCode as MilestoneTypeColor
-       FROM ProjectMilestones pm
-       LEFT JOIN MilestoneTypeValues mtv ON pm.MilestoneTypeId = mtv.Id
-       WHERE pm.ProjectId = ?
-       ORDER BY pm.SortOrder ASC, pm.DueDate ASC, pm.Id ASC`,
-      [projectId]
+    const organizationId = Number(projectRows[0].OrganizationId);
+    const milestones = await cachedJson(
+      cacheKeys.projectMilestones(projectId),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT pm.*, mtv.TypeName as MilestoneTypeName, mtv.IconSvg as MilestoneTypeIconSvg, mtv.ColorCode as MilestoneTypeColor
+           FROM ProjectMilestones pm
+           LEFT JOIN MilestoneTypeValues mtv ON pm.MilestoneTypeId = mtv.Id
+           WHERE pm.ProjectId = ?
+           ORDER BY pm.SortOrder ASC, pm.DueDate ASC, pm.Id ASC`,
+          [projectId]
+        );
+        return rows;
+      }
     );
 
     res.json({ success: true, milestones });
@@ -94,6 +105,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       ]
     );
 
+    await invalidateByEntity('milestone', { orgId: organizationId, projectId: Number(projectId) });
+
     res.status(201).json({ success: true, milestoneId: result.insertId });
   } catch (error) {
     console.error('Create project milestone error:', error);
@@ -131,6 +144,11 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       ? (wasCompleted ? existing.CompletedAt : new Date())
       : null;
 
+    const [projectRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT ProjectId FROM ProjectMilestones WHERE Id = ?',
+      [id]
+    );
+
     await pool.execute(
       `UPDATE ProjectMilestones
        SET Name = ?,
@@ -153,6 +171,11 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       ]
     );
 
+    await invalidateByEntity('milestone', {
+      orgId: Number(existing.OrganizationId),
+      projectId: Number(projectRows[0]?.ProjectId),
+    });
+
     res.json({ success: true });
   } catch (error) {
     console.error('Update project milestone error:', error);
@@ -166,7 +189,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     const id = Number(req.params.id);
 
     const [rows] = await pool.execute<RowDataPacket[]>(
-      `SELECT pm.Id, p.OrganizationId
+      `SELECT pm.Id, pm.ProjectId, p.OrganizationId
        FROM ProjectMilestones pm
        INNER JOIN Projects p ON p.Id = pm.ProjectId
        WHERE pm.Id = ?`,
@@ -183,6 +206,10 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     }
 
     await pool.execute('DELETE FROM ProjectMilestones WHERE Id = ?', [id]);
+    await invalidateByEntity('milestone', {
+      orgId: Number(rows[0].OrganizationId),
+      projectId: Number(rows[0].ProjectId),
+    });
     res.json({ success: true });
   } catch (error) {
     console.error('Delete project milestone error:', error);

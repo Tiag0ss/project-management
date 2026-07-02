@@ -1,7 +1,9 @@
 import express, { Response } from 'express';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
-import { pool } from '../config/database';
+import { pool, RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = express.Router();
 
@@ -227,6 +229,8 @@ router.post('/my/request', authenticateToken, async (req: AuthRequest, res: Resp
       created += 1;
     }
 
+    await invalidateByEntity('ooo', { userId });
+
     res.json({
       success: true,
       message: autoApproveOutOfOffice
@@ -404,18 +408,26 @@ router.get('/calendar', authenticateToken, async (req: AuthRequest, res: Respons
       return res.json({ success: true, entries: [] });
     }
 
-    const placeholders = uniqueEffectiveUserIds.map(() => '?').join(',');
-    const [rows] = await pool.execute<RowDataPacket[]>(
-      `SELECT Id, UserId, OutOfOfficeDate, COALESCE(DayPortion, 'full') as DayPortion, Status, Notes
-       FROM UserOutOfOffice
-       WHERE LOWER(Status) = 'approved'
-         AND OutOfOfficeDate BETWEEN ? AND ?
-         AND UserId IN (${placeholders})
-       ORDER BY OutOfOfficeDate ASC`,
-      [startDate, endDate, ...uniqueEffectiveUserIds]
+    const cacheScope = `viewer:${currentUserId}:admin:${isAdmin ? 1 : 0}:users:${uniqueEffectiveUserIds.sort((a, b) => a - b).join(',')}:start:${startDate}:end:${endDate}`;
+    const entries = await cachedJson(
+      cacheKeys.ooo(cacheScope),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const placeholders = uniqueEffectiveUserIds.map(() => '?').join(',');
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT Id, UserId, OutOfOfficeDate, COALESCE(DayPortion, 'full') as DayPortion, Status, Notes
+           FROM UserOutOfOffice
+           WHERE LOWER(Status) = 'approved'
+             AND OutOfOfficeDate BETWEEN ? AND ?
+             AND UserId IN (${placeholders})
+           ORDER BY OutOfOfficeDate ASC`,
+          [startDate, endDate, ...uniqueEffectiveUserIds]
+        );
+        return rows;
+      }
     );
 
-    res.json({ success: true, entries: rows });
+    res.json({ success: true, entries });
   } catch (error) {
     console.error('Error loading out-of-office calendar entries:', error);
     res.status(500).json({ success: false, message: 'Failed to load out-of-office calendar entries' });
@@ -452,6 +464,8 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     }
 
     await pool.execute('DELETE FROM UserOutOfOffice WHERE Id = ?', [outOfOfficeId]);
+
+    await invalidateByEntity('ooo', { userId: targetUserId });
 
     res.json({ success: true, message: 'Out-of-office day deleted' });
   } catch (error) {
@@ -491,10 +505,12 @@ router.put('/:id/approval', authenticateToken, async (req: AuthRequest, res: Res
 
     await pool.execute(
       `UPDATE UserOutOfOffice
-       SET Status = ?, ApprovedBy = ?, ApprovedAt = NOW()
+       SET Status = ?, ApprovedBy = ?, ApprovedAt = CURRENT_TIMESTAMP
        WHERE Id = ?`,
       [String(status).toLowerCase(), userId, outOfOfficeId]
     );
+
+    await invalidateByEntity('ooo', { userId: targetUserId });
 
     res.json({ success: true, message: `Out-of-office request ${status}` });
   } catch (error) {
@@ -607,6 +623,8 @@ router.post('/team-members/:userId/configure', authenticateToken, async (req: Au
       );
       created += 1;
     }
+
+    await invalidateByEntity('ooo', { userId: targetUserId });
 
     res.json({
       success: true,

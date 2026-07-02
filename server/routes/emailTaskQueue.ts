@@ -5,6 +5,9 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { normalizeEmailBodyForTaskDescription } from '../utils/emailBody';
 import { logActivity } from './activityLogs';
 import logger from '../utils/logger';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 const webhookRouter = Router();
@@ -149,6 +152,8 @@ webhookRouter.post('/email-task-queue', authenticateToken, async (req: AuthReque
       req.get('user-agent') || null
     );
 
+    await invalidateByEntity('emailQueue', { userId: Number(user.Id) });
+
     return res.status(201).json({
       success: true,
       id: insertResult.insertId,
@@ -173,20 +178,28 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const limitRaw = Number(req.query.limit ?? 50);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 200) : 50;
 
-    const [items] = await pool.execute<RowDataPacket[]>(
-      `SELECT Id, UserId, ExternalMessageId, FromEmail, ToEmail, Subject, BodyText, BodyHtml,
-              Status, ReceivedAt, CreatedAt
-       FROM EmailTaskQueue
-       WHERE UserId = ? AND Status = 'pending'
-       ORDER BY ReceivedAt DESC, Id DESC
-       LIMIT ${limit}`,
-      [userId]
+    const payload = await cachedJson(
+      `${cacheKeys.userEmailQueue(userId)}:${limit}`,
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [items] = await pool.execute<RowDataPacket[]>(
+          `SELECT Id, UserId, ExternalMessageId, FromEmail, ToEmail, Subject, BodyText, BodyHtml,
+                  Status, ReceivedAt, CreatedAt
+           FROM EmailTaskQueue
+           WHERE UserId = ? AND Status = 'pending'
+           ORDER BY ReceivedAt DESC, Id DESC
+           LIMIT ${limit}`,
+          [userId]
+        );
+
+        return {
+          success: true,
+          items,
+        };
+      }
     );
 
-    return res.json({
-      success: true,
-      items,
-    });
+    return res.json(payload);
   } catch (error) {
     logger.error('List email task queue error:', error);
     return res.status(500).json({ success: false, message: 'Failed to fetch email task queue' });
@@ -376,6 +389,8 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
       req.get('user-agent') || null
     );
 
+    await invalidateByEntity('emailQueue', { userId });
+
     return res.json({
       success: true,
       data: {
@@ -419,6 +434,8 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     if (affectedRows === 0) {
       return res.status(404).json({ success: false, message: 'Queue item not found or not dismissible' });
     }
+
+    await invalidateByEntity('emailQueue', { userId });
 
     return res.json({ success: true, message: 'Queue item dismissed' });
   } catch (error) {

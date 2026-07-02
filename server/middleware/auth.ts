@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import logger from '../utils/logger';
 import { pool, RowDataPacket } from '../config/database';
+import { cache } from '../services/cache';
+import { cacheKeys, AUTH_TOKEN_TTL_SECONDS } from '../services/cacheKeys';
 
 // CRITICAL: JWT_SECRET must be set in environment variables
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -25,6 +27,12 @@ export interface AuthRequest extends Request {
   };
 }
 
+interface CachedApiTokenAuth {
+  user: NonNullable<AuthRequest['user']>;
+  tokenId: number;
+  expiresAt: string | null;
+}
+
 export async function authenticateToken(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
@@ -41,6 +49,19 @@ export async function authenticateToken(req: AuthRequest, res: Response, next: N
   if (token.startsWith('pt_')) {
     try {
       const tokenHash = hashToken(token);
+      const cacheKey = cacheKeys.authToken(tokenHash);
+      const cached = await cache.get<CachedApiTokenAuth>(cacheKey);
+
+      if (cached) {
+        if (cached.expiresAt && new Date(cached.expiresAt) < new Date()) {
+          return res.status(403).json({ success: false, message: 'API token has expired' });
+        }
+
+        pool.execute('UPDATE ApiTokens SET LastUsedAt = CURRENT_TIMESTAMP WHERE Id = ?', [cached.tokenId]).catch(() => {});
+        req.user = cached.user;
+        return next();
+      }
+
       const [rows] = await pool.execute<RowDataPacket[]>(
         `SELECT t.Id, t.UserId, t.IsActive, t.ExpiresAt,
                 u.Username, u.Email, u.isAdmin, u.CustomerId
@@ -68,13 +89,25 @@ export async function authenticateToken(req: AuthRequest, res: Response, next: N
       // Update LastUsedAt asynchronously (fire-and-forget)
       pool.execute('UPDATE ApiTokens SET LastUsedAt = CURRENT_TIMESTAMP WHERE Id = ?', [row.Id]).catch(() => {});
 
-      req.user = {
+      const user = {
         userId: row.UserId,
         username: row.Username,
         email: row.Email,
         isAdmin: row.isAdmin === 1,
         customerId: row.CustomerId || null,
       };
+
+      req.user = user;
+
+      await cache.set(
+        cacheKey,
+        {
+          user,
+          tokenId: row.Id,
+          expiresAt: row.ExpiresAt ? new Date(row.ExpiresAt).toISOString() : null,
+        } satisfies CachedApiTokenAuth,
+        AUTH_TOKEN_TTL_SECONDS
+      );
 
       return next();
     } catch (err) {

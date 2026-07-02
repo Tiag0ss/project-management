@@ -2,6 +2,9 @@ import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
 import { ResultSetHeader, RowDataPacket } from '../config/database';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -68,21 +71,28 @@ router.get('/organization/:orgId', authenticateToken, async (req: AuthRequest, r
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    const [policies] = await pool.execute<RowDataPacket[]>(
-      `SELECT wtp.*,
-              fs.StatusName as FromStatusName,
-              ts.StatusName as ToStatusName,
-              u.Username as CreatedByUsername
-       FROM WorkflowTransitionPolicies wtp
-       INNER JOIN TaskStatusValues fs ON wtp.FromStatusId = fs.Id
-       INNER JOIN TaskStatusValues ts ON wtp.ToStatusId = ts.Id
-       LEFT JOIN Users u ON wtp.CreatedBy = u.Id
-       WHERE wtp.OrganizationId = ?
-       ORDER BY wtp.RuleType ASC, fs.SortOrder ASC, fs.StatusName ASC, ts.SortOrder ASC, ts.StatusName ASC`,
-      [orgId]
+    const payload = await cachedJson(
+      cacheKeys.orgWorkflow(orgId),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [policies] = await pool.execute<RowDataPacket[]>(
+          `SELECT wtp.*,
+                  fs.StatusName as FromStatusName,
+                  ts.StatusName as ToStatusName,
+                  u.Username as CreatedByUsername
+           FROM WorkflowTransitionPolicies wtp
+           INNER JOIN TaskStatusValues fs ON wtp.FromStatusId = fs.Id
+           INNER JOIN TaskStatusValues ts ON wtp.ToStatusId = ts.Id
+           LEFT JOIN Users u ON wtp.CreatedBy = u.Id
+           WHERE wtp.OrganizationId = ?
+           ORDER BY wtp.RuleType ASC, fs.SortOrder ASC, fs.StatusName ASC, ts.SortOrder ASC, ts.StatusName ASC`,
+          [orgId]
+        );
+        return { success: true, policies };
+      }
     );
 
-    return res.json({ success: true, policies });
+    return res.json(payload);
   } catch (error) {
     console.error('Get workflow transition policies error:', error);
     return res.status(500).json({ success: false, message: 'Failed to fetch workflow transition policies' });
@@ -168,6 +178,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         userId,
       ]
     );
+
+    await invalidateByEntity('workflow', { orgId });
 
     return res.status(201).json({ success: true, id: result.insertId });
   } catch (error) {
@@ -267,6 +279,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       ]
     );
 
+    await invalidateByEntity('workflow', { orgId });
+
     return res.json({ success: true });
   } catch (error) {
     console.error('Update workflow transition policy error:', error);
@@ -298,6 +312,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     }
 
     await pool.execute('DELETE FROM WorkflowTransitionPolicies WHERE Id = ?', [id]);
+    await invalidateByEntity('workflow', { orgId });
     return res.json({ success: true });
   } catch (error) {
     console.error('Delete workflow transition policy error:', error);

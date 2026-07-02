@@ -3,6 +3,9 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { pool } from '../config/database';
 import { prepareCustomFieldData } from '../utils/customFields';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = express.Router();
 
@@ -97,14 +100,21 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
       return res.status(404).json({ success: false, message: 'Project not found or access denied' });
     }
 
-    const [entries] = await pool.execute<RowDataPacket[]>(
-      `SELECT te.*, t.TaskName, u.Username, u.FirstName, u.LastName
-       FROM TimeEntries te
-       INNER JOIN Tasks t ON te.TaskId = t.Id
-       LEFT JOIN Users u ON te.UserId = u.Id
-       WHERE t.ProjectId = ?
-       ORDER BY te.WorkDate DESC, t.TaskName`,
-      [projectId]
+    const entries = await cachedJson(
+      cacheKeys.timeEntriesPlanning(`project:${projectId}`),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT te.*, t.TaskName, u.Username, u.FirstName, u.LastName
+           FROM TimeEntries te
+           INNER JOIN Tasks t ON te.TaskId = t.Id
+           LEFT JOIN Users u ON te.UserId = u.Id
+           WHERE t.ProjectId = ?
+           ORDER BY te.WorkDate DESC, t.TaskName`,
+          [projectId]
+        );
+        return rows;
+      }
     );
 
     res.json({ success: true, entries });
@@ -142,25 +152,33 @@ router.get('/my-entries', authenticateToken, async (req: AuthRequest, res: Respo
   try {
     const userId = req.user?.userId;
     const { startDate, endDate } = req.query;
+    const cacheScope = `user:${userId}:my:start:${String(startDate || 'all')}:end:${String(endDate || 'all')}`;
 
-    let query = `
-      SELECT te.*, t.TaskName, t.JiraIssueKey, t.ProjectId, p.ProjectName, p.IsHobby, c.Name as CustomerName
-      FROM TimeEntries te
-      INNER JOIN Tasks t ON te.TaskId = t.Id
-      INNER JOIN Projects p ON t.ProjectId = p.Id
-      LEFT JOIN Customers c ON p.CustomerId = c.Id
-      WHERE te.UserId = ?
-    `;
-    const params: any[] = [userId];
+    const entries = await cachedJson(
+      cacheKeys.timeEntriesPlanning(cacheScope),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        let query = `
+          SELECT te.*, t.TaskName, t.JiraIssueKey, t.ProjectId, p.ProjectName, p.IsHobby, c.Name as CustomerName
+          FROM TimeEntries te
+          INNER JOIN Tasks t ON te.TaskId = t.Id
+          INNER JOIN Projects p ON t.ProjectId = p.Id
+          LEFT JOIN Customers c ON p.CustomerId = c.Id
+          WHERE te.UserId = ?
+        `;
+        const params: Array<string | number> = [userId as number];
 
-    if (startDate && endDate) {
-      query += ` AND te.WorkDate BETWEEN ? AND ?`;
-      params.push(startDate, endDate);
-    }
+        if (startDate && endDate) {
+          query += ` AND te.WorkDate BETWEEN ? AND ?`;
+          params.push(String(startDate), String(endDate));
+        }
 
-    query += ` ORDER BY te.WorkDate DESC, te.CreatedAt DESC`;
+        query += ` ORDER BY te.WorkDate DESC, te.CreatedAt DESC`;
 
-    const [entries] = await pool.execute<RowDataPacket[]>(query, params);
+        const [rows] = await pool.execute<RowDataPacket[]>(query, params);
+        return rows;
+      }
+    );
 
     res.json({ success: true, entries });
   } catch (error) {
@@ -294,13 +312,20 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
       return res.status(404).json({ success: false, message: 'Task not found or access denied' });
     }
 
-    const [entries] = await pool.execute<RowDataPacket[]>(
-      `SELECT te.*, u.Username, u.FirstName, u.LastName
-       FROM TimeEntries te
-       LEFT JOIN Users u ON te.UserId = u.Id
-       WHERE te.TaskId = ?
-       ORDER BY te.WorkDate DESC`,
-      [taskId]
+    const entries = await cachedJson(
+      cacheKeys.timeEntriesPlanning(`task:${taskId}`),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT te.*, u.Username, u.FirstName, u.LastName
+           FROM TimeEntries te
+           LEFT JOIN Users u ON te.UserId = u.Id
+           WHERE te.TaskId = ?
+           ORDER BY te.WorkDate DESC`,
+          [taskId]
+        );
+        return rows;
+      }
     );
 
     res.json({ success: true, entries });
@@ -360,7 +385,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     // Verify user has access to the task, also get IsHobby
     const [tasks] = await pool.execute<RowDataPacket[]>(
-      `SELECT t.Id, p.OrganizationId, p.IsHobby
+      `SELECT t.Id, t.ProjectId, p.OrganizationId, p.IsHobby
        FROM Tasks t
        INNER JOIN Projects p ON t.ProjectId = p.Id
        INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
@@ -383,6 +408,12 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
       [taskId, userId, workDate, hours, description || null, startTime || null, endTime || null, approvalStatus, ...customFieldData.insertValues]
     );
+
+    await invalidateByEntity('timeEntry', {
+      orgId: tasks[0].OrganizationId,
+      projectId: tasks[0].ProjectId,
+      taskId,
+    });
 
     res.json({ 
       success: true, 
@@ -441,7 +472,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     // Verify user owns this entry, get IsHobby from project
     const [entries] = await pool.execute<RowDataPacket[]>(
-      `SELECT te.Id, te.ApprovalStatus, p.IsHobby
+      `SELECT te.Id, te.ApprovalStatus, te.TaskId, p.IsHobby, p.OrganizationId, t.ProjectId
        FROM TimeEntries te
        INNER JOIN Tasks t ON te.TaskId = t.Id
        INNER JOIN Projects p ON t.ProjectId = p.Id
@@ -492,6 +523,12 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       ]
     );
 
+    await invalidateByEntity('timeEntry', {
+      orgId: entries[0].OrganizationId,
+      projectId: entries[0].ProjectId,
+      taskId: entries[0].TaskId,
+    });
+
     res.json({ success: true, message: 'Time entry updated successfully' });
   } catch (error) {
     console.error('Error updating time entry:', error);
@@ -531,7 +568,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     // Verify user owns this entry, get IsHobby from project
     const [entries] = await pool.execute<RowDataPacket[]>(
-      `SELECT te.Id, te.ApprovalStatus, p.IsHobby
+      `SELECT te.Id, te.ApprovalStatus, te.TaskId, p.IsHobby, p.OrganizationId, t.ProjectId
        FROM TimeEntries te
        INNER JOIN Tasks t ON te.TaskId = t.Id
        INNER JOIN Projects p ON t.ProjectId = p.Id
@@ -552,6 +589,12 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     }
 
     await pool.execute('DELETE FROM TimeEntries WHERE Id = ?', [id]);
+
+    await invalidateByEntity('timeEntry', {
+      orgId: entries[0].OrganizationId,
+      projectId: entries[0].ProjectId,
+      taskId: entries[0].TaskId,
+    });
 
     res.json({ success: true, message: 'Time entry deleted successfully' });
   } catch (error) {
@@ -1024,83 +1067,92 @@ router.get('/planning-view', authenticateToken, async (req: AuthRequest, res: Re
     const isAdmin = !!callerRows[0].IsAdmin;
     const isManager = !!callerRows[0].IsManager;
     const canViewAll = isAdmin || isManager;
+    const cacheScope = `user:${currentUserId}:view:start:${String(startDate)}:end:${String(endDate)}:scope:${canViewAll ? 'all' : 'self'}`;
 
-    const teParams: any[] = [startDate, endDate];
-    let teWhere = `te.WorkDate BETWEEN ? AND ?`;
-    if (!canViewAll) {
-      teWhere += ` AND te.UserId = ?`;
-      teParams.push(currentUserId);
-    }
+    const entries = await cachedJson(
+      cacheKeys.timeEntriesPlanning(cacheScope),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const teParams: Array<string | number> = [String(startDate), String(endDate)];
+        let teWhere = `te.WorkDate BETWEEN ? AND ?`;
+        if (!canViewAll) {
+          teWhere += ` AND te.UserId = ?`;
+          teParams.push(currentUserId as number);
+        }
 
-    const [teRows] = await pool.execute<RowDataPacket[]>(
-      `SELECT
-         'TimeEntry' AS RecordType,
-         te.Id,
-         te.UserId,
-         u.Username,
-         u.FirstName,
-         u.LastName,
-         te.WorkDate AS WorkDate,
-         te.Hours AS Hours,
-         0 AS DurationMinutes,
-         t.TaskName,
-         t.Id AS TaskId,
-         p.ProjectName,
-         p.Id AS ProjectId,
-         te.Description,
-         te.StartTime,
-         te.EndTime,
-         COALESCE(c.ExternalName, c.Name) AS CustomerName
-       FROM TimeEntries te
-       INNER JOIN Tasks t ON te.TaskId = t.Id
-       INNER JOIN Projects p ON t.ProjectId = p.Id
-       LEFT JOIN Customers c ON p.CustomerId = c.Id
-       LEFT JOIN Users u ON te.UserId = u.Id
-       WHERE ${teWhere}
-       ORDER BY te.WorkDate, te.UserId, te.StartTime`,
-      teParams
+        const [teRows] = await pool.execute<RowDataPacket[]>(
+          `SELECT
+             'TimeEntry' AS RecordType,
+             te.Id,
+             te.UserId,
+             u.Username,
+             u.FirstName,
+             u.LastName,
+             te.WorkDate AS WorkDate,
+             te.Hours AS Hours,
+             0 AS DurationMinutes,
+             t.TaskName,
+             t.Id AS TaskId,
+             p.ProjectName,
+             p.Id AS ProjectId,
+             te.Description,
+             te.StartTime,
+             te.EndTime,
+             COALESCE(c.ExternalName, c.Name) AS CustomerName
+           FROM TimeEntries te
+           INNER JOIN Tasks t ON te.TaskId = t.Id
+           INNER JOIN Projects p ON t.ProjectId = p.Id
+           LEFT JOIN Customers c ON p.CustomerId = c.Id
+           LEFT JOIN Users u ON te.UserId = u.Id
+           WHERE ${teWhere}
+           ORDER BY te.WorkDate, te.UserId, te.StartTime`,
+          teParams
+        );
+
+        const crParams: Array<string | number> = [String(startDate), String(endDate)];
+        let crWhere = `cr.CallDate BETWEEN ? AND ?`;
+        if (!canViewAll) {
+          crWhere += ` AND cr.UserId = ?`;
+          crParams.push(currentUserId as number);
+        }
+
+        const [crRows] = await pool.execute<RowDataPacket[]>(
+          `SELECT
+             'CallRecord' AS RecordType,
+             cr.Id,
+             cr.UserId,
+             u.Username,
+             u.FirstName,
+             u.LastName,
+             cr.CallDate AS WorkDate,
+             ROUND(cr.DurationMinutes / 60.0, 2) AS Hours,
+             cr.DurationMinutes AS DurationMinutes,
+             COALESCE(t.TaskName, '') AS TaskName,
+             t.Id AS TaskId,
+             COALESCE(p.ProjectName, '') AS ProjectName,
+             COALESCE(p.Id, 0) AS ProjectId,
+             cr.Notes AS Description,
+             cr.StartTime,
+             NULL AS EndTime,
+             cr.Subject,
+             cr.CallType,
+             COALESCE(tc.ExternalName, tc.Name, pc.ExternalName, pc.Name) AS CustomerName
+           FROM CallRecords cr
+           LEFT JOIN Tasks t ON cr.TaskId = t.Id
+           LEFT JOIN Projects p ON COALESCE(t.ProjectId, cr.ProjectId) = p.Id
+           LEFT JOIN Users u ON cr.UserId = u.Id
+           LEFT JOIN Customers tc ON t.CustomerId = tc.Id
+           LEFT JOIN Customers pc ON p.CustomerId = pc.Id
+           WHERE ${crWhere}
+           ORDER BY cr.CallDate, cr.UserId, cr.StartTime`,
+          crParams
+        );
+
+        return [...(teRows as RowDataPacket[]), ...(crRows as RowDataPacket[])];
+      }
     );
 
-    const crParams: any[] = [startDate, endDate];
-    let crWhere = `cr.CallDate BETWEEN ? AND ?`;
-    if (!canViewAll) {
-      crWhere += ` AND cr.UserId = ?`;
-      crParams.push(currentUserId);
-    }
-
-    const [crRows] = await pool.execute<RowDataPacket[]>(
-      `SELECT
-         'CallRecord' AS RecordType,
-         cr.Id,
-         cr.UserId,
-         u.Username,
-         u.FirstName,
-         u.LastName,
-         cr.CallDate AS WorkDate,
-         ROUND(cr.DurationMinutes / 60.0, 2) AS Hours,
-         cr.DurationMinutes AS DurationMinutes,
-         COALESCE(t.TaskName, '') AS TaskName,
-         t.Id AS TaskId,
-         COALESCE(p.ProjectName, '') AS ProjectName,
-         COALESCE(p.Id, 0) AS ProjectId,
-         cr.Notes AS Description,
-         cr.StartTime,
-         NULL AS EndTime,
-         cr.Subject,
-         cr.CallType,
-         COALESCE(tc.ExternalName, tc.Name, pc.ExternalName, pc.Name) AS CustomerName
-       FROM CallRecords cr
-       LEFT JOIN Tasks t ON cr.TaskId = t.Id
-       LEFT JOIN Projects p ON COALESCE(t.ProjectId, cr.ProjectId) = p.Id
-       LEFT JOIN Users u ON cr.UserId = u.Id
-       LEFT JOIN Customers tc ON t.CustomerId = tc.Id
-       LEFT JOIN Customers pc ON p.CustomerId = pc.Id
-       WHERE ${crWhere}
-       ORDER BY cr.CallDate, cr.UserId, cr.StartTime`,
-      crParams
-    );
-
-    res.json({ success: true, entries: [...(teRows as any[]), ...(crRows as any[])] });
+    res.json({ success: true, entries });
   } catch (error) {
     console.error('Error fetching planning-view time entries:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch planning view data' });

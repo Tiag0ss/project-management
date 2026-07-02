@@ -4,6 +4,9 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { prepareCustomFieldData } from '../utils/customFields';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { decrypt } from '../utils/encryption';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -268,32 +271,40 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const { startDate, endDate } = req.query;
+    const cacheScope = `user:${userId}:start:${String(startDate || 'all')}:end:${String(endDate || 'all')}`;
 
-    let query = `
-                  SELECT cr.*, p.ProjectName, COALESCE(cr.OrganizationId, p.OrganizationId) as OrganizationId, o.Name as OrganizationName, t.TaskName, t.JiraIssueKey,
-             COALESCE(tc.ExternalName, tc.Name, pc.ExternalName, pc.Name) as CustomerName
-      FROM CallRecords cr
-      LEFT JOIN Tasks t ON cr.TaskId = t.Id
-            LEFT JOIN Projects p ON COALESCE(t.ProjectId, cr.ProjectId) = p.Id
-      LEFT JOIN Organizations o ON COALESCE(cr.OrganizationId, p.OrganizationId) = o.Id
-      LEFT JOIN Customers tc ON t.CustomerId = tc.Id
-      LEFT JOIN Customers pc ON p.CustomerId = pc.Id
-      WHERE cr.UserId = ?
-    `;
-    const params: any[] = [userId];
+    const records = await cachedJson(
+      cacheKeys.callRecords(cacheScope),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        let query = `
+                      SELECT cr.*, p.ProjectName, COALESCE(cr.OrganizationId, p.OrganizationId) as OrganizationId, o.Name as OrganizationName, t.TaskName, t.JiraIssueKey,
+                 COALESCE(tc.ExternalName, tc.Name, pc.ExternalName, pc.Name) as CustomerName
+          FROM CallRecords cr
+          LEFT JOIN Tasks t ON cr.TaskId = t.Id
+                LEFT JOIN Projects p ON COALESCE(t.ProjectId, cr.ProjectId) = p.Id
+          LEFT JOIN Organizations o ON COALESCE(cr.OrganizationId, p.OrganizationId) = o.Id
+          LEFT JOIN Customers tc ON t.CustomerId = tc.Id
+          LEFT JOIN Customers pc ON p.CustomerId = pc.Id
+          WHERE cr.UserId = ?
+        `;
+        const params: Array<string | number> = [userId as number];
 
-    if (startDate) {
-      query += ' AND cr.CallDate >= ?';
-      params.push(startDate);
-    }
-    if (endDate) {
-      query += ' AND cr.CallDate <= ?';
-      params.push(endDate);
-    }
+        if (startDate) {
+          query += ' AND cr.CallDate >= ?';
+          params.push(String(startDate));
+        }
+        if (endDate) {
+          query += ' AND cr.CallDate <= ?';
+          params.push(String(endDate));
+        }
 
-    query += ' ORDER BY cr.CallDate DESC, cr.StartTime DESC';
+        query += ' ORDER BY cr.CallDate DESC, cr.StartTime DESC';
 
-    const [records] = await pool.execute<RowDataPacket[]>(query, params);
+        const [rows] = await pool.execute<RowDataPacket[]>(query, params);
+        return rows;
+      }
+    );
 
     res.json({
       success: true,
@@ -392,6 +403,12 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       ]
     );
 
+    await invalidateByEntity('callRecord', {
+      orgId: organizationId || undefined,
+      projectId: projectId || undefined,
+      userId: Number(userId),
+    });
+
     res.status(201).json({
       success: true,
       message: 'Call record created successfully',
@@ -466,7 +483,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     // Check ownership
     const [existing] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id FROM CallRecords WHERE Id = ? AND UserId = ?',
+      `SELECT cr.Id, cr.OrganizationId, cr.ProjectId
+       FROM CallRecords cr
+       WHERE cr.Id = ? AND cr.UserId = ?`,
       [id, userId]
     );
 
@@ -500,6 +519,12 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         userId
       ]
     );
+
+    await invalidateByEntity('callRecord', {
+      orgId: organizationId || existing[0].OrganizationId || undefined,
+      projectId: projectId || existing[0].ProjectId || undefined,
+      userId: Number(userId),
+    });
 
     res.json({
       success: true,
@@ -543,6 +568,11 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     const userId = req.user?.userId;
     const { id } = req.params;
 
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      `SELECT OrganizationId, ProjectId FROM CallRecords WHERE Id = ? AND UserId = ?`,
+      [id, userId]
+    );
+
     const [result] = await pool.execute<ResultSetHeader>(
       'DELETE FROM CallRecords WHERE Id = ? AND UserId = ?',
       [id, userId]
@@ -552,6 +582,14 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       return res.status(404).json({
         success: false,
         message: 'Call record not found'
+      });
+    }
+
+    if (existing.length > 0) {
+      await invalidateByEntity('callRecord', {
+        orgId: existing[0].OrganizationId || undefined,
+        projectId: existing[0].ProjectId || undefined,
+        userId: Number(userId),
       });
     }
 
@@ -634,6 +672,8 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
         console.error('Failed to import record:', err);
       }
     }
+
+    await invalidateByEntity('callRecord', { userId: Number(req.user?.userId) });
 
     res.json({
       success: true,
@@ -1136,6 +1176,8 @@ router.post('/import/teams-recent', authenticateToken, async (req: AuthRequest, 
         console.error('Failed to import Teams call record:', error);
       }
     }
+
+    await invalidateByEntity('callRecord', { userId: Number(req.user?.userId) });
 
     return res.json({
       success: true,

@@ -2,6 +2,9 @@ import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
+import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
 
 const router = Router();
 
@@ -105,41 +108,49 @@ router.get('/project/:orgId', authenticateToken, async (req: AuthRequest, res: R
       });
     }
 
-    const [statusCountResult] = await pool.execute<RowDataPacket[]>(
-      'SELECT COUNT(*) as Count FROM ProjectStatusValues WHERE OrganizationId = ?',
-      [orgId]
-    );
-
-    const statusCount = Number(statusCountResult[0]?.Count || 0);
-    if (statusCount === 0) {
-      const defaultProjectStatuses = [
-        { name: 'Active', color: '#10b981', order: 1, isDefault: 1, isClosed: 0, isCancelled: 0 },
-        { name: 'On Hold', color: '#f59e0b', order: 2, isDefault: 0, isClosed: 0, isCancelled: 0 },
-        { name: 'Completed', color: '#3b82f6', order: 3, isDefault: 0, isClosed: 1, isCancelled: 0 },
-        { name: 'Cancelled', color: '#ef4444', order: 4, isDefault: 0, isClosed: 0, isCancelled: 1 },
-      ];
-
-      for (const status of defaultProjectStatuses) {
-        await pool.execute(
-          `INSERT INTO ProjectStatusValues 
-           (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [
-            orgId,
-            status.name,
-            status.color,
-            status.order,
-            status.isDefault,
-            status.isClosed,
-            status.isCancelled,
-          ]
+    const statuses = await cachedJson(
+      cacheKeys.orgStatusValues(String(orgId), 'project'),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [statusCountResult] = await pool.execute<RowDataPacket[]>(
+          'SELECT COUNT(*) as Count FROM ProjectStatusValues WHERE OrganizationId = ?',
+          [orgId]
         );
-      }
-    }
 
-    const [statuses] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM ProjectStatusValues WHERE OrganizationId = ? ORDER BY SortOrder, StatusName',
-      [orgId]
+        const statusCount = Number(statusCountResult[0]?.Count || 0);
+        if (statusCount === 0) {
+          const defaultProjectStatuses = [
+            { name: 'Active', color: '#10b981', order: 1, isDefault: 1, isClosed: 0, isCancelled: 0 },
+            { name: 'On Hold', color: '#f59e0b', order: 2, isDefault: 0, isClosed: 0, isCancelled: 0 },
+            { name: 'Completed', color: '#3b82f6', order: 3, isDefault: 0, isClosed: 1, isCancelled: 0 },
+            { name: 'Cancelled', color: '#ef4444', order: 4, isDefault: 0, isClosed: 0, isCancelled: 1 },
+          ];
+
+          for (const status of defaultProjectStatuses) {
+            await pool.execute(
+              `INSERT INTO ProjectStatusValues 
+               (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              [
+                orgId,
+                status.name,
+                status.color,
+                status.order,
+                status.isDefault,
+                status.isClosed,
+                status.isCancelled,
+              ]
+            );
+          }
+        }
+
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          'SELECT * FROM ProjectStatusValues WHERE OrganizationId = ? ORDER BY SortOrder, StatusName',
+          [orgId]
+        );
+
+        return rows;
+      }
     );
 
     res.json({
@@ -194,44 +205,52 @@ router.get('/task/:orgId', authenticateToken, async (req: AuthRequest, res: Resp
       });
     }
 
-    const [statusCountResult] = await pool.execute<RowDataPacket[]>(
-      'SELECT COUNT(*) as Count FROM TaskStatusValues WHERE OrganizationId = ?',
-      [orgId]
-    );
-
-    const statusCount = Number(statusCountResult[0]?.Count || 0);
-    if (statusCount === 0) {
-      const defaultTaskStatuses = [
-        { name: 'To Do', color: '#6b7280', order: 1, isDefault: 1, isClosed: 0, isCancelled: 0, isInProgress: 0, hideFromPlanningAndStatistics: 0 },
-        { name: 'Backlog', color: '#94a3b8', order: 2, isDefault: 0, isClosed: 0, isCancelled: 0, isInProgress: 0, hideFromPlanningAndStatistics: 1 },
-        { name: 'In Progress', color: '#3b82f6', order: 3, isDefault: 0, isClosed: 0, isCancelled: 0, isInProgress: 1, hideFromPlanningAndStatistics: 0 },
-        { name: 'Done', color: '#10b981', order: 4, isDefault: 0, isClosed: 1, isCancelled: 0, isInProgress: 0, hideFromPlanningAndStatistics: 0 },
-        { name: 'Cancelled', color: '#ef4444', order: 5, isDefault: 0, isClosed: 0, isCancelled: 1, isInProgress: 0, hideFromPlanningAndStatistics: 0 },
-      ];
-
-      for (const status of defaultTaskStatuses) {
-        await pool.execute(
-          `INSERT INTO TaskStatusValues 
-           (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled, IsInProgress, HideFromPlanningAndStatistics)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            orgId,
-            status.name,
-            status.color,
-            status.order,
-            status.isDefault,
-            status.isClosed,
-            status.isCancelled,
-            status.isInProgress,
-            status.hideFromPlanningAndStatistics,
-          ]
+    const statuses = await cachedJson(
+      cacheKeys.orgStatusValues(String(orgId), 'task'),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [statusCountResult] = await pool.execute<RowDataPacket[]>(
+          'SELECT COUNT(*) as Count FROM TaskStatusValues WHERE OrganizationId = ?',
+          [orgId]
         );
-      }
-    }
 
-    const [statuses] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM TaskStatusValues WHERE OrganizationId = ? ORDER BY SortOrder, StatusName',
-      [orgId]
+        const statusCount = Number(statusCountResult[0]?.Count || 0);
+        if (statusCount === 0) {
+          const defaultTaskStatuses = [
+            { name: 'To Do', color: '#6b7280', order: 1, isDefault: 1, isClosed: 0, isCancelled: 0, isInProgress: 0, hideFromPlanningAndStatistics: 0 },
+            { name: 'Backlog', color: '#94a3b8', order: 2, isDefault: 0, isClosed: 0, isCancelled: 0, isInProgress: 0, hideFromPlanningAndStatistics: 1 },
+            { name: 'In Progress', color: '#3b82f6', order: 3, isDefault: 0, isClosed: 0, isCancelled: 0, isInProgress: 1, hideFromPlanningAndStatistics: 0 },
+            { name: 'Done', color: '#10b981', order: 4, isDefault: 0, isClosed: 1, isCancelled: 0, isInProgress: 0, hideFromPlanningAndStatistics: 0 },
+            { name: 'Cancelled', color: '#ef4444', order: 5, isDefault: 0, isClosed: 0, isCancelled: 1, isInProgress: 0, hideFromPlanningAndStatistics: 0 },
+          ];
+
+          for (const status of defaultTaskStatuses) {
+            await pool.execute(
+              `INSERT INTO TaskStatusValues 
+               (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled, IsInProgress, HideFromPlanningAndStatistics)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                orgId,
+                status.name,
+                status.color,
+                status.order,
+                status.isDefault,
+                status.isClosed,
+                status.isCancelled,
+                status.isInProgress,
+                status.hideFromPlanningAndStatistics,
+              ]
+            );
+          }
+        }
+
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          'SELECT * FROM TaskStatusValues WHERE OrganizationId = ? ORDER BY SortOrder, StatusName',
+          [orgId]
+        );
+
+        return rows;
+      }
     );
 
     res.json({
@@ -316,6 +335,8 @@ router.post('/project', authenticateToken, async (req: AuthRequest, res: Respons
       [organizationId, statusName, colorCode || null, sortOrder || 0, isDefault ? 1 : 0, isClosed ? 1 : 0, isCancelled ? 1 : 0]
     );
 
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'project' });
+
     res.status(201).json({
       success: true,
       message: 'Project status value created successfully',
@@ -398,6 +419,8 @@ router.post('/task', authenticateToken, async (req: AuthRequest, res: Response) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [organizationId, statusName, colorCode || null, sortOrder || 0, isDefault ? 1 : 0, isClosed ? 1 : 0, isCancelled ? 1 : 0, isInProgress ? 1 : 0, hideFromPlanningAndStatistics ? 1 : 0]
     );
+
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'task' });
 
     res.status(201).json({
       success: true,
@@ -492,6 +515,8 @@ router.put('/project/:id', authenticateToken, async (req: AuthRequest, res: Resp
       [statusName, colorCode, sortOrder, isDefault ? 1 : 0, isClosed ? 1 : 0, isCancelled ? 1 : 0, statusId]
     );
 
+    await invalidateByEntity('statusValue', { orgId, statusType: 'project' });
+
     res.json({
       success: true,
       message: 'Project status value updated successfully'
@@ -584,6 +609,8 @@ router.put('/task/:id', authenticateToken, async (req: AuthRequest, res: Respons
       [statusName, colorCode, sortOrder, isDefault ? 1 : 0, isClosed ? 1 : 0, isCancelled ? 1 : 0, isInProgress ? 1 : 0, hideFromPlanningAndStatistics ? 1 : 0, statusId]
     );
 
+    await invalidateByEntity('statusValue', { orgId, statusType: 'task' });
+
     res.json({
       success: true,
       message: 'Task status value updated successfully'
@@ -648,6 +675,8 @@ router.delete('/project/:id', authenticateToken, async (req: AuthRequest, res: R
     }
 
     await pool.execute('DELETE FROM ProjectStatusValues WHERE Id = ?', [statusId]);
+
+    await invalidateByEntity('statusValue', { orgId, statusType: 'project' });
 
     res.json({
       success: true,
@@ -714,6 +743,8 @@ router.delete('/task/:id', authenticateToken, async (req: AuthRequest, res: Resp
 
     await pool.execute('DELETE FROM TaskStatusValues WHERE Id = ?', [statusId]);
 
+    await invalidateByEntity('statusValue', { orgId, statusType: 'task' });
+
     res.json({
       success: true,
       message: 'Task status value deleted successfully'
@@ -765,40 +796,43 @@ router.get('/priority/:orgId', authenticateToken, async (req: AuthRequest, res: 
       });
     }
 
-    const [priorities] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM TaskPriorityValues WHERE OrganizationId = ? ORDER BY SortOrder, PriorityName',
-      [orgId]
-    );
-
-    // If no priorities exist, create default ones
-    if (priorities.length === 0) {
-      const defaultTaskPriorities = [
-        { name: 'Low', color: '#6b7280', order: 1, isDefault: 0 },
-        { name: 'Medium', color: '#3b82f6', order: 2, isDefault: 1 },
-        { name: 'High', color: '#f59e0b', order: 3, isDefault: 0 },
-        { name: 'Critical', color: '#ef4444', order: 4, isDefault: 0 }
-      ];
-
-      for (const priority of defaultTaskPriorities) {
-        await pool.execute(
-          `INSERT INTO TaskPriorityValues 
-           (OrganizationId, PriorityName, ColorCode, SortOrder, IsDefault) 
-           VALUES (?, ?, ?, ?, ?)`,
-          [orgId, priority.name, priority.color, priority.order, priority.isDefault]
+    const priorities = await cachedJson(
+      cacheKeys.orgStatusValues(String(orgId), 'priority'),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          'SELECT * FROM TaskPriorityValues WHERE OrganizationId = ? ORDER BY SortOrder, PriorityName',
+          [orgId]
         );
+
+        if (rows.length > 0) {
+          return rows;
+        }
+
+        const defaultTaskPriorities = [
+          { name: 'Low', color: '#6b7280', order: 1, isDefault: 0 },
+          { name: 'Medium', color: '#3b82f6', order: 2, isDefault: 1 },
+          { name: 'High', color: '#f59e0b', order: 3, isDefault: 0 },
+          { name: 'Critical', color: '#ef4444', order: 4, isDefault: 0 }
+        ];
+
+        for (const priority of defaultTaskPriorities) {
+          await pool.execute(
+            `INSERT INTO TaskPriorityValues 
+             (OrganizationId, PriorityName, ColorCode, SortOrder, IsDefault) 
+             VALUES (?, ?, ?, ?, ?)`,
+            [orgId, priority.name, priority.color, priority.order, priority.isDefault]
+          );
+        }
+
+        const [newPriorities] = await pool.execute<RowDataPacket[]>(
+          'SELECT * FROM TaskPriorityValues WHERE OrganizationId = ? ORDER BY SortOrder, PriorityName',
+          [orgId]
+        );
+
+        return newPriorities;
       }
-
-      // Fetch the newly created priorities
-      const [newPriorities] = await pool.execute<RowDataPacket[]>(
-        'SELECT * FROM TaskPriorityValues WHERE OrganizationId = ? ORDER BY SortOrder, PriorityName',
-        [orgId]
-      );
-
-      return res.json({
-        success: true,
-        priorities: newPriorities
-      });
-    }
+    );
 
     res.json({
       success: true,
@@ -880,6 +914,8 @@ router.post('/priority', authenticateToken, async (req: AuthRequest, res: Respon
        VALUES (?, ?, ?, ?, ?)`,
       [organizationId, resolvedPriorityName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
     );
+
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'priority' });
 
     res.json({
       success: true,
@@ -982,6 +1018,8 @@ router.put('/priority/:id', authenticateToken, async (req: AuthRequest, res: Res
       [nextPriorityName, nextColorCode, nextSortOrder, nextIsDefault ? 1 : 0, priorityId]
     );
 
+    await invalidateByEntity('statusValue', { orgId, statusType: 'priority' });
+
     res.json({
       success: true,
       message: 'Task priority value updated successfully'
@@ -1045,6 +1083,8 @@ router.delete('/priority/:id', authenticateToken, async (req: AuthRequest, res: 
     }
 
     await pool.execute('DELETE FROM TaskPriorityValues WHERE Id = ?', [priorityId]);
+
+    await invalidateByEntity('statusValue', { orgId, statusType: 'priority' });
 
     res.json({
       success: true,
@@ -1215,7 +1255,11 @@ router.get('/type/:orgId', authenticateToken, async (req: AuthRequest, res: Resp
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    const types = await ensureTaskTypes(orgId);
+    const types = await cachedJson(
+      cacheKeys.orgStatusValues(String(orgId), 'type'),
+      ENTITY_TTL_SECONDS,
+      () => ensureTaskTypes(orgId)
+    );
     res.json({ success: true, types });
   } catch (error) {
     console.error('Get task type values error:', error);
@@ -1254,6 +1298,8 @@ router.post('/type', authenticateToken, async (req: AuthRequest, res: Response) 
       'INSERT INTO TaskTypeValues (OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?, ?)',
       [organizationId, resolvedTypeName, normalizeTaskTypeIcon(iconSvg, resolvedTypeName), colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
     );
+
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'type' });
 
     res.status(201).json({ success: true, typeId: result.insertId });
   } catch (error) {
@@ -1312,6 +1358,8 @@ router.put('/type/:id', authenticateToken, async (req: AuthRequest, res: Respons
       [nextTypeName, nextIconSvg, nextColorCode, nextSortOrder, nextIsDefault ? 1 : 0, typeId]
     );
 
+    await invalidateByEntity('statusValue', { orgId, statusType: 'type' });
+
     res.json({ success: true });
   } catch (error) {
     console.error('Update task type error:', error);
@@ -1349,6 +1397,7 @@ router.delete('/type/:id', authenticateToken, async (req: AuthRequest, res: Resp
     }
 
     await pool.execute('DELETE FROM TaskTypeValues WHERE Id = ?', [typeId]);
+    await invalidateByEntity('statusValue', { orgId, statusType: 'type' });
     res.json({ success: true });
   } catch (error) {
     console.error('Delete task type error:', error);
@@ -1371,7 +1420,11 @@ router.get('/milestone-type/:orgId', authenticateToken, async (req: AuthRequest,
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    const types = await ensureMilestoneTypes(orgId);
+    const types = await cachedJson(
+      cacheKeys.orgStatusValues(String(orgId), 'milestone-type'),
+      ENTITY_TTL_SECONDS,
+      () => ensureMilestoneTypes(orgId)
+    );
     res.json({ success: true, types });
   } catch (error) {
     console.error('Get milestone type values error:', error);
@@ -1410,6 +1463,8 @@ router.post('/milestone-type', authenticateToken, async (req: AuthRequest, res: 
       'INSERT INTO MilestoneTypeValues (OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?, ?)',
       [organizationId, resolvedTypeName, iconSvg || 'flag', colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
     );
+
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'milestone-type' });
 
     res.status(201).json({ success: true, typeId: result.insertId });
   } catch (error) {
@@ -1466,6 +1521,8 @@ router.put('/milestone-type/:id', authenticateToken, async (req: AuthRequest, re
       [nextTypeName, nextIconSvg, nextColorCode, nextSortOrder, nextIsDefault ? 1 : 0, typeId]
     );
 
+    await invalidateByEntity('statusValue', { orgId, statusType: 'milestone-type' });
+
     res.json({ success: true });
   } catch (error) {
     console.error('Update milestone type error:', error);
@@ -1503,6 +1560,7 @@ router.delete('/milestone-type/:id', authenticateToken, async (req: AuthRequest,
     }
 
     await pool.execute('DELETE FROM MilestoneTypeValues WHERE Id = ?', [typeId]);
+    await invalidateByEntity('statusValue', { orgId, statusType: 'milestone-type' });
     res.json({ success: true });
   } catch (error) {
     console.error('Delete milestone type error:', error);
@@ -1578,7 +1636,11 @@ router.get('/ticket/:orgId', authenticateToken, async (req: AuthRequest, res: Re
       [orgId, userId]
     );
     if (access.length === 0) return res.status(403).json({ success: false, message: 'Access denied' });
-    const statuses = await ensureTicketStatuses(orgId);
+    const statuses = await cachedJson(
+      cacheKeys.orgStatusValues(String(orgId), 'ticket'),
+      ENTITY_TTL_SECONDS,
+      () => ensureTicketStatuses(orgId)
+    );
     res.json({ success: true, statuses });
   } catch (error) {
     console.error('Get ticket status values error:', error);
@@ -1636,6 +1698,7 @@ router.post('/ticket', authenticateToken, async (req: AuthRequest, res: Response
       'INSERT INTO TicketStatusValues (OrganizationId, StatusName, Color, SortOrder, IsDefault, IsClosed, StatusType) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [organizationId, statusName, color || '#6b7280', sortOrder || 0, isDefault ? 1 : 0, isClosed ? 1 : 0, statusType || 'other']
     );
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'ticket' });
     res.status(201).json({ success: true, statusId: result.insertId });
   } catch (error) {
     console.error('Create ticket status error:', error);
@@ -1699,6 +1762,7 @@ router.put('/ticket/:id', authenticateToken, async (req: AuthRequest, res: Respo
       'UPDATE TicketStatusValues SET StatusName = ?, Color = ?, SortOrder = ?, IsDefault = ?, IsClosed = ?, StatusType = ? WHERE Id = ?',
       [statusName, color, sortOrder, isDefault ? 1 : 0, isClosed ? 1 : 0, statusType || 'other', statusId]
     );
+    await invalidateByEntity('statusValue', { orgId, statusType: 'ticket' });
     res.json({ success: true });
   } catch (error) {
     console.error('Update ticket status error:', error);
@@ -1742,6 +1806,7 @@ router.delete('/ticket/:id', authenticateToken, async (req: AuthRequest, res: Re
     );
     if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
     await pool.execute('DELETE FROM TicketStatusValues WHERE Id = ?', [statusId]);
+    await invalidateByEntity('statusValue', { orgId, statusType: 'ticket' });
     res.json({ success: true });
   } catch (error) {
     console.error('Delete ticket status error:', error);
@@ -1781,7 +1846,11 @@ router.get('/ticket-priority/:orgId', authenticateToken, async (req: AuthRequest
       [orgId, userId]
     );
     if (access.length === 0) return res.status(403).json({ success: false, message: 'Access denied' });
-    const priorities = await ensureTicketPriorities(orgId);
+    const priorities = await cachedJson(
+      cacheKeys.orgStatusValues(String(orgId), 'ticket-priority'),
+      ENTITY_TTL_SECONDS,
+      () => ensureTicketPriorities(orgId)
+    );
     res.json({ success: true, priorities });
   } catch (error) {
     console.error('Get ticket priority values error:', error);
@@ -1840,6 +1909,7 @@ router.post('/ticket-priority', authenticateToken, async (req: AuthRequest, res:
       'INSERT INTO TicketPriorityValues (OrganizationId, PriorityName, Color, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?)',
       [organizationId, resolvedPriorityName, color || '#6b7280', sortOrder || 0, isDefault ? 1 : 0]
     );
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'ticket-priority' });
     res.status(201).json({ success: true, priorityId: result.insertId });
   } catch (error) {
     console.error('Create ticket priority error:', error);
@@ -1908,6 +1978,7 @@ router.put('/ticket-priority/:id', authenticateToken, async (req: AuthRequest, r
       'UPDATE TicketPriorityValues SET PriorityName = ?, Color = ?, SortOrder = ?, IsDefault = ? WHERE Id = ?',
       [nextPriorityName, nextColor, nextSortOrder, nextIsDefault ? 1 : 0, priorityId]
     );
+    await invalidateByEntity('statusValue', { orgId, statusType: 'ticket-priority' });
     res.json({ success: true });
   } catch (error) {
     console.error('Update ticket priority error:', error);
@@ -1951,6 +2022,7 @@ router.delete('/ticket-priority/:id', authenticateToken, async (req: AuthRequest
     );
     if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
     await pool.execute('DELETE FROM TicketPriorityValues WHERE Id = ?', [priorityId]);
+    await invalidateByEntity('statusValue', { orgId, statusType: 'ticket-priority' });
     res.json({ success: true });
   } catch (error) {
     console.error('Delete ticket priority error:', error);
