@@ -16,6 +16,7 @@ import { seedRolePermissions } from './utils/seedRolePermissions';
 import { runMigrations } from './utils/migrations';
 import { swaggerSpec } from './config/swagger';
 import logger from './utils/logger';
+import { getBrandFaviconFilePath, getDefaultFaviconPath } from './utils/favicon';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/user';
 import projectsRoutes from './routes/projects';
@@ -343,6 +344,26 @@ app.prepare().then(async () => {
   server.use('/api', (req, res) => {
     logger.warn('API endpoint not found', { path: req.path, method: req.method });
     res.status(404).json({ success: false, message: 'API endpoint not found' });
+  });
+
+  const sendBrandFavicon = (res: express.Response) => {
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
+    res.sendFile(getBrandFaviconFilePath());
+  };
+
+  // Firefox and other browsers cache /favicon.ico aggressively — serve current brand SVG.
+  server.get('/favicon.ico', (_req, res) => {
+    sendBrandFavicon(res);
+  });
+
+  // Legacy paths that may still be cached from older builds.
+  server.get('/window.svg', (_req, res) => {
+    res.redirect(307, getDefaultFaviconPath());
+  });
+
+  server.get('/brand-favicon.svg', (_req, res) => {
+    sendBrandFavicon(res);
   });
 
   // Handle all other requests with Next.js
