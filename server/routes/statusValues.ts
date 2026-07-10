@@ -5,6 +5,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -158,7 +159,7 @@ router.get('/project/:orgId', authenticateToken, async (req: AuthRequest, res: R
       statuses
     });
   } catch (error) {
-    console.error('Get project status values error:', error);
+    logger.error('Get project status values error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch project status values' 
@@ -258,7 +259,7 @@ router.get('/task/:orgId', authenticateToken, async (req: AuthRequest, res: Resp
       statuses
     });
   } catch (error) {
-    console.error('Get task status values error:', error);
+    logger.error('Get task status values error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch task status values' 
@@ -343,7 +344,7 @@ router.post('/project', authenticateToken, async (req: AuthRequest, res: Respons
       statusId: result.insertId
     });
   } catch (error) {
-    console.error('Create project status error:', error);
+    logger.error('Create project status error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to create project status value' 
@@ -428,7 +429,7 @@ router.post('/task', authenticateToken, async (req: AuthRequest, res: Response) 
       statusId: result.insertId
     });
   } catch (error) {
-    console.error('Create task status error:', error);
+    logger.error('Create task status error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to create task status value' 
@@ -522,7 +523,7 @@ router.put('/project/:id', authenticateToken, async (req: AuthRequest, res: Resp
       message: 'Project status value updated successfully'
     });
   } catch (error) {
-    console.error('Update project status error:', error);
+    logger.error('Update project status error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update project status value' 
@@ -616,7 +617,7 @@ router.put('/task/:id', authenticateToken, async (req: AuthRequest, res: Respons
       message: 'Task status value updated successfully'
     });
   } catch (error) {
-    console.error('Update task status error:', error);
+    logger.error('Update task status error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update task status value' 
@@ -683,7 +684,7 @@ router.delete('/project/:id', authenticateToken, async (req: AuthRequest, res: R
       message: 'Project status value deleted successfully'
     });
   } catch (error) {
-    console.error('Delete project status error:', error);
+    logger.error('Delete project status error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to delete project status value' 
@@ -750,7 +751,7 @@ router.delete('/task/:id', authenticateToken, async (req: AuthRequest, res: Resp
       message: 'Task status value deleted successfully'
     });
   } catch (error) {
-    console.error('Delete task status error:', error);
+    logger.error('Delete task status error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to delete task status value' 
@@ -839,7 +840,7 @@ router.get('/priority/:orgId', authenticateToken, async (req: AuthRequest, res: 
       priorities
     });
   } catch (error) {
-    console.error('Get task priority values error:', error);
+    logger.error('Get task priority values error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch task priority values' 
@@ -923,7 +924,7 @@ router.post('/priority', authenticateToken, async (req: AuthRequest, res: Respon
       priorityId: result.insertId
     });
   } catch (error) {
-    console.error('Create task priority error:', error);
+    logger.error('Create task priority error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to create task priority value' 
@@ -1025,7 +1026,7 @@ router.put('/priority/:id', authenticateToken, async (req: AuthRequest, res: Res
       message: 'Task priority value updated successfully'
     });
   } catch (error) {
-    console.error('Update task priority error:', error);
+    logger.error('Update task priority error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update task priority value' 
@@ -1091,7 +1092,7 @@ router.delete('/priority/:id', authenticateToken, async (req: AuthRequest, res: 
       message: 'Task priority value deleted successfully'
     });
   } catch (error) {
-    console.error('Delete task priority error:', error);
+    logger.error('Delete task priority error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to delete task priority value' 
@@ -1262,7 +1263,7 @@ router.get('/type/:orgId', authenticateToken, async (req: AuthRequest, res: Resp
     );
     res.json({ success: true, types });
   } catch (error) {
-    console.error('Get task type values error:', error);
+    logger.error('Get task type values error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch task type values' });
   }
 });
@@ -1303,7 +1304,7 @@ router.post('/type', authenticateToken, async (req: AuthRequest, res: Response) 
 
     res.status(201).json({ success: true, typeId: result.insertId });
   } catch (error) {
-    console.error('Create task type error:', error);
+    logger.error('Create task type error:', error);
     res.status(500).json({ success: false, message: 'Failed to create task type value' });
   }
 });
@@ -1362,7 +1363,7 @@ router.put('/type/:id', authenticateToken, async (req: AuthRequest, res: Respons
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Update task type error:', error);
+    logger.error('Update task type error:', error);
     res.status(500).json({ success: false, message: 'Failed to update task type value' });
   }
 });
@@ -1400,7 +1401,7 @@ router.delete('/type/:id', authenticateToken, async (req: AuthRequest, res: Resp
     await invalidateByEntity('statusValue', { orgId, statusType: 'type' });
     res.json({ success: true });
   } catch (error) {
-    console.error('Delete task type error:', error);
+    logger.error('Delete task type error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete task type value' });
   }
 });
@@ -1427,7 +1428,7 @@ router.get('/milestone-type/:orgId', authenticateToken, async (req: AuthRequest,
     );
     res.json({ success: true, types });
   } catch (error) {
-    console.error('Get milestone type values error:', error);
+    logger.error('Get milestone type values error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch milestone type values' });
   }
 });
@@ -1468,7 +1469,7 @@ router.post('/milestone-type', authenticateToken, async (req: AuthRequest, res: 
 
     res.status(201).json({ success: true, typeId: result.insertId });
   } catch (error) {
-    console.error('Create milestone type error:', error);
+    logger.error('Create milestone type error:', error);
     res.status(500).json({ success: false, message: 'Failed to create milestone type value' });
   }
 });
@@ -1525,7 +1526,7 @@ router.put('/milestone-type/:id', authenticateToken, async (req: AuthRequest, re
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Update milestone type error:', error);
+    logger.error('Update milestone type error:', error);
     res.status(500).json({ success: false, message: 'Failed to update milestone type value' });
   }
 });
@@ -1563,7 +1564,7 @@ router.delete('/milestone-type/:id', authenticateToken, async (req: AuthRequest,
     await invalidateByEntity('statusValue', { orgId, statusType: 'milestone-type' });
     res.json({ success: true });
   } catch (error) {
-    console.error('Delete milestone type error:', error);
+    logger.error('Delete milestone type error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete milestone type value' });
   }
 });
@@ -1643,7 +1644,7 @@ router.get('/ticket/:orgId', authenticateToken, async (req: AuthRequest, res: Re
     );
     res.json({ success: true, statuses });
   } catch (error) {
-    console.error('Get ticket status values error:', error);
+    logger.error('Get ticket status values error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch ticket status values' });
   }
 });
@@ -1701,7 +1702,7 @@ router.post('/ticket', authenticateToken, async (req: AuthRequest, res: Response
     await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'ticket' });
     res.status(201).json({ success: true, statusId: result.insertId });
   } catch (error) {
-    console.error('Create ticket status error:', error);
+    logger.error('Create ticket status error:', error);
     res.status(500).json({ success: false, message: 'Failed to create ticket status' });
   }
 });
@@ -1765,7 +1766,7 @@ router.put('/ticket/:id', authenticateToken, async (req: AuthRequest, res: Respo
     await invalidateByEntity('statusValue', { orgId, statusType: 'ticket' });
     res.json({ success: true });
   } catch (error) {
-    console.error('Update ticket status error:', error);
+    logger.error('Update ticket status error:', error);
     res.status(500).json({ success: false, message: 'Failed to update ticket status' });
   }
 });
@@ -1809,7 +1810,7 @@ router.delete('/ticket/:id', authenticateToken, async (req: AuthRequest, res: Re
     await invalidateByEntity('statusValue', { orgId, statusType: 'ticket' });
     res.json({ success: true });
   } catch (error) {
-    console.error('Delete ticket status error:', error);
+    logger.error('Delete ticket status error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete ticket status' });
   }
 });
@@ -1853,7 +1854,7 @@ router.get('/ticket-priority/:orgId', authenticateToken, async (req: AuthRequest
     );
     res.json({ success: true, priorities });
   } catch (error) {
-    console.error('Get ticket priority values error:', error);
+    logger.error('Get ticket priority values error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch ticket priority values' });
   }
 });
@@ -1912,7 +1913,7 @@ router.post('/ticket-priority', authenticateToken, async (req: AuthRequest, res:
     await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'ticket-priority' });
     res.status(201).json({ success: true, priorityId: result.insertId });
   } catch (error) {
-    console.error('Create ticket priority error:', error);
+    logger.error('Create ticket priority error:', error);
     res.status(500).json({ success: false, message: 'Failed to create ticket priority' });
   }
 });
@@ -1981,7 +1982,7 @@ router.put('/ticket-priority/:id', authenticateToken, async (req: AuthRequest, r
     await invalidateByEntity('statusValue', { orgId, statusType: 'ticket-priority' });
     res.json({ success: true });
   } catch (error) {
-    console.error('Update ticket priority error:', error);
+    logger.error('Update ticket priority error:', error);
     res.status(500).json({ success: false, message: 'Failed to update ticket priority' });
   }
 });
@@ -2025,7 +2026,7 @@ router.delete('/ticket-priority/:id', authenticateToken, async (req: AuthRequest
     await invalidateByEntity('statusValue', { orgId, statusType: 'ticket-priority' });
     res.json({ success: true });
   } catch (error) {
-    console.error('Delete ticket priority error:', error);
+    logger.error('Delete ticket priority error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete ticket priority' });
   }
 });

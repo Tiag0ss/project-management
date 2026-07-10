@@ -5,6 +5,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -72,7 +73,7 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
     
     res.json({ success: true, tags });
   } catch (error) {
-    console.error('Error fetching tags:', error);
+    logger.error('Error fetching tags:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch tags' });
   }
 });
@@ -130,7 +131,7 @@ router.get('/organization/:organizationId/usage', authenticateToken, async (req:
 
     res.json({ success: true, tags });
   } catch (error) {
-    console.error('Error fetching tag usage:', error);
+    logger.error('Error fetching tag usage:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch tag usage' });
   }
 });
@@ -192,7 +193,7 @@ router.post('/organization/:organizationId/import-defaults', authenticateToken, 
       skippedTags,
     });
   } catch (error) {
-    console.error('Error importing default tags:', error);
+    logger.error('Error importing default tags:', error);
     res.status(500).json({ success: false, message: 'Failed to import default tags' });
   }
 });
@@ -239,7 +240,7 @@ router.get('/project/:projectId/tasks', authenticateToken, async (req: AuthReque
 
     res.json({ success: true, taskTags });
   } catch (error) {
-    console.error('Error fetching project task tags:', error);
+    logger.error('Error fetching project task tags:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch project task tags' });
   }
 });
@@ -282,7 +283,7 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
     
     res.json({ success: true, tags });
   } catch (error) {
-    console.error('Error fetching task tags:', error);
+    logger.error('Error fetching task tags:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch task tags' });
   }
 });
@@ -352,7 +353,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       tagId: result.insertId
     });
   } catch (error) {
-    console.error('Error creating tag:', error);
+    logger.error('Error creating tag:', error);
     res.status(500).json({ success: false, message: 'Failed to create tag' });
   }
 });
@@ -432,7 +433,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, message: 'Tag updated successfully' });
   } catch (error) {
-    console.error('Error updating tag:', error);
+    logger.error('Error updating tag:', error);
     res.status(500).json({ success: false, message: 'Failed to update tag' });
   }
 });
@@ -482,7 +483,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     
     res.json({ success: true, message: 'Tag deleted successfully' });
   } catch (error) {
-    console.error('Error deleting tag:', error);
+    logger.error('Error deleting tag:', error);
     res.status(500).json({ success: false, message: 'Failed to delete tag' });
   }
 });
@@ -538,7 +539,7 @@ router.post('/task/:taskId/tag/:tagId', authenticateToken, async (req: AuthReque
     
     res.status(201).json({ success: true, message: 'Tag added to task' });
   } catch (error) {
-    console.error('Error adding tag to task:', error);
+    logger.error('Error adding tag to task:', error);
     res.status(500).json({ success: false, message: 'Failed to add tag to task' });
   }
 });
@@ -583,7 +584,7 @@ router.delete('/task/:taskId/tag/:tagId', authenticateToken, async (req: AuthReq
     
     res.json({ success: true, message: 'Tag removed from task' });
   } catch (error) {
-    console.error('Error removing tag from task:', error);
+    logger.error('Error removing tag from task:', error);
     res.status(500).json({ success: false, message: 'Failed to remove tag from task' });
   }
 });
@@ -644,7 +645,7 @@ router.put('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
     
     res.json({ success: true, message: 'Task tags updated successfully' });
   } catch (error) {
-    console.error('Error updating task tags:', error);
+    logger.error('Error updating task tags:', error);
     res.status(500).json({ success: false, message: 'Failed to update task tags' });
   }
 });

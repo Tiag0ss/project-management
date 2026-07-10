@@ -12,6 +12,9 @@ import { resolveHistoryValues } from '../utils/changeLog';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
+import { createTaskSchema, updateTaskBodySchema, validateRequest } from '../utils/validation';
+import { populateAssigneesJson } from '../queries/tasks/taskAssignees';
 
 const router = Router();
 
@@ -306,7 +309,7 @@ const createTaskHistory = async (
       [taskId, userId, action, fieldName, resolved.oldValue, resolved.newValue]
     );
   } catch (error) {
-    console.error('Error creating task history:', error);
+    logger.error('Error creating task history:', error);
   }
 };
 
@@ -341,51 +344,6 @@ function parseTaskTagsJson(tasks: any[]): any[] {
       TaskTags: Array.isArray(taskTags) ? taskTags : [],
     };
   });
-}
-
-async function populateAssigneesJson(tasks: any[]): Promise<void> {
-  const taskIds = tasks
-    .map((task) => task?.Id)
-    .filter((taskId) => taskId !== null && taskId !== undefined);
-
-  for (const task of tasks) {
-    if (task.AssigneesJson === undefined || task.AssigneesJson === null) {
-      task.AssigneesJson = '[]';
-    }
-  }
-
-  if (taskIds.length === 0) {
-    return;
-  }
-
-  const placeholders = taskIds.map(() => '?').join(',');
-  const [assigneeRows] = await pool.execute<RowDataPacket[]>(
-    `SELECT ua.TaskId, ua.UserId, uu.Username, uu.FirstName, uu.LastName
-     FROM TaskAssignees ua
-     INNER JOIN Users uu ON ua.UserId = uu.Id
-     WHERE ua.TaskId IN (${placeholders})
-     ORDER BY ua.TaskId, ua.AssignedAt ASC`,
-    taskIds
-  );
-
-  const assigneesByTask = new Map<number, any[]>();
-  for (const row of assigneeRows) {
-    const taskId = Number(row.TaskId);
-    if (!assigneesByTask.has(taskId)) {
-      assigneesByTask.set(taskId, []);
-    }
-    assigneesByTask.get(taskId)?.push({
-      UserId: row.UserId,
-      Username: row.Username,
-      FirstName: row.FirstName,
-      LastName: row.LastName,
-    });
-  }
-
-  for (const task of tasks) {
-    const assignees = assigneesByTask.get(Number(task.Id)) || [];
-    task.AssigneesJson = JSON.stringify(assignees);
-  }
 }
 
 async function populateTaskTagsJson(tasks: any[]): Promise<void> {
@@ -558,7 +516,7 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
       tasks
     });
   } catch (error) {
-    console.error('Get my tasks error:', error);
+    logger.error('Get my tasks error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch tasks' 
@@ -652,7 +610,7 @@ router.get('/project/:projectId/summary', authenticateToken, async (req: AuthReq
       tasks
     });
   } catch (error) {
-    console.error('Get project tasks summary error:', error);
+    logger.error('Get project tasks summary error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch tasks summary' 
@@ -941,7 +899,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
       tasks
     });
   } catch (error) {
-    console.error('Get tasks error:', error);
+    logger.error('Get tasks error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch tasks' 
@@ -1007,7 +965,7 @@ router.get('/project/:projectId/integrated-issue-ids', authenticateToken, async 
 
     res.json({ success: true, issueIds: Array.from(issueIds), issueDetails });
   } catch (error) {
-    console.error('Get integrated issue IDs error:', error);
+    logger.error('Get integrated issue IDs error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch integrated issue IDs' });
   }
 });
@@ -1074,7 +1032,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
       tasks: computeCompletionPercentages(parseAssigneesJson(tasks))
     });
   } catch (error) {
-    console.error('Get tasks by ticket error:', error);
+    logger.error('Get tasks by ticket error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch tasks' 
@@ -1130,7 +1088,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
  *         description: Missing required fields
  */
 // Create new task
-router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.post('/', authenticateToken, validateRequest(createTaskSchema), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, customerId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, customFields } = req.body;
@@ -1325,7 +1283,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       taskId: result.insertId
     });
   } catch (error) {
-    console.error('Create task error:', error);
+    logger.error('Create task error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to create task' 
@@ -1350,7 +1308,7 @@ async function recalculateParentEstimatedHours(parentTaskId: number) {
       [totalHours, parentTaskId]
     );
   } catch (error) {
-    console.error('Error recalculating parent estimated hours:', error);
+    logger.error('Error recalculating parent estimated hours:', error);
   }
 }
 
@@ -1407,7 +1365,7 @@ async function recalculateParentEstimatedHours(parentTaskId: number) {
  *         description: Task not found
  */
 // Update task
-router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const taskId = req.params.id;
@@ -1717,7 +1675,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
           [finalPlannedStartDate, finalPlannedEndDate, taskId]
         );
       } catch (err) {
-        console.error('Error syncing allocation header dates:', err);
+        logger.error('Error syncing allocation header dates:', err);
         // Don't fail the entire request if sync fails
       }
     }
@@ -2004,7 +1962,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       message: 'Task updated successfully'
     });
   } catch (error) {
-    console.error('Update task error:', error);
+    logger.error('Update task error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update task' 
@@ -2063,7 +2021,7 @@ router.get('/:id/assignees', authenticateToken, async (req: AuthRequest, res: Re
 
     res.json({ success: true, assignees: rows });
   } catch (error) {
-    console.error('Get task assignees error:', error);
+    logger.error('Get task assignees error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch assignees' });
   }
 });
@@ -2171,7 +2129,7 @@ router.post('/:id/assignees', authenticateToken, async (req: AuthRequest, res: R
 
     res.json({ success: true, message: 'Assignee added' });
   } catch (error) {
-    console.error('Add task assignee error:', error);
+    logger.error('Add task assignee error:', error);
     res.status(500).json({ success: false, message: 'Failed to add assignee' });
   }
 });
@@ -2248,7 +2206,7 @@ router.delete('/:id/assignees/:assigneeUserId', authenticateToken, async (req: A
 
     res.json({ success: true, message: 'Assignee removed' });
   } catch (error) {
-    console.error('Remove task assignee error:', error);
+    logger.error('Remove task assignee error:', error);
     res.status(500).json({ success: false, message: 'Failed to remove assignee' });
   }
 });
@@ -2478,7 +2436,7 @@ router.post('/reorder-kanban', authenticateToken, async (req: AuthRequest, res: 
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error in reorder-kanban:', error);
+    logger.error('Error in reorder-kanban:', error);
     res.status(500).json({ success: false, message: 'Failed to reorder tasks' });
   }
 });
@@ -2569,7 +2527,7 @@ router.put('/:id/order', authenticateToken, async (req: AuthRequest, res: Respon
       message: 'Task order updated successfully'
     });
   } catch (error) {
-    console.error('Update task order error:', error);
+    logger.error('Update task order error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update task order' 
@@ -2712,7 +2670,7 @@ router.post('/:id/move-project', authenticateToken, async (req: AuthRequest, res
       movedTaskCount: movedTaskIds.length
     });
   } catch (error) {
-    console.error('Move task project error:', error);
+    logger.error('Move task project error:', error);
     res.status(500).json({ success: false, message: 'Failed to move task to another project' });
   }
 });
@@ -2892,7 +2850,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
         : 'Task deleted successfully'
     });
   } catch (error) {
-    console.error('Delete task error:', error);
+    logger.error('Delete task error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to delete task' 
@@ -2965,7 +2923,7 @@ router.post('/reorder-subtasks', authenticateToken, async (req: AuthRequest, res
 
     res.json({ success: true, message: 'Subtasks reordered successfully' });
   } catch (error) {
-    console.error('Error reordering subtasks:', error);
+    logger.error('Error reordering subtasks:', error);
     res.status(500).json({ success: false, message: 'Failed to reorder subtasks' });
   }
 });
@@ -3081,7 +3039,7 @@ router.post('/utilities/recalculate-hours/:projectId', authenticateToken, async 
 
     res.json({ success: true, message: `Updated ${updatedCount} parent tasks`, updates });
   } catch (error) {
-    console.error('Error recalculating hours:', error);
+    logger.error('Error recalculating hours:', error);
     res.status(500).json({ success: false, message: 'Failed to recalculate hours' });
   }
 });
@@ -3195,7 +3153,7 @@ router.post('/utilities/reassign-from-planning/:projectId', authenticateToken, a
 
     res.json({ success: true, message: `Reassigned ${updatedCount} tasks`, updates });
   } catch (error) {
-    console.error('Error reassigning tasks:', error);
+    logger.error('Error reassigning tasks:', error);
     res.status(500).json({ success: false, message: 'Failed to reassign tasks' });
   }
 });
@@ -3286,7 +3244,7 @@ router.post('/utilities/update-due-dates/:projectId', authenticateToken, async (
 
     res.json({ success: true, message: `Updated ${updatedCount} task due dates`, updates });
   } catch (error) {
-    console.error('Error updating due dates:', error);
+    logger.error('Error updating due dates:', error);
     res.status(500).json({ success: false, message: 'Failed to update due dates' });
   }
 });
@@ -3385,7 +3343,7 @@ router.post('/utilities/clear-planning/:projectId', authenticateToken, async (re
       updatedTasks: taskResult.affectedRows,
     });
   } catch (error) {
-    console.error('Error clearing planning:', error);
+    logger.error('Error clearing planning:', error);
     res.status(500).json({ success: false, message: 'Failed to clear planning' });
   }
 });
@@ -3514,7 +3472,7 @@ router.post('/utilities/sync-parent-status/:projectId', authenticateToken, async
 
     res.json({ success: true, message: `Updated ${updatedCount} parent task statuses`, updates });
   } catch (error) {
-    console.error('Error syncing parent status:', error);
+    logger.error('Error syncing parent status:', error);
     res.status(500).json({ success: false, message: 'Failed to sync parent status' });
   }
 });
@@ -3970,7 +3928,7 @@ router.post('/import-from-jira', authenticateToken, async (req: AuthRequest, res
       }
     });
   } catch (error) {
-    console.error('Error importing Jira tasks:', error);
+    logger.error('Error importing Jira tasks:', error);
     res.status(500).json({ success: false, message: 'Failed to import tasks from Jira' });
   }
 });
@@ -4029,7 +3987,7 @@ router.get('/github-issues/:projectId', authenticateToken, async (req: AuthReque
       }))
     });
   } catch (error) {
-    console.error('Error fetching GitHub issues:', error);
+    logger.error('Error fetching GitHub issues:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch GitHub issues' });
   }
 });
@@ -4212,7 +4170,7 @@ router.post('/import-from-github', authenticateToken, async (req: AuthRequest, r
       }
     });
   } catch (error) {
-    console.error('Error importing GitHub tasks:', error);
+    logger.error('Error importing GitHub tasks:', error);
     res.status(500).json({ success: false, message: 'Failed to import tasks from GitHub' });
   }
 });
@@ -4271,7 +4229,7 @@ router.get('/gitea-issues/:projectId', authenticateToken, async (req: AuthReques
       }))
     });
   } catch (error) {
-    console.error('Error fetching Gitea issues:', error);
+    logger.error('Error fetching Gitea issues:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch Gitea issues' });
   }
 });
@@ -4459,7 +4417,7 @@ router.post('/import-from-gitea', authenticateToken, async (req: AuthRequest, re
       }
     });
   } catch (error) {
-    console.error('Error importing Gitea tasks:', error);
+    logger.error('Error importing Gitea tasks:', error);
     res.status(500).json({ success: false, message: 'Failed to import tasks from Gitea' });
   }
 });
@@ -4521,7 +4479,7 @@ router.put('/:taskId/baseline', authenticateToken, async (req: AuthRequest, res:
       affectedRows: result.affectedRows,
     });
   } catch (error) {
-    console.error('Set task baseline error:', error);
+    logger.error('Set task baseline error:', error);
     return res.status(500).json({ success: false, message: 'Failed to set task baseline' });
   }
 });
@@ -4561,7 +4519,7 @@ router.put('/project/:projectId/baseline', authenticateToken, async (req: AuthRe
       affectedRows: result.affectedRows,
     });
   } catch (error) {
-    console.error('Set baseline error:', error);
+    logger.error('Set baseline error:', error);
     res.status(500).json({ success: false, message: 'Failed to set baseline' });
   }
 });

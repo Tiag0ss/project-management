@@ -4,7 +4,8 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Image from '@tiptap/extension-image';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 
 interface RichTextEditorProps {
   content: string;
@@ -26,6 +27,7 @@ export default function RichTextEditor({
   contentMaxHeightClass = 'max-h-56',
 }: RichTextEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [alertModal, setAlertModal] = useState<{ title: string; message: string } | null>(null);
 
   const editor = useEditor({
     extensions: [
@@ -76,13 +78,13 @@ export default function RichTextEditor({
 
     // Validate file type
     if (!file.type.startsWith('image/')) {
-      alert('Please select an image file');
+      setAlertModal({ title: 'Invalid file', message: 'Please select an image file' });
       return;
     }
 
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      alert('Image size must be less than 5MB');
+      setAlertModal({ title: 'File too large', message: 'Image size must be less than 5MB' });
       return;
     }
 
@@ -291,6 +293,14 @@ export default function RichTextEditor({
       <div className={contentScrollOnly ? `overflow-y-auto ${contentMaxHeightClass}` : ''}>
         <EditorContent editor={editor} className="text-gray-900 dark:text-white" />
       </div>
+
+      <ConfirmAlertModal
+        isOpen={!!alertModal}
+        type="alert"
+        title={alertModal?.title || ''}
+        message={alertModal?.message || ''}
+        onClose={() => setAlertModal(null)}
+      />
     </div>
   );
 }

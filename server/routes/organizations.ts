@@ -8,6 +8,8 @@ import { prepareCustomFieldData } from '../utils/customFields';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
+import { createOrganizationSchema, updateOrganizationBodySchema, validateRequest } from '../utils/validation';
 
 const router = Router();
 
@@ -142,7 +144,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       organizations
     });
   } catch (error) {
-    console.error('Get organizations error:', error);
+    logger.error('Get organizations error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch organizations' 
@@ -207,7 +209,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       organization: organizations[0]
     });
   } catch (error) {
-    console.error('Get organization error:', error);
+    logger.error('Get organization error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch organization' 
@@ -238,7 +240,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
  *       201:
  *         description: Organization created with default permission groups and status values
  */
-router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.post('/', authenticateToken, validateRequest(createOrganizationSchema), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const { name, abbreviation, description, customFields } = req.body;
@@ -409,7 +411,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       organizationId: orgId
     });
   } catch (error) {
-    console.error('Create organization error:', error);
+    logger.error('Create organization error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to create organization' 
@@ -448,7 +450,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
  *       404:
  *         description: Not found
  */
-router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.put('/:id', authenticateToken, validateRequest(updateOrganizationBodySchema), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const orgId = req.params.id;
@@ -549,7 +551,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       message: 'Organization updated successfully'
     });
   } catch (error) {
-    console.error('Update organization error:', error);
+    logger.error('Update organization error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update organization' 
@@ -637,7 +639,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       message: 'Organization deleted successfully'
     });
   } catch (error) {
-    console.error('Delete organization error:', error);
+    logger.error('Delete organization error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to delete organization' 
@@ -703,7 +705,7 @@ router.get('/:id/members', authenticateToken, async (req: AuthRequest, res: Resp
       members
     });
   } catch (error) {
-    console.error('Get members error:', error);
+    logger.error('Get members error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch members' 
@@ -773,7 +775,7 @@ router.get('/:id/users', authenticateToken, async (req: AuthRequest, res: Respon
       users
     });
   } catch (error) {
-    console.error('Get organization users error:', error);
+    logger.error('Get organization users error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch users' 
@@ -835,7 +837,7 @@ router.get('/:id/available-users', authenticateToken, async (req: AuthRequest, r
       users
     });
   } catch (error) {
-    console.error('Get available users error:', error);
+    logger.error('Get available users error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch available users'
@@ -983,7 +985,7 @@ router.post('/:id/members', authenticateToken, async (req: AuthRequest, res: Res
       message: 'Member added successfully'
     });
   } catch (error) {
-    console.error('Add member error:', error);
+    logger.error('Add member error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to add member' 
@@ -1084,7 +1086,7 @@ router.put('/:id/members/:memberId', authenticateToken, async (req: AuthRequest,
       message: 'Member updated successfully'
     });
   } catch (error) {
-    console.error('Update member error:', error);
+    logger.error('Update member error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update member' 
@@ -1188,7 +1190,7 @@ router.delete('/:id/members/:memberId', authenticateToken, async (req: AuthReque
       message: 'Member removed successfully'
     });
   } catch (error) {
-    console.error('Remove member error:', error);
+    logger.error('Remove member error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to remove member' 
@@ -1321,7 +1323,7 @@ router.post('/admin/create-system-groups', authenticateToken, async (req: AuthRe
       skipped
     });
   } catch (error) {
-    console.error('Create system groups migration error:', error);
+    logger.error('Create system groups migration error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to create system groups' 

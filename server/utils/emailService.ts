@@ -4,6 +4,7 @@ import { RowDataPacket } from '../config/database';
 import { logActivity } from '../routes/activityLogs';
 import { shouldSendEmail } from './emailPreferencesHelper';
 import { decrypt } from './encryption';
+import logger from './logger';
 
 interface EmailAttachment {
   filename: string;
@@ -62,7 +63,7 @@ async function getSMTPConfig(): Promise<SMTPConfig | null> {
       fromName: config.smtpFromName || 'Project Management System',
     };
   } catch (error) {
-    console.error('Error getting SMTP config:', error);
+    logger.error('Error getting SMTP config:', error);
     return null;
   }
 }
@@ -73,7 +74,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
     const smtpConfig = await getSMTPConfig();
 
     if (!smtpConfig) {
-      console.error('SMTP configuration not found or incomplete');
+      logger.error('SMTP configuration not found or incomplete');
       await logActivity(
         options.userId ?? null,
         options.username || null,
@@ -118,7 +119,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
 
     return true;
   } catch (error: any) {
-    console.error('Error sending email:', error);
+    logger.error('Error sending email:', error);
     
     // Log error to activity logs
     await logActivity(
@@ -264,7 +265,7 @@ export async function sendNotificationEmail(
       userId,
     });
   } catch (error) {
-    console.error('Error sending notification email:', error);
+    logger.error('Error sending notification email:', error);
     return false;
   }
 }

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getApiUrl } from '@/lib/api/config';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
+import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 
 interface CustomTable {
   Id: number;
@@ -48,6 +49,16 @@ export default function CustomTablesManagement() {
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null);
   const [columns, setColumns] = useState<CustomTableColumn[]>([]);
   const [rows, setRows] = useState<CustomTableRow[]>([]);
+  const [modal, setModal] = useState<{
+    type: 'confirm';
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setModal({ type: 'confirm', title, message, onConfirm });
+  };
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [error, setError] = useState('');
@@ -190,24 +201,29 @@ export default function CustomTablesManagement() {
   };
 
   // ── Delete table ──────────────────────────────────────────────────────────
-  const handleDeleteTable = async () => {
+  const handleDeleteTable = () => {
     if (!selectedTableId) return;
     const name = selectedTable?.Name ?? 'this table';
-    if (!window.confirm(`Delete "${name}" and all its data? This cannot be undone.`)) return;
-    try {
-      const res = await fetch(`${getApiUrl()}/api/custom-tables/${selectedTableId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Failed to delete table');
-      showToast({ type: 'success', title: 'Table Deleted', message: `"${name}" was deleted.` });
-      setSelectedTableId(null);
-      setColumns([]);
-      setRows([]);
-      await loadTables();
-    } catch (err: any) {
-      setError(err.message);
-    }
+    showConfirm(
+      'Delete table',
+      `Delete "${name}" and all its data? This cannot be undone.`,
+      () => void (async () => {
+        try {
+          const res = await fetch(`${getApiUrl()}/api/custom-tables/${selectedTableId}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!res.ok) throw new Error('Failed to delete table');
+          showToast({ type: 'success', title: 'Table Deleted', message: `"${name}" was deleted.` });
+          setSelectedTableId(null);
+          setColumns([]);
+          setRows([]);
+          await loadTables();
+        } catch (err: any) {
+          setError(err.message);
+        }
+      })()
+    );
   };
 
   // ── Add column ────────────────────────────────────────────────────────────
@@ -242,20 +258,25 @@ export default function CustomTablesManagement() {
   };
 
   // ── Delete column ─────────────────────────────────────────────────────────
-  const handleDeleteColumn = async (col: CustomTableColumn) => {
+  const handleDeleteColumn = (col: CustomTableColumn) => {
     if (!selectedTableId) return;
-    if (!window.confirm(`Delete column "${col.ColumnName}"? All values in this column will be lost.`)) return;
-    try {
-      await fetch(`${getApiUrl()}/api/custom-tables/${selectedTableId}/columns/${col.Id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      showToast({ type: 'success', title: 'Column Deleted', message: `"${col.ColumnName}" deleted.` });
-      await loadDetail(selectedTableId);
-      await loadTables();
-    } catch {
-      setError('Failed to delete column');
-    }
+    showConfirm(
+      'Delete column',
+      `Delete column "${col.ColumnName}"? All values in this column will be lost.`,
+      () => void (async () => {
+        try {
+          await fetch(`${getApiUrl()}/api/custom-tables/${selectedTableId}/columns/${col.Id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          showToast({ type: 'success', title: 'Column Deleted', message: `"${col.ColumnName}" deleted.` });
+          await loadDetail(selectedTableId);
+          await loadTables();
+        } catch {
+          setError('Failed to delete column');
+        }
+      })()
+    );
   };
 
   // ── Row editing helpers ───────────────────────────────────────────────────
@@ -321,19 +342,24 @@ export default function CustomTablesManagement() {
     }
   };
 
-  const handleDeleteRow = async (row: CustomTableRow) => {
+  const handleDeleteRow = (row: CustomTableRow) => {
     if (!selectedTableId) return;
-    if (!window.confirm(`Delete row "${row.Description}"?`)) return;
-    try {
-      await fetch(`${getApiUrl()}/api/custom-tables/${selectedTableId}/rows/${row.Id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      await loadDetail(selectedTableId);
-      await loadTables();
-    } catch {
-      setError('Failed to delete row');
-    }
+    showConfirm(
+      'Delete row',
+      `Delete row "${row.Description}"?`,
+      () => void (async () => {
+        try {
+          await fetch(`${getApiUrl()}/api/custom-tables/${selectedTableId}/rows/${row.Id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          await loadDetail(selectedTableId);
+          await loadTables();
+        } catch {
+          setError('Failed to delete row');
+        }
+      })()
+    );
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -763,6 +789,20 @@ export default function CustomTablesManagement() {
           )}
         </div>
       </div>
+
+      <ConfirmAlertModal
+        isOpen={!!modal}
+        type="confirm"
+        title={modal?.title || ''}
+        message={modal?.message || ''}
+        onClose={() => setModal(null)}
+        onConfirm={() => {
+          modal?.onConfirm();
+          setModal(null);
+        }}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+      />
     </div>
   );
 }

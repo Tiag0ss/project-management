@@ -6,6 +6,7 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { RowDataPacket } from '../config/database';
 import { cachedJson, AGGREGATE_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -338,7 +339,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json(payload);
   } catch (error) {
-    console.error('Error performing search:', error);
+    logger.error('Error performing search:', error);
     res.status(500).json({ success: false, message: 'Failed to perform search' });
   }
 });

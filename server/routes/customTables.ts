@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { pool, RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -74,7 +75,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     );
     res.json({ success: true, tables });
   } catch (err: any) {
-    console.error('Error fetching custom tables:', err);
+    logger.error('Error fetching custom tables:', err);
     res.status(500).json({ success: false, message: 'Failed to fetch custom tables' });
   }
 });
@@ -90,12 +91,12 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
   try {
     const [result] = await pool.execute<ResultSetHeader>(
-      'INSERT INTO CustomTables (Name, Description, CreatedBy, CreatedAt) VALUES (?, ?, ?, NOW())',
+      'INSERT INTO CustomTables (Name, Description, CreatedBy, CreatedAt) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
       [name.trim(), description?.trim() || null, userId]
     );
     res.status(201).json({ success: true, tableId: result.insertId });
   } catch (err: any) {
-    console.error('Error creating custom table:', err);
+    logger.error('Error creating custom table:', err);
     res.status(500).json({ success: false, message: 'Failed to create custom table' });
   }
 });
@@ -116,7 +117,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     );
     res.json({ success: true });
   } catch (err: any) {
-    console.error('Error updating custom table:', err);
+    logger.error('Error updating custom table:', err);
     res.status(500).json({ success: false, message: 'Failed to update custom table' });
   }
 });
@@ -139,7 +140,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true });
   } catch (err: any) {
-    console.error('Error deleting custom table:', err);
+    logger.error('Error deleting custom table:', err);
     res.status(500).json({ success: false, message: 'Failed to delete custom table' });
   }
 });
@@ -155,7 +156,7 @@ router.get('/:id/columns', authenticateToken, async (req: AuthRequest, res: Resp
     );
     res.json({ success: true, columns });
   } catch (err: any) {
-    console.error('Error fetching columns:', err);
+    logger.error('Error fetching columns:', err);
     res.status(500).json({ success: false, message: 'Failed to fetch columns' });
   }
 });
@@ -176,7 +177,7 @@ router.post('/:id/columns', authenticateToken, async (req: AuthRequest, res: Res
     );
     res.status(201).json({ success: true, columnId: result.insertId });
   } catch (err: any) {
-    console.error('Error adding column:', err);
+    logger.error('Error adding column:', err);
     res.status(500).json({ success: false, message: 'Failed to add column' });
   }
 });
@@ -190,7 +191,7 @@ router.delete('/:id/columns/:colId', authenticateToken, async (req: AuthRequest,
     await pool.execute('DELETE FROM CustomTableColumns WHERE Id = ?', [colId]);
     res.json({ success: true });
   } catch (err: any) {
-    console.error('Error deleting column:', err);
+    logger.error('Error deleting column:', err);
     res.status(500).json({ success: false, message: 'Failed to delete column' });
   }
 });
@@ -222,7 +223,7 @@ router.get('/:id/rows', authenticateToken, async (req: AuthRequest, res: Respons
 
     res.json({ success: true, rows: rowsWithCells });
   } catch (err: any) {
-    console.error('Error fetching rows:', err);
+    logger.error('Error fetching rows:', err);
     res.status(500).json({ success: false, message: 'Failed to fetch rows' });
   }
 });
@@ -282,7 +283,7 @@ router.post('/:id/rows', authenticateToken, async (req: AuthRequest, res: Respon
 
     res.status(201).json({ success: true, rowId });
   } catch (err: any) {
-    console.error('Error creating row:', err);
+    logger.error('Error creating row:', err);
     res.status(500).json({ success: false, message: 'Failed to create row' });
   }
 });
@@ -377,7 +378,7 @@ router.put('/:id/rows/:rowId', authenticateToken, async (req: AuthRequest, res: 
 
     res.json({ success: true });
   } catch (err: any) {
-    console.error('Error updating row:', err);
+    logger.error('Error updating row:', err);
     res.status(500).json({ success: false, message: 'Failed to update row' });
   }
 });
@@ -391,7 +392,7 @@ router.delete('/:id/rows/:rowId', authenticateToken, async (req: AuthRequest, re
     await pool.execute('DELETE FROM CustomTableRows WHERE Id = ?', [rowId]);
     res.json({ success: true });
   } catch (err: any) {
-    console.error('Error deleting row:', err);
+    logger.error('Error deleting row:', err);
     res.status(500).json({ success: false, message: 'Failed to delete row' });
   }
 });

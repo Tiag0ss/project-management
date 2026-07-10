@@ -7,6 +7,7 @@ import { decrypt } from '../utils/encryption';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -311,7 +312,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       data: records
     });
   } catch (error) {
-    console.error('Error fetching call records:', error);
+    logger.error('Error fetching call records:', error);
     res.status(500).json({
       success: false,
       message: 'Error fetching call records'
@@ -415,7 +416,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       id: result.insertId
     });
   } catch (error) {
-    console.error('Error creating call record:', error);
+    logger.error('Error creating call record:', error);
     res.status(500).json({
       success: false,
       message: 'Error creating call record'
@@ -531,7 +532,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       message: 'Call record updated successfully'
     });
   } catch (error) {
-    console.error('Error updating call record:', error);
+    logger.error('Error updating call record:', error);
     res.status(500).json({
       success: false,
       message: 'Error updating call record'
@@ -598,7 +599,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       message: 'Call record deleted successfully'
     });
   } catch (error) {
-    console.error('Error deleting call record:', error);
+    logger.error('Error deleting call record:', error);
     res.status(500).json({
       success: false,
       message: 'Error deleting call record'
@@ -669,7 +670,7 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
         imported++;
       } catch (err) {
         failed++;
-        console.error('Failed to import record:', err);
+        logger.error('Failed to import record:', err);
       }
     }
 
@@ -682,7 +683,7 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
       failed
     });
   } catch (error) {
-    console.error('Error importing call records:', error);
+    logger.error('Error importing call records:', error);
     res.status(500).json({
       success: false,
       message: 'Error importing call records'
@@ -1062,7 +1063,7 @@ router.post('/import/teams-recent', authenticateToken, async (req: AuthRequest, 
           if (detailFetchSamples.length < 3) {
             detailFetchSamples.push({ id: externalCallId, status: detailResp.status, body: failBody.slice(0, 500) });
           }
-          console.error('Teams call detail fetch failed', externalCallId, detailResp.status, failBody.slice(0, 500));
+          logger.error('Teams call detail fetch failed', externalCallId, detailResp.status, failBody.slice(0, 500));
         }
 
         // Graph only allows a single $expand item on this endpoint. Fetch sessions/segments
@@ -1087,7 +1088,7 @@ router.post('/import/teams-recent', authenticateToken, async (req: AuthRequest, 
           if (sessionsFetchSamples.length < 3) {
             sessionsFetchSamples.push({ id: externalCallId, status: sessionsResp.status, body: failBody.slice(0, 500) });
           }
-          console.error('Teams call sessions fetch failed', externalCallId, sessionsResp.status, failBody.slice(0, 500));
+          logger.error('Teams call sessions fetch failed', externalCallId, sessionsResp.status, failBody.slice(0, 500));
         }
 
         startDateTime = cleanString(sourceRecord?.startDateTime || startDateTime);
@@ -1173,7 +1174,7 @@ router.post('/import/teams-recent', authenticateToken, async (req: AuthRequest, 
         imported++;
       } catch (error) {
         failed++;
-        console.error('Failed to import Teams call record:', error);
+        logger.error('Failed to import Teams call record:', error);
       }
     }
 
@@ -1201,7 +1202,7 @@ router.post('/import/teams-recent', authenticateToken, async (req: AuthRequest, 
       },
     });
   } catch (error) {
-    console.error('Error importing Teams recent calls:', error);
+    logger.error('Error importing Teams recent calls:', error);
     return res.status(500).json({
       success: false,
       message: 'Error importing Teams recent calls',

@@ -5,6 +5,7 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -102,7 +103,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, preferences });
   } catch (error) {
-    console.error('Error fetching grid preferences:', error);
+    logger.error('Error fetching grid preferences:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch grid preferences' });
   }
 });
@@ -145,7 +146,7 @@ router.get('/:gridKey', authenticateToken, async (req: AuthRequest, res: Respons
 
     res.json(payload);
   } catch (error) {
-    console.error('Error fetching grid preference:', error);
+    logger.error('Error fetching grid preference:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch grid preference' });
   }
 });
@@ -189,7 +190,7 @@ router.put('/:gridKey', authenticateToken, async (req: AuthRequest, res: Respons
 
     res.json({ success: true, message: 'Grid preferences saved' });
   } catch (error) {
-    console.error('Error saving grid preference:', error);
+    logger.error('Error saving grid preference:', error);
     res.status(500).json({ success: false, message: 'Failed to save grid preference' });
   }
 });

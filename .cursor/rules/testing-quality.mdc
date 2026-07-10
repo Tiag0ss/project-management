@@ -1,0 +1,65 @@
+---
+description: Jest tests, CI, Zod validation patterns, and quality checks
+globs: __tests__/**/*,.github/workflows/**/*
+alwaysApply: false
+---
+
+# Testing & quality
+
+Catalog: [TESTING_SCENARIOS.md](../../TESTING_SCENARIOS.md) · CI: `.github/workflows/ci.yml`
+
+## Commands
+
+```bash
+npm test              # Jest (unit + integration)
+npm run test:integration
+npm run lint
+npm run build         # next build + server tsc
+npx tsc --project server/tsconfig.json
+```
+
+## Test layout
+
+```
+__tests__/
+  unit/           # validation.test.ts, cacheInvalidation.test.ts
+  integration/    # health, auth, tasks, projects, timeEntries
+  setup.ts        # loads .env.test, sets JWT_SECRET
+```
+
+## Health tests
+
+Use real handler from `server/health.ts` (`registerHealthRoute`, `buildHealthPayload`) — mock `testConnection` / Redis, not a fake endpoint.
+
+## Auth tests
+
+Supertest against minimal Express app + `authenticateToken` middleware; mock `pool.execute` for user lookup.
+
+## Validation tests
+
+When changing `server/utils/validation.ts`, update `__tests__/unit/validation.test.ts`:
+
+- Task create requires `status` + `priority` as **int FK IDs**.
+- Login/register schema bounds.
+
+## Cache tests
+
+`delKeyFamily` must delete exact key + prefix family — see `cacheInvalidation.test.ts`.
+
+## Writing new integration tests
+
+- Mock DB at `pool.execute` level unless CI has MySQL service.
+- Use supertest; avoid booting full Next+Express unless necessary.
+- Test: 401 without token, 403 without permission, happy path shape `{ success: true }`.
+
+## Before PR / commit
+
+1. `npm test`
+2. `npm run build`
+3. Manual smoke for touched flows (see TESTING_SCENARIOS IDs if applicable)
+
+## Do not
+
+- Commit `.env` secrets.
+- Skip server-side permission tests when adding new mutations.
+- Add tests that depend on production DB without skip guard.

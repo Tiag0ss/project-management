@@ -1,35 +1,116 @@
 ---
-description: Core conventions for the project management app (read AGENTS.md and copilot-instructions for full detail)
+description: Master agent context — architecture, non-negotiables, file map, and rule index for the project management app
 alwaysApply: true
 ---
 
-# Project Management — core rules
+# Project Management — agent master context
 
-Read [AGENTS.md](../../AGENTS.md) and [.github/copilot-instructions.md](../../.github/copilot-instructions.md) for full context.
+Read this rule first. For depth, also use scoped rules in `.cursor/rules/` and [.github/copilot-instructions.md](../../.github/copilot-instructions.md).
 
 ## Language (mandatory)
 
-- **Always respond in English (EN)** — summaries, errors, follow-ups, and explanations.
-- The user may write in **European Portuguese (PT)**; understand PT, but **never reply in Portuguese or Brazilian Portuguese (PT-BR)** unless they explicitly ask for Portuguese in that message.
+- **Always respond in English (EN)** — summaries, errors, follow-ups, explanations.
+- User may write in **European Portuguese (PT)**; understand PT but **never reply in PT or PT-BR** unless they explicitly ask for Portuguese in that reply.
 - Do not switch to PT-BR because the user wrote in PT.
-- Non-English UI copy in the app requires explicit user approval first.
+- **Non-English UI copy** requires explicit user approval first.
 
 ## Stack
 
-Next.js 16 App Router, React 19, Tailwind, Express, MySQL/MSSQL (`server/config/database.ts`).
+| Layer | Technology |
+|-------|------------|
+| Frontend | Next.js 16 App Router, React 19, Tailwind 4, dark mode |
+| Backend | Express 5, TypeScript, `server/index.ts` |
+| Database | MySQL 8+ **or** MSSQL via `server/config/database.ts` (`DB_PROVIDER=mysql\|mssql`) |
+| Cache | Optional Redis (`REDIS_ENABLED`) — `server/services/cache.ts`, invalidate-on-write |
+| Auth | JWT + HTTP-only cookie; API tokens for integrations |
+| Validation | Zod — `server/utils/validation.ts` + `validateRequest` middleware |
 
-## Must follow
+## Repository map (where to edit)
 
-- TypeScript strict; avoid `any`.
-- SQL: always parameterized; portable SQL for MySQL + MSSQL (no `FIELD()`, `GROUP_CONCAT`, `JSON_ARRAYAGG` in new routes without `dbProvider` branch).
-- DB schema: edit `server/database/structure/systemtables/*.json` only — use `PrimaryKeyFields` (string, not array). Never add one-off TS scripts to fix DB; give SQL to the developer if needed.
-- Auth: `authenticateToken` on protected routes; check permissions server-side.
-- UI: dark mode, `w-full` pages (no `container` unless asked), Applications list pattern for grids, icon-only row actions with `sr-only` Actions header.
-- Dialogs: no `alert()`/`confirm()` — use project modals.
-- Aggregated **hours**: leaf tasks only. Task **counts**: all tasks including subtasks.
-- Planning: allocation slices use `TaskAllocationHeaderId`; child allocations filtered by header when moving slices; check TaskAllocations + TaskChildAllocations for availability.
-- Time display: `hh:MM:ss` via `decimalHoursToHMS`, not decimal hours like `1.5h`.
+```
+app/                    # Next.js pages (App Router, 'use client' where needed)
+components/             # Shared UI (ConfirmAlertModal, Navbar, modals, admin/*)
+lib/api/                # Frontend API clients + getApiUrl()
+server/routes/          # Express route handlers (one file per domain)
+server/queries/         # Extracted SQL/query helpers (prefer for reuse)
+server/types/           # Shared row/interface types for query results
+server/services/        # cache, cacheInvalidation, cacheKeys
+server/utils/           # validation, logger, changeLog, schedulers
+server/database/structure/systemtables/*.json   # Schema source of truth
+.github/prompts/        # Task templates (skills) — open matching skill before coding
+docs/                   # FEATURES.md, ROLE_PERMISSIONS.md, TESTING_SCENARIOS.md
+```
 
-## Prompt library
+## Non-negotiables (never violate)
 
-For focused tasks, use templates in `.github/prompts/` (frontend, backend route, DB JSON, Jira, KPI drill-down, etc.).
+### Database
+- **Parameterized SQL only** — `pool.execute(sql, [params])` from `server/config/database.ts`.
+- **Never** import `mysql2` / `mssql` in route files; use exported `RowDataPacket`, `ResultSetHeader`.
+- Schema changes: edit JSON in `server/database/structure/systemtables/` only — **no** manual migration TS scripts for columns.
+- Portable SQL for MySQL + MSSQL: no `FIELD()`, `GROUP_CONCAT`, `JSON_ARRAYAGG` in new routes without `dbProvider` branch or TypeScript assembly.
+- Prefer `CURRENT_TIMESTAMP` over `NOW()` in new/edited SQL.
+
+### Backend routes
+- Protected routes: `authenticateToken` + **server-side permission checks** on every mutation.
+- Write routes: wire `validateRequest(schema)` from `server/utils/validation.ts` (or `validatePayload` after decrypt for auth).
+- Errors: `logger.error(...)` from `server/utils/logger.ts` — **not** `console.error`.
+- Redis: after successful writes that affect cached reads, call `invalidateByEntity(...)` — see `redis-cache.mdc`.
+- Response shape: `{ success: true, data?, message? }` / `{ success: false, message, errors? }`.
+
+### Frontend
+- Full-width pages: outer `w-full` — **no** `container` unless user asks.
+- Dark mode on all new UI: `bg-white dark:bg-gray-800`, `text-gray-900 dark:text-white`, etc.
+- **No** `alert()` / `confirm()` — use [`components/ConfirmAlertModal.tsx`](../../components/ConfirmAlertModal.tsx).
+- API URL: `getApiUrl()` from `@/lib/api/config` (relative `/api/...` by default).
+- Permissions: `usePermissions()` before showing actions; backend must still enforce.
+
+### Domain rules
+- **Aggregated hours**: leaf tasks only (no parent + child double-count).
+- **Task counts**: all tasks including subtasks.
+- **Time display**: `hh:MM:ss` via `decimalHoursToHMS` — never `1.5h`.
+- **Planning bars**: header-driven (`TaskAllocationHeaderId`); include `TaskChildAllocations` in availability.
+- **Customer users**: cannot set `projectId` when creating tickets.
+
+## Scoped rules (open when editing matching files)
+
+| Rule file | Applies to |
+|-----------|------------|
+| `backend-express.mdc` | `server/**/*.ts` |
+| `frontend-nextjs.mdc` | `app/**`, `components/**`, `lib/**` |
+| `database-json-schema.mdc` | `server/database/**` |
+| `planning-gantt.mdc` | `app/planning/**`, allocation routes |
+| `redis-cache.mdc` | cache + cached routes |
+| `permissions-auth.mdc` | auth, permissions, portal |
+| `integrations.mdc` | Jira, GitHub, Outlook, email queue |
+| `testing-quality.mdc` | tests, CI |
+
+## Prompt library (use before implementing)
+
+Match task → read template in `.github/prompts/`:
+
+| Task | Skill file |
+|------|------------|
+| New/changed API route | `skill-backend-route.prompt.md` |
+| DB column/table | `skill-db-schema-json.prompt.md` |
+| UI page/feature | `skill-frontend-feature.prompt.md` |
+| Permission-gated UI | `skill-permission-gated-ui.prompt.md` |
+| Zod on routes | `skill-validated-route.prompt.md` |
+| KPI drill-down | `skill-dashboard-kpi-drilldown.prompt.md` |
+| Jira | `skill-jira-integration.prompt.md` |
+| Bug fix | `skill-bugfix-debug.prompt.md` |
+
+## Quality bar
+
+- TypeScript strict; avoid `any` — use interfaces in `server/types/` or colocated types.
+- Minimal diff: do not refactor unrelated code.
+- No new features unless asked; bug fixes and requested scope only.
+- Do not edit plan files (`.cursor/plans/`) unless user asks.
+- Git: commit only when user explicitly requests.
+
+## Key docs
+
+- [AGENTS.md](../../AGENTS.md) — Cursor entry point
+- [docs/FEATURES.md](../../docs/FEATURES.md) — feature reference
+- [docs/ROLE_PERMISSIONS.md](../../docs/ROLE_PERMISSIONS.md) — permissions
+- [TESTING_SCENARIOS.md](../../TESTING_SCENARIOS.md) — manual test catalog
+- In-app user manual: `/docs`

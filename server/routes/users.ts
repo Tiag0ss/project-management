@@ -10,6 +10,8 @@ import { prepareCustomFieldData } from '../utils/customFields';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
+import { updateUserProfileSchema, validateRequest } from '../utils/validation';
 
 const router = Router();
 const SALT_ROUNDS = 10;
@@ -112,7 +114,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
       user: users[0]
     });
   } catch (error) {
-    console.error('Get profile error:', error);
+    logger.error('Get profile error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch profile' 
@@ -146,7 +148,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
  *         description: Email already in use
  */
 // Update current user profile (must come before /:id route)
-router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.put('/profile', authenticateToken, validateRequest(updateUserProfileSchema), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const {
@@ -339,7 +341,7 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
       message: 'Profile updated successfully'
     });
   } catch (error) {
-    console.error('Update profile error:', error);
+    logger.error('Update profile error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update profile' 
@@ -443,7 +445,7 @@ router.put('/change-password', authenticateToken, async (req: AuthRequest, res: 
       message: 'Password changed successfully'
     });
   } catch (error) {
-    console.error('Change password error:', error);
+    logger.error('Change password error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to change password' 
@@ -576,7 +578,7 @@ router.put('/work-hours', authenticateToken, async (req: AuthRequest, res: Respo
       message: 'Work hours updated successfully'
     });
   } catch (error) {
-    console.error('Update work hours error:', error);
+    logger.error('Update work hours error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update work hours' 
@@ -618,7 +620,7 @@ router.get('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: R
       users
     });
   } catch (error) {
-    console.error('Get users error:', error);
+    logger.error('Get users error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch users' 
@@ -852,7 +854,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res
       message: 'User updated successfully'
     });
   } catch (error) {
-    console.error('Update user error:', error);
+    logger.error('Update user error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update user' 
@@ -943,7 +945,7 @@ router.put('/:id/password', authenticateToken, requireAdmin, async (req: AuthReq
       message: 'Password reset successfully'
     });
   } catch (error) {
-    console.error('Reset password error:', error);
+    logger.error('Reset password error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to reset password' 
@@ -1036,7 +1038,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req: AuthRequest, 
       message: 'User deleted successfully'
     });
   } catch (error) {
-    console.error('Delete user error:', error);
+    logger.error('Delete user error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to delete user' 
@@ -1200,7 +1202,7 @@ router.post('/', authenticateToken, requireAdmin, async (req: AuthRequest, res: 
       userId: result.insertId
     });
   } catch (error) {
-    console.error('Create user error:', error);
+    logger.error('Create user error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to create user' 
@@ -1360,7 +1362,7 @@ router.get('/:id/details', authenticateToken, requireAdmin, async (req: AuthRequ
       recentActivity: recentTimeEntries
     });
   } catch (error) {
-    console.error('Get user details error:', error);
+    logger.error('Get user details error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch user details' });
   }
 });
@@ -1402,7 +1404,7 @@ router.get('/:id/memberships', authenticateToken, requireAdmin, async (req: Auth
 
     res.json({ success: true, memberships });
   } catch (error) {
-    console.error('Get memberships error:', error);
+    logger.error('Get memberships error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch memberships' });
   }
 });
@@ -1464,7 +1466,7 @@ router.post('/:id/memberships', authenticateToken, requireAdmin, async (req: Aut
 
     res.status(201).json({ success: true, message: 'Membership added', membershipId: result.insertId });
   } catch (error) {
-    console.error('Add membership error:', error);
+    logger.error('Add membership error:', error);
     res.status(500).json({ success: false, message: 'Failed to add membership' });
   }
 });
@@ -1514,7 +1516,7 @@ router.put('/:id/memberships/:membershipId', authenticateToken, requireAdmin, as
 
     res.json({ success: true, message: 'Membership updated' });
   } catch (error) {
-    console.error('Update membership error:', error);
+    logger.error('Update membership error:', error);
     res.status(500).json({ success: false, message: 'Failed to update membership' });
   }
 });
@@ -1558,7 +1560,7 @@ router.delete('/:id/memberships/:membershipId', authenticateToken, requireAdmin,
 
     res.json({ success: true, message: 'Membership removed' });
   } catch (error) {
-    console.error('Remove membership error:', error);
+    logger.error('Remove membership error:', error);
     res.status(500).json({ success: false, message: 'Failed to remove membership' });
   }
 });
@@ -1651,7 +1653,7 @@ router.get('/:id/attachments', authenticateToken, async (req: AuthRequest, res: 
 
     res.json({ success: true, attachments: allAttachments });
   } catch (error) {
-    console.error('Get user attachments error:', error);
+    logger.error('Get user attachments error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch attachments' });
   }
 });

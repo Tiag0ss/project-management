@@ -5,6 +5,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -233,10 +234,10 @@ router.post('/batch', authenticateToken, async (req: AuthRequest, res: Response)
       try {
         await connection.rollback();
       } catch (rollbackError) {
-        console.error('Error rolling back child allocations transaction:', rollbackError);
+        logger.error('Error rolling back child allocations transaction:', rollbackError);
       }
     }
-    console.error('Error saving child allocations:', error);
+    logger.error('Error saving child allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to save child allocations' });
   } finally {
     connection?.release();
@@ -287,7 +288,7 @@ router.get('/parent/:parentTaskId', authenticateToken, async (req: AuthRequest, 
     res.json({ success: true, allocations });
 
   } catch (error) {
-    console.error('Error fetching child allocations:', error);
+    logger.error('Error fetching child allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch child allocations' });
   }
 });
@@ -326,7 +327,7 @@ router.get('/child/:childTaskId', authenticateToken, async (req: AuthRequest, re
     res.json({ success: true, allocations: rows });
 
   } catch (error) {
-    console.error('Error fetching child allocations:', error);
+    logger.error('Error fetching child allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch child allocations' });
   }
 });
@@ -403,7 +404,7 @@ router.get('/user/:userId/date/:date', authenticateToken, async (req: AuthReques
     res.json({ success: true, allocations });
 
   } catch (error) {
-    console.error('Error fetching user child allocations:', error);
+    logger.error('Error fetching user child allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch child allocations' });
   }
 });
@@ -481,7 +482,7 @@ router.delete('/header/:headerId', authenticateToken, async (req: AuthRequest, r
       headerId,
     });
   } catch (error) {
-    console.error('Error deleting child allocation slice:', error);
+    logger.error('Error deleting child allocation slice:', error);
     res.status(500).json({ success: false, message: 'Failed to delete child allocation slice' });
   }
 });
@@ -603,7 +604,7 @@ router.delete('/parent/:parentTaskId/dates', authenticateToken, async (req: Auth
       sourceHeaderId: sourceHeaderId > 0 ? sourceHeaderId : null,
     });
   } catch (error) {
-    console.error('Error deleting child allocations by dates:', error);
+    logger.error('Error deleting child allocations by dates:', error);
     res.status(500).json({ success: false, message: 'Failed to delete child allocations for selected dates' });
   }
 });
@@ -710,7 +711,7 @@ router.delete('/parent/:parentTaskId', authenticateToken, async (req: AuthReques
     });
 
   } catch (error) {
-    console.error('Error deleting child allocations:', error);
+    logger.error('Error deleting child allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to delete child allocations' });
   }
 });

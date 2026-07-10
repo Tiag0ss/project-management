@@ -1,6 +1,7 @@
 import express, { Response } from 'express';
 import PDFDocument from 'pdfkit';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -126,7 +127,7 @@ router.post('/table', authenticateToken, async (req: AuthRequest, res: Response)
 
     doc.end();
   } catch (error) {
-    console.error('Error exporting PDF table:', error);
+    logger.error('Error exporting PDF table:', error);
     res.status(500).json({ success: false, message: 'Failed to export PDF' });
   }
 });

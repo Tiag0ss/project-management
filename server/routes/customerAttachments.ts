@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -81,7 +82,7 @@ router.get('/customer/:customerId', authenticateToken, async (req: AuthRequest, 
 
     res.json({ success: true, data: attachments });
   } catch (error) {
-    console.error('Error fetching customer attachments:', error);
+    logger.error('Error fetching customer attachments:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch attachments' });
   }
 });
@@ -139,7 +140,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, data: attachment });
   } catch (error) {
-    console.error('Error fetching attachment:', error);
+    logger.error('Error fetching attachment:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch attachment' });
   }
 });
@@ -216,7 +217,7 @@ router.post('/customer/:customerId', authenticateToken, async (req: AuthRequest,
 
     res.json({ success: true, attachmentId: result.insertId });
   } catch (error) {
-    console.error('Error uploading attachment:', error);
+    logger.error('Error uploading attachment:', error);
     res.status(500).json({ success: false, message: 'Failed to upload attachment' });
   }
 });
@@ -269,7 +270,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, message: 'Attachment deleted successfully' });
   } catch (error) {
-    console.error('Error deleting attachment:', error);
+    logger.error('Error deleting attachment:', error);
     res.status(500).json({ success: false, message: 'Failed to delete attachment' });
   }
 });

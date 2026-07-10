@@ -5,6 +5,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -149,7 +150,7 @@ router.get('/organization/:orgId', authenticateToken, async (req: AuthRequest, r
       groups
     });
   } catch (error) {
-    console.error('Get permission groups error:', error);
+    logger.error('Get permission groups error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch permission groups' 
@@ -292,7 +293,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       groupId: result.insertId
     });
   } catch (error) {
-    console.error('Create permission group error:', error);
+    logger.error('Create permission group error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to create permission group' 
@@ -451,7 +452,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       message: 'Permission group updated successfully'
     });
   } catch (error) {
-    console.error('Update permission group error:', error);
+    logger.error('Update permission group error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update permission group' 
@@ -527,7 +528,7 @@ router.post('/:id/sync-from-global', authenticateToken, async (req: AuthRequest,
 
     res.json({ success: true, message: `Permission group synced from global ${groups[0].LinkedRole} role defaults` });
   } catch (error) {
-    console.error('Sync permission group error:', error);
+    logger.error('Sync permission group error:', error);
     res.status(500).json({ success: false, message: 'Failed to sync permission group' });
   }
 });
@@ -615,7 +616,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       message: 'Permission group deleted successfully'
     });
   } catch (error) {
-    console.error('Delete permission group error:', error);
+    logger.error('Delete permission group error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to delete permission group' 

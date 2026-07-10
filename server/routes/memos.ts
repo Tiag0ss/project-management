@@ -6,6 +6,7 @@ import { sanitizeRichText } from '../utils/sanitize';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -60,7 +61,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       cacheKeys.orgMemos(`user-${userId}`),
       ENTITY_TTL_SECONDS,
       async () => {
-        console.log('[Memos] Fetching memos for userId:', userId);
+        logger.info('[Memos] Fetching memos for userId:', userId);
 
         // Get user's organizations
         const [userOrgs] = await pool.execute<RowDataPacket[]>(
@@ -68,7 +69,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
           [userId]
         );
         const orgIds = userOrgs.map(o => o.OrganizationId);
-        console.log('[Memos] User organizations:', orgIds);
+        logger.info('[Memos] User organizations:', orgIds);
 
         // Get memos:
         // - Private: only user's own
@@ -98,9 +99,9 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
         query += ' ORDER BY m.CreatedAt DESC';
 
-        console.log('[Memos] Query params:', params);
+        logger.info('[Memos] Query params:', params);
         const [memos] = await pool.execute<RowDataPacket[]>(query, params);
-        console.log('[Memos] Found memos:', memos.length);
+        logger.info('[Memos] Found memos:', memos.length);
 
         const memoIds = memos.map((memo) => memo.Id).filter((memoId) => memoId !== null && memoId !== undefined);
         const tagsByMemoId = new Map<number, string[]>();
@@ -196,7 +197,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json(payload);
   } catch (error) {
-    console.error('Error fetching memos:', error);
+    logger.error('Error fetching memos:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch memos' });
   }
 });
@@ -334,7 +335,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, memo });
   } catch (error) {
-    console.error('Error fetching memo:', error);
+    logger.error('Error fetching memo:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch memo' });
   }
 });
@@ -434,7 +435,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, memoId, message: 'Memo created successfully' });
   } catch (error) {
-    console.error('Error creating memo:', error);
+    logger.error('Error creating memo:', error);
     res.status(500).json({ success: false, message: 'Failed to create memo' });
   }
 });
@@ -557,7 +558,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, message: 'Memo updated successfully' });
   } catch (error) {
-    console.error('Error updating memo:', error);
+    logger.error('Error updating memo:', error);
     res.status(500).json({ success: false, message: 'Failed to update memo' });
   }
 });
@@ -621,7 +622,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, message: 'Memo deleted successfully' });
   } catch (error) {
-    console.error('Error deleting memo:', error);
+    logger.error('Error deleting memo:', error);
     res.status(500).json({ success: false, message: 'Failed to delete memo' });
   }
 });
@@ -649,7 +650,7 @@ router.get('/tags', authenticateToken, async (req: AuthRequest, res: Response) =
 
     res.json({ success: true, tags });
   } catch (error) {
-    console.error('Error fetching tags:', error);
+    logger.error('Error fetching tags:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch tags' });
   }
 });

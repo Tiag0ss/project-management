@@ -1,16 +1,82 @@
 ---
-description: Resource planning / Gantt conventions
-globs: app/planning/**/*
+description: Resource planning Gantt — allocation headers, child allocations, drag, availability, performance
+globs: app/planning/**/*,server/routes/taskAllocations.ts,server/routes/taskChildAllocations.ts,server/routes/recurringAllocations.ts
 alwaysApply: false
 ---
 
 # Planning / Gantt
 
-See [.github/copilot-instructions.md](../../.github/copilot-instructions.md) § Resource Planning.
+Full spec: [.github/copilot-instructions.md](../../.github/copilot-instructions.md) § Resource Planning · Page: `app/planning/page.tsx`
 
-- Render bars by `TaskAllocationHeaderId` (one bar per header slice), not naive date-gap grouping.
-- Normal drag: move full slice; Ctrl+drag: partial slice by **hours**.
-- New allocations must set `TaskAllocationHeaderId` on TaskAllocations and TaskChildAllocations.
-- Availability: user day capacity minus TaskAllocations **and** TaskChildAllocations for that date.
-- Prefer date-scoped API queries for initial load (`startDate`/`endDate` on allocations); avoid N+1 per project/user/parent when a bulk or parallel fetch is possible.
-- `app/planning/page.tsx` is large — prefer extracting hooks/components over growing the monolith.
+## Core model
+
+```
+TaskAllocationHeaders (slice identity)
+    └── TaskAllocations (hours per user per day)     → Planning bars
+    └── TaskChildAllocations (split to child tasks)  → consumes parent capacity
+```
+
+- **One bar = one header slice** (`TaskAllocationHeaderId`), NOT inferred by grouping consecutive dates.
+- Every new allocation row **must** set `TaskAllocationHeaderId` (parent and child tables).
+- Child slice membership filtered by **`TaskChildAllocations.TaskAllocationHeaderId`**, not date alone.
+
+## Drag behavior
+
+| Gesture | Behavior |
+|---------|----------|
+| Normal drag | Move **entire** header slice (all days/hours in slice) |
+| Ctrl + drag | Move **partial** slice by **hours** (never date-prompt partial) |
+
+Deletion / replan: prefer header-aware endpoints (`/header/:headerId`, `/header/:headerId/hours`) over broad task/user/date deletes.
+
+## Availability check (before allocate)
+
+For user U on date D, subtract:
+
+1. User daily capacity (`WorkHoursMonday`… from `Users`).
+2. Sum of `TaskAllocations` hours for U on D.
+3. Sum of `TaskChildAllocations` hours for U on D.
+4. Holidays, vacations, out-of-office overlays.
+5. When editing existing slice, **exclude current task/header** from conflict calc.
+
+Hobby vs non-hobby: respect `isHobby` query param on availability endpoints.
+
+## Views & timeline
+
+- Modes: Week (~28d), Month (~90d), Year (~365d) — navigation step matches mode.
+- Project Gantt: hierarchical parent/child tree, all project tasks.
+- Planning Gantt: user rows with allocation bars.
+- Outlook calendar: background load via `loadOutlookCalendarEvents` hook — non-blocking banner while loading.
+
+## API performance
+
+- Initial load: pass `startDate` / `endDate` on allocation queries — avoid unbounded fetch.
+- Prefer bulk/parallel fetches over N+1 per project/user/parent.
+- Redis caches planning bootstrap — invalidate on allocation writes (`invalidateByEntity('allocation', …)`).
+
+## Task details integration
+
+- Task Detail → Planned Allocations: group by header, expand/collapse daily rows.
+- Replan: use remaining hours (`estimated - sum(time entries)`); block if none left.
+
+## Parent / child tasks
+
+- Parent with allocations can split to children via `TaskChildAllocations`.
+- Child allocations **consume** parent allocation pool.
+- Creating child allocations can set child task planned dates.
+
+## Code organization
+
+`app/planning/page.tsx` is very large:
+
+- Extract hooks to `app/planning/hooks/` (bootstrap data, Outlook, holidays, drag state).
+- Do **not** append thousands of lines — extract when touching an area.
+- Shared types: colocate in `app/planning/types.ts` if needed.
+
+## Migrations (legacy data)
+
+Startup migrations backfill missing `TaskAllocationHeaderId` on legacy rows and repair orphan header references — idempotent. New code must not create headerless allocations.
+
+## Testing touchpoints
+
+See `TESTING_SCENARIOS.md` — planning sections: drag, ctrl+drag, child split, replan, Outlook overlay, overdue milestones.

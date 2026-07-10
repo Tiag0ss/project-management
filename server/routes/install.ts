@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { logActivity } from './activityLogs';
+import logger from '../utils/logger';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
@@ -48,7 +49,7 @@ router.get('/check', async (req: Request, res: Response) => {
       needsInstall,
     });
   } catch (error) {
-    console.error('Install check error:', error);
+    logger.error('Install check error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to check installation status',
@@ -392,8 +393,8 @@ router.post('/setup', async (req: Request, res: Response) => {
       connection.release();
     }
   } catch (error: any) {
-    console.error('Setup error:', error);
-    console.error('Error details:', {
+    logger.error('Setup error:', error);
+    logger.error('Error details:', {
       message: error.message,
       code: error.code,
       errno: error.errno,

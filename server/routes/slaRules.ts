@@ -5,6 +5,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -56,7 +57,7 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
     );
     res.json(payload);
   } catch (error) {
-    console.error('Error fetching SLA rules:', error);
+    logger.error('Error fetching SLA rules:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch SLA rules' });
   }
 });
@@ -84,9 +85,9 @@ router.get('/ticket/:ticketId/status', authenticateToken, async (req: AuthReques
 
     const [tickets] = await pool.execute<RowDataPacket[]>(
       `SELECT t.*, tpv.Value as PriorityName,
-              TIMESTAMPDIFF(MINUTE, t.CreatedAt, NOW()) as AgeMinutes,
-              TIMESTAMPDIFF(MINUTE, t.CreatedAt, COALESCE(t.FirstResponseAt, NOW())) as ResponseMinutes,
-              TIMESTAMPDIFF(MINUTE, t.CreatedAt, COALESCE(t.ResolvedAt, NOW())) as ResolutionMinutes,
+              TIMESTAMPDIFF(MINUTE, t.CreatedAt, CURRENT_TIMESTAMP) as AgeMinutes,
+              TIMESTAMPDIFF(MINUTE, t.CreatedAt, COALESCE(t.FirstResponseAt, CURRENT_TIMESTAMP)) as ResponseMinutes,
+              TIMESTAMPDIFF(MINUTE, t.CreatedAt, COALESCE(t.ResolvedAt, CURRENT_TIMESTAMP)) as ResolutionMinutes,
               tsv.StatusType
        FROM Tickets t
        LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
@@ -164,7 +165,7 @@ router.get('/ticket/:ticketId/status', authenticateToken, async (req: AuthReques
       },
     });
   } catch (error) {
-    console.error('Error fetching SLA status:', error);
+    logger.error('Error fetching SLA status:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch SLA status' });
   }
 });
@@ -246,7 +247,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     await invalidateByEntity('sla', { orgId: organizationId });
     res.status(201).json({ success: true, id: result.insertId });
   } catch (error) {
-    console.error('Error creating SLA rule:', error);
+    logger.error('Error creating SLA rule:', error);
     res.status(500).json({ success: false, message: 'Failed to create SLA rule' });
   }
 });
@@ -324,7 +325,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     await invalidateByEntity('sla', { orgId });
     res.json({ success: true });
   } catch (error) {
-    console.error('Error updating SLA rule:', error);
+    logger.error('Error updating SLA rule:', error);
     res.status(500).json({ success: false, message: 'Failed to update SLA rule' });
   }
 });
@@ -362,7 +363,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     await invalidateByEntity('sla', { orgId });
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting SLA rule:', error);
+    logger.error('Error deleting SLA rule:', error);
     res.status(500).json({ success: false, message: 'Failed to delete SLA rule' });
   }
 });

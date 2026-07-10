@@ -5,6 +5,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -50,7 +51,7 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
 
     res.json({ success: true, allocations });
   } catch (error) {
-    console.error('Error fetching recurring allocations:', error);
+    logger.error('Error fetching recurring allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch recurring allocations' });
   }
 });
@@ -94,7 +95,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, allocation: allocations[0] });
   } catch (error) {
-    console.error('Error fetching recurring allocation:', error);
+    logger.error('Error fetching recurring allocation:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch recurring allocation' });
   }
 });
@@ -221,7 +222,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       recurringAllocationId
     });
   } catch (error) {
-    console.error('Error creating recurring allocation:', error);
+    logger.error('Error creating recurring allocation:', error);
     res.status(500).json({ success: false, message: 'Failed to create recurring allocation' });
   }
 });
@@ -370,7 +371,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, message: 'Recurring allocation updated' });
   } catch (error) {
-    console.error('Error updating recurring allocation:', error);
+    logger.error('Error updating recurring allocation:', error);
     res.status(500).json({ success: false, message: 'Failed to update recurring allocation' });
   }
 });
@@ -430,7 +431,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, message: 'Recurring allocation deleted' });
   } catch (error) {
-    console.error('Error deleting recurring allocation:', error);
+    logger.error('Error deleting recurring allocation:', error);
     res.status(500).json({ success: false, message: 'Failed to delete recurring allocation' });
   }
 });
@@ -506,7 +507,7 @@ router.get('/occurrences/user/:userId', authenticateToken, async (req: AuthReque
 
     res.json({ success: true, occurrences });
   } catch (error) {
-    console.error('Error fetching recurring allocation occurrences:', error);
+    logger.error('Error fetching recurring allocation occurrences:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch occurrences' });
   }
 });

@@ -1,4 +1,5 @@
 import { pool } from '../config/database';
+import logger from './logger';
 
 type HistoryEntity = 'organization' | 'customer' | 'project' | 'user' | 'task' | 'ticket';
 
@@ -373,7 +374,7 @@ export async function logOrganizationHistory(
       [organizationId, changedBy, changeType, fieldName, resolved.oldValue, resolved.newValue]
     );
   } catch (error) {
-    console.error('Error logging organization history:', error);
+    logger.error('Error logging organization history:', error);
   }
 }
 
@@ -396,7 +397,7 @@ export async function logCustomerHistory(
       [customerId, changedBy, changeType, fieldName, resolved.oldValue, resolved.newValue]
     );
   } catch (error) {
-    console.error('Error logging customer history:', error);
+    logger.error('Error logging customer history:', error);
   }
 }
 
@@ -419,7 +420,7 @@ export async function logProjectHistory(
       [projectId, changedBy, changeType, fieldName, resolved.oldValue, resolved.newValue]
     );
   } catch (error) {
-    console.error('Error logging project history:', error);
+    logger.error('Error logging project history:', error);
   }
 }
 
@@ -442,6 +443,6 @@ export async function logUserHistory(
       [userId, changedBy, changeType, fieldName, resolved.oldValue, resolved.newValue]
     );
   } catch (error) {
-    console.error('Error logging user history:', error);
+    logger.error('Error logging user history:', error);
   }
 }

@@ -10,6 +10,8 @@ import { computeProjectHealth } from '../utils/projectHealth';
 import { cachedJson, ENTITY_TTL_SECONDS, AGGREGATE_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
+import { createProjectSchema, updateProjectBodySchema, validateRequest } from '../utils/validation';
 
 const router = Router();
 
@@ -261,7 +263,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       projects: projectsWithHealth
     });
   } catch (error) {
-    console.error('Get projects error:', error);
+    logger.error('Get projects error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch projects' 
@@ -444,7 +446,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       project
     });
   } catch (error) {
-    console.error('Get project error:', error);
+    logger.error('Get project error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch project' 
@@ -568,7 +570,7 @@ router.get('/:id/burndown', authenticateToken, async (req: AuthRequest, res: Res
 
     res.json(payload);
   } catch (error) {
-    console.error('Error fetching burndown data:', error);
+    logger.error('Error fetching burndown data:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch burndown data' });
   }
 });
@@ -773,7 +775,7 @@ router.get('/:id/flow-metrics', authenticateToken, async (req: AuthRequest, res:
 
     res.json(payload);
   } catch (error) {
-    console.error('Error fetching flow metrics data:', error);
+    logger.error('Error fetching flow metrics data:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch flow metrics data' });
   }
 });
@@ -842,7 +844,7 @@ router.get('/:id/permissions', authenticateToken, async (req: AuthRequest, res: 
     });
 
   } catch (error) {
-    console.error('Error fetching project permissions:', error);
+    logger.error('Error fetching project permissions:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch project permissions' 
@@ -881,7 +883,7 @@ router.get('/:id/permissions', authenticateToken, async (req: AuthRequest, res: 
  *       403:
  *         description: Forbidden
  */
-router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.post('/', authenticateToken, validateRequest(createProjectSchema), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const { organizationId, projectName, description, status, startDate, endDate, isHobby, isGlobal, isVisibleToCustomer, customerId, jiraBoardId, budget, budgetType, applicationIds, customFields } = req.body;
@@ -995,7 +997,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       projectId: result.insertId
     });
   } catch (error) {
-    console.error('Create project error:', error);
+    logger.error('Create project error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to create project' 
@@ -1115,7 +1117,7 @@ router.put('/:id/transfer', authenticateToken, async (req: AuthRequest, res: Res
       message: 'Project transferred successfully'
     });
   } catch (error) {
-    console.error('Transfer project error:', error);
+    logger.error('Transfer project error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to transfer project' 
@@ -1248,7 +1250,7 @@ router.put('/:id/task-mappings', authenticateToken, async (req: AuthRequest, res
 
     res.json({ success: true, message: 'Task mappings updated successfully' });
   } catch (error) {
-    console.error('Update task mappings error:', error);
+    logger.error('Update task mappings error:', error);
     res.status(500).json({ success: false, message: 'Failed to update task mappings' });
   }
 });
@@ -1290,7 +1292,7 @@ router.put('/:id/task-mappings', authenticateToken, async (req: AuthRequest, res
  *       404:
  *         description: Not found
  */
-router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.put('/:id', authenticateToken, validateRequest(updateProjectBodySchema), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const projectId = req.params.id;
@@ -1557,7 +1559,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       message: 'Project updated successfully'
     });
   } catch (error) {
-    console.error('Update project error:', error);
+    logger.error('Update project error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update project' 
@@ -1656,7 +1658,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       message: 'Project deleted successfully'
     });
   } catch (error) {
-    console.error('Delete project error:', error);
+    logger.error('Delete project error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to delete project' 

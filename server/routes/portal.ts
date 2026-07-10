@@ -4,6 +4,9 @@ import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { cachedJson, AGGREGATE_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
+import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
+import { createPortalTicketSchema, validateRequest } from '../utils/validation';
 
 const router = Router();
 
@@ -98,7 +101,7 @@ router.get('/overview', authenticateToken, async (req: AuthRequest, res: Respons
 
     res.json(payload);
   } catch (error) {
-    console.error('Portal overview error:', error);
+    logger.error('Portal overview error:', error);
     res.status(500).json({ success: false, message: 'Failed to load portal data' });
   }
 });
@@ -107,7 +110,7 @@ router.get('/overview', authenticateToken, async (req: AuthRequest, res: Respons
  * POST /api/portal/tickets
  * Create a ticket as a customer user.
  */
-router.post('/tickets', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.post('/tickets', authenticateToken, validateRequest(createPortalTicketSchema), async (req: AuthRequest, res: Response) => {
   try {
     const customerId = req.user?.customerId;
     const userId = req.user?.userId;
@@ -163,9 +166,16 @@ router.post('/tickets', authenticateToken, async (req: AuthRequest, res: Respons
       [organizationId, projectId || null, title.trim(), description || null, category || 'Support', statusId, resolvedPriorityId, customerId, userId]
     );
 
+    await invalidateByEntity('ticket', {
+      ticketId: result.insertId,
+      orgId: organizationId,
+      userId: userId ?? undefined,
+    });
+    await invalidateByEntity('portal', { customerId });
+
     res.status(201).json({ success: true, ticketId: result.insertId, message: 'Ticket created successfully' });
   } catch (error) {
-    console.error('Portal create ticket error:', error);
+    logger.error('Portal create ticket error:', error);
     res.status(500).json({ success: false, message: 'Failed to create ticket' });
   }
 });

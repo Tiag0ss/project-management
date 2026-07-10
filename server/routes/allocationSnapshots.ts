@@ -2,6 +2,7 @@ import express, { Response } from 'express';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { pool } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -46,7 +47,7 @@ router.get('/:id/data', authenticateToken, async (req: AuthRequest, res: Respons
       allocations,
     });
   } catch (error) {
-    console.error('Error fetching snapshot data:', error);
+    logger.error('Error fetching snapshot data:', error);
     return res.status(500).json({ success: false, message: 'Failed to fetch snapshot data' });
   }
 });
@@ -66,7 +67,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     );
     res.json({ success: true, snapshots: rows });
   } catch (error) {
-    console.error('Error fetching allocation snapshots:', error);
+    logger.error('Error fetching allocation snapshots:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch snapshots' });
   }
 });
@@ -209,7 +210,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     if (connection) await connection.rollback();
-    console.error('Error creating allocation snapshot:', error);
+    logger.error('Error creating allocation snapshot:', error);
     res.status(500).json({ success: false, message: 'Failed to create snapshot' });
   } finally {
     if (connection) connection.release();
@@ -339,7 +340,7 @@ router.post('/:id/restore', authenticateToken, async (req: AuthRequest, res: Res
     });
   } catch (error) {
     if (connection) await connection.rollback();
-    console.error('Error restoring allocation snapshot:', error);
+    logger.error('Error restoring allocation snapshot:', error);
     res.status(500).json({ success: false, message: 'Failed to restore snapshot' });
   } finally {
     if (connection) connection.release();
@@ -372,7 +373,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, message: 'Snapshot deleted successfully' });
   } catch (error) {
-    console.error('Error deleting allocation snapshot:', error);
+    logger.error('Error deleting allocation snapshot:', error);
     res.status(500).json({ success: false, message: 'Failed to delete snapshot' });
   }
 });

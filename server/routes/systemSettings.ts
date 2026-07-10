@@ -7,6 +7,7 @@ import { ensureAiAssistantViews } from '../utils/aiAssistantViews';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 // Keys that should be encrypted in the database
 const ENCRYPTED_KEYS = ['smtpPassword', 'openAIApiKey', 'outlookTenantId', 'outlookClientId', 'outlookClientSecret'];
@@ -98,7 +99,7 @@ router.get('/public', async (req, res: Response) => {
       demoMode: isDemoModeEnabled(),
     });
   } catch (error) {
-    console.error('Get public registration setting error:', error);
+    logger.error('Get public registration setting error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch registration setting' 
@@ -138,7 +139,7 @@ router.get('/user-flags', authenticateToken, async (req: AuthRequest, res: Respo
       ...flags,
     });
   } catch (error) {
-    console.error('Get user flags error:', error);
+    logger.error('Get user flags error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch user flags',
@@ -165,7 +166,7 @@ router.get('/public-frontpage', async (req, res: Response) => {
 
     res.json({ success: true, content });
   } catch (error) {
-    console.error('Get public frontpage content error:', error);
+    logger.error('Get public frontpage content error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch frontpage content' 
@@ -202,7 +203,7 @@ router.get('/frontpage', authenticateToken, async (req: AuthRequest, res: Respon
     const isAdmin = users.length > 0 && (users[0].IsAdmin === 1 || users[0].IsAdmin === true);
     
     if (!isAdmin) {
-      console.log('Frontpage access denied. User:', userId, 'IsAdmin:', users.length > 0 ? users[0].IsAdmin : 'not found');
+      logger.info('Frontpage access denied. User:', userId, 'IsAdmin:', users.length > 0 ? users[0].IsAdmin : 'not found');
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
 
@@ -212,7 +213,7 @@ router.get('/frontpage', authenticateToken, async (req: AuthRequest, res: Respon
 
     res.json({ success: true, content });
   } catch (error) {
-    console.error('Error fetching frontpage content:', error);
+    logger.error('Error fetching frontpage content:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch frontpage content' });
   }
 });
@@ -261,7 +262,7 @@ router.put('/frontpage', authenticateToken, async (req: AuthRequest, res: Respon
     const isAdmin = users.length > 0 && (users[0].IsAdmin === 1 || users[0].IsAdmin === true);
     
     if (!isAdmin) {
-      console.log('Frontpage update denied. User:', userId, 'IsAdmin:', users.length > 0 ? users[0].IsAdmin : 'not found');
+      logger.info('Frontpage update denied. User:', userId, 'IsAdmin:', users.length > 0 ? users[0].IsAdmin : 'not found');
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
 
@@ -289,7 +290,7 @@ router.put('/frontpage', authenticateToken, async (req: AuthRequest, res: Respon
 
     res.json({ success: true, message: 'Frontpage content updated successfully' });
   } catch (error) {
-    console.error('Error updating frontpage content:', error);
+    logger.error('Error updating frontpage content:', error);
     res.status(500).json({ success: false, message: 'Failed to update frontpage content' });
   }
 });
@@ -341,7 +342,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       settings: settingsObj
     });
   } catch (error) {
-    console.error('Get system settings error:', error);
+    logger.error('Get system settings error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch system settings' 
@@ -437,7 +438,7 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       message: 'Settings updated successfully'
     });
   } catch (error) {
-    console.error('Update system settings error:', error);
+    logger.error('Update system settings error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update system settings' 
@@ -465,7 +466,7 @@ router.post('/ai-assistant-views/sync', authenticateToken, async (req: AuthReque
     const result = await ensureAiAssistantViews();
     return res.json(result);
   } catch (error) {
-    console.error('Sync AI assistant views error:', error);
+    logger.error('Sync AI assistant views error:', error);
     return res.status(500).json({ success: false, message: 'Failed to sync AI assistant views' });
   }
 });

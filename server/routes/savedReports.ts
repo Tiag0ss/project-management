@@ -3,6 +3,7 @@ import { pool } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { dbProvider } from '../config/database';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -144,7 +145,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, reports: mergedReports });
   } catch (error) {
-    console.error('Error fetching saved reports:', error);
+    logger.error('Error fetching saved reports:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch saved reports' });
   }
 });
@@ -192,7 +193,7 @@ router.get('/datasource/:dataSource', authenticateToken, async (req: AuthRequest
 
     res.json({ success: true, reports: mergedReports });
   } catch (error) {
-    console.error('Error fetching saved reports:', error);
+    logger.error('Error fetching saved reports:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch saved reports' });
   }
 });
@@ -271,7 +272,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       reportId: result.insertId
     });
   } catch (error) {
-    console.error('Error creating saved report:', error);
+    logger.error('Error creating saved report:', error);
     res.status(500).json({ success: false, message: 'Failed to save report' });
   }
 });
@@ -357,7 +358,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, message: 'Report updated successfully' });
   } catch (error) {
-    console.error('Error updating saved report:', error);
+    logger.error('Error updating saved report:', error);
     res.status(500).json({ success: false, message: 'Failed to update report' });
   }
 });
@@ -409,7 +410,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, message: 'Report deleted successfully' });
   } catch (error) {
-    console.error('Error deleting saved report:', error);
+    logger.error('Error deleting saved report:', error);
     res.status(500).json({ success: false, message: 'Failed to delete report' });
   }
 });
@@ -482,7 +483,7 @@ router.post('/:id/share', authenticateToken, async (req: AuthRequest, res: Respo
 
     res.json({ success: true, message: 'Report shared successfully' });
   } catch (error) {
-    console.error('Error sharing report:', error);
+    logger.error('Error sharing report:', error);
     res.status(500).json({ success: false, message: 'Failed to share report' });
   }
 });
@@ -539,7 +540,7 @@ router.post('/:id/toggle-public', authenticateToken, async (req: AuthRequest, re
 
     res.json({ success: true, message: 'Report visibility updated successfully' });
   } catch (error) {
-    console.error('Error updating report visibility:', error);
+    logger.error('Error updating report visibility:', error);
     res.status(500).json({ success: false, message: 'Failed to update report visibility' });
   }
 });

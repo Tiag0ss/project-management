@@ -7,6 +7,7 @@ import { executeDynamicQueryConfig } from '../utils/dynamicQueryBuilder';
 import { SYSTEM_DEFAULT_REPORTS } from './savedReports';
 import { cachedJson, AGGREGATE_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -1074,7 +1075,7 @@ const getWidgetDetails = async (
 
       return { type: 'unknown', items: [] };
     } catch (err) {
-      console.error('Error executing reportKpi query:', err);
+      logger.error('Error executing reportKpi query:', err);
       return { type: 'unknown', items: [] };
     }
   }
@@ -1240,7 +1241,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json(payload);
   } catch (error) {
-    console.error('Error loading dashboard KPI config:', error);
+    logger.error('Error loading dashboard KPI config:', error);
     res.status(500).json({ success: false, message: 'Failed to load dashboard KPI config' });
   }
 });
@@ -1275,7 +1276,7 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       message: 'Dashboard KPI configuration saved',
     });
   } catch (error) {
-    console.error('Error saving dashboard KPI config:', error);
+    logger.error('Error saving dashboard KPI config:', error);
     res.status(500).json({ success: false, message: 'Failed to save dashboard KPI config' });
   }
 });
@@ -1309,7 +1310,7 @@ router.post('/values', authenticateToken, async (req: AuthRequest, res: Response
 
     res.json(payload);
   } catch (error) {
-    console.error('Error loading dashboard KPI values:', error);
+    logger.error('Error loading dashboard KPI values:', error);
     res.status(500).json({ success: false, message: 'Failed to load dashboard KPI values' });
   }
 });
@@ -1353,7 +1354,7 @@ router.post('/:widgetId/details', authenticateToken, async (req: AuthRequest, re
 
     res.json(payload);
   } catch (error) {
-    console.error('Error loading KPI details:', error);
+    logger.error('Error loading KPI details:', error);
     res.status(500).json({ success: false, message: 'Failed to load KPI details' });
   }
 });

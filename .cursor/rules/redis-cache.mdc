@@ -1,0 +1,77 @@
+---
+description: Optional Redis cache — read-through, TTL, invalidate-on-write, key families
+globs: server/services/cache*.ts,server/services/cacheInvalidation.ts,server/utils/cachedJson.ts,server/routes/**/*
+alwaysApply: false
+---
+
+# Redis cache (optional)
+
+Disabled by default (`REDIS_ENABLED=false`). MySQL/MSSQL remain source of truth.
+
+## Architecture
+
+```
+GET route → cachedJson(key, ttl, fetcher)
+              ├─ hit  → return Redis JSON
+              └─ miss → pool.execute → set Redis → return
+
+POST/PUT/DELETE → DB write → invalidateByEntity(type, payload)
+```
+
+Files:
+
+| File | Role |
+|------|------|
+| `server/config/redis.ts` | Connection, `isRedisEnabled()` |
+| `server/services/cache.ts` | `RedisCache` / `NoopCache` |
+| `server/services/cacheKeys.ts` | Key builders + TTL constants |
+| `server/utils/cachedJson.ts` | Read-through helper |
+| `server/services/cacheInvalidation.ts` | `invalidateByEntity`, `delKeyFamily` |
+
+## When to cache
+
+- List/detail GET routes with heavy joins (projects, tasks, planning bootstrap, settings).
+- Aggregates (KPIs, statistics): **short TTL** only (30–120s) + invalidation on writes.
+- **Do not cache**: active timers, notification unread counts, websocket push data.
+
+## When to invalidate
+
+After **every successful write** that affects a cached read:
+
+```typescript
+await invalidateByEntity('task', {
+  taskId,
+  projectId,
+  orgId,
+  userId,
+});
+```
+
+Common mistakes:
+
+- Portal ticket create must invalidate **`ticket`** and **`portal`** (customer overview).
+- Project task lists use scoped keys like `project:42:tasks:all` — invalidation uses `delKeyFamily` to clear exact + `key:*` variants.
+- Writes in route A that affect cached GET in route B — trace `cacheKeys.*` usage.
+
+## Key families
+
+`delKeyFamily('project:42:tasks')` deletes:
+
+1. Exact key `project:42:tasks`
+2. All keys matching `project:42:tasks:*`
+
+Always prefer `invalidateByEntity` over manual `cache.del` unless adding a new entity type.
+
+## Adding cache to a new GET
+
+1. Add key builder in `cacheKeys.ts`.
+2. Wrap fetch in `cachedJson(cacheKeys.xxx(...), ENTITY_TTL_SECONDS, async () => { ... })`.
+3. On every mutating route for that entity, call `invalidateByEntity` with full payload (orgId, projectId, etc.).
+
+## Ops note
+
+If stale data appears after deploy: restart API or flush Redis keys under `REDIS_KEY_PREFIX` (default `pm:*`). Invalidation should make this rare — stale reads indicate a missing `invalidateByEntity` call.
+
+## Health
+
+`/health` returns `redis: connected | disabled | error` — Redis down does not fail health check; app falls back to DB.

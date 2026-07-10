@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -32,7 +33,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
       user: req.user
     });
   } catch (error) {
-    console.error('Profile error:', error);
+    logger.error('Profile error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Server error' 

@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
 import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
+import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 
 // Complete list of IANA timezones
 const TIMEZONES = [
@@ -211,6 +212,7 @@ export default function ProfilePage() {
   const [vacationNotes, setVacationNotes] = useState('');
   const [isSavingVacation, setIsSavingVacation] = useState(false);
   const [vacationDeleteTarget, setVacationDeleteTarget] = useState<{ id: number; date: string } | null>(null);
+  const [recurringDeleteId, setRecurringDeleteId] = useState<number | null>(null);
 
   const [outOfOfficeEntries, setOutOfOfficeEntries] = useState<any[]>([]);
   const [outOfOfficeSummary, setOutOfOfficeSummary] = useState({
@@ -797,13 +799,15 @@ export default function ProfilePage() {
     }
   };
 
-  const handleDeleteRecurring = async (id: number) => {
+  const handleDeleteRecurring = (id: number) => {
     if (!token) return;
-    
-    if (!confirm('Are you sure you want to delete this recurring task? This will remove all future occurrences.')) {
-      return;
-    }
-    
+    setRecurringDeleteId(id);
+  };
+
+  const confirmDeleteRecurring = async () => {
+    if (!token || recurringDeleteId === null) return;
+    const id = recurringDeleteId;
+    setRecurringDeleteId(null);
     try {
       await recurringAllocationsApi.delete(id, token);
       setMessage('Recurring task deleted successfully');
@@ -2563,6 +2567,17 @@ export default function ProfilePage() {
           </div>
         </main>
       </div>
+
+      <ConfirmAlertModal
+        isOpen={recurringDeleteId !== null}
+        type="confirm"
+        title="Delete recurring task"
+        message="Are you sure you want to delete this recurring task? This will remove all future occurrences."
+        onClose={() => setRecurringDeleteId(null)}
+        onConfirm={() => void confirmDeleteRecurring()}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+      />
     </div>
   );
 }

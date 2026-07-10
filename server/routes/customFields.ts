@@ -4,6 +4,7 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -41,7 +42,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json(payload);
   } catch (error: any) {
-    console.error('Error fetching custom fields:', error);
+    logger.error('Error fetching custom fields:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch custom fields' });
   }
 });
@@ -69,7 +70,7 @@ router.get('/:tableName', authenticateToken, async (req: AuthRequest, res: Respo
 
     res.json(payload);
   } catch (error: any) {
-    console.error('Error fetching custom fields:', error);
+    logger.error('Error fetching custom fields:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch custom fields' });
   }
 });
@@ -106,7 +107,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const dbFieldName = `U_${fieldName}`;
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO CustomFields (TableName, FieldName, DisplayName, GroupName, DataType, IsRequired, Description, CreatedBy, IsActive, CreatedAt, CustomTableId)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, ?)`,
       [tableName, fieldName, displayName, groupName?.trim() || null, resolvedDataType, isRequired ? 1 : 0, description || '', userId, customTableId || null]
     );
 
@@ -130,7 +131,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       dbFieldName: dbFieldName
     });
   } catch (error: any) {
-    console.error('Error creating custom field:', error);
+    logger.error('Error creating custom field:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to create custom field' });
   }
 });
@@ -206,7 +207,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       const alterQuery = `ALTER TABLE ${existing.TableName} MODIFY COLUMN ${dbFieldName} ${existing.DataType} ${nullability}`;
       await pool.execute(alterQuery);
     } catch (alterError: any) {
-      console.warn('Could not alter physical column type/nullability for custom field update:', alterError?.message || alterError);
+      logger.warn('Could not alter physical column type/nullability for custom field update:', alterError?.message || alterError);
     }
 
     await invalidateByEntity('customField', { orgId: 'all' });
@@ -214,7 +215,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, message: 'Custom field updated successfully' });
   } catch (error: any) {
-    console.error('Error updating custom field:', error);
+    logger.error('Error updating custom field:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to update custom field' });
   }
 });
@@ -252,7 +253,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       const dropQuery = `ALTER TABLE ${fieldInfo.TableName} DROP COLUMN ${dbFieldName}`;
       await pool.execute(dropQuery);
     } catch (dropError: any) {
-      console.warn(`Could not drop column ${dbFieldName} from ${fieldInfo.TableName}:`, dropError);
+      logger.warn(`Could not drop column ${dbFieldName} from ${fieldInfo.TableName}:`, dropError);
       // Don't fail the delete if column drop fails
     }
 
@@ -261,7 +262,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, message: 'Custom field deleted successfully' });
   } catch (error: any) {
-    console.error('Error deleting custom field:', error);
+    logger.error('Error deleting custom field:', error);
     res.status(500).json({ success: false, message: 'Failed to delete custom field' });
   }
 });

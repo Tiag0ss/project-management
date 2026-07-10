@@ -1,0 +1,132 @@
+---
+description: Next.js App Router UI — layout, grids, modals, API calls, permissions, dark mode
+globs: app/**/*,components/**/*,lib/**/*
+alwaysApply: false
+---
+
+# Frontend — Next.js & React
+
+Skill: [skill-frontend-feature.prompt.md](../../.github/prompts/skill-frontend-feature.prompt.md) · Grid reference: `app/applications/page.tsx`
+
+## Component skeleton
+
+```tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/contexts/PermissionsContext';
+import { getApiUrl } from '@/lib/api/config';
+import ConfirmAlertModal from '@/components/ConfirmAlertModal';
+
+export default function PageName() {
+  const { user, token } = useAuth();
+  const { permissions } = usePermissions();
+  const [dialog, setDialog] = useState<{ type: 'confirm' | 'alert'; title: string; message: string; onConfirm?: () => void } | null>(null);
+
+  return (
+    <div className="w-full">
+      {/* content */}
+      <ConfirmAlertModal
+        isOpen={!!dialog}
+        type={dialog?.type || 'alert'}
+        title={dialog?.title || ''}
+        message={dialog?.message || ''}
+        onClose={() => setDialog(null)}
+        onConfirm={() => { dialog?.onConfirm?.(); setDialog(null); }}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+      />
+    </div>
+  );
+}
+```
+
+## Layout
+
+- Pages: **`w-full`** wrapper — never add `container` / `max-w-*` outer shell unless user asks.
+- Dark mode on every new element: pair light/dark classes.
+- `'use client'` only when using hooks, events, or browser APIs.
+
+## API calls
+
+```typescript
+const res = await fetch(`${getApiUrl()}/api/endpoint`, {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify(payload),
+});
+if (!res.ok) {
+  const err = await res.json().catch(() => ({}));
+  throw new Error(err.message || 'Request failed');
+}
+```
+
+- Prefer existing clients in `lib/api/*.ts` when present.
+- Always handle loading + error UI states.
+
+## Dialogs (mandatory)
+
+- **Never** `alert()`, `confirm()`, `window.confirm()`.
+- Use [`ConfirmAlertModal`](../../components/ConfirmAlertModal.tsx): `type: 'alert' | 'confirm'`.
+- Pattern: `app/projects/page.tsx` — `modalMessage` state + single modal at page bottom.
+
+## Tables / grids (Applications list standard)
+
+Shell:
+
+```html
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+  <table>
+    <thead class="bg-gray-50 dark:bg-gray-900">...</thead>
+  </table>
+</div>
+```
+
+Actions column:
+
+- Header: `<span class="sr-only">Actions</span>` only — no visible "Actions" text.
+- Buttons: icon-only SVG, `p-1.5 text-gray-400 rounded`, blue hover edit / red hover delete.
+- `title` + `aria-label` on every icon button.
+- Gate each action with `permissions?.canXxx`.
+
+Toolbar buttons (Import / Export / New): `h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center`.
+
+## Permissions UI
+
+```tsx
+const { permissions, isLoading } = usePermissions();
+if (isLoading) return null;
+{permissions?.canCreateTasks && <button>...</button>}
+```
+
+- Hide/disable actions user cannot perform; **backend still validates**.
+
+## Time display
+
+- Always **`hh:MM:ss`** via local `decimalHoursToHMS(hours: number)`.
+- Minutes → hours: `decimalHoursToHMS(minutes / 60)`.
+- Never show `1.5h` or raw decimals in UI totals.
+
+## Hours aggregation (UI)
+
+- **Totals / estimated / worked hours**: sum **leaf tasks only** (exclude parents that have children).
+- **Task counts**: include all tasks + subtasks.
+
+## Large pages
+
+- `app/planning/page.tsx` is ~12k lines — **extract hooks** (e.g. `app/planning/hooks/`) instead of growing the monolith.
+- Example extracted helper: `loadOutlookCalendarEvents.ts`.
+
+## Customer / portal users
+
+- `CustomerUserGuard` where appropriate.
+- Customer ticket create: no project picker; send `projectId: null`.
+
+## KPI dashboard
+
+- List-backed widgets: same source as drill-down (`detailsByWidget`).
+- Row click: tasks/time → `TaskDetailModal`; projects/customers/tickets → navigate to detail page.

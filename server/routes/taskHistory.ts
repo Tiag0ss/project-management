@@ -3,6 +3,7 @@ import { pool } from '../config/database';
 import { RowDataPacket } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { resolveHistoryValues } from '../utils/changeLog';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -47,7 +48,7 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
 
     res.json({ success: true, history });
   } catch (error) {
-    console.error('Error fetching task history:', error);
+    logger.error('Error fetching task history:', error);
     res.status(500).json({ success: false, message: 'Error fetching history' });
   }
 });
@@ -69,7 +70,7 @@ export const recordTaskHistory = async (
       [taskId, userId, action, fieldName || null, resolved.oldValue, resolved.newValue]
     );
   } catch (error) {
-    console.error('Error recording task history:', error);
+    logger.error('Error recording task history:', error);
   }
 };
 

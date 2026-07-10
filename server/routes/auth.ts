@@ -14,6 +14,8 @@ import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { logActivity } from './activityLogs';
 import { sendEmail } from '../utils/emailService';
+import logger from '../utils/logger';
+import { loginSchema, registerSchema, validatePayload } from '../utils/validation';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
@@ -132,7 +134,7 @@ router.get('/encryption-session', async (_req: Request, res: Response) => {
       expiresInSeconds: Math.floor(ENCRYPTION_SESSION_TTL_MS / 1000),
     });
   } catch (error) {
-    console.error('Encryption session error:', error);
+    logger.error('Encryption session error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to create encryption session',
@@ -202,6 +204,11 @@ router.post('/register', async (req: Request, res: Response) => {
     }
 
     const { username, email, password, firstName, lastName } = payload;
+
+    const registerValidation = validatePayload(registerSchema, { username, email, password, firstName, lastName });
+    if ('error' in registerValidation) {
+      return res.status(400).json(registerValidation.error);
+    }
 
     // Validate input
     if (!username || !email || !password) {
@@ -276,7 +283,7 @@ router.post('/register', async (req: Request, res: Response) => {
       userId: result.insertId
     });
   } catch (error) {
-    console.error('Registration error:', error);
+    logger.error('Registration error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Server error during registration' 
@@ -348,6 +355,11 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     const { username, password } = payload;
+
+    const loginValidation = validatePayload(loginSchema, { username, password });
+    if ('error' in loginValidation) {
+      return res.status(400).json(loginValidation.error);
+    }
 
     // Validate input
     if (!username || !password) {
@@ -450,7 +462,7 @@ router.post('/login', async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Server error during login' 
@@ -559,7 +571,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
       token: newToken
     });
   } catch (error) {
-    console.error('Token refresh error:', error);
+    logger.error('Token refresh error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Server error during token refresh' 
@@ -632,7 +644,7 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
         });
 
         if (!emailSent) {
-          console.error('Failed to send password reset email for user:', user.Id);
+          logger.error('Failed to send password reset email for user:', user.Id);
         }
       }
     }
@@ -642,7 +654,7 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
       message: 'If an account with that email exists, a reset link has been sent.'
     });
   } catch (error) {
-    console.error('Forgot password error:', error);
+    logger.error('Forgot password error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to process password reset request'
@@ -668,7 +680,7 @@ router.get('/reset-password/validate', async (req: Request, res: Response) => {
 
     return res.json({ success: true, valid: tokens.length > 0 });
   } catch (error) {
-    console.error('Validate reset token error:', error);
+    logger.error('Validate reset token error:', error);
     return res.status(500).json({ success: false, valid: false, message: 'Failed to validate token' });
   }
 });
@@ -733,7 +745,7 @@ router.post('/reset-password', async (req: Request, res: Response) => {
       message: 'Password reset successfully'
     });
   } catch (error) {
-    console.error('Reset password error:', error);
+    logger.error('Reset password error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to reset password'

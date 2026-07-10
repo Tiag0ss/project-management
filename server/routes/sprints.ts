@@ -5,6 +5,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -74,7 +75,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
     );
     res.json({ success: true, sprints });
   } catch (error) {
-    console.error('Error fetching sprints:', error);
+    logger.error('Error fetching sprints:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch sprints' });
   }
 });
@@ -182,7 +183,7 @@ router.get('/project/:projectId/velocity-trend', authenticateToken, async (req: 
       },
     });
   } catch (error) {
-    console.error('Error fetching sprint velocity trend:', error);
+    logger.error('Error fetching sprint velocity trend:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch sprint velocity trend' });
   }
 });
@@ -233,7 +234,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     );
     res.json({ success: true, sprint: sprints[0], tasks });
   } catch (error) {
-    console.error('Error fetching sprint:', error);
+    logger.error('Error fetching sprint:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch sprint' });
   }
 });
@@ -296,7 +297,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     });
     res.status(201).json({ success: true, id: result.insertId });
   } catch (error) {
-    console.error('Error creating sprint:', error);
+    logger.error('Error creating sprint:', error);
     res.status(500).json({ success: false, message: 'Failed to create sprint' });
   }
 });
@@ -367,7 +368,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     });
     res.json({ success: true });
   } catch (error) {
-    console.error('Error updating sprint:', error);
+    logger.error('Error updating sprint:', error);
     res.status(500).json({ success: false, message: 'Failed to update sprint' });
   }
 });
@@ -411,7 +412,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     }
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting sprint:', error);
+    logger.error('Error deleting sprint:', error);
     res.status(500).json({ success: false, message: 'Failed to delete sprint' });
   }
 });
@@ -472,7 +473,7 @@ router.post('/:id/tasks', authenticateToken, async (req: AuthRequest, res: Respo
     }
     res.json({ success: true, updated: taskIds.length });
   } catch (error) {
-    console.error('Error assigning tasks to sprint:', error);
+    logger.error('Error assigning tasks to sprint:', error);
     res.status(500).json({ success: false, message: 'Failed to assign tasks to sprint' });
   }
 });
@@ -533,7 +534,7 @@ router.post('/:id/tasks/remove', authenticateToken, async (req: AuthRequest, res
     }
     res.json({ success: true });
   } catch (error) {
-    console.error('Error removing tasks from sprint:', error);
+    logger.error('Error removing tasks from sprint:', error);
     res.status(500).json({ success: false, message: 'Failed to remove tasks from sprint' });
   }
 });
@@ -574,7 +575,7 @@ router.get('/project/:projectId/backlog', authenticateToken, async (req: AuthReq
     );
     res.json({ success: true, tasks });
   } catch (error) {
-    console.error('Error fetching backlog:', error);
+    logger.error('Error fetching backlog:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch backlog' });
   }
 });

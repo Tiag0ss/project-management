@@ -1,5 +1,6 @@
 import { pool } from '../config/database';
 import { RowDataPacket } from '../config/database';
+import logger from './logger';
 
 const EMAIL_NOTIFICATION_TYPE_ALIASES: Record<string, string> = {
   task_updated: 'task_status',
@@ -35,7 +36,7 @@ export const shouldSendEmail = async (userId: number, notificationType: string):
 
     return prefs[0].EmailEnabled === 1;
   } catch (error) {
-    console.error('Error checking email preference:', error);
+    logger.error('Error checking email preference:', error);
     return true; // Default to enabled on error
   }
 };

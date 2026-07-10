@@ -3,6 +3,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { pool } from '../config/database';
 import { encrypt, decrypt } from '../utils/encryption';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -62,7 +63,7 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
 
     res.json({ success: true, integration: integration[0] });
   } catch (error) {
-    console.error('Get GitHub integration error:', error);
+    logger.error('Get GitHub integration error:', error);
     res.status(500).json({ success: false, message: 'Failed to get GitHub integration' });
   }
 });
@@ -169,7 +170,7 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
 
     res.json({ success: true, message: 'GitHub integration saved successfully' });
   } catch (error) {
-    console.error('Save GitHub integration error:', error);
+    logger.error('Save GitHub integration error:', error);
     res.status(500).json({ success: false, message: 'Failed to save GitHub integration' });
   }
 });
@@ -229,7 +230,7 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('GitHub test connection failed:', response.status, errorText);
+      logger.error('GitHub test connection failed:', response.status, errorText);
       return res.status(400).json({ 
         success: false, 
         message: `Failed to connect to GitHub: ${response.status} ${response.statusText}` 
@@ -244,7 +245,7 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
       gitHubUser: userData.login || userData.name
     });
   } catch (error: any) {
-    console.error('Test GitHub connection error:', error);
+    logger.error('Test GitHub connection error:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message || 'Failed to test GitHub connection' 
@@ -334,7 +335,7 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('GitHub search failed:', response.status, errorText);
+      logger.error('GitHub search failed:', response.status, errorText);
       return res.status(400).json({ 
         success: false, 
         message: `Failed to search GitHub: ${response.status} ${response.statusText}` 
@@ -384,7 +385,7 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
       total: issuesOnly.length
     });
   } catch (error: any) {
-    console.error('GitHub search error:', error);
+    logger.error('GitHub search error:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message || 'Failed to search GitHub issues' 

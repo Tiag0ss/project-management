@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -280,7 +281,7 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
     });
   } catch (error: any) {
     await connection.rollback();
-    console.error('Import tasks error (rolled back):', error);
+    logger.error('Import tasks error (rolled back):', error);
     res.status(500).json({
       success: false,
       message: `Import failed and was rolled back: ${error.message}`,

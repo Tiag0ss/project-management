@@ -11,6 +11,8 @@ import { createHash } from 'crypto';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
+import { createTicketSchema, updateTicketBodySchema, validateRequest } from '../utils/validation';
 
 const router = Router();
 
@@ -42,7 +44,7 @@ router.use(authenticateToken, async (_req: AuthRequest, res: Response, next) => 
     }
     next();
   } catch (error) {
-    console.error('Ticket feature flag check error:', error);
+    logger.error('Ticket feature flag check error:', error);
     res.status(500).json({ success: false, message: 'Failed to validate ticket system setting' });
   }
 });
@@ -78,7 +80,7 @@ async function logTicketHistory(
       [ticketId, userId, action, fieldName, resolved.oldValue, resolved.newValue]
     );
   } catch (error) {
-    console.error('Error logging ticket history:', error);
+    logger.error('Error logging ticket history:', error);
     // Don't throw - history logging should not break the main operation
   }
 }
@@ -248,7 +250,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, tickets });
   } catch (error) {
-    console.error('Error fetching tickets:', error);
+    logger.error('Error fetching tickets:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch tickets' });
   }
 });
@@ -315,7 +317,7 @@ router.get('/my-tickets', authenticateToken, async (req: AuthRequest, res: Respo
 
     res.json({ success: true, tickets });
   } catch (error) {
-    console.error('Error fetching my tickets:', error);
+    logger.error('Error fetching my tickets:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch tickets' });
   }
 });
@@ -428,7 +430,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, ticket: ticketData.ticket, comments: ticketData.comments });
   } catch (error) {
-    console.error('Error fetching ticket:', error);
+    logger.error('Error fetching ticket:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch ticket' });
   }
 });
@@ -474,7 +476,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
  *         description: Internal server error
  */
 // Create new ticket
-router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.post('/', authenticateToken, validateRequest(createTicketSchema), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const customerId = req.user?.customerId;
@@ -538,7 +540,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
       if (!ticketCustomerId && project.CustomerId) {
         ticketCustomerId = project.CustomerId;
-        console.log('[Ticket Creation] Found customer from project:', ticketCustomerId);
+        logger.info('[Ticket Creation] Found customer from project:', ticketCustomerId);
       }
     }
 
@@ -550,20 +552,20 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     // If we have a customer, get default support user for auto-assignment
     let assignedToUserId = null;
     if (ticketCustomerId) {
-      console.log('[Ticket Creation] Ticket for customerId:', ticketCustomerId);
+      logger.info('[Ticket Creation] Ticket for customerId:', ticketCustomerId);
       const [customerResult] = await pool.execute<RowDataPacket[]>(
         'SELECT DefaultSupportUserId FROM Customers WHERE Id = ?',
         [ticketCustomerId]
       );
-      console.log('[Ticket Creation] Customer query result:', customerResult);
+      logger.info('[Ticket Creation] Customer query result:', customerResult);
       if (customerResult.length > 0 && customerResult[0].DefaultSupportUserId) {
         assignedToUserId = customerResult[0].DefaultSupportUserId;
-        console.log('[Ticket Creation] Auto-assigning to support user:', assignedToUserId);
+        logger.info('[Ticket Creation] Auto-assigning to support user:', assignedToUserId);
       } else {
-        console.log('[Ticket Creation] No DefaultSupportUserId found for customer');
+        logger.info('[Ticket Creation] No DefaultSupportUserId found for customer');
       }
     } else {
-      console.log('[Ticket Creation] No customer for this ticket (neither from user nor project)');
+      logger.info('[Ticket Creation] No customer for this ticket (neither from user nor project)');
     }
 
     // Resolve StatusId (default for org) and PriorityId from name
@@ -599,7 +601,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     const customFieldData = await prepareCustomFieldData('Tickets', customFields);
 
     // Insert ticket first to get the ID
-    console.log('[Ticket Creation] Inserting ticket with AssignedToUserId:', assignedToUserId);
+    logger.info('[Ticket Creation] Inserting ticket with AssignedToUserId:', assignedToUserId);
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO Tickets (
         OrganizationId, CustomerId, ProjectId, CreatedByUserId, AssignedToUserId,
@@ -622,7 +624,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     );
 
     const ticketId = result.insertId;
-    console.log('[Ticket Creation] Ticket created with ID:', ticketId);
+    logger.info('[Ticket Creation] Ticket created with ID:', ticketId);
     
     // Generate ticket number using abbreviation and ticket ID
     const ticketNumber = `TKT-${orgAbbr}-${ticketId}`;
@@ -670,7 +672,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     // Notify assigned support user if auto-assigned
     if (assignedToUserId && assignedToUserId !== userId) {
-      console.log('[Ticket Creation] Sending notification to assigned support user:', assignedToUserId);
+      logger.info('[Ticket Creation] Sending notification to assigned support user:', assignedToUserId);
       await createNotification(
         assignedToUserId,
         'ticket_assigned',
@@ -679,7 +681,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         `/tickets/${ticketId}`
       );
     } else {
-      console.log('[Ticket Creation] No notification sent. AssignedUser:', assignedToUserId, 'CreatedBy:', userId);
+      logger.info('[Ticket Creation] No notification sent. AssignedUser:', assignedToUserId, 'CreatedBy:', userId);
     }
 
     await invalidateByEntity('ticket', {
@@ -696,7 +698,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       ticketNumber
     });
   } catch (error) {
-    console.error('Error creating ticket:', error);
+    logger.error('Error creating ticket:', error);
     res.status(500).json({ success: false, message: 'Failed to create ticket' });
   }
 });
@@ -742,7 +744,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
  *         description: Internal server error
  */
 // Update ticket
-router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.put('/:id', authenticateToken, validateRequest(updateTicketBodySchema), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const ticketId = parseInt(Array.isArray(id) ? id[0] : id);
@@ -808,7 +810,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       }
       
       await pool.execute(
-        `UPDATE Tickets SET Title = ?, Description = ?, UpdatedAt = NOW() WHERE Id = ?`,
+        `UPDATE Tickets SET Title = ?, Description = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE Id = ?`,
         [title || ticket.Title, sanitizeRichText(description) || ticket.Description, ticketId]
       );
     } else {
@@ -876,10 +878,10 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         
         // Set timestamps based on IsClosed flag (not hardcoded status names)
         if (newStatusIsClosed && !ticket.ResolvedAt) {
-          updates.push('ResolvedAt = NOW()');
+          updates.push('ResolvedAt = CURRENT_TIMESTAMP');
         }
         if (newStatusIsClosed && !ticket.ClosedAt) {
-          updates.push('ClosedAt = NOW()');
+          updates.push('ClosedAt = CURRENT_TIMESTAMP');
         }
       }
       if (priority !== undefined) {
@@ -992,7 +994,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         params.push(...customFieldData.updateValues);
       }
 
-      updates.push('UpdatedAt = NOW()');
+      updates.push('UpdatedAt = CURRENT_TIMESTAMP');
       params.push(ticketId);
 
       await pool.execute(
@@ -1028,7 +1030,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, message: 'Ticket updated successfully' });
   } catch (error) {
-    console.error('Error updating ticket:', error);
+    logger.error('Error updating ticket:', error);
     res.status(500).json({ success: false, message: 'Failed to update ticket' });
   }
 });
@@ -1129,7 +1131,7 @@ router.post('/:id/comments', authenticateToken, async (req: AuthRequest, res: Re
         }
         // Auto-set FirstResponseAt on first staff response
         await pool.execute(
-          `UPDATE Tickets SET FirstResponseAt = NOW() WHERE Id = ? AND FirstResponseAt IS NULL AND CreatedByUserId != ?`,
+          `UPDATE Tickets SET FirstResponseAt = CURRENT_TIMESTAMP WHERE Id = ? AND FirstResponseAt IS NULL AND CreatedByUserId != ?`,
           [id, userId]
         );
       }
@@ -1142,19 +1144,19 @@ router.post('/:id/comments', authenticateToken, async (req: AuthRequest, res: Re
         );
         if (newStatusRow.length > 0) {
           await pool.execute(
-            'UPDATE Tickets SET StatusId = ?, UpdatedAt = NOW() WHERE Id = ?',
+            'UPDATE Tickets SET StatusId = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE Id = ?',
             [newStatusRow[0].Id, id]
           );
         } else {
-          await pool.execute('UPDATE Tickets SET UpdatedAt = NOW() WHERE Id = ?', [id]);
+          await pool.execute('UPDATE Tickets SET UpdatedAt = CURRENT_TIMESTAMP WHERE Id = ?', [id]);
         }
       } else {
         // Just update the timestamp
-        await pool.execute('UPDATE Tickets SET UpdatedAt = NOW() WHERE Id = ?', [id]);
+        await pool.execute('UPDATE Tickets SET UpdatedAt = CURRENT_TIMESTAMP WHERE Id = ?', [id]);
       }
     } else {
       // Internal note - just update timestamp
-      await pool.execute('UPDATE Tickets SET UpdatedAt = NOW() WHERE Id = ?', [id]);
+      await pool.execute('UPDATE Tickets SET UpdatedAt = CURRENT_TIMESTAMP WHERE Id = ?', [id]);
     }
 
     // Notify relevant users about new comment (unless it's internal)
@@ -1197,7 +1199,7 @@ router.post('/:id/comments', authenticateToken, async (req: AuthRequest, res: Re
       commentId: result.insertId
     });
   } catch (error) {
-    console.error('Error adding comment:', error);
+    logger.error('Error adding comment:', error);
     res.status(500).json({ success: false, message: 'Failed to add comment' });
   }
 });
@@ -1280,7 +1282,7 @@ router.get('/stats/summary', authenticateToken, async (req: AuthRequest, res: Re
 
     res.json({ success: true, stats: formattedStats });
   } catch (error) {
-    console.error('Error fetching ticket stats:', error);
+    logger.error('Error fetching ticket stats:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch statistics' });
   }
 });
@@ -1372,7 +1374,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, message: 'Ticket deleted successfully' });
   } catch (error) {
-    console.error('Error deleting ticket:', error);
+    logger.error('Error deleting ticket:', error);
     res.status(500).json({ success: false, message: 'Failed to delete ticket' });
   }
 });
@@ -1453,7 +1455,7 @@ router.get('/:id/history', authenticateToken, async (req: AuthRequest, res: Resp
 
     res.json({ success: true, data: history });
   } catch (error) {
-    console.error('Error fetching ticket history:', error);
+    logger.error('Error fetching ticket history:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch ticket history' });
   }
 });
@@ -1511,7 +1513,7 @@ router.post('/migrate-ticket-numbers', authenticateToken, async (req: AuthReques
       count: updatedCount
     });
   } catch (error) {
-    console.error('Error migrating ticket numbers:', error);
+    logger.error('Error migrating ticket numbers:', error);
     res.status(500).json({ success: false, message: 'Failed to migrate ticket numbers' });
   }
 });
@@ -1556,7 +1558,7 @@ router.get('/:id/applications', authenticateToken, async (req: AuthRequest, res:
 
     res.json({ success: true, applications });
   } catch (error) {
-    console.error('Error fetching ticket applications:', error);
+    logger.error('Error fetching ticket applications:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch ticket applications' });
   }
 });
@@ -1651,7 +1653,7 @@ router.put('/:id/applications', authenticateToken, async (req: AuthRequest, res:
 
     res.json({ success: true, message: 'Ticket applications updated successfully' });
   } catch (error) {
-    console.error('Error updating ticket applications:', error);
+    logger.error('Error updating ticket applications:', error);
     res.status(500).json({ success: false, message: 'Failed to update ticket applications' });
   }
 });

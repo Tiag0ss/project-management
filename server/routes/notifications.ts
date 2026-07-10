@@ -4,6 +4,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { sendNotificationEmail } from '../utils/emailService';
 import { emitToUser } from '../utils/socketHub';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -70,7 +71,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       unreadCount: countResult[0].unreadCount
     });
   } catch (error) {
-    console.error('Error fetching notifications:', error);
+    logger.error('Error fetching notifications:', error);
     res.status(500).json({ success: false, message: 'Error fetching notifications' });
   }
 });
@@ -101,7 +102,7 @@ router.get('/count', authenticateToken, async (req: AuthRequest, res: Response) 
 
     res.json({ success: true, count: result[0].count });
   } catch (error) {
-    console.error('Error fetching notification count:', error);
+    logger.error('Error fetching notification count:', error);
     res.status(500).json({ success: false, message: 'Error fetching count' });
   }
 });
@@ -142,7 +143,7 @@ router.put('/:id/read', authenticateToken, async (req: AuthRequest, res: Respons
 
     res.json({ success: true, message: 'Notification marked as read' });
   } catch (error) {
-    console.error('Error marking notification as read:', error);
+    logger.error('Error marking notification as read:', error);
     res.status(500).json({ success: false, message: 'Error updating notification' });
   }
 });
@@ -173,7 +174,7 @@ router.put('/read-all', authenticateToken, async (req: AuthRequest, res: Respons
 
     res.json({ success: true, message: 'All notifications marked as read' });
   } catch (error) {
-    console.error('Error marking all notifications as read:', error);
+    logger.error('Error marking all notifications as read:', error);
     res.status(500).json({ success: false, message: 'Error updating notifications' });
   }
 });
@@ -214,7 +215,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, message: 'Notification deleted' });
   } catch (error) {
-    console.error('Error deleting notification:', error);
+    logger.error('Error deleting notification:', error);
     res.status(500).json({ success: false, message: 'Error deleting notification' });
   }
 });
@@ -267,11 +268,11 @@ export const createNotification = async (
         message,
         link
       ).catch(err => {
-        console.error('Failed to send notification email:', err);
+        logger.error('Failed to send notification email:', err);
       });
     }
   } catch (error) {
-    console.error('Error creating notification:', error);
+    logger.error('Error creating notification:', error);
   }
 };
 

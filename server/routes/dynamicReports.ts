@@ -5,6 +5,7 @@ import { RowDataPacket } from '../config/database';
 import { dbProvider } from '../config/database';
 import fs from 'fs';
 import path from 'path';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -169,7 +170,7 @@ router.get('/schema', authenticateToken, async (req: AuthRequest, res: Response)
             description: rel.Description,
             type: rel.Type
           };
-          console.log(`✓ Found relationship: ${tableSchema.TableName}.${rel.FromField} → ${rel.ToTable}.${rel.ToField} (${rel.Description})`);
+          logger.info(`✓ Found relationship: ${tableSchema.TableName}.${rel.FromField} → ${rel.ToTable}.${rel.ToField} (${rel.Description})`);
           relations.push(relation);
         });
       }
@@ -185,7 +186,7 @@ router.get('/schema', authenticateToken, async (req: AuthRequest, res: Response)
               toTable: match[1],
               toField: match[2]
             };
-            console.log(`✓ Legacy FK: ${tableSchema.TableName}.${field.FieldName} → ${match[1]}.${match[2]}`);
+            logger.info(`✓ Legacy FK: ${tableSchema.TableName}.${field.FieldName} → ${match[1]}.${match[2]}`);
             // Only add if not already added from Relationships section
             const exists = relations.some(r => 
               r.fromTable === relation.fromTable && 
@@ -201,7 +202,7 @@ router.get('/schema', authenticateToken, async (req: AuthRequest, res: Response)
       });
     }
     
-    console.log(`📊 Schema processed: ${tables.length} tables, ${relations.length} relationships`);
+    logger.info(`📊 Schema processed: ${tables.length} tables, ${relations.length} relationships`);
     
     res.json({ 
       success: true, 
@@ -211,7 +212,7 @@ router.get('/schema', authenticateToken, async (req: AuthRequest, res: Response)
       }
     });
   } catch (error) {
-    console.error('Error fetching database schema:', error);
+    logger.error('Error fetching database schema:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch database schema' });
   }
 });
@@ -341,7 +342,7 @@ router.post('/query', authenticateToken, async (req: AuthRequest, res: Response)
     const joinedTables = new Set([tables[0], ...joins.map((j: any) => j.table)]);
     const missingTables = tables.filter((t: string) => !joinedTables.has(t));
     if (missingTables.length > 0) {
-      console.log('Missing tables in joins:', { 
+      logger.info('Missing tables in joins:', { 
         selectedTables: tables, 
         joinedTables: Array.from(joinedTables),
         missingTables,
@@ -462,7 +463,7 @@ router.post('/query', authenticateToken, async (req: AuthRequest, res: Response)
     // Combine all clauses
     const query = selectClause + fromClause + whereClause + groupByClause + orderByClause;
     
-    console.log('Executing dynamic query:', query);
+    logger.info('Executing dynamic query:', query);
     
     // Execute the query
     const [results] = await pool.execute<RowDataPacket[]>(query, whereParams);
@@ -474,7 +475,7 @@ router.post('/query', authenticateToken, async (req: AuthRequest, res: Response)
     });
     
   } catch (error: any) {
-    console.error('Error executing dynamic query:', error);
+    logger.error('Error executing dynamic query:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to execute query',
@@ -524,7 +525,7 @@ router.get('/sample/:tableName', authenticateToken, async (req: AuthRequest, res
       data: results
     });
   } catch (error: any) {
-    console.error('Error fetching sample data:', error);
+    logger.error('Error fetching sample data:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch sample data',

@@ -20,6 +20,7 @@ import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import { TaskTypeIconMark } from '@/lib/taskTypeIcons';
+import { loadOutlookCalendarEvents, type PlannerOutlookEvent } from './hooks/loadOutlookCalendarEvents';
 
 // Week days constant - reused throughout the component
 const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -80,18 +81,6 @@ interface PlannerOutOfOfficeDay {
   DayPortion?: 'full' | 'half' | string;
   Status: string;
   Notes?: string;
-}
-
-interface PlannerOutlookEvent {
-  id: string;
-  subject: string;
-  start: string;
-  end: string;
-  isAllDay?: boolean;
-  webLink?: string | null;
-  userId: number;
-  userName?: string;
-  userEmail?: string;
 }
 
 interface TimelineColumn {
@@ -1386,42 +1375,8 @@ export default function PlanningPage() {
 
       const startDate = getDateKeyFromDate(visibleDays[0]);
       const endDate = getDateKeyFromDate(visibleDays[visibleDays.length - 1]);
-
-      const response = await fetch(
-        `${getApiUrl()}/api/outlook-calendar/events?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!response.ok) {
-        setOutlookTimelineEvents([]);
-        return;
-      }
-
-      const data = await response.json();
-      if (data?.success && data?.enabled && Array.isArray(data.events)) {
-        const normalizedEvents: PlannerOutlookEvent[] = data.events
-          .map((eventItem: any) => ({
-            id: String(eventItem.id || ''),
-            subject: String(eventItem.subject || '(No subject)'),
-            start: String(eventItem.start || ''),
-            end: String(eventItem.end || ''),
-            isAllDay: !!eventItem.isAllDay,
-            webLink: eventItem.webLink || null,
-            userId: Number(eventItem.userId || 0),
-            userName: eventItem.userName || undefined,
-            userEmail: eventItem.userEmail || undefined,
-          }))
-          .filter((eventItem: PlannerOutlookEvent) => !!eventItem.id && !!eventItem.start && !!eventItem.end && eventItem.userId > 0);
-
-        setOutlookTimelineEvents(normalizedEvents);
-      } else {
-        setOutlookTimelineEvents([]);
-      }
+      const { events } = await loadOutlookCalendarEvents({ token, startDate, endDate });
+      setOutlookTimelineEvents(events);
     } catch (err) {
       console.error('Failed to load Outlook timeline events:', err);
       setOutlookTimelineEvents([]);

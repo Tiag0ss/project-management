@@ -4,6 +4,7 @@ import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 
 interface ActivityLog {
   Id: number;
@@ -48,6 +49,12 @@ export default function ActivityLogsManagement() {
   const [page, setPage] = useState(1);
   const [limit] = useState(50);
   const [totalPages, setTotalPages] = useState(1);
+  const [modal, setModal] = useState<{
+    type: 'confirm' | 'alert';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+  } | null>(null);
   const [total, setTotal] = useState(0);
 
   const API_URL = getApiUrl();
@@ -111,8 +118,15 @@ export default function ActivityLogsManagement() {
   };
 
   const handleCleanup = async () => {
-    if (!confirm('Delete logs older than 90 days? This cannot be undone.')) return;
+    setModal({
+      type: 'confirm',
+      title: 'Delete old logs',
+      message: 'Delete logs older than 90 days? This cannot be undone.',
+      onConfirm: () => void runCleanup(),
+    });
+  };
 
+  const runCleanup = async () => {
     try {
       const res = await fetch(`${API_URL}/api/activity-logs/cleanup`, {
         method: 'DELETE',
@@ -125,14 +139,14 @@ export default function ActivityLogsManagement() {
 
       if (res.ok) {
         const data = await res.json();
-        alert(data.message);
+        setModal({ type: 'alert', title: 'Cleanup complete', message: data.message || 'Old logs deleted.' });
         loadLogs();
         loadStats();
       } else {
-        alert('Failed to cleanup logs');
+        setModal({ type: 'alert', title: 'Error', message: 'Failed to cleanup logs' });
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to cleanup logs');
+      setModal({ type: 'alert', title: 'Error', message: err.message || 'Failed to cleanup logs' });
     }
   };
 
@@ -433,6 +447,20 @@ export default function ActivityLogsManagement() {
           </>
         )}
       </div>
+
+      <ConfirmAlertModal
+        isOpen={!!modal}
+        type={modal?.type || 'alert'}
+        title={modal?.title || ''}
+        message={modal?.message || ''}
+        onClose={() => setModal(null)}
+        onConfirm={() => {
+          modal?.onConfirm?.();
+          setModal(null);
+        }}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+      />
     </div>
   );
 }

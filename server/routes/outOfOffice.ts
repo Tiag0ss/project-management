@@ -4,6 +4,7 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -103,7 +104,7 @@ router.get('/approval-scope', authenticateToken, async (req: AuthRequest, res: R
     const canApprove = await getCanApproveOutOfOffice(userId, !!req.user?.isAdmin);
     res.json({ success: true, canApprove });
   } catch (error) {
-    console.error('Error checking out-of-office approval scope:', error);
+    logger.error('Error checking out-of-office approval scope:', error);
     res.status(500).json({ success: false, message: 'Failed to check out-of-office approval scope' });
   }
 });
@@ -156,7 +157,7 @@ router.get('/my', authenticateToken, async (req: AuthRequest, res: Response) => 
       entries,
     });
   } catch (error) {
-    console.error('Error loading my out-of-office entries:', error);
+    logger.error('Error loading my out-of-office entries:', error);
     res.status(500).json({ success: false, message: 'Failed to load out-of-office entries' });
   }
 });
@@ -244,7 +245,7 @@ router.post('/my/request', authenticateToken, async (req: AuthRequest, res: Resp
       nonWorkingDates,
     });
   } catch (error) {
-    console.error('Error requesting out-of-office:', error);
+    logger.error('Error requesting out-of-office:', error);
     res.status(500).json({ success: false, message: 'Failed to submit out-of-office request' });
   }
 });
@@ -275,7 +276,7 @@ router.get('/pending', authenticateToken, async (req: AuthRequest, res: Response
     const [rows] = await pool.execute<RowDataPacket[]>(query, params);
     res.json({ success: true, requests: rows });
   } catch (error) {
-    console.error('Error loading pending out-of-office requests:', error);
+    logger.error('Error loading pending out-of-office requests:', error);
     res.status(500).json({ success: false, message: 'Failed to load pending out-of-office requests' });
   }
 });
@@ -364,7 +365,7 @@ router.get('/requests', authenticateToken, async (req: AuthRequest, res: Respons
 
     res.json({ success: true, requests, year });
   } catch (error) {
-    console.error('Error loading out-of-office requests:', error);
+    logger.error('Error loading out-of-office requests:', error);
     res.status(500).json({ success: false, message: 'Failed to load out-of-office requests' });
   }
 });
@@ -429,7 +430,7 @@ router.get('/calendar', authenticateToken, async (req: AuthRequest, res: Respons
 
     res.json({ success: true, entries });
   } catch (error) {
-    console.error('Error loading out-of-office calendar entries:', error);
+    logger.error('Error loading out-of-office calendar entries:', error);
     res.status(500).json({ success: false, message: 'Failed to load out-of-office calendar entries' });
   }
 });
@@ -469,7 +470,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, message: 'Out-of-office day deleted' });
   } catch (error) {
-    console.error('Error deleting out-of-office entry:', error);
+    logger.error('Error deleting out-of-office entry:', error);
     res.status(500).json({ success: false, message: 'Failed to delete out-of-office entry' });
   }
 });
@@ -514,7 +515,7 @@ router.put('/:id/approval', authenticateToken, async (req: AuthRequest, res: Res
 
     res.json({ success: true, message: `Out-of-office request ${status}` });
   } catch (error) {
-    console.error('Error approving out-of-office request:', error);
+    logger.error('Error approving out-of-office request:', error);
     res.status(500).json({ success: false, message: 'Failed to update out-of-office request' });
   }
 });
@@ -543,7 +544,7 @@ router.get('/team-members', authenticateToken, async (req: AuthRequest, res: Res
     const [members] = await pool.execute<RowDataPacket[]>(query, params);
     res.json({ success: true, members });
   } catch (error) {
-    console.error('Error loading team members for out-of-office:', error);
+    logger.error('Error loading team members for out-of-office:', error);
     res.status(500).json({ success: false, message: 'Failed to load team members' });
   }
 });
@@ -637,7 +638,7 @@ router.post('/team-members/:userId/configure', authenticateToken, async (req: Au
       nonWorkingDates,
     });
   } catch (error) {
-    console.error('Error configuring out-of-office:', error);
+    logger.error('Error configuring out-of-office:', error);
     res.status(500).json({ success: false, message: 'Failed to configure out-of-office' });
   }
 });

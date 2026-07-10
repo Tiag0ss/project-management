@@ -10,7 +10,7 @@ const normalizeId = (value?: number | string | string[]): number | string | unde
 };
 
 /** Delete exact cache key and scoped variants (key:suffix). */
-const delKeyFamily = async (key: string): Promise<void> => {
+export const delKeyFamily = async (key: string): Promise<void> => {
   await cache.del(key);
   await cache.delByPrefix(`${key}:`);
 };

@@ -7,6 +7,7 @@ import { recordTaskHistory } from './taskHistory';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -583,7 +584,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, allocations });
   } catch (error) {
-    console.error('Error fetching all allocations:', error);
+    logger.error('Error fetching all allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch allocations' });
   }
 });
@@ -652,7 +653,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
 
     res.json({ success: true, allocations });
   } catch (error) {
-    console.error('Error fetching project allocations:', error);
+    logger.error('Error fetching project allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch project allocations' });
   }
 });
@@ -713,7 +714,7 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
 
     res.json({ success: true, allocations: payload.allocations, headers: payload.headers });
   } catch (error) {
-    console.error('Error fetching task allocations:', error);
+    logger.error('Error fetching task allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch task allocations' });
   }
 });
@@ -808,7 +809,7 @@ router.put('/task/:taskId/headers', authenticateToken, async (req: AuthRequest, 
 
     res.json({ success: true, headers });
   } catch (error) {
-    console.error('Error updating task allocation headers:', error);
+    logger.error('Error updating task allocation headers:', error);
     res.status(500).json({ success: false, message: 'Failed to update task allocation headers' });
   }
 });
@@ -893,7 +894,7 @@ router.get('/user/:userId/date/:date', authenticateToken, async (req: AuthReques
 
     res.json({ success: true, allocations: combinedAllocations });
   } catch (error) {
-    console.error('Error fetching user date allocations:', error);
+    logger.error('Error fetching user date allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch allocations' });
   }
 });
@@ -1228,7 +1229,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       });
     }
     
-    console.log(`Push-forward: loaded ${recurringOccurrences.length} recurring blocks for user ${userId}`);
+    logger.info(`Push-forward: loaded ${recurringOccurrences.length} recurring blocks for user ${userId}`);
 
     // Get IsHobby for the new task
     const [newTaskInfo] = await pool.execute<RowDataPacket[]>(
@@ -1240,7 +1241,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
     );
     const newTaskIsHobby = newTaskInfo.length > 0 && newTaskInfo[0].IsHobby === 1;
 
-    console.log(`Push-forward: new task ${newTaskId} (${newTaskHours}h, hobby=${newTaskIsHobby}) starting from ${fromDate}`);
+    logger.info(`Push-forward: new task ${newTaskId} (${newTaskHours}h, hobby=${newTaskIsHobby}) starting from ${fromDate}`);
     
     const formatTime = (mins: number) => {
       const h = Math.floor(mins / 60);
@@ -1327,7 +1328,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
         for (const block of dayRecurringBlocks) {
           // If our slot start is within a recurring block, skip past it
           if (slotStart >= block.startMinutes && slotStart < block.endMinutes) {
-            console.log(`  Task ${taskId} @ ${dateStr}: skipping recurring block ${formatTime(block.startMinutes)}-${formatTime(block.endMinutes)}`);
+            logger.info(`  Task ${taskId} @ ${dateStr}: skipping recurring block ${formatTime(block.startMinutes)}-${formatTime(block.endMinutes)}`);
             slotStart = block.endMinutes;
           }
         }
@@ -1383,7 +1384,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
             const morningStart = slotStart;
             const morningEnd = lunchStartMinutes;
             
-            console.log(`  Task ${taskId} @ ${dateStr} (morning): ${formatTime(morningStart)}-${formatTime(morningEnd)} (${morningHoursToAllocate}h)`);
+            logger.info(`  Task ${taskId} @ ${dateStr} (morning): ${formatTime(morningStart)}-${formatTime(morningEnd)} (${morningHoursToAllocate}h)`);
             
             await pool.execute(
               `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
@@ -1402,7 +1403,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
               afternoonEnd = workEndMinutes;
             }
             
-            console.log(`  Task ${taskId} @ ${dateStr} (afternoon): ${formatTime(afternoonStart)}-${formatTime(afternoonEnd)} (${afternoonHoursToAllocate}h)`);
+            logger.info(`  Task ${taskId} @ ${dateStr} (afternoon): ${formatTime(afternoonStart)}-${formatTime(afternoonEnd)} (${afternoonHoursToAllocate}h)`);
             
             await pool.execute(
               `INSERT INTO TaskAllocations (TaskId, TaskAllocationHeaderId, UserId, AllocationDate, AllocatedHours, StartTime, EndTime, IsManual)
@@ -1435,7 +1436,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
         for (const block of dayRecurringBlocks) {
           if (actualStart < block.startMinutes && actualEnd > block.startMinutes) {
             // Proposed allocation would cross into a recurring block - stop before it
-            console.log(`  Task ${taskId} @ ${dateStr}: stopping at ${formatTime(block.startMinutes)} due to recurring block`);
+            logger.info(`  Task ${taskId} @ ${dateStr}: stopping at ${formatTime(block.startMinutes)} due to recurring block`);
             actualEnd = block.startMinutes;
             break;
           }
@@ -1450,7 +1451,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
         }
         const actualHours = actualMinutes / 60;
         
-        console.log(`  Task ${taskId} @ ${dateStr}: ${formatTime(actualStart)}-${formatTime(actualEnd)} (${actualHours}h, hobby=${isHobby})`);
+        logger.info(`  Task ${taskId} @ ${dateStr}: ${formatTime(actualStart)}-${formatTime(actualEnd)} (${actualHours}h, hobby=${isHobby})`);
         
         // Create allocation
         await pool.execute(
@@ -1491,10 +1492,10 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
     const startDate = new Date(fromDate + 'T12:00:00');
 
     // FIRST: Allocate the NEW task with its hobby flag and get its end date
-    console.log(`Allocating NEW Task ${newTaskId}: ${newTaskHours}h (hobby=${newTaskIsHobby})`);
+    logger.info(`Allocating NEW Task ${newTaskId}: ${newTaskHours}h (hobby=${newTaskIsHobby})`);
     const newTaskEndDate = await allocateTask(newTaskId, newTaskHours, startDate, newTaskIsHobby);
     const newTaskEndDateStr = newTaskEndDate.toISOString().split('T')[0];
-    console.log(`New task ends on: ${newTaskEndDateStr}`);
+    logger.info(`New task ends on: ${newTaskEndDateStr}`);
 
     const [newTaskLastAllocationRows] = await pool.execute<RowDataPacket[]>(
       `SELECT AllocationDate, EndTime
@@ -1564,13 +1565,13 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       const shouldReplan = hasDirectConflict || hasChildChainConflict;
 
       if (hasMandatoryDueDate) {
-        console.log(`Task ${taskData.TaskId} preserved: mandatory due date (allocation locked)`);
+        logger.info(`Task ${taskData.TaskId} preserved: mandatory due date (allocation locked)`);
         await reserveExistingTaskSlots(Number(taskData.TaskId), taskIsHobby);
         continue;
       }
 
       if (!shouldReplan) {
-        console.log(`Task ${taskData.TaskId} preserved: no conflict with pushed task window`);
+        logger.info(`Task ${taskData.TaskId} preserved: no conflict with pushed task window`);
         await reserveExistingTaskSlots(Number(taskData.TaskId), taskIsHobby);
         continue;
       }
@@ -1582,7 +1583,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
     for (const taskData of tasksToReplan) {
       const remainingHours = parseFloat(taskData.AllocatedHoursFromDate) || 0;
 
-      console.log(`Task ${taskData.TaskId} starts on ${taskData.FirstAllocationDate} (conflict) - DELETING and replanning`);
+      logger.info(`Task ${taskData.TaskId} starts on ${taskData.FirstAllocationDate} (conflict) - DELETING and replanning`);
       await pool.execute(
         `DELETE FROM TaskAllocations 
          WHERE TaskId = ? AND UserId = ? AND AllocationDate >= ?`,
@@ -1617,7 +1618,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       }
       
       const taskIsHobby = taskData.IsHobby === 1;
-      console.log(`Re-allocating Task ${taskData.TaskId}: ${remainingHours}h (hobby=${taskIsHobby})`);
+      logger.info(`Re-allocating Task ${taskData.TaskId}: ${remainingHours}h (hobby=${taskIsHobby})`);
       await allocateTask(taskData.TaskId, remainingHours, replanStartDate, taskIsHobby);
     }
 
@@ -1641,7 +1642,7 @@ router.post('/push-forward', authenticateToken, async (req: AuthRequest, res: Re
       message: `Allocated new task and replanned ${tasksToReplan.length} tasks` 
     });
   } catch (error) {
-    console.error('Error pushing forward allocations:', error);
+    logger.error('Error pushing forward allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to push forward allocations' });
   }
 });
@@ -1907,7 +1908,7 @@ router.get('/availability/:userId', authenticateToken, async (req: AuthRequest, 
 
     res.json({ success: true, availability });
   } catch (error) {
-    console.error('Error fetching user availability:', error);
+    logger.error('Error fetching user availability:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch user availability' });
   }
 });
@@ -2144,7 +2145,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, message: 'Allocations saved successfully', headerId });
   } catch (error) {
-    console.error('Error saving task allocations:', error);
+    logger.error('Error saving task allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to save task allocations' });
   }
 });
@@ -2262,7 +2263,7 @@ router.delete('/delete', authenticateToken, async (req: AuthRequest, res: Respon
 
     res.json({ success: true, message: 'Allocation deleted successfully' });
   } catch (error) {
-    console.error('Error deleting allocation:', error);
+    logger.error('Error deleting allocation:', error);
     res.status(500).json({ success: false, message: 'Failed to delete allocation' });
   }
 });
@@ -2365,7 +2366,7 @@ router.get('/header/:headerId', authenticateToken, async (req: AuthRequest, res:
       ...payload,
     });
   } catch (error) {
-    console.error('Error loading allocation header detail:', error);
+    logger.error('Error loading allocation header detail:', error);
     res.status(500).json({ success: false, message: 'Failed to load allocation header detail' });
   }
 });
@@ -2543,7 +2544,7 @@ router.put('/header/:headerId', authenticateToken, async (req: AuthRequest, res:
       totalHours: computedTotalHours,
     });
   } catch (error) {
-    console.error('Error updating allocation slice:', error);
+    logger.error('Error updating allocation slice:', error);
     res.status(500).json({ success: false, message: 'Failed to update allocation slice' });
   }
 });
@@ -2607,7 +2608,7 @@ router.delete('/header/:headerId', authenticateToken, async (req: AuthRequest, r
 
     res.json({ success: true, message: 'Allocation slice deleted successfully' });
   } catch (error) {
-    console.error('Error deleting allocation slice:', error);
+    logger.error('Error deleting allocation slice:', error);
     res.status(500).json({ success: false, message: 'Failed to delete allocation slice' });
   }
 });
@@ -2703,7 +2704,7 @@ router.delete('/header/:headerId/dates', authenticateToken, async (req: AuthRequ
 
     res.json({ success: true, message: 'Allocation slice dates deleted successfully' });
   } catch (error) {
-    console.error('Error deleting allocation slice dates:', error);
+    logger.error('Error deleting allocation slice dates:', error);
     res.status(500).json({ success: false, message: 'Failed to delete allocation slice dates' });
   }
 });
@@ -2832,7 +2833,7 @@ router.delete('/header/:headerId/hours', authenticateToken, async (req: AuthRequ
       removedHours: Math.min(hoursToRemove, totalHoursInHeader),
     });
   } catch (error) {
-    console.error('Error deleting allocation slice hours:', error);
+    logger.error('Error deleting allocation slice hours:', error);
     res.status(500).json({ success: false, message: 'Failed to delete allocation slice hours' });
   }
 });
@@ -2991,7 +2992,7 @@ router.delete('/task/:taskId', authenticateToken, async (req: AuthRequest, res: 
 
     res.json({ success: true, message: 'Allocations deleted successfully' });
   } catch (error) {
-    console.error('Error deleting task allocations:', error);
+    logger.error('Error deleting task allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to delete task allocations' });
   }
 });
@@ -3144,7 +3145,7 @@ router.get('/my-allocations', authenticateToken, async (req: AuthRequest, res: R
 
     res.json({ success: true, allocations });
   } catch (error) {
-    console.error('Error fetching my allocations:', error);
+    logger.error('Error fetching my allocations:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch allocations' });
   }
 });
@@ -3416,7 +3417,7 @@ router.post('/manual', authenticateToken, async (req: AuthRequest, res: Response
 
     res.json({ success: true, message: 'Manual allocation created successfully' });
   } catch (error) {
-    console.error('Error creating manual allocation:', error);
+    logger.error('Error creating manual allocation:', error);
     res.status(500).json({ success: false, message: 'Failed to create manual allocation' });
   }
 });
@@ -3700,7 +3701,7 @@ router.put('/manual/:id', authenticateToken, async (req: AuthRequest, res: Respo
 
     res.json({ success: true, message: 'Manual allocation updated successfully' });
   } catch (error) {
-    console.error('Error updating manual allocation:', error);
+    logger.error('Error updating manual allocation:', error);
     res.status(500).json({ success: false, message: 'Failed to update manual allocation' });
   }
 });
@@ -3791,7 +3792,7 @@ router.delete('/manual/:id', authenticateToken, async (req: AuthRequest, res: Re
 
     res.json({ success: true, message: 'Manual allocation deleted successfully' });
   } catch (error) {
-    console.error('Error deleting manual allocation:', error);
+    logger.error('Error deleting manual allocation:', error);
     res.status(500).json({ success: false, message: 'Failed to delete manual allocation' });
   }
 });

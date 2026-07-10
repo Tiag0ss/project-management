@@ -5,6 +5,7 @@ import { ResultSetHeader, RowDataPacket } from '../config/database';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -94,7 +95,7 @@ router.get('/organization/:orgId', authenticateToken, async (req: AuthRequest, r
 
     return res.json(payload);
   } catch (error) {
-    console.error('Get workflow transition policies error:', error);
+    logger.error('Get workflow transition policies error:', error);
     return res.status(500).json({ success: false, message: 'Failed to fetch workflow transition policies' });
   }
 });
@@ -183,7 +184,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ success: true, id: result.insertId });
   } catch (error) {
-    console.error('Create workflow transition policy error:', error);
+    logger.error('Create workflow transition policy error:', error);
     return res.status(500).json({ success: false, message: 'Failed to create workflow transition policy' });
   }
 });
@@ -283,7 +284,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     return res.json({ success: true });
   } catch (error) {
-    console.error('Update workflow transition policy error:', error);
+    logger.error('Update workflow transition policy error:', error);
     return res.status(500).json({ success: false, message: 'Failed to update workflow transition policy' });
   }
 });
@@ -315,7 +316,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     await invalidateByEntity('workflow', { orgId });
     return res.json({ success: true });
   } catch (error) {
-    console.error('Delete workflow transition policy error:', error);
+    logger.error('Delete workflow transition policy error:', error);
     return res.status(500).json({ success: false, message: 'Failed to delete workflow transition policy' });
   }
 });

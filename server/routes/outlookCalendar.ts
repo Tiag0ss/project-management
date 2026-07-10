@@ -3,6 +3,7 @@ import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket } from '../config/database';
 import { decrypt } from '../utils/encryption';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -92,7 +93,7 @@ router.get('/events', authenticateToken, async (req: AuthRequest, res: Response)
 
     // Detect common misconfiguration: decryption failure returns the raw "enc:…" ciphertext
     if (clientSecret.startsWith('enc:') || tenantId.startsWith('enc:') || clientId.startsWith('enc:')) {
-      console.error('[OutlookCalendar] Decryption failed for one or more credentials. The ENCRYPTION_KEY env variable may have changed.');
+      logger.error('[OutlookCalendar] Decryption failed for one or more credentials. The ENCRYPTION_KEY env variable may have changed.');
       return res.status(500).json({
         success: false,
         message: 'Failed to decrypt Outlook credentials. The server ENCRYPTION_KEY may have changed — re-enter the credentials in System Settings.',
@@ -102,7 +103,7 @@ router.get('/events', authenticateToken, async (req: AuthRequest, res: Response)
     // Detect if the clientSecret looks like a UUID (Secret ID instead of Secret Value)
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (uuidPattern.test(clientSecret)) {
-      console.error('[OutlookCalendar] outlookClientSecret appears to be a GUID (Secret ID). The Secret Value must be used instead.');
+      logger.error('[OutlookCalendar] outlookClientSecret appears to be a GUID (Secret ID). The Secret Value must be used instead.');
       return res.status(400).json({
         success: false,
         message: 'The configured Outlook Client Secret appears to be the Secret ID (a GUID). Go to System Settings and use the Secret Value instead — it is shown only when the secret is first created in Azure.',
@@ -209,7 +210,7 @@ router.get('/events', authenticateToken, async (req: AuthRequest, res: Response)
 
       if (!tokenResponse.ok) {
         const errorText = await tokenResponse.text();
-        console.error('[OutlookCalendar] Microsoft Graph token request failed:', errorText);
+        logger.error('[OutlookCalendar] Microsoft Graph token request failed:', errorText);
         return res.status(502).json({
           success: false,
           message: 'Failed to authenticate with Microsoft Graph.',
@@ -311,7 +312,7 @@ router.get('/events', authenticateToken, async (req: AuthRequest, res: Response)
       warnings,
     });
   } catch (error) {
-    console.error('Outlook calendar events error:', error);
+    logger.error('Outlook calendar events error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch Outlook calendar events',

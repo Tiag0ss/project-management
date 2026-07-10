@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket } from '../config/database';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -59,7 +60,7 @@ router.get('/organization/:id', authenticateToken, async (req: AuthRequest, res:
 
     res.json({ success: true, history });
   } catch (error) {
-    console.error('Error fetching organization history:', error);
+    logger.error('Error fetching organization history:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch history' });
   }
 });
@@ -115,7 +116,7 @@ router.get('/customer/:id', authenticateToken, async (req: AuthRequest, res: Res
 
     res.json({ success: true, history });
   } catch (error) {
-    console.error('Error fetching customer history:', error);
+    logger.error('Error fetching customer history:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch history' });
   }
 });
@@ -170,7 +171,7 @@ router.get('/project/:id', authenticateToken, async (req: AuthRequest, res: Resp
 
     res.json({ success: true, history });
   } catch (error) {
-    console.error('Error fetching project history:', error);
+    logger.error('Error fetching project history:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch history' });
   }
 });
@@ -222,7 +223,7 @@ router.get('/user/:id', authenticateToken, async (req: AuthRequest, res: Respons
 
     res.json({ success: true, history });
   } catch (error) {
-    console.error('Error fetching user history:', error);
+    logger.error('Error fetching user history:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch history' });
   }
 });

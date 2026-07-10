@@ -1,5 +1,6 @@
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import logger from './logger';
 
 const DEFAULT_ROLE_PERMISSIONS = [
   {
@@ -123,11 +124,11 @@ export async function seedRolePermissions(): Promise<void> {
     );
 
     if (existing[0].count > 0) {
-      console.log('RolePermissions already seeded, skipping...');
+      logger.info('RolePermissions already seeded, skipping...');
       return;
     }
 
-    console.log('Seeding default role permissions...');
+    logger.info('Seeding default role permissions...');
 
     for (const role of DEFAULT_ROLE_PERMISSIONS) {
       const { roleName, permissions } = role;
@@ -207,18 +208,18 @@ export async function seedRolePermissions(): Promise<void> {
         ]
       );
 
-      console.log(`  ✓ Created permissions for ${roleName}`);
+      logger.info(`  ✓ Created permissions for ${roleName}`);
     }
 
-    console.log('Role permissions seeded successfully');
+    logger.info('Role permissions seeded successfully');
   } catch (error: any) {
     // If table doesn't exist yet, ignore the error
     if (error.code === 'ER_NO_SUCH_TABLE') {
-      console.log('RolePermissions table not yet created, will seed later...');
+      logger.info('RolePermissions table not yet created, will seed later...');
       return;
     }
-    console.error('Error seeding role permissions:', error);
-    console.error('Error details:', {
+    logger.error('Error seeding role permissions:', error);
+    logger.error('Error details:', {
       message: error.message,
       code: error.code,
       errno: error.errno,

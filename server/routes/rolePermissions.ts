@@ -5,6 +5,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -231,7 +232,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, data: permissions });
   } catch (error) {
-    console.error('Error fetching role permissions:', error);
+    logger.error('Error fetching role permissions:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch role permissions' });
   }
 });
@@ -276,7 +277,7 @@ router.get('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
 
     res.json({ success: true, data: permissions[0] });
   } catch (error) {
-    console.error('Error fetching role permissions:', error);
+    logger.error('Error fetching role permissions:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch role permissions' });
   }
 });
@@ -560,7 +561,7 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
 
     res.json({ success: true, message: 'Role permissions updated successfully' });
   } catch (error) {
-    console.error('Error updating role permissions:', error);
+    logger.error('Error updating role permissions:', error);
     res.status(500).json({ success: false, message: 'Failed to update role permissions' });
   }
 });
@@ -618,7 +619,7 @@ router.get('/user/:userId', authenticateToken, async (req: AuthRequest, res: Res
 
     res.json({ success: true, data });
   } catch (error) {
-    console.error('Error fetching user permissions:', error);
+    logger.error('Error fetching user permissions:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch user permissions' });
   }
 });

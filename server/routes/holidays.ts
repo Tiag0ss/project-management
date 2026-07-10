@@ -5,6 +5,7 @@ import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -119,7 +120,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, holidays });
   } catch (error) {
-    console.error('Get holidays error:', error);
+    logger.error('Get holidays error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch holidays' });
   }
 });
@@ -150,7 +151,7 @@ router.get('/my', authenticateToken, async (req: AuthRequest, res: Response) => 
 
     res.json({ success: true, year, countryCode, holidays });
   } catch (error) {
-    console.error('Get my holidays error:', error);
+    logger.error('Get my holidays error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch user holidays' });
   }
 });
@@ -174,7 +175,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO Holidays (Year, CountryCode, RegionCode, HolidayDate, HolidayName, Source, IsActive, CreatedAt, UpdatedAt)
-       VALUES (?, ?, ?, ?, ?, 'manual', ?, NOW(), NOW())`,
+       VALUES (?, ?, ?, ?, ?, 'manual', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
       [
         Number(year),
         normalizedCountryCode,
@@ -189,7 +190,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.status(201).json({ success: true, holidayId: result.insertId });
   } catch (error) {
-    console.error('Create holiday error:', error);
+    logger.error('Create holiday error:', error);
     res.status(500).json({ success: false, message: 'Failed to create holiday' });
   }
 });
@@ -208,7 +209,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Holidays
-       SET HolidayDate = ?, HolidayName = ?, IsActive = ?, UpdatedAt = NOW()
+       SET HolidayDate = ?, HolidayName = ?, IsActive = ?, UpdatedAt = CURRENT_TIMESTAMP
        WHERE Id = ?`,
       [
         toHolidayDateParam(normalizeDate(holidayDate)),
@@ -222,7 +223,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, message: 'Holiday updated successfully' });
   } catch (error) {
-    console.error('Update holiday error:', error);
+    logger.error('Update holiday error:', error);
     res.status(500).json({ success: false, message: 'Failed to update holiday' });
   }
 });
@@ -244,7 +245,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, message: 'Holiday deleted successfully' });
   } catch (error) {
-    console.error('Delete holiday error:', error);
+    logger.error('Delete holiday error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete holiday' });
   }
 });
@@ -326,7 +327,7 @@ router.post('/import/nager-date', authenticateToken, async (req: AuthRequest, re
 
         await connection.execute(
           `INSERT INTO Holidays (Year, CountryCode, RegionCode, HolidayDate, HolidayName, Source, IsActive, CreatedAt, UpdatedAt)
-           VALUES (?, ?, NULL, ?, ?, 'nager', 1, NOW(), NOW())`,
+           VALUES (?, ?, NULL, ?, ?, 'nager', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
           [numericYear, normalizedCountryCode, toHolidayDateParam(holidayDate), holidayName]
         );
         inserted += 1;
@@ -337,7 +338,7 @@ router.post('/import/nager-date', authenticateToken, async (req: AuthRequest, re
         if (!holidayDate || !regional.name) continue;
         await connection.execute(
           `INSERT INTO Holidays (Year, CountryCode, RegionCode, HolidayDate, HolidayName, Source, IsActive, CreatedAt, UpdatedAt)
-           VALUES (?, ?, ?, ?, ?, 'nager', 1, NOW(), NOW())`,
+           VALUES (?, ?, ?, ?, ?, 'nager', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
           [numericYear, normalizedCountryCode, regional.regionCode, toHolidayDateParam(holidayDate), regional.name]
         );
         inserted += 1;
@@ -361,7 +362,7 @@ router.post('/import/nager-date', authenticateToken, async (req: AuthRequest, re
       connection.release();
     }
   } catch (error) {
-    console.error('Import holidays error:', error);
+    logger.error('Import holidays error:', error);
     res.status(500).json({ success: false, message: 'Failed to import holidays from Nager.Date' });
   }
 });
@@ -451,7 +452,7 @@ router.post('/import/openholidays', authenticateToken, async (req: AuthRequest, 
       for (const holiday of uniqueHolidays) {
         await connection.execute(
           `INSERT INTO Holidays (Year, CountryCode, RegionCode, HolidayDate, HolidayName, Source, IsActive, CreatedAt, UpdatedAt)
-           VALUES (?, ?, NULL, ?, ?, 'openholidays', 1, NOW(), NOW())`,
+           VALUES (?, ?, NULL, ?, ?, 'openholidays', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
           [
             numericYear,
             normalizedCountryCode,
@@ -480,7 +481,7 @@ router.post('/import/openholidays', authenticateToken, async (req: AuthRequest, 
       connection.release();
     }
   } catch (error) {
-    console.error('Import OpenHolidays error:', error);
+    logger.error('Import OpenHolidays error:', error);
     res.status(500).json({ success: false, message: 'Failed to import holidays from OpenHolidays API' });
   }
 });
@@ -584,7 +585,7 @@ router.post('/import/openholidays-regional', authenticateToken, async (req: Auth
         if ((existing as RowDataPacket[]).length === 0) {
           await connection.execute(
             `INSERT INTO Holidays (Year, CountryCode, RegionCode, HolidayDate, HolidayName, Source, IsActive, CreatedAt, UpdatedAt)
-             VALUES (?, ?, NULL, ?, ?, 'openholidays', 1, NOW(), NOW())`,
+             VALUES (?, ?, NULL, ?, ?, 'openholidays', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
             [numericYear, normalizedCountryCode, toHolidayDateParam(holiday.holidayDate), holiday.holidayName]
           );
           inserted += 1;
@@ -595,7 +596,7 @@ router.post('/import/openholidays-regional', authenticateToken, async (req: Auth
       for (const holiday of uniqueRegional) {
         await connection.execute(
           `INSERT INTO Holidays (Year, CountryCode, RegionCode, HolidayDate, HolidayName, Source, IsActive, CreatedAt, UpdatedAt)
-           VALUES (?, ?, ?, ?, ?, 'openholidays', 1, NOW(), NOW())`,
+           VALUES (?, ?, ?, ?, ?, 'openholidays', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
           [numericYear, normalizedCountryCode, normalizedSubdivision, toHolidayDateParam(holiday.holidayDate), holiday.holidayName]
         );
         inserted += 1;
@@ -617,7 +618,7 @@ router.post('/import/openholidays-regional', authenticateToken, async (req: Auth
       connection.release();
     }
   } catch (error) {
-    console.error('Import OpenHolidays regional error:', error);
+    logger.error('Import OpenHolidays regional error:', error);
     res.status(500).json({ success: false, message: 'Failed to import regional holidays' });
   }
 });
@@ -658,7 +659,7 @@ router.get('/subdivisions/:countryCode', authenticateToken, async (req: AuthRequ
 
     res.json({ success: true, subdivisions });
   } catch (error) {
-    console.error('Fetch subdivisions error:', error);
+    logger.error('Fetch subdivisions error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch subdivisions' });
   }
 });
@@ -698,7 +699,7 @@ router.get('/nager-counties/:countryCode/:year', authenticateToken, async (req: 
     const subdivisions = Array.from(countySet).sort().map((c) => ({ code: c, name: c }));
     res.json({ success: true, subdivisions });
   } catch (error) {
-    console.error('Fetch Nager counties error:', error);
+    logger.error('Fetch Nager counties error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch counties' });
   }
 });
@@ -779,7 +780,7 @@ router.post('/import/nager-regional', authenticateToken, async (req: AuthRequest
         if ((existing as RowDataPacket[]).length === 0) {
           await connection.execute(
             `INSERT INTO Holidays (Year, CountryCode, RegionCode, HolidayDate, HolidayName, Source, IsActive, CreatedAt, UpdatedAt)
-             VALUES (?, ?, NULL, ?, ?, 'nager', 1, NOW(), NOW())`,
+             VALUES (?, ?, NULL, ?, ?, 'nager', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
             [numericYear, normalizedCountryCode, toHolidayDateParam(holidayDate), holidayName]
           );
           inserted += 1;
@@ -793,7 +794,7 @@ router.post('/import/nager-regional', authenticateToken, async (req: AuthRequest
         if (!holidayDate || !holidayName) continue;
         await connection.execute(
           `INSERT INTO Holidays (Year, CountryCode, RegionCode, HolidayDate, HolidayName, Source, IsActive, CreatedAt, UpdatedAt)
-           VALUES (?, ?, ?, ?, ?, 'nager', 1, NOW(), NOW())`,
+           VALUES (?, ?, ?, ?, ?, 'nager', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
           [numericYear, normalizedCountryCode, normalizedSubdivision, toHolidayDateParam(holidayDate), holidayName]
         );
         inserted += 1;
@@ -809,7 +810,7 @@ router.post('/import/nager-regional', authenticateToken, async (req: AuthRequest
       connection.release();
     }
   } catch (error) {
-    console.error('Import Nager regional error:', error);
+    logger.error('Import Nager regional error:', error);
     res.status(500).json({ success: false, message: 'Failed to import regional holidays from Nager.Date' });
   }
 });
@@ -837,7 +838,7 @@ router.get('/regions/:countryCode', authenticateToken, async (req: AuthRequest, 
 
     res.json({ success: true, regions });
   } catch (error) {
-    console.error('Get regions error:', error);
+    logger.error('Get regions error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch regions' });
   }
 });

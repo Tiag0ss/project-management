@@ -10,6 +10,7 @@ import RichTextEditor from '@/components/RichTextEditor';
 import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import TaskDetailModal from '@/components/TaskDetailModal';
+import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import { Task, tasksApi } from '@/lib/api/tasks';
 import { Project, projectsApi } from '@/lib/api/projects';
 
@@ -134,12 +135,17 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
   const [selectedCustomerIds, setSelectedCustomerIds] = useState<number[]>([]);
   const [isSavingCustomers, setIsSavingCustomers] = useState(false);
 
-  // Confirm modal
-  const [confirmModal, setConfirmModal] = useState<{
+  // Confirm / alert modal
+  const [dialog, setDialog] = useState<{
+    type: 'confirm' | 'alert';
     title: string;
     message: string;
-    onConfirm: () => void;
+    onConfirm?: () => void;
   } | null>(null);
+
+  const showAlert = (title: string, message: string) => {
+    setDialog({ type: 'alert', title, message });
+  };
 
   // Task search
   const [taskSearch, setTaskSearch] = useState('');
@@ -379,18 +385,18 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
   };
 
   const handleDeleteVersion = (v: AppVersion) => {
-    setConfirmModal({
+    setDialog({
+      type: 'confirm',
       title: 'Delete Version',
       message: `Are you sure you want to delete version "${v.VersionNumber}"? This cannot be undone.`,
-      onConfirm: async () => {
+      onConfirm: () => void (async () => {
         await fetch(`${getApiUrl()}/api/applications/${id}/versions/${v.Id}`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token}` },
         });
         if (selectedVersion?.Id === v.Id) setSelectedVersion(null);
-        setConfirmModal(null);
         loadApplication();
-      },
+      })(),
     });
   };
 
@@ -450,7 +456,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
       })
       .catch(error => {
         console.error('Error downloading PDF:', error);
-        alert('Failed to download PDF. Please try again.');
+        showAlert('Download failed', 'Failed to download PDF. Please try again.');
       });
   };
 
@@ -467,7 +473,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
     });
 
     if (versionsInRange.length === 0) {
-      alert('No released versions found in the selected date range.');
+      showAlert('No versions', 'No released versions found in the selected date range.');
       return;
     }
 
@@ -497,7 +503,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
       })
       .catch(error => {
         console.error('Error downloading PDF:', error);
-        alert('Failed to download PDF. Please try again.');
+        showAlert('Download failed', 'Failed to download PDF. Please try again.');
       });
   };
 
@@ -1403,31 +1409,19 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
         </div>
       )}
 
-      {/* Confirm modal */}
-      {confirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
-            <div className="p-6">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">{confirmModal.title}</h3>
-              <p className="text-gray-600 dark:text-gray-400 mb-6">{confirmModal.message}</p>
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => setConfirmModal(null)}
-                  className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmModal.onConfirm}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmAlertModal
+        isOpen={!!dialog}
+        type={dialog?.type || 'alert'}
+        title={dialog?.title || ''}
+        message={dialog?.message || ''}
+        onClose={() => setDialog(null)}
+        onConfirm={() => {
+          dialog?.onConfirm?.();
+          setDialog(null);
+        }}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -209,7 +210,7 @@ router.get('/active', authenticateToken, async (req: AuthRequest, res: Response)
     );
     res.json({ success: true, timer: rows[0] || null });
   } catch (error) {
-    console.error('Error fetching active timer:', error);
+    logger.error('Error fetching active timer:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch timer' });
   }
 });
@@ -236,7 +237,7 @@ router.get('/active-all', authenticateToken, async (req: AuthRequest, res: Respo
     const taskIds: number[] = rows.map((r) => Number(r.TaskId)).filter((id) => id > 0);
     res.json({ success: true, taskIds });
   } catch (error) {
-    console.error('Error fetching all active timers:', error);
+    logger.error('Error fetching all active timers:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch timers' });
   }
 });
@@ -408,7 +409,7 @@ router.post('/start', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, timer: rows[0] });
   } catch (error) {
-    console.error('Error starting timer:', error);
+    logger.error('Error starting timer:', error);
     res.status(500).json({ success: false, message: 'Failed to start timer' });
   }
 });
@@ -452,7 +453,7 @@ router.get('/available-tasks', authenticateToken, async (req: AuthRequest, res: 
 
     res.json({ success: true, tasks });
   } catch (error) {
-    console.error('Error fetching available timer tasks:', error);
+    logger.error('Error fetching available timer tasks:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch available tasks' });
   }
 });
@@ -526,7 +527,7 @@ router.post('/:id/stop', authenticateToken, async (req: AuthRequest, res: Respon
       hours: persisted.hours,
     });
   } catch (error) {
-    console.error('Error stopping timer:', error);
+    logger.error('Error stopping timer:', error);
     res.status(500).json({ success: false, message: 'Failed to stop timer' });
   }
 });
@@ -559,7 +560,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     await pool.execute('DELETE FROM ActiveTimers WHERE Id = ? AND UserId = ?', [req.params.id, userId]);
     res.json({ success: true });
   } catch (error) {
-    console.error('Error discarding timer:', error);
+    logger.error('Error discarding timer:', error);
     res.status(500).json({ success: false, message: 'Failed to discard timer' });
   }
 });

@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -95,7 +96,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
       }),
     });
   } catch (error) {
-    console.error('Error fetching retrospective actions:', error);
+    logger.error('Error fetching retrospective actions:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch retrospective actions' });
   }
 });
@@ -129,7 +130,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.status(201).json({ success: true, id: result.insertId });
   } catch (error) {
-    console.error('Error creating retrospective action:', error);
+    logger.error('Error creating retrospective action:', error);
     res.status(500).json({ success: false, message: 'Failed to create retrospective action' });
   }
 });
@@ -161,7 +162,7 @@ router.patch('/:id/close', authenticateToken, async (req: AuthRequest, res: Resp
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error updating retrospective action status:', error);
+    logger.error('Error updating retrospective action status:', error);
     res.status(500).json({ success: false, message: 'Failed to update retrospective action status' });
   }
 });
@@ -179,7 +180,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     await pool.execute('DELETE FROM RetrospectiveActions WHERE Id = ?', [actionId]);
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting retrospective action:', error);
+    logger.error('Error deleting retrospective action:', error);
     res.status(500).json({ success: false, message: 'Failed to delete retrospective action' });
   }
 });

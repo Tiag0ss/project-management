@@ -44,8 +44,8 @@ describe('Validation Schemas', () => {
         projectId: 1,
         taskName: 'Test Task',
         description: 'Test description',
-        status: 'To Do',
-        priority: 'High',
+        status: 1,
+        priority: 2,
         estimatedHours: 5,
       };
 
@@ -56,6 +56,8 @@ describe('Validation Schemas', () => {
       const invalidData = {
         projectId: 1,
         taskName: '',
+        status: 1,
+        priority: 1,
       };
 
       expect(() => validate(createTaskSchema, invalidData)).toThrow();
@@ -65,18 +67,20 @@ describe('Validation Schemas', () => {
       const invalidData = {
         projectId: -1,
         taskName: 'Test Task',
+        status: 1,
+        priority: 1,
       };
 
       expect(() => validate(createTaskSchema, invalidData)).toThrow();
     });
 
-    it('should accept optional fields as undefined', () => {
-      const validData = {
+    it('should reject missing status and priority', () => {
+      const invalidData = {
         projectId: 1,
         taskName: 'Test Task',
       };
 
-      expect(() => validate(createTaskSchema, validData)).not.toThrow();
+      expect(() => validate(createTaskSchema, invalidData)).toThrow();
     });
   });
 });

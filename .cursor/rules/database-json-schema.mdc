@@ -1,13 +1,109 @@
 ---
-description: Database schema changes via JSON structure files
+description: Database schema via JSON — tables, fields, sync, portable types for MySQL/MSSQL
 globs: server/database/**/*
 alwaysApply: false
 ---
 
 # Database JSON schema
 
-- Tables live in `server/database/structure/systemtables/{TableName}.json`.
-- New tables: `"PrimaryKeyFields": "Id"` at top level (comma-separated for composite keys).
-- Field shape: `FieldName`, `DataType`, `NotNullable`, optional `DefaultValue` (no extra quotes for strings: `"09:00"` not `"'09:00'"`).
-- Do **not** create manual SQL migration files for add/alter column — sync runs from JSON.
-- Do **not** create temporary TS fix scripts; provide raw SQL for the developer if manual cleanup is needed.
+Skill: [skill-db-schema-json.prompt.md](../../.github/prompts/skill-db-schema-json.prompt.md)
+
+## Source of truth
+
+All system tables: `server/database/structure/systemtables/{TableName}.json`
+
+Startup (`schemaBuilder.buildAllTables`) syncs JSON → database (create table / add missing columns). **No** manual SQL migration files for add/alter column.
+
+## New table template
+
+```json
+{
+  "TableName": "MyEntities",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key"
+    },
+    {
+      "FieldName": "Name",
+      "DataType": "varchar(255)",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ]
+}
+```
+
+## Critical rules
+
+| Rule | Detail |
+|------|--------|
+| Primary key field | **`PrimaryKeyFields`** (string) — NOT `PrimaryKey`, NOT array |
+| Single PK | `"PrimaryKeyFields": "Id"` |
+| Composite PK | `"PrimaryKeyFields": "Field1,Field2"` (comma, no spaces) |
+| Position | `PrimaryKeyFields` immediately after `TableName` |
+| String defaults | `"DefaultValue": "09:00"` — **no** extra quotes (`"'09:00'"` is wrong) |
+| Booleans | `tinyint(1)` in JSON → MSSQL maps to `bit` in schemaBuilder |
+
+## Common data types
+
+| Type | Use |
+|------|-----|
+| `int` | FKs, IDs, enums-as-int |
+| `varchar(N)` | Short text |
+| `text` / `mediumtext` | Descriptions, rich text |
+| `decimal(M,D)` | Money, precise numbers |
+| `date` | Date-only |
+| `timestamp` / `datetime` | Created/updated |
+| `tinyint(1)` | Boolean flags |
+
+## Adding a column
+
+1. Edit the table's JSON file — add field object to `Fields` array.
+2. Restart server (or run sync) — `schemaBuilder` adds column if missing.
+3. Update route handlers + Zod schemas + frontend forms if user-facing.
+4. **Never** create a one-off `.ts` migration script to alter columns.
+
+## Manual DB fixes
+
+If production needs a column drop or destructive change:
+
+- Provide **raw SQL** for the developer to run manually.
+- Do **not** commit ad-hoc fix scripts to the repo.
+
+## MSSQL mapping (automatic)
+
+`schemaBuilder` maps MySQL types for MSSQL: `varchar`→`nvarchar`, `text`→`nvarchar(max)`, `timestamp`→`datetime2`, `enum(...)`→bounded `nvarchar`, etc.
+
+Write JSON in MySQL-oriented types; builder handles MSSQL.
+
+## Status / lookup tables
+
+Org-scoped value tables (e.g. `TaskStatusValues`, `ProjectStatusValues`):
+
+- Always include `OrganizationId` FK.
+- `IsDefault`, `Color`, sort order as per sibling tables.
+- Seed defaults in route or startup — follow existing `statusValues.ts` patterns.
+
+## Custom fields / tables
+
+- `CustomFields` — EAV metadata; values in entity rows or related tables.
+- `CustomTables` — user-defined lookup tables; not in systemtables JSON beyond base tables.
+
+## After schema change checklist
+
+- [ ] JSON valid + `PrimaryKeyFields` correct
+- [ ] Portable types (avoid MySQL-only enums without builder support)
+- [ ] Backend routes handle new field
+- [ ] Frontend form/display if exposed
+- [ ] Cache invalidation if list endpoints cache the entity
+- [ ] `docs/FEATURES.md` only if user asked for doc updates

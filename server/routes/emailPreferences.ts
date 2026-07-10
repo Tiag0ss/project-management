@@ -4,6 +4,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { shouldSendEmail } from '../utils/emailPreferencesHelper';
 import { sendTestSummaryEmail } from '../utils/workSummaryScheduler';
+import logger from '../utils/logger';
 
 // Re-export for backwards compatibility
 export { shouldSendEmail } from '../utils/emailPreferencesHelper';
@@ -98,7 +99,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, preferences: result });
   } catch (error) {
-    console.error('Error fetching email preferences:', error);
+    logger.error('Error fetching email preferences:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch email preferences' });
   }
 });
@@ -172,7 +173,7 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, message: 'Email preferences updated successfully' });
   } catch (error) {
-    console.error('Error updating email preferences:', error);
+    logger.error('Error updating email preferences:', error);
     res.status(500).json({ success: false, message: 'Failed to update email preferences' });
   }
 });
@@ -215,7 +216,7 @@ router.post('/test-summary/:type', authenticateToken, async (req: AuthRequest, r
       res.status(500).json({ success: false, message: result.message });
     }
   } catch (error) {
-    console.error('Error sending test summary email:', error);
+    logger.error('Error sending test summary email:', error);
     res.status(500).json({ success: false, message: 'Failed to send test summary email' });
   }
 });

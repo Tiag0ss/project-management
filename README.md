@@ -253,6 +253,8 @@ Example response:
 
 `redis` is `connected`, `disabled`, or `error`. Redis failures do **not** fail the health check — the app falls back to the database.
 
+If you see stale lists after a create/update with Redis enabled, confirm invalidation is wired on that write route; as a fallback, restart the API or flush Redis keys matching your `REDIS_KEY_PREFIX` (default `pm:*`).
+
 ## Architecture
 
 Single container serves Next.js frontend and Express API. MySQL or MSSQL is the system of record. Redis is optional.

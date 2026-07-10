@@ -4,6 +4,7 @@ import { pool } from '../config/database';
 import { RowDataPacket } from '../config/database';
 import { decrypt } from '../utils/encryption';
 import { assistantDocumentationSections } from '../utils/assistantDocumentation';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -502,7 +503,7 @@ router.get('/availability', authenticateToken, async (req: AuthRequest, res: Res
       canViewReports: permissions.canViewReports,
     });
   } catch (error) {
-    console.error('AI assistant availability error:', error);
+    logger.error('AI assistant availability error:', error);
     return res.status(500).json({ success: false, message: 'Failed to check assistant availability' });
   }
 });
@@ -1120,7 +1121,7 @@ router.post('/chat', authenticateToken, async (req: AuthRequest, res: Response) 
 
     return res.status(500).json({ success: false, message: 'AI assistant view-only mode is disabled unexpectedly.' });
   } catch (error) {
-    console.error('AI assistant chat error:', error);
+    logger.error('AI assistant chat error:', error);
     return res.status(500).json({ success: false, message: 'Failed to process assistant request' });
   }
 });
@@ -1187,7 +1188,7 @@ router.post('/text-action', authenticateToken, async (req: AuthRequest, res: Res
     const result = String(llmJson?.choices?.[0]?.message?.content || '').trim();
     return res.json({ success: true, result });
   } catch (error) {
-    console.error('AI text-action error:', error);
+    logger.error('AI text-action error:', error);
     return res.status(500).json({ success: false, message: 'Failed to process AI request.' });
   }
 });

@@ -1,0 +1,101 @@
+---
+description: Express backend routes, SQL, validation, logging, and API conventions
+globs: server/**/*
+alwaysApply: false
+---
+
+# Backend — Express routes & services
+
+Full reference: [.github/copilot-instructions.md](../../.github/copilot-instructions.md) · Skill: [skill-backend-route.prompt.md](../../.github/prompts/skill-backend-route.prompt.md)
+
+## Route handler template
+
+```typescript
+import { Router, Response } from 'express';
+import { AuthRequest, authenticateToken } from '../middleware/auth';
+import { pool, RowDataPacket, ResultSetHeader } from '../config/database';
+import { validateRequest, createXSchema } from '../utils/validation';
+import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
+
+router.post('/', authenticateToken, validateRequest(createXSchema), async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    // 1) permission check (server-side)
+    // 2) pool.execute with ? placeholders
+    // 3) invalidateByEntity on success if reads are cached
+    res.json({ success: true, data: result });
+  } catch (error) {
+    logger.error('Create X failed', { error: error instanceof Error ? error.message : error });
+    res.status(500).json({ success: false, message: 'Failed to create X' });
+  }
+});
+```
+
+## Database access
+
+- Import **only** from `../config/database`: `pool`, `dbProvider`, `RowDataPacket`, `ResultSetHeader`.
+- Always `pool.execute<T>(sql, params)` — never string-concatenate user input into SQL.
+- Transactions: `const conn = await pool.getConnection()` → `beginTransaction` / `commit` / `rollback` / `release`.
+- `insertId`: use `result.insertId` from `ResultSetHeader` (MSSQL wrapper injects `OUTPUT`).
+
+### MySQL + MSSQL portability
+
+Avoid in new SQL (unless gated with `dbProvider === 'mssql'` branch):
+
+| MySQL-only | Portable approach |
+|------------|-------------------|
+| `NOW()` | `CURRENT_TIMESTAMP` |
+| `FIELD(col, 'a','b')` | `CASE WHEN col = 'a' THEN 1 ... END` |
+| `GROUP_CONCAT(...)` | Fetch rows; join in TypeScript |
+| `JSON_ARRAYAGG` / `JSON_OBJECT` | Build JSON in TypeScript |
+| `LIMIT n OFFSET m` | Wrapper adapts some forms; prefer explicit TOP/OFFSET-FETCH branches for complex queries |
+| `WITH RECURSIVE ... IN (...)` | Avoid fragile forms; test both providers |
+
+Non-aggregated columns in `SELECT` with `GROUP BY` must appear in `GROUP BY` (MSSQL strict).
+
+## Validation (Zod)
+
+- Schemas: `server/utils/validation.ts`
+- Middleware: `validateRequest(schema)` on POST/PUT/PATCH **before** handler.
+- Auth login/register: decrypt first via `getAuthRequestBody`, then `validatePayload(loginSchema, payload)`.
+- Schemas use `.passthrough()` so extra fields (Jira keys, customFields) are not stripped from `req.body`.
+- Task/project status & priority in API are **int FK IDs**, not string names.
+
+## Logging
+
+- Use `logger.info` / `logger.warn` / `logger.error` from `server/utils/logger.ts`.
+- Never log passwords, JWT, API tokens, decrypted secrets, or full SMTP credentials.
+
+## Caching (Redis)
+
+- Read-through: `cachedJson(key, ttl, fetcher)` in `server/utils/cachedJson.ts`.
+- After **any** create/update/delete that changes cached data → `invalidateByEntity(type, payload)`.
+- Scoped keys use families — invalidation must call `delKeyFamily` (inside `invalidateByEntity` helpers).
+- Do **not** cache: active timers, live notification counts, real-time websocket payloads.
+
+Entity types include: `task`, `ticket`, `project`, `organization`, `allocation`, `timeEntry`, `portal`, `settings`, `tag`, etc. — see `CacheEntityType` in `cacheInvalidation.ts`.
+
+## Permissions on mutations
+
+1. Resolve user roles + org membership + `PermissionGroups`.
+2. Admin (`isAdmin`) bypasses role checks but still validate input.
+3. Org-scoped actions: verify `OrganizationMembers` + group capabilities.
+4. Return `403` with `{ success: false, message: 'Permission denied' }` — not 401 if authenticated.
+
+## Extract large SQL
+
+When `tasks.ts`-scale files grow, extract to `server/queries/<domain>/`:
+
+- Example: `server/queries/tasks/taskAssignees.ts` → `populateAssigneesJson(tasks)`.
+- Colocate row types in `server/types/`.
+
+## Health & startup
+
+- `/health` logic: `server/health.ts` (DB + Redis status).
+- Schema sync on startup: `schemaBuilder.buildAllTables` — driven by JSON files.
+- Do not add one-off TS scripts to fix DB; give raw SQL to the developer if manual cleanup needed.
+
+## Swagger
+
+- JSDoc `@swagger` blocks on routes where siblings already document — keep consistent.

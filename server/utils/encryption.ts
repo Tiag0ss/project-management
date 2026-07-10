@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import logger from './logger';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
@@ -67,7 +68,7 @@ export function decrypt(encryptedText: string): string {
     const parts = withoutPrefix.split(':');
 
     if (parts.length !== 3) {
-      console.error('Invalid encrypted value format');
+      logger.error('Invalid encrypted value format');
       return encryptedText;
     }
 
@@ -83,7 +84,7 @@ export function decrypt(encryptedText: string): string {
 
     return decrypted;
   } catch (error) {
-    console.error('Decryption failed:', error);
+    logger.error('Decryption failed:', error);
     // Return original value if decryption fails (e.g., key changed)
     return encryptedText;
   }

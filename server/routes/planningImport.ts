@@ -4,6 +4,7 @@ import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -445,7 +446,7 @@ router.get('/options/:organizationId', authenticateToken, async (req: AuthReques
       },
     });
   } catch (error) {
-    console.error('Planning import options error:', error);
+    logger.error('Planning import options error:', error);
     res.status(500).json({ success: false, message: 'Failed to load import options' });
   }
 });
@@ -1008,7 +1009,7 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
             const importNotes = comments || `Imported from planner: ${taskName}`;
             await connection.execute(
               `INSERT INTO UserVacations (UserId, VacationDate, Status, Notes, RequestedBy, ApprovedBy, ApprovedAt)
-               VALUES (?, ?, 'approved', ?, ?, ?, NOW())`,
+               VALUES (?, ?, 'approved', ?, ?, ?, CURRENT_TIMESTAMP)`,
               [userIdForAllocation, vacationDate, importNotes, userId, userId]
             );
             vacationDaysCreated += 1;
@@ -1176,7 +1177,7 @@ router.post('/import', authenticateToken, async (req: AuthRequest, res: Response
     });
   } catch (error: any) {
     await connection.rollback();
-    console.error('Planning import execution error:', error);
+    logger.error('Planning import execution error:', error);
     res.status(500).json({
       success: false,
       message: error?.message || 'Failed to import planning CSV',

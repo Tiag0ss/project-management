@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { pool } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -84,7 +85,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, templates });
   } catch (error) {
-    console.error('Error fetching task templates:', error);
+    logger.error('Error fetching task templates:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch task templates' });
   }
 });
@@ -136,7 +137,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, template: templates[0], items });
   } catch (error) {
-    console.error('Error fetching task template:', error);
+    logger.error('Error fetching task template:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch task template' });
   }
 });
@@ -228,7 +229,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     res.json({ success: true, templateId, message: 'Template created successfully' });
   } catch (error) {
     await conn.rollback();
-    console.error('Error creating task template:', error);
+    logger.error('Error creating task template:', error);
     res.status(500).json({ success: false, message: 'Failed to create task template' });
   } finally {
     conn.release();
@@ -280,7 +281,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, message: 'Template updated' });
   } catch (error) {
-    console.error('Error updating task template:', error);
+    logger.error('Error updating task template:', error);
     res.status(500).json({ success: false, message: 'Failed to update task template' });
   }
 });
@@ -320,7 +321,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     res.json({ success: true, message: 'Template deleted' });
   } catch (error) {
     await conn.rollback();
-    console.error('Error deleting task template:', error);
+    logger.error('Error deleting task template:', error);
     res.status(500).json({ success: false, message: 'Failed to delete task template' });
   } finally {
     conn.release();
@@ -550,7 +551,7 @@ router.post('/:id/apply', authenticateToken, async (req: AuthRequest, res: Respo
     res.json({ success: true, created: itemsToApply.length, message: `${itemsToApply.length} tasks created from template` });
   } catch (error) {
     await conn.rollback();
-    console.error('Error applying task template:', error);
+    logger.error('Error applying task template:', error);
     res.status(500).json({ success: false, message: 'Failed to apply task template' });
   } finally {
     conn.release();

@@ -5,6 +5,7 @@ import { ResultSetHeader, RowDataPacket } from '../config/database';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -58,7 +59,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
 
     res.json({ success: true, milestones });
   } catch (error) {
-    console.error('Get project milestones error:', error);
+    logger.error('Get project milestones error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch project milestones' });
   }
 });
@@ -109,7 +110,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.status(201).json({ success: true, milestoneId: result.insertId });
   } catch (error) {
-    console.error('Create project milestone error:', error);
+    logger.error('Create project milestone error:', error);
     res.status(500).json({ success: false, message: 'Failed to create project milestone' });
   }
 });
@@ -178,7 +179,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Update project milestone error:', error);
+    logger.error('Update project milestone error:', error);
     res.status(500).json({ success: false, message: 'Failed to update project milestone' });
   }
 });
@@ -212,7 +213,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     });
     res.json({ success: true });
   } catch (error) {
-    console.error('Delete project milestone error:', error);
+    logger.error('Delete project milestone error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete project milestone' });
   }
 });

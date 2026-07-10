@@ -2,6 +2,7 @@ import express, { Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { dbProvider, pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -31,7 +32,7 @@ export async function logActivity(
       [userId, username, action, entityType, entityId, entityName, details, ipAddress, userAgent]
     );
   } catch (error) {
-    console.error('Error logging activity:', error);
+    logger.error('Error logging activity:', error);
     // Don't throw - logging should not break the main operation
   }
 }
@@ -164,7 +165,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching activity logs:', error);
+    logger.error('Error fetching activity logs:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch activity logs' });
   }
 });
@@ -245,7 +246,7 @@ router.get('/stats', authenticateToken, async (req: AuthRequest, res: Response) 
       }
     });
   } catch (error) {
-    console.error('Error fetching activity log stats:', error);
+    logger.error('Error fetching activity log stats:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch activity log stats' });
   }
 });
@@ -315,7 +316,7 @@ router.delete('/cleanup', authenticateToken, async (req: AuthRequest, res: Respo
       message: `Deleted ${result.affectedRows} log entries older than ${days} days`
     });
   } catch (error) {
-    console.error('Error cleaning up logs:', error);
+    logger.error('Error cleaning up logs:', error);
     res.status(500).json({ success: false, message: 'Failed to cleanup logs' });
   }
 });

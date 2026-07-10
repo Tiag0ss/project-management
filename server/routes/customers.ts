@@ -7,6 +7,7 @@ import { prepareCustomFieldData } from '../utils/customFields';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -263,7 +264,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       data: customers
     });
   } catch (error) {
-    console.error('Get customers error:', error);
+    logger.error('Get customers error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch customers' 
@@ -349,7 +350,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       data: customer
     });
   } catch (error) {
-    console.error('Get customer error:', error);
+    logger.error('Get customer error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch customer' 
@@ -522,7 +523,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       message: 'Customer created successfully'
     });
   } catch (error) {
-    console.error('Create customer error:', error);
+    logger.error('Create customer error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to create customer' 
@@ -864,7 +865,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       message: 'Customer updated successfully'
     });
   } catch (error) {
-    console.error('Update customer error:', error);
+    logger.error('Update customer error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update customer' 
@@ -932,7 +933,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
       message: 'Customer deleted successfully'
     });
   } catch (error) {
-    console.error('Delete customer error:', error);
+    logger.error('Delete customer error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to delete customer' 
@@ -1017,7 +1018,7 @@ router.get('/:id/projects', authenticateToken, async (req: AuthRequest, res: Res
 
     res.json({ success: true, data: projects });
   } catch (error) {
-    console.error('Get customer projects error:', error);
+    logger.error('Get customer projects error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch customer projects' });
   }
 });
@@ -1074,7 +1075,7 @@ router.get('/:id/users', authenticateToken, async (req: AuthRequest, res: Respon
 
     res.json({ success: true, data: users });
   } catch (error) {
-    console.error('Get customer users error:', error);
+    logger.error('Get customer users error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch customer users' });
   }
 });
@@ -1166,7 +1167,7 @@ router.post('/:id/users', authenticateToken, async (req: AuthRequest, res: Respo
 
     res.status(201).json({ success: true, message: 'User added to customer successfully' });
   } catch (error) {
-    console.error('Add customer user error:', error);
+    logger.error('Add customer user error:', error);
     res.status(500).json({ success: false, message: 'Failed to add user to customer' });
   }
 });
@@ -1229,7 +1230,7 @@ router.delete('/:id/users/:userId', authenticateToken, async (req: AuthRequest, 
 
     res.json({ success: true, message: 'User removed from customer successfully' });
   } catch (error) {
-    console.error('Remove customer user error:', error);
+    logger.error('Remove customer user error:', error);
     res.status(500).json({ success: false, message: 'Failed to remove user from customer' });
   }
 });
@@ -1410,7 +1411,7 @@ router.get('/:id/overview', authenticateToken, async (req: AuthRequest, res: Res
       data: overviewData,
     });
   } catch (error) {
-    console.error('Get customer overview error:', error);
+    logger.error('Get customer overview error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch customer overview' });
   }
 });

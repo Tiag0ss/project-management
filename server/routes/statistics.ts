@@ -4,6 +4,7 @@ import { pool } from '../config/database';
 import { RowDataPacket } from '../config/database';
 import { cachedJson, AGGREGATE_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -69,7 +70,7 @@ router.get('/public', async (req, res: Response) => {
 
     res.json(payload);
   } catch (error) {
-    console.error('Get public statistics error:', error);
+    logger.error('Get public statistics error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch statistics'
@@ -404,7 +405,7 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json(payload);
   } catch (error) {
-    console.error('Get global statistics error:', error);
+    logger.error('Get global statistics error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch global statistics'

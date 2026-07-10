@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { getApiUrl } from '@/lib/api/config';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
+import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 
 interface CustomTable {
   Id: number;
@@ -72,6 +73,7 @@ export default function CustomFieldsManagement() {
   const [showForm, setShowForm] = useState(false);
   const [editingFieldId, setEditingFieldId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [formData, setFormData] = useState<FormData>({
     tableName: 'Projects',
     fieldName: '',
@@ -230,10 +232,14 @@ export default function CustomFieldsManagement() {
     }
   };
 
-  const handleDeleteField = async (fieldId: number, fieldName: string) => {
-    if (!window.confirm(`Are you sure you want to delete the custom field "${fieldName}"?`)) {
-      return;
-    }
+  const handleDeleteField = (fieldId: number, fieldName: string) => {
+    setDeleteTarget({ id: fieldId, name: fieldName });
+  };
+
+  const confirmDeleteField = async () => {
+    if (!deleteTarget) return;
+    const { id: fieldId, name: fieldName } = deleteTarget;
+    setDeleteTarget(null);
 
     try {
       const response = await fetch(`${getApiUrl()}/api/custom-fields/${fieldId}`, {
@@ -569,6 +575,17 @@ export default function CustomFieldsManagement() {
           )}
         </div>
       </div>
+
+      <ConfirmAlertModal
+        isOpen={!!deleteTarget}
+        type="confirm"
+        title="Delete custom field"
+        message={deleteTarget ? `Are you sure you want to delete the custom field "${deleteTarget.name}"?` : ''}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => void confirmDeleteField()}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+      />
     </div>
   );
 }

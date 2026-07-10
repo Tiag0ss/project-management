@@ -1,0 +1,74 @@
+---
+description: JWT auth, API tokens, role permissions, org permission groups, portal users
+globs: server/routes/auth.ts,server/routes/apiTokens.ts,server/middleware/auth.ts,server/routes/portal.ts,server/routes/rolePermissions.ts,contexts/PermissionsContext.tsx,contexts/AuthContext.tsx
+alwaysApply: false
+---
+
+# Auth & permissions
+
+Docs: [docs/ROLE_PERMISSIONS.md](../../docs/ROLE_PERMISSIONS.md) · Skill: [skill-permission-gated-ui.prompt.md](../../.github/prompts/skill-permission-gated-ui.prompt.md)
+
+## Authentication layers
+
+| Mechanism | Use |
+|-----------|-----|
+| JWT (cookie + Bearer) | Interactive UI sessions |
+| API tokens (`ApiTokens` table) | Integrations, Outlook queue, scripts |
+| Customer JWT (`customerId` claim) | Portal users |
+
+- Protected routes: `authenticateToken` middleware.
+- `AuthRequest` exposes `req.user` (`userId`, `username`, `isAdmin`, `customerId`, …).
+
+## Permission model
+
+1. **Global roles** (`Users.IsDeveloper`, `IsSupport`, `IsManager`) → `RolePermissions` table.
+2. **Org groups** (`PermissionGroups` + `OrganizationMembers.PermissionGroupId`) — org-scoped overrides.
+3. **Effective permission** = role OR group (union — groups never revoke role grants).
+4. **`isAdmin`** → all permissions.
+
+Backend must check permissions on **every mutation** — UI hiding alone is insufficient.
+
+## Frontend
+
+```tsx
+import { usePermissions } from '@/contexts/PermissionsContext';
+
+const { permissions } = usePermissions();
+// permissions.canManageTasks, canViewBudgetInfo, etc.
+```
+
+- Budget fields: only when `permissions.canViewBudgetInfo`.
+- Admin pages: verify `user.isAdmin` or specific admin capability.
+
+## Portal / customer users
+
+- JWT includes `customerId` for customer-linked accounts.
+- `GET /api/portal/overview` — cached per customer; invalidate on portal ticket create.
+- **Ticket create**: customer users cannot pass `projectId` — backend rejects if set.
+- Portal schema: `createPortalTicketSchema` in `validation.ts`.
+
+## Password / encryption
+
+- Passwords: bcrypt hashes only.
+- Forgot-password: generic response (do not reveal if email exists).
+- Reset tokens: hashed in `PasswordResetTokens`, single-use + expiry.
+- Sensitive settings (SMTP, OpenAI, Outlook): encrypted at rest — never log decrypted values.
+
+## API tokens
+
+- Created in Profile → stored hashed; shown once on create.
+- Middleware resolves token → user context (cached in Redis when enabled).
+- Invalidate auth cache on token revoke/delete.
+
+## Common permission fields
+
+| Capability | Typical gate |
+|------------|--------------|
+| `canManageTasks` | Task edit/delete, planning edits |
+| `canPlanTasks` | Allocation create/move (may differ from manage) |
+| `canManageProjects` | Project settings, imports |
+| `canViewBudgetInfo` | Budget columns, cost KPIs |
+| `canManageTickets` | Ticket assign/status |
+| `canManageTimeEntries` | Approve/edit others' time |
+
+When adding a new action, define both UI gate and backend check; update `RolePermissions.json` seed if new column needed (via JSON schema file).

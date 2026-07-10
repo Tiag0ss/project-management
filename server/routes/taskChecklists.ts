@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -60,7 +61,7 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
 
     res.json({ success: true, items });
   } catch (error) {
-    console.error('Error fetching checklist items:', error);
+    logger.error('Error fetching checklist items:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch checklist items' });
   }
 });
@@ -140,7 +141,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, message: 'Checklist item created', item: newItems[0] });
   } catch (error) {
-    console.error('Error creating checklist item:', error);
+    logger.error('Error creating checklist item:', error);
     res.status(500).json({ success: false, message: 'Failed to create checklist item' });
   }
 });
@@ -222,7 +223,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, message: 'Checklist item updated' });
   } catch (error) {
-    console.error('Error updating checklist item:', error);
+    logger.error('Error updating checklist item:', error);
     res.status(500).json({ success: false, message: 'Failed to update checklist item' });
   }
 });
@@ -273,7 +274,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, message: 'Checklist item deleted' });
   } catch (error) {
-    console.error('Error deleting checklist item:', error);
+    logger.error('Error deleting checklist item:', error);
     res.status(500).json({ success: false, message: 'Failed to delete checklist item' });
   }
 });

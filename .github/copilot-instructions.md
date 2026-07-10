@@ -13,6 +13,22 @@ Language policy (mandatory):
 
 Cursor agents should read [AGENTS.md](../AGENTS.md) and rules in `.cursor/rules/` (same conventions as this file).
 
+**Cursor rule files (detailed, scoped):**
+
+| Rule | Scope |
+|------|--------|
+| `project-management.mdc` | Always — master context |
+| `backend-express.mdc` | `server/**` |
+| `frontend-nextjs.mdc` | `app/**`, `components/**`, `lib/**` |
+| `database-json-schema.mdc` | `server/database/**` |
+| `planning-gantt.mdc` | Planning + allocations |
+| `redis-cache.mdc` | Cache layer |
+| `permissions-auth.mdc` | Auth & permissions |
+| `integrations.mdc` | Jira, Outlook, email queue |
+| `testing-quality.mdc` | Tests & CI |
+
+Index: [.cursor/rules/README.md](../.cursor/rules/README.md)
+
 ## Prompt Library (Skills-like)
 
 Use reusable prompt templates from `.github/prompts/` when tasks match these categories:

@@ -4,6 +4,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { sanitizeRichText, sanitizePlainText } from '../utils/sanitize';
 import { createNotification } from './notifications';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -50,7 +51,7 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
 
     res.json({ success: true, comments });
   } catch (error) {
-    console.error('Error fetching task comments:', error);
+    logger.error('Error fetching task comments:', error);
     res.status(500).json({ success: false, message: 'Error fetching comments' });
   }
 });
@@ -152,12 +153,12 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         }
       }
     } catch (mentionError) {
-      console.error('Error processing @mentions:', mentionError);
+      logger.error('Error processing @mentions:', mentionError);
     }
 
     res.status(201).json({ success: true, comment: comments[0] });
   } catch (error) {
-    console.error('Error creating comment:', error);
+    logger.error('Error creating comment:', error);
     res.status(500).json({ success: false, message: 'Error creating comment' });
   }
 });
@@ -234,7 +235,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, comment: comments[0] });
   } catch (error) {
-    console.error('Error updating comment:', error);
+    logger.error('Error updating comment:', error);
     res.status(500).json({ success: false, message: 'Error updating comment' });
   }
 });
@@ -287,7 +288,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, message: 'Comment deleted' });
   } catch (error) {
-    console.error('Error deleting comment:', error);
+    logger.error('Error deleting comment:', error);
     res.status(500).json({ success: false, message: 'Error deleting comment' });
   }
 });

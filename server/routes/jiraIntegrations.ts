@@ -3,6 +3,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { pool } from '../config/database';
 import { encrypt, decrypt } from '../utils/encryption';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -64,7 +65,7 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
 
     res.json({ success: true, integration: integration[0] });
   } catch (error) {
-    console.error('Get Jira integration error:', error);
+    logger.error('Get Jira integration error:', error);
     res.status(500).json({ success: false, message: 'Failed to get Jira integration' });
   }
 });
@@ -237,7 +238,7 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
 
     res.json({ success: true, message: 'Jira integration saved successfully' });
   } catch (error) {
-    console.error('Save Jira integration error:', error);
+    logger.error('Save Jira integration error:', error);
     res.status(500).json({ success: false, message: 'Failed to save Jira integration' });
   }
 });
@@ -297,7 +298,7 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Jira test connection failed:', response.status, errorText);
+      logger.error('Jira test connection failed:', response.status, errorText);
       return res.status(400).json({ 
         success: false, 
         message: `Failed to connect to Jira: ${response.status} ${response.statusText}` 
@@ -312,7 +313,7 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
       jiraUser: userData.displayName || userData.emailAddress
     });
   } catch (error: any) {
-    console.error('Test Jira connection error:', error);
+    logger.error('Test Jira connection error:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message || 'Failed to test Jira connection' 
@@ -484,7 +485,7 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Jira search failed:', response.status, errorText);
+      logger.error('Jira search failed:', response.status, errorText);
       return res.status(400).json({ 
         success: false, 
         message: `Failed to search Jira: ${response.status} ${response.statusText}` 
@@ -579,7 +580,7 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
 
     res.json({ success: true, issues, total: data.total });
   } catch (error: any) {
-    console.error('Search Jira issues error:', error);
+    logger.error('Search Jira issues error:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message || 'Failed to search Jira issues' 
@@ -663,7 +664,7 @@ router.get('/project/:projectId/issues', authenticateToken, async (req: AuthRequ
       projectKey = config.JiraProjectKey;
     }
 
-    console.log('Using Jira config - URL:', jiraUrl, 'Board URL:', project.JiraBoardId, 'Extracted Project Key:', projectKey);
+    logger.info('Using Jira config - URL:', jiraUrl, 'Board URL:', project.JiraBoardId, 'Extracted Project Key:', projectKey);
 
     const authHeader = 'Basic ' + Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString('base64');
     
@@ -680,7 +681,7 @@ router.get('/project/:projectId/issues', authenticateToken, async (req: AuthRequ
 
     const searchUrl = `${jiraUrl}/rest/api/3/search/jql`;
 
-    console.log('Fetching Jira issues with JQL:', jql);
+    logger.info('Fetching Jira issues with JQL:', jql);
 
     const response = await fetch(searchUrl, {
       method: 'POST',
@@ -698,7 +699,7 @@ router.get('/project/:projectId/issues', authenticateToken, async (req: AuthRequ
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Jira search failed:', response.status, errorText);
+      logger.error('Jira search failed:', response.status, errorText);
       return res.status(400).json({ 
         success: false, 
         message: `Failed to fetch Jira issues: ${response.status} ${response.statusText}` 
@@ -706,7 +707,7 @@ router.get('/project/:projectId/issues', authenticateToken, async (req: AuthRequ
     }
 
     const data = await response.json();
-    console.log('Jira returned', data.issues?.length || 0, 'issues');
+    logger.info('Jira returned', data.issues?.length || 0, 'issues');
 
     // Format results with parent/child relationships
     const issues = data.issues?.map((issue: any) => {
@@ -752,7 +753,7 @@ router.get('/project/:projectId/issues', authenticateToken, async (req: AuthRequ
 
     res.json({ success: true, data: issues, total: data.total || issues.length });
   } catch (error: any) {
-    console.error('Get Jira project issues error:', error);
+    logger.error('Get Jira project issues error:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message || 'Failed to fetch Jira issues' 
@@ -850,7 +851,7 @@ router.get('/project/:projectId/check-board-statuses', authenticateToken, async 
 
     if (!jiraResponse.ok) {
       const errorText = await jiraResponse.text();
-      console.error('Jira check-board-statuses search failed:', jiraResponse.status, errorText);
+      logger.error('Jira check-board-statuses search failed:', jiraResponse.status, errorText);
       return res.status(400).json({ success: false, message: `Failed to query Jira: ${jiraResponse.status} ${jiraResponse.statusText}` });
     }
 
@@ -881,7 +882,7 @@ router.get('/project/:projectId/check-board-statuses', authenticateToken, async 
 
     res.json({ success: true, tickets });
   } catch (error: any) {
-    console.error('Check board statuses error:', error);
+    logger.error('Check board statuses error:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to check board statuses' });
   }
 });
@@ -992,7 +993,7 @@ router.get('/organization/:organizationId/check-ticket-statuses', authenticateTo
 
     if (!jiraResponse.ok) {
       const errorText = await jiraResponse.text();
-      console.error('Jira check-ticket-statuses search failed:', jiraResponse.status, errorText);
+      logger.error('Jira check-ticket-statuses search failed:', jiraResponse.status, errorText);
       return res.status(400).json({ success: false, message: `Failed to query Jira: ${jiraResponse.status} ${jiraResponse.statusText}` });
     }
 
@@ -1024,7 +1025,7 @@ router.get('/organization/:organizationId/check-ticket-statuses', authenticateTo
 
     res.json({ success: true, tickets });
   } catch (error: any) {
-    console.error('Check ticket statuses error:', error);
+    logger.error('Check ticket statuses error:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to check ticket statuses' });
   }
 });
@@ -1055,7 +1056,7 @@ router.delete('/organization/:organizationId', authenticateToken, async (req: Au
 
     res.json({ success: true, message: 'Jira integration deleted successfully' });
   } catch (error) {
-    console.error('Delete Jira integration error:', error);
+    logger.error('Delete Jira integration error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete Jira integration' });
   }
 });

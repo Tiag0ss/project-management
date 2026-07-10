@@ -6,6 +6,8 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
+import { createTimeEntrySchema, validateRequest } from '../utils/validation';
 
 const router = express.Router();
 
@@ -119,7 +121,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
 
     res.json({ success: true, entries });
   } catch (error) {
-    console.error('Error fetching project time entries:', error);
+    logger.error('Error fetching project time entries:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch project time entries' });
   }
 });
@@ -182,7 +184,7 @@ router.get('/my-entries', authenticateToken, async (req: AuthRequest, res: Respo
 
     res.json({ success: true, entries });
   } catch (error) {
-    console.error('Error fetching time entries:', error);
+    logger.error('Error fetching time entries:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch time entries' });
   }
 });
@@ -265,7 +267,7 @@ router.get('/my-entries-and-calls', authenticateToken, async (req: AuthRequest, 
 
     res.json({ success: true, entries });
   } catch (error) {
-    console.error('Error fetching time entries + call records:', error);
+    logger.error('Error fetching time entries + call records:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch combined entries' });
   }
 });
@@ -330,7 +332,7 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
 
     res.json({ success: true, entries });
   } catch (error) {
-    console.error('Error fetching task time entries:', error);
+    logger.error('Error fetching task time entries:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch task time entries' });
   }
 });
@@ -371,7 +373,7 @@ router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Res
  *         description: Internal server error
  */
 // Create time entry
-router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.post('/', authenticateToken, validateRequest(createTimeEntrySchema), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const { taskId, workDate, hours, description, startTime, endTime, customFields } = req.body;
@@ -421,7 +423,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       entryId: result.insertId
     });
   } catch (error) {
-    console.error('Error creating time entry:', error);
+    logger.error('Error creating time entry:', error);
     res.status(500).json({ success: false, message: 'Failed to create time entry' });
   }
 });
@@ -531,7 +533,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, message: 'Time entry updated successfully' });
   } catch (error) {
-    console.error('Error updating time entry:', error);
+    logger.error('Error updating time entry:', error);
     res.status(500).json({ success: false, message: 'Failed to update time entry' });
   }
 });
@@ -598,7 +600,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, message: 'Time entry deleted successfully' });
   } catch (error) {
-    console.error('Error deleting time entry:', error);
+    logger.error('Error deleting time entry:', error);
     res.status(500).json({ success: false, message: 'Failed to delete time entry' });
   }
 });
@@ -727,7 +729,7 @@ router.get('/summary-by-user', authenticateToken, async (req: AuthRequest, res: 
 
     res.json({ success: true, summary: enrichedSummary });
   } catch (error) {
-    console.error('Error fetching summary by user:', error);
+    logger.error('Error fetching summary by user:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch summary by user' });
   }
 });
@@ -868,7 +870,7 @@ router.get('/pending-approval/team', authenticateToken, async (req: AuthRequest,
 
     res.json({ success: true, entries, subordinates });
   } catch (error) {
-    console.error('Error fetching pending time entries:', error);
+    logger.error('Error fetching pending time entries:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch pending time entries' });
   }
 });
@@ -914,7 +916,7 @@ router.get('/approval-scope', authenticateToken, async (req: AuthRequest, res: R
       subordinateCount
     });
   } catch (error) {
-    console.error('Error fetching approval scope:', error);
+    logger.error('Error fetching approval scope:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch approval scope' });
   }
 });
@@ -980,7 +982,7 @@ router.put('/:id/approval', authenticateToken, async (req: AuthRequest, res: Res
 
     res.json({ success: true, message: `Time entry ${status}` });
   } catch (error) {
-    console.error('Error approving time entry:', error);
+    logger.error('Error approving time entry:', error);
     res.status(500).json({ success: false, message: 'Failed to update time entry approval' });
   }
 });
@@ -1009,7 +1011,7 @@ router.put('/:id/reopen', authenticateToken, async (req: AuthRequest, res: Respo
 
     res.json({ success: true, message: 'Time entry reopened for user edits' });
   } catch (error) {
-    console.error('Error reopening time entry:', error);
+    logger.error('Error reopening time entry:', error);
     res.status(500).json({ success: false, message: 'Failed to reopen time entry' });
   }
 });
@@ -1041,7 +1043,7 @@ router.put('/:id/admin-description', authenticateToken, async (req: AuthRequest,
 
     res.json({ success: true, message: 'Admin edited description saved' });
   } catch (error) {
-    console.error('Error saving admin edited description:', error);
+    logger.error('Error saving admin edited description:', error);
     res.status(500).json({ success: false, message: 'Failed to save admin edited description' });
   }
 });
@@ -1154,7 +1156,7 @@ router.get('/planning-view', authenticateToken, async (req: AuthRequest, res: Re
 
     res.json({ success: true, entries });
   } catch (error) {
-    console.error('Error fetching planning-view time entries:', error);
+    logger.error('Error fetching planning-view time entries:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch planning view data' });
   }
 });

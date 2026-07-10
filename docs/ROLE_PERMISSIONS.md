@@ -6,29 +6,19 @@ The Role Permissions system allows fine-grained control over what users can do i
 
 ## Architecture
 
-#### View Permissions
-
 ### Permission Types
 
-**Default permission matrix:**
-```
-server/database/structure/systemtables/RolePermissions.json
+Default permissions are defined in [`server/database/structure/systemtables/RolePermissions.json`](../server/database/structure/systemtables/RolePermissions.json) and **automatically seeded** when the server starts for the first time.
 
-Default role permissions are **automatically seeded** when the server starts for the first time.
+**Default permission matrix (summary):**
 
-**Developer:**
-- Manage Time Entries ✓
-- Manage Tickets ✓
-**Support:**
-- View Dashboard ✓
-- Manage Tickets ✓
-- Create Tickets ✓
-- Assign Tickets ✓
+| Role | Typical capabilities |
+|------|---------------------|
+| **Developer** | Manage time entries, manage tickets |
+| **Support** | View dashboard, manage/create/assign tickets |
+| **Manager** | All permissions |
 
-**Manager:**
-- **All permissions** ✓
-
-### 3. Frontend Usage
+### Frontend Usage
 
 #### PermissionsContext
 
@@ -68,7 +58,7 @@ function MyComponent() {
 }
 ```
 
-### 4. Backend Validation
+### Backend Validation
 
 Always validate permissions on the backend:
 

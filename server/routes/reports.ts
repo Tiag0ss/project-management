@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { pool } from '../config/database';
 import { RowDataPacket } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -561,7 +562,7 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
 
     res.json({ success: true, records });
   } catch (error) {
-    console.error('Error fetching report dataset:', error);
+    logger.error('Error fetching report dataset:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch report dataset' });
   }
 });

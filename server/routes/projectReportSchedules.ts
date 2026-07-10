@@ -3,6 +3,7 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { sendReportNow } from '../utils/pdfReportScheduler';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -35,7 +36,7 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
 
     res.json({ success: true, schedules });
   } catch (error) {
-    console.error('Error fetching report schedules:', error);
+    logger.error('Error fetching report schedules:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch report schedules' });
   }
 });
@@ -90,7 +91,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.status(201).json({ success: true, schedule: created[0] });
   } catch (error) {
-    console.error('Error creating report schedule:', error);
+    logger.error('Error creating report schedule:', error);
     res.status(500).json({ success: false, message: 'Failed to create report schedule' });
   }
 });
@@ -131,7 +132,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       `UPDATE ProjectReportSchedules SET
          Frequency = ?, DayOfWeek = ?, DayOfMonth = ?, Recipients = ?,
          IncludeTaskTable = ?, IncludeTimeEntries = ?, IncludeBudget = ?,
-         IsEnabled = ?, UpdatedAt = NOW()
+         IsEnabled = ?, UpdatedAt = CURRENT_TIMESTAMP
        WHERE Id = ?`,
       [
         frequency,
@@ -153,7 +154,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, schedule: updated[0] });
   } catch (error) {
-    console.error('Error updating report schedule:', error);
+    logger.error('Error updating report schedule:', error);
     res.status(500).json({ success: false, message: 'Failed to update report schedule' });
   }
 });
@@ -182,7 +183,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     await pool.execute('DELETE FROM ProjectReportSchedules WHERE Id = ?', [id]);
     res.json({ success: true, message: 'Schedule deleted' });
   } catch (error) {
-    console.error('Error deleting report schedule:', error);
+    logger.error('Error deleting report schedule:', error);
     res.status(500).json({ success: false, message: 'Failed to delete report schedule' });
   }
 });
@@ -212,7 +213,7 @@ router.post('/:id/send-now', authenticateToken, async (req: AuthRequest, res: Re
 
     res.json({ success: true, message: 'Report sent successfully' });
   } catch (error: any) {
-    console.error('Error sending report:', error);
+    logger.error('Error sending report:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to send report' });
   }
 });

@@ -9,6 +9,7 @@ import { decrypt } from '../utils/encryption';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -353,7 +354,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, applications: apps });
   } catch (error) {
-    console.error('Error fetching applications:', error);
+    logger.error('Error fetching applications:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch applications' });
   }
 });
@@ -374,7 +375,7 @@ router.get('/ai/availability', authenticateToken, async (_req: AuthRequest, res:
       configured: !!decryptedKey,
     });
   } catch (error: any) {
-    console.error('AI availability check error:', error);
+    logger.error('AI availability check error:', error);
     return res.status(500).json({ success: false, message: 'Failed to check AI availability' });
   }
 });
@@ -449,7 +450,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, application: app });
   } catch (error) {
-    console.error('Error fetching application:', error);
+    logger.error('Error fetching application:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch application' });
   }
 });
@@ -530,7 +531,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
     res.status(201).json({ success: true, id: appId, message: 'Application created' });
   } catch (error) {
-    console.error('Error creating application:', error);
+    logger.error('Error creating application:', error);
     res.status(500).json({ success: false, message: 'Failed to create application' });
   }
 });
@@ -626,7 +627,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     res.json({ success: true, message: 'Application updated' });
   } catch (error) {
-    console.error('Error updating application:', error);
+    logger.error('Error updating application:', error);
     res.status(500).json({ success: false, message: 'Failed to update application' });
   }
 });
@@ -697,7 +698,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     await invalidateByEntity('application', { applicationId: id, orgId: organizationId });
     res.json({ success: true, message: 'Application deleted' });
   } catch (error) {
-    console.error('Error deleting application:', error);
+    logger.error('Error deleting application:', error);
     res.status(500).json({ success: false, message: 'Failed to delete application' });
   }
 });
@@ -732,7 +733,7 @@ router.put('/:id/projects', authenticateToken, async (req: AuthRequest, res: Res
 
     res.json({ success: true, message: 'Project associations updated' });
   } catch (error) {
-    console.error('Error updating project associations:', error);
+    logger.error('Error updating project associations:', error);
     res.status(500).json({ success: false, message: 'Failed to update project associations' });
   }
 });
@@ -790,7 +791,7 @@ router.get('/:id/tasks', authenticateToken, async (req: AuthRequest, res: Respon
 
     res.json({ success: true, tasks });
   } catch (error) {
-    console.error('Error fetching application tasks:', error);
+    logger.error('Error fetching application tasks:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch tasks' });
   }
 });
@@ -822,7 +823,7 @@ router.get('/:id/versions', authenticateToken, async (req: AuthRequest, res: Res
 
     res.json({ success: true, versions });
   } catch (error) {
-    console.error('Error fetching versions:', error);
+    logger.error('Error fetching versions:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch versions' });
   }
 });
@@ -870,7 +871,7 @@ router.get('/:id/versions/:versionId', authenticateToken, async (req: AuthReques
 
     res.json({ success: true, version });
   } catch (error) {
-    console.error('Error fetching version:', error);
+    logger.error('Error fetching version:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch version' });
   }
 });
@@ -968,7 +969,7 @@ router.post('/:id/versions', authenticateToken, async (req: AuthRequest, res: Re
 
     res.status(201).json({ success: true, id: result.insertId, message: 'Version created' });
   } catch (error) {
-    console.error('Error creating version:', error);
+    logger.error('Error creating version:', error);
     res.status(500).json({ success: false, message: 'Failed to create version' });
   }
 });
@@ -1093,7 +1094,7 @@ router.put('/:id/versions/:versionId', authenticateToken, async (req: AuthReques
 
     res.json({ success: true, message: 'Version updated' });
   } catch (error) {
-    console.error('Error updating version:', error);
+    logger.error('Error updating version:', error);
     res.status(500).json({ success: false, message: 'Failed to update version' });
   }
 });
@@ -1167,7 +1168,7 @@ router.delete('/:id/versions/:versionId', authenticateToken, async (req: AuthReq
     await invalidateByEntity('application', { applicationId: id, orgId: organizationId });
     res.json({ success: true, message: 'Version deleted' });
   } catch (error) {
-    console.error('Error deleting version:', error);
+    logger.error('Error deleting version:', error);
     res.status(500).json({ success: false, message: 'Failed to delete version' });
   }
 });
@@ -1241,7 +1242,7 @@ router.put('/:id/versions/:versionId/tasks', authenticateToken, async (req: Auth
 
     res.json({ success: true, message: 'Version tasks updated' });
   } catch (error) {
-    console.error('Error updating version tasks:', error);
+    logger.error('Error updating version tasks:', error);
     res.status(500).json({ success: false, message: 'Failed to update version tasks' });
   }
 });
@@ -1378,7 +1379,7 @@ router.post('/:id/versions/improve-patch-notes', authenticateToken, async (req: 
 
     return res.json({ success: true, patchNotes: normalized });
   } catch (error: any) {
-    console.error('Improve patch notes error:', error);
+    logger.error('Improve patch notes error:', error);
     return res.status(500).json({ success: false, message: error.message || 'Failed to improve patch notes' });
   }
 });
@@ -1404,7 +1405,7 @@ router.post('/:id/versions/:versionId/tasks/:taskId', authenticateToken, async (
     await invalidateByEntity('application', { applicationId, orgId: apps[0]?.OrganizationId });
     res.json({ success: true, message: 'Task added to version' });
   } catch (error) {
-    console.error('Error adding task to version:', error);
+    logger.error('Error adding task to version:', error);
     res.status(500).json({ success: false, message: 'Failed to add task to version' });
   }
 });
@@ -1433,7 +1434,7 @@ router.delete('/:id/versions/:versionId/tasks/:taskId', authenticateToken, async
     await invalidateByEntity('application', { applicationId, orgId: apps[0]?.OrganizationId });
     res.json({ success: true, message: 'Task removed from version' });
   } catch (error) {
-    console.error('Error removing task from version:', error);
+    logger.error('Error removing task from version:', error);
     res.status(500).json({ success: false, message: 'Failed to remove task from version' });
   }
 });
@@ -1475,7 +1476,7 @@ router.get('/public/patch-notes/:versionId', async (req, res) => {
 
     res.json({ success: true, version });
   } catch (error) {
-    console.error('Error fetching patch notes:', error);
+    logger.error('Error fetching patch notes:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch patch notes' });
   }
 });
@@ -1576,7 +1577,7 @@ router.get('/:id/versions/:versionId/pdf', authenticateToken, async (req: AuthRe
 
     doc.end();
   } catch (error) {
-    console.error('Error generating version PDF:', error);
+    logger.error('Error generating version PDF:', error);
     if (!res.headersSent) {
       res.status(500).json({ success: false, message: 'Failed to generate PDF' });
     }
@@ -1712,7 +1713,7 @@ router.get('/:id/pdf', authenticateToken, async (req: AuthRequest, res: Response
 
     doc.end();
   } catch (error) {
-    console.error('Error generating date range PDF:', error);
+    logger.error('Error generating date range PDF:', error);
     if (!res.headersSent) {
       res.status(500).json({ success: false, message: 'Failed to generate PDF' });
     }

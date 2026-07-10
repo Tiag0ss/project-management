@@ -3,6 +3,7 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { pool } from '../config/database';
 import { encrypt, decrypt } from '../utils/encryption';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -62,7 +63,7 @@ router.get('/organization/:organizationId', authenticateToken, async (req: AuthR
 
     res.json({ success: true, integration: integration[0] });
   } catch (error) {
-    console.error('Get Gitea integration error:', error);
+    logger.error('Get Gitea integration error:', error);
     res.status(500).json({ success: false, message: 'Failed to get Gitea integration' });
   }
 });
@@ -173,7 +174,7 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
 
     res.json({ success: true, message: 'Gitea integration saved successfully' });
   } catch (error) {
-    console.error('Save Gitea integration error:', error);
+    logger.error('Save Gitea integration error:', error);
     res.status(500).json({ success: false, message: 'Failed to save Gitea integration' });
   }
 });
@@ -232,7 +233,7 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Gitea test connection failed:', response.status, errorText);
+      logger.error('Gitea test connection failed:', response.status, errorText);
       return res.status(400).json({ 
         success: false, 
         message: `Failed to connect to Gitea: ${response.status} ${response.statusText}` 
@@ -247,7 +248,7 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
       giteaUser: userData.login || userData.username
     });
   } catch (error: any) {
-    console.error('Test Gitea connection error:', error);
+    logger.error('Test Gitea connection error:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message || 'Failed to test Gitea connection' 
@@ -335,7 +336,7 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Gitea search failed:', response.status, errorText);
+      logger.error('Gitea search failed:', response.status, errorText);
       return res.status(400).json({ 
         success: false, 
         message: `Failed to search Gitea: ${response.status} ${response.statusText}` 
@@ -385,7 +386,7 @@ router.get('/organization/:organizationId/search', authenticateToken, async (req
       total: issuesOnly.length
     });
   } catch (error: any) {
-    console.error('Search Gitea error:', error);
+    logger.error('Search Gitea error:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message || 'Failed to search Gitea issues' 
@@ -439,7 +440,7 @@ router.delete('/organization/:organizationId', authenticateToken, async (req: Au
 
     res.json({ success: true, message: 'Gitea integration deleted successfully' });
   } catch (error) {
-    console.error('Delete Gitea integration error:', error);
+    logger.error('Delete Gitea integration error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete Gitea integration' });
   }
 });

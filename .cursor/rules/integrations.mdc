@@ -1,0 +1,59 @@
+---
+description: External integrations — Jira, GitHub, Gitea, Outlook, email queue, API tokens
+globs: server/routes/jiraIntegrations.ts,server/routes/githubIntegrations.ts,server/routes/giteaIntegrations.ts,server/routes/outlookCalendar.ts,server/routes/emailTaskQueue.ts,server/routes/apiTokens.ts,cloudflare/**/*
+alwaysApply: false
+---
+
+# Integrations
+
+Docs: [docs/FEATURES.md](../../docs/FEATURES.md) · Skills: `skill-jira-integration.prompt.md`, Outlook/cloudflare READMEs
+
+## Jira (tickets + projects)
+
+- Config per org: `OrganizationJiraIntegrations` (encrypted tokens).
+- Two tiers: **tickets** instance vs **projects** instance (optional separate URL/credentials).
+- `Projects.JiraBoardId` links project to board when projects Jira enabled.
+- Task ↔ ticket chain: `Tasks.TicketId` → `Tickets.ExternalTicketId`.
+- Tokens: AES-256-CBC via `server/utils/encryption.ts` — never return raw tokens in GET.
+- Batch status sync: map Jira statuses → local `TaskStatusValues` IDs.
+
+## GitHub / Gitea
+
+- Org-level integration tables; import issues → tasks.
+- Issue number stored on task; avoid duplicate imports on re-run.
+- Respect org/project permissions on import routes.
+
+## Outlook calendar
+
+- Microsoft Graph via tenant/client credentials in system settings.
+- `GET /api/outlook-calendar/events?startDate&endDate` — used by Planning overlay.
+- **Non-blocking** on planner load (background fetch + loading banner).
+- Graph token cached in-memory short TTL — not Redis.
+
+## Email → task queue
+
+- `EmailTaskQueue` table; webhook from Cloudflare Worker ([cloudflare/README.md](../../cloudflare/README.md)).
+- Import creates tasks; invalidate task/project caches on import.
+- Outlook add-in: [outlook-addin/README.md](../../outlook-addin/README.md).
+
+## API tokens
+
+- `POST/DELETE` under `/api/api-tokens`; user-managed in Profile.
+- Auth middleware accepts Bearer API token OR JWT.
+- Redis caches token lookup — invalidate on revoke (`invalidateByEntity('authToken', …)`).
+
+## Integration checklist (new code)
+
+- [ ] Encrypt secrets at rest
+- [ ] Mask secrets in GET responses
+- [ ] `authenticateToken` on all routes except documented webhooks
+- [ ] Webhooks: verify shared secret / signature if applicable
+- [ ] Invalidate correct cache entities after imports/creates
+- [ ] Portable SQL in integration queries
+- [ ] User-facing errors in English
+
+## Do not
+
+- Log API tokens, Jira tokens, or Graph access tokens.
+- Store integration secrets in frontend env vars.
+- Block planner/ticket UI on slow external API — use async load + status UI.
