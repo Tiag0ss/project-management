@@ -18,23 +18,23 @@ export default function BrandingRuntime() {
           document.title = companyName;
         }
 
-        if (faviconUrl) {
-          let iconLink = document.querySelector<HTMLLinkElement>("link[rel='icon']");
-          if (!iconLink) {
-            iconLink = document.createElement('link');
-            iconLink.rel = 'icon';
-            document.head.appendChild(iconLink);
-          }
-          iconLink.href = faviconUrl;
+        const resolvedFaviconUrl = faviconUrl || '/window.svg';
 
-          let shortcutIconLink = document.querySelector<HTMLLinkElement>("link[rel='shortcut icon']");
-          if (!shortcutIconLink) {
-            shortcutIconLink = document.createElement('link');
-            shortcutIconLink.rel = 'shortcut icon';
-            document.head.appendChild(shortcutIconLink);
-          }
-          shortcutIconLink.href = faviconUrl;
+        let iconLink = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+        if (!iconLink) {
+          iconLink = document.createElement('link');
+          iconLink.rel = 'icon';
+          document.head.appendChild(iconLink);
         }
+        iconLink.href = resolvedFaviconUrl;
+
+        let shortcutIconLink = document.querySelector<HTMLLinkElement>("link[rel='shortcut icon']");
+        if (!shortcutIconLink) {
+          shortcutIconLink = document.createElement('link');
+          shortcutIconLink.rel = 'shortcut icon';
+          document.head.appendChild(shortcutIconLink);
+        }
+        shortcutIconLink.href = resolvedFaviconUrl;
       } catch {
       }
     };
