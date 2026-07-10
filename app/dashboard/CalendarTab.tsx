@@ -149,6 +149,12 @@ interface OutOfOfficeCalendarItem {
   Notes?: string;
 }
 
+interface DevSupportCalendarItem {
+  Id: number;
+  DevSupportDate: string;
+  Notes?: string;
+}
+
 type LeaveDayPortion = 'full' | 'half';
 
 interface CalendarEvent {
@@ -158,7 +164,7 @@ interface CalendarEvent {
   end: Date;
   allDay?: boolean;
   resource: {
-    type: 'task' | 'timeEntry' | 'call' | 'lunch' | 'recurring' | 'holiday' | 'vacation' | 'outOfOffice' | 'outlook';
+    type: 'task' | 'timeEntry' | 'call' | 'lunch' | 'recurring' | 'holiday' | 'vacation' | 'outOfOffice' | 'devSupport' | 'outlook';
     projectId?: number;
     taskId?: number;
     entryId?: number;
@@ -173,6 +179,7 @@ interface CalendarEvent {
     vacationStatus?: string;
     outOfOfficeId?: number;
     outOfOfficeStatus?: string;
+    devSupportId?: number;
     source?: string;
     webLink?: string;
     userName?: string;
@@ -224,6 +231,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
   const [vacations, setVacations] = useState<VacationCalendarItem[]>([]);
   const [outOfOfficeEntries, setOutOfOfficeEntries] = useState<OutOfOfficeCalendarItem[]>([]);
+  const [devSupportEntries, setDevSupportEntries] = useState<DevSupportCalendarItem[]>([]);
   const [outlookEvents, setOutlookEvents] = useState<OutlookCalendarEvent[]>([]);
   const [showTaskDetailsModal, setShowTaskDetailsModal] = useState(false);
   const [detailsTask, setDetailsTask] = useState<ApiTask | null>(null);
@@ -463,6 +471,54 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     };
 
     loadOutOfOfficeEntries();
+  }, [token, currentDate, currentView]);
+
+  useEffect(() => {
+    if (!token) {
+      setDevSupportEntries([]);
+      return;
+    }
+
+    const loadDevSupportEntries = async () => {
+      try {
+        const visibleStart = currentView === 'month'
+          ? startOfMonth(currentDate)
+          : startOfWeek(currentDate, { weekStartsOn: 1 });
+        const visibleEnd = currentView === 'month'
+          ? endOfMonth(currentDate)
+          : endOfWeek(currentDate, { weekStartsOn: 1 });
+
+        const years = Array.from(new Set([visibleStart.getFullYear(), visibleEnd.getFullYear()]));
+
+        const responses = await Promise.all(
+          years.map((year) =>
+            fetch(`${getApiUrl()}/api/dev-support/my?year=${year}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+          )
+        );
+
+        const devSupportLists = await Promise.all(
+          responses.map(async (response) => {
+            if (!response.ok) {
+              return [] as DevSupportCalendarItem[];
+            }
+            const data = await response.json();
+            return (data.entries || []) as DevSupportCalendarItem[];
+          })
+        );
+
+        const merged = devSupportLists.flat();
+        const uniqueById = new Map<number, DevSupportCalendarItem>();
+        merged.forEach((entry) => uniqueById.set(entry.Id, entry));
+        setDevSupportEntries(Array.from(uniqueById.values()));
+      } catch (error) {
+        console.error('Error loading dev support for calendar:', error);
+        setDevSupportEntries([]);
+      }
+    };
+
+    loadDevSupportEntries();
   }, [token, currentDate, currentView]);
   
   // Helper functions for time calculations
@@ -847,6 +903,31 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
       });
     });
 
+    devSupportEntries.forEach((devSupport) => {
+      const datePart = String(devSupport.DevSupportDate).split('T')[0];
+      const [year, month, day] = datePart.split('-').map(Number);
+
+      if (!year || !month || !day) {
+        return;
+      }
+
+      const start = new Date(year, month - 1, day, 0, 0, 0);
+      const end = new Date(year, month - 1, day + 1, 0, 0, 0);
+
+      calendarEvents.push({
+        id: `dev-support-${devSupport.Id}`,
+        title: `🛠️ Dev Support${devSupport.Notes ? `: ${devSupport.Notes}` : ''}`,
+        start,
+        end,
+        allDay: true,
+        resource: {
+          type: 'devSupport',
+          devSupportId: devSupport.Id,
+          description: devSupport.Notes ? `Dev Support - ${devSupport.Notes}` : 'Dev Support',
+        },
+      });
+    });
+
     outlookEvents.forEach((outlookEvent, index) => {
       const startDate = new Date(outlookEvent.start);
       const endDate = new Date(outlookEvent.end);
@@ -887,7 +968,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
         id: `${baseId}__${count}`,
       };
     });
-  }, [taskAllocations, timeEntries, callRecords, recurringAllocations, holidays, vacations, outOfOfficeEntries, outlookEvents, workStartTimes, lunchTime, lunchDuration]);
+  }, [taskAllocations, timeEntries, callRecords, recurringAllocations, holidays, vacations, outOfOfficeEntries, devSupportEntries, outlookEvents, workStartTimes, lunchTime, lunchDuration]);
 
   const calendarScrollToTime = useMemo(() => {
     const dayNames: Array<keyof typeof workStartTimes> = [
@@ -939,7 +1020,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   }, [token]);
 
   const handleSelectEvent = useCallback(async (event: CalendarEvent) => {
-    if (event.resource.type === 'holiday' || event.resource.type === 'vacation' || event.resource.type === 'outOfOffice') {
+    if (event.resource.type === 'holiday' || event.resource.type === 'vacation' || event.resource.type === 'outOfOffice' || event.resource.type === 'devSupport') {
       return;
     }
 
@@ -989,6 +1070,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     const isHoliday = event.resource.type === 'holiday';
     const isVacation = event.resource.type === 'vacation';
     const isOutOfOffice = event.resource.type === 'outOfOffice';
+    const isDevSupport = event.resource.type === 'devSupport';
     const isOutlook = event.resource.type === 'outlook';
     
     let bgColor = '#10b981'; // green for time entries
@@ -1015,6 +1097,9 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
     } else if (isOutOfOffice) {
       bgColor = '#f43f5e'; // rose for out of office
       borderColor = '#e11d48';
+    } else if (isDevSupport) {
+      bgColor = '#6366f1'; // indigo for dev support
+      borderColor = '#4f46e5';
     } else if (isOutlook) {
       bgColor = '#0ea5e9'; // sky-blue for outlook events
       borderColor = '#0284c7';
@@ -1570,6 +1655,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
             { type: 'holiday' as const,   color: 'bg-red-500',    label: 'Holidays' },
             { type: 'vacation' as const,  color: 'bg-cyan-500',   label: 'Vacations' },
             { type: 'outOfOffice' as const, color: 'bg-rose-500', label: 'Out Of Office' },
+            { type: 'devSupport' as const, color: 'bg-indigo-500', label: 'Dev Support' },
           ] as { type: CalendarEventType; color: string; label: string }[]).map(({ type, color, label }) => {
             const hidden = hiddenTypes.has(type);
             return (

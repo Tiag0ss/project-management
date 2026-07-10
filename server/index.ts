@@ -71,6 +71,7 @@ import workflowTransitionPoliciesRoutes from './routes/workflowTransitionPolicie
 import holidaysRoutes from './routes/holidays';
 import vacationsRoutes from './routes/vacations';
 import outOfOfficeRoutes from './routes/outOfOffice';
+import devSupportRoutes from './routes/devSupport';
 import pdfExportsRoutes from './routes/pdfExports';
 import planningImportRoutes from './routes/planningImport';
 import allocationSnapshotsRoutes from './routes/allocationSnapshots';
@@ -267,6 +268,7 @@ app.prepare().then(async () => {
   server.use('/api/holidays', holidaysRoutes);
   server.use('/api/vacations', vacationsRoutes);
   server.use('/api/out-of-office', outOfOfficeRoutes);
+  server.use('/api/dev-support', devSupportRoutes);
   server.use('/api/pdf-exports', pdfExportsRoutes);
   server.use('/api/reports', reportsRoutes);
   server.use('/api/ai-assistant', aiAssistantRoutes);

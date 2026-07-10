@@ -71,6 +71,9 @@ Each user can edit their own profile at `/profile`:
 - **Hourly rate**: Used in budget calculations (Manager-visible)
 - **Timezone**: IANA timezone for correct date/time display
 - **Email preferences**: Opt in/out of specific notification types (assignment, due-date reminders, work summary, etc.)
+- **Vacations**: Request and manage vacation days (approval workflow when enabled)
+- **Out Of Office**: Request unavailable days that block planning capacity (approval workflow when enabled)
+- **Dev Support**: Mark informational dev-support days (auto-saved, full days only). Visible on the calendar and planning overlay but **does not** reduce allocation capacity or block drag-and-drop. Team leaders/admins manage others via **Management → Dev Support** (`/dev-support`).
 
 ---
 
@@ -479,6 +482,17 @@ When enabled in System Settings (Microsoft Graph credentials):
 - Non-all-day events appear as blocks on user rows; other users' events show as **Busy**
 - Event hours reduce daily availability in capacity calculations
 - Click own event → open in Outlook or start call timer
+
+### Dev Support overlay (informational)
+**Team leaders and admins** schedule Dev Support days from **Management → Dev Support** (`/dev-support`). Regular users see assigned days on Planning and the dashboard calendar but cannot create or delete them. Unlike vacations and out-of-office:
+
+| Surface | Dev Support | Out Of Office / Vacation |
+|---|---|---|
+| Planning column | Sky/indigo tint, 🛠️ footer icon | Amber tint (blocking), blocks allocation |
+| Dashboard calendar | Indigo all-day event | Cyan (vacation) / rose (OOO) all-day |
+| Allocation API | **Ignored** | Reduces available capacity |
+
+Dev Support entries are created immediately (no approval tab). Team leaders and admins can see subordinate dev support days on the planning calendar endpoint. **Team leaders** configure direct reports; **admins** configure any active user via `/dev-support` in the main menu (below Approvals).
 
 ### Planning Import (`/planning-import`)
 Batch import of allocation plans from CSV:

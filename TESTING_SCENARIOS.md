@@ -1052,6 +1052,81 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Outlook events appear as calendar blocks on user rows (non-all-day events reduce available hours)
 - Clicking own event opens modal (open in Outlook / start call timer)
 
+### TC-DEVSUP-001: Regular User Cannot Access Dev Support Management
+**Steps:**
+1. Log in as a regular user (not team leader or admin)
+2. Check main menu **Management** section
+3. Navigate directly to `/dev-support`
+
+**Expected:**
+- **Dev Support** menu item is not visible
+- Page redirects to dashboard (or shows access denied)
+- `POST /api/dev-support/my/request` returns 403
+
+### TC-DEVSUP-002: Planning Overlay Without Blocking Allocation
+**Prerequisites:** User has dev support day(s) in the visible planning range  
+**Steps:**
+1. Open Planning Gantt for a range that includes a dev support day
+2. Observe column styling for that user/date
+3. Attempt drag-and-drop allocation onto the dev support day
+
+**Expected:**
+- Column shows sky/indigo tint (not amber unavailable)
+- Footer row shows 🛠️ icon
+- Tooltip shows "Dev Support" (or notes), not "Unavailable"
+- Drag-drop and manual allocation still succeed
+- Server allocation API does not treat dev support as unavailable
+
+### TC-DEVSUP-003: Dashboard Calendar All-Day Event (Read-Only)
+**Prerequisites:** Manager has assigned dev support days for the user  
+**Steps:**
+1. Open Dashboard → Calendar
+2. Navigate to a day with dev support (week or month view)
+
+**Expected:**
+- All-day event **🛠️ Dev Support** appears in indigo styling
+- Legend includes toggleable **Dev Support** type
+- Clicking the event does not open an edit modal (informational only)
+- Calendar slot picker does **not** offer a Dev Support create option
+
+### TC-DEVSUP-004: Manager Deletes Dev Support Day
+**Steps:**
+1. Log in as team leader or admin
+2. Open **Management → Dev Support**
+3. Delete an existing entry for a managed user
+4. Confirm in the delete modal
+
+**Expected:**
+- Entry removed from table and stats update
+- Planning overlay and calendar no longer show the day
+
+### TC-DEVSUP-005: Team Leader Calendar Visibility
+**Prerequisites:** Team leader with at least one active subordinate  
+**Steps:**
+1. Subordinate creates dev support days
+2. Team leader opens Planning (or calls `GET /api/dev-support/calendar` with subordinate userIds)
+
+**Expected:**
+- Subordinate dev support days visible to team leader on planning overlay
+- Unrelated users' dev support days are not returned
+
+### TC-DEVSUP-006: Manager Configures Dev Support for Team Member
+**Prerequisites:** Team leader with at least one subordinate, or admin  
+**Steps:**
+1. Log in as team leader or admin
+2. Open main menu **Management → Dev Support** (`/dev-support`)
+3. Select a team member (subordinate for TL, any user for admin)
+4. Add a date range with optional notes
+5. Delete one of the member's days
+
+**Expected:**
+- Menu item visible only for team leaders/admins (below Approvals)
+- Full-width layout with filters, stats cards, and entries table (similar to Approvals)
+- `POST /api/dev-support/team-members/:userId/configure` creates rows immediately
+- Member list shows year day count per user
+- `CreatedBy` reflects the manager who added the days
+- Delete works for managed users
+
 ### TC-PLAN-016: Task Type Icon on Planning Bars
 **Prerequisites:** Tasks with configured task types (icons + colors)  
 **Steps:**

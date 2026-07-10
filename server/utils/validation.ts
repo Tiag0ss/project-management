@@ -132,6 +132,13 @@ export const createPortalTicketSchema = z.object({
   projectId: optionalPositiveInt,
 }).passthrough();
 
+// Dev Support schemas (informational leave marker — full days only)
+export const createDevSupportRequestSchema = z.object({
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)').optional().nullable(),
+  notes: z.string().max(1000).optional().nullable(),
+});
+
 // Time Entry schemas
 export const createTimeEntrySchema = z.object({
   taskId: z.coerce.number().int().positive(),

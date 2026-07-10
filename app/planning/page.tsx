@@ -25,6 +25,8 @@ import { loadOutlookCalendarEvents, type PlannerOutlookEvent } from './hooks/loa
 // Week days constant - reused throughout the component
 const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const PLANNING_HOUR_STEP = 0.5;
+const GANTT_NONE_SELECTED = -1;
+const PLANNING_GANTT_VIEW_OPTIONS_KEY = 'planning:gantt:view-options';
 
 const roundToPlanningStep = (value: number | string | null | undefined): number => {
   const numericValue = Number(value);
@@ -80,6 +82,13 @@ interface PlannerOutOfOfficeDay {
   OutOfOfficeDate: string;
   DayPortion?: 'full' | 'half' | string;
   Status: string;
+  Notes?: string;
+}
+
+interface PlannerDevSupportDay {
+  Id: number;
+  UserId: number;
+  DevSupportDate: string;
   Notes?: string;
 }
 
@@ -151,6 +160,7 @@ export default function PlanningPage() {
   const [showOutlookActionModal, setShowOutlookActionModal] = useState(false);
   const [isStartingOutlookTimer, setIsStartingOutlookTimer] = useState(false);
   const [holidayNamesByUserDate, setHolidayNamesByUserDate] = useState<Record<number, Record<string, string[]>>>({});
+  const [devSupportLabelsByUserDate, setDevSupportLabelsByUserDate] = useState<Record<number, Record<string, string[]>>>({});
   const [loadingAllocations, setLoadingAllocations] = useState(false);
   const [showDependencyLines, setShowDependencyLines] = useState(true);
   const [showCriticalPath, setShowCriticalPath] = useState(false);
@@ -816,6 +826,10 @@ export default function PlanningPage() {
     return holidayNamesByUserDate[userId]?.[dateStr] || [];
   };
 
+  const getUserDevSupportLabels = (userId: number, dateStr: string): string[] => {
+    return devSupportLabelsByUserDate[userId]?.[dateStr] || [];
+  };
+
   const isHalfDayLeaveLabel = (label: unknown): boolean => {
     const normalized = String(label || '').trim();
     return /^half-day\s+(vacation|out\s*of\s*office)\b/i.test(normalized);
@@ -838,6 +852,12 @@ export default function PlanningPage() {
     const outOfOfficeLabels = labels.filter((label) => outOfOfficePattern.test(String(label || '').trim()));
     const holidayLabels = labels.filter((label) => !vacationPattern.test(String(label || '').trim()) && !outOfOfficePattern.test(String(label || '').trim()));
     return { vacationLabels, outOfOfficeLabels, holidayLabels };
+  };
+
+  const isBlockingUnavailableLabel = (labels: string[]): boolean => {
+    if (labels.length === 0) return false;
+    const { vacationLabels, outOfOfficeLabels, holidayLabels } = splitUnavailableLabels(labels);
+    return vacationLabels.length > 0 || outOfOfficeLabels.length > 0 || holidayLabels.length > 0;
   };
 
   const getLatestAllocationDate = (allocations: { date: string }[]): string | null => {
@@ -977,7 +997,15 @@ export default function PlanningPage() {
   }, [showGanttViewOptions]);
 
   useEffect(() => {
+    if (users.length === 0) {
+      return;
+    }
+
     setSelectedGanttUserIds((previousSelectedIds) => {
+      if (previousSelectedIds.includes(GANTT_NONE_SELECTED)) {
+        return previousSelectedIds;
+      }
+
       if (previousSelectedIds.length === 0) {
         return previousSelectedIds;
       }
@@ -991,6 +1019,10 @@ export default function PlanningPage() {
 
       if (nextSelectedIds.length === previousSelectedIds.length) {
         return previousSelectedIds;
+      }
+
+      if (nextSelectedIds.length === 0) {
+        return [];
       }
 
       return nextSelectedIds;
@@ -1061,7 +1093,7 @@ export default function PlanningPage() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem('planning:gantt:view-options');
+      const raw = localStorage.getItem(PLANNING_GANTT_VIEW_OPTIONS_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as {
           showDependencyLines?: boolean;
@@ -1070,6 +1102,7 @@ export default function PlanningPage() {
           showGanttTotals?: boolean;
           showTaskBarHours?: boolean;
           showTimeEntriesOverlay?: boolean;
+          selectedGanttUserIds?: unknown;
         };
 
         if (typeof parsed.showDependencyLines === 'boolean') setShowDependencyLines(parsed.showDependencyLines);
@@ -1078,6 +1111,19 @@ export default function PlanningPage() {
         if (typeof parsed.showGanttTotals === 'boolean') setShowGanttTotals(parsed.showGanttTotals);
         if (typeof parsed.showTaskBarHours === 'boolean') setShowTaskBarHours(parsed.showTaskBarHours);
         if (typeof parsed.showTimeEntriesOverlay === 'boolean') setShowTimeEntriesOverlay(parsed.showTimeEntriesOverlay);
+
+        if (Array.isArray(parsed.selectedGanttUserIds)) {
+          const normalizedIds = parsed.selectedGanttUserIds.filter(
+            (id: unknown): id is number =>
+              typeof id === 'number' && Number.isInteger(id) && (id === GANTT_NONE_SELECTED || id > 0)
+          );
+
+          if (normalizedIds.includes(GANTT_NONE_SELECTED)) {
+            setSelectedGanttUserIds([GANTT_NONE_SELECTED]);
+          } else {
+            setSelectedGanttUserIds(normalizedIds);
+          }
+        }
       }
     } catch (error) {
       console.warn('Failed to load Gantt view options from localStorage:', error);
@@ -1091,7 +1137,7 @@ export default function PlanningPage() {
 
     try {
       localStorage.setItem(
-        'planning:gantt:view-options',
+        PLANNING_GANTT_VIEW_OPTIONS_KEY,
         JSON.stringify({
           showDependencyLines,
           showCriticalPath,
@@ -1099,6 +1145,7 @@ export default function PlanningPage() {
           showGanttTotals,
           showTaskBarHours,
           showTimeEntriesOverlay,
+          selectedGanttUserIds,
         })
       );
     } catch (error) {
@@ -1112,6 +1159,7 @@ export default function PlanningPage() {
     showGanttTotals,
     showTaskBarHours,
     showTimeEntriesOverlay,
+    selectedGanttUserIds,
   ]);
 
   // Re-apply canViewOthersPlanning filter after permissions are resolved
@@ -1388,6 +1436,7 @@ export default function PlanningPage() {
   const loadPlannerHolidays = async () => {
     if (!token || users.length === 0) {
       setHolidayNamesByUserDate({});
+      setDevSupportLabelsByUserDate({});
       return;
     }
 
@@ -1395,6 +1444,7 @@ export default function PlanningPage() {
       const days = getDaysInView();
       if (days.length === 0) {
         setHolidayNamesByUserDate({});
+        setDevSupportLabelsByUserDate({});
         return;
       }
 
@@ -1416,12 +1466,14 @@ export default function PlanningPage() {
 
       if (countryCodes.length === 0 || years.length === 0) {
         setHolidayNamesByUserDate({});
+        setDevSupportLabelsByUserDate({});
         return;
       }
 
       const userIds = users.map((u) => u.Id).filter((id): id is number => Number.isInteger(id) && id > 0);
       let approvedVacations: PlannerVacationDay[] = [];
       let approvedOutOfOffice: PlannerOutOfOfficeDay[] = [];
+      let devSupportEntries: PlannerDevSupportDay[] = [];
       if (userIds.length > 0) {
         const vacationQuery = new URLSearchParams({
           startDate: startDateKey,
@@ -1429,7 +1481,7 @@ export default function PlanningPage() {
           userIds: userIds.join(','),
         });
 
-        const [vacationResponse, outOfOfficeResponse] = await Promise.all([
+        const [vacationResponse, outOfOfficeResponse, devSupportResponse] = await Promise.all([
           fetch(`${getApiUrl()}/api/vacations/calendar?${vacationQuery.toString()}`, {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -1437,6 +1489,12 @@ export default function PlanningPage() {
             },
           }),
           fetch(`${getApiUrl()}/api/out-of-office/calendar?${vacationQuery.toString()}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          }),
+          fetch(`${getApiUrl()}/api/dev-support/calendar?${vacationQuery.toString()}`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json',
@@ -1452,6 +1510,11 @@ export default function PlanningPage() {
         if (outOfOfficeResponse.ok) {
           const outOfOfficeData = await outOfOfficeResponse.json();
           approvedOutOfOffice = (outOfOfficeData.entries || []) as PlannerOutOfOfficeDay[];
+        }
+
+        if (devSupportResponse.ok) {
+          const devSupportData = await devSupportResponse.json();
+          devSupportEntries = (devSupportData.entries || []) as PlannerDevSupportDay[];
         }
       }
 
@@ -1485,6 +1548,7 @@ export default function PlanningPage() {
       }
 
       const result: Record<number, Record<string, string[]>> = {};
+      const devSupportResult: Record<number, Record<string, string[]>> = {};
 
       users.forEach((planningUser) => {
         const countryCode = String(planningUser.CountryCode || 'PT').trim().toUpperCase();
@@ -1561,12 +1625,37 @@ export default function PlanningPage() {
           });
 
         result[planningUser.Id] = holidayMapForUser;
+
+        const devSupportMapForUser: Record<string, string[]> = {};
+        devSupportEntries
+          .filter((entry) => Number(entry.UserId) === planningUser.Id)
+          .forEach((entry) => {
+            const dateKey = normalizeDateKey(entry.DevSupportDate);
+            if (dateKey < startDateKey || dateKey > endDateKey) {
+              return;
+            }
+            if (!devSupportMapForUser[dateKey]) {
+              devSupportMapForUser[dateKey] = [];
+            }
+
+            const label = entry.Notes
+              ? `Dev Support: ${entry.Notes}`
+              : 'Dev Support';
+
+            if (!devSupportMapForUser[dateKey].includes(label)) {
+              devSupportMapForUser[dateKey].push(label);
+            }
+          });
+
+        devSupportResult[planningUser.Id] = devSupportMapForUser;
       });
 
       setHolidayNamesByUserDate(result);
+      setDevSupportLabelsByUserDate(devSupportResult);
     } catch (err) {
       console.error('Failed to load planner holidays:', err);
       setHolidayNamesByUserDate({});
+      setDevSupportLabelsByUserDate({});
     }
   };
 
@@ -7451,14 +7540,13 @@ export default function PlanningPage() {
   const isResourceGrouping = ganttGroupBy === 'resource';
   const availableGanttUsers = users.filter((planningUser) => Number(planningUser.Id) > 0);
   const allGanttUserIds = availableGanttUsers.map((planningUser) => Number(planningUser.Id));
-  const normalizedSelectedGanttUserIds = selectedGanttUserIds.includes(-1)
+  const normalizedSelectedGanttUserIds = selectedGanttUserIds.includes(GANTT_NONE_SELECTED)
     ? []
     : selectedGanttUserIds.length === 0
       ? allGanttUserIds
       : selectedGanttUserIds.filter((id) => allGanttUserIds.includes(id));
   const selectedGanttUserIdSet = new Set(normalizedSelectedGanttUserIds);
   const visibleGanttUsers = availableGanttUsers.filter((planningUser) => selectedGanttUserIdSet.has(Number(planningUser.Id)));
-  const GANTT_NONE_SELECTED = -1;
   const isGanttNoneSelected = selectedGanttUserIds.includes(GANTT_NONE_SELECTED);
   const isAllGanttUsersSelected =
     !isGanttNoneSelected
@@ -8823,6 +8911,7 @@ export default function PlanningPage() {
                     let hobbyCapacity = 0;
                     let isOverAllocated = false;
                     const holidaySet = new Set<string>();
+                    const devSupportSet = new Set<string>();
 
                     const cursor = new Date(column.start);
                     cursor.setHours(12, 0, 0, 0);
@@ -8852,17 +8941,23 @@ export default function PlanningPage() {
                       const holidayNames = getUserHolidayNames(userRow.Id, dateStr);
                       holidayNames.forEach((name) => holidaySet.add(name));
 
+                      const devSupportLabels = getUserDevSupportLabels(userRow.Id, dateStr);
+                      devSupportLabels.forEach((label) => devSupportSet.add(label));
+
                       cursor.setDate(cursor.getDate() + 1);
                     }
 
                     const holidayNames = Array.from(holidaySet);
+                    const devSupportLabels = Array.from(devSupportSet);
                     return {
                       totals,
                       workCapacity,
                       hobbyCapacity,
                       isOverAllocated,
                       holidayNames,
-                      isHoliday: holidayNames.length > 0,
+                      devSupportLabels,
+                      isHoliday: isBlockingUnavailableLabel(holidayNames),
+                      isDevSupport: devSupportLabels.length > 0,
                       isWeekend: column.isWeekend,
                     };
                   };
@@ -9126,6 +9221,8 @@ export default function PlanningPage() {
                             const isOverAllocated = summary.isOverAllocated;
                             const holidayNames = summary.holidayNames;
                             const isHoliday = summary.isHoliday;
+                            const isDevSupport = summary.isDevSupport;
+                            const devSupportLabels = summary.devSupportLabels;
                             const dateKey = getDateKeyFromDate(column.start);
                             const showDayDropTarget = !!(
                               draggedTask &&
@@ -9141,6 +9238,8 @@ export default function PlanningPage() {
                                     ? 'bg-red-50 dark:bg-red-900/20'
                                     : isHoliday
                                     ? 'bg-amber-50 dark:bg-amber-900/20'
+                                    : isDevSupport
+                                    ? 'bg-indigo-100 dark:bg-indigo-900/40 ring-inset ring-1 ring-indigo-300/80 dark:ring-indigo-500/50'
                                     : summary.isWeekend
                                     ? 'bg-gray-100 dark:bg-gray-700/45'
                                     : ''
@@ -9158,7 +9257,13 @@ export default function PlanningPage() {
                                 }}
                                 onDragOver={handleDragOver}
                                 onDrop={(e) => handleDropOnDay(e, column.start, userRow.Id)}
-                                title={isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
+                                title={
+                                  isHoliday
+                                    ? `Unavailable: ${holidayNames.join(', ')}`
+                                    : isDevSupport
+                                    ? devSupportLabels.join(', ')
+                                    : undefined
+                                }
                               >
                                 {showDayDropTarget && (
                                   <div className="absolute inset-1 rounded border-2 border-dashed border-blue-500 dark:border-blue-400 bg-blue-100/40 dark:bg-blue-900/30 pointer-events-none flex items-center justify-center">
@@ -9805,6 +9910,8 @@ export default function PlanningPage() {
                           const isOverAllocated = summary.isOverAllocated;
                           const holidayNames = summary.holidayNames;
                           const isHoliday = summary.isHoliday;
+                          const isDevSupport = summary.isDevSupport;
+                          const devSupportLabels = summary.devSupportLabels;
                           const { vacationLabels, outOfOfficeLabels, holidayLabels } = splitUnavailableLabels(holidayNames);
                           
                           const workCapacity = summary.workCapacity;
@@ -9818,11 +9925,21 @@ export default function PlanningPage() {
                                   ? 'bg-red-100/70 dark:bg-red-900/35'
                                   : isHoliday
                                   ? 'bg-amber-100/70 dark:bg-amber-900/35'
-                                    : summary.isWeekend
+                                  : isDevSupport
+                                  ? 'bg-indigo-100/90 dark:bg-indigo-900/45 ring-inset ring-1 ring-indigo-300/70 dark:ring-indigo-500/45'
+                                  : summary.isWeekend
                                   ? 'bg-gray-200 dark:bg-gray-600/65'
                                   : ''
                               } ${idx === todayIndex ? 'border-l-2 border-l-red-400/70 dark:border-l-red-400/60' : ''}`}
-                              title={isOverAllocated ? 'Over allocated day: planned hours exceed configured capacity' : isHoliday ? `Unavailable: ${holidayNames.join(', ')}` : undefined}
+                              title={
+                                isOverAllocated
+                                  ? 'Over allocated day: planned hours exceed configured capacity'
+                                  : isHoliday
+                                  ? `Unavailable: ${holidayNames.join(', ')}`
+                                  : isDevSupport
+                                  ? devSupportLabels.join(', ')
+                                  : undefined
+                              }
                               style={useFixedPixelColumns ? { overflow: 'hidden', width: `${dayColumnWidthPx}px` } : { overflow: 'hidden' }}
                             >
                               {vacationLabels.length > 0 && (
@@ -9830,6 +9947,9 @@ export default function PlanningPage() {
                               )}
                               {outOfOfficeLabels.length > 0 && (
                                 <div className="text-rose-700 dark:text-rose-300 font-medium truncate">🚫</div>
+                              )}
+                              {devSupportLabels.length > 0 && (
+                                <div className="text-indigo-600 dark:text-indigo-300 font-medium truncate">🛠️</div>
                               )}
                               {holidayLabels.length > 0 && (
                                 <div className="text-amber-700 dark:text-amber-300 font-medium truncate">🎉</div>

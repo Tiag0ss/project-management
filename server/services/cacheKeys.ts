@@ -63,6 +63,7 @@ export const cacheKeys = {
   holidays: (scope: string) => `holidays:${scope}`,
   vacations: (scope: string) => `vacations:${scope}`,
   ooo: (scope: string) => `ooo:${scope}`,
+  devSupport: (scope: string) => `devSupport:${scope}`,
   callRecords: (scope: string) => `call-records:${scope}`,
   recurringAllocations: (scope: string) => `recurring:${scope}`,
   childAllocations: (parentId: number | string) => `child-allocations:parent:${parentId}`,

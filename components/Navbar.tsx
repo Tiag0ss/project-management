@@ -129,6 +129,7 @@ export default function Navbar() {
   const [canAccessApprovals, setCanAccessApprovals] = useState(false);
   const [canAccessVacationApprovals, setCanAccessVacationApprovals] = useState(false);
   const [canAccessOutOfOfficeApprovals, setCanAccessOutOfOfficeApprovals] = useState(false);
+  const [canAccessDevSupportManagement, setCanAccessDevSupportManagement] = useState(false);
 
   // Active timer state
   const [navTimer, setNavTimer] = useState<{
@@ -489,6 +490,7 @@ export default function Navbar() {
         setCanAccessApprovals(false);
         setCanAccessVacationApprovals(false);
         setCanAccessOutOfOfficeApprovals(false);
+        setCanAccessDevSupportManagement(false);
         return;
       }
 
@@ -496,6 +498,7 @@ export default function Navbar() {
         setCanAccessApprovals(true);
         setCanAccessVacationApprovals(true);
         setCanAccessOutOfOfficeApprovals(true);
+        setCanAccessDevSupportManagement(true);
         return;
       }
 
@@ -541,6 +544,20 @@ export default function Navbar() {
         setCanAccessOutOfOfficeApprovals(!!outOfOfficeData?.canApprove);
       } catch {
         setCanAccessOutOfOfficeApprovals(false);
+      }
+
+      try {
+        const devSupportRes = await fetch(`${getApiUrl()}/api/dev-support/manage-scope`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!devSupportRes.ok) {
+          setCanAccessDevSupportManagement(false);
+          return;
+        }
+        const devSupportData = await devSupportRes.json();
+        setCanAccessDevSupportManagement(!!devSupportData?.canManage);
+      } catch {
+        setCanAccessDevSupportManagement(false);
       }
     };
 
@@ -1612,6 +1629,7 @@ export default function Navbar() {
   const canShowApprovalsOption = canAccessApprovals;
   const canShowVacationApprovalsOption = canAccessVacationApprovals;
   const canShowOutOfOfficeApprovalsOption = canAccessOutOfOfficeApprovals;
+  const canShowDevSupportManagementOption = canAccessDevSupportManagement;
   const canShowAnyApprovalsOption = canShowApprovalsOption || canShowVacationApprovalsOption || canShowOutOfOfficeApprovalsOption;
 
   const canShowDashboardLink = isCustomerUser || (!isCustomerUser && (permissionsLoading || permissions?.canViewDashboard));
@@ -1629,7 +1647,7 @@ export default function Navbar() {
   const showDeliverySection = canShowProjectsLink || canShowPlanningLink;
   const showWorkLogsSection = canShowTimesheetLink || canShowCallRecordsLink || canShowWorkSummaryLink;
   const showServiceSection = canShowTicketsLink || canShowMemosLink;
-  const showManagementSection = canShowCustomersOption || canShowApplicationsOption || canShowOrganizationsOption || canShowAnyApprovalsOption;
+  const showManagementSection = canShowCustomersOption || canShowApplicationsOption || canShowOrganizationsOption || canShowAnyApprovalsOption || canShowDevSupportManagementOption;
   const showReportingSection = canShowReportsLink;
 
   const canShowManagementMenu =
@@ -1637,7 +1655,8 @@ export default function Navbar() {
     (canShowCustomersOption ||
       canShowApplicationsOption ||
       canShowOrganizationsOption ||
-    canShowAnyApprovalsOption);
+    canShowAnyApprovalsOption ||
+    canShowDevSupportManagementOption);
 
   const shouldUseLeftSidebar = navbarMenuLayout === 'left';
   const isFloatingMode = shouldUseLeftSidebar && navbarLeftMode === 'floating';
@@ -1909,6 +1928,11 @@ export default function Navbar() {
                       <span className="w-5 text-center">✅</span>{!isSidebarEffectivelyCollapsed && <span>Approvals</span>}
                     </a>
                   )}
+                  {canShowDevSupportManagementOption && (
+                    <a href="/dev-support" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">🛠️</span>{!isSidebarEffectivelyCollapsed && <span>Dev Support</span>}
+                    </a>
+                  )}
                 </div>
               )}
 
@@ -2127,6 +2151,12 @@ export default function Navbar() {
                           ? '/approvals?tab=time'
                           : (canShowVacationApprovalsOption ? '/approvals?tab=vacations' : '/approvals?tab=out-of-office'),
                         visible: !!canShowAnyApprovalsOption,
+                        onClick: () => setManagementMenuOpen(false),
+                      },
+                      {
+                        label: '🛠️ Dev Support',
+                        href: '/dev-support',
+                        visible: !!canShowDevSupportManagementOption,
                         onClick: () => setManagementMenuOpen(false),
                       },
                     ]}

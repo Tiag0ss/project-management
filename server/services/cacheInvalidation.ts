@@ -41,6 +41,7 @@ export type CacheEntityType =
   | 'holiday'
   | 'vacation'
   | 'ooo'
+  | 'devSupport'
   | 'callRecord'
   | 'recurringAllocation'
   | 'childAllocation'
@@ -355,6 +356,13 @@ export async function invalidateOooCaches(scope: string, orgId?: number | string
   }
 }
 
+export async function invalidateDevSupportCaches(scope: string, orgId?: number | string): Promise<void> {
+  await cache.delByPrefix('devSupport:');
+  if (orgId !== undefined) {
+    await invalidatePlanning(orgId);
+  }
+}
+
 export async function invalidateCallRecordCaches(scope: string, orgId?: number | string): Promise<void> {
   await cache.delByPrefix('call-records:');
   if (orgId !== undefined) {
@@ -469,6 +477,9 @@ export async function invalidateByEntity(type: CacheEntityType, payload: Invalid
       break;
     case 'ooo':
       await invalidateOooCaches(String(normalizeId(payload.orgId) ?? 'global'), normalizeId(payload.orgId));
+      break;
+    case 'devSupport':
+      await invalidateDevSupportCaches(String(normalizeId(payload.orgId) ?? 'global'), normalizeId(payload.orgId));
       break;
     case 'callRecord':
       await invalidateCallRecordCaches(String(normalizeId(payload.orgId) ?? 'global'), normalizeId(payload.orgId));
