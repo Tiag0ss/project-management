@@ -1,8 +1,40 @@
 import { z } from 'zod';
 
+const TASK_NAME_MAX = 255;
+const MEDIUMTEXT_MAX = 16_777_215;
+
 const optionalPositiveInt = z.coerce.number().int().positive().optional().nullable();
 const optionalDateString = z.string().optional().nullable();
 const optionalCustomFields = z.record(z.string(), z.unknown()).optional();
+
+const emptyStringToNull = (value: unknown) => (value === '' ? null : value);
+
+const optionalStatusId = z.preprocess(
+  emptyStringToNull,
+  z.union([z.coerce.number().int().positive(), z.null()]).optional()
+);
+
+const taskFieldsSchema = z.object({
+  taskName: z.string().min(1, 'Task name is required').max(TASK_NAME_MAX),
+  description: z.string().max(MEDIUMTEXT_MAX, 'Description is too long').optional().nullable(),
+  status: z.coerce.number().int().positive('Status is required'),
+  priority: z.coerce.number().int().positive('Priority is required'),
+  taskType: optionalPositiveInt,
+  assignedTo: optionalPositiveInt,
+  dueDate: optionalDateString,
+  dueDateMandatory: z.union([z.boolean(), z.coerce.number(), z.string()]).optional(),
+  unscheduledWork: z.union([z.boolean(), z.coerce.number(), z.string()]).optional(),
+  estimatedHours: z.union([z.coerce.number(), z.literal(''), z.null()]).optional(),
+  storyPoints: z.union([z.coerce.number(), z.literal(''), z.null()]).optional(),
+  parentTaskId: optionalPositiveInt,
+  displayOrder: z.coerce.number().int().optional().nullable(),
+  plannedStartDate: optionalDateString,
+  plannedEndDate: optionalDateString,
+  dependsOnTaskId: optionalPositiveInt,
+  ticketId: optionalPositiveInt,
+  customerId: optionalPositiveInt,
+  customFields: optionalCustomFields,
+});
 
 // Authentication schemas
 export const loginSchema = z.object({
@@ -19,30 +51,17 @@ export const registerSchema = z.object({
 });
 
 // Task schemas (status/priority/taskType are FK int IDs)
-export const createTaskSchema = z.object({
+export const createTaskSchema = taskFieldsSchema.extend({
   projectId: z.coerce.number().int().positive(),
-  taskName: z.string().min(1, 'Task name is required').max(500),
-  description: z.string().max(65000).optional().nullable(),
-  status: z.coerce.number().int().positive(),
-  priority: z.coerce.number().int().positive(),
-  taskType: optionalPositiveInt,
-  assignedTo: optionalPositiveInt,
-  dueDate: optionalDateString,
-  dueDateMandatory: z.union([z.boolean(), z.coerce.number(), z.string()]).optional(),
-  unscheduledWork: z.union([z.boolean(), z.coerce.number(), z.string()]).optional(),
-  estimatedHours: z.union([z.coerce.number(), z.literal(''), z.null()]).optional(),
-  storyPoints: z.union([z.coerce.number(), z.literal(''), z.null()]).optional(),
-  parentTaskId: optionalPositiveInt,
-  displayOrder: z.coerce.number().int().optional().nullable(),
-  plannedStartDate: optionalDateString,
-  plannedEndDate: optionalDateString,
-  dependsOnTaskId: optionalPositiveInt,
-  ticketId: optionalPositiveInt,
-  customerId: optionalPositiveInt,
-  customFields: optionalCustomFields,
 }).passthrough();
 
-export const updateTaskBodySchema = createTaskSchema.omit({ projectId: true }).partial().passthrough();
+export const updateTaskBodySchema = taskFieldsSchema
+  .extend({
+    status: optionalStatusId,
+    priority: optionalStatusId,
+  })
+  .partial()
+  .passthrough();
 
 // Project schemas (status is FK int ID)
 export const createProjectSchema = z.object({
@@ -155,14 +174,22 @@ export const validate = <T>(schema: z.ZodSchema<T>, data: unknown): T => {
   return schema.parse(data);
 };
 
-export const formatZodError = (error: z.ZodError) => ({
-  success: false as const,
-  message: 'Validation error',
-  errors: error.issues.map((e: z.ZodIssue) => ({
+export const formatZodError = (error: z.ZodError) => {
+  const errors = error.issues.map((e: z.ZodIssue) => ({
     field: e.path.join('.'),
     message: e.message,
-  })),
-});
+  }));
+  const firstDetail = errors
+    .map((entry) => (entry.field ? `${entry.field}: ${entry.message}` : entry.message))
+    .filter(Boolean)
+    .join('; ');
+
+  return {
+    success: false as const,
+    message: firstDetail || 'Validation error',
+    errors,
+  };
+};
 
 /** Validate decrypted/plain payload (auth routes). */
 export const validatePayload = <T>(schema: z.ZodSchema<T>, data: unknown): T | { error: ReturnType<typeof formatZodError> } => {

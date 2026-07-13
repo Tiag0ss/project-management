@@ -1,5 +1,6 @@
 import { getApiUrl } from './config';
 import { CustomFieldValues } from '@/lib/customFields';
+import { getApiErrorMessageFromPayload } from '@/lib/api/httpErrors';
 
 const API_BASE_URL = getApiUrl();
 
@@ -207,7 +208,7 @@ export const tasksApi = {
     const data = await response.json();
     
     if (!response.ok) {
-      throw new Error(data.message || 'Failed to update task');
+      throw new Error(getApiErrorMessageFromPayload(data, 'Failed to update task'));
     }
 
     return data;

@@ -870,6 +870,16 @@ export default function TaskDetailModal({
       return;
     }
 
+    if (!formData.status || !formData.priority) {
+      setErrorWithToast('Status and priority are required');
+      return;
+    }
+
+    if ((formData.description || '').length > 16_777_215) {
+      setErrorWithToast('Description is too long');
+      return;
+    }
+
     if (formData.dueDateMandatory && !formData.dueDate) {
       setErrorWithToast('Due date is required when due date is mandatory');
       return;
