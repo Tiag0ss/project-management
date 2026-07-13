@@ -1,4 +1,9 @@
-﻿# Project Management App
+
+ # Demo
+ User: admin
+ Pwd: admin1
+ 
+ # Project Management App
 
 [![Docker Hub](https://img.shields.io/docker/pulls/tiag0ss/project-management?label=Docker%20Pulls&logo=docker)](https://hub.docker.com/r/tiag0ss/project-management)
 [![Docker Image](https://img.shields.io/badge/Docker%20Hub-tiag0ss%2Fproject--management-blue?logo=docker)](https://hub.docker.com/r/tiag0ss/project-management)
