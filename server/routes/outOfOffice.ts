@@ -5,6 +5,7 @@ import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
 import logger from '../utils/logger';
+import { resolveLeaveCalendarUserIds } from '../utils/leaveCalendarScope';
 
 const router = express.Router();
 
@@ -381,29 +382,13 @@ router.get('/calendar', authenticateToken, async (req: AuthRequest, res: Respons
       return res.status(400).json({ success: false, message: 'Invalid date range' });
     }
 
-    const requestedUserIds = String(req.query.userIds || '')
-      .split(',')
-      .map((value) => Number(value.trim()))
-      .filter((value) => Number.isInteger(value) && value > 0);
+    const requestedUserIds = String(req.query.userIds || '');
 
-    const uniqueRequestedUserIds = Array.from(new Set(requestedUserIds));
-
-    const [subordinateRows] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id FROM Users WHERE TeamLeaderId = ? AND IsActive = 1',
-      [currentUserId]
+    const uniqueEffectiveUserIds = await resolveLeaveCalendarUserIds(
+      currentUserId,
+      isAdmin,
+      requestedUserIds,
     );
-    const subordinateIds = subordinateRows.map((row) => Number(row.Id));
-
-    const allowedUserIds = new Set<number>([currentUserId, ...subordinateIds]);
-
-    const effectiveUserIds = (isAdmin
-      ? (uniqueRequestedUserIds.length > 0 ? uniqueRequestedUserIds : [currentUserId])
-      : (uniqueRequestedUserIds.length > 0
-        ? uniqueRequestedUserIds.filter((id) => allowedUserIds.has(id))
-        : [currentUserId, ...subordinateIds]))
-      .filter((id) => Number.isInteger(id) && id > 0);
-
-    const uniqueEffectiveUserIds = Array.from(new Set(effectiveUserIds));
 
     if (uniqueEffectiveUserIds.length === 0) {
       return res.json({ success: true, entries: [] });
