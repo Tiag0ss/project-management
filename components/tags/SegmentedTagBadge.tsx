@@ -1,5 +1,8 @@
 'use client';
 
+import { useColorVision } from '@/hooks/useColorVision';
+import { withAlphaSuffix } from '@/lib/colorVisionPalettes';
+
 interface SegmentedTagBadgeProps {
   name: string;
   color?: string | null;
@@ -54,14 +57,13 @@ const blendHexColors = (baseColor: string, mixColor: string, ratio: number): str
   });
 };
 
-const withAlpha = (color: string, alphaHex: string): string => `${normalizeHexColor(color)}${alphaHex}`;
-
 export default function SegmentedTagBadge({
   name,
   color,
   size = 'xs',
   className = '',
 }: SegmentedTagBadgeProps) {
+  const { mapColor } = useColorVision();
   const segments = String(name || '')
     .split('/')
     .map((segment) => segment.trim())
@@ -69,7 +71,7 @@ export default function SegmentedTagBadge({
 
   const fallbackLabel = String(name || '').trim() || 'Tag';
   const label = segments[0] || fallbackLabel;
-  const baseColor = normalizeHexColor(color);
+  const baseColor = mapColor(normalizeHexColor(color));
   const sizeClass = size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-2 py-0.5 text-[11px]';
 
   if (segments.length <= 1) {
@@ -77,9 +79,9 @@ export default function SegmentedTagBadge({
       <span
         className={`inline-flex items-center rounded-full border font-medium leading-none ${sizeClass} ${className}`.trim()}
         style={{
-          backgroundColor: withAlpha(baseColor, '20'),
+          backgroundColor: withAlphaSuffix(baseColor, '20'),
           color: baseColor,
-          borderColor: withAlpha(baseColor, '55'),
+          borderColor: withAlphaSuffix(baseColor, '55'),
         }}
       >
         {label}
@@ -90,7 +92,7 @@ export default function SegmentedTagBadge({
   return (
     <span
       className={`inline-flex items-stretch overflow-hidden rounded-md border shadow-sm ${className}`.trim()}
-      style={{ borderColor: withAlpha(baseColor, '66') }}
+      style={{ borderColor: withAlphaSuffix(baseColor, '66') }}
     >
       {segments.map((segment, index) => {
         const segmentBackground = index === 0
@@ -110,7 +112,7 @@ export default function SegmentedTagBadge({
             style={{
               backgroundColor: segmentBackground,
               color: segmentTextColor,
-              borderLeft: index === 0 ? 'none' : `1px solid ${withAlpha(baseColor, '88')}`,
+              borderLeft: index === 0 ? 'none' : `1px solid ${withAlphaSuffix(baseColor, '88')}`,
             }}
           >
             {segment}

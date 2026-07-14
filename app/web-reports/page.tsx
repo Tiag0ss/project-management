@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
+import { useColorVision } from '@/hooks/useColorVision';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import DynamicQueryBuilder from '@/components/DynamicQueryBuilder';
 import * as savedReportsApi from '@/lib/api/savedReports';
@@ -102,6 +103,7 @@ interface ChartPoint {
 }
 
 export default function WebReportsPage() {
+  const { mapColor } = useColorVision();
   const { user, token, isLoading } = useAuth();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
   const [dataSource, setDataSource] = useState<string>('time-entries');
@@ -1334,10 +1336,10 @@ export default function WebReportsPage() {
     
     if (value < threshold) {
       const intensity = Math.min(100, Math.abs((threshold - value) / threshold) * 100);
-      return `${colorLow}${Math.round(intensity * 2.55).toString(16).padStart(2, '0')}`;
+      return `${mapColor(colorLow)}${Math.round(intensity * 2.55).toString(16).padStart(2, '0')}`;
     } else {
       const intensity = Math.min(100, ((value - threshold) / threshold) * 50);
-      return `${colorHigh}${Math.round(intensity * 2.55).toString(16).padStart(2, '0')}`;
+      return `${mapColor(colorHigh)}${Math.round(intensity * 2.55).toString(16).padStart(2, '0')}`;
     }
   };
 

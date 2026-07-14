@@ -23,6 +23,8 @@ import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { createCustomer, CreateCustomerData } from '@/lib/api/customers';
 import { io, Socket } from 'socket.io-client';
 import { ThemeMode, getStoredThemeMode, setThemeMode } from '@/lib/theme';
+import { ColorVisionMode, getStoredColorVisionMode } from '@/lib/colorVision';
+import ColorVisionPicker from './navbar/ColorVisionPicker';
 
 interface Organization {
   Id: number;
@@ -86,6 +88,7 @@ export default function Navbar() {
   const router = useRouter();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+  const [colorVisionMode, setColorVisionModeState] = useState<ColorVisionMode>('default');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const quickActionsRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
@@ -253,6 +256,7 @@ export default function Navbar() {
 
   useEffect(() => {
     setThemeModeState(getStoredThemeMode());
+    setColorVisionModeState(getStoredColorVisionMode());
   }, []);
 
   useEffect(() => {
@@ -2734,6 +2738,10 @@ export default function Navbar() {
                         ))}
                       </div>
                     </div>
+                    <ColorVisionPicker
+                      colorVisionMode={colorVisionMode}
+                      onChange={setColorVisionModeState}
+                    />
                     <hr className="my-1 border-gray-200 dark:border-gray-700" />
                     <button
                       onClick={() => {

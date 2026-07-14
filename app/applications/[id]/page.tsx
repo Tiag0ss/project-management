@@ -13,6 +13,7 @@ import TaskDetailModal from '@/components/TaskDetailModal';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import { Task, tasksApi } from '@/lib/api/tasks';
 import { Project, projectsApi } from '@/lib/api/projects';
+import { useColorVision } from '@/hooks/useColorVision';
 
 type Tab = 'overview' | 'versions';
 
@@ -85,6 +86,7 @@ interface Customer {
 
 export default function ApplicationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { pillStyle } = useColorVision();
   const { user, token, isLoading: authLoading } = useAuth();
   const { permissions, isLoading: permissionsLoading } = usePermissions();
   const router = useRouter();
@@ -712,7 +714,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
                         {p.StatusName && (
                           <span
                             className="text-xs px-2 py-0.5 rounded-full font-medium"
-                            style={{ backgroundColor: p.StatusColor ? p.StatusColor + '33' : undefined, color: p.StatusColor ?? undefined }}
+                            style={pillStyle(p.StatusColor, { alpha: '33' })}
                           >
                             {p.StatusName}
                           </span>
@@ -1009,10 +1011,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
                               {task.StatusName && (
                                 <span
                                   className="text-xs px-2 py-0.5 rounded-full"
-                                  style={{
-                                    backgroundColor: task.StatusColor ? task.StatusColor + '33' : '#e5e7eb',
-                                    color: task.StatusColor ?? '#374151',
-                                  }}
+                                  style={pillStyle(task.StatusColor || '#374151', { alpha: '33' })}
                                 >
                                   {task.StatusName}
                                 </span>
@@ -1020,10 +1019,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
                               {task.PriorityName && (
                                 <span
                                   className="text-xs px-2 py-0.5 rounded-full"
-                                  style={{
-                                    backgroundColor: task.PriorityColor ? task.PriorityColor + '33' : '#e5e7eb',
-                                    color: task.PriorityColor ?? '#374151',
-                                  }}
+                                  style={pillStyle(task.PriorityColor || '#374151', { alpha: '33' })}
                                 >
                                   {task.PriorityName}
                                 </span>

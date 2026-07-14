@@ -14,6 +14,7 @@ import { getCustomer, updateCustomer, Customer } from '@/lib/api/customers';
 import { projectsApi, Project as ApiProject } from '@/lib/api/projects';
 import { tasksApi, Task as ApiTask } from '@/lib/api/tasks';
 import { useFormatHours } from '@/lib/useFormatHours';
+import { useColorVision } from '@/hooks/useColorVision';
 
 interface Project {
   Id: number;
@@ -152,6 +153,7 @@ interface CustomerOverviewData {
 
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const decimalHoursToHMS = useFormatHours();
+  const { mapColor, pillStyle, backgroundStyle } = useColorVision();
   const resolvedParams = use(params);
   const customerId = parseInt(resolvedParams.id);
   
@@ -1079,13 +1081,13 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                           <div key={row.StatusName}>
                             <div className="flex justify-between items-center text-sm mb-1">
                               <div className="flex items-center gap-2">
-                                <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: row.StatusColor || '#6B7280' }} />
+                                <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: mapColor(row.StatusColor || '#6B7280') }} />
                                 <span className="text-gray-700 dark:text-gray-300">{row.StatusName}</span>
                               </div>
                               <span className="font-medium text-gray-900 dark:text-white">{Number(row.TaskCount)} <span className="text-gray-400 font-normal">({pct}%)</span></span>
                             </div>
                             <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                              <div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: row.StatusColor || '#6B7280' }} />
+                              <div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: mapColor(row.StatusColor || '#6B7280') }} />
                             </div>
                           </div>
                         );
@@ -1114,13 +1116,13 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                           <div key={row.PriorityName}>
                             <div className="flex justify-between items-center text-sm mb-1">
                               <div className="flex items-center gap-2">
-                                <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: row.PriorityColor || '#6B7280' }} />
+                                <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: mapColor(row.PriorityColor || '#6B7280') }} />
                                 <span className="text-gray-700 dark:text-gray-300">{row.PriorityName}</span>
                               </div>
                               <span className="font-medium text-gray-900 dark:text-white">{Number(row.TaskCount)} <span className="text-gray-400 font-normal">({pct}%)</span></span>
                             </div>
                             <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                              <div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: row.PriorityColor || '#6B7280' }} />
+                              <div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: mapColor(row.PriorityColor || '#6B7280') }} />
                             </div>
                           </div>
                         );
@@ -1165,10 +1167,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                           </div>
                           <span
                             className="px-2 py-0.5 text-xs rounded-full whitespace-nowrap flex-shrink-0"
-                            style={{
-                              backgroundColor: task.StatusColor ? `${task.StatusColor}20` : '#e5e7eb',
-                              color: task.StatusColor || '#374151',
-                            }}
+                            style={pillStyle(task.StatusColor || '#374151', { alpha: '20' })}
                           >
                             {task.StatusName}
                           </span>
@@ -1378,7 +1377,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                               {project.CompletedTasks}/{project.TotalTasks} tasks · {decimalHoursToHMS(Number(project.TotalWorkedHours || 0))} / {decimalHoursToHMS(Number(project.TotalEstimatedHours || 0))}
                             </div>
                           </div>
-                          <span className="px-2 py-1 text-xs rounded-full whitespace-nowrap flex-shrink-0" style={{ backgroundColor: project.StatusColor ? `${project.StatusColor}20` : '#e5e7eb', color: project.StatusColor || '#374151' }}>
+                          <span className="px-2 py-1 text-xs rounded-full whitespace-nowrap flex-shrink-0" style={pillStyle(project.StatusColor || '#374151', { alpha: '20' })}>
                             {project.StatusName || 'Unknown'}
                           </span>
                         </div>

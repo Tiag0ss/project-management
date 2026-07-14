@@ -1,0 +1,188 @@
+/* Semantic event colors — unified across Planning and Calendar */
+:root,
+html.light {
+  --semantic-holiday: #d97706;
+  --semantic-vacation: #06b6d4;
+  --semantic-ooo: #f43f5e;
+  --semantic-dev-support: #6366f1;
+  --semantic-over-allocated: #dc2626;
+  --semantic-success: #16a34a;
+  --semantic-error: #dc2626;
+  --semantic-warning: #d97706;
+  --semantic-info: #2563eb;
+}
+
+html.dark {
+  --semantic-holiday: #fbbf24;
+  --semantic-vacation: #22d3ee;
+  --semantic-ooo: #fb7185;
+  --semantic-dev-support: #818cf8;
+  --semantic-over-allocated: #f87171;
+  --semantic-success: #4ade80;
+  --semantic-error: #f87171;
+  --semantic-warning: #fbbf24;
+  --semantic-info: #60a5fa;
+}
+
+/* Deuteranopia — remap red/green confusion (light) */
+html.light[data-color-vision="deuteranopia"] {
+  --color-red-50: oklch(97% 0.02 55);
+  --color-red-100: oklch(93% 0.05 55);
+  --color-red-200: oklch(88% 0.09 55);
+  --color-red-300: oklch(80% 0.14 55);
+  --color-red-400: oklch(72% 0.18 55);
+  --color-red-500: oklch(62% 0.2 55);
+  --color-red-600: oklch(55% 0.19 55);
+  --color-red-700: oklch(48% 0.17 55);
+  --color-red-800: oklch(42% 0.14 55);
+  --color-red-900: oklch(36% 0.11 55);
+
+  --color-green-50: oklch(97% 0.02 230);
+  --color-green-100: oklch(93% 0.04 230);
+  --color-green-200: oklch(88% 0.07 230);
+  --color-green-300: oklch(80% 0.11 230);
+  --color-green-400: oklch(72% 0.14 230);
+  --color-green-500: oklch(55% 0.14 230);
+  --color-green-600: oklch(48% 0.13 230);
+  --color-green-700: oklch(42% 0.11 230);
+  --color-green-800: oklch(36% 0.09 230);
+  --color-green-900: oklch(30% 0.07 230);
+
+  --color-emerald-500: oklch(55% 0.12 210);
+  --color-emerald-600: oklch(48% 0.11 210);
+
+  --semantic-success: #0072b2;
+  --semantic-error: #d55e00;
+  --semantic-holiday: #e69f00;
+}
+
+html.dark[data-color-vision="deuteranopia"] {
+  --color-red-400: oklch(78% 0.16 55);
+  --color-red-500: oklch(72% 0.18 55);
+  --color-red-600: oklch(65% 0.17 55);
+  --color-red-700: oklch(58% 0.15 55);
+
+  --color-green-400: oklch(78% 0.12 230);
+  --color-green-500: oklch(72% 0.13 230);
+  --color-green-600: oklch(65% 0.12 230);
+
+  --semantic-success: #56b4e9;
+  --semantic-error: #e69f00;
+  --semantic-holiday: #f0e442;
+}
+
+/* Protanopia — similar red/green remap with slight hue shift (light) */
+html.light[data-color-vision="protanopia"] {
+  --color-red-50: oklch(97% 0.02 50);
+  --color-red-100: oklch(93% 0.05 50);
+  --color-red-200: oklch(88% 0.09 50);
+  --color-red-300: oklch(80% 0.13 50);
+  --color-red-400: oklch(72% 0.17 50);
+  --color-red-500: oklch(62% 0.19 50);
+  --color-red-600: oklch(55% 0.18 50);
+  --color-red-700: oklch(48% 0.16 50);
+
+  --color-green-50: oklch(97% 0.02 200);
+  --color-green-100: oklch(93% 0.04 200);
+  --color-green-200: oklch(88% 0.07 200);
+  --color-green-300: oklch(80% 0.1 200);
+  --color-green-400: oklch(72% 0.12 200);
+  --color-green-500: oklch(52% 0.12 200);
+  --color-green-600: oklch(46% 0.11 200);
+  --color-green-700: oklch(40% 0.1 200);
+
+  --semantic-success: #0173b2;
+  --semantic-error: #de8f05;
+  --semantic-holiday: #ece133;
+}
+
+html.dark[data-color-vision="protanopia"] {
+  --color-red-400: oklch(78% 0.15 50);
+  --color-red-500: oklch(72% 0.17 50);
+  --color-green-400: oklch(78% 0.11 200);
+  --color-green-500: oklch(72% 0.12 200);
+
+  --semantic-success: #56b4e9;
+  --semantic-error: #de8f05;
+}
+
+/* Tritanopia — remap blue/yellow confusion (light) */
+html.light[data-color-vision="tritanopia"] {
+  --color-blue-50: oklch(97% 0.02 330);
+  --color-blue-100: oklch(93% 0.04 330);
+  --color-blue-200: oklch(88% 0.07 330);
+  --color-blue-300: oklch(80% 0.11 330);
+  --color-blue-400: oklch(72% 0.14 330);
+  --color-blue-500: oklch(55% 0.14 330);
+  --color-blue-600: oklch(48% 0.13 330);
+  --color-blue-700: oklch(42% 0.11 330);
+
+  --color-sky-500: oklch(55% 0.12 330);
+  --color-indigo-500: oklch(48% 0.13 330);
+
+  --color-yellow-50: oklch(97% 0.03 145);
+  --color-yellow-100: oklch(93% 0.06 145);
+  --color-yellow-200: oklch(88% 0.1 145);
+  --color-yellow-300: oklch(82% 0.13 145);
+  --color-yellow-400: oklch(76% 0.15 145);
+  --color-yellow-500: oklch(62% 0.16 145);
+  --color-yellow-600: oklch(55% 0.15 145);
+
+  --color-amber-500: oklch(62% 0.15 145);
+  --color-amber-600: oklch(55% 0.14 145);
+
+  --semantic-info: #cc79a7;
+  --semantic-warning: #009e73;
+  --semantic-holiday: #009e73;
+}
+
+html.dark[data-color-vision="tritanopia"] {
+  --color-blue-400: oklch(78% 0.12 330);
+  --color-blue-500: oklch(72% 0.13 330);
+  --color-yellow-400: oklch(82% 0.14 145);
+  --color-yellow-500: oklch(76% 0.15 145);
+  --color-amber-500: oklch(76% 0.14 145);
+
+  --semantic-info: #cc79a7;
+  --semantic-warning: #009e73;
+}
+
+/* Planning overlay patterns — visible when color vision mode is active */
+html[data-color-vision]:not([data-color-vision="default"]) .cv-pattern-unavailable {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    color-mix(in oklch, var(--semantic-holiday) 18%, transparent) 4px,
+    color-mix(in oklch, var(--semantic-holiday) 18%, transparent) 8px
+  );
+}
+
+html[data-color-vision]:not([data-color-vision="default"]) .cv-pattern-dev-support {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 3px,
+    color-mix(in oklch, var(--semantic-dev-support) 20%, transparent) 3px,
+    color-mix(in oklch, var(--semantic-dev-support) 20%, transparent) 7px
+  );
+}
+
+html[data-color-vision]:not([data-color-vision="default"]) .cv-pattern-over-allocated {
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 2px,
+    color-mix(in oklch, var(--semantic-over-allocated) 15%, transparent) 2px,
+    color-mix(in oklch, var(--semantic-over-allocated) 15%, transparent) 6px
+  );
+}
+
+/* Neutralize decorative KPI rainbow borders when color vision mode is active */
+html[data-color-vision]:not([data-color-vision="default"]) .kpi-widget-border {
+  border-color: var(--color-gray-300, #d1d5db) !important;
+}
+
+html.dark[data-color-vision]:not([data-color-vision="default"]) .kpi-widget-border {
+  border-color: var(--color-gray-600, #4b5563) !important;
+}

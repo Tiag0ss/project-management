@@ -17,6 +17,7 @@ import EmptyState from '@/components/EmptyState';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import ProjectFormModal from '@/components/ProjectFormModal';
 import { useFormatHours } from '@/lib/useFormatHours';
+import { useColorVision } from '@/hooks/useColorVision';
 
 type ProjectSortField = 'name' | 'status' | 'tasks' | 'hours' | 'tickets' | 'startDate' | 'endDate' | 'budget' | 'rag' | 'progress';
 type SortDirection = 'asc' | 'desc';
@@ -24,6 +25,7 @@ type RAGStatus = 'red' | 'amber' | 'green';
 
 export default function ProjectsPage() {
   const decimalHoursToHMS = useFormatHours();
+  const { pillStyle } = useColorVision();
   const { showToast } = useToast();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
@@ -933,7 +935,7 @@ export default function ProjectsPage() {
                               <span title={rag.reasons.join(', ') || 'On track'} className="text-lg leading-none cursor-default">{ragDot}</span>
                             </td>
                             <td className="px-6 py-4 text-center">
-                              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold" style={project.StatusColor ? { backgroundColor: project.StatusColor + '20', color: project.StatusColor } : undefined}>
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold" style={pillStyle(project.StatusColor, { alpha: '20' })}>
                                 {project.StatusName || 'Unknown'}
                               </span>
                             </td>
@@ -1130,6 +1132,7 @@ function ProjectCard({
   canDelete: boolean;
 }) {
   const decimalHoursToHMS = useFormatHours();
+  const { pillStyle } = useColorVision();
   const router = useRouter();
 
   const totalTasks      = Number(project.TotalTasks) || 0;
@@ -1168,7 +1171,7 @@ function ProjectCard({
             <span title={rag.reasons.join(', ') || 'On track'} className="text-lg leading-none">{ragDot}</span>
             {project.StatusName && (
               <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
-                style={project.StatusColor ? { backgroundColor: project.StatusColor + '20', color: project.StatusColor } : undefined}>
+                style={pillStyle(project.StatusColor, { alpha: '20' })}>
                 {project.StatusName}
               </span>
             )}

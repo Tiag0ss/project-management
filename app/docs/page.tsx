@@ -81,13 +81,14 @@ const manualSections: ManualSection[] = [
     whenToUse: 'Use this on your first login, after role changes, or when changing organizations.',
     steps: [
       'Open the main navigation and identify your available modules.',
-      'Open your user menu and review profile shortcuts (Profile, Docs, Theme).',
+      'Open your user menu and review profile shortcuts (Profile, Docs, Theme, Color vision).',
       'Confirm you can access your expected work areas (for example Projects, Timesheet, Tickets).',
       'If a required module is missing, request permission updates from your manager/admin.',
     ],
     tips: [
       'Use the search box in the navbar for quick navigation to tasks, projects, and users.',
       'Keep your profile details updated so mentions and assignments are clear for teammates.',
+      'If you have color-vision deficiency, open the user menu → Color vision and choose Deuter, Protan, or Tritan. This works together with light/dark theme.',
     ],
     commonMistakes: [
       'Assuming missing menu items are a bug; most are permission-based visibility rules.',

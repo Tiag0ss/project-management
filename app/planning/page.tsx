@@ -20,6 +20,7 @@ import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import { TaskTypeIconMark } from '@/lib/taskTypeIcons';
+import { useColorVision } from '@/hooks/useColorVision';
 import { loadOutlookCalendarEvents, type PlannerOutlookEvent } from './hooks/loadOutlookCalendarEvents';
 
 // Week days constant - reused throughout the component
@@ -125,6 +126,7 @@ const renderMilestoneTypeSvg = (iconSvg: string | null | undefined, className: s
 
 export default function PlanningPage() {
   const { user, isLoading, token } = useAuth();
+  const { mapColor } = useColorVision();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
   const { showToast } = useToast();
   const router = useRouter();
@@ -2404,7 +2406,8 @@ export default function PlanningPage() {
 
   // Helper to get the status color for a task (bar fill color)
   const getTaskStatusColor = (task: Task): string | undefined => {
-    return task.StatusColor || undefined;
+    if (!task.StatusColor) return undefined;
+    return mapColor(task.StatusColor);
   };
 
   // Get planned dates for a child task from child allocations
@@ -7037,7 +7040,7 @@ export default function PlanningPage() {
 
   // Priority border color (hex) for inline styles - uses PriorityColor from API
   const getPriorityBorderHex = (task: Task): string => {
-    return task.PriorityColor || '#d1d5db';
+    return mapColor(task.PriorityColor || '#d1d5db');
   };
 
   // Calculate daily totals for a specific user using actual allocations
@@ -9235,11 +9238,11 @@ export default function PlanningPage() {
                                 key={idx}
                                 className={`${useFixedPixelColumns ? 'flex-shrink-0' : 'flex-1'} border-r border-gray-200 dark:border-gray-700 relative ${
                                   isOverAllocated
-                                    ? 'bg-red-50 dark:bg-red-900/20'
+                                    ? 'bg-red-50 dark:bg-red-900/20 cv-pattern-over-allocated'
                                     : isHoliday
-                                    ? 'bg-amber-50 dark:bg-amber-900/20'
+                                    ? 'bg-amber-50 dark:bg-amber-900/20 cv-pattern-unavailable'
                                     : isDevSupport
-                                    ? 'bg-indigo-100 dark:bg-indigo-900/40 ring-inset ring-1 ring-indigo-300/80 dark:ring-indigo-500/50'
+                                    ? 'bg-indigo-100 dark:bg-indigo-900/40 ring-inset ring-1 ring-indigo-300/80 dark:ring-indigo-500/50 cv-pattern-dev-support'
                                     : summary.isWeekend
                                     ? 'bg-gray-100 dark:bg-gray-700/45'
                                     : ''

@@ -32,9 +32,11 @@ import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields'
 import SegmentedTagBadge from '@/components/tags/SegmentedTagBadge';
 import JiraStatusMappingPanel from '@/components/projects/JiraStatusMappingPanel';
 import { useFormatHours } from '@/lib/useFormatHours';
+import { useColorVision } from '@/hooks/useColorVision';
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
+  const { backgroundStyle, pillStyle } = useColorVision();
   const projectId = resolvedParams.id;
   
   const [project, setProject] = useState<Project | null>(null);
@@ -2650,7 +2652,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
           {activeTab !== 'overview' && (
             <div className="mb-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div className="h-1 w-full" style={{ background: project.StatusColor || '#6366f1' }} />
+              <div className="h-1 w-full" style={backgroundStyle(project.StatusColor || '#6366f1')} />
               <div className="px-4 py-2.5">
                 <div className="flex items-center justify-between gap-3 min-w-0">
                   <div className="min-w-0 flex-1 overflow-x-auto">
@@ -2672,7 +2674,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                   <span
                     className="inline-flex items-center px-2.5 py-1 rounded-md font-medium text-xs flex-shrink-0"
-                    style={project.StatusColor ? { backgroundColor: project.StatusColor + '22', color: project.StatusColor, border: `1px solid ${project.StatusColor}44` } : undefined}
+                    style={pillStyle(project.StatusColor, { alpha: '22', borderAlpha: '44' })}
                   >
                     {project.StatusName || 'Unknown'}
                   </span>
@@ -3390,10 +3392,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                                       ✓ Already imported
                                     </span>
                                   )}
-                                  <span className="text-xs px-2 py-0.5 rounded" style={{
-                                    backgroundColor: issue.statusColor ? `${issue.statusColor}20` : '#e5e7eb',
-                                    color: issue.statusColor || '#6b7280'
-                                  }}>
+                                  <span className="text-xs px-2 py-0.5 rounded" style={pillStyle(issue.statusColor || '#6b7280', { alpha: '20' })}>
                                     {issue.status}
                                   </span>
                                   {issue.priority && (
@@ -5121,6 +5120,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 // Overview Tab Component
 function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewBudgetInfo, token }: { project: Project; tasks: Task[]; tickets: any[]; internalTicketsEnabled: boolean; canViewBudgetInfo: boolean; token: string }) {
   const decimalHoursToHMS = useFormatHours();
+  const { pillStyle, backgroundStyle } = useColorVision();
   // Calculate task statistics (all tasks including subtasks)
   const parentTasks = tasks.filter(t => !t.ParentTaskId);
   const totalTasks = tasks.length;
@@ -5251,7 +5251,7 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
 
       {/* ── Project Header ── */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
-        <div className="h-1.5 w-full" style={{ background: project.StatusColor || '#6366f1' }} />
+        <div className="h-1.5 w-full" style={backgroundStyle(project.StatusColor || '#6366f1')} />
         <div className="p-6">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div className="flex-1 min-w-0">
@@ -5286,7 +5286,7 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
             <div className="flex-shrink-0">
               <span
                 className="inline-flex items-center px-4 py-2 rounded-lg font-semibold text-sm"
-                style={project.StatusColor ? { backgroundColor: project.StatusColor + '22', color: project.StatusColor, border: `1px solid ${project.StatusColor}44` } : undefined}
+                style={pillStyle(project.StatusColor, { alpha: '22', borderAlpha: '44' })}
               >
                 {project.StatusName || 'Unknown'}
               </span>
@@ -5630,7 +5630,7 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
                       </div>
                       {task.PriorityName && (
                         <span className="px-2 py-0.5 text-xs rounded-full font-medium flex-shrink-0"
-                          style={task.PriorityColor ? { backgroundColor: task.PriorityColor + '22', color: task.PriorityColor } : undefined}>
+                          style={pillStyle(task.PriorityColor, { alpha: '22' })}>
                           {task.PriorityName}
                         </span>
                       )}
@@ -5669,7 +5669,7 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
                       </div>
                       {task.StatusName && (
                         <span className="px-2 py-0.5 text-xs rounded-full font-medium flex-shrink-0"
-                          style={task.StatusColor ? { backgroundColor: task.StatusColor + '22', color: task.StatusColor } : undefined}>
+                          style={pillStyle(task.StatusColor, { alpha: '22' })}>
                           {task.StatusName}
                         </span>
                       )}
@@ -5709,7 +5709,7 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
                 </div>
                 {task.StatusName && (
                   <span className="px-2 py-0.5 text-xs rounded-full font-medium flex-shrink-0"
-                    style={task.StatusColor ? { backgroundColor: task.StatusColor + '22', color: task.StatusColor } : undefined}>
+                    style={pillStyle(task.StatusColor, { alpha: '22' })}>
                     {task.StatusName}
                   </span>
                 )}
@@ -5747,7 +5747,7 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
                       </div>
                       {m.MilestoneTypeName && (
                         <span className="px-2 py-0.5 text-xs rounded-full font-medium flex-shrink-0"
-                          style={m.MilestoneTypeColor ? { backgroundColor: m.MilestoneTypeColor + '22', color: m.MilestoneTypeColor } : undefined}>
+                          style={pillStyle(m.MilestoneTypeColor, { alpha: '22' })}>
                           {m.MilestoneTypeName}
                         </span>
                       )}
@@ -5779,7 +5779,7 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
                       </div>
                       {m.MilestoneTypeName && (
                         <span className="px-2 py-0.5 text-xs rounded-full font-medium flex-shrink-0"
-                          style={m.MilestoneTypeColor ? { backgroundColor: m.MilestoneTypeColor + '22', color: m.MilestoneTypeColor } : undefined}>
+                          style={pillStyle(m.MilestoneTypeColor, { alpha: '22' })}>
                           {m.MilestoneTypeName}
                         </span>
                       )}
@@ -5973,6 +5973,7 @@ function TasksTab({
   canDelete: boolean;
   token: string;
 }) {
+  const { pillStyle } = useColorVision();
   const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
   const [showImportDropdown, setShowImportDropdown] = useState(false);
   const [showCheckStatusDropdown, setShowCheckStatusDropdown] = useState(false);
@@ -6668,25 +6669,9 @@ function TasksTab({
     });
   };
 
-  const getStatusStyle = (task: Task) => {
-    if (task.StatusColor) {
-      return {
-        backgroundColor: task.StatusColor + '20',
-        color: task.StatusColor
-      };
-    }
-    return {};
-  };
+  const getStatusStyle = (task: Task) => pillStyle(task.StatusColor, { alpha: '20' }) ?? {};
 
-  const getPriorityStyle = (task: Task) => {
-    if (task.PriorityColor) {
-      return {
-        backgroundColor: task.PriorityColor + '20',
-        color: task.PriorityColor
-      };
-    }
-    return {};
-  };
+  const getPriorityStyle = (task: Task) => pillStyle(task.PriorityColor, { alpha: '20' }) ?? {};
 
   // Separate parent tasks from subtasks
   const parentTasks = tasks.filter(task => !task.ParentTaskId);
@@ -9372,6 +9357,7 @@ function UtilitiesTab({ projectId, token, onTasksUpdated }: { projectId: number;
 
 // Gantt View Tab Component (Read-only)
 function GanttViewTab({ tasks }: { tasks: Task[] }) {
+  const { pillStyle } = useColorVision();
   type ViewMode = 'Week' | 'Month' | 'Year';
   const [viewMode, setViewMode] = useState<ViewMode>('Month');
   const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
@@ -9831,10 +9817,7 @@ function GanttViewTab({ tasks }: { tasks: Task[] }) {
                     </div>
                   </div>
                   <span className="px-2 py-1 text-xs font-semibold rounded-full"
-                    style={task.StatusColor ? {
-                      backgroundColor: task.StatusColor + '20',
-                      color: task.StatusColor
-                    } : undefined}
+                    style={pillStyle(task.StatusColor, { alpha: '20' })}
                   >
                     {task.StatusName || 'Unknown'}
                   </span>
@@ -9870,6 +9853,7 @@ function KanbanTab({
   canCreate: boolean;
   canManage: boolean;
 }) {
+  const { mapColor, pillStyle, borderLeftStyle } = useColorVision();
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [draggedOverTask, setDraggedOverTask] = useState<number | null>(null);
@@ -10002,10 +9986,7 @@ function KanbanTab({
   };
 
   const getPriorityBorder = (task: Task) => {
-    if (task.PriorityColor) {
-      return { borderLeft: `4px solid ${task.PriorityColor}` };
-    }
-    return { borderLeft: '4px solid #d1d5db' };
+    return borderLeftStyle(task.PriorityColor) ?? { borderLeft: '4px solid #d1d5db' };
   };
 
   if (isLoading) {
@@ -10109,10 +10090,7 @@ function KanbanTab({
 
                     <div className="flex items-center flex-wrap gap-2 text-xs mb-2">
                       <span className="px-2 py-1 rounded"
-                        style={task.PriorityColor ? {
-                          backgroundColor: task.PriorityColor + '20',
-                          color: task.PriorityColor
-                        } : undefined}
+                        style={pillStyle(task.PriorityColor, { alpha: '20' })}
                       >
                         {task.PriorityName || 'No Priority'}
                       </span>
@@ -10180,6 +10158,7 @@ function KanbanTab({
 // Reporting Tab Component
 function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projectId: number; organizationId: number; token: string; onOpenTask?: (task: any) => void }) {
   const decimalHoursToHMS = useFormatHours();
+  const { pillStyle } = useColorVision();
   const [reportTab, setReportTab] = useState<'summary' | 'byUser' | 'allocations' | 'timeEntries' | 'flowMetrics' | 'schedules'>('summary');
   const [allocations, setAllocations] = useState<any[]>([]);
   const [timeEntries, setTimeEntries] = useState<any[]>([]);
@@ -10313,10 +10292,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
         </td>
         <td className="px-4 py-3">
           <span className="px-2 py-1 text-xs font-semibold rounded-full"
-            style={task.StatusColor ? {
-              backgroundColor: task.StatusColor + '20',
-              color: task.StatusColor
-            } : undefined}
+            style={pillStyle(task.StatusColor, { alpha: '20' })}
           >
             {task.StatusName || 'Unknown'}
           </span>
@@ -11875,19 +11851,13 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                   <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{selectedTask.TaskName}</h2>
                   <div className="flex items-center gap-3 mt-2">
                     <span className="px-2 py-1 text-xs font-semibold rounded-full"
-                      style={selectedTask.StatusColor ? {
-                        backgroundColor: selectedTask.StatusColor + '20',
-                        color: selectedTask.StatusColor
-                      } : undefined}
+                      style={pillStyle(selectedTask.StatusColor, { alpha: '20' })}
                     >
                       {selectedTask.StatusName || 'Unknown'}
                     </span>
                     {selectedTask.PriorityName && (
                       <span className="px-2 py-1 text-xs font-semibold rounded-full"
-                        style={selectedTask.PriorityColor ? {
-                          backgroundColor: selectedTask.PriorityColor + '20',
-                          color: selectedTask.PriorityColor
-                        } : undefined}
+                        style={pillStyle(selectedTask.PriorityColor, { alpha: '20' })}
                       >
                         {selectedTask.PriorityName}
                       </span>
@@ -15866,6 +15836,7 @@ function MilestonesTab({
   token: string;
   canManage: boolean;
 }) {
+  const { pillStyle } = useColorVision();
   const [milestones, setMilestones] = useState<ProjectMilestone[]>([]);
   const [milestoneTypes, setMilestoneTypes] = useState<StatusValue[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -16041,7 +16012,7 @@ function MilestonesTab({
                       {milestone.MilestoneTypeName ? (
                         <span
                           className="px-2 py-0.5 rounded-full text-xs font-semibold"
-                          style={milestone.MilestoneTypeColor ? { backgroundColor: `${milestone.MilestoneTypeColor}20`, color: milestone.MilestoneTypeColor } : undefined}
+                          style={pillStyle(milestone.MilestoneTypeColor, { alpha: '20' })}
                         >
                           {milestone.MilestoneTypeName}
                         </span>
@@ -16287,6 +16258,7 @@ interface RetrospectiveClosureBySprint {
 }
 
 function SprintsTab({ projectId, organizationId, token }: { projectId: number; organizationId: number; token: string }) {
+  const { pillStyle } = useColorVision();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [velocityTrend, setVelocityTrend] = useState<Array<{
@@ -17041,10 +17013,10 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
                                 </div>
                               </td>
                               <td className="px-4 py-2 hidden md:table-cell">
-                                <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${task.StatusColor}22`, color: task.StatusColor }}>{task.StatusName}</span>
+                                <span className="text-xs px-2 py-0.5 rounded-full" style={pillStyle(task.StatusColor, { alpha: '22' })}>{task.StatusName}</span>
                               </td>
                               <td className="px-4 py-2 hidden lg:table-cell">
-                                <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${task.PriorityColor}22`, color: task.PriorityColor }}>{task.PriorityName}</span>
+                                <span className="text-xs px-2 py-0.5 rounded-full" style={pillStyle(task.PriorityColor, { alpha: '22' })}>{task.PriorityName}</span>
                               </td>
                               <td className="px-4 py-2 text-gray-500 dark:text-gray-400 hidden md:table-cell">
                                 {task.FirstName ? `${task.FirstName} ${task.LastName}` : task.AssigneeName || '—'}
@@ -17174,10 +17146,10 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
                     </div>
                   </td>
                   <td className="px-4 py-2 hidden md:table-cell">
-                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${task.StatusColor}22`, color: task.StatusColor }}>{task.StatusName}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={pillStyle(task.StatusColor, { alpha: '22' })}>{task.StatusName}</span>
                   </td>
                   <td className="px-4 py-2 hidden lg:table-cell">
-                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${task.PriorityColor}22`, color: task.PriorityColor }}>{task.PriorityName}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={pillStyle(task.PriorityColor, { alpha: '22' })}>{task.PriorityName}</span>
                   </td>
                   <td className="px-4 py-2 text-gray-500 dark:text-gray-400 hidden md:table-cell">
                     {task.FirstName ? `${task.FirstName} ${task.LastName}` : task.AssigneeName || '—'}

@@ -13,6 +13,7 @@ import CustomerUserGuard from '@/components/CustomerUserGuard';
 import SearchableSelect from '@/components/SearchableSelect';
 import RichTextEditor from '@/components/RichTextEditor';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
+import ApprovalStatusBadge from '@/components/ApprovalStatusBadge';
 import TimeEntryFormModal, { TimeEntryFormValues } from '@/components/TimeEntryFormModal';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
@@ -904,24 +905,6 @@ export default function TimesheetPage() {
 
   // ─── Approval helpers ────────────────────────────────────────────────────────
 
-  const getApprovalBadge = (status?: string) => {
-    if (status === 'approved') return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
-        ✓ Approved
-      </span>
-    );
-    if (status === 'rejected') return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
-        ✗ Rejected
-      </span>
-    );
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300">
-        ⏳ Pending
-      </span>
-    );
-  };
-
   // ─────────────────────────────────────────────────────────────────────────────
 
   if (isLoading) {
@@ -1090,7 +1073,7 @@ export default function TimesheetPage() {
                                       {stripHtml(entry.Description) || '-'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                      {getApprovalBadge(entry.ApprovalStatus)}
+                                      <ApprovalStatusBadge status={entry.ApprovalStatus} variant="pill" />
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                       {entry.ApprovalStatus === 'approved' && !entry.IsHobby && !autoApproveTimeEntries ? (
@@ -1978,7 +1961,7 @@ export default function TimesheetPage() {
                                         {stripHtml(entry.Description) || '-'}
                                       </td>
                                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        {getApprovalBadge(entry.ApprovalStatus)}
+                                        <ApprovalStatusBadge status={entry.ApprovalStatus} variant="pill" />
                                       </td>
                                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         {entry.ApprovalStatus === 'approved' && !entry.IsHobby && !autoApproveTimeEntries ? (

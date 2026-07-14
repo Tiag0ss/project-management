@@ -28,6 +28,7 @@ import EmptyState from '@/components/EmptyState';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import SegmentedTagBadge from '@/components/tags/SegmentedTagBadge';
+import { useColorVision } from '@/hooks/useColorVision';
 import SearchableSelect from '@/components/SearchableSelect';
 import dynamic from 'next/dynamic';
 import CalendarTabComponent from './CalendarTab';
@@ -61,6 +62,7 @@ function AssignedKanbanTab({
   onTasksRefresh: () => Promise<TaskWithProject[]>;
   onError: (message: string) => void;
 }) {
+  const { mapColor, pillStyle, borderLeftStyle } = useColorVision();
   const [draggedOverTask, setDraggedOverTask] = useState<number | null>(null);
   const [localTasks, setLocalTasks] = useState<TaskWithProject[]>([]);
   const [statusCatalogByOrganization, setStatusCatalogByOrganization] = useState<Record<number, StatusValue[]>>({});
@@ -433,10 +435,7 @@ function AssignedKanbanTab({
   };
 
   const getPriorityBorder = (task: TaskWithProject) => {
-    if (task.PriorityColor) {
-      return { borderLeft: `4px solid ${task.PriorityColor}` };
-    }
-    return { borderLeft: '4px solid #d1d5db' };
+    return borderLeftStyle(task.PriorityColor) ?? { borderLeft: '4px solid #d1d5db' };
   };
 
   if (isLoading || loadingStatuses) {
@@ -563,7 +562,7 @@ function AssignedKanbanTab({
                     <div className="flex items-center justify-between mb-4">
                       <h3
                         className="font-bold text-gray-900 dark:text-white"
-                        style={status.ColorCode ? { color: status.ColorCode } : undefined}
+                        style={status.ColorCode ? { color: mapColor(status.ColorCode) } : undefined}
                       >
                         {status.StatusName}
                       </h3>
@@ -611,7 +610,7 @@ function AssignedKanbanTab({
                             <div className="flex items-center flex-wrap gap-2 text-xs mb-2">
                               <span
                                 className="px-2 py-1 rounded"
-                                style={task.PriorityColor ? { backgroundColor: `${task.PriorityColor}20`, color: task.PriorityColor } : undefined}
+                                style={pillStyle(task.PriorityColor, { alpha: '20' })}
                               >
                                 {task.PriorityName || 'No Priority'}
                               </span>
@@ -838,6 +837,7 @@ export default function DashboardPage() {
 
 function DashboardContent() {
   const decimalHoursToHMS = useFormatHours();
+  const { mapColor, pillStyle } = useColorVision();
   const { user, isLoading, token, isCustomerUser } = useAuth();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
   const { showToast } = useToast();
@@ -2365,7 +2365,7 @@ function DashboardContent() {
                             <div className="flex items-start justify-between gap-2">
                               <div className="font-medium text-gray-900 dark:text-white leading-tight">{project.ProjectName}</div>
                               {project.StatusLabel && (
-                                <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0" style={{ backgroundColor: `${project.StatusColor || '#888'}22`, color: project.StatusColor || '#888' }}>
+                                <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0" style={pillStyle(project.StatusColor || '#888888', { alpha: '22' })}>
                                   {project.StatusLabel}
                                 </span>
                               )}
@@ -2419,10 +2419,10 @@ function DashboardContent() {
                                 <td className="px-4 py-3 font-medium text-gray-900 dark:text-white max-w-xs"><span className="line-clamp-1">{ticket.Title}</span></td>
                                 <td className="px-4 py-3 text-gray-500 dark:text-gray-400 hidden md:table-cell">{ticket.Category}</td>
                                 <td className="px-4 py-3">
-                                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: `${ticket.StatusColor || '#888'}22`, color: ticket.StatusColor || '#888' }}>{ticket.StatusName}</span>
+                                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={pillStyle(ticket.StatusColor || '#888888', { alpha: '22' })}>{ticket.StatusName}</span>
                                 </td>
                                 <td className="px-4 py-3 hidden lg:table-cell">
-                                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: `${ticket.PriorityColor || '#888'}22`, color: ticket.PriorityColor || '#888' }}>{ticket.PriorityName}</span>
+                                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={pillStyle(ticket.PriorityColor || '#888888', { alpha: '22' })}>{ticket.PriorityName}</span>
                                 </td>
                                 <td className="px-4 py-3 text-gray-500 dark:text-gray-400 hidden md:table-cell">{ticket.ProjectName || '—'}</td>
                                 <td className="px-4 py-3 text-right text-xs text-gray-400 hidden sm:table-cell">{new Date(ticket.UpdatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
@@ -2663,7 +2663,7 @@ function DashboardContent() {
                           }}
                           onDrop={() => handleKpiDrop(widget.id)}
                           onClick={() => !kpiEditMode && openKpiDetailModal(widget)}
-                          className={`bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 ${template?.borderClass || 'border-gray-400'} ${kpiEditMode ? 'cursor-move' : 'cursor-pointer hover:shadow-lg transition-shadow'}`}
+                          className={`bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 kpi-widget-border ${template?.borderClass || 'border-gray-400'} ${kpiEditMode ? 'cursor-move' : 'cursor-pointer hover:shadow-lg transition-shadow'}`}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
@@ -3047,19 +3047,13 @@ function DashboardContent() {
                               <div className="flex items-center gap-3 mt-2 flex-wrap">
                                 <span
                                   className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                                  style={task.PriorityColor ? {
-                                    backgroundColor: task.PriorityColor + '20',
-                                    color: task.PriorityColor,
-                                  } : undefined}
+                                  style={pillStyle(task.PriorityColor, { alpha: '20' })}
                                 >
                                   {task.PriorityName || 'Normal'}
                                 </span>
                                 <span
                                   className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                                  style={task.StatusColor ? {
-                                    backgroundColor: task.StatusColor + '20',
-                                    color: task.StatusColor,
-                                  } : undefined}
+                                  style={pillStyle(task.StatusColor, { alpha: '20' })}
                                 >
                                   {task.StatusName || 'Unknown'}
                                 </span>

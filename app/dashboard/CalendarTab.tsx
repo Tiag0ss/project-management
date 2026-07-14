@@ -6,6 +6,8 @@ import { tasksApi, Task as ApiTask } from '@/lib/api/tasks';
 import { projectsApi, Project as ApiProject } from '@/lib/api/projects';
 
 import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useColorVision } from '@/hooks/useColorVision';
+import { getCalendarEventColors, type CalendarEventType } from '@/lib/colorVisionPalettes';
 import { Calendar, dateFnsLocalizer, Views } from 'react-big-calendar';
 import { format, parse, startOfWeek, endOfWeek, startOfMonth, endOfMonth, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
@@ -226,6 +228,7 @@ interface SlotInfo {
 }
 
 export default function CalendarTab({ tasks, timeEntries, callRecords, taskAllocations, recurringAllocations, workStartTimes, lunchTime, lunchDuration, token, onDataChanged }: CalendarTabProps) {
+  const { mode } = useColorVision();
   const [currentView, setCurrentView] = useState<'week' | 'month'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
@@ -1063,61 +1066,23 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
 
   // Custom event styling
   const eventStyleGetter = useCallback((event: CalendarEvent) => {
-    const isTask = event.resource.type === 'task';
-    const isCall = event.resource.type === 'call';
-    const isLunch = event.resource.type === 'lunch';
-    const isRecurring = event.resource.type === 'recurring';
-    const isHoliday = event.resource.type === 'holiday';
-    const isVacation = event.resource.type === 'vacation';
-    const isOutOfOffice = event.resource.type === 'outOfOffice';
-    const isDevSupport = event.resource.type === 'devSupport';
-    const isOutlook = event.resource.type === 'outlook';
-    
-    let bgColor = '#10b981'; // green for time entries
-    let borderColor = '#059669';
-    
-    if (isTask) {
-      bgColor = '#3b82f6'; // blue for tasks
-      borderColor = '#2563eb';
-    } else if (isCall) {
-      bgColor = '#8b5cf6'; // purple for calls
-      borderColor = '#7c3aed';
-    } else if (isLunch) {
-      bgColor = '#f59e0b'; // amber/orange for lunch
-      borderColor = '#d97706';
-    } else if (isRecurring) {
-      bgColor = '#ec4899'; // pink for recurring tasks
-      borderColor = '#db2777';
-    } else if (isHoliday) {
-      bgColor = '#ef4444'; // red for holidays
-      borderColor = '#dc2626';
-    } else if (isVacation) {
-      bgColor = '#06b6d4'; // cyan for vacations
-      borderColor = '#0891b2';
-    } else if (isOutOfOffice) {
-      bgColor = '#f43f5e'; // rose for out of office
-      borderColor = '#e11d48';
-    } else if (isDevSupport) {
-      bgColor = '#6366f1'; // indigo for dev support
-      borderColor = '#4f46e5';
-    } else if (isOutlook) {
-      bgColor = '#0ea5e9'; // sky-blue for outlook events
-      borderColor = '#0284c7';
-    }
-    
+    const type = event.resource.type as CalendarEventType;
+    const isLunch = type === 'lunch';
+    const { backgroundColor, borderColor } = getCalendarEventColors(type, mode);
+
     return {
       style: {
-        backgroundColor: bgColor,
+        backgroundColor,
         border: `1px solid ${borderColor}`,
         borderRadius: '4px',
         color: 'white',
         display: 'block',
         fontSize: '12px',
         fontWeight: 500,
-        opacity: isLunch ? 0.7 : 1, // slightly transparent for lunch
+        opacity: isLunch ? 0.7 : 1,
       },
     };
-  }, []);
+  }, [mode]);
 
   function normalizeLeaveDayPortion(value: unknown): LeaveDayPortion {
     return String(value || '').toLowerCase() === 'half' ? 'half' : 'full';
@@ -1652,10 +1617,10 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
             { type: 'timeEntry' as const, color: 'bg-green-500',  label: 'Time Entries' },
             { type: 'call' as const,      color: 'bg-purple-500', label: 'Calls' },
             { type: 'lunch' as const,     color: 'bg-amber-400',  label: 'Lunch Break' },
-            { type: 'holiday' as const,   color: 'bg-red-500',    label: 'Holidays' },
-            { type: 'vacation' as const,  color: 'bg-cyan-500',   label: 'Vacations' },
-            { type: 'outOfOffice' as const, color: 'bg-rose-500', label: 'Out Of Office' },
-            { type: 'devSupport' as const, color: 'bg-indigo-500', label: 'Dev Support' },
+            { type: 'holiday' as const,   color: 'bg-semantic-holiday',    label: 'Holidays' },
+            { type: 'vacation' as const,  color: 'bg-semantic-vacation',   label: 'Vacations' },
+            { type: 'outOfOffice' as const, color: 'bg-semantic-ooo', label: 'Out Of Office' },
+            { type: 'devSupport' as const, color: 'bg-semantic-dev-support', label: 'Dev Support' },
           ] as { type: CalendarEventType; color: string; label: string }[]).map(({ type, color, label }) => {
             const hidden = hiddenTypes.has(type);
             return (

@@ -8,6 +8,7 @@ import { getApiUrl } from '@/lib/api/config';
 import { useRouter } from 'next/navigation';
 import RichTextEditor from '@/components/RichTextEditor';
 import { useFormatHours } from '@/lib/useFormatHours';
+import ApprovalStatusBadge from '@/components/ApprovalStatusBadge';
 
 interface PendingEntry {
   Id: number;
@@ -93,17 +94,6 @@ const getLeaveDayWeight = (request: VacationRequest): number => {
 const formatLeaveDays = (value: number): string => {
   if (!Number.isFinite(value)) return '0';
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
-};
-
-const getApprovalBadge = (status?: string) => {
-  switch (status?.toLowerCase()) {
-    case 'approved':
-      return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">✓ Approved</span>;
-    case 'rejected':
-      return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">✗ Rejected</span>;
-    default:
-      return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">⏳ Pending</span>;
-  }
 };
 
 export default function ApprovalsPage() {
@@ -978,7 +968,7 @@ export default function ApprovalsPage() {
                                 stripHtml(entry.Description) || <span className="italic text-gray-400">—</span>
                               )}
                             </td>
-                            <td className="px-4 py-3 whitespace-nowrap">{getApprovalBadge(entry.ApprovalStatus)}</td>
+                            <td className="px-4 py-3 whitespace-nowrap"><ApprovalStatusBadge status={entry.ApprovalStatus} /></td>
                             <td className="px-4 py-3 whitespace-nowrap text-center">
                               {entry.ApprovalStatus === 'pending' ? (
                                 <div className="flex items-center justify-center gap-1.5">
@@ -1108,7 +1098,7 @@ export default function ApprovalsPage() {
                           stripHtml(entry.Description) || <span className="italic text-gray-400">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">{getApprovalBadge(entry.ApprovalStatus)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap"><ApprovalStatusBadge status={entry.ApprovalStatus} /></td>
                       <td className="px-4 py-3 whitespace-nowrap text-center">
                         {entry.ApprovalStatus === 'pending' ? (
                           <div className="flex items-center justify-center gap-1.5">

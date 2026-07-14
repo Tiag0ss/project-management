@@ -17,6 +17,7 @@ import { useToast } from '@/contexts/ToastContext';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 import { useFormatHours } from '@/lib/useFormatHours';
+import { useColorVision } from '@/hooks/useColorVision';
 
 interface TaskDetailModalProps {
   projectId: number;
@@ -282,6 +283,7 @@ export default function TaskDetailModal({
   onRemovePlanning,
 }: TaskDetailModalProps) {
   const decimalHoursToHMS = useFormatHours();
+  const { pillStyle, mapColor } = useColorVision();
   const router = useRouter();
     const { showToast } = useToast();
   // Integration state
@@ -2210,11 +2212,11 @@ export default function TaskDetailModal({
               )}
               {task?.Id && (
                 <div className="flex items-center gap-2 mt-1.5">
-                  <span className="px-2 py-1 text-xs font-semibold rounded-full" style={{ backgroundColor: task.StatusColor ? `${task.StatusColor}20` : undefined, color: task.StatusColor || undefined }}>
+                  <span className="px-2 py-1 text-xs font-semibold rounded-full" style={pillStyle(task.StatusColor, { alpha: '20' })}>
                     {task.StatusName || 'Unknown'}
                   </span>
                   {task.PriorityName && (
-                    <span className="px-2 py-1 text-xs font-semibold rounded-full" style={{ backgroundColor: task.PriorityColor ? `${task.PriorityColor}20` : undefined, color: task.PriorityColor || undefined }}>
+                    <span className="px-2 py-1 text-xs font-semibold rounded-full" style={pillStyle(task.PriorityColor, { alpha: '20' })}>
                       {task.PriorityName}
                     </span>
                   )}
@@ -2310,7 +2312,7 @@ export default function TaskDetailModal({
                                   onClick={() => handleAddTag(tag.Id)}
                                   className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
                                 >
-                                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: tag.Color }} />
+                                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: mapColor(tag.Color) }} />
                                   {tag.Name}
                                 </button>
                               ))

@@ -18,6 +18,7 @@ import RichTextEditor from '@/components/RichTextEditor';
 import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
+import { useColorVision } from '@/hooks/useColorVision';
 import { CustomFieldDefinition, CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 
@@ -83,6 +84,7 @@ interface OrgMember {
 const CATEGORIES = ['Support', 'Bug', 'Feature Request', 'Question', 'Other'];
 
 export default function TicketDetailPage() {
+  const { pillStyle } = useColorVision();
   const { user, token, isLoading, isCustomerUser } = useAuth();
   const { permissions } = usePermissions();
   const router = useRouter();
@@ -912,15 +914,13 @@ export default function TicketDetailPage() {
   const getStatusStyle = (statusName: string): React.CSSProperties => {
     const found = ticketStatuses.find(s => s.StatusName === statusName);
     const color = found?.Color || ticket?.StatusColor;
-    if (color) return { backgroundColor: color + '25', color, border: `1px solid ${color}50` };
-    return {};
+    return pillStyle(color || '#6b7280', { alpha: '25', borderAlpha: '50' }) ?? {};
   };
 
   const getPriorityStyle = (priorityName: string): React.CSSProperties => {
     const found = ticketPriorities.find(p => p.PriorityName === priorityName);
     const color = found?.Color || ticket?.PriorityColor;
-    if (color) return { backgroundColor: color + '25', color, border: `1px solid ${color}50` };
-    return {};
+    return pillStyle(color || '#6b7280', { alpha: '25', borderAlpha: '50' }) ?? {};
   };
 
   const isCurrentStatusClosed = (): boolean => {
@@ -1466,7 +1466,7 @@ export default function TicketDetailPage() {
                       >
                         <div className="flex items-start justify-between mb-2">
                           <h3 className="font-medium text-gray-900 dark:text-white">{task.TaskName}</h3>
-                          <span className="px-2 py-1 text-xs font-medium rounded" style={{ backgroundColor: task.StatusColor ? `${task.StatusColor}20` : undefined, color: task.StatusColor || undefined }}>
+                          <span className="px-2 py-1 text-xs font-medium rounded" style={pillStyle(task.StatusColor, { alpha: '20' })}>
                             {task.StatusName || 'Unknown'}
                           </span>
                         </div>
@@ -1479,7 +1479,7 @@ export default function TicketDetailPage() {
                         })()}
                         
                         <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
-                          <span className="px-2 py-0.5 rounded" style={{ backgroundColor: task.PriorityColor ? `${task.PriorityColor}20` : undefined, color: task.PriorityColor || undefined }}>
+                          <span className="px-2 py-0.5 rounded" style={pillStyle(task.PriorityColor, { alpha: '20' })}>
                             {task.PriorityName || 'Unknown'}
                           </span>
                           

@@ -11,6 +11,7 @@ import RichTextEditor from '@/components/RichTextEditor';
 import SearchableSelect from '@/components/SearchableSelect';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { CustomFieldValues } from '@/lib/customFields';
+import { useColorVision } from '@/hooks/useColorVision';
 
 interface Ticket {
   Id: number;
@@ -91,6 +92,7 @@ interface Stats {
 const CATEGORIES = ['Support', 'Bug', 'Feature Request', 'Question', 'Other'];
 
 export default function TicketsPage() {
+  const { pillStyle } = useColorVision();
   const { user, token, isLoading, isCustomerUser } = useAuth();
   const { permissions } = usePermissions();
   const router = useRouter();
@@ -659,15 +661,12 @@ export default function TicketsPage() {
   // Returns inline style for colored status badge using TicketStatusValues
   const getStatusStyle = (ticket: Ticket): React.CSSProperties => {
     const color = ticket.StatusColor || ticketStatuses.find(s => s.StatusName === ticket.Status)?.Color;
-    if (!color) return { backgroundColor: '#6b728025', color: '#6b7280', border: '1px solid #6b728050' };
-    return { backgroundColor: color + '25', color, border: `1px solid ${color}50` };
+    return pillStyle(color || '#6b7280', { alpha: '25', borderAlpha: '50' }) ?? { backgroundColor: '#6b728025', color: '#6b7280', border: '1px solid #6b728050' };
   };
 
-  // Returns inline style for colored priority badge using TicketPriorityValues
   const getPriorityStyle = (ticket: Ticket): React.CSSProperties => {
     const color = ticket.PriorityColor || ticketPriorities.find(p => p.PriorityName === ticket.Priority)?.Color;
-    if (!color) return { backgroundColor: '#6b728025', color: '#6b7280', border: '1px solid #6b728050' };
-    return { backgroundColor: color + '25', color, border: `1px solid ${color}50` };
+    return pillStyle(color || '#6b7280', { alpha: '25', borderAlpha: '50' }) ?? { backgroundColor: '#6b728025', color: '#6b7280', border: '1px solid #6b728050' };
   };
 
   // Legacy class-based helpers (kept for any remaining non-ticket-object usages)
