@@ -1179,7 +1179,6 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
           timerType: 'callRecord',
           callType: 'Teams',
           subject: subjectText || null,
-          startedAt: new Date().toISOString(),
           clientTimezone,
         }),
       });

@@ -6,6 +6,9 @@ import logger from '../utils/logger';
 
 const router = Router();
 
+/** Allow client/server clock drift when validating startedAt (common across timezones and laptops). */
+const STARTED_AT_FUTURE_TOLERANCE_MS = 2 * 60 * 1000;
+
 const isValidIanaTimezone = (timezone: unknown): timezone is string => {
   const normalized = String(timezone ?? '').trim();
   if (!normalized) return false;
@@ -364,7 +367,7 @@ router.post('/start', authenticateToken, async (req: AuthRequest, res: Response)
       if (Number.isNaN(parsedStartDate.getTime())) {
         return res.status(400).json({ success: false, message: 'Invalid startedAt value' });
       }
-      if (parsedStartDate.getTime() > Date.now()) {
+      if (parsedStartDate.getTime() > Date.now() + STARTED_AT_FUTURE_TOLERANCE_MS) {
         return res.status(400).json({ success: false, message: 'startedAt cannot be in the future' });
       }
       timerStartDate = parsedStartDate;

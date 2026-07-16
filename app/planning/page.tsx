@@ -7620,7 +7620,6 @@ export default function PlanningPage() {
           timerType: 'callRecord',
           callType: 'Teams',
           subject: selectedOutlookEvent.subject || null,
-          startedAt: new Date().toISOString(),
           clientTimezone,
         }),
       });
