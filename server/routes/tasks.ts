@@ -456,7 +456,8 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
     const userId = req.user?.userId!;
 
     const tasks = await cachedJson(cacheKeys.userMyTasks(userId), ENTITY_TTL_SECONDS, async () => {
-    // Get all tasks assigned to this user or tasks with subtasks allocated to them
+    // Tasks where the user is primary assignee, multi-assignee, or has a TaskAllocation.
+    // Do NOT include unrelated parent tasks that merely have children (that leaked org-wide parents).
     const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT DISTINCT t.*, 
               p.ProjectName,
@@ -496,11 +497,14 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
       LEFT JOIN TaskTypeValues ttv ON t.TaskType = ttv.Id
-       WHERE (t.AssignedTo = ? OR ta.UserId = ? OR EXISTS (
-         SELECT 1 FROM TaskAssignees WHERE TaskId = t.Id AND UserId = ?
-       ) OR EXISTS (
-         SELECT 1 FROM Tasks st WHERE st.ParentTaskId = t.Id
-       )) AND om.UserId = ?
+       WHERE om.UserId = ?
+         AND (
+           t.AssignedTo = ?
+           OR ta.UserId = ?
+           OR EXISTS (
+             SELECT 1 FROM TaskAssignees tas WHERE tas.TaskId = t.Id AND tas.UserId = ?
+           )
+         )
        ORDER BY p.IsHobby ASC, t.PlannedStartDate DESC, t.CreatedAt DESC`,
       [userId, userId, userId, userId]
     );

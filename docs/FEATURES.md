@@ -35,6 +35,7 @@ Comprehensive documentation of all features available in the application. Use th
 23. [Email Task Queue (Cloudflare)](#23-email-task-queue-cloudflare)
 24. [GitHub & Gitea Integration](#24-github--gitea-integration)
 25. [Redis Cache (Optional)](#25-redis-cache-optional)
+26. [IDE Extensions (Pending Tasks)](#26-ide-extensions-pending-tasks)
 
 ---
 
@@ -970,7 +971,7 @@ Server operators may also set `REDIS_ENABLED` and related env vars (see [Redis C
 
 ## 21. API Tokens
 
-Personal integration tokens for scripts, Cloudflare Workers, and the Outlook add-in.
+Personal integration tokens for scripts, Cloudflare Workers, the Outlook add-in, and IDE extensions.
 
 ### Creating Tokens
 1. Profile → **API Tokens**
@@ -1062,6 +1063,28 @@ REDIS_DEFAULT_TTL_SECONDS=300
 ```
 
 Docker: `docker compose --profile redis up -d`
+
+---
+
+## 26. IDE Extensions (Pending Tasks)
+
+Native IDE plugins (no webviews) that list the signed-in user’s **pending tasks** using `pt_` API tokens.
+
+| IDE | Location |
+|-----|----------|
+| VS Code / Cursor | [`ide-extensions/vscode`](../ide-extensions/vscode/) |
+| Rider | [`ide-extensions/rider`](../ide-extensions/rider/) |
+| Visual Studio 2022 | [`ide-extensions/visualstudio`](../ide-extensions/visualstudio/) |
+
+Setup, contract, and test checklist: [`ide-extensions/README.md`](../ide-extensions/README.md) · [`ide-extensions/CONTRACT.md`](../ide-extensions/CONTRACT.md)
+
+### Behaviour
+- Auth: `Authorization: Bearer pt_…` + Base URL
+- Data: `GET /api/tasks/my-tasks` (assignee / TaskAssignees / TaskAllocations only), then client filter like Dashboard pending (not closed / cancelled / hide-from-stats)
+- Grouped by project; overdue → due date → priority → name
+- **Send to AI Chat…** prefills (default) or optionally auto-submits; HTML descriptions stripped to plain text
+- Rider v1 copies the AI prompt to the clipboard (no stable JetBrains chat prefill API)
+- Self-signed HTTPS not supported in v1
 
 ---
 

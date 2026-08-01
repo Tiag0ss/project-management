@@ -1,0 +1,138 @@
+{
+  "name": "project-management-pending-tasks",
+  "displayName": "Project Management — Pending Tasks",
+  "description": "Native TreeView of your pending tasks via API token (no webview). Works in VS Code and Cursor.",
+  "version": "0.1.0",
+  "publisher": "project-management",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onView:pm.pendingTasks",
+    "onCommand:pm.refreshTasks",
+    "onCommand:pm.configure",
+    "onCommand:pm.testConnection"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "projectManagement",
+          "title": "Project Management",
+          "icon": "media/pm.svg"
+        }
+      ]
+    },
+    "views": {
+      "projectManagement": [
+        {
+          "id": "pm.pendingTasks",
+          "name": "Pending Tasks"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "pm.refreshTasks",
+        "title": "Refresh Pending Tasks",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "pm.configure",
+        "title": "Project Management: Configure Connection"
+      },
+      {
+        "command": "pm.testConnection",
+        "title": "Project Management: Test Connection"
+      },
+      {
+        "command": "pm.openInBrowser",
+        "title": "Open in Browser",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "pm.sendToAiChat",
+        "title": "Send to AI Chat…",
+        "icon": "$(comment-discussion)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "pm.refreshTasks",
+          "when": "view == pm.pendingTasks",
+          "group": "navigation"
+        },
+        {
+          "command": "pm.configure",
+          "when": "view == pm.pendingTasks"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "pm.sendToAiChat",
+          "when": "view == pm.pendingTasks && viewItem == task",
+          "group": "inline"
+        },
+        {
+          "command": "pm.openInBrowser",
+          "when": "view == pm.pendingTasks && viewItem == task",
+          "group": "inline"
+        },
+        {
+          "command": "pm.sendToAiChat",
+          "when": "view == pm.pendingTasks && viewItem == task",
+          "group": "1_actions"
+        },
+        {
+          "command": "pm.openInBrowser",
+          "when": "view == pm.pendingTasks && viewItem == task",
+          "group": "1_actions"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Project Management",
+      "properties": {
+        "projectManagement.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Application base URL (no trailing slash), e.g. https://pm.example.com"
+        },
+        "projectManagement.refreshIntervalSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "description": "Auto-refresh interval in seconds (0 = manual only)"
+        },
+        "projectManagement.aiAutoSubmit": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, Send to AI Chat submits immediately unless you pick Edit before send"
+        },
+        "projectManagement.aiPromptTemplate": {
+          "type": "string",
+          "default": "",
+          "description": "Optional override for Full context AI prompt. Placeholders: {TaskName}, {ProjectName}, {StatusName}, {PriorityName}, {DueDate}, {DescriptionPlain}, {AppUrl}"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "clean": "rm -rf out *.vsix",
+    "package": "pnpm run compile && vsce package --no-dependencies --allow-missing-repository",
+    "package:cursor": "pnpm run package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.3.3"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

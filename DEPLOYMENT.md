@@ -396,7 +396,88 @@ ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 
 ---
 
-## 11. Performance Optimization
+## 11. IDE Extensions (Pending Tasks)
+
+Native plugins live in [`ide-extensions/`](ide-extensions/). They talk to your **deployed** app API with a user `pt_` token. Same `.vsix` works in **VS Code and Cursor**.
+
+Contract and checklist: [`ide-extensions/README.md`](ide-extensions/README.md), [`ide-extensions/CONTRACT.md`](ide-extensions/CONTRACT.md).
+
+### Prerequisites (users)
+
+1. App reachable over HTTPS (valid cert) or HTTP on LAN/VPN — self-signed HTTPS is not supported in v1.
+2. Each user creates an API token: **Profile → API Tokens → Create** (`pt_…`, shown once).
+3. In the extension: Base URL = production origin (no trailing slash), e.g. `https://pm.example.com`.
+
+### Build & deploy — VS Code / Cursor (pnpm)
+
+Produces a `.vsix` installable in both editors:
+
+```bash
+cd ide-extensions/vscode
+# Required: ignore the monorepo workspace so deps land in this folder
+pnpm install --ignore-workspace
+pnpm run package
+# Output: project-management-pending-tasks-<version>.vsix
+```
+
+`package` and `package:cursor` are the same command — Cursor uses the VS Code extension format; there is no separate “Cursor build”.
+
+If `pnpm install` alone reports “Already up to date” but there is no local `node_modules/@types/vscode`, you skipped `--ignore-workspace` and the VSIX was never produced.
+
+**Install in Cursor or VS Code**
+
+1. Copy the `.vsix` to the machine (release artifact, internal share, etc.).
+2. Command Palette → **Extensions: Install from VSIX…** → select the file.
+3. Reload window if prompted.
+4. Open the **Project Management** activity-bar icon → **Configure Connection** (Base URL + token).
+5. Optional: set `projectManagement.refreshIntervalSeconds` / `projectManagement.aiAutoSubmit` in Settings.
+
+**Dev loop (no VSIX)**
+
+```bash
+cd ide-extensions/vscode
+pnpm install --ignore-workspace
+pnpm run compile
+# Open this folder in Cursor/VS Code → F5 (Extension Development Host)
+```
+
+**Releasing a new version**
+
+1. Bump `"version"` in `ide-extensions/vscode/package.json`.
+2. `pnpm install --ignore-workspace && pnpm run package`
+3. Distribute the new `.vsix`; users Install from VSIX again (or replace the previous install).
+
+### Build & deploy — Rider
+
+```bash
+cd ide-extensions/rider
+# Once, if wrapper missing:
+# gradle wrapper --gradle-version 8.7
+./gradlew buildPlugin
+# ZIP under build/distributions/
+```
+
+Install: **Settings → Plugins → ⚙ → Install Plugin from Disk** → select the ZIP.  
+Configure: **Settings → Tools → Project Management**.
+
+### Build & deploy — Visual Studio 2022
+
+1. Open `ide-extensions/visualstudio/ProjectManagement.PendingTasks.sln` with the **Visual Studio extension development** workload.
+2. Build **Release** → produces a `.vsix`.
+3. Install on target PCs (double-click `.vsix` or Extensions → Install from disk).
+4. Configure: **Tools → Options → Project Management**.
+5. Open: **View → PM Pending Tasks**.
+
+### Ops notes
+
+- No server deploy step beyond a normal app release: extensions call existing `GET /api/user/profile` and `GET /api/tasks/my-tasks`.
+- Ensure production `ALLOWED_ORIGINS` / reverse proxy allow HTTPS clients; API token auth does not use cookies.
+- Rotate/revoke tokens from Profile → API Tokens if a laptop is lost.
+- Do not commit `.vsix` / Rider ZIP / VS VSIX into git unless you intentionally version release binaries.
+
+---
+
+## 12. Performance Optimization
 
 ### Enable Compression
 ```typescript
@@ -421,7 +502,7 @@ DB_CONNECTION_LIMIT=50
 
 ---
 
-## 12. Rollback Plan
+## 13. Rollback Plan
 
 ### Quick Rollback
 ```bash
