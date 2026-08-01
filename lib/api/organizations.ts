@@ -14,6 +14,8 @@ export interface Organization {
   PermissionGroupId?: number;
   CanManageSettings?: number;
   CanManageMembers?: number;
+  CanCreateProjects?: number;
+  CanManageProjects?: number;
   MemberCount?: number;
   ProjectCount?: number;
   OpenTickets?: number;

@@ -57,26 +57,37 @@ wrangler deploy
 
 Use [`email-task-queue-forward-worker.js`](./email-task-queue-forward-worker.js) when the same catch-all routing receives **multiple** addresses but only one should create tasks.
 
-Example:
+**Recommended (simplest):** do **not** send catch-all to the Worker.
+
+| Address | Cloudflare rule |
+|---------|-----------------|
+| `tasks@yourdomain.com` | **Send to Worker** (task queue) |
+| `info@…`, `support@…`, etc. | **Send to email** (native forward — no Worker) |
+
+Only use catch-all → Worker if you accept configuring verified destinations + `FORWARD_MAP` / `DEFAULT_FORWARD_TO`.
+
+Example (catch-all → Worker):
 
 - `tasks@yourdomain.com` → webhook (Outlook task queue)
-- `info@yourdomain.com` → forward to its real mailbox (via `FORWARD_MAP`)
-- `support@yourdomain.com` → forward to its real mailbox
+- `info@yourdomain.com` → forward via `FORWARD_MAP` to a **verified** mailbox (e.g. Gmail / M365)
+- everything else → `DEFAULT_FORWARD_TO` (same verified mailbox, or another)
 
-Catch-all → Worker works for the task queue address. For all other addresses, Cloudflare **`message.forward()` only accepts verified destination addresses** (Email Routing → **Destination addresses**). A routing alias like `info@yourdomain.com` is **not** automatically valid unless it appears there as verified.
+Cloudflare **`message.forward()` only accepts verified destination addresses** (Email Routing → **Destination addresses**). A routing alias like `info@yourdomain.com` is **not** a valid forward target unless it is also listed and verified there. This Worker **never** falls back to forwarding to the routing alias itself (that caused the generic `Email processing failed` rejections).
 
 ### Secrets / vars
 
 | Name | Example | Purpose |
 |------|---------|---------|
 | `TASK_QUEUE_EMAIL` | `tasks@yourdomain.com` | Only mail to this address hits the webhook |
-| `FORWARD_MAP` | `{"info@yourdomain.com":"info@yourdomain.com","sales@yourdomain.com":"sales@gmail.com"}` | Maps each routing address to a **verified** destination |
+| `FORWARD_MAP` | `{"info@yourdomain.com":"you@gmail.com"}` | Maps each routing address to a **verified** destination |
+| `DEFAULT_FORWARD_TO` | `you@gmail.com` | Fallback verified mailbox when `FORWARD_MAP` has no match |
 | `API_TOKEN` | `pt_...` | Webhook auth (same as above) |
 | `APP_WEBHOOK_URL` | `https://your-domain.com/api/webhooks/email-task-queue` | Task queue webhook |
 
 ```bash
 wrangler secret put TASK_QUEUE_EMAIL
 wrangler secret put FORWARD_MAP
+wrangler secret put DEFAULT_FORWARD_TO
 wrangler secret put API_TOKEN
 wrangler secret put APP_WEBHOOK_URL
 wrangler deploy
@@ -85,20 +96,20 @@ wrangler deploy
 `FORWARD_MAP` example (one line for wrangler secret):
 
 ```json
-{"info@yourdomain.com":"info@yourdomain.com","support@yourdomain.com":"support@yourcompany.com"}
+{"info@yourdomain.com":"you@gmail.com","support@yourdomain.com":"you@gmail.com"}
 ```
 
-Each value must be verified under **Email Routing → Destination addresses**. If forward fails, the Worker log/rejection now shows the real Cloudflare error (often `destination address not verified`).
-
-In **Email Routing**, route addresses (or catch-all) to this Worker. Non-queue mail is forwarded using `FORWARD_MAP`; it is **not** sent to the webhook.
+Each **value** must be verified under **Email Routing → Destination addresses**. After changing the script, **redeploy** the Worker (dashboard paste + Save/Deploy, or `wrangler deploy`).
 
 ### Catch-all troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|--------|-----|
-| `Email processing failed` / `destination address not verified` | Forward target is a routing alias, not a verified destination | Add the real mailbox in **Destination addresses**, map it in `FORWARD_MAP` |
+| `No forward target for …` | Missing `FORWARD_MAP` / `DEFAULT_FORWARD_TO` | Set at least one verified destination var |
+| `Destination not verified: …` | Forward target not in Destination addresses | Verify that mailbox in Cloudflare, then retry |
+| `Email processing failed` | Uncaught Worker error (old script / parse / fetch) | Redeploy latest worker; check Workers → Logs |
 | Task queue not receiving mail | Wrong `TASK_QUEUE_EMAIL` or missing `API_TOKEN` | Check env vars and Worker logs |
-| Loop / duplicate mail | Forward target routes back to the same Worker | Map to an external verified mailbox, not back to the Worker |
+| Loop / duplicate mail | Forward target routes back to the same Worker | Map to an **external** verified mailbox, not back into the Worker |
 
 ## 4. Test
 

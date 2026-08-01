@@ -105,6 +105,14 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
             `SELECT o.*, om.Role, om.PermissionGroupId,
               COALESCE(pg.CanManageSettings, 0) as CanManageSettings,
               COALESCE(pg.CanManageMembers, 0) as CanManageMembers,
+              CASE
+                WHEN om.Role IN ('Owner', 'Admin') THEN 1
+                ELSE COALESCE(pg.CanCreateProjects, 0)
+              END as CanCreateProjects,
+              CASE
+                WHEN om.Role IN ('Owner', 'Admin') THEN 1
+                ELSE COALESCE(pg.CanManageProjects, 0)
+              END as CanManageProjects,
               u.Username as CreatorName,
               (SELECT COUNT(*) FROM OrganizationMembers WHERE OrganizationId = o.Id) as MemberCount,
               (SELECT COUNT(*) FROM Projects WHERE OrganizationId = o.Id) as ProjectCount,
@@ -178,13 +186,22 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const orgId = req.params.id;
 
     const organizations = await cachedJson(
-      cacheKeys.org(orgId),
+      // Membership/role is per-user — never share a single org cache across users.
+      `${cacheKeys.org(orgId)}:user:${userId}`,
       ENTITY_TTL_SECONDS,
       async () => {
         const [rows] = await pool.execute<RowDataPacket[]>(
           `SELECT o.*, om.Role, om.PermissionGroupId,
               COALESCE(pg.CanManageSettings, 0) as CanManageSettings,
               COALESCE(pg.CanManageMembers, 0) as CanManageMembers,
+              CASE
+                WHEN om.Role IN ('Owner', 'Admin') THEN 1
+                ELSE COALESCE(pg.CanCreateProjects, 0)
+              END as CanCreateProjects,
+              CASE
+                WHEN om.Role IN ('Owner', 'Admin') THEN 1
+                ELSE COALESCE(pg.CanManageProjects, 0)
+              END as CanManageProjects,
               u.Username as CreatorName
            FROM Organizations o
            INNER JOIN OrganizationMembers om ON o.Id = om.OrganizationId

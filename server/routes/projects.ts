@@ -72,6 +72,57 @@ const resolveCanViewBudgetInfo = async (userId: number): Promise<boolean> => {
   return canViewBudgetInfo;
 };
 
+const userCanCreateProjectsInOrganization = async (
+  userId: number,
+  organizationId: number
+): Promise<boolean> => {
+  const [users] = await pool.execute<RowDataPacket[]>(
+    'SELECT isAdmin, IsDeveloper, IsSupport, IsManager FROM Users WHERE Id = ?',
+    [userId]
+  );
+
+  if (!users.length) {
+    return false;
+  }
+
+  if (Number(users[0].isAdmin || 0) === 1) {
+    return true;
+  }
+
+  const [members] = await pool.execute<RowDataPacket[]>(
+    `SELECT om.Role, COALESCE(pg.CanCreateProjects, 0) AS CanCreateProjects
+     FROM OrganizationMembers om
+     LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+     WHERE om.OrganizationId = ? AND om.UserId = ?`,
+    [organizationId, userId]
+  );
+
+  if (members.length === 0) {
+    return false;
+  }
+
+  if (members[0].Role === 'Owner' || members[0].Role === 'Admin' || Number(members[0].CanCreateProjects || 0) === 1) {
+    return true;
+  }
+
+  const roles: string[] = [];
+  if (Number(users[0].IsDeveloper || 0) === 1) roles.push('Developer');
+  if (Number(users[0].IsSupport || 0) === 1) roles.push('Support');
+  if (Number(users[0].IsManager || 0) === 1) roles.push('Manager');
+
+  if (roles.length === 0) {
+    return false;
+  }
+
+  const placeholders = roles.map(() => '?').join(',');
+  const [rolePerms] = await pool.execute<RowDataPacket[]>(
+    `SELECT CanCreateProjects FROM RolePermissions WHERE RoleName IN (${placeholders})`,
+    roles
+  );
+
+  return rolePerms.some((perm) => Number(perm.CanCreateProjects || 0) === 1);
+};
+
 const attachProjectHealth = (projects: RowDataPacket[], canViewBudgetInfo: boolean) => projects.map((project) => {
   const health = computeProjectHealth({
     isClosed: project.StatusIsClosed,
@@ -925,6 +976,14 @@ router.post('/', authenticateToken, validateRequest(createProjectSchema), async 
       return res.status(403).json({ 
         success: false, 
         message: 'You are not a member of this organization' 
+      });
+    }
+
+    const canCreate = await userCanCreateProjectsInOrganization(Number(userId), Number(organizationId));
+    if (!canCreate) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to create projects in this organization',
       });
     }
 

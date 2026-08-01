@@ -45,6 +45,7 @@ export default function SearchableSelect({
 
   // Get selected option label
   const selectedOption = options.find(opt => String(opt.value) === String(value));
+  const hasSelectedValue = value !== '' && value !== null && value !== undefined && String(value) !== '0' && !!selectedOption;
   const displayValue = selectedOption?.label || emptyText;
 
   // Close dropdown when clicking outside
@@ -105,11 +106,12 @@ export default function SearchableSelect({
   // Auto-select when there is exactly one valid option (create flows)
   useEffect(() => {
     if (!autoSelectSingleOption || disabled) return;
-    if (value !== '' && value !== null && value !== undefined) return;
+    const hasValue = value !== '' && value !== null && value !== undefined && String(value) !== '0';
+    if (hasValue) return;
     if (options.length !== 1) return;
 
     const singleOptionValue = String(options[0].value ?? '').trim();
-    if (!singleOptionValue) return;
+    if (!singleOptionValue || singleOptionValue === '0') return;
 
     onChange(String(options[0].value));
   }, [autoSelectSingleOption, disabled, value, options, onChange]);
@@ -138,11 +140,11 @@ export default function SearchableSelect({
           disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-gray-400 dark:hover:border-gray-500'
         }`}
       >
-        <span className={value ? '' : 'text-gray-400 dark:text-gray-500'}>
+        <span className={hasSelectedValue ? '' : 'text-gray-400 dark:text-gray-500'}>
           {displayValue}
         </span>
         <div className="flex items-center gap-1">
-          {value && !disabled && (
+          {hasSelectedValue && !disabled && (
             <span
               onClick={handleClear}
               className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 px-1"

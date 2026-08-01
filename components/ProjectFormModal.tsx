@@ -10,6 +10,14 @@ import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 import { useToast } from '@/contexts/ToastContext';
+import { usePermissions } from '@/contexts/PermissionsContext';
+
+const canCreateProjectsInOrganization = (org: Organization): boolean => {
+  if (org.Role === 'Owner' || org.Role === 'Admin') {
+    return true;
+  }
+  return Number(org.CanCreateProjects || 0) === 1;
+};
 
 interface ProjectFormModalProps {
   project: Project | null;
@@ -27,6 +35,7 @@ export default function ProjectFormModal({
   canViewBudgetInfo,
 }: ProjectFormModalProps) {
   const { showToast } = useToast();
+  const { permissions } = usePermissions();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [customers, setCustomers] = useState<{ Id: number; Name: string }[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
@@ -58,8 +67,9 @@ export default function ProjectFormModal({
   const [customFields, setCustomFields] = useState<CustomFieldValues>(() => extractCustomFieldValues(project));
 
   useEffect(() => {
+    if (!token) return;
     void loadOrganizations();
-  }, []);
+  }, [token, permissions?.canCreateProjects]);
 
   useEffect(() => {
     if (formData.organizationId && formData.organizationId > 0) {
@@ -96,12 +106,37 @@ export default function ProjectFormModal({
   const loadOrganizations = async () => {
     try {
       const response = await organizationsApi.getAll(token);
-      setOrganizations(response.organizations);
-      if (!project && response.organizations.length > 0) {
-        setFormData(prev => ({ ...prev, organizationId: response.organizations[0].Id }));
+      const allOrganizations = Array.isArray(response.organizations) ? response.organizations : [];
+
+      // Prefer orgs where this membership can create (Owner/Admin/permission group).
+      let organizationsForSelect = project
+        ? allOrganizations
+        : allOrganizations.filter(canCreateProjectsInOrganization);
+
+      // Global role CanCreateProjects (Developer/Support/Manager) is aggregated into
+      // permissions.canCreateProjects but is not always mirrored on each org row.
+      // If the per-org filter is empty, fall back to all memberships for entitled users.
+      if (!project && organizationsForSelect.length === 0 && permissions?.canCreateProjects) {
+        organizationsForSelect = allOrganizations;
+      }
+
+      setOrganizations(organizationsForSelect);
+
+      if (!project && organizationsForSelect.length > 0) {
+        setError('');
+        setFormData((prev) => {
+          if (prev.organizationId && organizationsForSelect.some((org) => org.Id === prev.organizationId)) {
+            return prev;
+          }
+          return { ...prev, organizationId: organizationsForSelect[0].Id };
+        });
+      } else if (!project && organizationsForSelect.length === 0) {
+        setError('No organizations available for project creation. Ask an admin to grant Create Projects on your permission group.');
       }
     } catch (err: any) {
       console.error('Failed to load organizations:', err);
+      setOrganizations([]);
+      setError(err.message || 'Failed to load organizations');
     }
   };
 
@@ -264,7 +299,7 @@ export default function ProjectFormModal({
                 Organization *
               </label>
               <SearchableSelect
-                value={formData.organizationId.toString()}
+                value={formData.organizationId > 0 ? formData.organizationId.toString() : ''}
                 onChange={(value) => setFormData({ ...formData, organizationId: parseInt(value) || 0 })}
                 options={organizations.map(org => ({ value: org.Id, label: org.Name }))}
                 placeholder="Select Organization"
@@ -272,6 +307,11 @@ export default function ProjectFormModal({
                 disabled={!!project}
                 autoSelectSingleOption={!project}
               />
+              {!project && organizations.length === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                  No organizations available. Your membership needs Create Projects permission.
+                </p>
+              )}
               {!!project && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Organization cannot be changed after project creation

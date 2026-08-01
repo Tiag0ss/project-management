@@ -26,7 +26,12 @@ function decodeQuotedPrintable(input) {
   try {
     return new TextDecoder('utf-8').decode(new Uint8Array(bytes));
   } catch {
-    return String.fromCharCode(...bytes);
+    let out = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      out += String.fromCharCode(...bytes.slice(i, i + chunkSize));
+    }
+    return out;
   }
 }
 
@@ -77,26 +82,45 @@ function decodePartBody(body, headers) {
   const charset = getCharset(headers['content-type'] || '');
   let decoded = String(body || '').replace(/\r?\n$/, '');
 
-  if (encoding === 'base64') {
-    const binary = atob(decoded.replace(/\s/g, ''));
-    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    try {
-      decoded = new TextDecoder(charset).decode(bytes);
-    } catch {
-      decoded = new TextDecoder('utf-8').decode(bytes);
+  try {
+    if (encoding === 'base64') {
+      const compact = decoded.replace(/\s/g, '');
+      if (!compact) return '';
+      const binary = atob(compact);
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      try {
+        decoded = new TextDecoder(charset).decode(bytes);
+      } catch {
+        decoded = new TextDecoder('utf-8').decode(bytes);
+      }
+    } else if (encoding === 'quoted-printable') {
+      decoded = decodeQuotedPrintable(decoded);
     }
-  } else if (encoding === 'quoted-printable') {
-    decoded = decodeQuotedPrintable(decoded);
+  } catch (error) {
+    console.error('Failed to decode MIME part', error);
+    return '';
   }
 
   return decoded.trim();
 }
 
-function collectBodyParts(raw) {
+function collectBodyParts(raw, depth = 0) {
   const result = { text: '', html: '' };
+  if (depth > 12) return result;
+
   const { headers, body } = splitHeadersAndBody(raw);
   const contentType = String(headers['content-type'] || 'text/plain');
   const boundary = getBoundary(contentType);
+  const loweredType = contentType.toLowerCase();
+
+  if (
+    !boundary &&
+    !loweredType.includes('text/plain') &&
+    !loweredType.includes('text/html') &&
+    !loweredType.includes('multipart/')
+  ) {
+    return result;
+  }
 
   if (boundary) {
     const escapedBoundary = boundary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -106,7 +130,7 @@ function collectBodyParts(raw) {
       const trimmed = segment.trim();
       if (!trimmed || trimmed === '--') continue;
 
-      const nested = collectBodyParts(trimmed);
+      const nested = collectBodyParts(trimmed, depth + 1);
       if (nested.text && !result.text) result.text = nested.text;
       if (nested.html && !result.html) result.html = nested.html;
     }
@@ -115,7 +139,6 @@ function collectBodyParts(raw) {
   }
 
   const decoded = decodePartBody(body, headers);
-  const loweredType = contentType.toLowerCase();
 
   if (loweredType.includes('text/html')) {
     result.html = decoded;
@@ -146,22 +169,27 @@ function stripHtmlTags(html) {
 }
 
 function parseEmailBody(raw) {
-  const parts = collectBodyParts(raw);
-  return {
-    text: parts.text || '',
-    html: parts.html || '',
-  };
+  try {
+    const parts = collectBodyParts(raw);
+    return {
+      text: parts.text || '',
+      html: parts.html || '',
+    };
+  } catch (error) {
+    console.error('parseEmailBody failed', error);
+    return { text: '', html: '' };
+  }
 }
 
 export default {
-  async email(message, env, ctx) {
+  async email(message, env) {
     try {
       const webhookUrl = env.APP_WEBHOOK_URL;
       const apiToken = env.API_TOKEN;
 
       if (!webhookUrl || !apiToken) {
         console.error('Missing APP_WEBHOOK_URL or API_TOKEN');
-        message.setReject('Worker is not configured');
+        message.setReject('Worker is not configured (missing APP_WEBHOOK_URL or API_TOKEN)');
         return;
       }
 
@@ -169,34 +197,53 @@ export default {
       const subject = message.headers.get('subject') || '';
       const from = message.from;
       const to = message.to;
-      const rawEmail = await new Response(message.raw).text();
-      const { text, html } = parseEmailBody(rawEmail);
 
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiToken}`,
-        },
-        body: JSON.stringify({
-          messageId,
-          from,
-          to,
-          subject,
-          text: text || stripHtmlTags(html),
-          html,
-          receivedAt: new Date().toISOString(),
-        }),
-      });
-
-      if (!response.ok && response.status !== 202) {
-        const body = await response.text();
-        console.error('Webhook failed', response.status, body);
-        message.setReject('Webhook delivery failed');
+      let text = '';
+      let html = '';
+      try {
+        const rawEmail = await new Response(message.raw).text();
+        ({ text, html } = parseEmailBody(rawEmail));
+      } catch (error) {
+        console.error('Failed to read/parse raw email; continuing with empty body', error);
       }
+
+      let response;
+      try {
+        response = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiToken}`,
+          },
+          body: JSON.stringify({
+            messageId,
+            from,
+            to,
+            subject,
+            text: text || stripHtmlTags(html),
+            html,
+            receivedAt: new Date().toISOString(),
+          }),
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        console.error('Webhook fetch threw', { webhookUrl, reason });
+        message.setReject(`Webhook unreachable: ${reason}`);
+        return;
+      }
+
+      // 200 = duplicate, 201 = queued, 202 = unknown sender (accepted, do not bounce)
+      if (response.ok || response.status === 202) {
+        return;
+      }
+
+      const body = await response.text();
+      console.error('Webhook failed', response.status, body);
+      message.setReject(`Webhook HTTP ${response.status}`);
     } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
       console.error('Email worker error', error);
-      message.setReject('Email processing failed');
+      message.setReject(`Email processing failed: ${reason}`);
     }
   },
 };

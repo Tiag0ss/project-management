@@ -102,6 +102,7 @@ export async function invalidateOrganizationCaches(payload: InvalidatePayload): 
   const normalizedOrgId = normalizeId(orgId);
   if (normalizedOrgId !== undefined) {
     await cache.del(cacheKeys.org(normalizedOrgId));
+    await cache.delByPrefix(`${cacheKeys.org(normalizedOrgId)}:user:`);
     await cache.del(cacheKeys.orgMembers(normalizedOrgId));
     await cache.del(cacheKeys.orgUsers(normalizedOrgId));
     await cache.del(cacheKeys.orgAvailableUsers(normalizedOrgId));

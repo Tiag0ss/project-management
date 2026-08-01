@@ -8,16 +8,22 @@
  * Email Routing → Destination addresses. Routing aliases (e.g. info@yourdomain.com)
  * are NOT valid forward targets unless explicitly verified there.
  *
- * Use FORWARD_MAP (JSON) to map each routing address to its verified mailbox:
- *   {"info@yourdomain.com":"info@yourdomain.com","sales@yourdomain.com":"sales@gmail.com"}
+ * Prefer this setup when possible (avoids Worker forward entirely):
+ *   tasks@domain → Worker
+ *   info@ / support@ → native "Send to email" rules (not the Worker)
  *
  * Required Worker secrets / vars:
  *   TASK_QUEUE_EMAIL — e.g. tasks@yourdomain.com (only this address hits the webhook)
  *   API_TOKEN        — application API key (pt_...) from Profile → API Tokens
  *   APP_WEBHOOK_URL  — e.g. https://your-domain.com/api/webhooks/email-task-queue
  *
- * Optional:
- *   FORWARD_MAP      — JSON map: routing address → verified destination address
+ * Optional (needed for catch-all → Worker):
+ *   FORWARD_MAP        — JSON map: routing address → verified destination
+ *                        {"info@yourdomain.com":"you@gmail.com"}
+ *   DEFAULT_FORWARD_TO — verified mailbox used when FORWARD_MAP has no match
+ *
+ * IMPORTANT: Do NOT fall back to forwarding to the routing address itself.
+ * That almost always fails with "destination address not verified".
  */
 
 function decodeQuotedPrintable(input) {
@@ -40,7 +46,13 @@ function decodeQuotedPrintable(input) {
   try {
     return new TextDecoder('utf-8').decode(new Uint8Array(bytes));
   } catch {
-    return String.fromCharCode(...bytes);
+    // Avoid String.fromCharCode(...bytes) — large emails blow the call stack.
+    let out = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      out += String.fromCharCode(...bytes.slice(i, i + chunkSize));
+    }
+    return out;
   }
 }
 
@@ -91,26 +103,46 @@ function decodePartBody(body, headers) {
   const charset = getCharset(headers['content-type'] || '');
   let decoded = String(body || '').replace(/\r?\n$/, '');
 
-  if (encoding === 'base64') {
-    const binary = atob(decoded.replace(/\s/g, ''));
-    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    try {
-      decoded = new TextDecoder(charset).decode(bytes);
-    } catch {
-      decoded = new TextDecoder('utf-8').decode(bytes);
+  try {
+    if (encoding === 'base64') {
+      const compact = decoded.replace(/\s/g, '');
+      if (!compact) return '';
+      const binary = atob(compact);
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      try {
+        decoded = new TextDecoder(charset).decode(bytes);
+      } catch {
+        decoded = new TextDecoder('utf-8').decode(bytes);
+      }
+    } else if (encoding === 'quoted-printable') {
+      decoded = decodeQuotedPrintable(decoded);
     }
-  } else if (encoding === 'quoted-printable') {
-    decoded = decodeQuotedPrintable(decoded);
+  } catch (error) {
+    console.error('Failed to decode MIME part', error);
+    return '';
   }
 
   return decoded.trim();
 }
 
-function collectBodyParts(raw) {
+function collectBodyParts(raw, depth = 0) {
   const result = { text: '', html: '' };
+  if (depth > 12) return result;
+
   const { headers, body } = splitHeadersAndBody(raw);
   const contentType = String(headers['content-type'] || 'text/plain');
   const boundary = getBoundary(contentType);
+  const loweredType = contentType.toLowerCase();
+
+  // Skip non-text parts (attachments) — they often break base64 decode or blow memory.
+  if (
+    !boundary &&
+    !loweredType.includes('text/plain') &&
+    !loweredType.includes('text/html') &&
+    !loweredType.includes('multipart/')
+  ) {
+    return result;
+  }
 
   if (boundary) {
     const escapedBoundary = boundary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -120,7 +152,7 @@ function collectBodyParts(raw) {
       const trimmed = segment.trim();
       if (!trimmed || trimmed === '--') continue;
 
-      const nested = collectBodyParts(trimmed);
+      const nested = collectBodyParts(trimmed, depth + 1);
       if (nested.text && !result.text) result.text = nested.text;
       if (nested.html && !result.html) result.html = nested.html;
     }
@@ -129,7 +161,6 @@ function collectBodyParts(raw) {
   }
 
   const decoded = decodePartBody(body, headers);
-  const loweredType = contentType.toLowerCase();
 
   if (loweredType.includes('text/html')) {
     result.html = decoded;
@@ -160,57 +191,60 @@ function stripHtmlTags(html) {
 }
 
 function parseEmailBody(raw) {
-  const parts = collectBodyParts(raw);
-  return {
-    text: parts.text || '',
-    html: parts.html || '',
-  };
+  try {
+    const parts = collectBodyParts(raw);
+    return {
+      text: parts.text || '',
+      html: parts.html || '',
+    };
+  } catch (error) {
+    console.error('parseEmailBody failed', error);
+    return { text: '', html: '' };
+  }
 }
 
 function normalizeEmailAddress(value) {
   const text = String(value || '').trim().toLowerCase();
-  if (!text) return '';
+  if (!text || text === '[object object]') return '';
 
   const angleMatch = text.match(/<([^>]+)>/);
   if (angleMatch) {
-    return angleMatch[1].trim();
+    return angleMatch[1].trim().toLowerCase();
   }
 
-  const emailMatch = text.match(/[^\s<>]+@[^\s<>]+/);
-  return emailMatch ? emailMatch[0].trim() : text;
+  const emailMatch = text.match(/[^\s<>,"]+@[^\s<>,"]+/);
+  return emailMatch ? emailMatch[0].trim().toLowerCase() : '';
+}
+
+function addAddressCandidates(addresses, value) {
+  if (value == null) return;
+
+  if (typeof value === 'object') {
+    // Some runtimes expose envelope recipients as objects.
+    const nested = value.address || value.email || value.value || value.to;
+    if (nested && nested !== value) {
+      addAddressCandidates(addresses, nested);
+      return;
+    }
+  }
+
+  String(value)
+    .split(/[,;]/)
+    .forEach((part) => {
+      const normalized = normalizeEmailAddress(part);
+      if (normalized) addresses.add(normalized);
+    });
 }
 
 function collectRecipientAddresses(message) {
   const addresses = new Set();
 
-  if (message.to) {
-    String(message.to)
-      .split(',')
-      .forEach((part) => {
-        const normalized = normalizeEmailAddress(part);
-        if (normalized) addresses.add(normalized);
-      });
-  }
-
-  const deliveredTo = message.headers.get('delivered-to');
-  if (deliveredTo) {
-    String(deliveredTo)
-      .split(',')
-      .forEach((part) => {
-        const normalized = normalizeEmailAddress(part);
-        if (normalized) addresses.add(normalized);
-      });
-  }
-
-  const toHeader = message.headers.get('to');
-  if (toHeader) {
-    String(toHeader)
-      .split(',')
-      .forEach((part) => {
-        const normalized = normalizeEmailAddress(part);
-        if (normalized) addresses.add(normalized);
-      });
-  }
+  addAddressCandidates(addresses, message.to);
+  addAddressCandidates(addresses, message.headers?.get?.('delivered-to'));
+  addAddressCandidates(addresses, message.headers?.get?.('x-original-to'));
+  addAddressCandidates(addresses, message.headers?.get?.('x-forwarded-to'));
+  addAddressCandidates(addresses, message.headers?.get?.('to'));
+  addAddressCandidates(addresses, message.headers?.get?.('cc'));
 
   return addresses;
 }
@@ -229,7 +263,7 @@ async function enqueueTaskFromEmail(message, env) {
 
   if (!webhookUrl || !apiToken) {
     console.error('Missing APP_WEBHOOK_URL or API_TOKEN');
-    message.setReject('Task queue worker is not configured');
+    message.setReject('Task queue worker is not configured (missing APP_WEBHOOK_URL or API_TOKEN)');
     return;
   }
 
@@ -237,38 +271,57 @@ async function enqueueTaskFromEmail(message, env) {
   const subject = message.headers.get('subject') || '';
   const from = message.from;
   const to = message.to;
-  const rawEmail = await new Response(message.raw).text();
-  const { text, html } = parseEmailBody(rawEmail);
 
-  const response = await fetch(webhookUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiToken}`,
-    },
-    body: JSON.stringify({
-      messageId,
-      from,
-      to,
-      subject,
-      text: text || stripHtmlTags(html),
-      html,
-      receivedAt: new Date().toISOString(),
-    }),
-  });
-
-  if (!response.ok && response.status !== 202) {
-    const body = await response.text();
-    console.error('Webhook failed', response.status, body);
-    message.setReject('Webhook delivery failed');
+  let text = '';
+  let html = '';
+  try {
+    const rawEmail = await new Response(message.raw).text();
+    ({ text, html } = parseEmailBody(rawEmail));
+  } catch (error) {
+    console.error('Failed to read/parse raw email; continuing with empty body', error);
   }
+
+  let response;
+  try {
+    response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiToken}`,
+      },
+      body: JSON.stringify({
+        messageId,
+        from,
+        to,
+        subject,
+        text: text || stripHtmlTags(html),
+        html,
+        receivedAt: new Date().toISOString(),
+      }),
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error('Webhook fetch threw', { webhookUrl, reason });
+    message.setReject(`Webhook unreachable: ${reason}`);
+    return;
+  }
+
+  // 200 = duplicate, 201 = queued, 202 = unknown sender (accepted, do not bounce)
+  if (response.ok || response.status === 202) {
+    return;
+  }
+
+  const body = await response.text();
+  console.error('Webhook failed', response.status, body);
+  message.setReject(`Webhook HTTP ${response.status}`);
 }
 
 function getRoutingAddress(message) {
   const candidates = [
     message.to,
-    message.rcptTo,
-    message.headers.get('delivered-to'),
+    message.headers?.get?.('delivered-to'),
+    message.headers?.get?.('x-original-to'),
+    message.headers?.get?.('x-forwarded-to'),
   ];
 
   for (const candidate of candidates) {
@@ -287,6 +340,7 @@ function parseForwardMap(env) {
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      console.error('FORWARD_MAP must be a JSON object');
       return {};
     }
 
@@ -307,41 +361,70 @@ function parseForwardMap(env) {
 
 function getForwardDestination(message, env) {
   const routingAddress = getRoutingAddress(message);
-  if (!routingAddress) return '';
-
   const forwardMap = parseForwardMap(env);
-  if (forwardMap[routingAddress]) {
-    return forwardMap[routingAddress];
+  const defaultForwardTo = normalizeEmailAddress(env.DEFAULT_FORWARD_TO);
+
+  if (routingAddress && forwardMap[routingAddress]) {
+    return {
+      routingAddress,
+      forwardTo: forwardMap[routingAddress],
+      source: 'FORWARD_MAP',
+    };
   }
 
-  // Default: try the routing address itself (works only if verified as destination).
-  return routingAddress;
+  if (defaultForwardTo) {
+    return {
+      routingAddress,
+      forwardTo: defaultForwardTo,
+      source: 'DEFAULT_FORWARD_TO',
+    };
+  }
+
+  // Intentionally do NOT forward to routingAddress itself — Cloudflare rejects
+  // unverified routing aliases and the UI only shows a generic failure.
+  return {
+    routingAddress,
+    forwardTo: '',
+    source: 'none',
+  };
 }
 
 async function forwardEmail(message, env) {
-  const routingAddress = getRoutingAddress(message);
-  const forwardTo = getForwardDestination(message, env);
+  const { routingAddress, forwardTo, source } = getForwardDestination(message, env);
 
   if (!forwardTo) {
-    console.error('Could not determine forward destination', { routingAddress });
-    message.setReject('Forward destination is missing');
+    const hint =
+      'Set FORWARD_MAP or DEFAULT_FORWARD_TO to a verified Destination address ' +
+      '(Email Routing → Destination addresses). Do not forward to the routing alias itself.';
+    console.error('No verified forward destination configured', {
+      routingAddress,
+      hasForwardMap: Object.keys(parseForwardMap(env)).length > 0,
+      hasDefault: Boolean(normalizeEmailAddress(env.DEFAULT_FORWARD_TO)),
+    });
+    message.setReject(
+      `No forward target for ${routingAddress || '(unknown)'}. ${hint}`
+    );
     return;
   }
 
   try {
     await message.forward(forwardTo);
+    console.log('Forwarded email', { routingAddress, forwardTo, source });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    console.error('Forward failed', { routingAddress, forwardTo, reason });
+    console.error('Forward failed', { routingAddress, forwardTo, source, reason });
+
+    const isUnverified = /not verified|unverified/i.test(reason);
     message.setReject(
-      `Forward failed for ${routingAddress} → ${forwardTo}: ${reason}. ` +
-      'Add a verified destination in Email Routing and/or set FORWARD_MAP.'
+      isUnverified
+        ? `Destination not verified: ${forwardTo}. Add it under Email Routing → Destination addresses, then retry.`
+        : `Forward failed ${routingAddress || '?'} → ${forwardTo}: ${reason}`
     );
   }
 }
 
 export default {
-  async email(message, env, ctx) {
+  async email(message, env) {
     try {
       const taskQueueEmail = env.TASK_QUEUE_EMAIL;
 
@@ -353,7 +436,12 @@ export default {
       await forwardEmail(message, env);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      console.error('Email worker error', { reason, to: message.to, from: message.from });
+      console.error('Email worker error', {
+        reason,
+        to: message.to,
+        from: message.from,
+      });
+      // Put the actionable part first — Cloudflare UI often truncates long reasons.
       message.setReject(`Email processing failed: ${reason}`);
     }
   },
