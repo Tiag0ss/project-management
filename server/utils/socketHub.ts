@@ -93,10 +93,3 @@ export function emitToUser(userId: number, event: string, data: unknown): void {
     io!.to(socketId).emit(event, data);
   });
 }
-
-/**
- * Returns whether socket.io has been initialised.
- */
-export function isSocketHubReady(): boolean {
-  return io !== null;
-}

@@ -72,7 +72,6 @@ export const cacheKeys = {
   stats: (scope: string) => `stats:${scope}`,
   search: (hash: string) => `search:${hash}`,
   portalOverview: (scope: string) => `portal:${scope}`,
-  activityStats: (scope: string) => `activity:stats:${scope}`,
 };
 
 export const ENTITY_TTL_SECONDS = 300;

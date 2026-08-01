@@ -46,22 +46,6 @@ export const recurringAllocationsApi = {
     return data.allocations || [];
   },
 
-  // Get single recurring allocation
-  getById: async (id: number, token: string): Promise<RecurringAllocation> => {
-    const response = await fetch(`${API_URL}/api/recurring-allocations/${id}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch recurring allocation');
-    }
-
-    const data = await response.json();
-    return data.allocation;
-  },
-
   // Create recurring allocation
   create: async (allocation: Partial<RecurringAllocation>, token: string): Promise<number> => {
     // Convert interface fields to API format (camelCase)
@@ -139,33 +123,5 @@ export const recurringAllocationsApi = {
     if (!response.ok) {
       throw new Error('Failed to delete recurring allocation');
     }
-  },
-
-  // Get occurrences for a user in a date range
-  getOccurrences: async (
-    userId: number,
-    startDate?: string,
-    endDate?: string,
-    token?: string
-  ): Promise<RecurringAllocationOccurrence[]> => {
-    const params = new URLSearchParams();
-    if (startDate) params.append('startDate', startDate);
-    if (endDate) params.append('endDate', endDate);
-
-    const response = await fetch(
-      `${API_URL}/api/recurring-allocations/occurrences/user/${userId}?${params.toString()}`,
-      {
-        headers: token ? {
-          'Authorization': `Bearer ${token}`,
-        } : {},
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch recurring allocation occurrences');
-    }
-
-    const data = await response.json();
-    return data.occurrences || [];
   },
 };

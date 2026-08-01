@@ -69,3 +69,4 @@ ecosystem.config.js
 /backups
 *.sql.gz
 templates/export.csv
+package-lock.json

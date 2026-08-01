@@ -1,18 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { ColorVisionMode } from './colorVision';
 
-/** Okabe–Ito-inspired distinguishable palette (hex). */
-export const OKABE_ITO = [
-  '#0072B2', // blue
-  '#D55E00', // vermillion
-  '#009E73', // bluish green
-  '#F0E442', // yellow
-  '#CC79A7', // reddish purple
-  '#56B4E9', // sky blue
-  '#E69F00', // orange
-  '#000000', // black
-] as const;
-
 const DEUTERANOPIA_PALETTE = [
   '#0072B2',
   '#D55E00',

@@ -41,7 +41,7 @@ This project is a work in progress — bugs may still be found; please report th
 - 🔔 **Real-Time Updates** — Socket.io notifications and live UI refresh
 - 🌙 **Dark Mode** — Full dark mode support across the UI
 - 📱 **Responsive Design** — Mobile-friendly interface with grouped navigation
-- 🖥️ **Desktop App** — Optional Electron wrapper (`npm run desktop:dev`)
+- 🖥️ **Desktop App** — Optional Electron wrapper (`pnpm run desktop:dev`)
 - 🧙 **Install Wizard** — Guided first-time setup
 - ⚡ **Optional Redis Cache** — Read-through cache with invalidate-on-write for faster loads; disabled by default
 
@@ -70,33 +70,36 @@ This project is a work in progress — bugs may still be found; please report th
 ```bash
 git clone https://github.com/tiag0ss/project-management.git
 cd project-management
-npm install
+pnpm install
 cp .env.example .env
 # Edit .env (database, JWT_SECRET, etc.)
 ```
 
-Run the API and frontend in **two terminals**:
+Run the app (Express custom server embeds Next.js on the same port):
 
 ```bash
-# Terminal 1 — Express API (port 3000)
-npm run dev
-
-# Terminal 2 — Next.js dev server
-npm run dev:next
+pnpm run dev
 ```
 
 Open `http://localhost:3000`, complete the install wizard on first run, then sign in.
 
+Production after `pnpm run build`:
+
+```bash
+pnpm start
+# same as: pnpm run start:prod
+```
+
 Optional desktop shell:
 
 ```bash
-npm run desktop:dev
+pnpm run desktop:dev
 ```
 
 Run tests:
 
 ```bash
-npm test
+pnpm test
 ```
 
 ## Quick Start (Docker)
@@ -322,9 +325,9 @@ Comprehensive testing scenarios are in [TESTING_SCENARIOS.md](TESTING_SCENARIOS.
 - Performance and browser compatibility notes
 
 ```bash
-npm test
-npm run test:coverage
-npm run test:integration
+pnpm test
+pnpm run test:coverage
+pnpm run test:integration
 ```
 
 ## License

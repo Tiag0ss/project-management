@@ -26,5 +26,3 @@ export function getApiUrl(): string {
   // Default: use relative URLs (works when frontend and API are on the same host)
   return '';
 }
-
-export const API_URL = getApiUrl();

@@ -1,4 +1,4 @@
-import { validate, loginSchema, createTaskSchema } from '../../server/utils/validation';
+import { loginSchema, createTaskSchema } from '../../server/utils/validation';
 
 describe('Validation Schemas', () => {
   describe('loginSchema', () => {
@@ -8,7 +8,7 @@ describe('Validation Schemas', () => {
         password: 'password123',
       };
 
-      expect(() => validate(loginSchema, validData)).not.toThrow();
+      expect(() => loginSchema.parse(validData)).not.toThrow();
     });
 
     it('should reject username that is too short', () => {
@@ -17,7 +17,7 @@ describe('Validation Schemas', () => {
         password: 'password123',
       };
 
-      expect(() => validate(loginSchema, invalidData)).toThrow();
+      expect(() => loginSchema.parse(invalidData)).toThrow();
     });
 
     it('should reject password that is too short', () => {
@@ -26,7 +26,7 @@ describe('Validation Schemas', () => {
         password: '12345',
       };
 
-      expect(() => validate(loginSchema, invalidData)).toThrow();
+      expect(() => loginSchema.parse(invalidData)).toThrow();
     });
 
     it('should reject missing fields', () => {
@@ -34,7 +34,7 @@ describe('Validation Schemas', () => {
         username: 'testuser',
       };
 
-      expect(() => validate(loginSchema, invalidData)).toThrow();
+      expect(() => loginSchema.parse(invalidData)).toThrow();
     });
   });
 
@@ -49,7 +49,7 @@ describe('Validation Schemas', () => {
         estimatedHours: 5,
       };
 
-      expect(() => validate(createTaskSchema, validData)).not.toThrow();
+      expect(() => createTaskSchema.parse(validData)).not.toThrow();
     });
 
     it('should reject empty task name', () => {
@@ -60,7 +60,7 @@ describe('Validation Schemas', () => {
         priority: 1,
       };
 
-      expect(() => validate(createTaskSchema, invalidData)).toThrow();
+      expect(() => createTaskSchema.parse(invalidData)).toThrow();
     });
 
     it('should reject invalid projectId', () => {
@@ -71,7 +71,7 @@ describe('Validation Schemas', () => {
         priority: 1,
       };
 
-      expect(() => validate(createTaskSchema, invalidData)).toThrow();
+      expect(() => createTaskSchema.parse(invalidData)).toThrow();
     });
 
     it('should reject missing status and priority', () => {
@@ -80,7 +80,7 @@ describe('Validation Schemas', () => {
         taskName: 'Test Task',
       };
 
-      expect(() => validate(createTaskSchema, invalidData)).toThrow();
+      expect(() => createTaskSchema.parse(invalidData)).toThrow();
     });
   });
 });

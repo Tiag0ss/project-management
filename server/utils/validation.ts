@@ -93,10 +93,6 @@ export const createOrganizationSchema = z.object({
 
 export const updateOrganizationBodySchema = createOrganizationSchema.partial().passthrough();
 
-export const updateOrganizationSchema = createOrganizationSchema.partial().extend({
-  id: z.number().int().positive(),
-});
-
 // User profile update
 export const updateUserProfileSchema = z.object({
   firstName: z.string().max(100).optional(),
@@ -168,11 +164,6 @@ export const createTimeEntrySchema = z.object({
   endTime: z.string().max(20).optional().nullable(),
   customFields: optionalCustomFields,
 }).passthrough();
-
-// Validation helper
-export const validate = <T>(schema: z.ZodSchema<T>, data: unknown): T => {
-  return schema.parse(data);
-};
 
 export const formatZodError = (error: z.ZodError) => {
   const errors = error.issues.map((e: z.ZodIssue) => ({

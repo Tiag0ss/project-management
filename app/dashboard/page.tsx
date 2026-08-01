@@ -680,27 +680,6 @@ interface TaskAllocationForCalendar {
   EndTime: string;
 }
 
-// Define the CalendarTab props type
-interface CalendarTabProps {
-  tasks: TaskWithProject[];
-  timeEntries: TimeEntry[];
-  callRecords: CallRecordForCalendar[];
-  taskAllocations: TaskAllocationForCalendar[];
-  workStartTimes: {
-    monday: string;
-    tuesday: string;
-    wednesday: string;
-    thursday: string;
-    friday: string;
-    saturday: string;
-    sunday: string;
-  };
-  lunchTime: string;
-  lunchDuration: number;
-  token: string;
-  onDataChanged: () => void;
-}
-
 type DashboardTab = 'overview' | 'calendar' | 'kanban' | 'analytics';
 type AnalyticsPeriod = 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth' | 'allTime';
 type TaskSortOption = 'dueDate' | 'priority' | 'project';

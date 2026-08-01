@@ -206,11 +206,3 @@ export function startSlaAutoTransitionScheduler(): void {
 
   logger.info('SLA auto-transition scheduler started (cron: every 10 minutes)');
 }
-
-export function stopSlaAutoTransitionScheduler(): void {
-  if (schedulerTask) {
-    schedulerTask.stop();
-    schedulerTask = null;
-    logger.info('SLA auto-transition scheduler stopped');
-  }
-}

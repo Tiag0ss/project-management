@@ -55,11 +55,4 @@ if (process.env.NODE_ENV !== 'production') {
   );
 }
 
-// Create a stream object for Morgan HTTP logger
-export const morganStream = {
-  write: (message: string) => {
-    logger.info(message.trim());
-  },
-};
-
 export default logger;

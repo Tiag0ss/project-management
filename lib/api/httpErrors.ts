@@ -37,15 +37,3 @@ export const getApiErrorMessageFromPayload = (
 
   return fallback;
 };
-
-export const getApiErrorMessage = async (
-  response: Response,
-  fallback: string
-): Promise<string> => {
-  try {
-    const payload = await response.json() as ApiErrorPayload;
-    return getApiErrorMessageFromPayload(payload, fallback);
-  } catch {
-    return fallback;
-  }
-};

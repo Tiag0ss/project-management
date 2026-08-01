@@ -16,9 +16,3 @@ export default function UsersPage() {
     </div>
   );
 }
-
-interface CustomerOption {
-  Id: number;
-  Name: string;
-}
- 

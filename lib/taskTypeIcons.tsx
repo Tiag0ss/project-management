@@ -354,8 +354,3 @@ export function TaskTypeIconPicker({
     </div>
   );
 }
-
-// Backwards-compatible alias
-export function normalizeTaskTypeIconId(iconSvg: string | null | undefined): TaskTypeIconId {
-  return resolveTaskTypeIcon(iconSvg);
-}

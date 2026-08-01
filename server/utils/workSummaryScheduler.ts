@@ -594,14 +594,6 @@ export function startWorkSummaryScheduler(): void {
   logger.info('Work summary scheduler started (cron: minute 0 every hour)');
 }
 
-export function stopWorkSummaryScheduler(): void {
-  if (schedulerTask) {
-    schedulerTask.stop();
-    schedulerTask = null;
-    logger.info('Work summary scheduler stopped');
-  }
-}
-
 // Send a test summary email for a user
 export async function sendTestSummaryEmail(
   userId: number, 

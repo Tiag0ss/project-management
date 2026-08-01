@@ -328,11 +328,3 @@ export function startDueDateReminderScheduler(): void {
 
   logger.info('Due date reminder scheduler started (cron: minute 0 every hour)');
 }
-
-export function stopDueDateReminderScheduler(): void {
-  if (schedulerTask) {
-    schedulerTask.stop();
-    schedulerTask = null;
-    logger.info('Due date reminder scheduler stopped');
-  }
-}

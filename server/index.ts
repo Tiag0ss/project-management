@@ -295,10 +295,6 @@ app.prepare().then(async () => {
     });
   });
 
-  server.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
-  });
-
   // Download latest generated Desktop App installer from release folder
   server.get('/api/downloads/desktop-app', async (req, res) => {
     try {
