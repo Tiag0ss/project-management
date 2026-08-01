@@ -4,7 +4,7 @@ import { getApiUrl } from '@/lib/api/config';
 import { parseCsv } from '@/lib/csv';
 
 import React, { useState, useEffect, useRef, use } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -38,6 +38,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const resolvedParams = use(params);
   const { backgroundStyle, pillStyle } = useColorVision();
   const projectId = resolvedParams.id;
+  const searchParams = useSearchParams();
+  const deepLinkHandledRef = useRef(false);
   
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -423,6 +425,37 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       refreshOutlookQueueAvailability();
     }
   }, [activeTab, token]);
+
+  // Deep-link from Synapse: /projects/:id?tab=tasks&taskId=:taskId
+  useEffect(() => {
+    if (deepLinkHandledRef.current || isLoading) return;
+    const tab = searchParams.get('tab');
+    const taskIdParam = searchParams.get('taskId');
+    if (!tab && !taskIdParam) return;
+
+    if (tab === 'tasks' || taskIdParam) {
+      setActiveTab('tasks');
+    }
+
+    if (!taskIdParam) {
+      if (tab === 'tasks') deepLinkHandledRef.current = true;
+      return;
+    }
+
+    const taskId = Number(taskIdParam);
+    if (!Number.isFinite(taskId) || taskId <= 0 || tasks.length === 0) return;
+
+    const task = tasks.find((t) => t.Id === taskId);
+    if (!task) {
+      deepLinkHandledRef.current = true;
+      return;
+    }
+
+    deepLinkHandledRef.current = true;
+    setEditingTask(task);
+    setShowTaskModal(true);
+    router.replace(`/projects/${projectId}?tab=tasks`, { scroll: false });
+  }, [isLoading, tasks, searchParams, projectId, router]);
 
   const loadProject = async () => {
     if (!token) return;

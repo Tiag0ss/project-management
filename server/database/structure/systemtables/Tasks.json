@@ -163,6 +163,30 @@
       "Comment": "URL to external issue or task in other systems"
     },
     {
+      "FieldName": "SynapseVaultId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "PM Synapse vault id this task was pushed from (one-way link; UI only)"
+    },
+    {
+      "FieldName": "SynapseNoteId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "PM Synapse note id containing the source checkbox"
+    },
+    {
+      "FieldName": "SynapseMarkerId",
+      "DataType": "varchar(64)",
+      "NotNullable": false,
+      "Comment": "Stable checkbox marker id in the Synapse note body"
+    },
+    {
+      "FieldName": "SynapseNoteUrl",
+      "DataType": "varchar(1024)",
+      "NotNullable": false,
+      "Comment": "Absolute URL to open the source note in PM Synapse"
+    },
+    {
       "FieldName": "CompletionPercentage",
       "DataType": "int",
       "NotNullable": true,

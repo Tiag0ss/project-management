@@ -25,6 +25,11 @@ yarn-error.log*
 .pnpm-debug.log*
 /.next/
 /out/
+/pm-synapse/.next/
+/pm-synapse/dist/
+/pm-synapse/node_modules/
+# PM Synapse has its own git repository (nested)
+/pm-synapse/
 
 # production
 /build

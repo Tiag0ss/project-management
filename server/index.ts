@@ -81,6 +81,7 @@ import outlookCalendarRoutes from './routes/outlookCalendar';
 import emailTaskQueueRoutes, { webhookRouter as emailTaskQueueWebhookRoutes } from './routes/emailTaskQueue';
 import apiTokensRoutes from './routes/apiTokens';
 import reportsRoutes from './routes/reports';
+import ssoRoutes from './routes/sso';
 import { ensureAiAssistantViews } from './utils/aiAssistantViews';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
 import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler';
@@ -274,6 +275,7 @@ app.prepare().then(async () => {
   server.use('/api/reports', reportsRoutes);
   server.use('/api/ai-assistant', aiAssistantRoutes);
   server.use('/api/api-tokens', apiTokensRoutes);
+  server.use('/api/sso', ssoRoutes);
 
   // Error handling middleware
   server.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

@@ -991,6 +991,19 @@ Admins can view all tokens; regular users see only their own.
 
 ---
 
+## 21b. SSO for companion apps (PM Synapse)
+
+Minimal OAuth-style handoff so companion apps (e.g. **PM Synapse**) can use the same users without planner UI changes.
+
+1. Companion redirects the browser to `/sso/authorize?redirect_uri=…&state=…&client_id=…`
+2. User logs in on PM if needed (`returnUrl` supported on `/login`)
+3. PM issues a one-time code via `POST /api/sso/handoff` (authenticated)
+4. Companion backend exchanges the code at `POST /api/sso/token` for a short-lived PM JWT
+
+Env: `ALLOWED_SSO_REDIRECTS`, `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` (or `SSO_CLIENTS`). No Navbar or task deep links.
+
+---
+
 ## 22. Outlook Calendar Integration
 
 ### Admin Configuration

@@ -267,6 +267,19 @@ curl https://yourdomain.com/health
 }
 ```
 
+### SSO (PM Synapse and other companions)
+
+Set on the Project Management server:
+
+```env
+ALLOWED_SSO_REDIRECTS=https://synapse.example.com/api/auth/sso/callback
+SSO_CLIENT_ID=pm-synapse
+SSO_CLIENT_SECRET=long-random-secret
+```
+
+Authorize URL (browser): `https://pm.example.com/sso/authorize?redirect_uri=…&state=…&client_id=pm-synapse`  
+Token exchange (server): `POST /api/sso/token` with `code`, `client_id`, `client_secret`.
+
 ### PM2 Monitoring
 ```bash
 # Real-time monitoring

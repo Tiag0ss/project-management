@@ -2,14 +2,14 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { prepareAuthEncryptionSession } from '@/lib/api/auth';
 import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 
-export default function LoginPage() {
+function LoginPageInner() {
   const [username, setUsername] = useState('');
   const passwordRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [registrationType, setRegistrationType] = useState<'internal' | 'customer'>('internal');
   const { login } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     checkInstallStatus();
@@ -68,7 +69,12 @@ export default function LoginPage() {
     try {
       await login({ username, password: readPasswordInput(passwordRef) });
       clearPasswordInput(passwordRef);
-      router.push('/dashboard');
+      const returnUrl = searchParams.get('returnUrl');
+      if (returnUrl && returnUrl.startsWith('/')) {
+        router.push(returnUrl);
+      } else {
+        router.push('/dashboard');
+      }
     } catch (err: any) {
       setError(err.message || 'Login failed. Please try again.');
     } finally {
@@ -147,5 +153,19 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-gray-100 dark:bg-gray-900">
+          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
+        </div>
+      }
+    >
+      <LoginPageInner />
+    </Suspense>
   );
 }

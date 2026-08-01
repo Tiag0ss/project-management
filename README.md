@@ -44,6 +44,7 @@ This project is a work in progress — bugs may still be found; please report th
 - 🖥️ **Desktop App** — Optional Electron wrapper (`pnpm run desktop:dev`)
 - 🧙 **Install Wizard** — Guided first-time setup
 - ⚡ **Optional Redis Cache** — Read-through cache with invalidate-on-write for faster loads; disabled by default
+- 🧠 **[PM Synapse](https://github.com/tiag0ss/pm-synapse)** — Companion Markdown vaults (SSO with this app; optional checkbox→task push). Placeholder repo URL — update when the Synapse repository is published.
 
 ## Additional Notes
 
@@ -223,12 +224,15 @@ docker run -d \
 | `REDIS_URL` | No | `redis://localhost:6379` | Redis connection URL |
 | `REDIS_KEY_PREFIX` | No | `pm:` | Key prefix for all cache entries |
 | `REDIS_DEFAULT_TTL_SECONDS` | No | `300` | Safety TTL for cached entities (invalidated on writes) |
+| `ALLOWED_SSO_REDIRECTS` | No | — | Comma-separated SSO callback URLs (e.g. Synapse `http://localhost:3010/api/auth/sso/callback`) |
+| `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` | No | — | SSO client credentials for companions such as [PM Synapse](https://github.com/tiag0ss/pm-synapse) |
 
 ## Ports
 
 | Port | Description |
 |------|-------------|
 | `3000` | Application (frontend + API) |
+| `3010` | [PM Synapse](https://github.com/tiag0ss/pm-synapse) companion (optional, separate process) |
 | `6379` | Redis (optional, Docker `redis` profile only) |
 | `3306` | MySQL (Docker Compose default) |
 

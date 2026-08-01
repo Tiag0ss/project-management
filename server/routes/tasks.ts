@@ -1095,7 +1095,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
 router.post('/', authenticateToken, validateRequest(createTaskSchema), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, customerId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, customFields } = req.body;
+    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, customerId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, synapseVaultId, synapseNoteId, synapseMarkerId, synapseNoteUrl, customFields } = req.body;
 
     if (!taskName || !projectId) {
       return res.status(400).json({ 
@@ -1192,9 +1192,22 @@ router.post('/', authenticateToken, validateRequest(createTaskSchema), async (re
 
     const customFieldData = await prepareCustomFieldData('Tasks', customFields);
 
+    const normalizedSynapseVaultId = synapseVaultId === undefined || synapseVaultId === null || synapseVaultId === ''
+      ? null
+      : Number(synapseVaultId);
+    const normalizedSynapseNoteId = synapseNoteId === undefined || synapseNoteId === null || synapseNoteId === ''
+      ? null
+      : Number(synapseNoteId);
+    const normalizedSynapseMarkerId = synapseMarkerId
+      ? String(synapseMarkerId).slice(0, 64)
+      : null;
+    const normalizedSynapseNoteUrl = synapseNoteUrl
+      ? String(synapseNoteUrl).slice(0, 1024)
+      : null;
+
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, UnscheduledWork, EstimatedHours, StoryPoints, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, GitHubIssueNumber, GiteaIssueNumber, ApplicationId, ReleaseVersionId, CreatedBy${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
+      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, UnscheduledWork, EstimatedHours, StoryPoints, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, GitHubIssueNumber, GiteaIssueNumber, ApplicationId, ReleaseVersionId, SynapseVaultId, SynapseNoteId, SynapseMarkerId, SynapseNoteUrl, CreatedBy${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
       [
         projectId,
         taskName,
@@ -1220,6 +1233,10 @@ router.post('/', authenticateToken, validateRequest(createTaskSchema), async (re
         normalizedGiteaIssueNumber,
         applicationId || null,
         normalizedReleaseVersionId,
+        normalizedSynapseVaultId,
+        normalizedSynapseNoteId,
+        normalizedSynapseMarkerId,
+        normalizedSynapseNoteUrl,
         userId,
         ...customFieldData.insertValues
       ]
@@ -1373,7 +1390,7 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
   try {
     const userId = req.user?.userId;
     const taskId = req.params.id;
-    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, customerId, syncAllocationHeaderDates, customFields } = req.body;
+    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, customerId, synapseVaultId, synapseNoteId, synapseMarkerId, synapseNoteUrl, syncAllocationHeaderDates, customFields } = req.body;
 
     // Verify user has access to this task's project through organization membership and has CanManageTasks permission
     const [access] = await pool.execute<RowDataPacket[]>(
@@ -1640,6 +1657,34 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
 
     if (releaseVersionId !== undefined && hasEffectiveChange(oldTask.ReleaseVersionId, finalReleaseVersionId)) {
       await syncTaskReleaseVersionLink(Number(taskId), finalReleaseVersionId);
+    }
+
+    // Optional one-way Synapse backfill (set only when provided; never clear via null coalesce)
+    if (
+      synapseVaultId !== undefined ||
+      synapseNoteId !== undefined ||
+      synapseMarkerId !== undefined ||
+      synapseNoteUrl !== undefined
+    ) {
+      await pool.execute(
+        `UPDATE Tasks SET
+           SynapseVaultId = COALESCE(?, SynapseVaultId),
+           SynapseNoteId = COALESCE(?, SynapseNoteId),
+           SynapseMarkerId = COALESCE(?, SynapseMarkerId),
+           SynapseNoteUrl = COALESCE(?, SynapseNoteUrl)
+         WHERE Id = ?`,
+        [
+          synapseVaultId !== undefined && synapseVaultId !== null && synapseVaultId !== ''
+            ? Number(synapseVaultId)
+            : null,
+          synapseNoteId !== undefined && synapseNoteId !== null && synapseNoteId !== ''
+            ? Number(synapseNoteId)
+            : null,
+          synapseMarkerId ? String(synapseMarkerId).slice(0, 64) : null,
+          synapseNoteUrl ? String(synapseNoteUrl).slice(0, 1024) : null,
+          taskId,
+        ]
+      );
     }
 
     if (assignedTo !== undefined && assignedTo !== null) {

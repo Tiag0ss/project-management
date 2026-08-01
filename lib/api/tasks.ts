@@ -74,6 +74,10 @@ export interface Task {
   JiraIssueKey?: string | null;
   GitHubIssueNumber?: number | null;
   GiteaIssueNumber?: number | null;
+  SynapseVaultId?: number | null;
+  SynapseNoteId?: number | null;
+  SynapseMarkerId?: string | null;
+  SynapseNoteUrl?: string | null;
   ApplicationId?: number | null;
   ApplicationName?: string | null;
   ReleaseVersionId?: number | null;
@@ -118,6 +122,10 @@ export interface CreateTaskData {
   giteaIssueNumber?: number | null;
   applicationId?: number | null;
   releaseVersionId?: number | null;
+  synapseVaultId?: number | null;
+  synapseNoteId?: number | null;
+  synapseMarkerId?: string | null;
+  synapseNoteUrl?: string | null;
   syncAllocationHeaderDates?: boolean;
   customFields?: CustomFieldValues;
 }
