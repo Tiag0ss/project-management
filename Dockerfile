@@ -1,5 +1,6 @@
 # Production Dockerfile for Project Management App
 FROM node:20-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
 # Build Linux desktop AppImage (Electron requires glibc — use Debian, not Alpine)
 FROM node:20-bookworm-slim AS desktop-builder
@@ -11,30 +12,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY package.json package-lock.json* ./
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+
+COPY package.json pnpm-lock.yaml ./
 COPY desktop ./desktop
 COPY scripts/ensure-electron.mjs ./scripts/
 
-RUN npm ci \
+RUN pnpm install --frozen-lockfile \
     && node scripts/ensure-electron.mjs \
-    && npm run desktop:build:linux
+    && pnpm run desktop:build:linux
 
 # Install dependencies only when needed
 FROM base AS deps
 WORKDIR /app
 
 # Copy package files
-COPY package.json package-lock.json* ./
+COPY package.json pnpm-lock.yaml ./
 
 # Install production dependencies
-RUN npm ci --only=production && npm cache clean --force
+RUN pnpm install --frozen-lockfile --prod
 
 # Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
-RUN npm ci
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY . .
 
