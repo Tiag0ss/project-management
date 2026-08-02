@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import { useColorVision } from '@/hooks/useColorVision';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import DynamicQueryBuilder from '@/components/DynamicQueryBuilder';
@@ -2525,6 +2526,8 @@ export default function WebReportsPage() {
           </div>
         </main>
       </div>
+
+      <ScrollToTopButton />
     </CustomerUserGuard>
   );
 }

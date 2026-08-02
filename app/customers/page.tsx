@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import CustomerFormModal, { CustomerFormValues } from '@/components/CustomerFormModal';
 import EmptyState from '@/components/EmptyState';
@@ -1289,6 +1290,8 @@ export default function CustomersPage() {
           </div>
         </div>
       )}
+
+      <ScrollToTopButton />
     </div>
     </CustomerUserGuard>
   );

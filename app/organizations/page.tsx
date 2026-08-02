@@ -12,6 +12,7 @@ import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsForm
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 import { downloadCsv, parseCsv, toCsv } from '@/lib/csv';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import EmptyState from '@/components/EmptyState';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
@@ -1076,6 +1077,8 @@ export default function OrganizationsPage() {
         confirmLabel="Delete"
         confirmVariant="danger"
       />
+
+      <ScrollToTopButton />
     </div>
     </CustomerUserGuard>
   );

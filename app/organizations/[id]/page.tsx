@@ -13,6 +13,7 @@ import { statusValuesApi, StatusValue, CreateStatusValueData } from '@/lib/api/s
 import { workflowTransitionPoliciesApi, WorkflowTransitionPolicy, UpsertWorkflowTransitionPolicyData } from '@/lib/api/workflowTransitionPolicies';
 import { projectsApi, Project } from '@/lib/api/projects';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
@@ -593,6 +594,8 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
           </div>
         </div>
       )}
+
+      <ScrollToTopButton />
 
       <ConfirmAlertModal
         isOpen={!!modalMessage}

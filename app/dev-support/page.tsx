@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import { useAuth } from '@/contexts/AuthContext';
 import { getApiUrl } from '@/lib/api/config';
 
@@ -467,6 +468,8 @@ export default function DevSupportManagementPage() {
           </div>
         </div>
       )}
+
+      <ScrollToTopButton />
     </div>
   );
 }

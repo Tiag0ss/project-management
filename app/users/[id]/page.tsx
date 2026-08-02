@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import ChangeHistory from '@/components/ChangeHistory';
 import SearchableSelect from '@/components/SearchableSelect';
 
@@ -1190,6 +1191,8 @@ export default function UserDetailPage() {
           </div>
         </div>
       )}
+
+      <ScrollToTopButton />
     </div>
   );
 }

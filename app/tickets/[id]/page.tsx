@@ -7,6 +7,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import TicketHistory from '@/components/TicketHistory';
 import AttachmentUploader, { AttachmentList } from '@/components/AttachmentManager';
 import { getTicketAttachments, getTicketAttachment, uploadTicketAttachment, deleteTicketAttachment, TicketAttachment } from '@/lib/api/tickets';
@@ -1964,6 +1965,8 @@ export default function TicketDetailPage() {
         confirmLabel="Delete"
         confirmVariant="danger"
       />
+
+      <ScrollToTopButton />
     </div>
   );
 }

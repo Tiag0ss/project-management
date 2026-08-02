@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import { projectsApi, Project } from '@/lib/api/projects';
 import { tasksApi, Task } from '@/lib/api/tasks';
@@ -427,6 +428,8 @@ export default function NotificationsPage() {
           )}
         </>
       )}
+
+      <ScrollToTopButton />
     </>
   );
 }

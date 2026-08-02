@@ -7,6 +7,7 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import EmptyState from '@/components/EmptyState';
 import { downloadCsv, parseBooleanLike, parseCsv, toCsv } from '@/lib/csv';
@@ -1210,6 +1211,8 @@ export default function ApplicationsPage() {
           </div>
         </div>
       )}
+
+      <ScrollToTopButton />
     </div>
   );
 }

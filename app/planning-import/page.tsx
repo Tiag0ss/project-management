@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import SearchableSelect from '@/components/SearchableSelect';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 
 interface Organization {
   Id: number;
@@ -709,6 +710,8 @@ export default function PlanningImportPage() {
           </button>
         </div>
       </div>
+
+      <ScrollToTopButton />
     </div>
   );
 }

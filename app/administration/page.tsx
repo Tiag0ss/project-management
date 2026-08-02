@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import UsersManagement from '@/components/admin/UsersManagement';
 import RolePermissionsManagement from '@/components/admin/RolePermissionsManagement';
 import SystemSettings from '@/components/admin/SystemSettings';
@@ -18,6 +19,7 @@ import TaskFormVisibilitySettingsPanel from '@/components/admin/TaskFormVisibili
 type AdminTab = 'users' | 'permissions' | 'settings' | 'task-form' | 'custom-fields' | 'custom-tables' | 'holidays' | 'logs' | 'frontpage' | 'api-tokens';
 
 export default function AdministrationPage() {
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
   const [activeTab, setActiveTab] = useState<AdminTab>('users');
   const { user, token, isLoading } = useAuth();
   const router = useRouter();
@@ -179,7 +181,7 @@ export default function AdministrationPage() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-auto">
+        <main ref={scrollContainerRef} className="flex-1 overflow-auto">
           <div className="p-6">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow">{activeTab === 'users' && <UsersManagement />}
           
@@ -208,6 +210,8 @@ export default function AdministrationPage() {
           </div>
         </main>
       </div>
+
+      <ScrollToTopButton scrollContainerRef={scrollContainerRef} />
     </div>
   );
 }

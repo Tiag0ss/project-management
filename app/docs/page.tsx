@@ -1,6 +1,7 @@
 'use client';
 
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -2389,6 +2390,8 @@ export default function DocsPage() {
           </main>
         </div>
       </div>
+
+      <ScrollToTopButton />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect, useMemo, Suspense, useCallback } from 'react';
+import { useState, useEffect, useMemo, Suspense, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -24,6 +24,7 @@ import {
   saveDashboardKpis,
 } from '@/lib/api/dashboardKpis';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import EmptyState from '@/components/EmptyState';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import TaskDetailModal from '@/components/TaskDetailModal';
@@ -815,6 +816,7 @@ export default function DashboardPage() {
 }
 
 function DashboardContent() {
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
   const decimalHoursToHMS = useFormatHours();
   const { mapColor, pillStyle } = useColorVision();
   const { user, isLoading, token, isCustomerUser } = useAuth();
@@ -2497,7 +2499,7 @@ function DashboardContent() {
           </aside>
 
           {/* Main Content */}
-          <main className="flex-1 overflow-auto p-6">
+          <main ref={scrollContainerRef} className="flex-1 overflow-auto p-6">
             {/* Overview Tab */}
             {activeTab === 'overview' && (
             overviewLoading ? (
@@ -4094,6 +4096,8 @@ function DashboardContent() {
           </div>
         </div>
       )}
+
+      <ScrollToTopButton scrollContainerRef={isCustomerUser ? undefined : scrollContainerRef} />
     </div>
   );
 }

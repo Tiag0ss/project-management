@@ -7,6 +7,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import ProfileTaskFormVisibility from '@/components/profile/ProfileTaskFormVisibility';
@@ -113,6 +114,7 @@ const formatLeaveUnits = (value: number): string => {
 };
 
 export default function ProfilePage() {
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
   const { user, token, isLoading: authLoading, isCustomerUser, updateUser } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'info' | 'attachments' | 'workHours' | 'security' | 'emailAlerts' | 'recurringTasks' | 'vacations' | 'outOfOffice' | 'taskForm'>('info');
@@ -1302,7 +1304,7 @@ export default function ProfilePage() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-auto">
+        <main ref={scrollContainerRef} className="flex-1 overflow-auto">
           <div className="p-6">
               {message && (
                 <div className={`mb-4 p-3 rounded ${
@@ -2590,6 +2592,8 @@ export default function ProfilePage() {
           </div>
         </main>
       </div>
+
+      <ScrollToTopButton scrollContainerRef={scrollContainerRef} />
 
       <ConfirmAlertModal
         isOpen={recurringDeleteId !== null}

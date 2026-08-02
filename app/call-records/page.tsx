@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CallRecordFormModal, { CallRecordFormValues } from '@/components/CallRecordFormModal';
 import { extractCustomFieldValues } from '@/lib/customFields';
 
@@ -782,6 +783,8 @@ export default function CallRecordsPage() {
           </div>
         </div>
       )}
+
+      <ScrollToTopButton />
     </div>
   );
 }

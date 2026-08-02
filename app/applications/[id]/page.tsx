@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
@@ -1418,6 +1419,8 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
         confirmLabel="Delete"
         confirmVariant="danger"
       />
+
+      <ScrollToTopButton />
     </div>
   );
 }

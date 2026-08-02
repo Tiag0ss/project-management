@@ -9,6 +9,7 @@ import { usersApi, User } from '@/lib/api/users';
 import { tasksApi, Task } from '@/lib/api/tasks';
 import { downloadTablePdf } from '@/lib/api/pdfExport';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import SearchableSelect from '@/components/SearchableSelect';
 import RichTextEditor from '@/components/RichTextEditor';
@@ -2315,6 +2316,8 @@ export default function TimesheetPage() {
           confirmLabel="Delete"
           confirmVariant="danger"
         />
+
+        <ScrollToTopButton />
       </div>
     </CustomerUserGuard>
   );

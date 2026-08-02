@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -1087,6 +1088,8 @@ export default function WorkSummaryPage() {
           </div>
         </main>
       </div>
+
+      <ScrollToTopButton />
     </CustomerUserGuard>
   );
 }

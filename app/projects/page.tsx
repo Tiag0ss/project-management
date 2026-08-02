@@ -16,6 +16,7 @@ import CustomerUserGuard from '@/components/CustomerUserGuard';
 import EmptyState from '@/components/EmptyState';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import ProjectFormModal from '@/components/ProjectFormModal';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { useColorVision } from '@/hooks/useColorVision';
 
@@ -1099,6 +1100,7 @@ export default function ProjectsPage() {
         confirmLabel="Delete"
         confirmVariant="danger"
       />
+      <ScrollToTopButton />
     </div>
     </CustomerUserGuard>
   );

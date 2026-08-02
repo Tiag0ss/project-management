@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableSelect from '@/components/SearchableSelect';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
@@ -1565,6 +1566,8 @@ export default function TicketsPage() {
           </div>
         </div>
       )}
+
+      <ScrollToTopButton />
     </div>
   );
 }

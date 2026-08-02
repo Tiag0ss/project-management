@@ -6,6 +6,7 @@ import RichTextEditor from '@/components/RichTextEditor';
 import { getMemos, createMemo, updateMemo, deleteMemo, Memo } from '@/lib/api/memos';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 
 const MEMO_CALENDAR_LOCALE = 'en-US';
@@ -845,6 +846,8 @@ export default function MemosPage() {
           </div>
         </div>
       )}
+
+      <ScrollToTopButton />
     </>
   );
 }

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import { getApiUrl } from '@/lib/api/config';
 import { useRouter } from 'next/navigation';
 import RichTextEditor from '@/components/RichTextEditor';
@@ -1636,6 +1637,8 @@ export default function ApprovalsPage() {
           </>
         )}
       </main>
+
+      <ScrollToTopButton />
     </div>
   );
 }

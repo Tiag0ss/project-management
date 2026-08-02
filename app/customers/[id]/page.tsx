@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
 import TaskDetailModal from '@/components/TaskDetailModal';
@@ -1946,6 +1947,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           )}
         </>
       )}
+
+      <ScrollToTopButton />
     </div>
     </CustomerUserGuard>
   );

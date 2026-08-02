@@ -13,6 +13,7 @@ import { usersApi, User } from '@/lib/api/users';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { projectMilestonesApi, ProjectMilestone } from '@/lib/api/projectMilestones';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import AllocationHeaderDetailModal from '@/components/AllocationHeaderDetailModal';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
@@ -217,6 +218,7 @@ export default function PlanningPage() {
     taskName: ''
   });
   const [expandedAllocationRows, setExpandedAllocationRows] = useState<Set<number>>(new Set());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const ganttContainerRef = useRef<HTMLDivElement>(null);
   const ganttViewOptionsRef = useRef<HTMLDivElement>(null);
   const suppressTaskClickUntilRef = useRef(0);
@@ -8300,7 +8302,7 @@ export default function PlanningPage() {
                 )}
               </div>
             )}
-            <div className="flex-1 min-h-0 overflow-auto">
+            <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-auto">
               <div
                 className="relative"
                 ref={ganttContainerRef}
@@ -12316,6 +12318,8 @@ export default function PlanningPage() {
           </div>
         </div>
       )}
+
+      <ScrollToTopButton scrollContainerRef={scrollContainerRef} />
     </div>
     </CustomerUserGuard>
   );

@@ -17,6 +17,7 @@ import { TaskTypeBadge, TaskTypeIconMark } from '@/lib/taskTypeIcons';
 import { usersApi, User } from '@/lib/api/users';
 import { tagsApi } from '@/lib/api/tags';
 import Navbar from '@/components/Navbar';
+import ScrollToTopButton from '@/components/ScrollToTopButton';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
@@ -5145,6 +5146,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           </div>
         </div>
       )}
+
+      <ScrollToTopButton />
     </div>
     </CustomerUserGuard>
   );
