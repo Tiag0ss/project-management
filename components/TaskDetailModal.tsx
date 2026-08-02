@@ -451,7 +451,6 @@ export default function TaskDetailModal({
   const hasGitHubIntegrationConfigured = Boolean(project?.GitHubOwner && project?.GitHubRepo);
   const hasGiteaIntegrationConfigured = Boolean(project?.GiteaOwner && project?.GiteaRepo);
   const hasTicketJiraReference = Boolean(externalTicketId && jiraTicketBaseUrl);
-  const hasJiraTicketImportReference = Boolean(jiraIssueKeyValue && jiraIntegration?.JiraUrl);
   const hasJiraBoardImportReference = Boolean(externalIssueId && jiraBoardBaseUrl);
   const hasGitHubIssueReference = Boolean(gitHubIssueNumberValue);
   const hasGiteaIssueReference = Boolean(giteaIssueNumberValue);
@@ -2186,18 +2185,20 @@ export default function TaskDetailModal({
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                 {task?.Id ? task.TaskName : 'Create New Task'}
               </h2>
-              {task?.Id && project?.Id && (
+              {task?.Id && (project?.Id || headerCustomerName || task.SynapseNoteUrl) && (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/projects/${project.Id}`)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 transition-colors"
-                    title={`Open project ${project.ProjectName}`}
-                  >
-                    <span>📁</span>
-                    <span>{project.ProjectName}</span>
-                    <span aria-hidden="true">↗</span>
-                  </button>
+                  {project?.Id && (
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/projects/${project.Id}`)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 transition-colors"
+                      title={`Open project ${project.ProjectName}`}
+                    >
+                      <span>📁</span>
+                      <span>{project.ProjectName}</span>
+                      <span aria-hidden="true">↗</span>
+                    </button>
+                  )}
 
                   {headerCustomerName && (
                     <span
@@ -2207,6 +2208,22 @@ export default function TaskDetailModal({
                       <span>🏢</span>
                       <span>{headerCustomerName}</span>
                     </span>
+                  )}
+
+                  {task.SynapseNoteUrl && (
+                    <a
+                      href={task.SynapseNoteUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-cyan-100 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:hover:bg-cyan-900/50 text-cyan-800 dark:text-cyan-300 transition-colors"
+                      title="Open linked Synapse note"
+                    >
+                      <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                      </svg>
+                      <span>Synapse</span>
+                      <span aria-hidden="true">↗</span>
+                    </a>
                   )}
                 </div>
               )}
@@ -2567,137 +2584,118 @@ export default function TaskDetailModal({
               </div>
 
               {/* Ticket Reference */}
-              {(task?.TicketNumber || hasTicketJiraReference || hasJiraTicketImportReference || hasJiraBoardImportReference || (hasGitHubIssueReference && showGitHubIssueSection) || (hasGiteaIssueReference && showGiteaIssueSection)) && (
+              {(task?.TicketNumber || hasTicketJiraReference || hasJiraTicketIntegrationConfigured || hasJiraBoardImportReference || showAnySourceControlIssueSection) && (
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
                   Linked Tickets & Jira
                 </h3>
               )}
               {task?.TicketNumber && (
-                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                    </svg>
-                    <div className="flex-1">
-                      <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Created from Ticket:</span>
-                      <a
-                        href={`/tickets/${task.TicketIdRef}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ml-2 text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-                      >
-                        {task.TicketNumber} - {task.TicketTitle}
-                      </a>
-                      
-                      {/* Jira Integration Link */}
-                      {hasTicketJiraReference && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Jira Issue:</span>
-                          <a
-                            href={`${jiraTicketBaseUrl}/browse/${externalTicketId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
-                            title={`Open in Jira: ${externalTicketId}`}
-                          >
-                            🔗 {externalTicketId}
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <svg className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                  </svg>
+                  <a
+                    href={`/tickets/${task.TicketIdRef}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors"
+                    title={`Open ticket ${task.TicketNumber}`}
+                  >
+                    {task.TicketNumber}
+                    {task.TicketTitle ? ` — ${task.TicketTitle}` : ''}
+                    <span aria-hidden="true">↗</span>
+                  </a>
+                  {hasTicketJiraReference && (
+                    <a
+                      href={`${jiraTicketBaseUrl}/browse/${externalTicketId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors"
+                      title={`Open in Jira: ${externalTicketId}`}
+                    >
+                      {externalTicketId}
+                      <span aria-hidden="true">↗</span>
+                    </a>
+                  )}
                 </div>
               )}
 
               {/* Jira Integration Link (Independent) */}
               {!task?.TicketNumber && hasTicketJiraReference && (
-                <div className="p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5 text-orange-600 dark:text-orange-400" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
-                    </svg>
-                    <div className="flex-1">
-                      <span className="text-xs font-medium text-orange-700 dark:text-orange-300">Associated Jira Issue:</span>
-                      <a
-                        href={`${jiraTicketBaseUrl}/browse/${externalTicketId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ml-2 inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors"
-                        title={`Open in Jira: ${externalTicketId}`}
-                      >
-                        🔗 {externalTicketId}
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                      </a>
-                    </div>
-                  </div>
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                  <svg className="w-4 h-4 text-orange-600 dark:text-orange-400 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
+                  </svg>
+                  <a
+                    href={`${jiraTicketBaseUrl}/browse/${externalTicketId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900/60 transition-colors"
+                    title={`Open in Jira: ${externalTicketId}`}
+                  >
+                    {externalTicketId}
+                    <span aria-hidden="true">↗</span>
+                  </a>
                 </div>
               )}
 
-              {/* Jira Ticket Link (from Jira Ticket Import) */}
-              {hasJiraTicketIntegrationConfigured && (jiraIssueKeyValue || jiraIntegration?.JiraUrl) && (
-                <div className="p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
-                    </svg>
-                    <div className="flex-1">
-                      <span className="text-xs font-medium text-purple-700 dark:text-purple-300">Imported from Jira Ticket:</span>
-                      {jiraIssueKeyValue && jiraIntegration?.JiraUrl && (
-                        <a
-                          href={`${jiraIntegration.JiraUrl}/browse/${jiraIssueKeyValue}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="ml-2 inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
-                          title={`Open in Jira: ${jiraIssueKeyValue}`}
-                        >
-                          🎫 {jiraIssueKeyValue}
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                        </a>
-                      )}
-                      <div className="mt-2">
-                        <input
-                          type="text"
-                          value={formData.jiraIssueKey || ''}
-                          onChange={(e) => setFormData({ ...formData, jiraIssueKey: e.target.value || undefined })}
-                          className="w-full max-w-xs px-3 py-1.5 text-sm border border-purple-300 dark:border-purple-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500"
-                          placeholder="Edit Jira issue ID"
-                        />
-                      </div>
-                    </div>
-                  </div>
+              {/* Jira Ticket Link (from Jira Ticket Import) — always when org Jira is configured */}
+              {hasJiraTicketIntegrationConfigured && (
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                  <svg className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
+                  </svg>
+                  <input
+                    type="text"
+                    value={formData.jiraIssueKey || ''}
+                    onChange={(e) => setFormData({ ...formData, jiraIssueKey: e.target.value || undefined })}
+                    className="flex-1 min-w-[8rem] max-w-xs px-2.5 py-1 text-xs border border-purple-300 dark:border-purple-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500"
+                    placeholder="Jira issue key"
+                    aria-label="Jira issue key"
+                  />
+                  {jiraIssueKeyValue && jiraIntegration?.JiraUrl ? (
+                    <a
+                      href={`${jiraIntegration.JiraUrl}/browse/${jiraIssueKeyValue}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors"
+                      title={`Open in Jira: ${jiraIssueKeyValue}`}
+                      aria-label={`Open in Jira: ${jiraIssueKeyValue}`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  ) : (
+                    <span
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-purple-300 dark:text-purple-700 cursor-not-allowed"
+                      title="Enter a Jira issue key to open"
+                      aria-hidden="true"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </span>
+                  )}
                 </div>
               )}
 
               {/* Jira Board Link (from Jira Board/Project Import) */}
               {hasJiraBoardImportReference && (
-                <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
-                    </svg>
-                    <div className="flex-1">
-                      <span className="text-xs font-medium text-indigo-700 dark:text-indigo-300">Imported from Jira Board:</span>
-                      <a
-                        href={`${jiraBoardBaseUrl}/browse/${externalIssueId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ml-2 inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors"
-                        title={`Open in Jira: ${externalIssueId}`}
-                      >
-                        🧩 {externalIssueId}
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                      </a>
-                    </div>
-                  </div>
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
+                  <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
+                  </svg>
+                  <a
+                    href={`${jiraBoardBaseUrl}/browse/${externalIssueId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/60 transition-colors"
+                    title={`Open in Jira: ${externalIssueId}`}
+                  >
+                    {externalIssueId}
+                    <span aria-hidden="true">↗</span>
+                  </a>
                 </div>
               )}
 
@@ -2754,37 +2752,6 @@ export default function TaskDetailModal({
                   )}
                 </div>
               </div>
-              )}
-
-              {task?.SynapseNoteUrl && (
-                <>
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
-                    Synapse
-                  </h3>
-                  <div className="p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <svg className="w-5 h-5 text-teal-600 dark:text-teal-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                      </svg>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-xs font-medium text-teal-700 dark:text-teal-300">Linked from Synapse note</span>
-                        <div className="mt-1">
-                          <a
-                            href={task.SynapseNoteUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-sm font-semibold text-teal-700 dark:text-teal-300 hover:underline"
-                          >
-                            Open in Synapse
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </>
               )}
 
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-1.5 pt-1">
