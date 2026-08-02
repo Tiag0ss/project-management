@@ -69,6 +69,7 @@ import applicationsRoutes from './routes/applications';
 import projectReportSchedulesRoutes from './routes/projectReportSchedules';
 import retrospectiveActionsRoutes from './routes/retrospectiveActions';
 import workflowTransitionPoliciesRoutes from './routes/workflowTransitionPolicies';
+import taskFieldVisibilityRoutes from './routes/taskFieldVisibility';
 import holidaysRoutes from './routes/holidays';
 import vacationsRoutes from './routes/vacations';
 import outOfOfficeRoutes from './routes/outOfOffice';
@@ -267,6 +268,7 @@ app.prepare().then(async () => {
   server.use('/api/project-report-schedules', projectReportSchedulesRoutes);
   server.use('/api/retrospective-actions', retrospectiveActionsRoutes);
   server.use('/api/workflow-transition-policies', workflowTransitionPoliciesRoutes);
+  server.use('/api/task-field-visibility', taskFieldVisibilityRoutes);
   server.use('/api/holidays', holidaysRoutes);
   server.use('/api/vacations', vacationsRoutes);
   server.use('/api/out-of-office', outOfOfficeRoutes);

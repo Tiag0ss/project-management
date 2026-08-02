@@ -20,13 +20,14 @@ import SearchableSelect from '@/components/SearchableSelect';
 import { useFormatHours } from '@/lib/useFormatHours';
 import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 import { TaskTypeIcon, TaskTypeIconPicker, resolveTaskTypeIcon } from '@/lib/taskTypeIcons';
+import TaskFormVisibilitySettingsPanel from '@/components/admin/TaskFormVisibilitySettingsPanel';
 
 export default function OrganizationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const orgId = parseInt(resolvedParams.id);
   
   const [organization, setOrganization] = useState<Organization | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'projects' | 'permissions' | 'statuses' | 'tags' | 'integrations' | 'sla' | 'workflow-policies' | 'attachments' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'projects' | 'permissions' | 'statuses' | 'tags' | 'integrations' | 'sla' | 'workflow-policies' | 'task-form' | 'attachments' | 'history'>('overview');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const { user, token, isLoading: authLoading } = useAuth();
@@ -427,6 +428,18 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
                   ✅ Workflow Transition Policies (DoR/DoD)
                 </button>
               )}
+              {canManageSettings && (
+                <button
+                  onClick={() => setActiveTab('task-form')}
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                    activeTab === 'task-form'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  🧩 Task Form
+                </button>
+              )}
               <button
                 onClick={() => {
                   setActiveTab('attachments');
@@ -490,6 +503,22 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
             {activeTab === 'sla' && <SlaTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}
             {activeTab === 'workflow-policies' && (
               <WorkflowPoliciesTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />
+            )}
+            {activeTab === 'task-form' && token && (
+              <TaskFormVisibilitySettingsPanel
+                mode="organization"
+                organizationId={orgId}
+                token={token}
+                canManage={canManageSettings}
+                onRequestSyncConfirm={(onConfirm) => {
+                  showConfirm(
+                    'Sync from global',
+                    'This will overwrite this organization\'s task form visibility with the global template. Continue?',
+                    onConfirm,
+                    { confirmLabel: 'Sync', confirmVariant: 'primary' }
+                  );
+                }}
+              />
             )}
             {activeTab === 'attachments' && (
               <AttachmentsTab 

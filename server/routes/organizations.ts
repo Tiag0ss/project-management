@@ -10,6 +10,7 @@ import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
 import logger from '../utils/logger';
 import { createOrganizationSchema, updateOrganizationBodySchema, validateRequest } from '../utils/validation';
+import { seedOrgTaskFieldVisibility } from '../utils/taskFieldVisibilitySeed';
 
 const router = Router();
 
@@ -396,6 +397,8 @@ router.post('/', authenticateToken, validateRequest(createOrganizationSchema), a
         [orgId, type.name, type.icon, type.color, type.order, type.isDefault]
       );
     }
+
+    await seedOrgTaskFieldVisibility(orgId);
 
     // Log organization creation
     await logActivity(

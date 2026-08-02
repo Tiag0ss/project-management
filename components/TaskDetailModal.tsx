@@ -18,6 +18,7 @@ import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsForm
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { useColorVision } from '@/hooks/useColorVision';
+import { useTaskFieldVisibility } from '@/hooks/useTaskFieldVisibility';
 
 interface TaskDetailModalProps {
   projectId: number;
@@ -33,6 +34,8 @@ interface TaskDetailModalProps {
   // Optional planning features
   showRemovePlanning?: boolean;
   onRemovePlanning?: () => void;
+  /** Prefill create mode (e.g. create task from ticket). */
+  initialCreateData?: Partial<CreateTaskData>;
 }
 
 interface TaskHistory {
@@ -281,11 +284,13 @@ export default function TaskDetailModal({
   onOpenTask,
   showRemovePlanning = false,
   onRemovePlanning,
+  initialCreateData,
 }: TaskDetailModalProps) {
   const decimalHoursToHMS = useFormatHours();
   const { pillStyle, mapColor } = useColorVision();
   const router = useRouter();
     const { showToast } = useToast();
+  const { isFieldVisible, isTabVisible } = useTaskFieldVisibility(organizationId, token);
   // Integration state
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
 
@@ -320,30 +325,37 @@ export default function TaskDetailModal({
   const [activeTab, setActiveTab] = useState<'details' | 'history' | 'comments' | 'attachments' | 'hours' | 'checklist'>('details');
   
   // Form data for editing
-  const [formData, setFormData] = useState<CreateTaskData>({
+  const [formData, setFormData] = useState<CreateTaskData>(() => ({
     projectId,
-    taskName: task?.TaskName || '',
-    description: task?.Description || '',
-    status: task?.Status ?? null,
-    priority: task?.Priority ?? null,
-    taskType: task?.TaskType ?? null,
-    assignedTo: task?.AssignedTo || undefined,
-    dueDate: task?.DueDate ? task.DueDate.split('T')[0] : '',
-    dueDateMandatory: task?.DueDateMandatory === 1,
-    unscheduledWork: task?.UnscheduledWork === 1,
-    estimatedHours: task?.EstimatedHours || undefined,
-    storyPoints: task?.StoryPoints || undefined,
-    parentTaskId: task?.ParentTaskId || undefined,
-    plannedStartDate: task?.PlannedStartDate ? task.PlannedStartDate.split('T')[0] : '',
-    plannedEndDate: task?.PlannedEndDate ? task.PlannedEndDate.split('T')[0] : '',
-    dependsOnTaskId: task?.DependsOnTaskId || undefined,
-    customerId: task?.CustomerId ?? null,
-    jiraIssueKey: task?.JiraIssueKey || undefined,
-    gitHubIssueNumber: task?.GitHubIssueNumber ?? null,
-    giteaIssueNumber: task?.GiteaIssueNumber ?? null,
-    applicationId: task?.ApplicationId ?? null,
-    releaseVersionId: task?.ReleaseVersionId ?? null,
-  });
+    taskName: task?.TaskName || initialCreateData?.taskName || '',
+    description: task?.Description || initialCreateData?.description || '',
+    status: task?.Status ?? initialCreateData?.status ?? null,
+    priority: task?.Priority ?? initialCreateData?.priority ?? null,
+    taskType: task?.TaskType ?? initialCreateData?.taskType ?? null,
+    assignedTo: task?.AssignedTo || initialCreateData?.assignedTo || undefined,
+    dueDate: task?.DueDate
+      ? task.DueDate.split('T')[0]
+      : (initialCreateData?.dueDate || ''),
+    dueDateMandatory: task?.DueDateMandatory === 1 || Boolean(initialCreateData?.dueDateMandatory),
+    unscheduledWork: task?.UnscheduledWork === 1 || Boolean(initialCreateData?.unscheduledWork),
+    estimatedHours: task?.EstimatedHours || initialCreateData?.estimatedHours || undefined,
+    storyPoints: task?.StoryPoints || initialCreateData?.storyPoints || undefined,
+    parentTaskId: task?.ParentTaskId || initialCreateData?.parentTaskId || undefined,
+    plannedStartDate: task?.PlannedStartDate
+      ? task.PlannedStartDate.split('T')[0]
+      : (initialCreateData?.plannedStartDate || ''),
+    plannedEndDate: task?.PlannedEndDate
+      ? task.PlannedEndDate.split('T')[0]
+      : (initialCreateData?.plannedEndDate || ''),
+    dependsOnTaskId: task?.DependsOnTaskId || initialCreateData?.dependsOnTaskId || undefined,
+    ticketId: task?.TicketIdRef || initialCreateData?.ticketId || undefined,
+    customerId: task?.CustomerId ?? initialCreateData?.customerId ?? null,
+    jiraIssueKey: task?.JiraIssueKey || initialCreateData?.jiraIssueKey || undefined,
+    gitHubIssueNumber: task?.GitHubIssueNumber ?? initialCreateData?.gitHubIssueNumber ?? null,
+    giteaIssueNumber: task?.GiteaIssueNumber ?? initialCreateData?.giteaIssueNumber ?? null,
+    applicationId: task?.ApplicationId ?? initialCreateData?.applicationId ?? null,
+    releaseVersionId: task?.ReleaseVersionId ?? initialCreateData?.releaseVersionId ?? null,
+  }));
   const [customFields, setCustomFields] = useState<CustomFieldValues>(() => extractCustomFieldValues(task));
   
   // Data states
@@ -456,7 +468,6 @@ export default function TaskDetailModal({
   const hasGiteaIssueReference = Boolean(giteaIssueNumberValue);
   const showGitHubIssueSection = hasGitHubIntegrationConfigured;
   const showGiteaIssueSection = hasGiteaIntegrationConfigured;
-  const showAnySourceControlIssueSection = showGitHubIssueSection || showGiteaIssueSection;
   const githubIssueUrl = hasGitHubIssueReference && project?.GitHubOwner && project?.GitHubRepo
     ? `https://github.com/${project.GitHubOwner}/${project.GitHubRepo}/issues/${gitHubIssueNumberValue}`
     : null;
@@ -991,6 +1002,7 @@ export default function TaskDetailModal({
           plannedStartDate: formData.plannedStartDate || '',
           plannedEndDate: formData.plannedEndDate || '',
           dependsOnTaskId: formData.dependsOnTaskId ?? undefined,
+          ticketId: formData.ticketId ?? undefined,
           customerId: formData.customerId ?? null,
           jiraIssueKey: normalizedJiraIssueKey ?? '',
           gitHubIssueNumber: normalizedGitHubIssueNumber ?? null,
@@ -1864,10 +1876,40 @@ export default function TaskDetailModal({
   const headerCustomerName = isGlobalProject
     ? taskCustomerName
     : (taskCustomerName || projectCustomerName);
-  const visibleTabs = (task?.Id
+  const baseTabs = (task?.Id
     ? (['details', 'checklist', 'hours', 'comments', 'attachments', 'history'] as const)
     : (['details', 'hours'] as const)
   );
+  const visibleTabs = baseTabs.filter((tab) => isTabVisible(tab));
+  const showSectionLabels = isFieldVisible('sectionLabels');
+  const showHoursPlanningSubTab =
+    isFieldVisible('parentTask') || isFieldVisible('dependsOn') || isFieldVisible('childTasks');
+  const showHoursAllocationsSubTab = isFieldVisible('plannedAllocations');
+  const showHoursTimeSubTab = isFieldVisible('timeEntries');
+  const visibleHoursSubTabs = (
+    [
+      showHoursPlanningSubTab ? 'planning' : null,
+      showHoursAllocationsSubTab ? 'allocations' : null,
+      showHoursTimeSubTab ? 'time' : null,
+    ] as const
+  ).filter((tab): tab is 'planning' | 'allocations' | 'time' => tab !== null);
+
+  const visibleTabKey = visibleTabs.join(',');
+  useEffect(() => {
+    if (!visibleTabs.includes(activeTab)) {
+      setActiveTab('details');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- visibleTabKey captures tab set changes
+  }, [activeTab, visibleTabKey]);
+
+  const visibleHoursSubTabKey = visibleHoursSubTabs.join(',');
+  useEffect(() => {
+    if (visibleHoursSubTabs.length === 0) return;
+    if (!visibleHoursSubTabs.includes(hoursSubTab)) {
+      setHoursSubTab(visibleHoursSubTabs[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- visibleHoursSubTabKey captures sub-tab set changes
+  }, [hoursSubTab, visibleHoursSubTabKey]);
 
   const handleExportTaskPdf = async () => {
     if (!task?.Id) {
@@ -2185,9 +2227,13 @@ export default function TaskDetailModal({
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                 {task?.Id ? task.TaskName : 'Create New Task'}
               </h2>
-              {task?.Id && (project?.Id || headerCustomerName || task.SynapseNoteUrl) && (
+              {task?.Id && (
+                (project?.Id && isFieldVisible('headerProject'))
+                || (headerCustomerName && isFieldVisible('headerCustomer'))
+                || (task.SynapseNoteUrl && isFieldVisible('headerSynapse'))
+              ) && (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {project?.Id && (
+                  {project?.Id && isFieldVisible('headerProject') && (
                     <button
                       type="button"
                       onClick={() => router.push(`/projects/${project.Id}`)}
@@ -2200,7 +2246,7 @@ export default function TaskDetailModal({
                     </button>
                   )}
 
-                  {headerCustomerName && (
+                  {headerCustomerName && isFieldVisible('headerCustomer') && (
                     <span
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300"
                       title={`Customer: ${headerCustomerName}`}
@@ -2210,7 +2256,7 @@ export default function TaskDetailModal({
                     </span>
                   )}
 
-                  {task.SynapseNoteUrl && (
+                  {task.SynapseNoteUrl && isFieldVisible('headerSynapse') && (
                     <a
                       href={task.SynapseNoteUrl}
                       target="_blank"
@@ -2238,6 +2284,7 @@ export default function TaskDetailModal({
                     </span>
                   )}
                   {/* Timer widget */}
+                  {isFieldVisible('headerTimer') && (
                   <div className="flex items-center gap-1 ml-auto">
                     {activeTimer && activeTimer.TaskId === task.Id ? (
                       <>
@@ -2282,9 +2329,10 @@ export default function TaskDetailModal({
                       </button>
                     )}
                   </div>
+                  )}
                 </div>
               )}
-              {task?.Id && (
+              {task?.Id && isFieldVisible('headerHoursSummary') && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
                   <div className="px-3 py-1.5 rounded bg-purple-50 dark:bg-purple-900/20">
                     <div className="text-[11px] text-gray-600 dark:text-gray-400">Estimated</div>
@@ -2305,7 +2353,7 @@ export default function TaskDetailModal({
                 </div>
               )}
               {/* Tags */}
-              {task?.Id && (
+              {task?.Id && isFieldVisible('headerTags') && (
                 <div className="flex flex-wrap items-center gap-2 mt-2">
                   {taskTags.map((tag) => renderTaskTagBadge(tag))}
                   <div className="relative">
@@ -2344,6 +2392,7 @@ export default function TaskDetailModal({
             <div ref={taskActionsMenuRef} className="relative ml-4 flex items-center gap-2">
               {task?.Id && (
                 <>
+                  {isFieldVisible('headerPrint') && (
                   <button
                     type="button"
                     onClick={handleExportTaskPdf}
@@ -2356,6 +2405,8 @@ export default function TaskDetailModal({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 9V4h12v5M6 14H5a2 2 0 01-2-2v-1a2 2 0 012-2h14a2 2 0 012 2v1a2 2 0 01-2 2h-1M6 14v6h12v-6M9 17h6" />
                     </svg>
                   </button>
+                  )}
+                  {isFieldVisible('headerTaskActions') && (
                   <button
                     type="button"
                     onClick={() => setShowTaskActionsMenu((prev) => !prev)}
@@ -2365,7 +2416,8 @@ export default function TaskDetailModal({
                   >
                     ⋯
                   </button>
-                  {showTaskActionsMenu && (
+                  )}
+                  {isFieldVisible('headerTaskActions') && showTaskActionsMenu && (
                     <div className="absolute right-10 top-0 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20 py-1">
                       <button
                         type="button"
@@ -2413,7 +2465,10 @@ export default function TaskDetailModal({
           </div>
 
           {/* Tabs */}
-          <div className={`grid ${task?.Id ? 'grid-cols-6' : 'grid-cols-2'} gap-1 mt-3 border-b border-gray-200 dark:border-gray-700 -mb-4 pb-0`}>
+          <div
+            className="grid gap-1 mt-3 border-b border-gray-200 dark:border-gray-700 -mb-4 pb-0"
+            style={{ gridTemplateColumns: `repeat(${Math.max(visibleTabs.length, 1)}, minmax(0, 1fr))` }}
+          >
             {visibleTabs.map((tab) => (
               <button
                 key={tab}
@@ -2454,9 +2509,11 @@ export default function TaskDetailModal({
           {/* Details Tab (Edit Form) */}
           {activeTab === 'details' && (
             <form onSubmit={handleSubmit} className="space-y-3">
+              {showSectionLabels && (
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">
                 Basic Information
               </h3>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -2473,6 +2530,7 @@ export default function TaskDetailModal({
               </div>
 
 
+              {isFieldVisible('description') && (
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -2582,14 +2640,18 @@ export default function TaskDetailModal({
                   </div>
                 )}
               </div>
+              )}
 
               {/* Ticket Reference */}
-              {(task?.TicketNumber || hasTicketJiraReference || hasJiraTicketIntegrationConfigured || hasJiraBoardImportReference || showAnySourceControlIssueSection) && (
+              {showSectionLabels && ((isFieldVisible('linkedTicketRefs') && (task?.TicketNumber || hasTicketJiraReference || hasJiraBoardImportReference))
+                || (hasJiraTicketIntegrationConfigured && isFieldVisible('jiraIssueKey'))
+                || (showGitHubIssueSection && isFieldVisible('gitHubIssueNumber'))
+                || (showGiteaIssueSection && isFieldVisible('giteaIssueNumber'))) && (
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
                   Linked Tickets & Jira
                 </h3>
               )}
-              {task?.TicketNumber && (
+              {isFieldVisible('linkedTicketRefs') && task?.TicketNumber && (
                 <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                   <svg className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
@@ -2621,7 +2683,7 @@ export default function TaskDetailModal({
               )}
 
               {/* Jira Integration Link (Independent) */}
-              {!task?.TicketNumber && hasTicketJiraReference && (
+              {isFieldVisible('linkedTicketRefs') && !task?.TicketNumber && hasTicketJiraReference && (
                 <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
                   <svg className="w-4 h-4 text-orange-600 dark:text-orange-400 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
@@ -2640,7 +2702,7 @@ export default function TaskDetailModal({
               )}
 
               {/* Jira Ticket Link (from Jira Ticket Import) — always when org Jira is configured */}
-              {hasJiraTicketIntegrationConfigured && (
+              {hasJiraTicketIntegrationConfigured && isFieldVisible('jiraIssueKey') && (
                 <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
                   <svg className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
@@ -2681,7 +2743,7 @@ export default function TaskDetailModal({
               )}
 
               {/* Jira Board Link (from Jira Board/Project Import) */}
-              {hasJiraBoardImportReference && (
+              {isFieldVisible('linkedTicketRefs') && hasJiraBoardImportReference && (
                 <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
                   <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
@@ -2699,10 +2761,10 @@ export default function TaskDetailModal({
                 </div>
               )}
 
-              {showAnySourceControlIssueSection && (
+              {((showGitHubIssueSection && isFieldVisible('gitHubIssueNumber')) || (showGiteaIssueSection && isFieldVisible('giteaIssueNumber'))) && (
               <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {showGitHubIssueSection && (
+                  {showGitHubIssueSection && isFieldVisible('gitHubIssueNumber') && (
                   <div>
                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                       GitHub Issue ID
@@ -2732,7 +2794,7 @@ export default function TaskDetailModal({
                   </div>
                   )}
 
-                  {showGiteaIssueSection && (
+                  {showGiteaIssueSection && isFieldVisible('giteaIssueNumber') && (
                   <div>
                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Gitea Issue ID
@@ -2754,9 +2816,11 @@ export default function TaskDetailModal({
               </div>
               )}
 
+              {showSectionLabels && (
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-1.5 pt-1">
                 Task Setup
               </h3>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -2811,11 +2875,13 @@ export default function TaskDetailModal({
                 />
               </div>
 
+              {showSectionLabels && ((isGlobalProject && isFieldVisible('customerId')) || isFieldVisible('assignees')) && (
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-1.5 pt-1">
                 Assignment
               </h3>
+              )}
               <div>
-                {isGlobalProject && (
+                {isGlobalProject && isFieldVisible('customerId') && (
                   <div className="mb-3">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Customer *
@@ -2834,6 +2900,8 @@ export default function TaskDetailModal({
                   </div>
                 )}
 
+                {isFieldVisible('assignees') && (
+                <>
                 {/* Principal Assignee field (searchable) */}
                 <div className="mb-3">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -2905,13 +2973,20 @@ export default function TaskDetailModal({
                     dropdownMode="portal"
                   />
                 )}
+                </>
+                )}
               </div>
 
+              {showSectionLabels && (isFieldVisible('dueDate') || isFieldVisible('dueDateMandatory') || isFieldVisible('unscheduledWork') || isFieldVisible('estimatedHours') || isFieldVisible('storyPoints')) && (
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-1.5 pt-1">
                 Effort & Completion
               </h3>
+              )}
               <div className="grid grid-cols-2 gap-3">
+                {(isFieldVisible('dueDate') || isFieldVisible('dueDateMandatory') || isFieldVisible('unscheduledWork')) && (
                 <div>
+                  {isFieldVisible('dueDate') && (
+                  <>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Due Date
                   </label>
@@ -2921,6 +2996,9 @@ export default function TaskDetailModal({
                     onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
+                  </>
+                  )}
+                  {isFieldVisible('dueDateMandatory') && (
                   <label className="mt-1.5 inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                     <input
                       type="checkbox"
@@ -2930,6 +3008,8 @@ export default function TaskDetailModal({
                     />
                     Due date is mandatory for planning
                   </label>
+                  )}
+                  {isFieldVisible('unscheduledWork') && (
                   <label className="mt-1.5 inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                     <input
                       type="checkbox"
@@ -2939,8 +3019,11 @@ export default function TaskDetailModal({
                     />
                     Unscheduled work (show in Planner today)
                   </label>
+                  )}
                 </div>
+                )}
 
+                {isFieldVisible('estimatedHours') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Estimated Hours
@@ -2961,7 +3044,9 @@ export default function TaskDetailModal({
                     placeholder="e.g., 4.5"
                   />
                 </div>
+                )}
 
+                {isFieldVisible('storyPoints') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Story Points
@@ -2976,15 +3061,16 @@ export default function TaskDetailModal({
                     placeholder="e.g., 3"
                   />
                 </div>
+                )}
               </div>
 
               {/* Application */}
-              {(applications.length > 0 || (formData.applicationId && applicationVersions.length > 0)) && (
+              {showSectionLabels && ((applications.length > 0 && isFieldVisible('application')) || (formData.applicationId && applicationVersions.length > 0 && isFieldVisible('releaseVersion'))) && (
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-1.5 pt-1">
                   Release Tracking
                 </h3>
               )}
-              {applications.length > 0 && (
+              {applications.length > 0 && isFieldVisible('application') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Application (Optional)
@@ -3005,7 +3091,7 @@ export default function TaskDetailModal({
               )}
 
               {/* Release Version — only when an application is selected */}
-              {formData.applicationId && applicationVersions.length > 0 && (
+              {formData.applicationId && applicationVersions.length > 0 && isFieldVisible('releaseVersion') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Release Version (Optional)
@@ -3026,12 +3112,14 @@ export default function TaskDetailModal({
                 </div>
               )}
 
-              <CustomFieldsFormSection
-                tableName="Tasks"
-                token={token}
-                values={customFields}
-                onChange={setCustomFields}
-              />
+              {isFieldVisible('customFields') && (
+                <CustomFieldsFormSection
+                  tableName="Tasks"
+                  token={token}
+                  values={customFields}
+                  onChange={setCustomFields}
+                />
+              )}
 
             </form>
           )}
@@ -3188,9 +3276,12 @@ export default function TaskDetailModal({
             !task?.Id ? (
               <div className="space-y-6"> 
 
+                {showSectionLabels && (isFieldVisible('parentTask') || isFieldVisible('dependsOn')) && (
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
                   Plan & Dependencies
                 </h3>
+                )}
+                {isFieldVisible('parentTask') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Parent Task (Optional)
@@ -3203,7 +3294,9 @@ export default function TaskDetailModal({
                     emptyMessage="No tasks available"
                   />
                 </div>
+                )}
 
+                {isFieldVisible('dependsOn') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Depends On (Optional)
@@ -3216,10 +3309,13 @@ export default function TaskDetailModal({
                     emptyMessage="No tasks available"
                   />
                 </div>
+                )}
               </div>
             ) : (
             <div className="space-y-6">
+              {visibleHoursSubTabs.length > 0 ? (
               <div className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-700 pb-3">
+                {showHoursPlanningSubTab && (
                 <button
                   type="button"
                   onClick={() => setHoursSubTab('planning')}
@@ -3231,6 +3327,8 @@ export default function TaskDetailModal({
                 >
                   Planning & Dependencies
                 </button>
+                )}
+                {showHoursAllocationsSubTab && (
                 <button
                   type="button"
                   onClick={() => setHoursSubTab('allocations')}
@@ -3242,6 +3340,8 @@ export default function TaskDetailModal({
                 >
                   Planned Allocations
                 </button>
+                )}
+                {showHoursTimeSubTab && (
                 <button
                   type="button"
                   onClick={() => setHoursSubTab('time')}
@@ -3253,13 +3353,22 @@ export default function TaskDetailModal({
                 >
                   Time Entries
                 </button>
+                )}
               </div>
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  All Hours sections are hidden for this organization.
+                </p>
+              )}
 
-              {hoursSubTab === 'planning' && (
+              {hoursSubTab === 'planning' && showHoursPlanningSubTab && (
                 <>
+              {showSectionLabels && (isFieldVisible('parentTask') || isFieldVisible('dependsOn')) && (
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
                 Plan & Dependencies
               </h3>
+              )}
+              {isFieldVisible('parentTask') && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Parent Task (Optional)
@@ -3275,7 +3384,9 @@ export default function TaskDetailModal({
                   Select a parent task to create a subtask (supports multi-level hierarchy)
                 </p>
               </div>
+              )}
 
+              {isFieldVisible('dependsOn') && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Depends On (Optional)
@@ -3291,7 +3402,9 @@ export default function TaskDetailModal({
                   This task cannot start until the selected task is completed
                 </p>
               </div>
+              )}
 
+              {isFieldVisible('childTasks') && (
               <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30">
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Child Tasks</h4>
@@ -3339,12 +3452,13 @@ export default function TaskDetailModal({
                   </p>
                 )}
               </div>
+              )}
 
                 </>
               )}
 
               {/* Allocations */}
-              {hoursSubTab === 'allocations' && (
+              {hoursSubTab === 'allocations' && showHoursAllocationsSubTab && (
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Planned Allocations</h3>
@@ -3611,7 +3725,7 @@ export default function TaskDetailModal({
               )}
 
               {/* Time Entries */}
-              {hoursSubTab === 'time' && (
+              {hoursSubTab === 'time' && showHoursTimeSubTab && (
               <div>
                 <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">Time Entries</h3>
                 {loadingData ? (

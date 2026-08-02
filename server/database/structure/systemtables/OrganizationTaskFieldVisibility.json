@@ -1,0 +1,25 @@
+{
+  "TableName": "OrganizationTaskFieldVisibility",
+  "PrimaryKeyFields": "OrganizationId",
+  "Fields": [
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Primary key - organization that owns this task form visibility config"
+    },
+    {
+      "FieldName": "VisibilityJson",
+      "DataType": "text",
+      "NotNullable": true,
+      "Comment": "JSON object with fields and tabs visibility maps"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+      "Comment": "Date and time when this config was last modified"
+    }
+  ]
+}

@@ -26,6 +26,8 @@ export const cacheKeys = {
   orgMemos: (orgId: number | string | string[]) => `org:${keyPart(orgId)}:memos`,
   orgSla: (orgId: number | string | string[]) => `org:${keyPart(orgId)}:sla`,
   orgWorkflow: (orgId: number | string | string[]) => `org:${keyPart(orgId)}:workflow`,
+  orgTaskFieldVisibility: (orgId: number | string | string[]) => `org:${keyPart(orgId)}:task-field-visibility`,
+  taskFieldVisibilityGlobal: () => 'task-field-visibility:global',
   orgPermissionGroups: (orgId: number | string | string[]) => `org:${keyPart(orgId)}:permission-groups`,
 
   customer: (customerId: number | string | string[]) => `customer:${keyPart(customerId)}`,

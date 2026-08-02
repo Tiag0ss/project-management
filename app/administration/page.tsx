@@ -13,12 +13,13 @@ import HolidaysManagement from '@/components/admin/HolidaysManagement';
 import CustomFieldsManagement from '@/components/admin/CustomFieldsManagement';
 import CustomTablesManagement from '@/components/admin/CustomTablesManagement';
 import ApiTokensManagement from '@/components/admin/ApiTokensManagement';
+import TaskFormVisibilitySettingsPanel from '@/components/admin/TaskFormVisibilitySettingsPanel';
 
-type AdminTab = 'users' | 'permissions' | 'settings' | 'custom-fields' | 'custom-tables' | 'holidays' | 'logs' | 'frontpage' | 'api-tokens';
+type AdminTab = 'users' | 'permissions' | 'settings' | 'task-form' | 'custom-fields' | 'custom-tables' | 'holidays' | 'logs' | 'frontpage' | 'api-tokens';
 
 export default function AdministrationPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>('users');
-  const { user, isLoading } = useAuth();
+  const { user, token, isLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -89,6 +90,18 @@ export default function AdministrationPage() {
             >
               <span className="text-xl">⚙️</span>
               <span className="font-medium">System Settings</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('task-form')}
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                activeTab === 'task-form'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <span className="text-xl">📝</span>
+              <span className="font-medium">Task Form</span>
             </button>
 
             <button
@@ -173,6 +186,12 @@ export default function AdministrationPage() {
           {activeTab === 'permissions' && <RolePermissionsManagement />}
           
           {activeTab === 'settings' && <SystemSettings />}
+
+          {activeTab === 'task-form' && token && (
+            <div className="p-6">
+              <TaskFormVisibilitySettingsPanel mode="global" token={token} canManage />
+            </div>
+          )}
 
           {activeTab === 'custom-fields' && <CustomFieldsManagement />}
 

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { getApiUrl } from '@/lib/api/config';
 
@@ -6,7 +6,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
-
 // Complete list of IANA timezones
 const TIMEZONES = [
   { value: '', label: 'Use browser/system default' },
@@ -1074,6 +1073,7 @@ export default function SystemSettings() {
                 </div>
               </div>
             </div>
+
           </div>
         )}
 

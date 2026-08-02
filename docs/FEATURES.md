@@ -107,6 +107,25 @@ Each organization defines its own status vocabularies used throughout the app:
 
 Only one status per type can be `IsDefault` — it is automatically pre-selected in new items.
 
+### Task Form Visibility (Fields & Tabs)
+Optional task modal fields and tabs can be hidden to simplify the UI. Resolution order for each user in an organization:
+
+1. **Personal override** — My Profile → **Task Form** (`UserTaskFieldVisibility`, per organization), if the user has saved one
+2. **Organization default** — Organization → **Task Form** (`OrganizationTaskFieldVisibility`), if present
+3. **Global template** — Administration → **Task Form** (`SystemSettings.taskFieldVisibility`)
+
+- **Sync from global** (org): overwrites the org copy with the current global template
+- **Use organization default** (profile): deletes the personal override for that org
+- New organizations are seeded from the global template; missing org rows fall through to global for effective reads (admin org GET still lazy-creates a copy for editing)
+- **Locked (always visible)**: Task Name, Status, Priority, Task Type, Details tab
+- **Section labels**: optional toggle to hide form section headings while keeping fields visible
+- **Optional header controls**: Project/Customer/Synapse pills, timer, hours summary cards, tags, print, task actions menu
+- **Optional Details fields**: Description, linked ticket/Jira board refs, Jira/GitHub/Gitea keys, Assignees, Customer (global projects), Due Date flags, Estimates, Story Points, Application/Release, Custom fields block
+- **Optional Hours fields**: Parent/Depends On, Child tasks list, Planned allocations, Time entries (also hides Hours sub-tabs when empty)
+- **Optional tabs**: History / Comments / Attachments / Hours / Checklist
+- Visibility is **UI-only** in `TaskDetailModal` (API create/update still accepts values for imports/integrations)
+- Config UI is grouped by location (Modal tabs / Header / Details / Hours) with short location hints
+
 ---
 
 ## 3. Customers & Customer Portal
@@ -267,15 +286,16 @@ Four sub-tabs:
   ```
 
 ### Task Detail Modal — Sections
-- **Header**: Name, status badge, priority badge, Jira badge (links to Jira URL)
-- **Details**: All task fields with inline editing
-- **Description**: Full rich text editor
+- **Header**: Name, status badge, priority badge, Synapse chip (when linked), project/customer pills
+- **Details**: Task fields with inline editing (optional fields/tabs filtered by [Task Form Visibility](#task-form-visibility-fields--tabs))
+- **Description**: Full rich text editor (when visible)
 - **Timer**: Live elapsed counter, Start/Stop/Discard buttons (see [Active Timers](#11-active-timers))
 - **Checklist** tab: Checklist items with progress bar and checkbox toggles
 - **Comments** tab: Rich text comments with `@mention` support; attachments per comment
-- **Allocations** tab: Group-by-header view of planned allocations with expand/collapse; **Split** button per slice
+- **Hours / Plan & Deps** tab: Parent/depends editors plus allocations and time entries
 - **Attachments** tab: Upload / download / delete file attachments
 - **History** tab: Change log showing all field changes with timestamp and user
+- **Create from ticket**: uses the same `TaskDetailModal` (prefills name/description/ticketId); project picker only when the ticket has no project
 
 ### Task Checklists
 - Each task can have a checklist (ordered list of items)
@@ -940,6 +960,7 @@ Admin-only page:
 - **Jira / GitHub / Gitea**: Organization-level integration credentials (see respective sections)
 - **AI Assistant**: OpenAI API key and enable toggle
 - **Timezone**: Default system timezone
+- **Task Form**: Global template for which task modal fields/tabs are visible (see [Task Form Visibility](#task-form-visibility-fields--tabs))
 - **User Management**: Create, edit, activate/deactivate users; assign global roles; set hourly rate; manage admin flag
 - **Activity Logs**: Audit log of all admin actions
 
@@ -1038,8 +1059,8 @@ Per-user queue for turning emails into tasks. Setup: [cloudflare/README.md](../c
 - Unknown senders accepted with 202 but not queued
 - API token required on webhook; queue owner resolved from email From address
 
-### Outlook Add-in (Alternative)
-The [outlook-addin](../outlook-addin/README.md) creates tasks directly from Outlook via API token — no email queue involved.
+### Outlook Add-in
+The [outlook-addin](../outlook-addin/README.md) settings pane can store an API endpoint/token. **Task creation from the add-in is no longer supported** — create tasks in the web app or via the email task queue.
 
 ---
 

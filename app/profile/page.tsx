@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
 import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
+import ProfileTaskFormVisibility from '@/components/profile/ProfileTaskFormVisibility';
 
 // Complete list of IANA timezones
 const TIMEZONES = [
@@ -114,7 +115,7 @@ const formatLeaveUnits = (value: number): string => {
 export default function ProfilePage() {
   const { user, token, isLoading: authLoading, isCustomerUser, updateUser } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'info' | 'attachments' | 'workHours' | 'security' | 'emailAlerts' | 'recurringTasks' | 'vacations' | 'outOfOffice'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'attachments' | 'workHours' | 'security' | 'emailAlerts' | 'recurringTasks' | 'vacations' | 'outOfOffice' | 'taskForm'>('info');
   const [attachments, setAttachments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -1283,6 +1284,20 @@ export default function ProfilePage() {
               <span className="font-medium">Email Alerts</span>
             </button>
 
+            {!isCustomerUser && (
+              <button
+                onClick={() => setActiveTab('taskForm')}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                  activeTab === 'taskForm'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="text-xl">📝</span>
+                <span className="font-medium">Task Form</span>
+              </button>
+            )}
+
           </nav>
         </aside>
 
@@ -1903,6 +1918,13 @@ export default function ProfilePage() {
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {activeTab === 'taskForm' && token && !isCustomerUser && (
+                <div className="space-y-4">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">Task Form</h2>
+                  <ProfileTaskFormVisibility token={token} />
                 </div>
               )}
 

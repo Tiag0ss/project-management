@@ -1,0 +1,31 @@
+{
+  "TableName": "UserTaskFieldVisibility",
+  "PrimaryKeyFields": "UserId,OrganizationId",
+  "Fields": [
+    {
+      "FieldName": "UserId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Composite primary key - user who owns this personal task form visibility override"
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Composite primary key - organization this personal override applies to"
+    },
+    {
+      "FieldName": "VisibilityJson",
+      "DataType": "text",
+      "NotNullable": true,
+      "Comment": "JSON object with fields and tabs visibility maps (user override)"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+      "Comment": "Date and time when this config was last modified"
+    }
+  ]
+}

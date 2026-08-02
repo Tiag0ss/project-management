@@ -32,6 +32,7 @@ export type CacheEntityType =
   | 'permissionGroup'
   | 'customField'
   | 'workflow'
+  | 'taskFieldVisibility'
   | 'sla'
   | 'memo'
   | 'emailQueue'
@@ -306,6 +307,14 @@ export async function invalidateWorkflowCaches(orgId: number | string): Promise<
   await cache.del(cacheKeys.orgWorkflow(orgId));
 }
 
+export async function invalidateTaskFieldVisibilityCaches(orgId?: number | string): Promise<void> {
+  if (orgId !== undefined) {
+    await cache.del(cacheKeys.orgTaskFieldVisibility(orgId));
+  } else {
+    await cache.del(cacheKeys.taskFieldVisibilityGlobal());
+  }
+}
+
 export async function invalidateSlaCaches(orgId: number | string): Promise<void> {
   await cache.del(cacheKeys.orgSla(orgId));
 }
@@ -445,6 +454,11 @@ export async function invalidateByEntity(type: CacheEntityType, payload: Invalid
       break;
     case 'workflow':
       if (payload.orgId !== undefined) await invalidateWorkflowCaches(normalizeId(payload.orgId)!);
+      break;
+    case 'taskFieldVisibility':
+      await invalidateTaskFieldVisibilityCaches(
+        payload.orgId !== undefined ? normalizeId(payload.orgId) : undefined
+      );
       break;
     case 'sla':
       if (payload.orgId !== undefined) await invalidateSlaCaches(normalizeId(payload.orgId)!);
