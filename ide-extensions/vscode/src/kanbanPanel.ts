@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { getApiToken, getBaseUrl, getAiInProgressStatusId, requestJson } from './api';
 import { configureConnection, runSendToAiForTask } from './aiChat';
+import { setActiveTaskContext } from './activeTaskContext';
 import { PmTask } from './tasks';
 import { TaskDetailPanel } from './taskDetailPanel';
 
@@ -12,6 +13,8 @@ type BoardToHostMessage =
   | { type: 'sendToAi'; task: PmTask }
   | { type: 'openExternal'; url: string }
   | { type: 'openTask'; task: PmTask }
+  | { type: 'copyText'; text: string; label?: string; task?: PmTask }
+  | { type: 'setActiveTask'; task: PmTask }
   | { type: 'configure' }
   | { type: 'error'; message: string }
   | {
@@ -162,7 +165,25 @@ export class KanbanPanel {
       }
       case 'openTask': {
         if (msg.task) {
+          await setActiveTaskContext(msg.task);
           TaskDetailPanel.show(this.context, msg.task);
+        }
+        break;
+      }
+      case 'copyText': {
+        if (msg.task) {
+          await setActiveTaskContext(msg.task);
+        }
+        if (msg.text) {
+          await vscode.env.clipboard.writeText(msg.text);
+          const label = msg.label || 'Text';
+          void vscode.window.showInformationMessage(`${label} copied to clipboard.`);
+        }
+        break;
+      }
+      case 'setActiveTask': {
+        if (msg.task) {
+          await setActiveTaskContext(msg.task);
         }
         break;
       }

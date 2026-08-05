@@ -7,6 +7,8 @@
  *   { type: 'sendToAi', task: object }
  *   { type: 'openExternal', url: string }
  *   { type: 'openTask', task: object }
+ *   { type: 'copyText', text: string, label?: string, task?: object }
+ *   { type: 'setActiveTask', task: object }
  *   { type: 'configure' }
  *   { type: 'error', message: string }
  *

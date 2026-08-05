@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { getApiToken, getBaseUrl, requestJson } from './api';
 import { runSendToAiForTask } from './aiChat';
+import { setActiveTaskContext, formatTaskCommitMessage } from './activeTaskContext';
 import { stripHtmlToPlainText } from './html';
 import { PmTask } from './tasks';
 
@@ -60,10 +61,17 @@ export class TaskDetailPanel {
           await vscode.env.clipboard.writeText(url);
           void vscode.window.showInformationMessage('Task link copied to clipboard.');
         }
+        if (msg.type === 'copyCommitMessage') {
+          await setActiveTaskContext(this.task);
+          const text = formatTaskCommitMessage(this.task);
+          await vscode.env.clipboard.writeText(text);
+          void vscode.window.showInformationMessage('Commit message copied to clipboard.');
+        }
         if (msg.type === 'sendToAi') {
           await runSendToAiForTask(this.task);
         }
         if (msg.type === 'startTimer') {
+          await setActiveTaskContext(this.task);
           await this.startTimer();
         }
         if (msg.type === 'stopTimer') {
@@ -200,6 +208,7 @@ export class TaskDetailPanel {
   <div class="actions">
     <button type="button" id="openApp">Open in app</button>
     <button type="button" class="secondary" id="copyLink">Copy link</button>
+    <button type="button" class="secondary" id="copyCommit">Copy commit message</button>
     ${timerBtn}
     <button type="button" class="secondary" id="ai">Send to AI</button>
   </div>
@@ -212,6 +221,7 @@ export class TaskDetailPanel {
     const vscode = acquireVsCodeApi();
     document.getElementById('openApp').addEventListener('click', () => vscode.postMessage({ type: 'openInApp' }));
     document.getElementById('copyLink').addEventListener('click', () => vscode.postMessage({ type: 'copyLink' }));
+    document.getElementById('copyCommit').addEventListener('click', () => vscode.postMessage({ type: 'copyCommitMessage' }));
     document.getElementById('ai').addEventListener('click', () => vscode.postMessage({ type: 'sendToAi' }));
     const startBtn = document.getElementById('startTimer');
     const stopBtn = document.getElementById('stopTimer');

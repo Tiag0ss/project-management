@@ -16,7 +16,15 @@ import { Task, tasksApi } from '@/lib/api/tasks';
 import { Project, projectsApi } from '@/lib/api/projects';
 import { useColorVision } from '@/hooks/useColorVision';
 
-type Tab = 'overview' | 'versions';
+type Tab = 'overview' | 'versions' | 'commits';
+
+interface RemoteCommit {
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+  url: string;
+}
 
 const VERSION_STATUSES = ['Planning', 'In Development', 'Testing', 'Released', 'Archived'];
 
@@ -97,6 +105,14 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('overview');
 
+  const [commits, setCommits] = useState<RemoteCommit[]>([]);
+  const [commitsLoading, setCommitsLoading] = useState(false);
+  const [commitsError, setCommitsError] = useState('');
+  const [commitsProvider, setCommitsProvider] = useState<string | null>(null);
+  const [commitsHasMore, setCommitsHasMore] = useState(false);
+  const [commitsPage, setCommitsPage] = useState(1);
+  const [commitsLoaded, setCommitsLoaded] = useState(false);
+
   // Version modal state
   const [showVersionModal, setShowVersionModal] = useState(false);
   const [editingVersion, setEditingVersion] = useState<AppVersion | null>(null);
@@ -163,6 +179,12 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
     }
   }, [token, id]);
 
+  useEffect(() => {
+    if (activeTab === 'commits' && token && id && !commitsLoaded && !commitsLoading) {
+      void loadCommits(1, false);
+    }
+  }, [activeTab, token, id, commitsLoaded, commitsLoading]);
+
   const loadApplication = async () => {
     setIsLoading(true);
     try {
@@ -177,6 +199,37 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
       setError(err.message || 'Failed to load application');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadCommits = async (page = 1, append = false) => {
+    if (!token || !id) return;
+    setCommitsLoading(true);
+    setCommitsError('');
+    try {
+      const res = await fetch(
+        `${getApiUrl()}/api/applications/${id}/commits?page=${page}&per_page=30`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to load commits');
+      }
+      const next = (data.data?.commits || []) as RemoteCommit[];
+      setCommits((prev) => (append ? [...prev, ...next] : next));
+      setCommitsProvider(data.data?.provider || null);
+      setCommitsHasMore(Boolean(data.data?.hasMore));
+      setCommitsPage(page);
+      setCommitsLoaded(true);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load commits';
+      setCommitsError(message);
+      if (!append) {
+        setCommits([]);
+      }
+      setCommitsLoaded(true);
+    } finally {
+      setCommitsLoading(false);
     }
   };
 
@@ -665,7 +718,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
         {/* Tabs */}
         <div className="border-b border-gray-200 dark:border-gray-700 mb-6">
           <nav className="-mb-px flex space-x-6">
-            {(['overview', 'versions'] as Tab[]).map((tab) => (
+            {(['overview', 'versions', 'commits'] as Tab[]).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -677,7 +730,9 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
               >
                 {tab === 'versions'
                   ? `Versions (${application.Versions?.length ?? 0})`
-                  : 'Overview'}
+                  : tab === 'commits'
+                    ? 'Commits'
+                    : 'Overview'}
               </button>
             ))}
           </nav>
@@ -1034,6 +1089,100 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ── COMMITS TAB ───────────────────────────────────────────────── */}
+        {activeTab === 'commits' && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div>
+                <h2 className="font-semibold text-gray-900 dark:text-white">Commit history</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Recent commits from the application repository
+                  {commitsProvider ? ` (${commitsProvider})` : ''}.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setCommitsLoaded(false);
+                  void loadCommits(1, false);
+                }}
+                disabled={commitsLoading || !application.RepositoryUrl}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg text-sm transition-colors"
+              >
+                {commitsLoading ? 'Loading…' : 'Refresh'}
+              </button>
+            </div>
+
+            {!application.RepositoryUrl ? (
+              <p className="text-gray-500 dark:text-gray-400 text-center py-8">
+                No repository URL configured for this application.
+              </p>
+            ) : commitsLoading && commits.length === 0 ? (
+              <p className="text-gray-500 dark:text-gray-400 text-center py-8">Loading commits…</p>
+            ) : commitsError ? (
+              <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-400">
+                {commitsError}
+              </div>
+            ) : commits.length === 0 ? (
+              <p className="text-gray-500 dark:text-gray-400 text-center py-8">No commits found.</p>
+            ) : (
+              <div className="space-y-2">
+                {commits.map((c) => {
+                  const firstLine = (c.message || '').split('\n')[0] || '(no message)';
+                  const shortSha = (c.sha || '').slice(0, 7);
+                  const taskMatch = firstLine.match(/\bTask\s*#?\s*(\d+)\b/i);
+                  return (
+                    <div
+                      key={c.sha || `${c.date}-${firstLine}`}
+                      className="flex flex-col sm:flex-row sm:items-start gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <code className="text-xs font-mono text-blue-600 dark:text-blue-400">{shortSha || '—'}</code>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white break-words">
+                            {firstLine}
+                          </span>
+                          {taskMatch && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">
+                              Task #{taskMatch[1]}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          {c.author || 'Unknown author'}
+                          {c.date ? ` · ${new Date(c.date).toLocaleString()}` : ''}
+                        </div>
+                      </div>
+                      {c.url && (
+                        <a
+                          href={c.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-blue-600 dark:text-blue-400 hover:underline shrink-0"
+                        >
+                          Open
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+                {commitsHasMore && (
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      disabled={commitsLoading}
+                      onClick={() => void loadCommits(commitsPage + 1, true)}
+                      className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                    >
+                      {commitsLoading ? 'Loading…' : 'Load more'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

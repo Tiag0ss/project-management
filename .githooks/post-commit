@@ -1,0 +1,22 @@
+#!/bin/sh
+# PM-ACTIVE-TASK-HOOK v2 — clear active PM tasks after a successful commit
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+CTX="$ROOT/.git/pm-active-task.json"
+RULES="$ROOT/.cursorrules"
+printf '%s\n' "{
+  \"tasks\": [],
+  \"updatedAt\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"
+}" > "$CTX" 2>/dev/null || rm -f "$CTX"
+
+if [ -f "$RULES" ] && grep -q 'PM-ACTIVE-TASK:START' "$RULES" 2>/dev/null; then
+  START='# >>> PM-ACTIVE-TASK:START'
+  END='# >>> PM-ACTIVE-TASK:END'
+  TMP="$(mktemp)"
+  awk -v start="$START" -v end="$END" '
+    $0 == start { skip=1; print start; print "# Managed by Project Management Kanban extension — do not edit this block by hand."; print "# No active PM tasks since the last commit."; next }
+    $0 == end { skip=0; print end; next }
+    skip { next }
+    { print }
+  ' "$RULES" > "$TMP" && mv "$TMP" "$RULES"
+fi
+exit 0

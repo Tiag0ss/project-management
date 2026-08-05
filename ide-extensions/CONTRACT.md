@@ -144,9 +144,29 @@ No trailing slash on `baseUrl`.
 | Add task / column + | Webview create modal → `POST /api/tasks` |
 | Timer / Stop | Start or stop via `/api/timers/*` (start switches previous) |
 | Toolbar Stop | Stops active timer even if task not on board |
-| View | IDE read-only task preview (VS Code/Cursor); Rider/VS open the deep link |
+| View | IDE read-only task preview (VS Code/Cursor); Rider/VS open the deep link. Sets active task for commit messages. |
+| Commit | Copy `Task #Id - Task Name`; sets active task for Cursor Generate commit message |
 | App | Browser deep link to the full task modal |
-| AI | Set In Progress (optional) + prefill AI chat / clipboard |
+| AI | Set In Progress (optional) + prefill AI chat / clipboard; sets active task |
+| Timer | Start/stop; start sets active task |
+
+## Active task → Cursor commit messages
+
+Cursor’s SCM **Generate commit message** button does **not** use `.cursor/rules` or User Rules. It does read a repo-root **`.cursorrules`** file.
+
+When you activate a task from the Kanban (Commit / AI / View / Timer start), the VS Code/Cursor extension:
+
+1. **Adds** the task to `.git/pm-active-task.json` (list of all tasks since last commit — not a single overwrite)
+2. Upserts a managed block in `.cursorrules` listing **every** active task as `Task #<Id> - <Name>`
+3. Installs `.git/hooks/prepare-commit-msg` + `.git/hooks/post-commit` (only if missing or already ours):
+   - **prepare-commit-msg**: appends any missing `Task #Id` lines before the commit is created
+   - **post-commit**: clears the active-task list (and the `.cursorrules` block) after a successful commit
+
+**Workflow (personal projects in Cursor):** open that project folder → use Kanban on each task you touch → stage changes → Generate commit message / commit. Expect all touched `Task #…` references until the commit succeeds, then the list resets.
+
+Optional repo-checked hooks (this monorepo): `git config core.hooksPath .githooks`
+
+Add `.cursorrules` to `.git/info/exclude` in personal clones if you do not want that file committed.
 
 ## AI prompt templates
 

@@ -15,6 +15,12 @@ import { invalidateByEntity } from '../services/cacheInvalidation';
 import logger from '../utils/logger';
 import { createTaskSchema, updateTaskBodySchema, validateRequest } from '../utils/validation';
 import { populateAssigneesJson } from '../queries/tasks/taskAssignees';
+import {
+  parseRepositoryUrl,
+  resolveGitCredentials,
+  resolveProjectRepoCredentials,
+  listCommitsForTask,
+} from '../utils/gitRemote';
 
 const router = Router();
 
@@ -2041,6 +2047,83 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
  *       200:
  *         description: List of assignees for the task
  */
+// GET /:id/commits – remote commits matching Task #Id and/or linked issue numbers
+router.get('/:id/commits', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const taskId = Number(req.params.id);
+
+    if (!Number.isFinite(taskId) || taskId <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid task id' });
+    }
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.Id, t.GitHubIssueNumber, t.GiteaIssueNumber, t.ApplicationId,
+              p.OrganizationId, p.GitHubOwner, p.GitHubRepo, p.GiteaOwner, p.GiteaRepo,
+              a.RepositoryUrl as ApplicationRepositoryUrl
+       FROM Tasks t
+       JOIN Projects p ON t.ProjectId = p.Id
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId AND om.UserId = ?
+       LEFT JOIN Applications a ON t.ApplicationId = a.Id AND a.IsActive = 1
+       WHERE t.Id = ?`,
+      [userId, taskId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Task not found or access denied' });
+    }
+
+    const task = rows[0];
+    const organizationId = Number(task.OrganizationId);
+
+    let resolved = await resolveProjectRepoCredentials(organizationId, {
+      gitHubOwner: task.GitHubOwner,
+      gitHubRepo: task.GitHubRepo,
+      giteaOwner: task.GiteaOwner,
+      giteaRepo: task.GiteaRepo,
+    });
+
+    if (!resolved && task.ApplicationRepositoryUrl) {
+      const parsed = parseRepositoryUrl(String(task.ApplicationRepositoryUrl));
+      if (parsed) {
+        const creds = await resolveGitCredentials(organizationId, parsed);
+        if (creds) {
+          resolved = { parsed, creds };
+        }
+      }
+    }
+
+    if (!resolved) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'No repository configured. Set project GitHub/Gitea repo or link an application with a repository URL, and enable the matching org integration.',
+      });
+    }
+
+    const result = await listCommitsForTask(
+      resolved.parsed,
+      resolved.creds,
+      taskId,
+      task.GitHubIssueNumber != null ? Number(task.GitHubIssueNumber) : null,
+      task.GiteaIssueNumber != null ? Number(task.GiteaIssueNumber) : null
+    );
+
+    res.json({
+      success: true,
+      data: {
+        commits: result.commits,
+        provider: result.provider,
+        hasMore: result.hasMore,
+      },
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to fetch commits';
+    logger.error('Get task commits error:', error);
+    res.status(500).json({ success: false, message });
+  }
+});
+
 // GET /:id/assignees – list all assignees for a task
 router.get('/:id/assignees', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

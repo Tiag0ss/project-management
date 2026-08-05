@@ -38,6 +38,29 @@
   let projectHighlight = -1;
   let projectListOpen = false;
 
+  function formatTaskCommitMessage(task) {
+    var id = Number(task && task.Id);
+    var name = String((task && task.TaskName) || '').trim();
+    var tag = id > 0 ? 'Task #' + id : 'Task #';
+    if (!name) return tag;
+    return tag + ' - ' + name;
+  }
+
+  function copyCommitMessage(task) {
+    var text = formatTaskCommitMessage(task);
+    var done = function () {
+      setStatus('Commit message copied', false);
+    };
+    postHost({ type: 'setActiveTask', task: task });
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(text).then(done).catch(function () {
+        postHost({ type: 'copyText', text: text, label: 'Commit message', task: task });
+      });
+      return;
+    }
+    postHost({ type: 'copyText', text: text, label: 'Commit message', task: task });
+  }
+
   const el = {
     projectSearch: /** @type {HTMLInputElement | null} */ (document.getElementById('projectSearch')),
     projectPickerToggle: /** @type {HTMLButtonElement | null} */ (document.getElementById('projectPickerToggle')),
@@ -563,6 +586,7 @@
   }
 
   async function startTimerForTask(task) {
+    postHost({ type: 'setActiveTask', task: task });
     try {
       const data = await requestJson('/api/timers/start', {
         method: 'POST',
@@ -598,6 +622,7 @@
   }
 
   async function markInProgressThenAi(task) {
+    postHost({ type: 'setActiveTask', task: task });
     const targetId = resolveInProgressStatusId();
     let nextTask = task;
     if (targetId && Number(task.Status) !== Number(targetId)) {
@@ -808,7 +833,17 @@
     openBtn.title = 'View task (read-only)';
     openBtn.addEventListener('click', function (e) {
       e.stopPropagation();
+      postHost({ type: 'setActiveTask', task: task });
       postHost({ type: 'openTask', task: task });
+    });
+
+    const commitBtn = document.createElement('button');
+    commitBtn.type = 'button';
+    commitBtn.textContent = 'Commit';
+    commitBtn.title = 'Copy commit message (Task #Id)';
+    commitBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      copyCommitMessage(task);
     });
 
     const appBtn = document.createElement('button');
@@ -825,6 +860,7 @@
     actions.appendChild(timerBtn);
     actions.appendChild(aiBtn);
     actions.appendChild(openBtn);
+    actions.appendChild(commitBtn);
     actions.appendChild(appBtn);
 
     card.addEventListener('dragstart', function (e) {

@@ -1,0 +1,28 @@
+#!/bin/sh
+# PM-ACTIVE-TASK-HOOK v2 — append all Task #Ids from .git/pm-active-task.json when missing
+# Enable with: git config core.hooksPath .githooks
+# (The Cursor/VS Code extension also installs copies under .git/hooks when a task is activated.)
+MSG_FILE="$1"
+COMMIT_SOURCE="$2"
+case "$COMMIT_SOURCE" in
+  merge|squash) exit 0 ;;
+esac
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+CTX="$ROOT/.git/pm-active-task.json"
+[ -f "$CTX" ] || exit 0
+[ -f "$MSG_FILE" ] || exit 0
+IDS="$(grep -oE '"taskId"[[:space:]]*:[[:space:]]*[0-9]+' "$CTX" | grep -oE '[0-9]+' | sort -nu)"
+[ -n "$IDS" ] || exit 0
+MISSING=""
+for TASK_ID in $IDS; do
+  if ! grep -Eiq "Task[[:space:]]*#?[[:space:]]*$TASK_ID([^0-9]|$)" "$MSG_FILE"; then
+    MISSING="$MISSING $TASK_ID"
+  fi
+done
+MISSING="$(echo "$MISSING" | sed 's/^[[:space:]]*//')"
+[ -n "$MISSING" ] || exit 0
+printf '\n' >> "$MSG_FILE"
+for TASK_ID in $MISSING; do
+  printf 'Task #%s\n' "$TASK_ID" >> "$MSG_FILE"
+done
+exit 0

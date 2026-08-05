@@ -1,6 +1,7 @@
 'use client';
 
 import { getApiUrl } from '@/lib/api/config';
+import { formatTaskCommitMessage } from '@/lib/commitMessage';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -322,7 +323,7 @@ export default function TaskDetailModal({
     }
   }, [organizationId, token]);
   const { permissions } = usePermissions();
-  const [activeTab, setActiveTab] = useState<'details' | 'history' | 'comments' | 'attachments' | 'hours' | 'checklist'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'history' | 'comments' | 'attachments' | 'hours' | 'checklist' | 'commits'>('details');
   
   // Form data for editing
   const [formData, setFormData] = useState<CreateTaskData>(() => ({
@@ -400,6 +401,11 @@ export default function TaskDetailModal({
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
+  const [taskCommits, setTaskCommits] = useState<{ sha: string; message: string; author: string; date: string; url: string }[]>([]);
+  const [commitsLoading, setCommitsLoading] = useState(false);
+  const [commitsError, setCommitsError] = useState('');
+  const [commitsProvider, setCommitsProvider] = useState<string | null>(null);
+  const [commitsFetched, setCommitsFetched] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -1855,10 +1861,43 @@ export default function TaskDetailModal({
   }, [timeEntriesPage, timeEntriesTotalPages]);
 
   useEffect(() => {
-    if (!task?.Id && (activeTab === 'checklist' || activeTab === 'attachments' || activeTab === 'comments' || activeTab === 'history')) {
+    if (!task?.Id && (activeTab === 'checklist' || activeTab === 'attachments' || activeTab === 'comments' || activeTab === 'history' || activeTab === 'commits')) {
       setActiveTab('details');
     }
   }, [task?.Id, activeTab]);
+
+  useEffect(() => {
+    setTaskCommits([]);
+    setCommitsError('');
+    setCommitsProvider(null);
+    setCommitsFetched(false);
+    setCommitsLoading(false);
+  }, [task?.Id]);
+
+  const loadTaskCommits = async () => {
+    if (!task?.Id || !token) return;
+    setCommitsLoading(true);
+    setCommitsError('');
+    try {
+      const res = await fetch(`${getApiUrl()}/api/tasks/${task.Id}/commits`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to load commits');
+      }
+      setTaskCommits(data.data?.commits || []);
+      setCommitsProvider(data.data?.provider || null);
+      setCommitsFetched(true);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load commits';
+      setCommitsError(message);
+      setTaskCommits([]);
+      setCommitsFetched(true);
+    } finally {
+      setCommitsLoading(false);
+    }
+  };
 
   const canSaveTask = !!(task?.Id ? permissions?.canManageTasks : permissions?.canCreateTasks);
   const canDeleteTask = !!(task?.Id && permissions?.canDeleteTasks);
@@ -1877,10 +1916,17 @@ export default function TaskDetailModal({
     ? taskCustomerName
     : (taskCustomerName || projectCustomerName);
   const baseTabs = (task?.Id
-    ? (['details', 'checklist', 'hours', 'comments', 'attachments', 'history'] as const)
+    ? (['details', 'checklist', 'hours', 'comments', 'attachments', 'history', 'commits'] as const)
     : (['details', 'hours'] as const)
   );
-  const visibleTabs = baseTabs.filter((tab) => isTabVisible(tab));
+  const hasAssociatedApplication = Boolean(
+    Number(formData.applicationId) > 0 || Number(task?.ApplicationId) > 0
+  );
+  const visibleTabs = baseTabs.filter((tab) => {
+    if (!isTabVisible(tab)) return false;
+    if (tab === 'commits' && !hasAssociatedApplication) return false;
+    return true;
+  });
   const showSectionLabels = isFieldVisible('sectionLabels');
   const showHoursPlanningSubTab =
     isFieldVisible('parentTask') || isFieldVisible('dependsOn') || isFieldVisible('childTasks');
@@ -2415,6 +2461,32 @@ export default function TaskDetailModal({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                     </svg>
                   </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const message = formatTaskCommitMessage({
+                        Id: task.Id,
+                        TaskName: formData.taskName || task.TaskName,
+                      });
+                      try {
+                        await navigator.clipboard.writeText(message);
+                        showToast({
+                          type: 'success',
+                          title: 'Commit message copied',
+                          message: 'Paste it into your git commit.',
+                        });
+                      } catch {
+                        showAlert('Copy commit message', message);
+                      }
+                    }}
+                    className={headerIconButtonClass}
+                    title="Copy commit message"
+                    aria-label="Copy commit message"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </button>
                   {isFieldVisible('headerPrint') && (
                   <button
                     type="button"
@@ -2461,6 +2533,29 @@ export default function TaskDetailModal({
                         className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
                       >
                         Copy task link
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setShowTaskActionsMenu(false);
+                          const message = formatTaskCommitMessage({
+                            Id: task.Id,
+                            TaskName: formData.taskName || task.TaskName,
+                          });
+                          try {
+                            await navigator.clipboard.writeText(message);
+                            showToast({
+                              type: 'success',
+                              title: 'Commit message copied',
+                              message: 'Paste it into your git commit.',
+                            });
+                          } catch {
+                            showAlert('Copy commit message', message);
+                          }
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        Copy commit message
                       </button>
                       <button
                         type="button"
@@ -2527,6 +2622,7 @@ export default function TaskDetailModal({
                   tab === 'hours' ? `Plan & Deps (${decimalHoursToHMS(totalWorked)})` :
                   tab === 'comments' ? `Comments (${taskComments.length})` :
                   tab === 'attachments' ? `Files (${taskAttachments.length})` :
+                  tab === 'commits' ? 'Commits' :
                   `History (${taskHistory.length})`
                 }
               >
@@ -2536,6 +2632,7 @@ export default function TaskDetailModal({
                 {tab === 'comments' && `💬 Comments (${taskComments.length})`}
                 {tab === 'attachments' && `📎 Files (${taskAttachments.length})`}
                 {tab === 'history' && `📜 History (${taskHistory.length})`}
+                {tab === 'commits' && '🔗 Commits'}
               </button>
             ))}
           </div>
@@ -4054,6 +4151,97 @@ export default function TaskDetailModal({
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Commits Tab — on-demand only */}
+          {activeTab === 'commits' && task && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Linked commits</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Matches messages containing Task #{task.Id}
+                    {(task.GitHubIssueNumber || task.GiteaIssueNumber)
+                      ? ' or the linked GitHub/Gitea issue number'
+                      : ''}
+                    . This can take a while on large repositories — load only when needed.
+                    {commitsProvider ? ` Provider: ${commitsProvider}.` : ''}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadTaskCommits()}
+                  disabled={commitsLoading}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg text-sm transition-colors"
+                >
+                  {commitsLoading
+                    ? 'Loading…'
+                    : commitsFetched
+                      ? 'Refresh'
+                      : 'Load commits'}
+                </button>
+              </div>
+
+              {!commitsFetched && !commitsLoading && (
+                <p className="text-gray-500 dark:text-gray-400 text-center py-8">
+                  Click <span className="font-medium text-gray-700 dark:text-gray-200">Load commits</span> to fetch matching remote commits.
+                </p>
+              )}
+
+              {commitsLoading && (
+                <p className="text-gray-500 dark:text-gray-400 text-center py-8">Searching commit history…</p>
+              )}
+
+              {commitsError && !commitsLoading && (
+                <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded text-sm">
+                  {commitsError}
+                </div>
+              )}
+
+              {commitsFetched && !commitsLoading && !commitsError && taskCommits.length === 0 && (
+                <p className="text-gray-500 dark:text-gray-400 text-center py-8">
+                  No matching commits found in the recent history scanned.
+                </p>
+              )}
+
+              {taskCommits.length > 0 && !commitsLoading && (
+                <div className="space-y-2">
+                  {taskCommits.map((c) => {
+                    const firstLine = (c.message || '').split('\n')[0] || '(no message)';
+                    const shortSha = (c.sha || '').slice(0, 7);
+                    return (
+                      <div
+                        key={c.sha || `${c.date}-${firstLine}`}
+                        className="flex flex-col sm:flex-row sm:items-start gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <code className="text-xs font-mono text-blue-600 dark:text-blue-400">{shortSha || '—'}</code>
+                            <span className="text-sm font-medium text-gray-900 dark:text-white break-words">
+                              {firstLine}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {c.author || 'Unknown author'}
+                            {c.date ? ` · ${new Date(c.date).toLocaleString()}` : ''}
+                          </div>
+                        </div>
+                        {c.url && (
+                          <a
+                            href={c.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-blue-600 dark:text-blue-400 hover:underline shrink-0"
+                          >
+                            Open
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

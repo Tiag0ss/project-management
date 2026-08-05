@@ -6,7 +6,8 @@ export type TaskFormTabKey =
   | 'comments'
   | 'attachments'
   | 'hours'
-  | 'checklist';
+  | 'checklist'
+  | 'commits';
 
 export type TaskFormFieldKey =
   | 'taskName'
@@ -73,6 +74,7 @@ export const TASK_FORM_TAB_CATALOG: TaskFieldVisibilityCatalogItem[] = [
   { key: 'attachments', label: 'Attachments', locked: false, hint: 'Files attached to the task.' },
   { key: 'hours', label: 'Hours', locked: false, hint: 'Planning, allocations, and time entries.' },
   { key: 'checklist', label: 'Checklist', locked: false, hint: 'Checklist items for the task.' },
+  { key: 'commits', label: 'Commits', locked: false, hint: 'Remote git commits linked to this task (on-demand). Only shown when the task has an application.' },
 ];
 
 export const TASK_FORM_FIELD_CATALOG: TaskFieldVisibilityCatalogItem[] = [

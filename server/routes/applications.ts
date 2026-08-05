@@ -10,6 +10,11 @@ import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
 import logger from '../utils/logger';
+import {
+  parseRepositoryUrl,
+  resolveGitCredentials,
+  listRemoteCommits,
+} from '../utils/gitRemote';
 
 const router = Router();
 
@@ -452,6 +457,68 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   } catch (error) {
     logger.error('Error fetching application:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch application' });
+  }
+});
+
+// GET /api/applications/:id/commits - list remote commits for application RepositoryUrl
+router.get('/:id/commits', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+    const perPage = Math.min(100, Math.max(1, parseInt(String(req.query.per_page || '30'), 10) || 30));
+
+    const [apps] = await pool.execute<RowDataPacket[]>(
+      `SELECT a.Id, a.OrganizationId, a.RepositoryUrl
+       FROM Applications a
+       INNER JOIN OrganizationMembers om ON a.OrganizationId = om.OrganizationId AND om.UserId = ?
+       WHERE a.Id = ? AND a.IsActive = 1`,
+      [userId, id]
+    );
+
+    if (apps.length === 0) {
+      return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+
+    const repositoryUrl = apps[0].RepositoryUrl as string | null;
+    if (!repositoryUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'Application has no repository URL configured',
+      });
+    }
+
+    const parsed = parseRepositoryUrl(repositoryUrl);
+    if (!parsed) {
+      return res.status(400).json({
+        success: false,
+        message: 'Could not parse repository URL',
+      });
+    }
+
+    const creds = await resolveGitCredentials(Number(apps[0].OrganizationId), parsed);
+    if (!creds) {
+      return res.status(400).json({
+        success: false,
+        message: 'No matching GitHub, Gitea, or Bitbucket integration is enabled for this organization',
+      });
+    }
+
+    const result = await listRemoteCommits(parsed, creds, { page, perPage });
+    res.json({
+      success: true,
+      data: {
+        commits: result.commits,
+        provider: result.provider,
+        hasMore: result.hasMore,
+        page,
+        perPage,
+      },
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to fetch commits';
+    logger.error('Error fetching application commits:', error);
+    res.status(500).json({ success: false, message });
   }
 });
 

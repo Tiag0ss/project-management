@@ -12,6 +12,7 @@ import {
 
 const KEEP_EXISTING_TOKEN_SENTINEL = '';
 import { PmTask } from './tasks';
+import { setActiveTaskContext } from './activeTaskContext';
 
 function isCursorHost(): boolean {
   const name = (vscode.env.appName || '').toLowerCase();
@@ -201,5 +202,6 @@ export async function runSendToAiForTask(task: PmTask): Promise<void> {
   if (!contentPick) return;
 
   const prompt = buildAiPrompt(task, baseUrl, contentPick.mode, getAiPromptTemplate());
+  await setActiveTaskContext(task);
   await sendPromptToAiChat(prompt, false);
 }

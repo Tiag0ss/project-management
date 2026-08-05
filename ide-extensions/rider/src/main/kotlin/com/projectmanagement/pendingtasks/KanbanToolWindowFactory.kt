@@ -215,6 +215,12 @@ class KanbanPanel : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
                     notify("Could not open browser: ${ex.message}", NotificationType.ERROR)
                 }
             }
+            "copyText" -> {
+                val text = obj.get("text")?.asString ?: return
+                val label = obj.get("label")?.asString ?: "Text"
+                CopyPasteManager.getInstance().setContents(StringSelection(text))
+                notify("$label copied to clipboard.", NotificationType.INFORMATION)
+            }
             "sendToAi" -> {
                 val taskEl = obj.get("task") ?: return
                 val task = gson.fromJson(taskEl, PmTask::class.java) ?: return

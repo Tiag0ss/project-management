@@ -4378,12 +4378,326 @@ function GiteaIntegrationCard({
   );
 }
 
+// Bitbucket Integration Card Component
+function BitbucketIntegrationCard({
+  integration,
+  token,
+  orgId,
+  onUpdate,
+  setError,
+  setSuccess
+}: {
+  integration: any;
+  token: string;
+  orgId: number;
+  onUpdate: () => void;
+  setError: (error: string) => void;
+  setSuccess: (success: string) => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const bitbucketTokenRef = useRef<HTMLInputElement>(null);
+  const [formData, setFormData] = useState({
+    isEnabled: true,
+    bitbucketUrl: '',
+    bitbucketUsername: '',
+  });
+
+  useEffect(() => {
+    if (integration) {
+      setFormData({
+        isEnabled: integration.IsEnabled === 1,
+        bitbucketUrl: integration.BitbucketUrl || '',
+        bitbucketUsername: integration.BitbucketUsername || '',
+      });
+      clearPasswordInput(bitbucketTokenRef);
+    }
+  }, [integration]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/bitbucket-integrations/organization/${orgId}`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            isEnabled: formData.isEnabled,
+            bitbucketUrl: formData.bitbucketUrl,
+            bitbucketUsername: formData.bitbucketUsername || null,
+            bitbucketToken: readPasswordInput(bitbucketTokenRef),
+          })
+        }
+      );
+
+      const data = await response.json();
+
+      if (response.ok) {
+        clearPasswordInput(bitbucketTokenRef);
+        setSuccess('Bitbucket integration saved successfully');
+        setShowForm(false);
+        onUpdate();
+      } else {
+        setError(data.message || 'Failed to save Bitbucket integration');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to save Bitbucket integration');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/bitbucket-integrations/organization/${orgId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        setSuccess('Bitbucket integration removed successfully');
+        onUpdate();
+      } else {
+        setError('Failed to delete Bitbucket integration');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete Bitbucket integration');
+    } finally {
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  return (
+    <>
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+      <div className="p-6">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <div className="text-5xl">🪣</div>
+            <div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Bitbucket Integration</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Read commit history from Bitbucket Cloud or Server (API tokens)
+              </p>
+            </div>
+          </div>
+          {integration && (
+            <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+              integration.IsEnabled
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-400'
+            }`}>
+              {integration.IsEnabled ? '✓ Active' : 'Inactive'}
+            </div>
+          )}
+        </div>
+
+        {!integration && !showForm ? (
+          <div className="text-center py-8">
+            <div className="text-gray-400 dark:text-gray-500 text-6xl mb-4">🪣</div>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">
+              Bitbucket integration is not configured for this organization.
+            </p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              Configure Bitbucket
+            </button>
+          </div>
+        ) : integration && !showForm ? (
+          <div className="space-y-4">
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/20 rounded-lg border border-gray-200 dark:border-gray-800">
+              <div className="grid grid-cols-1 gap-3 text-sm">
+                <div>
+                  <span className="text-gray-500 dark:text-gray-400">Bitbucket URL:</span>{' '}
+                  <span className="font-medium text-gray-900 dark:text-white">{integration.BitbucketUrl}</span>
+                </div>
+                {integration.BitbucketUsername && (
+                  <div>
+                    <span className="text-gray-500 dark:text-gray-400">Atlassian email:</span>{' '}
+                    <span className="font-medium text-gray-900 dark:text-white">{integration.BitbucketUsername}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              Last Updated: <span className="text-gray-900 dark:text-white">{new Date(integration.UpdatedAt).toLocaleDateString()}</span>
+            </div>
+
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+              <p className="text-sm text-blue-800 dark:text-blue-400">
+                Repository URL is set on each Application. For Cloud, use an Atlassian API token (app passwords are discontinued).
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowForm(true)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                Edit Configuration
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                Remove Integration
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSave} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Bitbucket URL {!integration && <span className="text-red-500">*</span>}
+              </label>
+              <input
+                type="url"
+                value={formData.bitbucketUrl}
+                onChange={(e) => setFormData({ ...formData, bitbucketUrl: e.target.value })}
+                placeholder="https://bitbucket.org"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                required={!integration}
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Use https://bitbucket.org for Cloud, or your Bitbucket Server / Data Center base URL
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Atlassian account email (Cloud) {!integration && <span className="text-red-500">*</span>}
+              </label>
+              <input
+                type="email"
+                value={formData.bitbucketUsername}
+                onChange={(e) => setFormData({ ...formData, bitbucketUsername: e.target.value })}
+                placeholder="you@company.com"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                autoComplete="off"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Required for Bitbucket Cloud API tokens. Use your Atlassian email — not your Bitbucket username.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                API token {!integration && <span className="text-red-500">*</span>}
+              </label>
+              <PasswordInput
+                ref={bitbucketTokenRef}
+                name="bitbucketToken"
+                placeholder={integration ? 'Leave empty to keep current token' : 'Atlassian API token for Bitbucket'}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                required={!integration}
+                autoComplete="new-password"
+                preventAutofill
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Create at Atlassian account → Security → API tokens (select Bitbucket, scopes include repository read).
+                App passwords are discontinued and will return 401.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="bitbucketEnabled"
+                checked={formData.isEnabled}
+                onChange={(e) => setFormData({ ...formData, isEnabled: e.target.checked })}
+                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <label htmlFor="bitbucketEnabled" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Enable Bitbucket integration
+              </label>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg transition-colors"
+              >
+                {isSaving ? 'Saving...' : 'Save Integration'}
+              </button>
+              {integration && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForm(false);
+                    setFormData({
+                      isEnabled: integration.IsEnabled === 1,
+                      bitbucketUrl: integration.BitbucketUrl || '',
+                      bitbucketUsername: integration.BitbucketUsername || '',
+                    });
+                    clearPasswordInput(bitbucketTokenRef);
+                  }}
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+    {showDeleteConfirm && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+          <div className="p-6">
+            <h3 className="text-xl font-semibold mb-3 text-gray-900 dark:text-white">Remove Bitbucket Integration</h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-6">
+              Are you sure you want to remove the Bitbucket integration?
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
+  );
+}
+
 // Integrations Tab Component
 function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
   const { showToast } = useToast();
   const [integration, setIntegration] = useState<any>(null);
   const [githubIntegration, setGithubIntegration] = useState<any>(null);
   const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
+  const [bitbucketIntegration, setBitbucketIntegration] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -4478,6 +4792,20 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
         if (giteaData.integration) {
           setGiteaIntegration(giteaData.integration);
         }
+      }
+
+      const bitbucketResponse = await fetch(
+        `${getApiUrl()}/api/bitbucket-integrations/organization/${orgId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (bitbucketResponse.ok) {
+        const bitbucketData = await bitbucketResponse.json();
+        setBitbucketIntegration(bitbucketData.integration || null);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load integrations');
@@ -5012,6 +5340,16 @@ function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
         onUpdate={loadIntegration}
         setError={setError}
           setSuccess={setSuccessWithToast}
+      />
+
+      {/* Bitbucket Integration Card */}
+      <BitbucketIntegrationCard
+        integration={bitbucketIntegration}
+        token={token}
+        orgId={orgId}
+        onUpdate={loadIntegration}
+        setError={setError}
+        setSuccess={setSuccessWithToast}
       />
     </div>
     {showDeleteConfirm && (

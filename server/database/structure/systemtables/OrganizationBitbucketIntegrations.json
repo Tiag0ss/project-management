@@ -1,0 +1,51 @@
+{
+  "TableName": "OrganizationBitbucketIntegrations",
+  "PrimaryKeyFields": "OrganizationId",
+  "Fields": [
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Primary key / Foreign key - reference to Organizations.Id"
+    },
+    {
+      "FieldName": "IsEnabled",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1",
+      "Comment": "Flag indicating if Bitbucket integration is active"
+    },
+    {
+      "FieldName": "BitbucketUrl",
+      "DataType": "varchar(500)",
+      "NotNullable": true,
+      "Comment": "Bitbucket base URL (https://bitbucket.org for Cloud, or Server/DC base URL)"
+    },
+    {
+      "FieldName": "BitbucketUsername",
+      "DataType": "varchar(255)",
+      "NotNullable": false,
+      "Comment": "Atlassian account email for Bitbucket Cloud Basic auth with API tokens (not Bitbucket username)"
+    },
+    {
+      "FieldName": "BitbucketToken",
+      "DataType": "text",
+      "NotNullable": true,
+      "Comment": "Encrypted Bitbucket Cloud API token or Server/DC personal access token"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when integration was created"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when integration was last updated"
+    }
+  ]
+}

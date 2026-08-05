@@ -1,0 +1,11 @@
+# >>> PM-ACTIVE-TASK:START
+# Managed by Project Management Kanban extension — do not edit this block by hand.
+# Cursor "Generate commit message" reads .cursorrules (not .cursor/rules).
+When generating a Git commit message for this repository, include ALL of these task references
+(tasks worked on since the last successful commit):
+- Task #322 - analyse the possiblity in application read the commit history
+- Task #419 - Verificar maneira de nos commits colocar um indentificador da tarefa automático, principalmente no cursor
+Always keep every of these references in the message: Task #322, Task #419.
+Prefer starting the subject with the most recently activated task, then briefly describe the staged changes.
+If more than one task is listed, put the others in the subject or body — do not drop any Task #Id.
+# >>> PM-ACTIVE-TASK:END

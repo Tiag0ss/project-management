@@ -233,6 +233,20 @@ namespace ProjectManagement.PendingTasks
                         }
                     }
                     break;
+                case "copyText":
+                    {
+                        var text = obj?["text"]?.ToString();
+                        if (string.IsNullOrEmpty(text)) break;
+                        try
+                        {
+                            System.Windows.Clipboard.SetText(text);
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Windows.MessageBox.Show(ex.Message, "Copy failed");
+                        }
+                    }
+                    break;
                 case "sendToAi":
                     {
                         var taskToken = obj?["task"];
