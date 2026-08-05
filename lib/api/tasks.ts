@@ -149,6 +149,23 @@ export type UpdateTaskData = Omit<Partial<CreateTaskData>,
 };
 
 export const tasksApi = {
+  async getById(id: number, token: string): Promise<{ success: boolean; task: Task }> {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch task');
+    }
+
+    return data;
+  },
+
   async getByProject(projectId: number, token: string): Promise<{ success: boolean; tasks: Task[] }> {
     const response = await fetch(`${API_BASE_URL}/api/tasks/project/${projectId}`, {
       method: 'GET',

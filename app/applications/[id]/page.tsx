@@ -588,6 +588,37 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
     }
   };
 
+  const handleOpenTaskById = async (taskId: number) => {
+    if (!token || !Number.isFinite(taskId) || taskId <= 0) return;
+
+    try {
+      const { task: summary } = await tasksApi.getById(taskId, token);
+      const projectId = Number(summary.ProjectId);
+      if (!Number.isFinite(projectId) || projectId <= 0) {
+        setError('Task project could not be resolved.');
+        return;
+      }
+
+      const [projectRes, tasksRes] = await Promise.all([
+        projectsApi.getById(projectId, token),
+        tasksApi.getByProject(projectId, token),
+      ]);
+
+      const fullTask = (tasksRes.tasks || []).find((task) => Number(task.Id) === Number(taskId));
+      if (!fullTask) {
+        setError('Task not found in project context.');
+        return;
+      }
+
+      setTaskModalProject(projectRes.project);
+      setTaskModalTasks(tasksRes.tasks || []);
+      setSelectedTaskForModal(fullTask);
+      setShowTaskDetailModal(true);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to open task details.');
+    }
+  };
+
   const toggleVersionTask = (taskId: number) => {
     setVersionForm((prev) => {
       const newTaskIds = prev.TaskIds.includes(taskId)
@@ -1141,7 +1172,13 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start gap-2">
                           <code className="text-xs font-mono text-blue-600 dark:text-blue-400 shrink-0 mt-0.5">{shortSha || '—'}</code>
-                          <CommitMessage message={c.message || ''} />
+                          <CommitMessage
+                            message={c.message || ''}
+                            token={token || undefined}
+                            onTaskClick={(taskId) => {
+                              void handleOpenTaskById(taskId);
+                            }}
+                          />
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                           {c.author || 'Unknown author'}
@@ -1411,6 +1448,9 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
           task={selectedTaskForModal}
           project={taskModalProject}
           tasks={taskModalTasks}
+          onOpenTask={(targetTask) => {
+            void handleOpenTaskById(Number(targetTask.Id));
+          }}
           onClose={() => {
             setShowTaskDetailModal(false);
             setSelectedTaskForModal(null);

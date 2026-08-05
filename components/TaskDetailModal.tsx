@@ -2272,7 +2272,14 @@ export default function TaskDetailModal({
           <div className="flex justify-between items-start">
             <div className="flex-1">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                {task?.Id ? task.TaskName : 'Create New Task'}
+                {task?.Id ? (
+                  <>
+                    <span className="text-gray-500 dark:text-gray-400 font-semibold mr-2">#{task.Id}</span>
+                    {task.TaskName}
+                  </>
+                ) : (
+                  'Create New Task'
+                )}
               </h2>
               {task?.Id && (
                 (project?.Id && isFieldVisible('headerProject'))
@@ -4220,7 +4227,38 @@ export default function TaskDetailModal({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start gap-2">
                             <code className="text-xs font-mono text-blue-600 dark:text-blue-400 shrink-0 mt-0.5">{shortSha || '—'}</code>
-                            <CommitMessage message={c.message || ''} />
+                            <CommitMessage
+                              message={c.message || ''}
+                              token={token}
+                              taskNamesById={Object.fromEntries(
+                                [
+                                  ...(task?.Id && task.TaskName ? [[task.Id, task.TaskName] as const] : []),
+                                  ...tasks
+                                    .filter((entry) => entry?.Id && entry.TaskName)
+                                    .map((entry) => [entry.Id, entry.TaskName] as const),
+                                ]
+                              )}
+                              onTaskClick={
+                                onOpenTask
+                                  ? (taskId) => {
+                                      if (Number(taskId) === Number(task?.Id)) return;
+                                      const local = tasks.find((entry) => Number(entry.Id) === Number(taskId));
+                                      if (local) {
+                                        onOpenTask(local);
+                                        return;
+                                      }
+                                      void (async () => {
+                                        try {
+                                          const res = await tasksApi.getById(taskId, token);
+                                          if (res.task) onOpenTask(res.task);
+                                        } catch {
+                                          // keep badge informative if open fails
+                                        }
+                                      })();
+                                    }
+                                  : undefined
+                              }
+                            />
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                             {c.author || 'Unknown author'}

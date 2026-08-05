@@ -2047,6 +2047,40 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
  *       200:
  *         description: List of assignees for the task
  */
+// GET /:id – lightweight task lookup (name + project) for deep-links / commit badges
+router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const taskId = Number(req.params.id);
+
+    if (!Number.isFinite(taskId) || taskId <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid task id' });
+    }
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.Id, t.TaskName, t.ProjectId, t.Status, t.Priority, t.TaskType,
+              p.ProjectName, p.OrganizationId
+       FROM Tasks t
+       JOIN Projects p ON t.ProjectId = p.Id
+       INNER JOIN OrganizationMembers om ON p.OrganizationId = om.OrganizationId
+       WHERE t.Id = ? AND om.UserId = ?`,
+      [taskId, userId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found or access denied',
+      });
+    }
+
+    return res.json({ success: true, task: rows[0] });
+  } catch (error) {
+    logger.error('Error fetching task by id:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch task' });
+  }
+});
+
 // GET /:id/commits – remote commits matching Task #Id and/or linked issue numbers
 router.get('/:id/commits', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
