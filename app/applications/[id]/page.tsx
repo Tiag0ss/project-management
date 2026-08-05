@@ -12,6 +12,7 @@ import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
+import CommitMessage from '@/components/CommitMessage';
 import { Task, tasksApi } from '@/lib/api/tasks';
 import { Project, projectsApi } from '@/lib/api/projects';
 import { useColorVision } from '@/hooks/useColorVision';
@@ -1131,25 +1132,16 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
             ) : (
               <div className="space-y-2">
                 {commits.map((c) => {
-                  const firstLine = (c.message || '').split('\n')[0] || '(no message)';
                   const shortSha = (c.sha || '').slice(0, 7);
-                  const taskMatch = firstLine.match(/\bTask\s*#?\s*(\d+)\b/i);
                   return (
                     <div
-                      key={c.sha || `${c.date}-${firstLine}`}
+                      key={c.sha || `${c.date}-${c.message}`}
                       className="flex flex-col sm:flex-row sm:items-start gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
                     >
                       <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <code className="text-xs font-mono text-blue-600 dark:text-blue-400">{shortSha || '—'}</code>
-                          <span className="text-sm font-medium text-gray-900 dark:text-white break-words">
-                            {firstLine}
-                          </span>
-                          {taskMatch && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">
-                              Task #{taskMatch[1]}
-                            </span>
-                          )}
+                        <div className="flex items-start gap-2">
+                          <code className="text-xs font-mono text-blue-600 dark:text-blue-400 shrink-0 mt-0.5">{shortSha || '—'}</code>
+                          <CommitMessage message={c.message || ''} />
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                           {c.author || 'Unknown author'}
