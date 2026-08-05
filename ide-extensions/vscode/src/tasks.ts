@@ -16,6 +16,8 @@ export interface PmTask {
   PriorityName?: string;
   PriorityColor?: string;
   PrioritySortOrder?: number;
+  TaskTypeName?: string;
+  TaskTypeColor?: string;
   DisplayOrder?: number;
   DueDate?: string | null;
 }

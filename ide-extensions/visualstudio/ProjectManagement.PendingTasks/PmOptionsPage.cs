@@ -11,11 +11,11 @@ namespace ProjectManagement.PendingTasks
         private string _baseUrl = "";
         private string _apiToken = "";
         private int _refreshIntervalSeconds = 300;
-        private bool _aiAutoSubmit;
         private int _selectedProjectId;
         private string _kanbanLayout = "horizontal";
         private string _kanbanHiddenStatuses = "";
         private int _kanbanMaxVisibleCards = 2;
+        private int _aiInProgressStatusId;
 
         [Category("Connection")]
         [DisplayName("Base URL")]
@@ -82,12 +82,12 @@ namespace ProjectManagement.PendingTasks
         }
 
         [Category("AI")]
-        [DisplayName("Auto-submit AI prompt")]
-        [Description("When true, Send to AI submits immediately unless you choose Edit before send")]
-        public bool AiAutoSubmit
+        [DisplayName("In Progress status Id")]
+        [Description("Status Id to set when sending a task to AI (0 = use org IsInProgress flag)")]
+        public int AiInProgressStatusId
         {
-            get => _aiAutoSubmit;
-            set => _aiAutoSubmit = value;
+            get => _aiInProgressStatusId;
+            set => _aiInProgressStatusId = Math.Max(0, value);
         }
 
         [Category("AI")]

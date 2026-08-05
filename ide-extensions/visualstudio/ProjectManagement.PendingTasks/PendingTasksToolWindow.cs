@@ -103,14 +103,51 @@ namespace ProjectManagement.PendingTasks
 </head>
 <body>
   <div id=""toolbar"">
-    <label for=""projectSelect"">Project</label>
-    <select id=""projectSelect"" aria-label=""Project""></select>
-    <button type=""button"" id=""refreshBtn"">Refresh</button>
-    <button type=""button"" id=""configureBtn"" class=""primary"">Configure</button>
-  </div>
-  <div id=""statusLine"" aria-live=""polite""></div>
-  <div id=""board"" role=""list""></div>
-  <div id=""emptyState""></div>
+        <label for=""projectSearch"">Project</label>
+        <div id=""projectPicker"" class=""project-picker"">
+          <input
+            id=""projectSearch""
+            type=""text""
+            autocomplete=""off""
+            placeholder=""Search projects…""
+            aria-label=""Search projects""
+            aria-autocomplete=""list""
+            aria-controls=""projectList""
+            aria-expanded=""false""
+          />
+          <button type=""button"" id=""projectPickerToggle"" aria-label=""Toggle project list"" tabindex=""-1"">
+            ▾
+          </button>
+          <ul id=""projectList"" role=""listbox"" hidden></ul>
+        </div>
+        <button type=""button"" id=""addTaskBtn"" disabled>Add task</button>
+        <button type=""button"" id=""refreshBtn"">Refresh</button>
+        <button type=""button"" id=""configureBtn"" class=""primary"">Configure</button>
+      </div>
+      <div id=""activeTimerBar"" class=""active-timer-bar"" hidden>
+        <span id=""activeTimerLabel""></span>
+        <button type=""button"" id=""activeTimerStop"">Stop</button>
+      </div>
+      <div id=""statusLine"" aria-live=""polite""></div>
+      <div id=""board"" role=""list""></div>
+      <div id=""emptyState""></div>
+      <div id=""createTaskModal"" class=""modal"" hidden aria-hidden=""true"">
+        <div class=""modal-backdrop"" data-close-modal></div>
+        <div class=""modal-dialog"" role=""dialog"" aria-labelledby=""createTaskTitle"" aria-modal=""true"">
+          <h2 id=""createTaskTitle"">New task</h2>
+          <label for=""createTaskName"">Name</label>
+          <input id=""createTaskName"" type=""text"" maxlength=""255"" autocomplete=""off"" />
+          <label for=""createTaskStatus"">Status</label>
+          <select id=""createTaskStatus""></select>
+          <label for=""createTaskPriority"">Priority</label>
+          <select id=""createTaskPriority""></select>
+          <p id=""createTaskError"" class=""modal-error"" hidden></p>
+          <div class=""modal-actions"">
+            <button type=""button"" id=""createTaskCancel"" data-close-modal>Cancel</button>
+            <button type=""button"" id=""createTaskSubmit"" class=""primary"">Create</button>
+          </div>
+        </div>
+      </div>
   <script>{js}</script>
 </body>
 </html>";
@@ -129,7 +166,8 @@ namespace ProjectManagement.PendingTasks
                 selectedProjectId = (opt?.SelectedProjectId ?? 0) > 0 ? (int?)opt!.SelectedProjectId : null,
                 layout = opt?.KanbanLayout ?? "horizontal",
                 hiddenStatuses = opt?.KanbanHiddenStatuses ?? "",
-                maxVisibleCards = opt?.KanbanMaxVisibleCards ?? 2
+                maxVisibleCards = opt?.KanbanMaxVisibleCards ?? 2,
+                aiInProgressStatusId = opt?.AiInProgressStatusId ?? 0
             };
             _webView.CoreWebView2.PostWebMessageAsJson(JsonConvert.SerializeObject(payload));
             await System.Threading.Tasks.Task.CompletedTask;
@@ -176,6 +214,22 @@ namespace ProjectManagement.PendingTasks
                             {
                                 System.Windows.MessageBox.Show(ex.Message, "Open in browser");
                             }
+                        }
+                    }
+                    break;
+                case "openTask":
+                    {
+                        var taskToken = obj?["task"];
+                        if (taskToken == null) break;
+                        var task = taskToken.ToObject<PmTask>();
+                        var opt = Options;
+                        var base = opt?.BaseUrl?.TrimEnd('/') ?? "";
+                        if (task == null || string.IsNullOrWhiteSpace(base)) break;
+                        var url = $"{base}/projects/{task.ProjectId}?tab=tasks&taskId={task.Id}";
+                        try { System.Diagnostics.Process.Start(url); }
+                        catch (Exception ex)
+                        {
+                            System.Windows.MessageBox.Show(ex.Message, "Open task");
                         }
                     }
                     break;
@@ -261,17 +315,6 @@ namespace ProjectManagement.PendingTasks
                     ? AiContentMode.NameDescription
                     : AiContentMode.Name;
 
-            var defaultAuto = opt?.AiAutoSubmit == true;
-            var sendNow = System.Windows.MessageBox.Show(
-                "Yes = Send now\nNo = Edit before send (copy to clipboard)",
-                "Send mode",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question) == MessageBoxResult.Yes;
-            if (!sendNow && defaultAuto)
-            {
-                // User chose edit; keep clipboard path
-            }
-
             var prompt = AiPromptBuilder.Build(task, baseUrl, mode, opt?.AiPromptTemplate);
             try
             {
@@ -283,9 +326,7 @@ namespace ProjectManagement.PendingTasks
             }
 
             System.Windows.MessageBox.Show(
-                sendNow
-                    ? "Prompt copied. Paste into Copilot Chat and send (host-specific auto-submit is best-effort in v1)."
-                    : "Prompt copied to clipboard — paste into Copilot Chat and edit before sending.",
+                "Prompt copied to clipboard — paste into Copilot Chat and edit before sending.",
                 "Send to AI Chat");
         }
     }

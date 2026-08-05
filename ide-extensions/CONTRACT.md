@@ -44,15 +44,40 @@ Relevant fields:
 | `StatusName` | string | |
 | `DisplayOrder` | number | Column order |
 | `PriorityName` | string | |
-| `PriorityColor` | string | Optional card accent |
+| `PriorityColor` | string | Optional card accent (left border) |
 | `PrioritySortOrder` | number | Lower = higher priority |
+| `TaskTypeName` | string | Shown on card meta chip |
+| `TaskTypeColor` | string | Optional type chip color |
 | `DueDate` | string \| null | ISO / date string |
 
 ### `GET /api/status-values/task/{organizationId}`
 
 Kanban columns. Returns `{ success: true, statuses: StatusValue[] }` for the org (requires membership).
 
-Relevant fields: `Id`, `StatusName`, `ColorCode`, `SortOrder`, `IsClosed`, `IsCancelled`, `IsInProgress`, `HideFromPlanningAndStatistics`.
+Relevant fields: `Id`, `StatusName`, `ColorCode`, `SortOrder`, `IsDefault`, `IsClosed`, `IsCancelled`, `IsInProgress`, `HideFromPlanningAndStatistics`.
+
+### `GET /api/status-values/priority/{organizationId}`
+
+Priority options for create-task. Returns `{ success: true, priorities: PriorityValue[] }`.
+
+Relevant fields: `Id`, `PriorityName`, `ColorCode`, `SortOrder`, `IsDefault`.
+
+### `POST /api/tasks`
+
+Create a task (org membership required). Minimum body:
+
+```json
+{
+  "projectId": 42,
+  "taskName": "New task",
+  "status": 7,
+  "priority": 3
+}
+```
+
+`status` / `priority` are org FK ids (not names). `taskType` is optional (server picks org default).
+
+Success `201`: `{ success: true, message, taskId }` (top-level `taskId`).
 
 ### `POST /api/tasks/reorder-kanban`
 
@@ -78,11 +103,15 @@ Optional single-task status update `{ "status": <StatusValueId> }`. Prefer `reor
 
 ## Kanban UX (v1)
 
-1. Host injects `{ type: 'config', baseUrl, token, selectedProjectId }`.
-2. Board loads projects → user selects one → loads statuses + project tasks.
-3. Columns sorted by `SortOrder`; cards by `DisplayOrder` within `Status`.
-4. Card actions: **Send to AI** / **Open** (host messages).
-5. Persist last `selectedProjectId` in host settings.
+1. Host injects `{ type: 'config', baseUrl, token, selectedProjectId, aiInProgressStatusId, … }`.
+2. Board loads projects → searchable project picker → loads statuses, priorities, active timer, and project tasks.
+3. Tasks are filtered to the API-token user (`AssignedTo` or `TaskAssignees`).
+4. Columns sorted by `SortOrder`; cards by `DisplayOrder` within `Status`.
+5. **Add task** / column **+** → create modal → `POST /api/tasks` (with `assignedTo` = current user).
+6. **Timer** on cards + toolbar Stop for the active timer (`/api/timers/*`).
+7. **AI** sets In Progress (when resolvable) then prefills chat.
+8. Card actions: **Timer** / **AI** / **View** / **App**.
+9. Persist last `selectedProjectId` in host settings.
 
 Shared assets: [`shared-kanban/`](./shared-kanban/) (`board.css`, `board.js`). Hosts copy into their resource folders.
 
@@ -97,13 +126,27 @@ Apply before AI prompts:
 5. Decode `&nbsp;` `&amp;` `&lt;` `&gt;` `&quot;` `&#39;`
 6. Collapse spaces/tabs; collapse 3+ newlines to 2; trim
 
-## Open in app (v1)
+## Open in app
 
 ```text
-{baseUrl}/projects/{ProjectId}
+{baseUrl}/projects/{ProjectId}?tab=tasks&taskId={Id}
 ```
 
+Opens the project Tasks tab and auto-opens `TaskDetailModal` (same as Synapse deep links). Legacy `?task=` is also accepted.
+
 No trailing slash on `baseUrl`.
+
+## Board card actions
+
+| Action | Behaviour |
+|--------|-----------|
+| Project search | Filterable combobox (name + organization) |
+| Add task / column + | Webview create modal → `POST /api/tasks` |
+| Timer / Stop | Start or stop via `/api/timers/*` (start switches previous) |
+| Toolbar Stop | Stops active timer even if task not on board |
+| View | IDE read-only task preview (VS Code/Cursor); Rider/VS open the deep link |
+| App | Browser deep link to the full task modal |
+| AI | Set In Progress (optional) + prefill AI chat / clipboard |
 
 ## AI prompt templates
 
@@ -138,7 +181,7 @@ Due: {DueDate}
 Description:
 {DescriptionPlain}
 
-App: {baseUrl}/projects/{ProjectId}
+App: {baseUrl}/projects/{ProjectId}?tab=tasks&taskId={Id}
 ```
 
 Empty optional fields: omit the line or use `—`.
@@ -147,19 +190,25 @@ Empty optional fields: omit the line or use `—`.
 
 | Mode | Behaviour |
 |------|-----------|
-| Prefill (default) | Open AI chat with draft; user edits then sends (`aiAutoSubmit=false`) |
-| Auto-submit | Submit immediately when host supports it (`aiAutoSubmit=true` or “Send now”) |
+| Prefill (only) | Paste / open AI chat with draft into the **active** conversation; user edits then sends |
 
-Clipboard fallback when chat APIs are unavailable (expected for Rider / Visual Studio v1).
+Clipboard fallback when chat APIs are unavailable (expected for Rider / Visual Studio).
+
+Removed: Edit before send / Send now QuickPick and `aiAutoSubmit` setting (both paths were equivalent on Cursor).
+
+## Send to AI side effects
+
+1. Optionally set task status to In Progress (`aiInProgressStatusId` setting, else org `IsInProgress` flag) via `PUT /api/tasks/{id}`.
+2. Prefill AI prompt.
 
 ## Chat command IDs
 
-| Host | Prefill | Auto-submit |
-|------|---------|-------------|
-| VS Code (Copilot Chat) | `workbench.action.chat.open` `{ query, isPartialQuery: true }` | `{ query, isPartialQuery: false }` then `workbench.action.chat.submit` if needed |
-| Cursor | `composer.focusComposer` / `composer.openComposer` + clipboard paste into the **active** chat. Never `composer.newAgentChat`. | Same + `workbench.action.chat.submit` / `composer.startGeneration` when available |
-| Rider | Clipboard + notification (v1) | Clipboard |
-| Visual Studio | Clipboard (+ Copilot Chat when available) | Same |
+| Host | Prefill |
+|------|---------|
+| VS Code (Copilot Chat) | `workbench.action.chat.open` `{ query, isPartialQuery: true }` |
+| Cursor | `composer.focusComposer` / `composer.openComposer` + clipboard paste into the **active** chat. Never `composer.newAgentChat`. |
+| Rider | Clipboard + notification |
+| Visual Studio | Clipboard (+ Copilot Chat when available) |
 
 ## Network
 

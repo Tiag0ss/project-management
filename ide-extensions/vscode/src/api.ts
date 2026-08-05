@@ -37,12 +37,15 @@ export function getRefreshIntervalSeconds(): number {
   return vscode.workspace.getConfiguration('projectManagement').get<number>('refreshIntervalSeconds', 300);
 }
 
-export function getAiAutoSubmit(): boolean {
-  return vscode.workspace.getConfiguration('projectManagement').get<boolean>('aiAutoSubmit', false);
-}
-
 export function getAiPromptTemplate(): string {
   return vscode.workspace.getConfiguration('projectManagement').get<string>('aiPromptTemplate', '') || '';
+}
+
+export function getAiInProgressStatusId(): number {
+  const n = vscode.workspace
+    .getConfiguration('projectManagement')
+    .get<number>('aiInProgressStatusId', 0);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
 function tokenPreview(token: string): string {
@@ -176,7 +179,7 @@ export function buildAiPrompt(
   customFullTemplate?: string
 ): string {
   const descriptionPlain = stripHtmlToPlainText(task.Description);
-  const appUrl = `${baseUrl}/projects/${task.ProjectId}`;
+  const appUrl = `${baseUrl}/projects/${task.ProjectId}?tab=tasks&taskId=${task.Id}`;
   const due = task.DueDate ? String(task.DueDate).split('T')[0] : '—';
 
   if (mode === 'name') {

@@ -6,6 +6,7 @@
  *   { type: 'projectSelected', projectId: number | null }
  *   { type: 'sendToAi', task: object }
  *   { type: 'openExternal', url: string }
+ *   { type: 'openTask', task: object }
  *   { type: 'configure' }
  *   { type: 'error', message: string }
  *

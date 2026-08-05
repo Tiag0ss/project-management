@@ -59,6 +59,98 @@ body {
   font-size: 12px;
 }
 
+.project-picker {
+  position: relative;
+  flex: 1;
+  min-width: 160px;
+  max-width: 320px;
+  display: flex;
+  align-items: stretch;
+}
+
+#projectSearch {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+#projectPickerToggle {
+  padding: 6px 8px;
+  border-radius: 0 6px 6px 0;
+  border-left: none;
+}
+
+#projectList {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+#projectList[hidden] {
+  display: none !important;
+}
+
+#projectList li {
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+#projectList li:hover,
+#projectList li[aria-selected='true'] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+#projectList li.muted {
+  color: var(--muted);
+  cursor: default;
+}
+
+.active-timer-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.active-timer-bar[hidden] {
+  display: none !important;
+}
+
+#activeTimerLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#activeTimerStop {
+  flex-shrink: 0;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 #projectSelect {
   min-width: 160px;
   max-width: 280px;
@@ -164,6 +256,20 @@ button:disabled {
   flex-shrink: 0;
 }
 
+.column-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.column-add {
+  padding: 2px 7px;
+  font-size: 14px;
+  line-height: 1.2;
+  min-width: 24px;
+}
+
 .column-title {
   font-weight: 650;
   font-size: 12px;
@@ -171,6 +277,8 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .column-count {
@@ -235,6 +343,22 @@ button:disabled {
   color: var(--muted);
 }
 
+.card-meta .chip {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  line-height: 1.4;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-meta .chip-type {
+  font-weight: 500;
+}
+
 .card-actions {
   display: flex;
   gap: 4px;
@@ -245,6 +369,16 @@ button:disabled {
   flex: 1;
   padding: 4px 6px;
   font-size: 11px;
+}
+
+.card-actions button.card-timer-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.card.timer-running {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .empty-hint {
@@ -261,3 +395,72 @@ button:disabled {
   text-align: center;
   padding: 32px 16px;
 }
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modal[hidden] {
+  display: none !important;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.modal-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(380px, 100%);
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal-dialog h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.modal-dialog label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.modal-dialog input,
+.modal-dialog select {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.modal-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+

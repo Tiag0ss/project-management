@@ -2,7 +2,7 @@
   "name": "project-management-pending-tasks",
   "displayName": "Project Management — Kanban",
   "description": "Project Kanban board in an editor tab (API token). Drag cards to change status. Send tasks to AI Chat. Works in VS Code and Cursor.",
-  "version": "0.3.2",
+  "version": "0.3.6",
   "publisher": "project-management",
   "engines": {
     "vscode": "^1.85.0"
@@ -103,10 +103,11 @@
           "minimum": 0,
           "description": "Max cards shown per status before a “Show more” control (0 = show all)"
         },
-        "projectManagement.aiAutoSubmit": {
-          "type": "boolean",
-          "default": false,
-          "description": "When true, Send to AI Chat submits immediately unless you pick Edit before send"
+        "projectManagement.aiInProgressStatusId": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Task status Id to set when sending a task to AI (0 = use org status flagged IsInProgress)"
         },
         "projectManagement.aiPromptTemplate": {
           "type": "string",

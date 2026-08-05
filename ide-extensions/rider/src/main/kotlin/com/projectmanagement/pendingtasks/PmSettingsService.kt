@@ -13,12 +13,12 @@ import com.intellij.openapi.components.Storage
 data class PmSettingsState(
     var baseUrl: String = "",
     var refreshIntervalSeconds: Int = 300,
-    var aiAutoSubmit: Boolean = false,
     var aiPromptTemplate: String = "",
     var selectedProjectId: Int = 0,
     var kanbanLayout: String = "horizontal",
     var kanbanHiddenStatuses: String = "",
     var kanbanMaxVisibleCards: Int = 2,
+    var aiInProgressStatusId: Int = 0,
 )
 
 @Service(Service.Level.APP)

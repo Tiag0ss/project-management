@@ -427,11 +427,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   }, [activeTab, token]);
 
-  // Deep-link from Synapse: /projects/:id?tab=tasks&taskId=:taskId
+  // Deep-link: /projects/:id?tab=tasks&taskId=:taskId (also accepts ?task= for older email links)
   useEffect(() => {
     if (deepLinkHandledRef.current || isLoading) return;
     const tab = searchParams.get('tab');
-    const taskIdParam = searchParams.get('taskId');
+    const taskIdParam = searchParams.get('taskId') || searchParams.get('task');
     if (!tab && !taskIdParam) return;
 
     if (tab === 'tasks' || taskIdParam) {

@@ -26,6 +26,8 @@ namespace ProjectManagement.PendingTasks
         public string? PriorityName { get; set; }
         public string? PriorityColor { get; set; }
         public int? PrioritySortOrder { get; set; }
+        public string? TaskTypeName { get; set; }
+        public string? TaskTypeColor { get; set; }
         public int? DisplayOrder { get; set; }
         public string? DueDate { get; set; }
     }
@@ -116,7 +118,7 @@ namespace ProjectManagement.PendingTasks
         public static string Build(PmTask task, string baseUrl, AiContentMode mode, string? customFull = null)
         {
             var plain = HtmlPlainText.Strip(task.Description);
-            var appUrl = $"{baseUrl.TrimEnd('/')}/projects/{task.ProjectId}";
+            var appUrl = $"{baseUrl.TrimEnd('/')}/projects/{task.ProjectId}?tab=tasks&taskId={task.Id}";
             var due = string.IsNullOrWhiteSpace(task.DueDate) ? "—" : task.DueDate!.Split('T')[0];
 
             if (mode == AiContentMode.Name)

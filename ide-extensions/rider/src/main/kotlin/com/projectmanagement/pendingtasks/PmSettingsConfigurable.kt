@@ -1,7 +1,6 @@
 package com.projectmanagement.pendingtasks
 
 import com.intellij.openapi.options.Configurable
-import javax.swing.JCheckBox
 import javax.swing.JComboBox
 import javax.swing.JComponent
 import javax.swing.JLabel
@@ -20,10 +19,10 @@ class PmSettingsConfigurable : Configurable {
     private lateinit var baseUrlField: JTextField
     private lateinit var tokenField: JPasswordField
     private lateinit var refreshSpinner: JSpinner
-    private lateinit var autoSubmitCheck: JCheckBox
     private lateinit var layoutCombo: JComboBox<String>
     private lateinit var hiddenStatusesField: JTextField
     private lateinit var maxCardsSpinner: JSpinner
+    private lateinit var aiInProgressSpinner: JSpinner
 
     override fun getDisplayName(): String = "Project Management"
 
@@ -31,10 +30,10 @@ class PmSettingsConfigurable : Configurable {
         baseUrlField = JTextField()
         tokenField = JPasswordField()
         refreshSpinner = JSpinner(SpinnerNumberModel(300, 0, 86400, 30))
-        autoSubmitCheck = JCheckBox("AI auto-submit by default (Send now)")
         layoutCombo = JComboBox(arrayOf("horizontal", "vertical"))
         hiddenStatusesField = JTextField()
         maxCardsSpinner = JSpinner(SpinnerNumberModel(2, 0, 500, 1))
+        aiInProgressSpinner = JSpinner(SpinnerNumberModel(0, 0, 1_000_000, 1))
 
         val form = JPanel(GridBagLayout())
         val c = GridBagConstraints().apply {
@@ -61,12 +60,11 @@ class PmSettingsConfigurable : Configurable {
         row("Kanban layout", layoutCombo)
         row("Hidden statuses (; separated)", hiddenStatusesField)
         row("Max visible cards (0=all)", maxCardsSpinner)
+        row("AI In Progress status Id (0=auto)", aiInProgressSpinner)
 
         c.gridx = 0
         c.gridwidth = 2
         c.weightx = 1.0
-        form.add(autoSubmitCheck, c)
-        c.gridy += 1
         form.add(JLabel("HTTPS needs a valid certificate; HTTP on LAN is OK. Self-signed not supported."), c)
 
         panel = JPanel(BorderLayout()).apply { add(form, BorderLayout.NORTH) }
@@ -80,10 +78,10 @@ class PmSettingsConfigurable : Configurable {
         val tokenChanged = token.isNotEmpty() && token != PmSettingsService.getApiToken()
         return baseUrlField.text.trimEnd('/') != s.baseUrl.trimEnd('/') ||
             refreshSpinner.value != s.refreshIntervalSeconds ||
-            autoSubmitCheck.isSelected != s.aiAutoSubmit ||
             (layoutCombo.selectedItem as String) != s.kanbanLayout ||
             hiddenStatusesField.text != s.kanbanHiddenStatuses ||
             maxCardsSpinner.value != s.kanbanMaxVisibleCards ||
+            aiInProgressSpinner.value != s.aiInProgressStatusId ||
             tokenChanged
     }
 
@@ -91,10 +89,10 @@ class PmSettingsConfigurable : Configurable {
         val service = PmSettingsService.getInstance()
         service.state.baseUrl = baseUrlField.text.trim().trimEnd('/')
         service.state.refreshIntervalSeconds = refreshSpinner.value as Int
-        service.state.aiAutoSubmit = autoSubmitCheck.isSelected
         service.state.kanbanLayout = layoutCombo.selectedItem as String
         service.state.kanbanHiddenStatuses = hiddenStatusesField.text
         service.state.kanbanMaxVisibleCards = maxCardsSpinner.value as Int
+        service.state.aiInProgressStatusId = aiInProgressSpinner.value as Int
         val token = String(tokenField.password)
         if (token.isNotEmpty()) {
             PmSettingsService.setApiToken(token)
@@ -106,9 +104,9 @@ class PmSettingsConfigurable : Configurable {
         baseUrlField.text = s.baseUrl
         tokenField.text = PmSettingsService.getApiToken()
         refreshSpinner.value = s.refreshIntervalSeconds
-        autoSubmitCheck.isSelected = s.aiAutoSubmit
         layoutCombo.selectedItem = if (s.kanbanLayout == "vertical") "vertical" else "horizontal"
         hiddenStatusesField.text = s.kanbanHiddenStatuses
         maxCardsSpinner.value = s.kanbanMaxVisibleCards
+        aiInProgressSpinner.value = s.aiInProgressStatusId
     }
 }

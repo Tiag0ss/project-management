@@ -25,6 +25,8 @@ data class PmTask(
     @SerializedName("PriorityName") val priorityName: String? = null,
     @SerializedName("PriorityColor") val priorityColor: String? = null,
     @SerializedName("PrioritySortOrder") val prioritySortOrder: Int? = null,
+    @SerializedName("TaskTypeName") val taskTypeName: String? = null,
+    @SerializedName("TaskTypeColor") val taskTypeColor: String? = null,
     @SerializedName("DisplayOrder") val displayOrder: Int? = null,
     @SerializedName("DueDate") val dueDate: String? = null,
 )
@@ -170,7 +172,7 @@ enum class AiContentMode { NAME, NAME_DESCRIPTION, FULL }
 object AiPromptBuilder {
     fun build(task: PmTask, baseUrl: String, mode: AiContentMode, customFull: String = ""): String {
         val plain = HtmlPlainText.strip(task.description)
-        val appUrl = "${baseUrl.trimEnd('/')}/projects/${task.projectId}"
+        val appUrl = "${baseUrl.trimEnd('/')}/projects/${task.projectId}?tab=tasks&taskId=${task.id}"
         val due = task.dueDate?.take(10) ?: "—"
         return when (mode) {
             AiContentMode.NAME -> "Help me work on this task: ${task.taskName}"

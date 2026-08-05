@@ -82,14 +82,51 @@ class KanbanPanel : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
             </head>
             <body>
               <div id="toolbar">
-                <label for="projectSelect">Project</label>
-                <select id="projectSelect" aria-label="Project"></select>
-                <button type="button" id="refreshBtn">Refresh</button>
-                <button type="button" id="configureBtn" class="primary">Configure</button>
-              </div>
-              <div id="statusLine" aria-live="polite"></div>
-              <div id="board" role="list"></div>
-              <div id="emptyState"></div>
+                    <label for="projectSearch">Project</label>
+                    <div id="projectPicker" class="project-picker">
+                      <input
+                        id="projectSearch"
+                        type="text"
+                        autocomplete="off"
+                        placeholder="Search projects…"
+                        aria-label="Search projects"
+                        aria-autocomplete="list"
+                        aria-controls="projectList"
+                        aria-expanded="false"
+                      />
+                      <button type="button" id="projectPickerToggle" aria-label="Toggle project list" tabindex="-1">
+                        ▾
+                      </button>
+                      <ul id="projectList" role="listbox" hidden></ul>
+                    </div>
+                    <button type="button" id="addTaskBtn" disabled>Add task</button>
+                    <button type="button" id="refreshBtn">Refresh</button>
+                    <button type="button" id="configureBtn" class="primary">Configure</button>
+                  </div>
+                  <div id="activeTimerBar" class="active-timer-bar" hidden>
+                    <span id="activeTimerLabel"></span>
+                    <button type="button" id="activeTimerStop">Stop</button>
+                  </div>
+                  <div id="statusLine" aria-live="polite"></div>
+                  <div id="board" role="list"></div>
+                  <div id="emptyState"></div>
+                  <div id="createTaskModal" class="modal" hidden aria-hidden="true">
+                    <div class="modal-backdrop" data-close-modal></div>
+                    <div class="modal-dialog" role="dialog" aria-labelledby="createTaskTitle" aria-modal="true">
+                      <h2 id="createTaskTitle">New task</h2>
+                      <label for="createTaskName">Name</label>
+                      <input id="createTaskName" type="text" maxlength="255" autocomplete="off" />
+                      <label for="createTaskStatus">Status</label>
+                      <select id="createTaskStatus"></select>
+                      <label for="createTaskPriority">Priority</label>
+                      <select id="createTaskPriority"></select>
+                      <p id="createTaskError" class="modal-error" hidden></p>
+                      <div class="modal-actions">
+                        <button type="button" id="createTaskCancel" data-close-modal>Cancel</button>
+                        <button type="button" id="createTaskSubmit" class="primary">Create</button>
+                      </div>
+                    </div>
+                  </div>
               <script>$bootstrap</script>
               <script>$js</script>
             </body>
@@ -116,7 +153,8 @@ class KanbanPanel : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
                 "selectedProjectId" to selected,
                 "layout" to layout,
                 "hiddenStatuses" to settings.kanbanHiddenStatuses,
-                "maxVisibleCards" to settings.kanbanMaxVisibleCards
+                "maxVisibleCards" to settings.kanbanMaxVisibleCards,
+                "aiInProgressStatusId" to settings.aiInProgressStatusId
             )
         )
         postToBoard(payload)
@@ -156,6 +194,21 @@ class KanbanPanel : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
             }
             "openExternal" -> {
                 val url = obj.get("url")?.asString ?: return
+                try {
+                    Desktop.getDesktop().browse(URI.create(url))
+                } catch (ex: Exception) {
+                    notify("Could not open browser: ${ex.message}", NotificationType.ERROR)
+                }
+            }
+            "openTask" -> {
+                val taskEl = obj.get("task") ?: return
+                val task = gson.fromJson(taskEl, PmTask::class.java) ?: return
+                val base = PmSettingsService.getInstance().state.baseUrl.trimEnd('/')
+                if (base.isBlank()) {
+                    notify("Configure Base URL first", NotificationType.WARNING)
+                    return
+                }
+                val url = "$base/projects/${task.projectId}?tab=tasks&taskId=${task.id}"
                 try {
                     Desktop.getDesktop().browse(URI.create(url))
                 } catch (ex: Exception) {

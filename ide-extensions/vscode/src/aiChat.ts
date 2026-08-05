@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import {
   AiContentMode,
   buildAiPrompt,
-  getAiAutoSubmit,
   getAiPromptTemplate,
   getApiToken,
   getBaseUrl,
@@ -201,24 +200,6 @@ export async function runSendToAiForTask(task: PmTask): Promise<void> {
   );
   if (!contentPick) return;
 
-  const defaultAuto = getAiAutoSubmit();
-  const modePick = await vscode.window.showQuickPick(
-    [
-      {
-        label: 'Edit before send',
-        description: defaultAuto ? '' : '(default)',
-        autoSubmit: false,
-      },
-      {
-        label: 'Send now',
-        description: defaultAuto ? '(default)' : '',
-        autoSubmit: true,
-      },
-    ],
-    { title: 'Send mode', ignoreFocusOut: true }
-  );
-  if (!modePick) return;
-
   const prompt = buildAiPrompt(task, baseUrl, contentPick.mode, getAiPromptTemplate());
-  await sendPromptToAiChat(prompt, modePick.autoSubmit);
+  await sendPromptToAiChat(prompt, false);
 }

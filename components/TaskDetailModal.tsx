@@ -2392,6 +2392,29 @@ export default function TaskDetailModal({
             <div ref={taskActionsMenuRef} className="relative ml-4 flex items-center gap-2">
               {task?.Id && (
                 <>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const url = `${window.location.origin}/projects/${projectId}?tab=tasks&taskId=${task.Id}`;
+                      try {
+                        await navigator.clipboard.writeText(url);
+                        showToast({
+                          type: 'success',
+                          title: 'Link copied',
+                          message: 'Task link copied to clipboard.',
+                        });
+                      } catch {
+                        showAlert('Copy task link', url);
+                      }
+                    }}
+                    className={headerIconButtonClass}
+                    title="Copy task link"
+                    aria-label="Copy task link"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                  </button>
                   {isFieldVisible('headerPrint') && (
                   <button
                     type="button"
@@ -2419,6 +2442,26 @@ export default function TaskDetailModal({
                   )}
                   {isFieldVisible('headerTaskActions') && showTaskActionsMenu && (
                     <div className="absolute right-10 top-0 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20 py-1">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setShowTaskActionsMenu(false);
+                          const url = `${window.location.origin}/projects/${projectId}?tab=tasks&taskId=${task.Id}`;
+                          try {
+                            await navigator.clipboard.writeText(url);
+                            showToast({
+                              type: 'success',
+                              title: 'Link copied',
+                              message: 'Task link copied to clipboard.',
+                            });
+                          } catch {
+                            showAlert('Copy task link', url);
+                          }
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        Copy task link
+                      </button>
                       <button
                         type="button"
                         onClick={openMoveToExistingProjectModal}
