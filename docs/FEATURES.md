@@ -1120,6 +1120,11 @@ Setup, contract, and test checklist: [`ide-extensions/README.md`](../ide-extensi
 - **Send to AI Chat…** on cards (Cursor uses the active chat; Rider/VS clipboard)
 - Self-signed HTTPS not supported in v1
 
+### Tampermonkey: Task # links in git commit history
+Userscript [`scripts/tampermonkey/pm-task-commit-links.user.js`](../scripts/tampermonkey/pm-task-commit-links.user.js) turns `Task #N` on GitHub / Bitbucket / Gitea commit pages into links to `/dashboard?task=N` (opens `TaskDetailModal`). Configure one PM base URL per git host in `PM_BY_HOST` (or Tampermonkey menu override).
+
+Deep-link handled by the app: `/dashboard?task=<id>` (also `?taskId=`).
+
 ---
 
 ## Appendix: Key Database Tables

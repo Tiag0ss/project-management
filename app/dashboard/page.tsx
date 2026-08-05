@@ -817,6 +817,7 @@ export default function DashboardPage() {
 
 function DashboardContent() {
   const scrollContainerRef = useRef<HTMLElement | null>(null);
+  const taskDeepLinkHandledRef = useRef<string | null>(null);
   const decimalHoursToHMS = useFormatHours();
   const { mapColor, pillStyle } = useColorVision();
   const { user, isLoading, token, isCustomerUser } = useAuth();
@@ -825,6 +826,7 @@ function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
+  const taskDeepLinkParam = searchParams.get('taskId') || searchParams.get('task');
   const [activeTab, setActiveTab] = useState<DashboardTab>(() => {
     if (tabParam === 'calendar' || tabParam === 'kanban' || tabParam === 'analytics') return tabParam;
     return 'overview';
@@ -1397,6 +1399,74 @@ function DashboardContent() {
       showToast({ type: 'error', message: 'Failed to open task details.' });
     }
   }, [token, showToast]);
+
+  // Deep-link: /dashboard?task=<id> (also accepts ?taskId=) — resolve ProjectId then open TaskDetailModal
+  useEffect(() => {
+    if (isLoading || !user || !token || isCustomerUser) return;
+    if (!taskDeepLinkParam) {
+      taskDeepLinkHandledRef.current = null;
+      return;
+    }
+
+    const taskId = Number(taskDeepLinkParam);
+    if (!Number.isFinite(taskId) || taskId <= 0) {
+      showToast({ type: 'error', message: 'Invalid task id in link.' });
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('task');
+      params.delete('taskId');
+      const qs = params.toString();
+      router.replace(qs ? `/dashboard?${qs}` : '/dashboard');
+      return;
+    }
+
+    const handledKey = String(taskId);
+    if (taskDeepLinkHandledRef.current === handledKey) return;
+    taskDeepLinkHandledRef.current = handledKey;
+
+    let cancelled = false;
+
+    const clearTaskQuery = () => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('task');
+      params.delete('taskId');
+      const qs = params.toString();
+      router.replace(qs ? `/dashboard?${qs}` : '/dashboard');
+    };
+
+    void (async () => {
+      try {
+        const res = await tasksApi.getById(taskId, token);
+        if (cancelled) return;
+        const projectId = Number(res.task?.ProjectId);
+        if (!Number.isFinite(projectId) || projectId <= 0) {
+          showToast({ type: 'error', message: 'Task project could not be resolved.' });
+          clearTaskQuery();
+          return;
+        }
+        await openTaskDetails({ Id: taskId, ProjectId: projectId });
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : 'Failed to open task details.';
+        showToast({ type: 'error', message });
+      } finally {
+        if (!cancelled) clearTaskQuery();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isLoading,
+    user,
+    token,
+    isCustomerUser,
+    taskDeepLinkParam,
+    openTaskDetails,
+    router,
+    searchParams,
+    showToast,
+  ]);
 
   const handleKpiDetailItemOpen = useCallback((item: DashboardKpiDetailItem) => {
     if (kpiDetailModal.type === 'tasks') {
