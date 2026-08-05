@@ -1,12 +1,12 @@
 # Project Management — IDE Extensions
 
-Native IDE plugins that list **your pending tasks** using the app REST API and `pt_` API tokens. **No webviews.**
+IDE plugins that show a **project Kanban** using the app REST API and `pt_` API tokens. Shared board UI: [`shared-kanban/`](./shared-kanban/).
 
 | IDE | Folder | UI |
 |-----|--------|-----|
-| VS Code / Cursor | [`vscode/`](./vscode/) | Activity Bar TreeView |
-| Rider | [`rider/`](./rider/) | Tool Window |
-| Visual Studio 2022 | [`visualstudio/`](./visualstudio/) | Tool Window (WPF) |
+| VS Code / Cursor | [`vscode/`](./vscode/) | Activity Bar **Webview** Kanban |
+| Rider | [`rider/`](./rider/) | Tool Window (JBCef) |
+| Visual Studio 2022 | [`visualstudio/`](./visualstudio/) | Tool Window (WebView2) |
 
 Shared rules: [`CONTRACT.md`](./CONTRACT.md).  
 Deploy guide: [`DEPLOYMENT.md` §11](../DEPLOYMENT.md#11-ide-extensions-pending-tasks).
@@ -14,30 +14,34 @@ Deploy guide: [`DEPLOYMENT.md` §11](../DEPLOYMENT.md#11-ide-extensions-pending-
 ## Setup (all IDEs)
 
 1. In the web app: **Profile → API Tokens → Create** → copy the `pt_…` value (shown once).
-2. In the IDE extension settings:
+2. In the IDE extension settings / Configure:
    - **Base URL** — e.g. `https://pm.example.com` (no trailing slash)
    - **API token** — paste `pt_…` into the secure store / password field
-3. Run **Test Connection** / refresh the Pending Tasks view.
+3. Open the Kanban view → pick a **project** from the dropdown.
 
 ### Network baseline
 
 - Valid HTTPS certificates, or plain **HTTP** on LAN / VPN
 - Self-signed HTTPS is **not** supported in v1
 
-## Features (v1)
+## Features (v0.3)
 
-- Pending tasks (not closed / cancelled / hidden from planning stats)
-- Grouped by project; overdue → due date → priority → name
-- Refresh (manual + optional interval)
+- Opens in an **editor tab** (VS Code/Cursor) for full width — Activity Bar only launches it
+- Project dropdown → org status columns (ordered by `SortOrder`) + project tasks
+- Settings: `kanbanLayout` (`horizontal` / `vertical`), `kanbanHiddenStatuses` (`Done; Cancelled`), `kanbanMaxVisibleCards`
+- Drag cards between columns / reorder (uses `POST /api/tasks/reorder-kanban`)
+- Refresh (manual + optional interval on VS Code/Cursor)
 - Open project in browser
-- **Send to AI Chat…**
+- **Send to AI Chat…** on each card
   - Content: Name only / Name + description / Full context
   - Mode: Edit before send (default) / Send now
-  - Setting `aiAutoSubmit` for default one-click send
+  - Cursor: pastes into the **active** chat (does not open a new agent)
+  - Rider / Visual Studio: clipboard (+ notification)
   - HTML descriptions stripped to plain text
-  - Rider: copies prompt to clipboard (no public JetBrains chat prefill API)
 
 ## Build
+
+After editing [`shared-kanban/`](./shared-kanban/), copy `board.css` / `board.js` into each host’s resource folder (VS Code: `pnpm run sync-kanban`).
 
 ### VS Code / Cursor (pnpm)
 
@@ -48,9 +52,7 @@ pnpm run package
 # → project-management-pending-tasks-<version>.vsix
 ```
 
-Install in **Cursor or VS Code**: Command Palette → **Extensions: Install from VSIX…**
-
-`pnpm run package:cursor` is an alias of `package` (same `.vsix`). Full deploy notes: [DEPLOYMENT.md §11](../DEPLOYMENT.md#11-ide-extensions-pending-tasks).
+Install: Command Palette → **Extensions: Install from VSIX…**
 
 ### Rider
 
@@ -59,30 +61,23 @@ cd ide-extensions/rider
 ./gradlew buildPlugin
 ```
 
-If the Gradle wrapper is missing:
-
-```bash
-gradle wrapper --gradle-version 8.7
-./gradlew buildPlugin
-```
-
 Install ZIP from `build/distributions/` via **Settings → Plugins → Install from Disk**.
 
 ### Visual Studio
 
-Open `ide-extensions/visualstudio/ProjectManagement.PendingTasks.sln` (VSIX workload). Build → install the `.vsix`.
+Requires **WebView2 Runtime**. Open `ide-extensions/visualstudio/ProjectManagement.PendingTasks.sln` (VSIX workload). Build → install the `.vsix`.
 
 ## Manual test checklist
 
-- [ ] Valid `pt_` token → Test Connection OK
-- [ ] Pending list matches Dashboard pending tasks
-- [ ] Closed / cancelled / hide-from-stats tasks hidden
-- [ ] Ordering: overdue first, then due date, priority, name
-- [ ] HTML description → clean plain text in AI prompt
+- [ ] Valid `pt_` token → Configure / Test Connection OK
+- [ ] Project dropdown lists accessible projects
+- [ ] Selecting a project loads status columns and cards
+- [ ] Drag card to another column updates status in the web app
+- [ ] Drag onto another card reorders within / across columns
+- [ ] Workflow policy errors show a clear message (no silent fail)
 - [ ] Invalid token → clear error, no crash
 - [ ] HTTP base URL works; self-signed HTTPS fails clearly
-- [ ] Refresh after status change in the web app
-- [ ] Send to AI (default): prefill, **not** auto-sent (VS Code **and** Cursor)
-- [ ] Send now / `aiAutoSubmit`: submits when host supports it
+- [ ] Send to AI (default): prefill / clipboard, **not** auto-sent (VS Code **and** Cursor)
+- [ ] Cursor: uses **active** chat (no new agent chat)
 - [ ] Rider: clipboard + notification
-- [ ] Open in browser opens `{baseUrl}/projects/{id}`
+- [ ] Open opens `{baseUrl}/projects/{id}`

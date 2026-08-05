@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="ProjectManagement.PendingTasks.A1B2C3D4" Version="0.1.0" Language="en-US" Publisher="Project Management" />
-    <DisplayName>Project Management — Pending Tasks</DisplayName>
-    <Description>Native tool window for pending tasks via API token (pt_). No WebView.</Description>
+    <Identity Id="ProjectManagement.PendingTasks.A1B2C3D4" Version="0.3.0" Language="en-US" Publisher="Project Management" />
+    <DisplayName>Project Management — Kanban</DisplayName>
+    <Description>Project Kanban board via API token (pt_). Select a project, drag cards to change status, send prompts to Copilot Chat.</Description>
   </Metadata>
   <Installation>
     <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.0, 18.0)" />

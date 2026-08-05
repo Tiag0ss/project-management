@@ -1,29 +1,22 @@
-# Rider — Pending Tasks
+# Rider — Project Management Kanban
 
-IntelliJ Platform plugin (Rider). Native **Tool Window**, no webview.
+Tool window (**PM Kanban**) with a JBCef-hosted board. Select a project, drag cards to change status.
 
-v1 **Copy AI prompt** puts the draft on the clipboard (no stable public JetBrains AI prefill API).
+## Setup
+
+1. Create a `pt_…` API token in the web app (Profile → API Tokens).
+2. **Settings → Tools → Project Management**: Base URL + API token.
+3. Open **View → Tool Windows → PM Kanban**, pick a project.
+
+## AI
+
+**AI** on a card copies a prompt to the clipboard (JetBrains has no stable public chat prefill API in v1). Paste into AI Assistant.
 
 ## Build
 
-Requires JDK 17+.
-
 ```bash
 cd ide-extensions/rider
+# refresh shared board assets if needed:
+cp ../shared-kanban/board.css ../shared-kanban/board.js src/main/resources/kanban/
 ./gradlew buildPlugin
 ```
-
-If the Gradle wrapper is missing, generate it from IntelliJ (**Build → Generate Gradle Wrapper**) or:
-
-```bash
-gradle wrapper --gradle-version 8.7
-./gradlew buildPlugin
-```
-
-Install `build/distributions/*.zip` via **Settings → Plugins → ⚙ → Install Plugin from Disk**.
-
-## Configure
-
-**Settings → Tools → Project Management**: Base URL + API token (`pt_…`).
-
-See [../CONTRACT.md](../CONTRACT.md).

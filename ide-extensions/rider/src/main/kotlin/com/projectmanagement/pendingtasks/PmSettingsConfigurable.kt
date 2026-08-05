@@ -2,6 +2,7 @@ package com.projectmanagement.pendingtasks
 
 import com.intellij.openapi.options.Configurable
 import javax.swing.JCheckBox
+import javax.swing.JComboBox
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
@@ -20,6 +21,9 @@ class PmSettingsConfigurable : Configurable {
     private lateinit var tokenField: JPasswordField
     private lateinit var refreshSpinner: JSpinner
     private lateinit var autoSubmitCheck: JCheckBox
+    private lateinit var layoutCombo: JComboBox<String>
+    private lateinit var hiddenStatusesField: JTextField
+    private lateinit var maxCardsSpinner: JSpinner
 
     override fun getDisplayName(): String = "Project Management"
 
@@ -28,6 +32,9 @@ class PmSettingsConfigurable : Configurable {
         tokenField = JPasswordField()
         refreshSpinner = JSpinner(SpinnerNumberModel(300, 0, 86400, 30))
         autoSubmitCheck = JCheckBox("AI auto-submit by default (Send now)")
+        layoutCombo = JComboBox(arrayOf("horizontal", "vertical"))
+        hiddenStatusesField = JTextField()
+        maxCardsSpinner = JSpinner(SpinnerNumberModel(2, 0, 500, 1))
 
         val form = JPanel(GridBagLayout())
         val c = GridBagConstraints().apply {
@@ -36,36 +43,30 @@ class PmSettingsConfigurable : Configurable {
             anchor = GridBagConstraints.WEST
             insets = Insets(4, 4, 4, 4)
         }
-        form.add(JLabel("Base URL"), c)
-        c.gridx = 1
-        c.fill = GridBagConstraints.HORIZONTAL
-        c.weightx = 1.0
-        form.add(baseUrlField, c)
+        fun row(label: String, field: JComponent) {
+            c.gridx = 0
+            c.weightx = 0.0
+            c.fill = GridBagConstraints.NONE
+            form.add(JLabel(label), c)
+            c.gridx = 1
+            c.fill = GridBagConstraints.HORIZONTAL
+            c.weightx = 1.0
+            form.add(field, c)
+            c.gridy += 1
+        }
+
+        row("Base URL", baseUrlField)
+        row("API token (pt_…)", tokenField)
+        row("Refresh interval (seconds)", refreshSpinner)
+        row("Kanban layout", layoutCombo)
+        row("Hidden statuses (; separated)", hiddenStatusesField)
+        row("Max visible cards (0=all)", maxCardsSpinner)
 
         c.gridx = 0
-        c.gridy = 1
-        c.weightx = 0.0
-        c.fill = GridBagConstraints.NONE
-        form.add(JLabel("API token (pt_…)"), c)
-        c.gridx = 1
-        c.fill = GridBagConstraints.HORIZONTAL
-        c.weightx = 1.0
-        form.add(tokenField, c)
-
-        c.gridx = 0
-        c.gridy = 2
-        c.weightx = 0.0
-        c.fill = GridBagConstraints.NONE
-        form.add(JLabel("Refresh interval (seconds)"), c)
-        c.gridx = 1
-        form.add(refreshSpinner, c)
-
-        c.gridx = 0
-        c.gridy = 3
         c.gridwidth = 2
+        c.weightx = 1.0
         form.add(autoSubmitCheck, c)
-
-        c.gridy = 4
+        c.gridy += 1
         form.add(JLabel("HTTPS needs a valid certificate; HTTP on LAN is OK. Self-signed not supported."), c)
 
         panel = JPanel(BorderLayout()).apply { add(form, BorderLayout.NORTH) }
@@ -80,6 +81,9 @@ class PmSettingsConfigurable : Configurable {
         return baseUrlField.text.trimEnd('/') != s.baseUrl.trimEnd('/') ||
             refreshSpinner.value != s.refreshIntervalSeconds ||
             autoSubmitCheck.isSelected != s.aiAutoSubmit ||
+            (layoutCombo.selectedItem as String) != s.kanbanLayout ||
+            hiddenStatusesField.text != s.kanbanHiddenStatuses ||
+            maxCardsSpinner.value != s.kanbanMaxVisibleCards ||
             tokenChanged
     }
 
@@ -88,6 +92,9 @@ class PmSettingsConfigurable : Configurable {
         service.state.baseUrl = baseUrlField.text.trim().trimEnd('/')
         service.state.refreshIntervalSeconds = refreshSpinner.value as Int
         service.state.aiAutoSubmit = autoSubmitCheck.isSelected
+        service.state.kanbanLayout = layoutCombo.selectedItem as String
+        service.state.kanbanHiddenStatuses = hiddenStatusesField.text
+        service.state.kanbanMaxVisibleCards = maxCardsSpinner.value as Int
         val token = String(tokenField.password)
         if (token.isNotEmpty()) {
             PmSettingsService.setApiToken(token)
@@ -100,5 +107,8 @@ class PmSettingsConfigurable : Configurable {
         tokenField.text = PmSettingsService.getApiToken()
         refreshSpinner.value = s.refreshIntervalSeconds
         autoSubmitCheck.isSelected = s.aiAutoSubmit
+        layoutCombo.selectedItem = if (s.kanbanLayout == "vertical") "vertical" else "horizontal"
+        hiddenStatusesField.text = s.kanbanHiddenStatuses
+        maxCardsSpinner.value = s.kanbanMaxVisibleCards
     }
 }

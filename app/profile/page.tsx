@@ -11,6 +11,7 @@ import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import ProfileTaskFormVisibility from '@/components/profile/ProfileTaskFormVisibility';
+import ApiTokensManagement from '@/components/admin/ApiTokensManagement';
 
 // Complete list of IANA timezones
 const TIMEZONES = [
@@ -117,7 +118,7 @@ export default function ProfilePage() {
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const { user, token, isLoading: authLoading, isCustomerUser, updateUser } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'info' | 'attachments' | 'workHours' | 'security' | 'emailAlerts' | 'recurringTasks' | 'vacations' | 'outOfOffice' | 'taskForm'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'attachments' | 'workHours' | 'security' | 'apiTokens' | 'emailAlerts' | 'recurringTasks' | 'vacations' | 'outOfOffice' | 'taskForm'>('info');
   const [attachments, setAttachments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -1272,6 +1273,18 @@ export default function ProfilePage() {
             </button>
 
             <button
+              onClick={() => setActiveTab('apiTokens')}
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
+                activeTab === 'apiTokens'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <span className="text-xl">🔑</span>
+              <span className="font-medium">API Tokens</span>
+            </button>
+
+            <button
               onClick={() => {
                 setActiveTab('emailAlerts');
                 loadEmailPreferences();
@@ -1681,6 +1694,8 @@ export default function ProfilePage() {
                   </button>
                 </div>
               )}
+
+              {activeTab === 'apiTokens' && <ApiTokensManagement mode="self" />}
 
               {activeTab === 'workHours' && (
                 <div>

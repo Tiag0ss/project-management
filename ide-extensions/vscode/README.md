@@ -1,31 +1,28 @@
-# Project Management — Pending Tasks
+# Project Management — Kanban
 
-Lists **your** pending tasks in a native Activity Bar TreeView (no webview). Works in **VS Code** and **Cursor**.
+Project Kanban opens in an **editor tab** (full width). Works in **VS Code** and **Cursor**.
 
 ## Setup
 
-1. In the web app: **Profile → API Tokens → Create** → copy the `pt_…` value (shown once).
-2. In the IDE, open the **Project Management** icon in the Activity Bar → **Pending Tasks**.
-3. Run **Project Management: Configure Connection** (Command Palette, or the **⋯** menu on the Pending Tasks view).
-4. Enter:
-   - **Base URL** — app origin, no trailing slash (e.g. `https://pm.example.com`)
-   - **API token** — paste `pt_…` (stored in the editor’s secret storage, not in Settings)
-5. Use **Project Management: Test Connection** if you want to verify the account.
+1. Profile → API Tokens → Create → copy `pt_…`.
+2. Activity Bar → **Project Management** → **Open Kanban Board** (or Command Palette → **Project Management: Open Kanban**).
+3. **Configure** on the board (Base URL + token).
+4. Pick a project.
 
-Settings (optional): `projectManagement.baseUrl`, refresh interval, AI auto-submit, custom AI prompt template. The token is **only** set via Configure Connection.
+## Settings (`projectManagement.*`)
 
-## What you see
-
-- Pending tasks assigned to you (or where you are a multi-assignee / have a task allocation)
-- Grouped by project; overdue first, then due date, priority, name
-- Closed, cancelled, and “hide from planning/statistics” statuses are hidden
+| Setting | Purpose |
+|---------|---------|
+| `kanbanLayout` | `horizontal` (columns) or `vertical` (stacked) |
+| `kanbanHiddenStatuses` | Status names to hide, separated by `;` (e.g. `Done; Cancelled`) |
+| `kanbanMaxVisibleCards` | Cards shown per status before **Show more** (`0` = all; default `2`) |
+| `baseUrl` / refresh / AI | Connection and AI defaults |
 
 ## Actions
 
 | Action | How |
 |--------|-----|
-| Refresh | Toolbar refresh / status bar |
-| Open in browser | Context menu on a task → project page |
-| Send to AI Chat… | Context menu → choose name / name+description / full context; prefill by default |
-
-Network: HTTPS with a valid certificate, or HTTP on LAN/VPN. Self-signed HTTPS is not supported in v1.
+| Open board | Activity Bar item / Command Palette |
+| Refresh | Command Palette / board button |
+| Send to AI | Card **AI** |
+| Open in browser | Card **Open** |

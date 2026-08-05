@@ -205,7 +205,7 @@ export default function AdministrationPage() {
           
           {activeTab === 'frontpage' && <FrontpageEditor />}
 
-          {activeTab === 'api-tokens' && <ApiTokensManagement />}
+          {activeTab === 'api-tokens' && <ApiTokensManagement mode="admin" />}
             </div>
           </div>
         </main>

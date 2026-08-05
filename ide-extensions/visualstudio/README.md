@@ -1,20 +1,19 @@
-# Visual Studio 2022 — Pending Tasks
+# Visual Studio — Project Management Kanban
 
-Native **Tool Window** (WPF, no WebView2). Uses `pt_` API token.
+Tool window (**PM Kanban**) hosted in **WebView2**. Select a project, drag cards to change status.
+
+Requires the [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+
+## Setup
+
+1. Create a `pt_…` API token in the web app (Profile → API Tokens).
+2. **Tools → Options → Project Management**: Base URL + API token.
+3. **View → PM Kanban**, pick a project.
+
+## AI
+
+Card **AI** copies a prompt to the clipboard for Copilot Chat (edit before send by default).
 
 ## Build
 
-1. Install Visual Studio 2022 with **Visual Studio extension development** workload.
-2. Open `ProjectManagement.PendingTasks.sln`.
-3. Build → produces a `.vsix`.
-4. Install via double-click or **Extensions → Manage Extensions → Install from disk**.
-
-## Configure
-
-**Tools → Options → Project Management → General**: Base URL + API token.
-
-**View → PM Pending Tasks** opens the tool window.
-
-AI prompts are copied to the clipboard for Copilot Chat (edit before send by default).
-
-See [../CONTRACT.md](../CONTRACT.md).
+Open `ProjectManagement.PendingTasks.sln`, build the VSIX. Ensure `Resources/kanban/board.css` and `board.js` are present (copy from `../shared-kanban/` if needed).

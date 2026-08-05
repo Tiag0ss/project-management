@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src data: https: http:; style-src 'unsafe-inline' {{CSP_STYLE}}; script-src 'unsafe-inline' {{CSP_SCRIPT}}; connect-src {{CSP_CONNECT}};"
+    />
+    <title>Project Management — Kanban</title>
+    <link rel="stylesheet" href="{{BOARD_CSS}}" />
+  </head>
+  <body>
+    <div id="toolbar">
+      <label for="projectSelect">Project</label>
+      <select id="projectSelect" aria-label="Project"></select>
+      <button type="button" id="refreshBtn">Refresh</button>
+      <button type="button" id="configureBtn" class="primary">Configure</button>
+    </div>
+    <div id="statusLine" aria-live="polite"></div>
+    <div id="board" role="list"></div>
+    <div id="emptyState"></div>
+    <script>
+      {{HOST_BOOTSTRAP}}
+    </script>
+    <script src="{{BOARD_JS}}"></script>
+  </body>
+</html>

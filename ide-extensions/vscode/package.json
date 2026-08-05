@@ -1,16 +1,17 @@
 {
   "name": "project-management-pending-tasks",
-  "displayName": "Project Management — Pending Tasks",
-  "description": "Native TreeView of your pending tasks via API token (no webview). Works in VS Code and Cursor.",
-  "version": "0.1.0",
+  "displayName": "Project Management — Kanban",
+  "description": "Project Kanban board in an editor tab (API token). Drag cards to change status. Send tasks to AI Chat. Works in VS Code and Cursor.",
+  "version": "0.3.2",
   "publisher": "project-management",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": ["Other"],
   "activationEvents": [
-    "onView:pm.pendingTasks",
-    "onCommand:pm.refreshTasks",
+    "onView:pm.kanbanLauncher",
+    "onCommand:pm.openKanban",
+    "onCommand:pm.refreshKanban",
     "onCommand:pm.configure",
     "onCommand:pm.testConnection"
   ],
@@ -28,15 +29,20 @@
     "views": {
       "projectManagement": [
         {
-          "id": "pm.pendingTasks",
-          "name": "Pending Tasks"
+          "id": "pm.kanbanLauncher",
+          "name": "Kanban"
         }
       ]
     },
     "commands": [
       {
-        "command": "pm.refreshTasks",
-        "title": "Refresh Pending Tasks",
+        "command": "pm.openKanban",
+        "title": "Project Management: Open Kanban",
+        "icon": "$(layout)"
+      },
+      {
+        "command": "pm.refreshKanban",
+        "title": "Project Management: Refresh Kanban",
         "icon": "$(refresh)"
       },
       {
@@ -46,50 +52,23 @@
       {
         "command": "pm.testConnection",
         "title": "Project Management: Test Connection"
-      },
-      {
-        "command": "pm.openInBrowser",
-        "title": "Open in Browser",
-        "icon": "$(link-external)"
-      },
-      {
-        "command": "pm.sendToAiChat",
-        "title": "Send to AI Chat…",
-        "icon": "$(comment-discussion)"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "pm.refreshTasks",
-          "when": "view == pm.pendingTasks",
+          "command": "pm.openKanban",
+          "when": "view == pm.kanbanLauncher",
+          "group": "navigation"
+        },
+        {
+          "command": "pm.refreshKanban",
+          "when": "view == pm.kanbanLauncher",
           "group": "navigation"
         },
         {
           "command": "pm.configure",
-          "when": "view == pm.pendingTasks"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "pm.sendToAiChat",
-          "when": "view == pm.pendingTasks && viewItem == task",
-          "group": "inline"
-        },
-        {
-          "command": "pm.openInBrowser",
-          "when": "view == pm.pendingTasks && viewItem == task",
-          "group": "inline"
-        },
-        {
-          "command": "pm.sendToAiChat",
-          "when": "view == pm.pendingTasks && viewItem == task",
-          "group": "1_actions"
-        },
-        {
-          "command": "pm.openInBrowser",
-          "when": "view == pm.pendingTasks && viewItem == task",
-          "group": "1_actions"
+          "when": "view == pm.kanbanLauncher"
         }
       ]
     },
@@ -106,6 +85,23 @@
           "default": 300,
           "minimum": 0,
           "description": "Auto-refresh interval in seconds (0 = manual only)"
+        },
+        "projectManagement.kanbanLayout": {
+          "type": "string",
+          "enum": ["horizontal", "vertical"],
+          "default": "horizontal",
+          "description": "Kanban layout: horizontal columns (side-by-side) or vertical stacked status sections"
+        },
+        "projectManagement.kanbanHiddenStatuses": {
+          "type": "string",
+          "default": "",
+          "description": "Status names to hide from the board, separated by semicolons (case-insensitive). Example: Done; Cancelled; Archived"
+        },
+        "projectManagement.kanbanMaxVisibleCards": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "description": "Max cards shown per status before a “Show more” control (0 = show all)"
         },
         "projectManagement.aiAutoSubmit": {
           "type": "boolean",
@@ -125,7 +121,8 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "clean": "rm -rf out *.vsix",
-    "package": "pnpm run compile && vsce package --no-dependencies --allow-missing-repository",
+    "sync-kanban": "cp ../shared-kanban/board.css ../shared-kanban/board.js media/kanban/",
+    "package": "pnpm run sync-kanban && pnpm run compile && vsce package --no-dependencies --allow-missing-repository",
     "package:cursor": "pnpm run package"
   },
   "devDependencies": {

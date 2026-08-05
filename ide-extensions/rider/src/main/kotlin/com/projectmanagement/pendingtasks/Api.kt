@@ -12,21 +12,40 @@ import com.google.gson.annotations.SerializedName
 data class PmTask(
     @SerializedName("Id") val id: Int = 0,
     @SerializedName("ProjectId") val projectId: Int = 0,
+    @SerializedName("OrganizationId") val organizationId: Int = 0,
     @SerializedName("ProjectName") val projectName: String? = null,
     @SerializedName("TaskName") val taskName: String = "",
     @SerializedName("Description") val description: String? = null,
+    @SerializedName("Status") val statusId: Int = 0,
     @SerializedName("StatusName") val statusName: String? = null,
     @SerializedName("StatusIsClosed") val statusIsClosed: Int = 0,
     @SerializedName("StatusIsCancelled") val statusIsCancelled: Int = 0,
+    @SerializedName("StatusIsInProgress") val statusIsInProgress: Int = 0,
     @SerializedName("StatusHideFromPlanningAndStatistics") val statusHide: Int = 0,
     @SerializedName("PriorityName") val priorityName: String? = null,
+    @SerializedName("PriorityColor") val priorityColor: String? = null,
     @SerializedName("PrioritySortOrder") val prioritySortOrder: Int? = null,
+    @SerializedName("DisplayOrder") val displayOrder: Int? = null,
     @SerializedName("DueDate") val dueDate: String? = null,
+)
+
+data class PmStatusValue(
+    @SerializedName("Id") val id: Int = 0,
+    @SerializedName("StatusName") val statusName: String = "",
+    @SerializedName("SortOrder") val sortOrder: Int? = null,
+    @SerializedName("IsClosed") val isClosed: Int = 0,
+    @SerializedName("IsCancelled") val isCancelled: Int = 0,
+    @SerializedName("IsInProgress") val isInProgress: Int = 0,
 )
 
 data class MyTasksResponse(
     val success: Boolean? = null,
     val tasks: List<PmTask>? = null,
+)
+
+data class StatusValuesResponse(
+    val success: Boolean? = null,
+    val statuses: List<PmStatusValue>? = null,
 )
 
 data class ProfileResponse(
@@ -77,18 +96,28 @@ object PmApi {
         .connectTimeout(Duration.ofSeconds(15))
         .build()
 
-    private fun request(baseUrl: String, token: String, path: String): String {
+    private fun request(
+        baseUrl: String,
+        token: String,
+        path: String,
+        method: String = "GET",
+        jsonBody: String? = null
+    ): String {
         val url = baseUrl.trimEnd('/') + path
-        val req = HttpRequest.newBuilder()
+        val builder = HttpRequest.newBuilder()
             .uri(URI.create(url))
             .timeout(Duration.ofSeconds(30))
             .header("Authorization", "Bearer $token")
             .header("Accept", "application/json")
-            .GET()
-            .build()
-        val res = client.send(req, HttpResponse.BodyHandlers.ofString())
+        if (jsonBody != null) {
+            builder.header("Content-Type", "application/json")
+            builder.method(method, HttpRequest.BodyPublishers.ofString(jsonBody))
+        } else {
+            builder.method(method, HttpRequest.BodyPublishers.noBody())
+        }
+        val res = client.send(builder.build(), HttpResponse.BodyHandlers.ofString())
         if (res.statusCode() == 401 || res.statusCode() == 403) {
-            throw IllegalStateException("Unauthorized — check your API token (pt_…)")
+            throw IllegalStateException("Unauthorized — check your API token (pt_…) or permissions")
         }
         if (res.statusCode() !in 200..299) {
             throw IllegalStateException("HTTP ${res.statusCode()}")
@@ -106,6 +135,33 @@ object PmApi {
         val body = request(baseUrl, token, "/api/tasks/my-tasks")
         val parsed = gson.fromJson(body, MyTasksResponse::class.java)
         return parsed.tasks.orEmpty().filter(TaskRules::isPending)
+    }
+
+    fun fetchTaskStatuses(baseUrl: String, token: String, organizationId: Int): List<PmStatusValue> {
+        val body = request(baseUrl, token, "/api/status-values/task/$organizationId")
+        val parsed = gson.fromJson(body, StatusValuesResponse::class.java)
+        return parsed.statuses.orEmpty().sortedBy { it.sortOrder ?: 9999 }
+    }
+
+    fun updateTaskStatus(baseUrl: String, token: String, taskId: Int, statusId: Int) {
+        request(
+            baseUrl,
+            token,
+            "/api/tasks/$taskId",
+            method = "PUT",
+            jsonBody = """{"status":$statusId}"""
+        )
+    }
+
+    /** Proxy helper for the Kanban webview (returns parsed JSON body as string). */
+    fun proxyJson(
+        baseUrl: String,
+        token: String,
+        path: String,
+        method: String = "GET",
+        jsonBody: String? = null
+    ): String {
+        return request(baseUrl, token, path, method = method.uppercase(), jsonBody = jsonBody)
     }
 }
 

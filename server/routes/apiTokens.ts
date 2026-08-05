@@ -31,8 +31,12 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
     const isAdmin = req.user!.isAdmin;
+    // Profile UI always requests mine=1 so admins only see their own tokens there.
+    const mineOnly =
+      String(req.query.mine || '') === '1' || String(req.query.scope || '') === 'mine';
+    const showAllUsers = isAdmin && !mineOnly;
 
-    const query = isAdmin
+    const query = showAllUsers
       ? `SELECT t.Id, t.UserId, u.Username, u.Email, t.TokenName, t.TokenPrefix,
                t.IsActive, t.LastUsedAt, t.ExpiresAt, t.CreatedAt
          FROM ApiTokens t
@@ -41,7 +45,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       : `SELECT Id, UserId, TokenName, TokenPrefix, IsActive, LastUsedAt, ExpiresAt, CreatedAt
          FROM ApiTokens WHERE UserId = ? ORDER BY CreatedAt DESC`;
 
-    const params = isAdmin ? [] : [userId];
+    const params = showAllUsers ? [] : [userId];
     const [tokens] = await pool.execute<RowDataPacket[]>(query, params);
 
     res.json({ success: true, tokens });

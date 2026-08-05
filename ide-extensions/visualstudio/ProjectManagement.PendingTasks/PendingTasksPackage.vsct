@@ -12,7 +12,7 @@
       <Button guid="guidPendingTasksCmdSet" id="cmdidPendingTasks" priority="0x0100" type="Button">
         <Parent guid="guidPendingTasksCmdSet" id="MyMenuGroup"/>
         <Strings>
-          <ButtonText>PM Pending Tasks</ButtonText>
+          <ButtonText>PM Kanban</ButtonText>
         </Strings>
       </Button>
     </Buttons>

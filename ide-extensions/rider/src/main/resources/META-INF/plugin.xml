@@ -1,18 +1,18 @@
 <idea-plugin>
   <id>com.projectmanagement.pendingtasks</id>
-  <name>Project Management — Pending Tasks</name>
+  <name>Project Management — Kanban</name>
   <vendor>Project Management</vendor>
   <description><![CDATA[
-    Native tool window listing your pending tasks via API token (pt_). No webview.
+    Project Kanban board in a tool window via API token (pt_). Select a project, drag cards to change status.
     Send to AI copies a prompt to the clipboard (JetBrains AI has no stable public prefill API in v1).
   ]]></description>
 
   <depends>com.intellij.modules.platform</depends>
 
   <extensions defaultExtensionNs="com.intellij">
-    <toolWindow id="PM Pending Tasks"
+    <toolWindow id="PM Kanban"
                 anchor="right"
-                factoryClass="com.projectmanagement.pendingtasks.PendingTasksToolWindowFactory"
+                factoryClass="com.projectmanagement.pendingtasks.KanbanToolWindowFactory"
                 icon="/icons/pm.svg"/>
     <applicationConfigurable
             parentId="tools"
@@ -21,11 +21,4 @@
             displayName="Project Management"/>
     <notificationGroup id="Project Management" displayType="BALLOON"/>
   </extensions>
-
-  <actions>
-    <action id="pm.refreshTasks"
-            class="com.projectmanagement.pendingtasks.RefreshTasksAction"
-            text="Refresh Pending Tasks"
-            description="Reload pending tasks from the API"/>
-  </actions>
 </idea-plugin>

@@ -6,10 +6,12 @@ import {
   getAiPromptTemplate,
   getApiToken,
   getBaseUrl,
+  sanitizeApiToken,
   setApiToken,
   testConnection,
 } from './api';
-import { TaskNode } from './tree';
+
+const KEEP_EXISTING_TOKEN_SENTINEL = '';
 import { PmTask } from './tasks';
 
 function isCursorHost(): boolean {
@@ -17,16 +19,88 @@ function isCursorHost(): boolean {
   return name.includes('cursor');
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function copyPromptFallback(prompt: string, reason: string): Promise<void> {
   await vscode.env.clipboard.writeText(prompt);
   void vscode.window.showInformationMessage(`${reason} Prompt copied to clipboard — paste into AI chat.`);
 }
 
+async function tryChatSubmit(): Promise<void> {
+  for (const command of ['workbench.action.chat.submit', 'composer.startGeneration']) {
+    try {
+      await vscode.commands.executeCommand(command);
+      return;
+    } catch {
+      // try next
+    }
+  }
+}
+
 /**
- * Prefill or submit AI chat. Cursor and VS Code use different chat surfaces.
+ * Focus the active Cursor composer (never create a new agent chat).
+ * Returns true when focus command ran.
+ */
+async function focusActiveCursorComposer(): Promise<boolean> {
+  for (const command of ['composer.focusComposer', 'composer.openComposer']) {
+    try {
+      await vscode.commands.executeCommand(command);
+      return true;
+    } catch {
+      // try next
+    }
+  }
+  return false;
+}
+
+/**
+ * Prefill or submit AI chat into the **active** conversation.
+ * Cursor: never call composer.newAgentChat / aichat.newchataction.
  */
 export async function sendPromptToAiChat(prompt: string, autoSubmit: boolean): Promise<void> {
   const partial = !autoSubmit;
+
+  // Cursor: focus the active composer first (newAgentChat always opened a fresh chat)
+  if (isCursorHost()) {
+    await vscode.env.clipboard.writeText(prompt);
+    const focused = await focusActiveCursorComposer();
+    if (focused) {
+      await sleep(150);
+      try {
+        await vscode.commands.executeCommand('editor.action.clipboardPasteAction');
+      } catch {
+        // clipboard still has the prompt
+      }
+      if (autoSubmit) {
+        await tryChatSubmit();
+      }
+      void vscode.window.showInformationMessage(
+        autoSubmit
+          ? 'Prompt pasted into the active chat. If it was not sent, press Enter (also on clipboard).'
+          : 'Prompt pasted into the active chat — edit and send (also on clipboard).'
+      );
+      return;
+    }
+
+    // Older Cursor builds may still accept chat.open
+    try {
+      await vscode.commands.executeCommand('workbench.action.chat.open', {
+        query: prompt,
+        isPartialQuery: partial,
+      });
+      if (autoSubmit) {
+        await tryChatSubmit();
+      }
+      return;
+    } catch {
+      // continue to clipboard fallback
+    }
+
+    await copyPromptFallback(prompt, 'Could not focus the active Cursor chat.');
+    return;
+  }
 
   // VS Code Copilot Chat
   try {
@@ -34,41 +108,12 @@ export async function sendPromptToAiChat(prompt: string, autoSubmit: boolean): P
       query: prompt,
       isPartialQuery: partial,
     });
+    if (autoSubmit) {
+      await tryChatSubmit();
+    }
     return;
   } catch {
     // continue
-  }
-
-  // Cursor — try known / evolving command IDs; fall back to clipboard
-  if (isCursorHost()) {
-    const cursorAttempts: Array<{ command: string; args?: unknown }> = [
-      { command: 'composer.newAgentChat', args: { partialQuery: true, query: prompt } },
-      { command: 'aichat.newchataction' },
-      { command: 'cursorai.action.generateInTerminal' },
-    ];
-
-    for (const attempt of cursorAttempts) {
-      try {
-        if (attempt.args !== undefined) {
-          await vscode.commands.executeCommand(attempt.command, attempt.args);
-        } else {
-          await vscode.commands.executeCommand(attempt.command);
-        }
-        // Best-effort: many Cursor commands ignore query args — always leave clipboard as backup
-        await vscode.env.clipboard.writeText(prompt);
-        void vscode.window.showInformationMessage(
-          autoSubmit
-            ? 'Opened Cursor AI. If the prompt was not submitted, paste from clipboard.'
-            : 'Opened Cursor AI and copied prompt to clipboard — paste and edit before sending.'
-        );
-        return;
-      } catch {
-        // try next
-      }
-    }
-
-    await copyPromptFallback(prompt, 'Cursor chat command unavailable.');
-    return;
   }
 
   await copyPromptFallback(prompt, 'AI chat command unavailable.');
@@ -86,23 +131,51 @@ export async function configureConnection(context: vscode.ExtensionContext): Pro
   if (baseUrl === undefined) return false;
 
   const existingToken = await getApiToken(context);
-  const token = await vscode.window.showInputBox({
+  const tokenInput = await vscode.window.showInputBox({
     title: 'Project Management — API Token',
-    prompt: 'Paste pt_… token from Profile → API Tokens',
-    value: existingToken ? '••••••••' : '',
+    prompt: existingToken
+      ? 'Paste a new pt_… token from Profile → API Tokens (leave empty to keep the current token)'
+      : 'Paste pt_… token from Profile → API Tokens',
+    value: KEEP_EXISTING_TOKEN_SENTINEL,
     password: true,
     ignoreFocusOut: true,
+    placeHolder: existingToken ? 'Leave empty to keep current token' : 'pt_…',
+    validateInput: (value) => {
+      const cleaned = sanitizeApiToken(value);
+      if (!cleaned) {
+        return existingToken ? null : 'API token is required';
+      }
+      if (!cleaned.startsWith('pt_')) {
+        return 'Token must start with pt_';
+      }
+      if (cleaned.length < 20) {
+        return 'Token looks too short — paste the full value shown once at creation';
+      }
+      return null;
+    },
   });
-  if (token === undefined) return false;
+  if (tokenInput === undefined) return false;
 
-  await vscode.workspace.getConfiguration('projectManagement').update('baseUrl', baseUrl.trim().replace(/\/+$/, ''), true);
-  if (token && token !== '••••••••') {
-    await setApiToken(context, token);
+  const cleanedInput = sanitizeApiToken(tokenInput);
+  if (cleanedInput) {
+    await setApiToken(context, cleanedInput);
+  } else if (!existingToken) {
+    void vscode.window.showErrorMessage('API token is required.');
+    return false;
   }
 
+  await vscode.workspace
+    .getConfiguration('projectManagement')
+    .update('baseUrl', baseUrl.trim().replace(/\/+$/, ''), true);
+
   try {
-    const profile = await testConnection(getBaseUrl(), await getApiToken(context));
-    void vscode.window.showInformationMessage(`Connected as ${profile.username || profile.email || 'user'}`);
+    // Re-read settings after update (workspace config can lag one tick)
+    const effectiveUrl = baseUrl.trim().replace(/\/+$/, '') || getBaseUrl();
+    const effectiveToken = await getApiToken(context);
+    const profile = await testConnection(effectiveUrl, effectiveToken);
+    void vscode.window.showInformationMessage(
+      `Connected as ${profile.username || profile.email || 'user'}`
+    );
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -111,8 +184,7 @@ export async function configureConnection(context: vscode.ExtensionContext): Pro
   }
 }
 
-export async function runSendToAiChat(taskNode: TaskNode): Promise<void> {
-  const task: PmTask = taskNode.task;
+export async function runSendToAiForTask(task: PmTask): Promise<void> {
   const baseUrl = getBaseUrl();
   if (!baseUrl) {
     void vscode.window.showWarningMessage('Configure Base URL first.');

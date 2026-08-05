@@ -12,6 +12,10 @@ namespace ProjectManagement.PendingTasks
         private string _apiToken = "";
         private int _refreshIntervalSeconds = 300;
         private bool _aiAutoSubmit;
+        private int _selectedProjectId;
+        private string _kanbanLayout = "horizontal";
+        private string _kanbanHiddenStatuses = "";
+        private int _kanbanMaxVisibleCards = 2;
 
         [Category("Connection")]
         [DisplayName("Base URL")]
@@ -39,6 +43,42 @@ namespace ProjectManagement.PendingTasks
         {
             get => _refreshIntervalSeconds;
             set => _refreshIntervalSeconds = Math.Max(0, value);
+        }
+
+        [Category("Behaviour")]
+        [DisplayName("Selected project id")]
+        [Description("Last project opened in the Kanban tool window (set automatically)")]
+        public int SelectedProjectId
+        {
+            get => _selectedProjectId;
+            set => _selectedProjectId = Math.Max(0, value);
+        }
+
+        [Category("Kanban")]
+        [DisplayName("Layout")]
+        [Description("horizontal = columns side-by-side; vertical = stacked status sections")]
+        public string KanbanLayout
+        {
+            get => _kanbanLayout;
+            set => _kanbanLayout = string.Equals(value, "vertical", StringComparison.OrdinalIgnoreCase) ? "vertical" : "horizontal";
+        }
+
+        [Category("Kanban")]
+        [DisplayName("Hidden statuses")]
+        [Description("Status names to hide, separated by semicolons (case-insensitive). Example: Done; Cancelled")]
+        public string KanbanHiddenStatuses
+        {
+            get => _kanbanHiddenStatuses;
+            set => _kanbanHiddenStatuses = value ?? "";
+        }
+
+        [Category("Kanban")]
+        [DisplayName("Max visible cards")]
+        [Description("Max cards per status before Show more (0 = show all)")]
+        public int KanbanMaxVisibleCards
+        {
+            get => _kanbanMaxVisibleCards;
+            set => _kanbanMaxVisibleCards = Math.Max(0, value);
         }
 
         [Category("AI")]

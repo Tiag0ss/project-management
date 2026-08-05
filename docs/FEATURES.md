@@ -35,7 +35,7 @@ Comprehensive documentation of all features available in the application. Use th
 23. [Email Task Queue (Cloudflare)](#23-email-task-queue-cloudflare)
 24. [GitHub & Gitea Integration](#24-github--gitea-integration)
 25. [Redis Cache (Optional)](#25-redis-cache-optional)
-26. [IDE Extensions (Pending Tasks)](#26-ide-extensions-pending-tasks)
+26. [IDE Extensions (Project Kanban)](#26-ide-extensions-project-kanban)
 
 ---
 
@@ -995,9 +995,11 @@ Server operators may also set `REDIS_ENABLED` and related env vars (see [Redis C
 Personal integration tokens for scripts, Cloudflare Workers, the Outlook add-in, and IDE extensions.
 
 ### Creating Tokens
-1. Profile → **API Tokens**
+1. **My Profile → API Tokens** (any signed-in user) — manage your own tokens
 2. Create token with name and optional expiry
 3. Copy the `pt_...` secret immediately (shown only once)
+
+Admins can also open **Administration → API Tokens** to see **all** users’ tokens (revoke/delete any). Creating a token there still creates it for the admin’s own account.
 
 ### Using Tokens
 - Send as `Authorization: Bearer pt_...` on API requests
@@ -1008,7 +1010,7 @@ Personal integration tokens for scripts, Cloudflare Workers, the Outlook add-in,
 - **Deactivate** — immediate revocation; cached auth invalidated
 - **Delete** — permanent removal from list
 
-Admins can view all tokens; regular users see only their own.
+Admins can view all tokens under Administration; regular users manage only their own under My Profile.
 
 ---
 
@@ -1100,9 +1102,9 @@ Docker: `docker compose --profile redis up -d`
 
 ---
 
-## 26. IDE Extensions (Pending Tasks)
+## 26. IDE Extensions (Project Kanban)
 
-Native IDE plugins (no webviews) that list the signed-in user’s **pending tasks** using `pt_` API tokens.
+IDE plugins that show a **project Kanban** (project dropdown, drag-and-drop status columns) using `pt_` API tokens. Shared board UI under [`ide-extensions/shared-kanban`](../ide-extensions/shared-kanban/).
 
 | IDE | Location |
 |-----|----------|
@@ -1114,10 +1116,8 @@ Setup, contract, and test checklist: [`ide-extensions/README.md`](../ide-extensi
 
 ### Behaviour
 - Auth: `Authorization: Bearer pt_…` + Base URL
-- Data: `GET /api/tasks/my-tasks` (assignee / TaskAssignees / TaskAllocations only), then client filter like Dashboard pending (not closed / cancelled / hide-from-stats)
-- Grouped by project; overdue → due date → priority → name
-- **Send to AI Chat…** prefills (default) or optionally auto-submits; HTML descriptions stripped to plain text
-- Rider v1 copies the AI prompt to the clipboard (no stable JetBrains chat prefill API)
+- Data: `GET /api/projects`, `GET /api/tasks/project/{id}`, `GET /api/status-values/task/{orgId}`, DnD via `POST /api/tasks/reorder-kanban`
+- **Send to AI Chat…** on cards (Cursor uses the active chat; Rider/VS clipboard)
 - Self-signed HTTPS not supported in v1
 
 ---

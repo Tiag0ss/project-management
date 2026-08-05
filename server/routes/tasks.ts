@@ -471,6 +471,7 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
               tsv.StatusName, tsv.ColorCode as StatusColor,
               tsv.SortOrder as StatusSortOrder,
               COALESCE(tsv.IsClosed, 0) as StatusIsClosed, COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
+              COALESCE(tsv.IsInProgress, 0) as StatusIsInProgress,
               COALESCE(tsv.HideFromPlanningAndStatistics, 0) as StatusHideFromPlanningAndStatistics,
               tpv.PriorityName, tpv.ColorCode as PriorityColor, tpv.SortOrder as PrioritySortOrder,
               ttv.TypeName as TaskTypeName, ttv.IconSvg as TaskTypeIconSvg, ttv.ColorCode as TaskTypeColor,

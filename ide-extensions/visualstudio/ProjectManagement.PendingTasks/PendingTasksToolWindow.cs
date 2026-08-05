@@ -1,58 +1,40 @@
 using System;
 using System.ComponentModel.Design;
+using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace ProjectManagement.PendingTasks
 {
     [Guid("d4e5f6a7-b8c9-0123-def0-234567890123")]
     public class PendingTasksToolWindow : ToolWindowPane
     {
-        public PendingTasksControl Control { get; }
-
         public PendingTasksToolWindow() : base(null)
         {
-            Caption = "PM Pending Tasks";
-            Control = new PendingTasksControl();
-            Content = Control;
+            Caption = "PM Kanban";
+            Content = new KanbanControl(this);
         }
     }
 
-    public sealed class PendingTasksControl : UserControl
+    public sealed class KanbanControl : UserControl
     {
-        private readonly ListBox _list = new ListBox();
-        private readonly TextBlock _status = new TextBlock { Margin = new Thickness(8, 4, 8, 8) };
-        private readonly PendingTasksPackage? _package;
+        private readonly ToolWindowPane _pane;
+        private readonly WebView2 _webView = new WebView2();
+        private bool _ready;
 
-        public PendingTasksControl(PendingTasksPackage? package = null)
+        public KanbanControl(ToolWindowPane pane)
         {
-            _package = package;
-            var root = new DockPanel { Margin = new Thickness(8) };
-
-            var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
-            toolbar.Children.Add(MakeButton("Refresh", (_, __) => _ = ReloadAsync()));
-            toolbar.Children.Add(MakeButton("Open in browser", (_, __) => OpenSelected()));
-            toolbar.Children.Add(MakeButton("Send to AI Chat…", (_, __) => SendToAi()));
-
-            DockPanel.SetDock(toolbar, Dock.Top);
-            DockPanel.SetDock(_status, Dock.Bottom);
-            root.Children.Add(toolbar);
-            root.Children.Add(_status);
-            root.Children.Add(_list);
-
-            Content = root;
-            _ = ReloadAsync();
-        }
-
-        private static Button MakeButton(string text, RoutedEventHandler handler)
-        {
-            var b = new Button { Content = text, Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(8, 4, 8, 4) };
-            b.Click += handler;
-            return b;
+            _pane = pane;
+            Content = _webView;
+            Loaded += async (_, __) => await EnsureWebViewAsync();
         }
 
         private PmOptionsPage? Options
@@ -61,7 +43,8 @@ namespace ProjectManagement.PendingTasks
             {
                 try
                 {
-                    var pkg = _package ?? (PendingTasksPackage?)ServiceProvider.GlobalProvider.GetService(typeof(PendingTasksPackage));
+                    var pkg = _pane.Package as PendingTasksPackage
+                              ?? (PendingTasksPackage?)ServiceProvider.GlobalProvider.GetService(typeof(PendingTasksPackage));
                     return pkg?.GetDialogPage(typeof(PmOptionsPage)) as PmOptionsPage;
                 }
                 catch
@@ -71,104 +54,239 @@ namespace ProjectManagement.PendingTasks
             }
         }
 
-        public async System.Threading.Tasks.Task ReloadAsync()
+        private async System.Threading.Tasks.Task EnsureWebViewAsync()
         {
-            var opt = Options;
-            if (opt == null || string.IsNullOrWhiteSpace(opt.BaseUrl) || string.IsNullOrWhiteSpace(opt.ApiToken))
-            {
-                _status.Text = "Configure Tools → Options → Project Management";
-                _list.Items.Clear();
-                return;
-            }
-
-            _status.Text = "Loading…";
+            if (_ready) return;
             try
             {
-                var tasks = await PmApi.FetchPendingTasksAsync(opt.BaseUrl, opt.ApiToken);
-                var flat = TaskRules.GroupByProject(tasks).SelectMany(g => g).ToList();
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                _list.Items.Clear();
-                foreach (var t in flat)
-                {
-                    var due = string.IsNullOrWhiteSpace(t.DueDate) ? "" : t.DueDate!.Split('T')[0];
-                    var meta = string.Join(" · ", new[] { t.ProjectName, t.StatusName, t.PriorityName, due }.Where(s => !string.IsNullOrWhiteSpace(s)));
-                    _list.Items.Add(new TaskListItem(t, $"{t.TaskName}  —  {meta}"));
-                }
-                _status.Text = $"{flat.Count} pending task(s)";
+                await _webView.EnsureCoreWebView2Async();
+                _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
+                _webView.CoreWebView2.Settings.IsWebMessageEnabled = true;
+                _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+                _webView.CoreWebView2.NavigationCompleted += async (_, __) => await PushConfigAsync();
+                _webView.NavigateToString(BuildHtml());
+                _ready = true;
             }
             catch (Exception ex)
             {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                _list.Items.Clear();
-                _status.Text = ex.Message;
-                _status.Foreground = Brushes.IndianRed;
+                Content = new TextBlock
+                {
+                    Text = "WebView2 failed to start. Install the WebView2 Runtime.\n" + ex.Message,
+                    Margin = new Thickness(12),
+                    TextWrapping = TextWrapping.Wrap
+                };
             }
         }
 
-        private PmTask? SelectedTask => (_list.SelectedItem as TaskListItem)?.Task;
-
-        private void OpenSelected()
+        private static string ReadSiblingResource(string fileName)
         {
-            var task = SelectedTask;
-            var opt = Options;
-            if (task == null || opt == null || string.IsNullOrWhiteSpace(opt.BaseUrl)) return;
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = $"{opt.BaseUrl.TrimEnd('/')}/projects/{task.ProjectId}",
-                UseShellExecute = true
-            });
+            var asmDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "";
+            var path = Path.Combine(asmDir, "Resources", "kanban", fileName);
+            if (File.Exists(path)) return File.ReadAllText(path);
+            // Fallback: next to project output without Resources nesting
+            path = Path.Combine(asmDir, "kanban", fileName);
+            if (File.Exists(path)) return File.ReadAllText(path);
+            throw new FileNotFoundException("Missing kanban asset: " + fileName);
         }
 
-        private void SendToAi()
+        private string BuildHtml()
         {
-            var task = SelectedTask;
+            var css = ReadSiblingResource("board.css");
+            var js = ReadSiblingResource("board.js");
+            return $@"<!DOCTYPE html>
+<html lang=""en"">
+<head>
+  <meta charset=""UTF-8"" />
+  <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"" />
+  <title>Project Management — Kanban</title>
+  <style>{css}</style>
+</head>
+<body>
+  <div id=""toolbar"">
+    <label for=""projectSelect"">Project</label>
+    <select id=""projectSelect"" aria-label=""Project""></select>
+    <button type=""button"" id=""refreshBtn"">Refresh</button>
+    <button type=""button"" id=""configureBtn"" class=""primary"">Configure</button>
+  </div>
+  <div id=""statusLine"" aria-live=""polite""></div>
+  <div id=""board"" role=""list""></div>
+  <div id=""emptyState""></div>
+  <script>{js}</script>
+</body>
+</html>";
+        }
+
+        private async System.Threading.Tasks.Task PushConfigAsync()
+        {
             var opt = Options;
-            if (task == null || opt == null)
+            if (_webView.CoreWebView2 == null) return;
+            var payload = new
             {
-                MessageBox.Show("Select a task first.");
+                type = "config",
+                baseUrl = opt?.BaseUrl ?? "",
+                token = "",
+                proxyViaHost = true,
+                selectedProjectId = (opt?.SelectedProjectId ?? 0) > 0 ? (int?)opt!.SelectedProjectId : null,
+                layout = opt?.KanbanLayout ?? "horizontal",
+                hiddenStatuses = opt?.KanbanHiddenStatuses ?? "",
+                maxVisibleCards = opt?.KanbanMaxVisibleCards ?? 2
+            };
+            _webView.CoreWebView2.PostWebMessageAsJson(JsonConvert.SerializeObject(payload));
+            await System.Threading.Tasks.Task.CompletedTask;
+        }
+
+        private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+        {
+            JObject? obj;
+            try
+            {
+                obj = JObject.Parse(e.WebMessageAsJson);
+            }
+            catch
+            {
                 return;
             }
 
-            var content = MessageBox.Show(
+            var type = obj?["type"]?.ToString();
+            switch (type)
+            {
+                case "ready":
+                    _ = PushConfigAsync();
+                    break;
+                case "configure":
+                    System.Windows.MessageBox.Show(
+                        "Open Tools → Options → Project Management to set Base URL and API token, then click Refresh on the board.",
+                        "Configure Connection");
+                    break;
+                case "projectSelected":
+                    {
+                        var opt = Options;
+                        if (opt == null) break;
+                        var id = obj?["projectId"]?.Type == JTokenType.Null ? 0 : (int?)obj?["projectId"] ?? 0;
+                        opt.SelectedProjectId = id;
+                    }
+                    break;
+                case "openExternal":
+                    {
+                        var url = obj?["url"]?.ToString();
+                        if (!string.IsNullOrWhiteSpace(url))
+                        {
+                            try { System.Diagnostics.Process.Start(url); }
+                            catch (Exception ex)
+                            {
+                                System.Windows.MessageBox.Show(ex.Message, "Open in browser");
+                            }
+                        }
+                    }
+                    break;
+                case "sendToAi":
+                    {
+                        var taskToken = obj?["task"];
+                        if (taskToken == null) break;
+                        var task = taskToken.ToObject<PmTask>();
+                        if (task != null) SendToAi(task);
+                    }
+                    break;
+                case "error":
+                    {
+                        var message = obj?["message"]?.ToString();
+                        if (!string.IsNullOrWhiteSpace(message))
+                            System.Windows.MessageBox.Show(message, "Project Management");
+                    }
+                    break;
+                case "apiRequest":
+                    _ = HandleApiRequestAsync(obj!);
+                    break;
+            }
+        }
+
+        private async System.Threading.Tasks.Task HandleApiRequestAsync(JObject obj)
+        {
+            var requestId = obj["requestId"]?.ToString() ?? "";
+            var path = obj["path"]?.ToString() ?? "";
+            var method = obj["method"]?.ToString() ?? "GET";
+            var bodyToken = obj["body"];
+            string? jsonBody = bodyToken == null || bodyToken.Type == JTokenType.Null
+                ? null
+                : bodyToken.ToString(Formatting.None);
+
+            try
+            {
+                var opt = Options;
+                var baseUrl = opt?.BaseUrl ?? "";
+                var token = opt?.ApiToken ?? "";
+                var dataJson = await PmApi.ProxyJsonAsync(baseUrl, token, path, method, jsonBody);
+                var data = JsonConvert.DeserializeObject(dataJson);
+                var response = new
+                {
+                    type = "apiResponse",
+                    requestId,
+                    ok = true,
+                    data
+                };
+                _webView.CoreWebView2?.PostWebMessageAsJson(JsonConvert.SerializeObject(response));
+            }
+            catch (Exception ex)
+            {
+                var response = new
+                {
+                    type = "apiResponse",
+                    requestId,
+                    ok = false,
+                    error = ex.Message
+                };
+                _webView.CoreWebView2?.PostWebMessageAsJson(JsonConvert.SerializeObject(response));
+            }
+        }
+
+        private void SendToAi(PmTask task)
+        {
+            var opt = Options;
+            var baseUrl = opt?.BaseUrl ?? "";
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                System.Windows.MessageBox.Show("Configure Base URL first.", "Send to AI Chat");
+                return;
+            }
+
+            var content = System.Windows.MessageBox.Show(
                 "Yes = Full context\nNo = Name + description\nCancel = Name only",
                 "AI prompt content",
                 MessageBoxButton.YesNoCancel,
                 MessageBoxImage.Question);
-
-            AiContentMode mode = content switch
-            {
-                MessageBoxResult.Yes => AiContentMode.Full,
-                MessageBoxResult.No => AiContentMode.NameDescription,
-                MessageBoxResult.Cancel => AiContentMode.Name,
-                _ => AiContentMode.Full
-            };
             if (content == MessageBoxResult.None) return;
+            var mode = content == MessageBoxResult.Yes
+                ? AiContentMode.Full
+                : content == MessageBoxResult.No
+                    ? AiContentMode.NameDescription
+                    : AiContentMode.Name;
 
-            var sendNow = opt.AiAutoSubmit;
-            var modeResult = MessageBox.Show(
+            var defaultAuto = opt?.AiAutoSubmit == true;
+            var sendNow = System.Windows.MessageBox.Show(
                 "Yes = Send now\nNo = Edit before send (copy to clipboard)",
                 "Send mode",
-                MessageBoxButton.YesNoCancel);
-            if (modeResult == MessageBoxResult.Cancel) return;
-            sendNow = modeResult == MessageBoxResult.Yes;
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question) == MessageBoxResult.Yes;
+            if (!sendNow && defaultAuto)
+            {
+                // User chose edit; keep clipboard path
+            }
 
-            var prompt = AiPromptBuilder.Build(task, opt.BaseUrl, mode, opt.AiPromptTemplate);
-            Clipboard.SetText(prompt);
+            var prompt = AiPromptBuilder.Build(task, baseUrl, mode, opt?.AiPromptTemplate);
+            try
+            {
+                System.Windows.Clipboard.SetText(prompt);
+            }
+            catch
+            {
+                /* ignore */
+            }
 
-            // Copilot Chat prefill/submit APIs vary by VS version — clipboard is the reliable path.
-            MessageBox.Show(
+            System.Windows.MessageBox.Show(
                 sendNow
                     ? "Prompt copied. Paste into Copilot Chat and send (host-specific auto-submit is best-effort in v1)."
                     : "Prompt copied to clipboard — paste into Copilot Chat and edit before sending.",
                 "Send to AI Chat");
-        }
-
-        private sealed class TaskListItem
-        {
-            public TaskListItem(PmTask task, string display) { Task = task; Display = display; }
-            public PmTask Task { get; }
-            public string Display { get; }
-            public override string ToString() => Display;
         }
     }
 

@@ -15,6 +15,10 @@ data class PmSettingsState(
     var refreshIntervalSeconds: Int = 300,
     var aiAutoSubmit: Boolean = false,
     var aiPromptTemplate: String = "",
+    var selectedProjectId: Int = 0,
+    var kanbanLayout: String = "horizontal",
+    var kanbanHiddenStatuses: String = "",
+    var kanbanMaxVisibleCards: Int = 2,
 )
 
 @Service(Service.Level.APP)

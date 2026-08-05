@@ -27,8 +27,16 @@ interface NewTokenResult {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
-export default function ApiTokensManagement() {
+export type ApiTokensMode = 'self' | 'admin';
+
+interface ApiTokensManagementProps {
+  /** self = My Profile (own tokens only); admin = Administration (all users for admins) */
+  mode?: ApiTokensMode;
+}
+
+export default function ApiTokensManagement({ mode = 'self' }: ApiTokensManagementProps) {
   const { token, user } = useAuth();
+  const isAdminView = mode === 'admin' && !!user?.isAdmin;
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -52,7 +60,8 @@ export default function ApiTokensManagement() {
     setIsLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_URL}/api/api-tokens`, {
+      const qs = mode === 'self' ? '?mine=1' : '';
+      const res = await fetch(`${API_URL}/api/api-tokens${qs}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Failed to load tokens');
@@ -63,7 +72,7 @@ export default function ApiTokensManagement() {
     } finally {
       setIsLoading(false);
     }
-  }, [token]);
+  }, [token, mode]);
 
   useEffect(() => {
     loadTokens();
@@ -151,7 +160,9 @@ export default function ApiTokensManagement() {
         <div>
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">API Tokens</h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Generate personal API tokens for external integrations (e.g., Outlook add-in).
+            {isAdminView
+              ? 'All users’ API tokens. Create below issues a token for your own account; revoke or delete any token as needed.'
+              : 'Personal API tokens for IDE extensions, Outlook, and other integrations. Create tokens here — they authenticate as you.'}
           </p>
         </div>
         <button
@@ -270,7 +281,7 @@ export default function ApiTokensManagement() {
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
-                {user?.isAdmin && (
+                {isAdminView && (
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     User
                   </th>
@@ -301,7 +312,7 @@ export default function ApiTokensManagement() {
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {tokens.map(t => (
                 <tr key={t.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                  {user?.isAdmin && (
+                  {isAdminView && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                       <div className="font-medium">{t.Username}</div>
                       <div className="text-xs text-gray-500 dark:text-gray-400">{t.Email}</div>

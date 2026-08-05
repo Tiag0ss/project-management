@@ -12,21 +12,23 @@ Shared contract for VS Code / Cursor, Rider, and Visual Studio extensions.
 
 Successful profile response includes at least `username` / `Username` and `email` / `Email`.
 
+The Kanban board UI runs in a host webview and calls these endpoints with the same `pt_` token (injected by the host). Do **not** embed the Next.js SPA (it needs a separate JWT session).
+
 ## Endpoints
 
 ### `GET /api/user/profile`
 
 Connection test. Any `2xx` with a user identity means the token works.
 
-### `GET /api/tasks/my-tasks`
+### `GET /api/projects`
 
-Returns `{ success: true, tasks: Task[] }` for the authenticated user only when they are:
+Project dropdown. Returns `{ success: true, projects: Project[] }` for orgs the user belongs to.
 
-- primary `AssignedTo`, or
-- in `TaskAssignees`, or
-- have a row in `TaskAllocations`
+Relevant fields: `Id`, `ProjectName` / `Name`, `OrganizationId`, `OrganizationName`.
 
-Parent tasks are **not** included merely because they have subtasks.
+### `GET /api/tasks/project/{projectId}`
+
+Kanban cards for one project. Returns `{ success: true, tasks: Task[] }` (subject to manage/plan/own-task visibility rules on the server).
 
 Relevant fields:
 
@@ -34,41 +36,59 @@ Relevant fields:
 |-------|------|-------|
 | `Id` | number | Task id |
 | `ProjectId` | number | |
+| `OrganizationId` | number | From project (needed for status list) |
 | `ProjectName` | string | |
 | `TaskName` | string | |
 | `Description` | string \| null | **HTML** rich text |
+| `Status` | number | Status value id |
 | `StatusName` | string | |
-| `StatusIsClosed` | 0 \| 1 | |
-| `StatusIsCancelled` | 0 \| 1 | |
-| `StatusHideFromPlanningAndStatistics` | 0 \| 1 | |
+| `DisplayOrder` | number | Column order |
 | `PriorityName` | string | |
+| `PriorityColor` | string | Optional card accent |
 | `PrioritySortOrder` | number | Lower = higher priority |
 | `DueDate` | string \| null | ISO / date string |
 
-## Pending filter (client-side v1)
+### `GET /api/status-values/task/{organizationId}`
 
-A task is **pending** when all are true:
+Kanban columns. Returns `{ success: true, statuses: StatusValue[] }` for the org (requires membership).
 
-```text
-StatusIsClosed !== 1
-AND StatusIsCancelled !== 1
-AND StatusHideFromPlanningAndStatistics !== 1
+Relevant fields: `Id`, `StatusName`, `ColorCode`, `SortOrder`, `IsClosed`, `IsCancelled`, `IsInProgress`, `HideFromPlanningAndStatistics`.
+
+### `POST /api/tasks/reorder-kanban`
+
+Drag-and-drop commit (same as web Kanban).
+
+Body:
+
+```json
+{
+  "updates": [
+    { "taskId": 1, "displayOrder": 10, "status": 3 }
+  ]
+}
 ```
 
-(Matches Dashboard pending tasks.)
+- Drop on empty column: one update (new status + end order).
+- Drop on a card: reassign gap orders `10, 20, 30…` for the target column (include `status` when moving columns).
+- Surface `message` from non-2xx responses (including workflow policy blocks).
 
-## Tree ordering
+### `PUT /api/tasks/{id}`
 
-1. Group by `ProjectName` (alphabetical, case-insensitive).
-2. Inside a project:
-   1. Overdue first (`DueDate` date part &lt; today, local calendar day)
-   2. `DueDate` ascending (null / empty last)
-   3. `PrioritySortOrder` ascending (missing → large number)
-   4. `TaskName` alphabetical
+Optional single-task status update `{ "status": <StatusValueId> }`. Prefer `reorder-kanban` for board DnD.
+
+## Kanban UX (v1)
+
+1. Host injects `{ type: 'config', baseUrl, token, selectedProjectId }`.
+2. Board loads projects → user selects one → loads statuses + project tasks.
+3. Columns sorted by `SortOrder`; cards by `DisplayOrder` within `Status`.
+4. Card actions: **Send to AI** / **Open** (host messages).
+5. Persist last `selectedProjectId` in host settings.
+
+Shared assets: [`shared-kanban/`](./shared-kanban/) (`board.css`, `board.js`). Hosts copy into their resource folders.
 
 ## HTML → plain text
 
-Apply before AI prompts and tooltips:
+Apply before AI prompts:
 
 1. Remove `<style>…</style>` and `<script>…</script>` (case-insensitive)
 2. Replace `<br>` / `<br/>` with `\n`
@@ -130,18 +150,16 @@ Empty optional fields: omit the line or use `—`.
 | Prefill (default) | Open AI chat with draft; user edits then sends (`aiAutoSubmit=false`) |
 | Auto-submit | Submit immediately when host supports it (`aiAutoSubmit=true` or “Send now”) |
 
-Clipboard fallback when chat APIs are unavailable (expected for Rider v1).
+Clipboard fallback when chat APIs are unavailable (expected for Rider / Visual Studio v1).
 
-## Chat command IDs (discover / update during ship)
+## Chat command IDs
 
 | Host | Prefill | Auto-submit |
 |------|---------|-------------|
-| VS Code (Copilot Chat) | `workbench.action.chat.open` `{ query, isPartialQuery: true }` | `{ query, isPartialQuery: false }` |
-| Cursor | Detect via `vscode.env.appName`; try Cursor chat commands; fallback clipboard | Same |
+| VS Code (Copilot Chat) | `workbench.action.chat.open` `{ query, isPartialQuery: true }` | `{ query, isPartialQuery: false }` then `workbench.action.chat.submit` if needed |
+| Cursor | `composer.focusComposer` / `composer.openComposer` + clipboard paste into the **active** chat. Never `composer.newAgentChat`. | Same + `workbench.action.chat.submit` / `composer.startGeneration` when available |
 | Rider | Clipboard + notification (v1) | Clipboard |
-| Visual Studio | Copilot Chat when available; else clipboard | Same |
-
-Document working IDs here after manual verification.
+| Visual Studio | Clipboard (+ Copilot Chat when available) | Same |
 
 ## Network
 

@@ -13,16 +13,31 @@ namespace ProjectManagement.PendingTasks
     {
         public int Id { get; set; }
         public int ProjectId { get; set; }
+        public int OrganizationId { get; set; }
         public string? ProjectName { get; set; }
         public string TaskName { get; set; } = "";
         public string? Description { get; set; }
+        public int Status { get; set; }
         public string? StatusName { get; set; }
         public int StatusIsClosed { get; set; }
         public int StatusIsCancelled { get; set; }
+        public int StatusIsInProgress { get; set; }
         public int StatusHideFromPlanningAndStatistics { get; set; }
         public string? PriorityName { get; set; }
+        public string? PriorityColor { get; set; }
         public int? PrioritySortOrder { get; set; }
+        public int? DisplayOrder { get; set; }
         public string? DueDate { get; set; }
+    }
+
+    public sealed class PmStatusValue
+    {
+        public int Id { get; set; }
+        public string StatusName { get; set; } = "";
+        public int? SortOrder { get; set; }
+        public int IsClosed { get; set; }
+        public int IsCancelled { get; set; }
+        public int IsInProgress { get; set; }
     }
 
     public static class HtmlPlainText
@@ -143,14 +158,48 @@ namespace ProjectManagement.PendingTasks
             return (wrapper?.Tasks ?? new List<PmTask>()).Where(TaskRules.IsPending).ToList();
         }
 
+        public static async Task<List<PmStatusValue>> FetchTaskStatusesAsync(string baseUrl, string token, int organizationId)
+        {
+            var json = await GetAsync(baseUrl, token, $"/api/status-values/task/{organizationId}");
+            var wrapper = JsonConvert.DeserializeObject<StatusValuesResponse>(json);
+            return (wrapper?.Statuses ?? new List<PmStatusValue>())
+                .OrderBy(s => s.SortOrder ?? 9999)
+                .ToList();
+        }
+
+        public static async Task UpdateTaskStatusAsync(string baseUrl, string token, int taskId, int statusId)
+        {
+            await SendAsync(baseUrl, token, $"/api/tasks/{taskId}", HttpMethod.Put, $"{{\"status\":{statusId}}}");
+        }
+
+        public static async Task<string> ProxyJsonAsync(
+            string baseUrl,
+            string token,
+            string path,
+            string method,
+            string? jsonBody)
+        {
+            var httpMethod = new HttpMethod((method ?? "GET").ToUpperInvariant());
+            return await SendAsync(baseUrl, token, path, httpMethod, jsonBody);
+        }
+
         private static async Task<string> GetAsync(string baseUrl, string token, string path)
+        {
+            return await SendAsync(baseUrl, token, path, HttpMethod.Get, null);
+        }
+
+        private static async Task<string> SendAsync(string baseUrl, string token, string path, HttpMethod method, string? jsonBody)
         {
             if (string.IsNullOrWhiteSpace(baseUrl)) throw new InvalidOperationException("Base URL is not configured");
             if (string.IsNullOrWhiteSpace(token)) throw new InvalidOperationException("API token is not configured");
 
-            using var req = new HttpRequestMessage(HttpMethod.Get, baseUrl.TrimEnd('/') + path);
+            using var req = new HttpRequestMessage(method, baseUrl.TrimEnd('/') + path);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            if (jsonBody != null)
+            {
+                req.Content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json");
+            }
 
             HttpResponseMessage res;
             try
@@ -166,16 +215,38 @@ namespace ProjectManagement.PendingTasks
 
             var body = await res.Content.ReadAsStringAsync();
             if ((int)res.StatusCode == 401 || (int)res.StatusCode == 403)
-                throw new InvalidOperationException("Unauthorized — check your API token (pt_…)");
+                throw new InvalidOperationException(
+                    string.IsNullOrWhiteSpace(TryReadMessage(body))
+                        ? "Unauthorized — check your API token (pt_…) or permissions"
+                        : TryReadMessage(body)!);
             if (!res.IsSuccessStatusCode)
-                throw new InvalidOperationException($"HTTP {(int)res.StatusCode}");
+                throw new InvalidOperationException(TryReadMessage(body) ?? $"HTTP {(int)res.StatusCode}");
             return body;
+        }
+
+        private static string? TryReadMessage(string body)
+        {
+            try
+            {
+                dynamic? obj = JsonConvert.DeserializeObject(body);
+                return (string?)obj?.message;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private sealed class MyTasksResponse
         {
             [JsonProperty("tasks")]
             public List<PmTask>? Tasks { get; set; }
+        }
+
+        private sealed class StatusValuesResponse
+        {
+            [JsonProperty("statuses")]
+            public List<PmStatusValue>? Statuses { get; set; }
         }
     }
 }

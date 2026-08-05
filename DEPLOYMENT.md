@@ -409,9 +409,9 @@ ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 
 ---
 
-## 11. IDE Extensions (Pending Tasks)
+## 11. IDE Extensions (Project Kanban)
 
-Native plugins live in [`ide-extensions/`](ide-extensions/). They talk to your **deployed** app API with a user `pt_` token. Same `.vsix` works in **VS Code and Cursor**.
+Plugins live in [`ide-extensions/`](ide-extensions/). They talk to your **deployed** app API with a user `pt_` token and host a shared Kanban board (webview / JBCef / WebView2). Same VS Code `.vsix` works in **Cursor**.
 
 Contract and checklist: [`ide-extensions/README.md`](ide-extensions/README.md), [`ide-extensions/CONTRACT.md`](ide-extensions/CONTRACT.md).
 
@@ -420,6 +420,7 @@ Contract and checklist: [`ide-extensions/README.md`](ide-extensions/README.md), 
 1. App reachable over HTTPS (valid cert) or HTTP on LAN/VPN — self-signed HTTPS is not supported in v1.
 2. Each user creates an API token: **Profile → API Tokens → Create** (`pt_…`, shown once).
 3. In the extension: Base URL = production origin (no trailing slash), e.g. `https://pm.example.com`.
+4. Visual Studio: install [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
 
 ### Build & deploy — VS Code / Cursor (pnpm)
 
@@ -442,7 +443,7 @@ If `pnpm install` alone reports “Already up to date” but there is no local `
 1. Copy the `.vsix` to the machine (release artifact, internal share, etc.).
 2. Command Palette → **Extensions: Install from VSIX…** → select the file.
 3. Reload window if prompted.
-4. Open the **Project Management** activity-bar icon → **Configure Connection** (Base URL + token).
+4. Open the **Project Management** activity-bar icon → **Kanban** → **Configure** (Base URL + token) → select a project.
 5. Optional: set `projectManagement.refreshIntervalSeconds` / `projectManagement.aiAutoSubmit` in Settings.
 
 **Dev loop (no VSIX)**
@@ -457,13 +458,15 @@ pnpm run compile
 **Releasing a new version**
 
 1. Bump `"version"` in `ide-extensions/vscode/package.json`.
-2. `pnpm install --ignore-workspace && pnpm run package`
-3. Distribute the new `.vsix`; users Install from VSIX again (or replace the previous install).
+2. Sync shared board if needed: `pnpm run sync-kanban`
+3. `pnpm install --ignore-workspace && pnpm run package`
+4. Distribute the new `.vsix`; users Install from VSIX again (or replace the previous install).
 
 ### Build & deploy — Rider
 
 ```bash
 cd ide-extensions/rider
+cp ../shared-kanban/board.css ../shared-kanban/board.js src/main/resources/kanban/
 # Once, if wrapper missing:
 # gradle wrapper --gradle-version 8.7
 ./gradlew buildPlugin
@@ -471,19 +474,20 @@ cd ide-extensions/rider
 ```
 
 Install: **Settings → Plugins → ⚙ → Install Plugin from Disk** → select the ZIP.  
-Configure: **Settings → Tools → Project Management**.
+Configure: **Settings → Tools → Project Management**. Tool window: **PM Kanban**.
 
 ### Build & deploy — Visual Studio 2022
 
 1. Open `ide-extensions/visualstudio/ProjectManagement.PendingTasks.sln` with the **Visual Studio extension development** workload.
-2. Build **Release** → produces a `.vsix`.
-3. Install on target PCs (double-click `.vsix` or Extensions → Install from disk).
-4. Configure: **Tools → Options → Project Management**.
-5. Open: **View → PM Pending Tasks**.
+2. Ensure WebView2 package restore succeeds; copy `shared-kanban` assets into `Resources/kanban/` if needed.
+3. Build **Release** → produces a `.vsix`.
+4. Install on target PCs (double-click `.vsix` or Extensions → Install from disk).
+5. Configure: **Tools → Options → Project Management**.
+6. Open: **View → PM Kanban**.
 
 ### Ops notes
 
-- No server deploy step beyond a normal app release: extensions call existing `GET /api/user/profile` and `GET /api/tasks/my-tasks`.
+- No server deploy step beyond a normal app release: extensions call existing projects/tasks/status/`reorder-kanban` APIs with API tokens.
 - Ensure production `ALLOWED_ORIGINS` / reverse proxy allow HTTPS clients; API token auth does not use cookies.
 - Rotate/revoke tokens from Profile → API Tokens if a laptop is lost.
 - Do not commit `.vsix` / Rider ZIP / VS VSIX into git unless you intentionally version release binaries.
