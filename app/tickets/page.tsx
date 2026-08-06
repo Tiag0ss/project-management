@@ -1046,7 +1046,7 @@ export default function TicketsPage() {
         )}
 
         {/* Tickets List */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto">
           {loading ? (
             <div className="p-8 text-center text-gray-500 dark:text-gray-400">
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
@@ -1459,7 +1459,7 @@ export default function TicketsPage() {
                   </div>
 
                   {/* Category and Priority */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Category

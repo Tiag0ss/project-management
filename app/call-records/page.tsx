@@ -377,17 +377,17 @@ export default function CallRecordsPage() {
       <Navbar />
       <main className="w-full mx-auto py-6 px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
             📞 Call Records
           </h1>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => {
                 setError('');
                 setShowTeamsImportModal(true);
               }}
-              className="h-10 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
+              className="h-10 px-3 sm:px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
             >
               📅 Import Teams Calls
             </button>
@@ -396,7 +396,7 @@ export default function CallRecordsPage() {
                 setError('');
                 setShowImportModal(true);
               }}
-              className="h-10 px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
+              className="h-10 px-3 sm:px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
             >
               📥 Import CSV
             </button>
@@ -405,7 +405,7 @@ export default function CallRecordsPage() {
                 resetForm();
                 setShowForm(true);
               }}
-              className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
+              className="h-10 px-3 sm:px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
             >
               + Add Call
             </button>
@@ -660,7 +660,7 @@ export default function CallRecordsPage() {
         )}
 
         {/* Call Records Table */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden border border-gray-200 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 overflow-x-auto">
           {isLoadingRecords ? (
             <div className="text-center py-8 text-gray-500 dark:text-gray-400">
               Loading call records...

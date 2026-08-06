@@ -13,6 +13,7 @@ import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields'
 import { downloadCsv, parseCsv, toCsv } from '@/lib/csv';
 import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import EmptyState from '@/components/EmptyState';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
@@ -31,6 +32,8 @@ export default function OrganizationsPage() {
     const stored = window.localStorage.getItem('organizations:viewMode');
     return stored === 'grid' || stored === 'list' ? stored : 'list';
   });
+  const isMobile = useIsMobile();
+  const effectiveViewMode: 'grid' | 'list' = isMobile ? 'grid' : viewMode;
   const [filterText, setFilterText] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [projectFilter, setProjectFilter] = useState<OrgProjectFilter>('all');
@@ -526,11 +529,11 @@ export default function OrganizationsPage() {
       <Navbar />
       
       <div className="w-full mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Organizations</h1>
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap justify-between items-center gap-4 mb-5">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Organizations</h1>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
             {/* View Toggle */}
-            <div className="flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+            <div className="hidden sm:flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
               <button
                 onClick={() => setViewMode('grid')}
                 className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-300 dark:hover:bg-gray-600'}`}
@@ -554,21 +557,21 @@ export default function OrganizationsPage() {
               <button
                 onClick={() => setShowImportModal(true)}
                 disabled={isImportingCsv}
-                className="h-10 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
+                className="h-10 px-3 sm:px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
               >
                 {isImportingCsv ? 'Importing...' : 'Import CSV'}
               </button>
             )}
             <button
               onClick={handleExportOrganizationsCsv}
-              className="h-10 px-4 bg-gray-700 hover:bg-gray-800 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
+              className="h-10 px-3 sm:px-4 bg-gray-700 hover:bg-gray-800 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
             >
               Export CSV
             </button>
             {(user?.isAdmin || permissions?.canManageOrganizations) && (
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center gap-2"
+                className="h-10 px-3 sm:px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center gap-2"
               >
                 <span className="text-base leading-none">+</span>
                 New Organization
@@ -590,30 +593,30 @@ export default function OrganizationsPage() {
         )}
 
         {organizations.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-              <div className="text-sm text-blue-600 dark:text-blue-400 font-medium">🏢 Total</div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{organizationIndicators.total}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">all organizations</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-3 sm:p-4 text-center sm:text-left">
+              <div className="text-xs sm:text-sm text-blue-600 dark:text-blue-400 font-medium">🏢 Total</div>
+              <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mt-1">{organizationIndicators.total}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">all organizations</div>
             </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-              <div className="text-sm text-indigo-600 dark:text-indigo-400 font-medium">👁 In View</div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{organizationIndicators.inView}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">after current filters</div>
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-3 sm:p-4 text-center sm:text-left">
+              <div className="text-xs sm:text-sm text-indigo-600 dark:text-indigo-400 font-medium">👁 In View</div>
+              <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mt-1">{organizationIndicators.inView}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">after current filters</div>
             </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-              <div className="text-sm text-green-600 dark:text-green-400 font-medium">📁 With Projects</div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{organizationIndicators.withProjects}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">organizations with projects</div>
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-3 sm:p-4 text-center sm:text-left">
+              <div className="text-xs sm:text-sm text-green-600 dark:text-green-400 font-medium">📁 Projects</div>
+              <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mt-1">{organizationIndicators.withProjects}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">organizations with projects</div>
             </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-              <div className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-                {internalTicketsEnabled ? '🎫 Open Tickets' : '👥 Members'}
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-3 sm:p-4 text-center sm:text-left">
+              <div className="text-xs sm:text-sm text-amber-600 dark:text-amber-400 font-medium">
+                {internalTicketsEnabled ? '🎫 Tickets' : '👥 Members'}
               </div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">
+              <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mt-1">
                 {internalTicketsEnabled ? organizationIndicators.openTickets : organizationIndicators.totalMembers}
               </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
+              <div className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">
                 {internalTicketsEnabled
                   ? 'open tickets in current view'
                   : 'total team members in view'}
@@ -652,7 +655,7 @@ export default function OrganizationsPage() {
             }}
             secondaryAction={{ label: 'Reload', onClick: loadOrganizations }}
           />
-        ) : viewMode === 'grid' ? (
+        ) : effectiveViewMode === 'grid' ? (
           <>
             {/* Filters */}
             <div className="mb-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
@@ -819,7 +822,7 @@ export default function OrganizationsPage() {
                 </div>
               )}
             </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-10">
                   <tr>

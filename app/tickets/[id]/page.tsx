@@ -995,9 +995,9 @@ export default function TicketDetailPage() {
             Back to Tickets
           </button>
 
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
                 <span className="text-2xl">{getCategoryIcon(ticket.Category)}</span>
                 <span className="font-mono text-sm text-gray-500 dark:text-gray-400">{ticket.TicketNumber}</span>
                 <span className="px-3 py-1 text-sm font-medium rounded-full" style={getStatusStyle(ticket.Status)}>
@@ -1041,7 +1041,7 @@ export default function TicketDetailPage() {
             </div>
 
             {/* Actions */}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {isEditing ? (
                 <>
                   <button

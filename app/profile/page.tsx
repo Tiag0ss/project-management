@@ -1149,9 +1149,52 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
       <Navbar />
 
-      <div className="flex w-full  mx-auto min-h-[calc(100vh-64px)]">
+      <div className="flex flex-col md:flex-row w-full mx-auto min-h-[calc(100vh-64px)]">
+        {/* Mobile tabs */}
+        <div className="md:hidden sticky top-16 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+          <nav className="flex overflow-x-auto px-2 py-2 gap-1" aria-label="Profile tabs">
+            {([
+              { id: 'info' as const, label: 'Profile', icon: '👤' },
+              { id: 'vacations' as const, label: 'Vacations', icon: '🏖️' },
+              { id: 'outOfOffice' as const, label: 'OOO', icon: '🚫' },
+              ...(!isCustomerUser
+                ? [
+                    { id: 'workHours' as const, label: 'Hours', icon: '⏰' },
+                    { id: 'recurringTasks' as const, label: 'Recurring', icon: '🔁' },
+                  ]
+                : []),
+              { id: 'attachments' as const, label: 'Files', icon: '📎' },
+              { id: 'security' as const, label: 'Security', icon: '🔒' },
+              { id: 'apiTokens' as const, label: 'API', icon: '🔑' },
+              { id: 'emailAlerts' as const, label: 'Email', icon: '📧' },
+              ...(!isCustomerUser ? [{ id: 'taskForm' as const, label: 'Task Form', icon: '📝' }] : []),
+            ]).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  if (tab.id === 'vacations') loadVacationData();
+                  if (tab.id === 'outOfOffice') loadOutOfOfficeData();
+                  if (tab.id === 'emailAlerts') loadEmailPreferences();
+                  if (tab.id === 'attachments') loadAttachments();
+                  if (tab.id === 'recurringTasks') loadRecurringAllocations();
+                }}
+                className={`shrink-0 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="mr-1">{tab.icon}</span>
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
         {/* Sidebar */}
-        <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+        <aside className="hidden md:flex w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-col shrink-0">
           {/* User Profile Header */}
           <div className="p-6 border-b border-gray-200 dark:border-gray-700">
             <div className="flex flex-col items-center text-center">
@@ -1317,7 +1360,7 @@ export default function ProfilePage() {
         </aside>
 
         {/* Main Content */}
-        <main ref={scrollContainerRef} className="flex-1 overflow-auto">
+        <main ref={scrollContainerRef} className="flex-1 overflow-auto min-w-0">
           <div className="p-6">
               {message && (
                 <div className={`mb-4 p-3 rounded ${

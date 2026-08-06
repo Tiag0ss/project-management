@@ -11,6 +11,7 @@ import ScrollToTopButton from '@/components/ScrollToTopButton';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import EmptyState from '@/components/EmptyState';
 import { downloadCsv, parseBooleanLike, parseCsv, toCsv } from '@/lib/csv';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Application {
   Id: number;
@@ -52,11 +53,13 @@ export default function ApplicationsPage() {
   const [error, setError] = useState('');
   
   // View and filters
+  const isMobile = useIsMobile();
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => {
     if (typeof window === 'undefined') return 'list';
     const stored = window.localStorage.getItem('applications:viewMode');
     return stored === 'grid' || stored === 'list' ? stored : 'list';
   });
+  const effectiveViewMode: 'list' | 'grid' = isMobile ? 'grid' : viewMode;
   const [searchQuery, setSearchQuery] = useState('');
   const [filterOrg, setFilterOrg] = useState('');
   const [filterVersions, setFilterVersions] = useState<'all' | 'with' | 'without'>('all');
@@ -612,9 +615,9 @@ export default function ApplicationsPage() {
               {applications.length} application{applications.length !== 1 ? 's' : ''} across your organisations
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
             {/* View Toggle */}
-            <div className="flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+            <div className="hidden sm:flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
               <button
                 onClick={() => setViewMode('grid')}
                 className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-300 dark:hover:bg-gray-600'}`}
@@ -771,9 +774,9 @@ export default function ApplicationsPage() {
             }}
             secondaryAction={{ label: 'Reload', onClick: loadData }}
           />
-        ) : viewMode === 'list' ? (
+        ) : effectiveViewMode === 'list' ? (
           /* List View */
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
               <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-10">
                 <tr>

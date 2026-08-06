@@ -457,7 +457,7 @@ function AssignedKanbanTab({
 
   return (
     <div
-      className={`h-[calc(100vh-220px)] min-h-[560px] flex flex-col ${isDraggingTask ? 'select-none' : ''}`}
+      className={`h-[calc(100vh-220px)] min-h-[360px] md:min-h-[560px] flex flex-col ${isDraggingTask ? 'select-none' : ''}`}
       onDragEnterCapture={(e) => {
         if (!canManage) return;
         e.preventDefault();
@@ -2491,9 +2491,42 @@ function DashboardContent() {
         </main>
       ) : (
         /* Regular User View with Sidebar */
-        <div className="flex w-full  mx-auto min-h-[calc(100vh-64px)]">
+        <div className="flex flex-col md:flex-row w-full mx-auto min-h-[calc(100vh-64px)]">
+          {/* Mobile tab bar */}
+          <div className="md:hidden sticky top-16 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+            <nav className="flex overflow-x-auto px-2 py-2 gap-1" aria-label="Dashboard tabs">
+              {([
+                { id: 'overview' as const, label: 'Overview', icon: '🏠', href: '/dashboard' },
+                ...(!showCalendarInOverview
+                  ? [{ id: 'calendar' as const, label: 'Calendar', icon: '📅', href: '/dashboard?tab=calendar' }]
+                  : []),
+                { id: 'kanban' as const, label: 'Kanban', icon: '📋', href: '/dashboard?tab=kanban' },
+                ...(user?.isAdmin
+                  ? [{ id: 'analytics' as const, label: 'Analytics', icon: '📊', href: '/dashboard?tab=analytics' }]
+                  : []),
+              ]).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    window.history.pushState({}, '', tab.href);
+                  }}
+                  className={`shrink-0 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                    activeTab === tab.id
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <span className="mr-1">{tab.icon}</span>
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          </div>
+
           {/* Sidebar */}
-          <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+          <aside className="hidden md:flex w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-col shrink-0">
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">
               <h2 className="text-lg font-bold text-gray-900 dark:text-white">Dashboard</h2>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
@@ -2569,7 +2602,7 @@ function DashboardContent() {
           </aside>
 
           {/* Main Content */}
-          <main ref={scrollContainerRef} className="flex-1 overflow-auto p-6">
+          <main ref={scrollContainerRef} className="flex-1 overflow-auto p-4 md:p-6 min-w-0">
             {/* Overview Tab */}
             {activeTab === 'overview' && (
             overviewLoading ? (
@@ -2589,8 +2622,8 @@ function DashboardContent() {
             ) : (
             <div className="space-y-6">
               {/* Welcome Header */}
-              <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow p-6 text-white">
-                <div className="flex items-center justify-between gap-4">
+              <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow p-4 sm:p-6 text-white">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div>
                     <h2 className="text-2xl font-bold">
                       Welcome back, {user?.firstName || user?.username}!

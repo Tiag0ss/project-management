@@ -19,6 +19,7 @@ import ProjectFormModal from '@/components/ProjectFormModal';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { useColorVision } from '@/hooks/useColorVision';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 type ProjectSortField = 'name' | 'status' | 'tasks' | 'hours' | 'tickets' | 'startDate' | 'endDate' | 'budget' | 'rag' | 'progress';
 type SortDirection = 'asc' | 'desc';
@@ -28,6 +29,7 @@ export default function ProjectsPage() {
   const decimalHoursToHMS = useFormatHours();
   const { pillStyle } = useColorVision();
   const { showToast } = useToast();
+  const isMobile = useIsMobile();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [error, setError] = useState('');
@@ -36,6 +38,7 @@ export default function ProjectsPage() {
     const stored = window.localStorage.getItem('projects:viewMode');
     return stored === 'grid' || stored === 'list' ? stored : 'list';
   });
+  const effectiveViewMode: 'grid' | 'list' = isMobile ? 'grid' : viewMode;
   const [filterText, setFilterText] = useState('');
   const [filterOrg, setFilterOrg] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -641,9 +644,9 @@ export default function ProjectsPage() {
               <h2 className="text-3xl font-bold text-gray-900 dark:text-white">My Projects</h2>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{projects.length} project{projects.length !== 1 ? 's' : ''} across your organisations</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
               {/* View Toggle */}
-              <div className="flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+              <div className="hidden sm:flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
                 <button
                   onClick={() => setViewMode('grid')}
                   className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-300 dark:hover:bg-gray-600'}`}
@@ -692,7 +695,7 @@ export default function ProjectsPage() {
 
           {/* RAG Summary tiles */}
           {projects.length > 0 && (
-            <div className="grid grid-cols-4 gap-3 mb-5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
               <button
                 onClick={() => setFilterRAG('')}
                 className={`rounded-xl px-4 py-3 text-center transition-all border-2 ${filterRAG === '' ? 'border-gray-400 dark:border-gray-500 shadow-md' : 'border-transparent'} bg-white dark:bg-gray-800 shadow-sm hover:shadow-md`}
@@ -839,7 +842,7 @@ export default function ProjectsPage() {
                     }}
                     secondaryAction={{ label: 'Reload', onClick: loadProjects }}
                   />
-              ) : viewMode === 'grid' ? (
+              ) : effectiveViewMode === 'grid' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                   {filteredAndSortedProjects.map(project => (
                     <ProjectCard
@@ -856,7 +859,7 @@ export default function ProjectsPage() {
                   ))}
                 </div>
               ) : (
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700 overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                     <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-10">
                       <tr>

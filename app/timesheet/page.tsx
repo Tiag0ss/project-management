@@ -938,11 +938,11 @@ export default function TimesheetPage() {
             </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
-              <div className="border-b border-gray-200 dark:border-gray-700 px-6">
-                <nav className="flex space-x-8">
+              <div className="border-b border-gray-200 dark:border-gray-700 px-3 sm:px-6 overflow-x-auto">
+                <nav className="flex space-x-4 sm:space-x-8 min-w-max">
                   <button
                     onClick={() => setTimesheetView('daily')}
-                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                    className={`py-3 sm:py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
                       timesheetView === 'daily'
                         ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
@@ -952,7 +952,7 @@ export default function TimesheetPage() {
                   </button>
                   <button
                     onClick={() => setTimesheetView('weekly')}
-                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                    className={`py-3 sm:py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
                       timesheetView === 'weekly'
                         ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
@@ -965,7 +965,7 @@ export default function TimesheetPage() {
 
                 {/* Daily Entry View */}
                 {timesheetView === 'daily' && (
-                  <div className="p-6 space-y-6">
+                  <div className="p-3 sm:p-6 space-y-6">
                     {/* Time Entries List - Last 8 days */}
                     <div>
                       <div className="mb-4">
@@ -1133,9 +1133,9 @@ export default function TimesheetPage() {
 
                 {/* Weekly Grid View */}
                 {timesheetView === 'weekly' && (
-                  <div className="p-6">
+                  <div className="p-3 sm:p-6">
                     {/* Week Navigation */}
-                    <div className="mb-6 flex items-center justify-between">
+                    <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                       <div>
                         <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                           Weekly Timesheet
@@ -2240,7 +2240,7 @@ export default function TimesheetPage() {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Time</label>
                       <input

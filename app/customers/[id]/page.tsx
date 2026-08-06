@@ -866,9 +866,42 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
       <Navbar />
       
-      <div className="flex w-full  mx-auto">
+      <div className="flex flex-col md:flex-row w-full mx-auto">
+        {/* Mobile tabs */}
+        <div className="md:hidden sticky top-16 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+          <div className="px-3 pt-2">
+            <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{customer.Name}</p>
+          </div>
+          <nav className="flex overflow-x-auto px-2 py-2 gap-1" aria-label="Customer tabs">
+            {([
+              { id: 'overview' as const, label: 'Overview', icon: '📊' },
+              { id: 'users' as const, label: 'Users', icon: '👥' },
+              { id: 'settings' as const, label: 'Settings', icon: '⚙️' },
+              { id: 'attachments' as const, label: 'Files', icon: '📎' },
+              { id: 'history' as const, label: 'History', icon: '📜' },
+            ]).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  if (tab.id === 'attachments') loadAttachments();
+                }}
+                className={`shrink-0 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="mr-1">{tab.icon}</span>
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
         {/* Sidebar */}
-        <aside className="w-64 bg-white dark:bg-gray-800 min-h-[calc(100vh-64px)] border-r border-gray-200 dark:border-gray-700">
+        <aside className="hidden md:block w-64 bg-white dark:bg-gray-800 min-h-[calc(100vh-64px)] border-r border-gray-200 dark:border-gray-700 shrink-0">
           <div className="p-4">
             {/* Customer Header */}
             <div className="mb-6">
@@ -949,7 +982,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 p-6">
+        <main className="flex-1 p-3 sm:p-6 min-w-0">
           {error && (
             <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
               {error}
@@ -1418,7 +1451,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               Users associated with this customer will have limited access and can only view projects and tasks for this customer.
             </p>
 
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-900">
                   <tr>

@@ -49,9 +49,41 @@ export default function AdministrationPage() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Navbar />
 
-      <div className="flex w-full  mx-auto min-h-[calc(100vh-64px)]">
+      <div className="flex flex-col md:flex-row w-full mx-auto min-h-[calc(100vh-64px)]">
+        {/* Mobile tabs */}
+        <div className="md:hidden sticky top-16 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+          <nav className="flex overflow-x-auto px-2 py-2 gap-1" aria-label="Administration tabs">
+            {([
+              { id: 'users' as const, label: 'Users', icon: '👥' },
+              { id: 'permissions' as const, label: 'Permissions', icon: '🔐' },
+              { id: 'settings' as const, label: 'Settings', icon: '⚙️' },
+              { id: 'task-form' as const, label: 'Task Form', icon: '📝' },
+              { id: 'custom-fields' as const, label: 'Fields', icon: '🧩' },
+              { id: 'custom-tables' as const, label: 'Tables', icon: '🗃️' },
+              { id: 'holidays' as const, label: 'Holidays', icon: '📅' },
+              { id: 'logs' as const, label: 'Logs', icon: '📋' },
+              { id: 'frontpage' as const, label: 'Frontpage', icon: '🏠' },
+              { id: 'api-tokens' as const, label: 'API', icon: '🔑' },
+            ]).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`shrink-0 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="mr-1">{tab.icon}</span>
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
         {/* Sidebar */}
-        <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+        <aside className="hidden md:flex w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-col shrink-0">
           <div className="p-6 border-b border-gray-200 dark:border-gray-700">
             <h1 className="text-xl font-bold text-gray-900 dark:text-white">Administration</h1>
             <p className="text-sm text-gray-600 dark:text-gray-400">Manage system settings and configurations</p>
@@ -181,8 +213,8 @@ export default function AdministrationPage() {
         </aside>
 
         {/* Main Content */}
-        <main ref={scrollContainerRef} className="flex-1 overflow-auto">
-          <div className="p-6">
+        <main ref={scrollContainerRef} className="flex-1 overflow-auto min-w-0">
+          <div className="p-4 sm:p-6">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow">{activeTab === 'users' && <UsersManagement />}
           
           {activeTab === 'permissions' && <RolePermissionsManagement />}

@@ -2265,13 +2265,13 @@ export default function TaskDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full h-[90vh] overflow-hidden flex flex-col">
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center p-0 sm:p-4 z-[100]">
+      <div className="bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-lg shadow-xl max-w-4xl w-full h-[100dvh] sm:h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex justify-between items-start">
-            <div className="flex-1">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+        <div className="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+          <div className="flex justify-between items-start gap-2">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white line-clamp-2">
                 {task?.Id ? (
                   <>
                     <span className="text-gray-500 dark:text-gray-400 font-semibold mr-2">#{task.Id}</span>
@@ -2443,7 +2443,7 @@ export default function TaskDetailModal({
                 </div>
               )}
             </div>
-            <div ref={taskActionsMenuRef} className="relative ml-4 flex items-center gap-2">
+            <div ref={taskActionsMenuRef} className="relative ml-2 sm:ml-4 flex items-center gap-1 sm:gap-2 flex-wrap justify-end shrink-0">
               {task?.Id && (
                 <>
                   <button
@@ -2611,15 +2611,13 @@ export default function TaskDetailModal({
           </div>
 
           {/* Tabs */}
-          <div
-            className="grid gap-1 mt-3 border-b border-gray-200 dark:border-gray-700 -mb-4 pb-0"
-            style={{ gridTemplateColumns: `repeat(${Math.max(visibleTabs.length, 1)}, minmax(0, 1fr))` }}
-          >
+          <div className="mt-3 border-b border-gray-200 dark:border-gray-700 -mb-3 sm:-mb-4 overflow-x-auto">
+            <div className="flex gap-1 min-w-max">
             {visibleTabs.map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-3 py-2 text-sm font-medium rounded-t-lg transition-colors min-w-0 truncate text-center ${
+                className={`shrink-0 px-3 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
                   activeTab === tab
                     ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-t border-l border-r border-gray-200 dark:border-gray-700'
                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
@@ -2636,13 +2634,14 @@ export default function TaskDetailModal({
               >
                 {tab === 'details' && '📝 Details'}
                 {tab === 'checklist' && `✅ Checklist (${checklists.length})`}
-                {tab === 'hours' && `📅 Plan & Deps (${decimalHoursToHMS(totalWorked)})`}
+                {tab === 'hours' && `📅 Plan`}
                 {tab === 'comments' && `💬 Comments (${taskComments.length})`}
                 {tab === 'attachments' && `📎 Files (${taskAttachments.length})`}
-                {tab === 'history' && `📜 History (${taskHistory.length})`}
+                {tab === 'history' && `📜 History`}
                 {tab === 'commits' && '🔗 Commits'}
               </button>
             ))}
+            </div>
           </div>
         </div>
 

@@ -2497,9 +2497,50 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
       <Navbar />
 
-      <div className="flex">
+      <div className="flex flex-col md:flex-row">
+        {/* Mobile project tabs */}
+        <div className="md:hidden sticky top-16 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+          <nav className="flex overflow-x-auto px-2 py-2 gap-1" aria-label="Project tabs">
+            {([
+              { id: 'overview' as const, label: 'Overview', icon: '📊' },
+              { id: 'tasks' as const, label: 'Tasks', icon: '✅' },
+              { id: 'kanban' as const, label: 'Kanban', icon: '📋' },
+              { id: 'gantt' as const, label: 'Gantt', icon: '📅' },
+              ...(permissions?.canViewReports ? [{ id: 'reporting' as const, label: 'Reporting', icon: '📊' }] : []),
+              { id: 'burndown' as const, label: 'Burndown', icon: '📉' },
+              { id: 'sprints' as const, label: 'Sprints', icon: '🏃' },
+              { id: 'milestones' as const, label: 'Milestones', icon: '🏁' },
+              { id: 'attachments' as const, label: 'Files', icon: '📎' },
+              { id: 'dependencies' as const, label: 'Deps', icon: '🔗' },
+              { id: 'utilities' as const, label: 'Utils', icon: '🔧' },
+              ...(permissions?.canManageProjects ? [{ id: 'settings' as const, label: 'Settings', icon: '⚙️' }] : []),
+              ...(permissions?.canManageProjects && jiraIntegration?.IsEnabled && jiraIntegration?.JiraProjectsUrl
+                ? [{ id: 'mappings' as const, label: 'Mappings', icon: '🧭' }]
+                : []),
+              { id: 'history' as const, label: 'History', icon: '📜' },
+            ]).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  if (tab.id === 'attachments') loadProjectAttachments();
+                }}
+                className={`shrink-0 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="mr-1">{tab.icon}</span>
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
         {/* Sidebar */}
-        <aside className="w-64 bg-white dark:bg-gray-800 shadow-lg min-h-screen">
+        <aside className="hidden md:block w-64 bg-white dark:bg-gray-800 shadow-lg min-h-screen shrink-0">
           <div className="p-6">
             <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
               Project Menu
@@ -2668,7 +2709,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 min-w-0 p-6">
+        <main className="flex-1 min-w-0 p-3 sm:p-6">
           {error && (
             <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg flex items-start justify-between gap-3">
               <span>{error}</span>

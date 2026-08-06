@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { tasksApi, Task as ApiTask } from '@/lib/api/tasks';
 import { projectsApi, Project as ApiProject } from '@/lib/api/projects';
 import RichTextEditor from './RichTextEditor';
@@ -25,6 +25,7 @@ import { io, Socket } from 'socket.io-client';
 import { ThemeMode, getStoredThemeMode, setThemeMode } from '@/lib/theme';
 import { ColorVisionMode, getStoredColorVisionMode } from '@/lib/colorVision';
 import ColorVisionPicker from './navbar/ColorVisionPicker';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Organization {
   Id: number;
@@ -86,6 +87,8 @@ export default function Navbar() {
   const { permissions, isLoading: permissionsLoading } = usePermissions();
   const { showToast } = useToast();
   const router = useRouter();
+  const pathname = usePathname();
+  const isMobile = useIsMobile();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const [colorVisionMode, setColorVisionModeState] = useState<ColorVisionMode>('default');
@@ -123,6 +126,7 @@ export default function Navbar() {
   const [navbarLeftCollapsed, setNavbarLeftCollapsed] = useState(false);
   const [isLeftSidebarHovered, setIsLeftSidebarHovered] = useState(false);
   const [isFloatingSidebarOpen, setIsFloatingSidebarOpen] = useState(false);
+  const [isTopMobileNavOpen, setIsTopMobileNavOpen] = useState(false);
 
   // Notifications state
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -370,9 +374,13 @@ export default function Navbar() {
     document.body.classList.remove('nav-left-fixed-expanded');
     document.body.classList.remove('nav-left-fixed-collapsed');
 
+    // On mobile, left sidebar is always treated as floating (no fixed content offset)
+    const effectiveLeftMode =
+      isMobile && navbarMenuLayout === 'left' ? 'floating' : navbarLeftMode;
+
     const shouldApplyFixedOffset =
       navbarMenuLayout === 'left' &&
-      navbarLeftMode === 'fixed';
+      effectiveLeftMode === 'fixed';
 
     if (shouldApplyFixedOffset) {
       document.body.classList.add(navbarLeftCollapsed ? 'nav-left-fixed-collapsed' : 'nav-left-fixed-expanded');
@@ -382,7 +390,13 @@ export default function Navbar() {
       document.body.classList.remove('nav-left-fixed-expanded');
       document.body.classList.remove('nav-left-fixed-collapsed');
     };
-  }, [navbarMenuLayout, navbarLeftMode, navbarLeftCollapsed]);
+  }, [navbarMenuLayout, navbarLeftMode, navbarLeftCollapsed, isMobile]);
+
+  useEffect(() => {
+    if (isMobile) {
+      setIsFloatingSidebarOpen(false);
+    }
+  }, [isMobile]);
 
   const saveNavbarPreference = async (updates: {
     navbarLeftCollapsed?: boolean;
@@ -1614,6 +1628,11 @@ export default function Navbar() {
     console.log('Navbar - Permissions Loading:', permissionsLoading);
   }, [user, permissions, permissionsLoading]);
 
+  useEffect(() => {
+    setIsTopMobileNavOpen(false);
+    setIsFloatingSidebarOpen(false);
+  }, [pathname]);
+
   if (!user) return null;
 
   const canShowCustomersOption =
@@ -1663,11 +1682,18 @@ export default function Navbar() {
     canShowDevSupportManagementOption);
 
   const shouldUseLeftSidebar = navbarMenuLayout === 'left';
-  const isFloatingMode = shouldUseLeftSidebar && navbarLeftMode === 'floating';
-  const shouldRenderLeftSidebar = shouldUseLeftSidebar && (navbarLeftMode === 'fixed' || isFloatingSidebarOpen);
-  const isFixedCollapsedRail = shouldUseLeftSidebar && navbarLeftMode === 'fixed' && navbarLeftCollapsed;
+  // Mobile always uses floating overlay so content is not squeezed by a fixed rail
+  const effectiveNavbarLeftMode: 'fixed' | 'floating' =
+    isMobile && shouldUseLeftSidebar ? 'floating' : navbarLeftMode;
+  const isFloatingMode = shouldUseLeftSidebar && effectiveNavbarLeftMode === 'floating';
+  const shouldRenderLeftSidebar = shouldUseLeftSidebar && (effectiveNavbarLeftMode === 'fixed' || isFloatingSidebarOpen);
+  const isFixedCollapsedRail = shouldUseLeftSidebar && effectiveNavbarLeftMode === 'fixed' && navbarLeftCollapsed;
   const isHoverExpandedRail = isFixedCollapsedRail && isLeftSidebarHovered;
   const isSidebarEffectivelyCollapsed = !isFloatingMode && navbarLeftCollapsed && !isHoverExpandedRail;
+  const topMobileNavItemClass =
+    'flex items-center gap-3 px-4 py-3 rounded-lg text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm font-medium';
+
+  const closeTopMobileNav = () => setIsTopMobileNavOpen(false);
   const sidebarItemClass = `flex items-center gap-2 px-3 py-1.5 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 overflow-hidden whitespace-nowrap`;
   const sidebarSectionHeaderClass = 'px-3 h-5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400';
   const renderSidebarSectionHeader = (title: string) => {
@@ -1735,17 +1761,14 @@ export default function Navbar() {
           <button
             type="button"
             onClick={openNavStartTimerModal}
-            className="flex items-center gap-2 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2.5 py-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors animate-pulse ring-2 ring-red-300/70 dark:ring-red-900/70 shadow-[0_0_14px_rgba(239,68,68,0.45)] dark:shadow-[0_0_14px_rgba(248,113,113,0.35)]"
+            className="flex items-center gap-1.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 sm:px-2.5 py-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors animate-pulse ring-2 ring-red-300/70 dark:ring-red-900/70 shadow-[0_0_14px_rgba(239,68,68,0.45)] dark:shadow-[0_0_14px_rgba(248,113,113,0.35)] shrink-0"
             title="No timer running. Click to start timer"
           >
             <span>⏱</span>
             {centered ? (
               <span>No timer running — click to start</span>
             ) : (
-              <>
-                <span className="hidden sm:inline">No timer running — click to start</span>
-                <span className="sm:hidden">Start timer</span>
-              </>
+              <span className="hidden sm:inline">No timer running — click to start</span>
             )}
           </button>
         )}
@@ -1818,7 +1841,7 @@ export default function Navbar() {
         />
       )}
 
-      {navbarMenuLayout === 'left' && navbarLeftMode === 'fixed' && (
+      {navbarMenuLayout === 'left' && effectiveNavbarLeftMode === 'fixed' && (
         <div
           className={`fixed top-0 left-0 z-[79] h-16 ${navbarLeftCollapsed ? 'w-16' : 'w-72'} bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700`}
         />
@@ -1832,7 +1855,7 @@ export default function Navbar() {
           onMouseLeave={() => {
             if (isFixedCollapsedRail) setIsLeftSidebarHovered(false);
           }}
-          className={`${navbarLeftMode === 'floating'
+          className={`${effectiveNavbarLeftMode === 'floating'
             ? 'fixed left-4 top-20 bottom-4 z-[70] rounded-xl border border-gray-200 dark:border-gray-700'
             : 'fixed left-0 top-16 bottom-0 z-[70] border-r border-gray-200 dark:border-gray-700'} ${isSidebarEffectivelyCollapsed ? (isHoverExpandedRail ? 'w-72' : 'w-16') : 'w-72'} bg-white dark:bg-gray-800 shadow-xl transition-all duration-200`}
         >
@@ -1977,7 +2000,7 @@ export default function Navbar() {
                 </>
               )}
               {!isSidebarEffectivelyCollapsed && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 px-1">Mode: {navbarLeftMode === 'floating' ? 'Floating' : 'Fixed'}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 px-1">Mode: {effectiveNavbarLeftMode === 'floating' ? 'Floating' : 'Fixed'}{isMobile && navbarLeftMode === 'fixed' ? ' (auto on mobile)' : ''}</p>
               )}
             </div>
           </div>
@@ -1987,44 +2010,69 @@ export default function Navbar() {
       {/* outer nav stretches across entire header so background fills 100% */}
       <nav
         className={`sticky top-0 z-[80] w-full bg-white dark:bg-gray-800 shadow ${
-          navbarMenuLayout === 'left' && navbarLeftMode === 'fixed'
+          navbarMenuLayout === 'left' && effectiveNavbarLeftMode === 'fixed'
             ? (navbarLeftCollapsed ? 'nav-top-compensate-left-collapsed' : 'nav-top-compensate-left-expanded')
             : ''
         }`}
       >
         {/* content not limited to max width so nav items span entire header */}
-        <div className="w-full px-4 sm:px-6 lg:px-8">
-          <div className="relative flex justify-between h-16">
-            <div className="flex items-center space-x-8">
+        <div className="w-full px-2 sm:px-6 lg:px-8">
+          <div className="relative flex justify-between items-center h-16 gap-2">
+            <div className="flex items-center gap-2 sm:space-x-8 min-w-0 flex-1">
               {shouldUseLeftSidebar && (
                 <button
                   onClick={toggleLeftSidebar}
-                  className="p-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  className="p-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
                   title={isFloatingMode ? (isFloatingSidebarOpen ? 'Hide menu' : 'Show menu') : (navbarLeftCollapsed ? 'Show menu' : 'Hide menu')}
+                  aria-label="Toggle navigation menu"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                   </svg>
                 </button>
               )}
-              <div className="flex items-center gap-3">
+              {!shouldUseLeftSidebar && (
+                <button
+                  type="button"
+                  onClick={() => setIsTopMobileNavOpen((open) => !open)}
+                  className="md:hidden p-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
+                  title={isTopMobileNavOpen ? 'Hide menu' : 'Show menu'}
+                  aria-label="Toggle navigation menu"
+                  aria-expanded={isTopMobileNavOpen}
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {isTopMobileNavOpen ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    )}
+                  </svg>
+                </button>
+              )}
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                 {companyLogoUrl ? (
                   <img
                     src={companyLogoUrl}
                     alt={companyName || 'Company logo'}
-                    className="w-8 h-8 rounded object-contain bg-white"
+                    className="w-8 h-8 rounded object-contain bg-white shrink-0"
                   />
                 ) : (
-                  <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm shrink-0">
                     {(companyName || 'PM').trim().charAt(0).toUpperCase() || 'P'}
                   </div>
                 )}
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+                <h1
+                  className={`text-base sm:text-xl font-bold text-gray-900 dark:text-white truncate ${
+                    shouldUseLeftSidebar
+                      ? 'hidden md:block max-w-[180px] lg:max-w-none'
+                      : 'max-w-[100px] xs:max-w-[140px] sm:max-w-[220px] md:max-w-none'
+                  }`}
+                >
                   {companyName || 'Project Management'}
                 </h1>
                 {isDemoMode && (
                   <span
-                    className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700"
+                    className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700 shrink-0"
                     title="Demo mode is enabled"
                   >
                     DEMO MODE
@@ -2194,15 +2242,15 @@ export default function Navbar() {
             </div>
 
             {!isCustomerUser && shouldUseLeftSidebar && (
-              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[81]">
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[81] hidden md:block">
                 <NavTimerIndicator centered />
               </div>
             )}
 
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center gap-1.5 sm:gap-2 md:space-x-4 shrink-0">
               {/* Global Search - Hidden for customer users */}
               {!isCustomerUser && (
-              <div className="relative" ref={searchRef}>
+              <div className="relative hidden sm:block" ref={searchRef}>
                 <div className="relative">
                   <input
                     type="text"
@@ -2210,7 +2258,7 @@ export default function Navbar() {
                     onChange={(e) => handleSearch(e.target.value)}
                     onFocus={() => searchQuery.length >= 2 && setSearchOpen(true)}
                     placeholder="Search..."
-                    className="w-48 lg:w-64 px-4 py-2 pl-10 text-sm bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+                    className="w-40 md:w-48 lg:w-64 px-4 py-2 pl-10 text-sm bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
                   />
                   <svg 
                     className="absolute left-3 top-2.5 w-4 h-4 text-gray-400"
@@ -2414,14 +2462,14 @@ export default function Navbar() {
                 <button
                   onClick={() => setQuickActionsOpen(!quickActionsOpen)}
                   title="Quick Actions (Ctrl+Q)"
-                  className="flex items-center space-x-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                  className="flex items-center space-x-1 px-2 sm:px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors shrink-0"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
                   <span className="hidden sm:inline">Quick Actions</span>
                   <svg 
-                    className={`w-4 h-4 transition-transform ${quickActionsOpen ? 'rotate-180' : ''}`}
+                    className={`hidden sm:block w-4 h-4 transition-transform ${quickActionsOpen ? 'rotate-180' : ''}`}
                     fill="none" 
                     stroke="currentColor" 
                     viewBox="0 0 24 24"
@@ -2503,14 +2551,14 @@ export default function Navbar() {
               </div>
               )}
 
-              {/* Timer indicator */}
-              {!isCustomerUser && !shouldUseLeftSidebar && (
+              {/* Timer indicator — inline on mobile for left layout; centered only on md+ */}
+              {!isCustomerUser && (!shouldUseLeftSidebar || isMobile) && (
                 <NavTimerIndicator />
               )}
 
               {/* Notifications Dropdown - Hidden for customer users */}
               {!isCustomerUser && (
-              <div className="relative" ref={notificationsRef}>
+              <div className="relative shrink-0" ref={notificationsRef}>
                 <button
                   onClick={handleNotificationsClick}
                   className="relative p-2 text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
@@ -2527,7 +2575,7 @@ export default function Navbar() {
                 </button>
 
                 {notificationsOpen && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 max-h-96 overflow-hidden">
+                  <div className="absolute right-0 mt-2 w-[calc(100vw-2rem)] max-w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 max-h-96 overflow-hidden">
                     <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
                       <h3 className="font-semibold text-gray-900 dark:text-white">Notifications</h3>
                       {unreadCount > 0 && (
@@ -2621,14 +2669,19 @@ export default function Navbar() {
               )}
 
               {/* User Menu */}
-              <div className="relative" ref={dropdownRef}>
+              <div className="relative shrink-0" ref={dropdownRef}>
                 <button
                   onClick={() => setDropdownOpen(!dropdownOpen)}
-                  className="flex items-center space-x-2 text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
+                  className="flex items-center space-x-1 sm:space-x-2 text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-1.5 sm:px-3 py-2 rounded-md text-sm font-medium"
+                  title={user.firstName || user.username}
+                  aria-label="User menu"
                 >
-                  <span>{user.firstName || user.username}</span>
+                  <span className="hidden sm:inline">{user.firstName || user.username}</span>
+                  <span className="sm:hidden inline-flex h-7 w-7 items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-xs font-semibold">
+                    {(user.firstName || user.username || 'U').trim().charAt(0).toUpperCase()}
+                  </span>
                   <svg 
-                    className={`w-4 h-4 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
+                    className={`hidden sm:block w-4 h-4 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
                     fill="none" 
                     stroke="currentColor" 
                     viewBox="0 0 24 24"
@@ -2759,6 +2812,108 @@ export default function Navbar() {
           </div>
         </div>
       </nav>
+
+      {!shouldUseLeftSidebar && isTopMobileNavOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-[70] bg-black/30 md:hidden"
+            onClick={closeTopMobileNav}
+            aria-hidden="true"
+          />
+          <div className="md:hidden sticky top-16 z-[75] w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-lg max-h-[calc(100dvh-4rem)] overflow-y-auto">
+            <nav className="px-3 py-3 space-y-1" aria-label="Mobile primary">
+              {canShowDashboardLink && (
+                <a href="/dashboard" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>📊</span><span>Dashboard</span>
+                </a>
+              )}
+              {canShowProjectsLink && (
+                <a href="/projects" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>📁</span><span>Projects</span>
+                </a>
+              )}
+              {canShowPlanningLink && (
+                <a href="/planning" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>📅</span><span>Planning</span>
+                </a>
+              )}
+              {canShowTimesheetLink && (
+                <a href="/timesheet" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>📝</span><span>Timesheet</span>
+                </a>
+              )}
+              {canShowCallRecordsLink && (
+                <a href="/call-records" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>📞</span><span>Call Records</span>
+                </a>
+              )}
+              {canShowWorkSummaryLink && (
+                <a href="/work-summary" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>📚</span><span>Work Summary</span>
+                </a>
+              )}
+              {canShowTicketsLink && (
+                <a href="/tickets" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>🎫</span><span>Tickets</span>
+                </a>
+              )}
+              {canShowMemosLink && (
+                <a href="/memos" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>📝</span><span>Memos</span>
+                </a>
+              )}
+              {canShowCustomersOption && (
+                <a href="/customers" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>🏢</span><span>Customers</span>
+                </a>
+              )}
+              {canShowApplicationsOption && (
+                <a href="/applications" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>🧩</span><span>Applications</span>
+                </a>
+              )}
+              {canShowOrganizationsOption && (
+                <a href="/organizations" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>🏬</span><span>Organizations</span>
+                </a>
+              )}
+              {canShowAnyApprovalsOption && (
+                <a
+                  href={
+                    canShowApprovalsOption
+                      ? '/approvals?tab=time'
+                      : (canShowVacationApprovalsOption ? '/approvals?tab=vacations' : '/approvals?tab=out-of-office')
+                  }
+                  className={topMobileNavItemClass}
+                  onClick={closeTopMobileNav}
+                >
+                  <span>✅</span><span>Approvals</span>
+                </a>
+              )}
+              {canShowDevSupportManagementOption && (
+                <a href="/dev-support" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>🛠️</span><span>Dev Support</span>
+                </a>
+              )}
+              {canShowReportsLink && (
+                <a href="/reports" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>📊</span><span>Reports</span>
+                </a>
+              )}
+              {canShowReportsLink && (
+                <a href="/web-reports" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>📈</span><span>Advanced Reports</span>
+                </a>
+              )}
+              {canShowDocsLink && (
+                <a href="/docs" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>📘</span><span>User Manual</span>
+                </a>
+              )}
+            </nav>
+          </div>
+        </>
+      )}
 
       {/* Quick Task Add Modal */}
       {navTaskModalState.show && (

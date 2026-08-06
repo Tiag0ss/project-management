@@ -36,6 +36,7 @@ Comprehensive documentation of all features available in the application. Use th
 24. [GitHub & Gitea Integration](#24-github--gitea-integration)
 25. [Redis Cache (Optional)](#25-redis-cache-optional)
 26. [IDE Extensions (Project Kanban)](#26-ide-extensions-project-kanban)
+27. [Mobile (phases 1–2)](#27-mobile-phases-12)
 
 ---
 
@@ -1124,6 +1125,36 @@ Setup, contract, and test checklist: [`ide-extensions/README.md`](../ide-extensi
 Userscript [`scripts/tampermonkey/pm-task-commit-links.user.js`](../scripts/tampermonkey/pm-task-commit-links.user.js) turns `Task #N` on GitHub / Bitbucket / Gitea commit pages into links to `/dashboard?task=N` (opens `TaskDetailModal`). Configure one PM base URL per git host in `PM_BY_HOST` (or Tampermonkey menu override).
 
 Deep-link handled by the app: `/dashboard?task=<id>` (also `?taskId=`).
+
+---
+
+## 27. Mobile (phases 1–2)
+
+Phone layouts (viewport ≤767px / Tailwind `md`). Shared hook: [`hooks/useIsMobile.ts`](../hooks/useIsMobile.ts).
+
+### Phase 1 — daily work
+
+| Surface | Behaviour |
+|---------|-----------|
+| Top Navbar | Hamburger drawer with primary links (`md:hidden`); search hidden below `sm` |
+| Dashboard | Horizontal tabs instead of `w-64` aside; stacked welcome header |
+| Projects list | Grid view forced on phone; RAG tiles `2×2`; list table scrolls if used |
+| Project detail | Horizontal scrollable tabs; denser main padding |
+| TaskDetailModal | Full-height sheet; scrollable tabs; denser header |
+| Timesheet | Scrollable Daily/Weekly tabs; denser padding; edit form stacks |
+
+### Phase 2 — ops, org, admin, reports, auth
+
+| Surface | Behaviour |
+|---------|-----------|
+| Customer / Organization / Profile / Administration | Horizontal tabs replace `w-64` aside below `md` |
+| Applications detail (Versions) | Version list stacks above detail panel on phone |
+| Customer / Organization / Application lists | Grid forced on phone; view toggle hidden below `sm`; KPI tiles denser `2×2`; toolbars wrap |
+| Tickets / Call records / Notifications / Memos | Stacked toolbars; wrap action buttons |
+| CallRecordFormModal / ConfirmAlertModal / auth forms | Stacked grids / denser padding |
+| Work summary / planning-import | Denser page padding |
+
+**Later (phase 3):** Planning Gantt read-only via `canPlanOnThisDevice`. Planning remains desktop-first for editing.
 
 ---
 

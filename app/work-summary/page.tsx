@@ -523,9 +523,9 @@ export default function WorkSummaryPage() {
     <CustomerUserGuard>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Navbar />
-        <main className="w-full mx-auto py-6 sm:px-6 lg:px-8">
-          <div className="px-4 py-6 sm:px-0">
-            <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow p-6 text-white mb-6">
+        <main className="w-full mx-auto py-4 sm:py-6 px-4 sm:px-6 lg:px-8">
+          <div className="px-0 sm:px-0">
+            <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow p-4 sm:p-6 text-white mb-6">
               <h1 className="text-3xl font-bold">Work Summary</h1>
               <p className="text-blue-100 mt-1">Combined view of Time Entries and Call Records</p>
             </div>
@@ -790,7 +790,7 @@ export default function WorkSummaryPage() {
                       </label>
                     </div>
 
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700" data-grid-enhancer-ignore="true">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-x-auto" data-grid-enhancer-ignore="true">
                       {isLoadingData ? (
                         <div className="text-center py-8 text-gray-500">Loading...</div>
                       ) : groupByDays ? (

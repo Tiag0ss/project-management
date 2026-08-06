@@ -2060,17 +2060,24 @@ This document contains comprehensive test scenarios to verify all functionality 
 
 ### TC-UI-003: Responsive Design (Mobile)
 **Steps:**
-1. Open application on mobile device or resize browser to mobile width
-2. Navigate through pages
-3. Open modals, dropdowns
+1. Open application on mobile device or resize browser to width ≤767px
+2. With **top** navbar layout: open hamburger and navigate to Dashboard, Projects, Timesheet
+3. On Dashboard / Project detail: switch tabs via the horizontal tab bar
+4. Open a task (`TaskDetailModal`) and switch tabs
+5. Open Timesheet Daily and Weekly views; open edit entry modal if available
+6. Open Customer / Organization / Profile / Administration detail pages and switch tabs via the horizontal tab bar
+7. Open Tickets, Call Records, Work Summary, Approvals — confirm tables scroll horizontally and toolbars wrap
+8. Open Applications → Versions tab — version list stacks above detail on phone
+9. Open Login / Register — forms usable; name fields stack on register
 
 **Expected:**
 - Layout adapts to mobile screen
-- Navigation collapses to hamburger menu
-- Tables scroll horizontally
-- Modals fit screen
-- Touch interactions work
-- Forms usable on mobile
+- Top navigation collapses to hamburger menu (left layout keeps its existing hamburger)
+- Sidebars (dashboard, project, customer, org, profile, admin) become horizontal tabs below `md`
+- Tables scroll horizontally where still used; projects list prefers grid on phone
+- TaskDetailModal fits as a full-height sheet with scrollable tabs
+- Forms and shared modals usable on mobile (stacked actions / grids)
+- Planning Gantt mobile read-only is out of scope until phase 3
 
 ### TC-UI-004: Rich Text Editor
 **Steps:**

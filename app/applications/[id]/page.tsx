@@ -888,9 +888,9 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
 
         {/* ── VERSIONS TAB ──────────────────────────────────────────────── */}
         {activeTab === 'versions' && (
-          <div className="flex gap-6">
+          <div className="flex flex-col md:flex-row gap-4 md:gap-6">
             {/* Version list */}
-            <div className="w-72 shrink-0">
+            <div className="w-full md:w-72 shrink-0">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-semibold text-gray-900 dark:text-white">Versions</h2>
                 <div className="flex gap-2">
@@ -1239,7 +1239,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
               )}
 
               <form onSubmit={handleSaveVersion} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Version Number <span className="text-red-500">*</span>
@@ -1267,7 +1267,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Status

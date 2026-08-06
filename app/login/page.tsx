@@ -85,7 +85,7 @@ function LoginPageInner() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100 dark:bg-gray-900 px-4">
       <div className="w-full max-w-md">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 sm:p-8">
           <h1 className="text-3xl font-bold text-center mb-8 text-gray-900 dark:text-white">
             Login
           </h1>

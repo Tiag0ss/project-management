@@ -479,9 +479,9 @@ export default function PlanningImportPage() {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen w-full bg-gray-100 dark:bg-gray-900 p-6">
+    <div className="min-h-screen w-full bg-gray-100 dark:bg-gray-900 p-3 sm:p-6">
       <div className="w-full space-y-6">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Planning CSV Import</h1>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
             Standalone import page without menu. Use this to map CSV columns and import allocations into one organization.
