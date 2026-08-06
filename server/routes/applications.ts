@@ -15,8 +15,47 @@ import {
   resolveGitCredentials,
   listRemoteCommits,
 } from '../utils/gitRemote';
+import {
+  APPLICATION_IMAGE_TYPES,
+  APPLICATION_UPLOAD_DIR,
+  deletePublicUploadIfOwned,
+  writePublicUpload,
+} from '../utils/publicUploads';
 
 const router = Router();
+
+const MAX_APPLICATION_IMAGE_BYTES = 2 * 1024 * 1024;
+
+async function userCanManageApplications(userId: number, organizationId: number): Promise<boolean> {
+  const [user] = await pool.execute<RowDataPacket[]>(
+    'SELECT isAdmin, IsDeveloper, IsSupport, IsManager FROM Users WHERE Id = ?',
+    [userId]
+  );
+  if (!user.length) return false;
+  if (user[0].isAdmin) return true;
+
+  const roles: string[] = [];
+  if (user[0].IsDeveloper) roles.push('Developer');
+  if (user[0].IsSupport) roles.push('Support');
+  if (user[0].IsManager) roles.push('Manager');
+
+  if (roles.length > 0) {
+    const placeholders = roles.map(() => '?').join(',');
+    const [rolePerms] = await pool.execute<RowDataPacket[]>(
+      `SELECT CanManageApplications FROM RolePermissions WHERE RoleName IN (${placeholders})`,
+      roles
+    );
+    if (rolePerms.some((rp: any) => rp.CanManageApplications === 1)) return true;
+  }
+
+  const [orgPerms] = await pool.execute<RowDataPacket[]>(
+    `SELECT pg.CanManageApplications FROM PermissionGroups pg
+     INNER JOIN OrganizationMembers om ON om.PermissionGroupId = pg.Id
+     WHERE om.UserId = ? AND pg.OrganizationId = ?`,
+    [userId, organizationId]
+  );
+  return orgPerms.some((op: any) => op.CanManageApplications === 1);
+}
 
 function normalizeDateOnly(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -696,6 +735,99 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   } catch (error) {
     logger.error('Error updating application:', error);
     res.status(500).json({ success: false, message: 'Failed to update application' });
+  }
+});
+
+// POST /api/applications/:id/image - upload application image (local path only)
+router.post('/:id/image', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    const { fileName, fileType, fileData, fileSize } = req.body || {};
+
+    if (!fileType || !fileData) {
+      return res.status(400).json({ success: false, message: 'fileType and fileData are required' });
+    }
+    if (!APPLICATION_IMAGE_TYPES.has(String(fileType))) {
+      return res.status(400).json({ success: false, message: 'File type not allowed. Use PNG, JPEG, WebP, or SVG.' });
+    }
+
+    const [apps] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id, OrganizationId, ImagePath FROM Applications WHERE Id = ? AND IsActive = 1',
+      [id]
+    );
+    if (!apps.length) {
+      return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+
+    const organizationId = Number(apps[0].OrganizationId);
+    if (!(await userCanManageApplications(userId!, organizationId))) {
+      return res.status(403).json({ success: false, message: 'Access denied. You do not have permission to manage applications.' });
+    }
+
+    const buffer = Buffer.from(
+      String(fileData).includes(',') ? String(fileData).split(',')[1] : String(fileData),
+      'base64'
+    );
+    const size = Number(fileSize) || buffer.length;
+    if (size > MAX_APPLICATION_IMAGE_BYTES) {
+      return res.status(400).json({ success: false, message: 'File size exceeds 2MB limit' });
+    }
+
+    const { publicPath } = writePublicUpload({
+      dir: APPLICATION_UPLOAD_DIR,
+      publicPrefix: '/uploads/applications',
+      fileType: String(fileType),
+      fileName: fileName ? String(fileName) : undefined,
+      fileData: String(fileData),
+      namePrefix: `app-${id}`,
+    });
+
+    deletePublicUploadIfOwned(apps[0].ImagePath, APPLICATION_UPLOAD_DIR);
+
+    await pool.execute(
+      'UPDATE Applications SET ImagePath = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE Id = ?',
+      [publicPath, id]
+    );
+    await invalidateByEntity('application', { applicationId: id, orgId: organizationId });
+
+    res.json({ success: true, imagePath: publicPath, message: 'Application image uploaded' });
+  } catch (error) {
+    logger.error('Error uploading application image:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload application image' });
+  }
+});
+
+// DELETE /api/applications/:id/image - remove application image
+router.delete('/:id/image', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+
+    const [apps] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id, OrganizationId, ImagePath FROM Applications WHERE Id = ? AND IsActive = 1',
+      [id]
+    );
+    if (!apps.length) {
+      return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+
+    const organizationId = Number(apps[0].OrganizationId);
+    if (!(await userCanManageApplications(userId!, organizationId))) {
+      return res.status(403).json({ success: false, message: 'Access denied. You do not have permission to manage applications.' });
+    }
+
+    deletePublicUploadIfOwned(apps[0].ImagePath, APPLICATION_UPLOAD_DIR);
+    await pool.execute(
+      'UPDATE Applications SET ImagePath = NULL, UpdatedAt = CURRENT_TIMESTAMP WHERE Id = ?',
+      [id]
+    );
+    await invalidateByEntity('application', { applicationId: id, orgId: organizationId });
+
+    res.json({ success: true, message: 'Application image removed' });
+  } catch (error) {
+    logger.error('Error deleting application image:', error);
+    res.status(500).json({ success: false, message: 'Failed to remove application image' });
   }
 });
 

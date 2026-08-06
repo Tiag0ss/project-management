@@ -12,8 +12,21 @@ import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/componen
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import ProfileTaskFormVisibility from '@/components/profile/ProfileTaskFormVisibility';
 import ApiTokensManagement from '@/components/admin/ApiTokensManagement';
+import { useUrlTab } from '@/hooks/useUrlTab';
 
-// Complete list of IANA timezones
+const PROFILE_TABS = [
+  'info',
+  'attachments',
+  'workHours',
+  'security',
+  'apiTokens',
+  'emailAlerts',
+  'recurringTasks',
+  'vacations',
+  'outOfOffice',
+  'taskForm',
+] as const;
+type ProfileTab = (typeof PROFILE_TABS)[number];
 const TIMEZONES = [
   { value: '', label: 'Use system default' },
   { value: 'UTC', label: 'UTC (Coordinated Universal Time)' },
@@ -118,7 +131,7 @@ export default function ProfilePage() {
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const { user, token, isLoading: authLoading, isCustomerUser, updateUser } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'info' | 'attachments' | 'workHours' | 'security' | 'apiTokens' | 'emailAlerts' | 'recurringTasks' | 'vacations' | 'outOfOffice' | 'taskForm'>('info');
+  const [activeTab, setActiveTab] = useUrlTab<ProfileTab>(PROFILE_TABS, 'info');
   const [attachments, setAttachments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   

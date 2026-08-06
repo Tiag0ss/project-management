@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
@@ -15,12 +15,25 @@ import CustomFieldsManagement from '@/components/admin/CustomFieldsManagement';
 import CustomTablesManagement from '@/components/admin/CustomTablesManagement';
 import ApiTokensManagement from '@/components/admin/ApiTokensManagement';
 import TaskFormVisibilitySettingsPanel from '@/components/admin/TaskFormVisibilitySettingsPanel';
+import { useUrlTab } from '@/hooks/useUrlTab';
 
 type AdminTab = 'users' | 'permissions' | 'settings' | 'task-form' | 'custom-fields' | 'custom-tables' | 'holidays' | 'logs' | 'frontpage' | 'api-tokens';
+const ADMIN_TABS = [
+  'users',
+  'permissions',
+  'settings',
+  'task-form',
+  'custom-fields',
+  'custom-tables',
+  'holidays',
+  'logs',
+  'frontpage',
+  'api-tokens',
+] as const;
 
 export default function AdministrationPage() {
   const scrollContainerRef = useRef<HTMLElement | null>(null);
-  const [activeTab, setActiveTab] = useState<AdminTab>('users');
+  const [activeTab, setActiveTab] = useUrlTab<AdminTab>(ADMIN_TABS, 'users');
   const { user, token, isLoading } = useAuth();
   const router = useRouter();
 

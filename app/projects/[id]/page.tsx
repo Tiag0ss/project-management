@@ -34,6 +34,25 @@ import SegmentedTagBadge from '@/components/tags/SegmentedTagBadge';
 import JiraStatusMappingPanel from '@/components/projects/JiraStatusMappingPanel';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { useColorVision } from '@/hooks/useColorVision';
+import { useUrlTab } from '@/hooks/useUrlTab';
+
+const PROJECT_DETAIL_TABS = [
+  'overview',
+  'tasks',
+  'kanban',
+  'gantt',
+  'reporting',
+  'settings',
+  'mappings',
+  'utilities',
+  'attachments',
+  'history',
+  'dependencies',
+  'burndown',
+  'sprints',
+  'milestones',
+] as const;
+type ProjectDetailTab = (typeof PROJECT_DETAIL_TABS)[number];
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -47,7 +66,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [tickets, setTickets] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'kanban' | 'gantt' | 'reporting' | 'settings' | 'mappings' | 'utilities' | 'attachments' | 'history' | 'dependencies' | 'burndown' | 'sprints' | 'milestones'>('overview');
+  const [activeTab, setActiveTab] = useUrlTab<ProjectDetailTab>(PROJECT_DETAIL_TABS, 'overview', {
+    clearParamsOnChange: ['taskId', 'task'],
+  });
   const [showEditModal, setShowEditModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -430,16 +451,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // Deep-link: /projects/:id?tab=tasks&taskId=:taskId (also accepts ?task= for older email links)
   useEffect(() => {
     if (deepLinkHandledRef.current || isLoading) return;
-    const tab = searchParams.get('tab');
     const taskIdParam = searchParams.get('taskId') || searchParams.get('task');
-    if (!tab && !taskIdParam) return;
-
-    if (tab === 'tasks' || taskIdParam) {
-      setActiveTab('tasks');
-    }
-
     if (!taskIdParam) {
-      if (tab === 'tasks') deepLinkHandledRef.current = true;
+      if (searchParams.get('tab')) deepLinkHandledRef.current = true;
       return;
     }
 
@@ -455,8 +469,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     deepLinkHandledRef.current = true;
     setEditingTask(task);
     setShowTaskModal(true);
-    router.replace(`/projects/${projectId}?tab=tasks`, { scroll: false });
-  }, [isLoading, tasks, searchParams, projectId, router]);
+    setActiveTab('tasks');
+  }, [isLoading, tasks, searchParams, setActiveTab]);
 
   const loadProject = async () => {
     if (!token) return;

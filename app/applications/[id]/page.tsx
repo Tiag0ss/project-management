@@ -16,8 +16,10 @@ import CommitMessage from '@/components/CommitMessage';
 import { Task, tasksApi } from '@/lib/api/tasks';
 import { Project, projectsApi } from '@/lib/api/projects';
 import { useColorVision } from '@/hooks/useColorVision';
+import { useUrlTab } from '@/hooks/useUrlTab';
 
 type Tab = 'overview' | 'versions' | 'commits';
+const APPLICATION_DETAIL_TABS = ['overview', 'versions', 'commits'] as const;
 
 interface RemoteCommit {
   sha: string;
@@ -42,6 +44,7 @@ interface Application {
   Name: string;
   Description: string | null;
   RepositoryUrl: string | null;
+  ImagePath?: string | null;
   IsCustomerSpecific: number | boolean;
   OrganizationId: number;
   OrganizationName: string;
@@ -104,7 +107,7 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [activeTab, setActiveTab] = useUrlTab<Tab>(APPLICATION_DETAIL_TABS, 'overview');
 
   const [commits, setCommits] = useState<RemoteCommit[]>([]);
   const [commitsLoading, setCommitsLoading] = useState(false);
@@ -723,11 +726,20 @@ export default function ApplicationDetailPage({ params }: { params: Promise<{ id
             Applications
           </button>
 
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-4xl">📦</span>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{application.Name}</h1>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              {application.ImagePath ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={application.ImagePath}
+                  alt=""
+                  className="h-14 w-14 rounded-xl object-cover border border-gray-200 dark:border-gray-600 shrink-0 bg-white"
+                />
+              ) : (
+                <span className="text-4xl shrink-0">📦</span>
+              )}
+              <div className="min-w-0">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white truncate">{application.Name}</h1>
                 <p className="text-sm text-gray-500 dark:text-gray-400">{application.OrganizationName}</p>
               </div>
             </div>

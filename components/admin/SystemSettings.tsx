@@ -200,6 +200,9 @@ export default function SystemSettings() {
   const openAIApiKeyRef = useRef<HTMLInputElement>(null);
   const [aiViewsSyncMessage, setAiViewsSyncMessage] = useState('');
   const [aiViewsSyncError, setAiViewsSyncError] = useState('');
+  const [isUploadingBranding, setIsUploadingBranding] = useState<'logo' | 'favicon' | null>(null);
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
+  const faviconFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (token) {
@@ -415,6 +418,50 @@ export default function SystemSettings() {
     setSettings(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleBrandingUpload = async (kind: 'logo' | 'favicon', file: File | null) => {
+    if (!token || !file) return;
+    setIsUploadingBranding(kind);
+    setError('');
+    try {
+      const fileData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+      });
+
+      const response = await fetch(`${getApiUrl()}/api/system-settings/branding-upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          kind,
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+          fileData,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Upload failed');
+      }
+      const field = kind === 'logo' ? 'companyLogoUrl' : 'faviconUrl';
+      handleChange(field, data.url || '');
+      showToast({ type: 'success', message: data.message || 'Uploaded' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      setError(message);
+      showToast({ type: 'error', message });
+    } finally {
+      setIsUploadingBranding(null);
+      if (kind === 'logo' && logoFileInputRef.current) logoFileInputRef.current.value = '';
+      if (kind === 'favicon' && faviconFileInputRef.current) faviconFileInputRef.current.value = '';
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="p-6 flex justify-center items-center">
@@ -499,9 +546,30 @@ export default function SystemSettings() {
                   type="url"
                   value={settings.companyLogoUrl || ''}
                   onChange={(e) => handleChange('companyLogoUrl', e.target.value)}
-                  placeholder="https://example.com/logo.png"
+                  placeholder="https://example.com/logo.png or /uploads/branding/…"
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <input
+                    ref={logoFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    className="hidden"
+                    onChange={(e) => handleBrandingUpload('logo', e.target.files?.[0] || null)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => logoFileInputRef.current?.click()}
+                    disabled={isUploadingBranding === 'logo'}
+                    className="h-9 px-3 text-sm rounded-lg bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-100 hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-50"
+                  >
+                    {isUploadingBranding === 'logo' ? 'Uploading…' : 'Upload logo'}
+                  </button>
+                  {settings.companyLogoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={settings.companyLogoUrl} alt="Logo preview" className="h-8 max-w-[120px] object-contain rounded border border-gray-200 dark:border-gray-600 bg-white" />
+                  ) : null}
+                </div>
               </div>
 
               <div className="md:col-span-2">
@@ -512,9 +580,30 @@ export default function SystemSettings() {
                   type="url"
                   value={settings.faviconUrl || ''}
                   onChange={(e) => handleChange('faviconUrl', e.target.value)}
-                  placeholder="https://example.com/favicon.ico"
+                  placeholder="https://example.com/favicon.ico or /uploads/branding/…"
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <input
+                    ref={faviconFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon,image/vnd.microsoft.icon"
+                    className="hidden"
+                    onChange={(e) => handleBrandingUpload('favicon', e.target.files?.[0] || null)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => faviconFileInputRef.current?.click()}
+                    disabled={isUploadingBranding === 'favicon'}
+                    className="h-9 px-3 text-sm rounded-lg bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-100 hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-50"
+                  >
+                    {isUploadingBranding === 'favicon' ? 'Uploading…' : 'Upload favicon'}
+                  </button>
+                  {settings.faviconUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={settings.faviconUrl} alt="Favicon preview" className="h-8 w-8 object-contain rounded border border-gray-200 dark:border-gray-600 bg-white" />
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>

@@ -641,7 +641,7 @@
         setStatus('Could not set In Progress: ' + msg, true);
       }
     } else if (!targetId) {
-      setStatus('No In Progress status configured (set aiInProgressStatusId or IsInProgress).', true);
+      setStatus('No In Progress status configured. In the app: Organization → Statuses → edit a task status → enable “In Progress status”. Or set projectManagement.aiInProgressStatusId in Cursor/VS Code Settings.', true);
     }
     postHost({ type: 'sendToAi', task: nextTask });
   }

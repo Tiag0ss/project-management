@@ -297,34 +297,47 @@ This document contains comprehensive test scenarios to verify all functionality 
 ## Applications & Releases
 
 ### TC-APP-001: Create Application
-**Prerequisites:** User with `CanManageApplications` permission  
+**Prerequisites:** User with `CanManageApplications` / create permission  
 **Steps:**
 1. Navigate to Applications page
-2. Click "Create Application"
-3. Fill in: Name, Description (rich text), Repository URL
-4. Select organization
-5. Select associated customers using searchable dropdown
-6. Click "Create"
+2. Click "Create Application" / "New Application"
+3. Fill in: Name, Description, Repository URL
+4. Optionally upload an application image (PNG/JPEG/WebP/SVG) — no external image URL field
+5. Select organization
+6. Select associated customers using searchable dropdown
+7. Click "Create"
 
 **Expected:**
 - Application created successfully
 - Associated with selected organization
 - Customers linked to application
+- Image appears as thumbnail on list/grid and on the detail header when uploaded
 - Appears in applications list
 - Available in project/task application dropdowns
 
 ### TC-APP-002: Edit Application
 **Steps:**
 1. Navigate to Applications page
-2. Click on an application
-3. Edit application details
+2. Open edit on an application (or edit from detail flows that use the same modal)
+3. Edit application details; change / remove uploaded image if desired
 4. Modify customer associations
-5. Click "Save Changes"
+5. Click "Save" / "Update"
 
 **Expected:**
 - Changes saved successfully
 - Customer associations updated
+- Image updates or clears correctly (local `/uploads/applications/` path)
 - Changes reflected in application list and detail page
+
+### TC-APP-002b: Application detail tab URL
+**Steps:**
+1. Open an application detail page
+2. Switch to Versions (or Commits)
+3. Hard-refresh the browser
+
+**Expected:**
+- URL contains `?tab=versions` (or `commits`)
+- Same tab remains active after refresh
 
 ### TC-APP-003: Manage Application Customers (Detail Page)
 **Steps:**
@@ -2084,6 +2097,8 @@ This document contains comprehensive test scenarios to verify all functionality 
 8. Open Applications → Versions tab — version list stacks above detail on phone
 9. Open Login / Register — forms usable; name fields stack on register
 10. Open Planning Gantt with a user who has Plan Tasks permission; try to drag an allocation bar
+11. On Project / Customer / Organization detail: switch to a non-default tab, hard-refresh, confirm `?tab=` restores the panel
+12. Admin → System Settings → Branding: upload a logo (or favicon) and confirm preview + navbar/favicon update after save/reload
 
 **Expected:**
 - Layout adapts to mobile screen
@@ -2093,6 +2108,8 @@ This document contains comprehensive test scenarios to verify all functionality 
 - TaskDetailModal fits as a full-height sheet with scrollable tabs
 - Forms and shared modals usable on mobile (stacked actions / grids)
 - Planning shows a read-only device banner; bars are not draggable; planning tools / deletes stay hidden; widen past 767px to edit again
+- Detail sidebars keep the active tab across refresh via `?tab=`
+- Branding upload stores a local `/uploads/branding/…` path (external URLs still allowed for branding)
 
 ### TC-UI-004: Rich Text Editor
 **Steps:**

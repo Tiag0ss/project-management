@@ -28,6 +28,12 @@
       "Comment": "URL of the source code repository"
     },
     {
+      "FieldName": "ImagePath",
+      "DataType": "varchar(500)",
+      "NotNullable": false,
+      "Comment": "Local public path to uploaded application image (e.g. /uploads/applications/...)"
+    },
+    {
       "FieldName": "IsCustomerSpecific",
       "DataType": "tinyint(1)",
       "NotNullable": true,

@@ -75,3 +75,9 @@ ecosystem.config.js
 *.sql.gz
 templates/export.csv
 package-lock.json
+
+# Uploaded branding / application images (keep folder placeholders)
+/public/uploads/branding/*
+!/public/uploads/branding/.gitkeep
+/public/uploads/applications/*
+!/public/uploads/applications/.gitkeep

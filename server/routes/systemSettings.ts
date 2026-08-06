@@ -8,12 +8,20 @@ import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
 import logger from '../utils/logger';
+import {
+  BRANDING_IMAGE_TYPES,
+  BRANDING_UPLOAD_DIR,
+  deletePublicUploadIfOwned,
+  writePublicUpload,
+} from '../utils/publicUploads';
 
 // Keys that should be encrypted in the database
 const ENCRYPTED_KEYS = ['smtpPassword', 'openAIApiKey', 'outlookTenantId', 'outlookClientId', 'outlookClientSecret'];
 
 // Keys that should be masked in GET responses
 const MASKED_KEYS = ['smtpPassword', 'openAIApiKey', 'outlookTenantId', 'outlookClientId', 'outlookClientSecret'];
+
+const MAX_BRANDING_IMAGE_BYTES = 2 * 1024 * 1024;
 
 const router = Router();
 
@@ -443,6 +451,87 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       success: false, 
       message: 'Failed to update system settings' 
     });
+  }
+});
+
+// POST /api/system-settings/branding-upload — admin-only logo/favicon file upload
+router.post('/branding-upload', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { kind, fileName, fileType, fileData, fileSize } = req.body || {};
+
+    const [users] = await pool.execute<RowDataPacket[]>(
+      'SELECT IsAdmin FROM Users WHERE Id = ?',
+      [userId]
+    );
+    if (!users.length || !(users[0].IsAdmin === 1 || users[0].IsAdmin === true)) {
+      return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+
+    if (kind !== 'logo' && kind !== 'favicon') {
+      return res.status(400).json({ success: false, message: 'kind must be logo or favicon' });
+    }
+    if (!fileType || !fileData) {
+      return res.status(400).json({ success: false, message: 'fileType and fileData are required' });
+    }
+    if (!BRANDING_IMAGE_TYPES.has(String(fileType))) {
+      return res.status(400).json({ success: false, message: 'File type not allowed for branding assets' });
+    }
+
+    const buffer = Buffer.from(
+      String(fileData).includes(',') ? String(fileData).split(',')[1] : String(fileData),
+      'base64'
+    );
+    const size = Number(fileSize) || buffer.length;
+    if (size > MAX_BRANDING_IMAGE_BYTES) {
+      return res.status(400).json({ success: false, message: 'File size exceeds 2MB limit' });
+    }
+
+    const settingKey = kind === 'logo' ? 'companyLogoUrl' : 'faviconUrl';
+    const settingsMap = await getCachedSettingsMap();
+    const previousPath = settingsMap[settingKey] || '';
+
+    const { publicPath } = writePublicUpload({
+      dir: BRANDING_UPLOAD_DIR,
+      publicPrefix: '/uploads/branding',
+      fileType: String(fileType),
+      fileName: fileName ? String(fileName) : undefined,
+      fileData: String(fileData),
+      namePrefix: kind,
+    });
+
+    if (previousPath.startsWith('/uploads/branding/')) {
+      deletePublicUploadIfOwned(previousPath, BRANDING_UPLOAD_DIR);
+    }
+
+    const [updateResult, updateMeta] = await pool.execute(
+      'UPDATE SystemSettings SET SettingValue = ? WHERE SettingKey = ?',
+      [publicPath, settingKey]
+    );
+    const affectedRows = Number(
+      (updateResult as any)?.affectedRows
+      || (updateResult as any)?.rowsAffected?.[0]
+      || (updateMeta as any)?.affectedRows
+      || 0
+    );
+    if (affectedRows === 0) {
+      await pool.execute(
+        'INSERT INTO SystemSettings (SettingKey, SettingValue) VALUES (?, ?)',
+        [settingKey, publicPath]
+      );
+    }
+
+    await invalidateByEntity('settings');
+
+    res.json({
+      success: true,
+      kind,
+      url: publicPath,
+      message: kind === 'logo' ? 'Company logo uploaded' : 'Favicon uploaded',
+    });
+  } catch (error) {
+    logger.error('Branding upload error:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload branding asset' });
   }
 });
 

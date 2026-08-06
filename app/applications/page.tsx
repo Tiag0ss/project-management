@@ -1,7 +1,7 @@
 'use client';
 
 import { getApiUrl } from '@/lib/api/config';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -18,6 +18,7 @@ interface Application {
   Name: string;
   Description: string | null;
   RepositoryUrl: string | null;
+  ImagePath?: string | null;
   IsCustomerSpecific: number | boolean;
   OrganizationId: number;
   OrganizationName: string;
@@ -88,6 +89,10 @@ export default function ApplicationsPage() {
   const [isImportingCsv, setIsImportingCsv] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const { showToast } = useToast();
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [removeExistingImage, setRemoveExistingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
@@ -370,6 +375,10 @@ export default function ApplicationsPage() {
       OrganizationId: organizations.length === 1 ? organizations[0].Id : 0,
       CustomerIds: [],
     });
+    setImageFile(null);
+    setImagePreview(null);
+    setRemoveExistingImage(false);
+    if (imageInputRef.current) imageInputRef.current.value = '';
     setShowModal(true);
   };
 
@@ -383,6 +392,10 @@ export default function ApplicationsPage() {
       OrganizationId: app.OrganizationId,
       CustomerIds: app.Customers?.map((c) => c.Id) || [],
     });
+    setImageFile(null);
+    setImagePreview(app.ImagePath || null);
+    setRemoveExistingImage(false);
+    if (imageInputRef.current) imageInputRef.current.value = '';
     setShowModal(true);
   };
 
@@ -390,6 +403,47 @@ export default function ApplicationsPage() {
     setShowModal(false);
     setEditingApp(null);
     setError('');
+    setImageFile(null);
+    setImagePreview(null);
+    setRemoveExistingImage(false);
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
+
+  const readFileAsDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Failed to read image'));
+      reader.readAsDataURL(file);
+    });
+
+  const uploadApplicationImage = async (applicationId: number, file: File) => {
+    const fileData = await readFileAsDataUrl(file);
+    const res = await fetch(`${getApiUrl()}/api/applications/${applicationId}/image`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
+        fileData,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || 'Failed to upload application image');
+    }
+  };
+
+  const deleteApplicationImage = async (applicationId: number) => {
+    const res = await fetch(`${getApiUrl()}/api/applications/${applicationId}/image`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || 'Failed to remove application image');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -417,9 +471,20 @@ export default function ApplicationsPage() {
         body: JSON.stringify(body),
       });
 
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.message || 'Failed to save application');
+      }
+
+      const applicationId = editingApp?.Id ?? Number(data.id);
+      if (!applicationId) {
+        throw new Error('Application saved but id was missing');
+      }
+
+      if (imageFile) {
+        await uploadApplicationImage(applicationId, imageFile);
+      } else if (editingApp && removeExistingImage && editingApp.ImagePath) {
+        await deleteApplicationImage(applicationId);
       }
 
       closeModal();
@@ -819,7 +884,12 @@ export default function ApplicationsPage() {
                   >
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <span className="text-2xl">📦</span>
+                        {app.ImagePath ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={app.ImagePath} alt="" className="h-9 w-9 rounded object-cover border border-gray-200 dark:border-gray-600 shrink-0" />
+                        ) : (
+                          <span className="text-2xl shrink-0">📦</span>
+                        )}
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
                             {app.Name}
@@ -925,7 +995,12 @@ export default function ApplicationsPage() {
                 <div className="p-5">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-2xl">📦</span>
+                      {app.ImagePath ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={app.ImagePath} alt="" className="h-8 w-8 rounded object-cover border border-gray-200 dark:border-gray-600 shrink-0" />
+                      ) : (
+                        <span className="text-2xl shrink-0">📦</span>
+                      )}
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
                         {app.Name}
                       </h3>
@@ -1116,6 +1191,66 @@ export default function ApplicationsPage() {
                     placeholder="https://github.com/org/repo"
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Application image
+                  </label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                    Upload only (PNG, JPEG, WebP, or SVG). External image URLs are not supported.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {imagePreview ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={imagePreview}
+                        alt="Application preview"
+                        className="h-14 w-14 rounded-lg object-cover border border-gray-200 dark:border-gray-600 bg-white"
+                      />
+                    ) : (
+                      <div className="h-14 w-14 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center text-2xl bg-gray-50 dark:bg-gray-700/40">
+                        📦
+                      </div>
+                    )}
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        setImageFile(file);
+                        setRemoveExistingImage(false);
+                        if (file) {
+                          void readFileAsDataUrl(file).then(setImagePreview).catch(() => setImagePreview(null));
+                        } else {
+                          setImagePreview(editingApp?.ImagePath || null);
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => imageInputRef.current?.click()}
+                      className="h-9 px-3 text-sm rounded-lg bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-100 hover:bg-gray-300 dark:hover:bg-gray-500"
+                    >
+                      {imagePreview ? 'Change image' : 'Upload image'}
+                    </button>
+                    {imagePreview && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImageFile(null);
+                          setImagePreview(null);
+                          setRemoveExistingImage(!!editingApp?.ImagePath);
+                          if (imageInputRef.current) imageInputRef.current.value = '';
+                        }}
+                        className="h-9 px-3 text-sm rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div>

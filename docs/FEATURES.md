@@ -165,9 +165,12 @@ Every meaningful field change to a customer record is logged and visible in the 
 Applications represent software products that projects may be building or maintaining.
 
 - Created and managed at `/applications`
-- Fields: Name, Description (rich text), Repository URL, Organization, `IsCustomerSpecific` flag
+- Fields: Name, Description (rich text), Repository URL, Organization, `IsCustomerSpecific` flag, optional **Image** (`ImagePath`)
+- Application image is **upload-only** (PNG/JPEG/WebP/SVG) to `/uploads/applications/…` — no external image URL field
 - Customers are linked via a searchable multi-select (many-to-many)
 - Projects and tasks can reference an application; tasks can further reference a specific **version**
+- Detail and list pages show the uploaded image (or a package icon fallback)
+- Sidebar tabs on detail pages persist in `?tab=` (overview / versions / commits) so refresh keeps the active panel
 
 ### Application Versions (Releases)
 Each application can have multiple versioned releases:
@@ -972,8 +975,9 @@ Admin-only page:
 Server operators may also set `REDIS_ENABLED` and related env vars (see [Redis Cache](#25-redis-cache-optional)); not configured in the UI.
 
 ### Branding
-- Upload a custom logo displayed in the Navbar and PDF exports
-- Configure accent color for UI elements
+- Company name, logo, and favicon under Administration → System Settings → Branding
+- Logo / favicon accept an external URL **or** an upload stored under `/uploads/branding/…` (PNG/JPEG/WebP/SVG/ICO)
+- Uploaded assets fill the URL fields with the local path; Navbar / layout / PDFs use the stored value
 
 ### AI Assistant Widget
 - Available as a floating widget on supported views
@@ -1165,6 +1169,8 @@ Phone layouts (viewport ≤767px / Tailwind `md`). Shared hook: [`hooks/useIsMob
 | Planning (`/planning`) | `canPlanOnThisDevice = canPlanTasks && !isMobile`; drag/resize/tools/deletes disabled on phone |
 | RO banner | Distinct message when locked for device vs missing permission |
 | Toolbar | Date nav / view controls wrap on narrow widths |
+
+**URL tabs:** Project / Customer / Organization / Profile / Administration / Application detail sidebars write `?tab=` so a hard refresh restores the active panel.
 
 Planning remains desktop-first for editing.
 

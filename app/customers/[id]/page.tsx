@@ -16,6 +16,10 @@ import { projectsApi, Project as ApiProject } from '@/lib/api/projects';
 import { tasksApi, Task as ApiTask } from '@/lib/api/tasks';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { useColorVision } from '@/hooks/useColorVision';
+import { useUrlTab } from '@/hooks/useUrlTab';
+
+type TabType = 'overview' | 'users' | 'settings' | 'attachments' | 'history';
+const CUSTOMER_DETAIL_TABS = ['overview', 'users', 'settings', 'attachments', 'history'] as const;
 
 interface Project {
   Id: number;
@@ -63,8 +67,6 @@ interface CustomerContact {
   Phone: string;
   IsDefault: number;
 }
-
-type TabType = 'overview' | 'users' | 'settings' | 'attachments' | 'history';
 
 interface TaskByStatus {
   StatusName: string;
@@ -187,7 +189,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [activeTab, setActiveTab] = useUrlTab<TabType>(CUSTOMER_DETAIL_TABS, 'overview');
   
   // Attachments state
   const [attachments, setAttachments] = useState<any[]>([]);

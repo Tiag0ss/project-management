@@ -22,13 +22,30 @@ import { useFormatHours } from '@/lib/useFormatHours';
 import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 import { TaskTypeIcon, TaskTypeIconPicker, resolveTaskTypeIcon } from '@/lib/taskTypeIcons';
 import TaskFormVisibilitySettingsPanel from '@/components/admin/TaskFormVisibilitySettingsPanel';
+import { useUrlTab } from '@/hooks/useUrlTab';
+
+const ORGANIZATION_DETAIL_TABS = [
+  'overview',
+  'members',
+  'projects',
+  'permissions',
+  'statuses',
+  'tags',
+  'integrations',
+  'sla',
+  'workflow-policies',
+  'task-form',
+  'attachments',
+  'history',
+] as const;
+type OrganizationDetailTab = (typeof ORGANIZATION_DETAIL_TABS)[number];
 
 export default function OrganizationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const orgId = parseInt(resolvedParams.id);
   
   const [organization, setOrganization] = useState<Organization | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'projects' | 'permissions' | 'statuses' | 'tags' | 'integrations' | 'sla' | 'workflow-policies' | 'task-form' | 'attachments' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useUrlTab<OrganizationDetailTab>(ORGANIZATION_DETAIL_TABS, 'overview');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const { user, token, isLoading: authLoading } = useAuth();
@@ -3038,14 +3055,19 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
                 )}
 
                 {type === 'task' && (
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className="flex items-start gap-2 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={!!formData.isInProgress}
                       onChange={(e) => setFormData({ ...formData, isInProgress: e.target.checked })}
-                      className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                      className="w-4 h-4 mt-0.5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
                     />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Mark as in progress status</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      <span className="font-medium">In Progress status</span>
+                      <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        Used by the IDE Kanban “Send to AI” action when no explicit status Id is set in editor settings.
+                      </span>
+                    </span>
                   </label>
                 )}
 
