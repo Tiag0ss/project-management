@@ -2999,24 +2999,24 @@ function DashboardContent() {
                 </div>
               )}
 
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 sm:p-6">
+                <div className="mb-3 sm:mb-4 flex flex-col gap-2 sm:gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                      <span className="text-2xl">📋</span> My Pending Tasks
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                      <span className="text-xl sm:text-2xl">📋</span> My Pending Tasks
                     </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    <p className="hidden sm:block text-sm text-gray-500 dark:text-gray-400 mt-1">
                       One list for all open tasks, filtered by planning type.
                     </p>
                   </div>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full text-sm font-medium text-gray-600 dark:text-gray-300">
+                  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                    <span className="px-2.5 sm:px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-300">
                       {sortedPendingTasks.length} visible
                     </span>
                     <select
                       value={pendingSortBy}
                       onChange={(event) => setPendingSortBy(event.target.value as TaskSortOption)}
-                      className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     >
                       <option value="dueDate">Sort: Due date</option>
                       <option value="priority">Sort: Priority</option>
@@ -3025,9 +3025,9 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                <div className="mb-4 flex flex-wrap gap-2">
+                <div className="mb-3 sm:mb-4 flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin">
                   {[
-                    { key: 'all' as const, label: 'All Pending', count: pendingTasks.length },
+                    { key: 'all' as const, label: 'All', count: pendingTasks.length },
                     { key: 'scheduled' as const, label: 'Scheduled', count: pendingTasks.length - unscheduledPendingTasks.length },
                     { key: 'unscheduled' as const, label: 'Unscheduled', count: unscheduledPendingTasks.length },
                   ].map((option) => {
@@ -3041,14 +3041,14 @@ function DashboardContent() {
                           setPendingWorkFilter(option.key);
                           setShowAllPendingTasks(false);
                         }}
-                        className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                        className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs sm:text-sm transition-colors ${
                           isActive
                             ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/20 dark:text-blue-300'
                             : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
                         }`}
                       >
                         <span>{option.label}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-xs ${
+                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] sm:text-xs ${
                           isActive
                             ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
                             : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
@@ -3071,7 +3071,7 @@ function DashboardContent() {
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-2 sm:space-y-3">
                     {sortedPendingTasks.slice(0, (isPrintMode || showAllPendingTasks) ? sortedPendingTasks.length : 5).map((task) => {
                       const isOverdue = isTaskOverdue(task.DueDate ? String(task.DueDate) : null);
                       const isUnscheduled = Number(task.UnscheduledWork || 0) === 1;
@@ -3079,22 +3079,57 @@ function DashboardContent() {
                       return (
                         <div
                           key={task.Id}
-                          className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openTaskDetails(task)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              openTaskDetails(task);
+                            }
+                          }}
+                          className={`border rounded-lg p-3 sm:p-4 hover:shadow-md transition-shadow cursor-pointer ${
                             isOverdue
                               ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/10'
                               : 'border-gray-200 dark:border-gray-700'
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-2 min-w-0">
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h4 className="font-medium text-gray-900 dark:text-white">{task.TaskName}</h4>
+                              <div className="flex items-start gap-2">
+                                <h4 className="font-medium text-sm sm:text-base text-gray-900 dark:text-white line-clamp-2 min-w-0 flex-1">
+                                  {task.TaskName}
+                                </h4>
+                                <div className="hidden sm:flex items-center gap-3 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openTaskDetails(task);
+                                    }}
+                                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
+                                  >
+                                    Task Details
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      router.push(`/projects/${task.ProjectId}`);
+                                    }}
+                                    className="text-sm text-gray-600 dark:text-gray-300 hover:underline whitespace-nowrap"
+                                  >
+                                    Go to Project →
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                                 {!!task.IsHobby && (
-                                  <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                  <span className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
                                     Hobby
                                   </span>
                                 )}
-                                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                <span className={`text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full ${
                                   isUnscheduled
                                     ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
                                     : 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
@@ -3102,22 +3137,22 @@ function DashboardContent() {
                                   {isUnscheduled ? 'Unscheduled' : 'Scheduled'}
                                 </span>
                                 {isOverdue && (
-                                  <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-full">
+                                  <span className="text-[10px] sm:text-xs px-1.5 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-full">
                                     Overdue
                                   </span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-2 mt-1 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
-                                <span>{task.ProjectName || 'No project'}</span>
+                              <div className="flex items-center gap-2 mt-1 text-xs sm:text-sm text-gray-500 dark:text-gray-400 min-w-0">
+                                <span className="truncate">{task.ProjectName || 'No project'}</span>
                                 {task.CustomerName && (
-                                  <span className="ml-2 text-blue-500">• {task.CustomerName}</span>
+                                  <span className="text-blue-500 shrink-0">• {task.CustomerName}</span>
                                 )}
                                 {!task.CustomerName && task.ProjectCustomerName && (
-                                  <span className="ml-2 text-blue-500">• {task.ProjectCustomerName}</span>
+                                  <span className="text-blue-500 shrink-0">• {task.ProjectCustomerName}</span>
                                 )}
                               </div>
                               {!!task.TaskTags?.length && (
-                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                <div className="mt-1.5 flex flex-wrap gap-1">
                                   {task.TaskTags.map((tag) => (
                                     <SegmentedTagBadge
                                       key={`${task.Id}-${tag.Id}`}
@@ -3128,54 +3163,52 @@ function DashboardContent() {
                                   ))}
                                 </div>
                               )}
-                              <div className="flex items-center gap-3 mt-2 flex-wrap">
+                              <div className="flex items-center gap-1.5 sm:gap-3 mt-1.5 flex-wrap">
                                 <span
-                                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium"
                                   style={pillStyle(task.PriorityColor, { alpha: '20' })}
                                 >
                                   {task.PriorityName || 'Normal'}
                                 </span>
                                 <span
-                                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium"
                                   style={pillStyle(task.StatusColor, { alpha: '20' })}
                                 >
                                   {task.StatusName || 'Unknown'}
                                 </span>
                                 {task.DueDate && (
-                                  <span className={`text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
-                                    📅 Due: {new Date(task.DueDate).toLocaleDateString()}
+                                  <span className={`text-[10px] sm:text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
+                                    📅 {new Date(task.DueDate).toLocaleDateString()}
                                   </span>
                                 )}
                                 {typeof task.EstimatedHours === 'number' && (
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  <span className="hidden sm:inline text-xs text-gray-500 dark:text-gray-400">
                                     ⏱️ {task.EstimatedHours}h estimated
                                   </span>
                                 )}
                                 {typeof task.PlannedHours === 'number' && task.PlannedHours > 0 && (
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  <span className="hidden sm:inline text-xs text-gray-500 dark:text-gray-400">
                                     🗓️ {task.PlannedHours}h planned
                                   </span>
                                 )}
                                 {typeof task.WorkedHours === 'number' && task.WorkedHours > 0 && (
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  <span className="hidden sm:inline text-xs text-gray-500 dark:text-gray-400">
                                     ✅ {task.WorkedHours}h worked
                                   </span>
                                 )}
                               </div>
-                            </div>
-                            <div className="ml-4 flex items-center gap-3 shrink-0">
-                              <button
-                                onClick={() => openTaskDetails(task)}
-                                className="text-sm text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
-                              >
-                                Task Details
-                              </button>
-                              <button
-                                onClick={() => router.push(`/projects/${task.ProjectId}`)}
-                                className="text-sm text-gray-600 dark:text-gray-300 hover:underline whitespace-nowrap"
-                              >
-                                Go to Project →
-                              </button>
+                              <div className="mt-2 flex sm:hidden">
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    router.push(`/projects/${task.ProjectId}`);
+                                  }}
+                                  className="text-xs text-gray-600 dark:text-gray-300"
+                                >
+                                  Project →
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>

@@ -36,7 +36,7 @@ Comprehensive documentation of all features available in the application. Use th
 24. [GitHub & Gitea Integration](#24-github--gitea-integration)
 25. [Redis Cache (Optional)](#25-redis-cache-optional)
 26. [IDE Extensions (Project Kanban)](#26-ide-extensions-project-kanban)
-27. [Mobile (phases 1–2)](#27-mobile-phases-12)
+27. [Mobile (phases 1–3)](#27-mobile-phases-13)
 
 ---
 
@@ -418,6 +418,10 @@ From the ticket detail page:
 
 ### Overview
 The Planning page (`/planning`) provides a resource-centric Gantt view driven by `TaskAllocationHeaders` and `TaskAllocations`. Every allocation belongs to a header (a logical "slice"), ensuring bars are header-driven — not merged by date proximity.
+
+### Mobile
+
+On viewports ≤767px (`useIsMobile`), Planning is **read-only** even when the user has `canPlanTasks`. Device gate: `canPlanOnThisDevice = canPlanTasks && !isMobile`. Drag, resize, planning tools, allocation deletes, and related edit chrome reuse the existing read-only path; a banner explains the device lock. Edit allocations on a larger screen.
 
 ### View Modes
 | Mode | Days Shown | Navigation Step | Column Headers |
@@ -1128,7 +1132,7 @@ Deep-link handled by the app: `/dashboard?task=<id>` (also `?taskId=`).
 
 ---
 
-## 27. Mobile (phases 1–2)
+## 27. Mobile (phases 1–3)
 
 Phone layouts (viewport ≤767px / Tailwind `md`). Shared hook: [`hooks/useIsMobile.ts`](../hooks/useIsMobile.ts).
 
@@ -1154,7 +1158,15 @@ Phone layouts (viewport ≤767px / Tailwind `md`). Shared hook: [`hooks/useIsMob
 | CallRecordFormModal / ConfirmAlertModal / auth forms | Stacked grids / denser padding |
 | Work summary / planning-import | Denser page padding |
 
-**Later (phase 3):** Planning Gantt read-only via `canPlanOnThisDevice`. Planning remains desktop-first for editing.
+### Phase 3 — Planning Gantt
+
+| Surface | Behaviour |
+|---------|-----------|
+| Planning (`/planning`) | `canPlanOnThisDevice = canPlanTasks && !isMobile`; drag/resize/tools/deletes disabled on phone |
+| RO banner | Distinct message when locked for device vs missing permission |
+| Toolbar | Date nav / view controls wrap on narrow widths |
+
+Planning remains desktop-first for editing.
 
 ---
 

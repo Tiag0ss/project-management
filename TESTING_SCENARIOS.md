@@ -1038,6 +1038,20 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Critical path highlighting (🔴 toggle) available in both modes
 - Baseline comparison (📏 toggle) shows original vs current planned dates
 
+### TC-PLAN-014b: Mobile Read-Only Planning
+**Steps:**
+1. With Plan Tasks permission, open `/planning` at viewport width ≤767px
+2. Confirm the yellow banner about read-only on this device
+3. Attempt to drag/resize an allocation bar; open allocation header modal and task detail from a bar
+4. Widen the viewport above 767px (or use desktop)
+
+**Expected:**
+- Banner shows device read-only message (not the missing-permission message)
+- Bars use pointer cursor; drag/drop and resize do not change allocations
+- Planning tools that mutate data (e.g. Set Baseline, delete allocations) are hidden
+- Allocation / task modals open for viewing but edit/remove planning actions stay off
+- Above 767px with permission, editing works again as on desktop
+
 ### TC-PLAN-015: Outlook Calendar Overlay (Non-Blocking Load)
 **Prerequisites:** Outlook calendar enabled in System Settings with valid Microsoft Graph credentials  
 **Steps:**
@@ -2069,6 +2083,7 @@ This document contains comprehensive test scenarios to verify all functionality 
 7. Open Tickets, Call Records, Work Summary, Approvals — confirm tables scroll horizontally and toolbars wrap
 8. Open Applications → Versions tab — version list stacks above detail on phone
 9. Open Login / Register — forms usable; name fields stack on register
+10. Open Planning Gantt with a user who has Plan Tasks permission; try to drag an allocation bar
 
 **Expected:**
 - Layout adapts to mobile screen
@@ -2077,7 +2092,7 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Tables scroll horizontally where still used; projects list prefers grid on phone
 - TaskDetailModal fits as a full-height sheet with scrollable tabs
 - Forms and shared modals usable on mobile (stacked actions / grids)
-- Planning Gantt mobile read-only is out of scope until phase 3
+- Planning shows a read-only device banner; bars are not draggable; planning tools / deletes stay hidden; widen past 767px to edit again
 
 ### TC-UI-004: Rich Text Editor
 **Steps:**

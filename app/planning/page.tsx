@@ -22,6 +22,7 @@ import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import { TaskTypeIconMark } from '@/lib/taskTypeIcons';
 import { useColorVision } from '@/hooks/useColorVision';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { loadOutlookCalendarEvents, type PlannerOutlookEvent } from './hooks/loadOutlookCalendarEvents';
 
 // Week days constant - reused throughout the component
@@ -131,6 +132,9 @@ export default function PlanningPage() {
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
   const { showToast } = useToast();
   const router = useRouter();
+  const isMobile = useIsMobile();
+  /** Planning edits (drag/resize/tools) require permission and a non-phone viewport. */
+  const canPlanOnThisDevice = !!permissions?.canPlanTasks && !isMobile;
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -690,7 +694,7 @@ export default function PlanningPage() {
   }, [allAllocations]);
 
   const shouldSuppressTaskClick = () => Date.now() < suppressTaskClickUntilRef.current;
-  const canUseGanttPlanningActions = () => !!permissions?.canPlanTasks && ganttGroupBy === 'resource';
+  const canUseGanttPlanningActions = () => !!canPlanOnThisDevice && ganttGroupBy === 'resource';
 
   const closeMilestoneEditor = () => {
     setMilestoneEditor({
@@ -1065,7 +1069,7 @@ export default function PlanningPage() {
     closeTaskContextMenu();
     closeForceDatesModal();
     closeTaskResize();
-  }, [ganttGroupBy, permissions?.canPlanTasks]);
+  }, [ganttGroupBy, canPlanOnThisDevice]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1665,7 +1669,7 @@ export default function PlanningPage() {
 
   const handleTaskClick = async (task: Task) => {
     const fullTask = tasks.find((entry) => Number(entry.Id) === Number(task.Id)) || task;
-    const canPlanTaskAllocations = !!permissions?.canPlanTasks;
+    const canPlanTaskAllocations = !!canPlanOnThisDevice;
     setSelectedTask(fullTask);
     setLoadingAllocations(true);
 
@@ -3953,7 +3957,7 @@ export default function PlanningPage() {
   };
 
   const handleDragStart = (e: React.DragEvent, task: Task, sourceUserId?: number | null, sourceHeaderId?: number | null) => {
-    if (ganttGroupBy !== 'resource' || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) {
+    if (ganttGroupBy !== 'resource' || !canPlanOnThisDevice || ganttSearch.trim().length > 0) {
       e.preventDefault();
       return;
     }
@@ -4514,7 +4518,7 @@ export default function PlanningPage() {
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    if (ganttGroupBy !== 'resource' || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) {
+    if (ganttGroupBy !== 'resource' || !canPlanOnThisDevice || ganttSearch.trim().length > 0) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'none';
       return;
@@ -4529,7 +4533,7 @@ export default function PlanningPage() {
   const handleDropOnUser = async (e: React.DragEvent, userId: number | null) => {
     e.preventDefault();
     setHoveredDropCell(null);
-    if (ganttGroupBy !== 'resource' || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) return;
+    if (ganttGroupBy !== 'resource' || !canPlanOnThisDevice || ganttSearch.trim().length > 0) return;
 
     const droppedTaskId = Number(e.dataTransfer.getData('text/plain') || 0);
     const activeDraggedTask = draggedTaskRef.current || draggedTask || tasks.find((t) => t.Id === droppedTaskId) || null;
@@ -4573,7 +4577,7 @@ export default function PlanningPage() {
     e.preventDefault();
     e.stopPropagation();
     setHoveredDropCell(null);
-    if (ganttGroupBy !== 'resource' || !permissions?.canPlanTasks || ganttSearch.trim().length > 0 || !userId) return;
+    if (ganttGroupBy !== 'resource' || !canPlanOnThisDevice || ganttSearch.trim().length > 0 || !userId) return;
 
     const droppedTaskId = Number(e.dataTransfer.getData('text/plain') || 0);
     const activeDraggedTask = draggedTaskRef.current || draggedTask || tasks.find((t) => t.Id === droppedTaskId) || null;
@@ -7882,12 +7886,16 @@ export default function PlanningPage() {
 
             {activeTab === 'gantt' && (
           <div className="w-full bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700 flex-1 min-h-0 flex flex-col">
-            {/* Permission Notice */}
-            {!permissions?.canPlanTasks && (
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 border-b-2 border-yellow-400 dark:border-yellow-600 p-4">
-                <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200">
-                  <span className="text-xl">🔒</span>
-                  <span className="font-medium">Read-only view - You don't have permission to plan tasks</span>
+            {/* Permission / device notice */}
+            {!canPlanOnThisDevice && (
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border-b-2 border-yellow-400 dark:border-yellow-600 p-3 sm:p-4">
+                <div className="flex items-start sm:items-center gap-2 text-yellow-800 dark:text-yellow-200">
+                  <span className="text-xl shrink-0">{isMobile && permissions?.canPlanTasks ? '📱' : '🔒'}</span>
+                  <span className="font-medium text-sm sm:text-base">
+                    {isMobile && permissions?.canPlanTasks
+                      ? 'Read-only on this device — use a larger screen to edit allocations.'
+                      : "Read-only view - You don't have permission to plan tasks"}
+                  </span>
                 </div>
               </div>
             )}
@@ -7909,8 +7917,8 @@ export default function PlanningPage() {
             )}
 
             {/* Date Navigation */}
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center gap-4">
-              <div className="flex items-center gap-2">
+            <div className="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => {
                     const newDate = new Date(viewStartDate);
@@ -7928,13 +7936,13 @@ export default function PlanningPage() {
                       }
                     }
                   }}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                  className="px-3 sm:px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-sm"
                 >
                   ← Previous
                 </button>
                 <button
                   onClick={goToToday}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium"
+                  className="px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm"
                   title="Go to today"
                 >
                   📅 Today
@@ -7956,7 +7964,7 @@ export default function PlanningPage() {
                       }
                     }
                   }}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                  className="px-3 sm:px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-sm"
                 >
                   Next →
                 </button>
@@ -8065,11 +8073,11 @@ export default function PlanningPage() {
                 </select>
               </div>
 
-              <div className="flex items-center gap-2"> 
-                <div className="relative" ref={ganttViewOptionsRef}>
+              <div className={`flex flex-wrap items-center gap-2 ${showGanttViewOptions && isMobile ? 'w-full' : ''}`}>
+                <div className={`relative ${isMobile ? 'w-full' : ''}`} ref={ganttViewOptionsRef}>
                   <button
                     onClick={() => setShowGanttViewOptions((prev) => !prev)}
-                    className="px-4 py-2 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors inline-flex items-center gap-2"
+                    className="px-3 sm:px-4 py-2 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors inline-flex items-center gap-2"
                     title="Gantt view options"
                     aria-label="Gantt view options"
                   >
@@ -8079,7 +8087,13 @@ export default function PlanningPage() {
                     </svg>
                   </button>
                   {showGanttViewOptions && (
-                    <div className="absolute right-0 mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-[120] p-3 space-y-2">
+                    <div
+                      className={
+                        isMobile
+                          ? 'mt-2 w-full max-h-[min(50vh,24rem)] overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-[120] p-3 space-y-2'
+                          : 'absolute right-0 mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-[120] p-3 space-y-2'
+                      }
+                    >
                       <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
                         <input
                           type="checkbox"
@@ -8205,7 +8219,7 @@ export default function PlanningPage() {
             {showPlanningTools && (
               <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/60 flex items-center gap-3 flex-wrap">
                 {/* Existing action buttons */}
-                {permissions?.canPlanTasks && projects.length > 0 && (
+                {canPlanOnThisDevice && projects.length > 0 && (
                   <button
                     onClick={() => {
                       showConfirm(
@@ -8576,7 +8590,7 @@ export default function PlanningPage() {
                         const plannedEndDate = normalizeDateOnly(parentTask.PlannedEndDate);
                         const canResizeTask = !!(
                           isResourceGrouping &&
-                          permissions?.canPlanTasks &&
+                          canPlanOnThisDevice &&
                           !isGanttSearchActive &&
                           plannedStartDate &&
                           plannedEndDate
@@ -8642,7 +8656,7 @@ export default function PlanningPage() {
                           <div
                             key={parentTask.Id}
                             data-task-id={parentTask.Id}
-                            draggable={permissions?.canPlanTasks && !isGanttSearchActive}
+                            draggable={canPlanOnThisDevice && !isGanttSearchActive}
                             onDragStart={(e) => handleDragStart(e, parentTask, null)}
                             onDragEnd={handleDragEnd}
                             onContextMenu={(e) => handleTaskContextMenu(e, parentTask, null)}
@@ -8658,7 +8672,7 @@ export default function PlanningPage() {
                               }
                               void handleTaskClick(parentTask);
                             }}
-                            className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(parentTask) : ''} opacity-75 hover:opacity-100 ${permissions?.canPlanTasks && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white text-xs px-2 transition-all ${isResizingTask ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''} ${activeTimerGlowIds.has(parentTask.Id) ? 'timer-active-glow' : otherActiveTimerGlowIds.has(parentTask.Id) ? 'timer-active-glow-other' : ''}`}
+                            className={`absolute h-6 rounded ${!statusColor ? getPriorityColor(parentTask) : ''} opacity-75 hover:opacity-100 ${canPlanOnThisDevice && !isGanttSearchActive ? 'cursor-move' : 'cursor-pointer'} flex items-center text-white text-xs px-2 transition-all ${isResizingTask ? 'ring-2 ring-blue-400 ring-offset-1 shadow-lg' : ''} ${activeTimerGlowIds.has(parentTask.Id) ? 'timer-active-glow' : otherActiveTimerGlowIds.has(parentTask.Id) ? 'timer-active-glow-other' : ''}`}
                             style={{
                               left: previewBarStyle?.left || (position ? position.left : '0%'),
                               width: previewBarStyle?.width || (position ? position.width : `${(Math.min(5, Math.max(1, timelineColumns.length)) / Math.max(1, timelineColumns.length)) * 100}%`),
@@ -9140,7 +9154,7 @@ export default function PlanningPage() {
                             const dateKey = getDateKeyFromDate(column.start);
                             const showDayDropTarget = !!(
                               draggedTask &&
-                              permissions?.canPlanTasks &&
+                              canPlanOnThisDevice &&
                               hoveredDropCell?.userId === userRow.Id &&
                               hoveredDropCell?.dateKey === dateKey
                             );
@@ -9160,7 +9174,7 @@ export default function PlanningPage() {
                                 } ${idx === todayIndex ? 'border-l-2 border-l-red-400/70 dark:border-l-red-400/60' : ''}`}
                                 style={useFixedPixelColumns ? { width: `${dayColumnWidthPx}px` } : undefined}
                                 onDragEnter={(e) => {
-                                  if (!draggedTask || !permissions?.canPlanTasks || ganttSearch.trim().length > 0) return;
+                                  if (!draggedTask || !canPlanOnThisDevice || ganttSearch.trim().length > 0) return;
                                   e.preventDefault();
                                   setHoveredDropCell({ userId: userRow.Id, dateKey });
                                 }}
@@ -9379,10 +9393,10 @@ export default function PlanningPage() {
                           const subtaskTextSize = isSubtask ? 'text-[10px]' : 'text-xs';
                           const subtaskPadding = isSubtask ? 'px-1' : 'px-2';
                           const indentPrefix = isSubtask && level ? '└' + '─'.repeat(level) + ' ' : '';
-                          const canDragTaskSegment = !!(permissions?.canPlanTasks && !isGanttSearchActive && !isSubtask);
+                          const canDragTaskSegment = !!(canPlanOnThisDevice && !isGanttSearchActive && !isSubtask);
                           const canResizeTask = !!(
                             isResourceGrouping &&
-                            permissions?.canPlanTasks &&
+                            canPlanOnThisDevice &&
                             !isGanttSearchActive &&
                             displayedStartDate &&
                             displayedEndDate &&
@@ -9547,7 +9561,7 @@ export default function PlanningPage() {
                                         e.stopPropagation();
                                         return;
                                       }
-                                      if (segmentHeaderId !== null && permissions?.canPlanTasks) {
+                                      if (segmentHeaderId !== null && canPlanOnThisDevice) {
                                         openAllocationHeaderModal(segmentHeaderId);
                                         return;
                                       }
@@ -9775,7 +9789,7 @@ export default function PlanningPage() {
                             </div>
                           );
                         })}
-                        {draggedTask && permissions?.canPlanTasks && ganttSearch.trim().length === 0 && (
+                        {draggedTask && canPlanOnThisDevice && ganttSearch.trim().length === 0 && (
                           <div className="absolute inset-0 z-[60] flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
                             {timelineColumns.map((column, idx) => {
                               const dateKey = getDateKeyFromDate(column.start);
@@ -10444,7 +10458,7 @@ export default function PlanningPage() {
           isOpen={allocationHeaderModal.show}
           headerId={allocationHeaderModal.headerId}
           token={token}
-          canEdit={!!permissions?.canPlanTasks}
+          canEdit={!!canPlanOnThisDevice}
           onClose={closeAllocationHeaderModal}
           onDeleteAllAllocations={async ({ taskId }) => {
             const response = await fetch(`${getApiUrl()}/api/task-allocations/task/${taskId}`, {
@@ -10946,7 +10960,7 @@ export default function PlanningPage() {
               }}
               token={token!}
               // jiraIntegration prop removed; now handled internally in modal
-              showRemovePlanning={permissions?.canPlanTasks}
+              showRemovePlanning={canPlanOnThisDevice}
               onRemovePlanning={handleRemovePlanning}
             />
           );
@@ -11197,7 +11211,7 @@ export default function PlanningPage() {
                           {group.allocations.length}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          {permissions?.canPlanTasks && (
+                          {canPlanOnThisDevice && (
                             <button
                               onClick={() => handleDeleteTaskAllocations(group.TaskId)}
                               title="Delete all allocations"

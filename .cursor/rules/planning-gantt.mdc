@@ -79,4 +79,6 @@ Startup migrations backfill missing `TaskAllocationHeaderId` on legacy rows and 
 
 ## Testing touchpoints
 
-See `TESTING_SCENARIOS.md` — planning sections: drag, ctrl+drag, child split, replan, Outlook overlay, overdue milestones.
+Manual: `TESTING_SCENARIOS.md` TC-PLAN-* (incl. TC-PLAN-014b mobile RO) and TC-UI-003.
+
+On phone viewports (≤767px), Planning reuses the read-only interaction path even when the user has `canPlanTasks` (`canPlanOnThisDevice`).
