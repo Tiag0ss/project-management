@@ -1,7 +1,7 @@
 'use client';
 
 import { getApiUrl } from '@/lib/api/config';
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, use, Suspense } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useRouter } from 'next/navigation';
@@ -97,7 +97,21 @@ interface Customer {
   Email?: string;
 }
 
-export default function ApplicationDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function ApplicationDetailPage(props: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
+          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
+        </div>
+      }
+    >
+      <ApplicationDetailPageContent {...props} />
+    </Suspense>
+  );
+}
+
+function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { pillStyle } = useColorVision();
   const { user, token, isLoading: authLoading } = useAuth();

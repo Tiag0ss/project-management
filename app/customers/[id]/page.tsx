@@ -2,7 +2,7 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, use, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -154,7 +154,21 @@ interface CustomerOverviewData {
   upcomingTasks: UpcomingTask[];
 }
 
-export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function CustomerDetailPage(props: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
+          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
+        </div>
+      }
+    >
+      <CustomerDetailPageContent {...props} />
+    </Suspense>
+  );
+}
+
+function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const decimalHoursToHMS = useFormatHours();
   const { mapColor, pillStyle, backgroundStyle } = useColorVision();
   const resolvedParams = use(params);

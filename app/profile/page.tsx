@@ -3,7 +3,7 @@
 import { getApiUrl } from '@/lib/api/config';
 import { recurringAllocationsApi, RecurringAllocation } from '@/lib/api/recurringAllocations';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
@@ -128,6 +128,20 @@ const formatLeaveUnits = (value: number): string => {
 };
 
 export default function ProfilePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
+          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
+        </div>
+      }
+    >
+      <ProfilePageContent />
+    </Suspense>
+  );
+}
+
+function ProfilePageContent() {
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const { user, token, isLoading: authLoading, isCustomerUser, updateUser } = useAuth();
   const router = useRouter();

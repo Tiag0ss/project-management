@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
@@ -32,6 +32,20 @@ const ADMIN_TABS = [
 ] as const;
 
 export default function AdministrationPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
+          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
+        </div>
+      }
+    >
+      <AdministrationPageContent />
+    </Suspense>
+  );
+}
+
+function AdministrationPageContent() {
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const [activeTab, setActiveTab] = useUrlTab<AdminTab>(ADMIN_TABS, 'users');
   const { user, token, isLoading } = useAuth();

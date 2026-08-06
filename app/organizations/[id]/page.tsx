@@ -2,7 +2,7 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect, use, useMemo, useRef } from 'react';
+import { useState, useEffect, use, useMemo, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -40,7 +40,21 @@ const ORGANIZATION_DETAIL_TABS = [
 ] as const;
 type OrganizationDetailTab = (typeof ORGANIZATION_DETAIL_TABS)[number];
 
-export default function OrganizationDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function OrganizationDetailPage(props: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
+          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
+        </div>
+      }
+    >
+      <OrganizationDetailPageContent {...props} />
+    </Suspense>
+  );
+}
+
+function OrganizationDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const orgId = parseInt(resolvedParams.id);
   

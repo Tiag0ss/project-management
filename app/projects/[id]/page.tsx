@@ -3,7 +3,7 @@
 import { getApiUrl } from '@/lib/api/config';
 import { parseCsv } from '@/lib/csv';
 
-import React, { useState, useEffect, useRef, use } from 'react';
+import React, { useState, useEffect, useRef, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -54,7 +54,21 @@ const PROJECT_DETAIL_TABS = [
 ] as const;
 type ProjectDetailTab = (typeof PROJECT_DETAIL_TABS)[number];
 
-export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function ProjectDetailPage(props: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
+          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
+        </div>
+      }
+    >
+      <ProjectDetailPageContent {...props} />
+    </Suspense>
+  );
+}
+
+function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const { backgroundStyle, pillStyle } = useColorVision();
   const projectId = resolvedParams.id;
