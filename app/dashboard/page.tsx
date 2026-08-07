@@ -29,6 +29,7 @@ import EmptyState from '@/components/EmptyState';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import SegmentedTagBadge from '@/components/tags/SegmentedTagBadge';
+import InstallAppPrompt from '@/components/InstallAppPrompt';
 import { useColorVision } from '@/hooks/useColorVision';
 import SearchableSelect from '@/components/SearchableSelect';
 import dynamic from 'next/dynamic';
@@ -2355,7 +2356,8 @@ function DashboardContent() {
 
       {isCustomerUser ? (
         <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-          <div className="px-4 py-6 sm:px-0">
+          <div className="px-4 py-6 sm:px-0 space-y-4">
+            <InstallAppPrompt />
             {portalLoading ? (
               <div className="space-y-5 animate-pulse">
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-24" />
@@ -2603,6 +2605,7 @@ function DashboardContent() {
 
           {/* Main Content */}
           <main ref={scrollContainerRef} className="flex-1 overflow-auto p-4 md:p-6 min-w-0">
+            <InstallAppPrompt className="mb-4" />
             {/* Overview Tab */}
             {activeTab === 'overview' && (
             overviewLoading ? (

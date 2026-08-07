@@ -2111,6 +2111,21 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Detail sidebars keep the active tab across refresh via `?tab=`
 - Branding upload stores a local `/uploads/branding/…` path (external URLs still allowed for branding)
 
+### TC-UI-003b: Install app (PWA) on Dashboard
+**Prerequisites:** Mobile viewport (≤767px) or phone browser; HTTPS or localhost  
+**Steps:**
+1. Open `/dashboard` on a phone (or narrow Chrome DevTools device mode)
+2. Confirm an “Install app” banner appears (unless already installed or previously dismissed)
+3. On Chromium: tap **Install app** when the browser deferred prompt is available
+4. On iOS Safari: follow Share → Add to Home Screen tips
+5. Open the installed shortcut and confirm standalone full-screen (no browser chrome)
+
+**Expected:**
+- Banner only on Dashboard and only on mobile / non-standalone
+- Dismiss (“Not now”) hides the banner for that browser (localStorage)
+- Installed app opens at `/dashboard` in standalone display mode
+- `/manifest.webmanifest` and `/sw.js` are reachable
+
 ### TC-UI-004: Rich Text Editor
 **Steps:**
 1. Open any form with rich text editor (task, ticket, memo)

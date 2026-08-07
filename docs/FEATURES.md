@@ -1145,7 +1145,7 @@ Phone layouts (viewport ≤767px / Tailwind `md`). Shared hook: [`hooks/useIsMob
 | Surface | Behaviour |
 |---------|-----------|
 | Top Navbar | Hamburger drawer with primary links (`md:hidden`); search hidden below `sm` |
-| Dashboard | Horizontal tabs instead of `w-64` aside; stacked welcome header |
+| Dashboard | Horizontal tabs instead of `w-64` aside; stacked welcome header; mobile **Install app** PWA banner (Synapse-style) |
 | Projects list | Grid view forced on phone; RAG tiles `2×2`; list table scrolls if used |
 | Project detail | Horizontal scrollable tabs; denser main padding |
 | TaskDetailModal | Full-height sheet; scrollable tabs; denser header |

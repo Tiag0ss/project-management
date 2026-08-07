@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -6,6 +6,7 @@ import { PermissionsProvider } from "@/contexts/PermissionsContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import BrandingRuntime from "@/components/BrandingRuntime";
 import PreferencesRuntime from "@/components/PreferencesRuntime";
+import PwaRegister from "@/components/PwaRegister";
 import { PREFERENCES_EARLY_APPLY_SCRIPT } from "@/lib/colorVision";
 import GlobalGridEnhancer from "@/components/GlobalGridEnhancer";
 import AIAssistantWidget from "@/components/AIAssistantWidget";
@@ -21,6 +22,12 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  themeColor: "#2563eb",
+  width: "device-width",
+  initialScale: 1,
+};
+
 export async function generateMetadata(): Promise<Metadata> {
   const { companyName, faviconUrl } = await getPublicBranding();
   const faviconType = inferFaviconType(faviconUrl);
@@ -28,9 +35,22 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: companyName,
     description: "Manage your projects efficiently",
+    manifest: "/manifest.webmanifest",
+    appleWebApp: {
+      capable: true,
+      title: companyName,
+      statusBarStyle: "default",
+    },
     icons: {
-      icon: faviconType ? [{ url: faviconUrl, type: faviconType }] : faviconUrl,
+      icon: [
+        ...(faviconType
+          ? [{ url: faviconUrl, type: faviconType }]
+          : [{ url: faviconUrl }]),
+        { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+        { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
+      ],
       shortcut: faviconUrl,
+      apple: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
     },
   };
 }
@@ -53,6 +73,7 @@ export default function RootLayout({
             <ToastProvider>
               <PreferencesRuntime />
               <BrandingRuntime />
+              <PwaRegister />
               <GlobalGridEnhancer />
               {children}
               <AIAssistantWidget />
