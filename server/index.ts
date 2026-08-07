@@ -16,7 +16,7 @@ import { seedRolePermissions } from './utils/seedRolePermissions';
 import { runMigrations } from './utils/migrations';
 import { swaggerSpec } from './config/swagger';
 import logger from './utils/logger';
-import { getBrandFaviconFilePath, getDefaultFaviconPath } from './utils/favicon';
+import { getBrandFaviconFilePath, getDefaultFaviconPath, resolveFaviconTarget } from './utils/favicon';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/user';
 import projectsRoutes from './routes/projects';
@@ -194,6 +194,18 @@ app.prepare().then(async () => {
     next();
   });
 
+  // Serve runtime-written branding / application images (Next may not pick up post-build public files)
+  const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+  try {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  } catch (error) {
+    logger.warn('Could not ensure public/uploads directory (uploads may fail until permissions are fixed)', {
+      error: error instanceof Error ? error.message : String(error),
+      uploadsDir,
+    });
+  }
+  server.use('/uploads', express.static(uploadsDir, { fallthrough: true, maxAge: '1d' }));
+
   registerHealthRoute(server);
 
   // API Documentation with Swagger
@@ -348,15 +360,26 @@ app.prepare().then(async () => {
     res.status(404).json({ success: false, message: 'API endpoint not found' });
   });
 
-  const sendBrandFavicon = (res: express.Response) => {
-    res.setHeader('Content-Type', 'image/svg+xml');
-    res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
-    res.sendFile(getBrandFaviconFilePath());
+  const sendConfiguredFavicon = async (res: express.Response) => {
+    try {
+      const target = await resolveFaviconTarget();
+      if (target.kind === 'redirect') {
+        return res.redirect(302, target.url);
+      }
+      res.setHeader('Content-Type', target.contentType);
+      res.setHeader('Cache-Control', target.cacheControl);
+      return res.sendFile(target.absolutePath);
+    } catch (error) {
+      logger.error('Failed to serve favicon', { error });
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'public, max-age=60');
+      return res.sendFile(getBrandFaviconFilePath());
+    }
   };
 
-  // Firefox and other browsers cache /favicon.ico aggressively — serve current brand SVG.
-  server.get('/favicon.ico', (_req, res) => {
-    sendBrandFavicon(res);
+  // Browsers still request /favicon.ico aggressively — honour SystemSettings.faviconUrl.
+  server.get('/favicon.ico', async (_req, res) => {
+    await sendConfiguredFavicon(res);
   });
 
   // Legacy paths that may still be cached from older builds.
@@ -364,8 +387,8 @@ app.prepare().then(async () => {
     res.redirect(307, getDefaultFaviconPath());
   });
 
-  server.get('/brand-favicon.svg', (_req, res) => {
-    sendBrandFavicon(res);
+  server.get('/brand-favicon.svg', async (_req, res) => {
+    await sendConfiguredFavicon(res);
   });
 
   // Handle all other requests with Next.js

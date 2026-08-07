@@ -543,7 +543,8 @@ export default function SystemSettings() {
                   Company Logo URL
                 </label>
                 <input
-                  type="url"
+                  type="text"
+                  inputMode="url"
                   value={settings.companyLogoUrl || ''}
                   onChange={(e) => handleChange('companyLogoUrl', e.target.value)}
                   placeholder="https://example.com/logo.png or /uploads/branding/…"
@@ -577,7 +578,8 @@ export default function SystemSettings() {
                   Favicon URL
                 </label>
                 <input
-                  type="url"
+                  type="text"
+                  inputMode="url"
                   value={settings.faviconUrl || ''}
                   onChange={(e) => handleChange('faviconUrl', e.target.value)}
                   placeholder="https://example.com/favicon.ico or /uploads/branding/…"

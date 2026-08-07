@@ -68,8 +68,10 @@ COPY --from=builder /app/server/database ./dist/server/database
 # Copy production dependencies
 COPY --from=deps /app/node_modules ./node_modules
 
-# Create logs directory
-RUN mkdir -p logs && chown nodejs:nodejs logs
+# Writable dirs for runtime uploads (branding / application images) and logs.
+# The app runs as `nodejs`; without this, fs.writeFile under public/uploads fails with EACCES.
+RUN mkdir -p public/uploads/branding public/uploads/applications logs \
+  && chown -R nodejs:nodejs public/uploads logs
 
 USER nodejs
 

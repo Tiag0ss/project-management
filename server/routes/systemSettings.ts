@@ -12,6 +12,8 @@ import {
   BRANDING_IMAGE_TYPES,
   BRANDING_UPLOAD_DIR,
   deletePublicUploadIfOwned,
+  resolveImageMime,
+  uploadErrorMessage,
   writePublicUpload,
 } from '../utils/publicUploads';
 
@@ -458,7 +460,8 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 router.post('/branding-upload', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { kind, fileName, fileType, fileData, fileSize } = req.body || {};
+    const { kind, fileName, fileData, fileSize } = req.body || {};
+    const fileType = resolveImageMime(req.body?.fileType, fileName);
 
     const [users] = await pool.execute<RowDataPacket[]>(
       'SELECT IsAdmin FROM Users WHERE Id = ?',
@@ -471,11 +474,14 @@ router.post('/branding-upload', authenticateToken, async (req: AuthRequest, res:
     if (kind !== 'logo' && kind !== 'favicon') {
       return res.status(400).json({ success: false, message: 'kind must be logo or favicon' });
     }
-    if (!fileType || !fileData) {
-      return res.status(400).json({ success: false, message: 'fileType and fileData are required' });
+    if (!fileData) {
+      return res.status(400).json({ success: false, message: 'fileData is required' });
     }
-    if (!BRANDING_IMAGE_TYPES.has(String(fileType))) {
-      return res.status(400).json({ success: false, message: 'File type not allowed for branding assets' });
+    if (!fileType || !BRANDING_IMAGE_TYPES.has(fileType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'File type not allowed for branding assets (PNG, JPEG, WebP, SVG, or ICO)',
+      });
     }
 
     const buffer = Buffer.from(
@@ -494,7 +500,7 @@ router.post('/branding-upload', authenticateToken, async (req: AuthRequest, res:
     const { publicPath } = writePublicUpload({
       dir: BRANDING_UPLOAD_DIR,
       publicPrefix: '/uploads/branding',
-      fileType: String(fileType),
+      fileType,
       fileName: fileName ? String(fileName) : undefined,
       fileData: String(fileData),
       namePrefix: kind,
@@ -531,7 +537,10 @@ router.post('/branding-upload', authenticateToken, async (req: AuthRequest, res:
     });
   } catch (error) {
     logger.error('Branding upload error:', error);
-    res.status(500).json({ success: false, message: 'Failed to upload branding asset' });
+    res.status(500).json({
+      success: false,
+      message: uploadErrorMessage(error, 'Failed to upload branding asset'),
+    });
   }
 });
 

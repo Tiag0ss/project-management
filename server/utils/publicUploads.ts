@@ -32,8 +32,24 @@ const EXT_BY_TYPE: Record<string, string> = {
   'image/vnd.microsoft.icon': '.ico',
 };
 
+const TYPE_BY_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+};
+
 export function ensureUploadDir(dir: string): void {
-  fs.mkdirSync(dir, { recursive: true });
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (error: any) {
+    const code = error?.code ? ` (${error.code})` : '';
+    throw new Error(
+      `Cannot create upload directory "${dir}"${code}. Ensure the process user can write under public/uploads.`
+    );
+  }
 }
 
 export function extensionForMime(fileType: string, fileName?: string): string {
@@ -42,6 +58,17 @@ export function extensionForMime(fileType: string, fileName?: string): string {
   const fromName = path.extname(fileName || '').toLowerCase();
   if (fromName && fromName.length <= 5) return fromName;
   return '.bin';
+}
+
+/** Resolve MIME when the browser sends an empty `file.type` (common for .ico / some SVGs). */
+export function resolveImageMime(fileType: string | undefined | null, fileName?: string): string {
+  const trimmed = String(fileType || '').trim().toLowerCase();
+  if (trimmed) {
+    if (trimmed === 'image/jpg') return 'image/jpeg';
+    return trimmed;
+  }
+  const ext = path.extname(fileName || '').toLowerCase();
+  return TYPE_BY_EXT[ext] || '';
 }
 
 export function decodeBase64FileData(fileData: string): Buffer {
@@ -66,7 +93,14 @@ export function writePublicUpload(options: {
   const diskName = `${safePrefix}-${hash}${ext}`;
   const absolutePath = path.join(options.dir, diskName);
   const buffer = decodeBase64FileData(options.fileData);
-  fs.writeFileSync(absolutePath, buffer);
+  try {
+    fs.writeFileSync(absolutePath, buffer);
+  } catch (error: any) {
+    const code = error?.code ? ` (${error.code})` : '';
+    throw new Error(
+      `Failed to write upload file${code}. Ensure public/uploads is writable by the app process.`
+    );
+  }
   const publicPath = `${options.publicPrefix.replace(/\/$/, '')}/${diskName}`;
   return { absolutePath, publicPath };
 }
@@ -88,4 +122,16 @@ export function deletePublicUploadIfOwned(publicPath: string | null | undefined,
   } catch {
     // best-effort cleanup
   }
+}
+
+export function uploadErrorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof Error) || !error.message) return fallback;
+  const msg = error.message;
+  // Surface actionable filesystem / schema errors to the client
+  if (
+    /writable|upload directory|write upload|EACCES|EPERM|ENOENT|Unknown column|ImagePath/i.test(msg)
+  ) {
+    return msg;
+  }
+  return fallback;
 }

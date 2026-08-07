@@ -19,6 +19,8 @@ import {
   APPLICATION_IMAGE_TYPES,
   APPLICATION_UPLOAD_DIR,
   deletePublicUploadIfOwned,
+  resolveImageMime,
+  uploadErrorMessage,
   writePublicUpload,
 } from '../utils/publicUploads';
 
@@ -743,12 +745,13 @@ router.post('/:id/image', authenticateToken, async (req: AuthRequest, res: Respo
   try {
     const userId = req.user?.userId;
     const { id } = req.params;
-    const { fileName, fileType, fileData, fileSize } = req.body || {};
+    const { fileName, fileData, fileSize } = req.body || {};
+    const fileType = resolveImageMime(req.body?.fileType, fileName);
 
-    if (!fileType || !fileData) {
-      return res.status(400).json({ success: false, message: 'fileType and fileData are required' });
+    if (!fileData) {
+      return res.status(400).json({ success: false, message: 'fileData is required' });
     }
-    if (!APPLICATION_IMAGE_TYPES.has(String(fileType))) {
+    if (!fileType || !APPLICATION_IMAGE_TYPES.has(fileType)) {
       return res.status(400).json({ success: false, message: 'File type not allowed. Use PNG, JPEG, WebP, or SVG.' });
     }
 
@@ -777,7 +780,7 @@ router.post('/:id/image', authenticateToken, async (req: AuthRequest, res: Respo
     const { publicPath } = writePublicUpload({
       dir: APPLICATION_UPLOAD_DIR,
       publicPrefix: '/uploads/applications',
-      fileType: String(fileType),
+      fileType,
       fileName: fileName ? String(fileName) : undefined,
       fileData: String(fileData),
       namePrefix: `app-${id}`,
@@ -794,7 +797,18 @@ router.post('/:id/image', authenticateToken, async (req: AuthRequest, res: Respo
     res.json({ success: true, imagePath: publicPath, message: 'Application image uploaded' });
   } catch (error) {
     logger.error('Error uploading application image:', error);
-    res.status(500).json({ success: false, message: 'Failed to upload application image' });
+    const message = uploadErrorMessage(error, 'Failed to upload application image');
+    const unknownColumn =
+      typeof error === 'object'
+      && error !== null
+      && 'message' in error
+      && /Unknown column ['`]?ImagePath/i.test(String((error as { message?: string }).message));
+    res.status(500).json({
+      success: false,
+      message: unknownColumn
+        ? 'Applications.ImagePath column is missing. Restart the API so schema sync can add it, then retry.'
+        : message,
+    });
   }
 });
 
@@ -827,7 +841,10 @@ router.delete('/:id/image', authenticateToken, async (req: AuthRequest, res: Res
     res.json({ success: true, message: 'Application image removed' });
   } catch (error) {
     logger.error('Error deleting application image:', error);
-    res.status(500).json({ success: false, message: 'Failed to remove application image' });
+    res.status(500).json({
+      success: false,
+      message: uploadErrorMessage(error, 'Failed to remove application image'),
+    });
   }
 });
 
