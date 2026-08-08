@@ -1397,7 +1397,7 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
   try {
     const userId = req.user?.userId;
     const taskId = req.params.id;
-    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, customerId, synapseVaultId, synapseNoteId, synapseMarkerId, synapseNoteUrl, syncAllocationHeaderDates, customFields } = req.body;
+    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, customerId, synapseVaultId, synapseNoteId, synapseMarkerId, synapseNoteUrl, clearSynapseLink, syncAllocationHeaderDates, customFields } = req.body;
 
     // Verify user has access to this task's project through organization membership and has CanManageTasks permission
     const [access] = await pool.execute<RowDataPacket[]>(
@@ -1666,8 +1666,18 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
       await syncTaskReleaseVersionLink(Number(taskId), finalReleaseVersionId);
     }
 
-    // Optional one-way Synapse backfill (set only when provided; never clear via null coalesce)
-    if (
+    // Optional Synapse link: clear all refs, or one-way backfill (COALESCE never clears via null)
+    if (clearSynapseLink === true || clearSynapseLink === 1 || clearSynapseLink === 'true') {
+      await pool.execute(
+        `UPDATE Tasks SET
+           SynapseVaultId = NULL,
+           SynapseNoteId = NULL,
+           SynapseMarkerId = NULL,
+           SynapseNoteUrl = NULL
+         WHERE Id = ?`,
+        [taskId]
+      );
+    } else if (
       synapseVaultId !== undefined ||
       synapseNoteId !== undefined ||
       synapseMarkerId !== undefined ||
