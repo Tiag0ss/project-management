@@ -440,6 +440,8 @@ On viewports ≤767px (`useIsMobile`), Planning is **read-only** even when the u
 ### Toolbar Filters
 - Filter by organization, project, user
 - "Show only my tasks" toggle (restricts to current user's allocations)
+- **View Options** (persisted in localStorage): dependencies, critical path, baseline, daily totals, bar hours, time entries overlay, user visibility
+- **Hide not-planned tasks without hours**: when enabled in resource grouping, hides **Not Planned** parent tasks that have no estimated hours (leaf or own). Unplanned tasks that still have estimated hours remain visible. Unscheduled work remains on assignee rows. A top amber warning lists the hidden tasks (expandable, open task, or restore them in Not Planned).
 - 🔴 **Critical Path** toggle: highlights tasks on the critical path with a red ring (CPM forward/backward pass)
 - 📏 **Baseline** toggle + 📐 **Set Baseline**: captures `BaselineStartDate`/`BaselineEndDate` snapshot; drift bars rendered as coloured thin strips beside each bar (🟢 ahead / 🟡 minor drift / 🟣 late)
 
@@ -966,7 +968,7 @@ Admin-only page:
 - **Email / SMTP**: Configure mail server (see [Email & Notifications](#18-email--notifications))
 - **Outlook calendar**: Microsoft Graph credentials and enable toggle
 - **Jira / GitHub / Gitea**: Organization-level integration credentials (see respective sections)
-- **AI Assistant**: OpenAI API key and enable toggle
+- **AI Assistant**: Provider (OpenAI or Ollama), credentials/model, enable toggle
 - **Timezone**: Default system timezone
 - **Task Form**: Global template for which task modal fields/tabs are visible (see [Task Form Visibility](#task-form-visibility-fields--tabs))
 - **User Management**: Create, edit, activate/deactivate users; assign global roles; set hourly rate; manage admin flag
@@ -983,6 +985,8 @@ Server operators may also set `REDIS_ENABLED` and related env vars (see [Redis C
 - Available as a floating widget on supported views
 - Queries the backend AI assistant (`/api/ai-assistant`) which answers natural language questions about project data
 - Assistant has read access to tasks, allocations, time entries, and org members via database views (see `docs/AI_ASSISTANT_VIEWS.md`)
+- **Providers**: **OpenAI** (API key + model) or **Ollama** (Base URL + model name, OpenAI-compatible `/v1/chat/completions`)
+- Same provider is used for translate/summarize on tasks and AI patch-notes improvement
 
 #### Assistant Modes (Analytics vs Docs)
 - The widget includes a mode toggle:
@@ -993,7 +997,7 @@ Server operators may also set `REDIS_ENABLED` and related env vars (see [Redis C
 - Responses remain English-only by assistant policy.
 
 #### Availability and Access Rules
-- Assistant visibility requires global AI enablement + valid OpenAI configuration in System Settings.
+- Assistant visibility requires global AI enablement + a configured provider in System Settings (OpenAI key, or Ollama base URL + model).
 - Analytics answers still enforce report/visibility permission constraints for business data scope.
 - Budget insights remain hidden when `canViewBudgetInfo` is denied.
 

@@ -175,6 +175,8 @@ export default function PlanningPage() {
   const [showGanttTotals, setShowGanttTotals] = useState(true);
   const [showTaskBarHours, setShowTaskBarHours] = useState(true);
   const [showTimeEntriesOverlay, setShowTimeEntriesOverlay] = useState(false);
+  /** When true, hide Not Planned tasks with no estimated hours (Unscheduled stay on assignee rows). */
+  const [hideNotPlannedTasks, setHideNotPlannedTasks] = useState(false);
   const [plannerTimeEntries, setPlannerTimeEntries] = useState<any[]>([]);
   const [isLoadingPlannerTimeEntries, setIsLoadingPlannerTimeEntries] = useState(false);
   const [showGanttViewOptions, setShowGanttViewOptions] = useState(false);
@@ -554,6 +556,7 @@ export default function PlanningPage() {
     isDeleting: false,
   });
   const [showOverdueDetails, setShowOverdueDetails] = useState(false);
+  const [showHiddenNotPlannedDetails, setShowHiddenNotPlannedDetails] = useState(false);
   const [activeTimerTaskId, setActiveTimerTaskId] = useState<number | null>(null);
   const [otherActiveTimerTaskIds, setOtherActiveTimerTaskIds] = useState<Set<number>>(new Set());
 
@@ -1110,6 +1113,7 @@ export default function PlanningPage() {
           showGanttTotals?: boolean;
           showTaskBarHours?: boolean;
           showTimeEntriesOverlay?: boolean;
+          hideNotPlannedTasks?: boolean;
           selectedGanttUserIds?: unknown;
         };
 
@@ -1119,6 +1123,7 @@ export default function PlanningPage() {
         if (typeof parsed.showGanttTotals === 'boolean') setShowGanttTotals(parsed.showGanttTotals);
         if (typeof parsed.showTaskBarHours === 'boolean') setShowTaskBarHours(parsed.showTaskBarHours);
         if (typeof parsed.showTimeEntriesOverlay === 'boolean') setShowTimeEntriesOverlay(parsed.showTimeEntriesOverlay);
+        if (typeof parsed.hideNotPlannedTasks === 'boolean') setHideNotPlannedTasks(parsed.hideNotPlannedTasks);
 
         if (Array.isArray(parsed.selectedGanttUserIds)) {
           const normalizedIds = parsed.selectedGanttUserIds.filter(
@@ -1153,6 +1158,7 @@ export default function PlanningPage() {
           showGanttTotals,
           showTaskBarHours,
           showTimeEntriesOverlay,
+          hideNotPlannedTasks,
           selectedGanttUserIds,
         })
       );
@@ -1167,6 +1173,7 @@ export default function PlanningPage() {
     showGanttTotals,
     showTaskBarHours,
     showTimeEntriesOverlay,
+    hideNotPlannedTasks,
     selectedGanttUserIds,
   ]);
 
@@ -7597,7 +7604,25 @@ export default function PlanningPage() {
     return !(Number(project.StatusIsClosed || 0) === 1 || Number(project.StatusIsCancelled || 0) === 1);
   };
   const unassignedTasks = isResourceGrouping ? getTasksForUser(null) : [];
-  const visibleUnassignedTasks = unassignedTasks.filter(matchesGanttSearch);
+  const taskHasAssignedHours = (task: Task): boolean => {
+    const leafHours = getAllLeafTasks(task.Id).reduce(
+      (sum, leaf) => sum + parseFloat(String(leaf.EstimatedHours || 0)),
+      0
+    );
+    if (leafHours > 0) return true;
+    return parseFloat(String(task.EstimatedHours || 0)) > 0;
+  };
+  const visibleUnassignedTasks = unassignedTasks
+    .filter(matchesGanttSearch)
+    .filter((task) => !hideNotPlannedTasks || taskHasAssignedHours(task));
+  const hiddenUnassignedTasks = hideNotPlannedTasks
+    ? unassignedTasks
+        .filter(matchesGanttSearch)
+        .filter((task) => !taskHasAssignedHours(task))
+        .slice()
+        .sort((a, b) => a.TaskName.localeCompare(b.TaskName))
+    : [];
+  const hiddenUnassignedTasksPreview = hiddenUnassignedTasks.slice(0, 5);
   const groupedGanttRows = (() => {
     if (isResourceGrouping) return [] as { id: string; label: string; subLabel: string; tasks: Task[] }[];
 
@@ -7817,7 +7842,7 @@ export default function PlanningPage() {
               </div>
             </div>
 
-            {(isLoadingOutlookCalendar || overdueMilestones.length > 0) && (
+            {(isLoadingOutlookCalendar || overdueMilestones.length > 0 || hiddenUnassignedTasks.length > 0) && (
               <div className="bg-amber-50/60 dark:bg-amber-900/10 border-b border-amber-200/50 dark:border-amber-800/30 px-4 py-2 space-y-2">
                 {isLoadingOutlookCalendar && (
                   <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
@@ -7877,6 +7902,69 @@ export default function PlanningPage() {
                             +{overdueMilestones.length - overdueMilestonesPreview.length} more
                           </div>
                         )}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {hiddenUnassignedTasks.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowHiddenNotPlannedDetails(!showHiddenNotPlannedDetails)}
+                      className="flex items-center gap-2 text-sm hover:opacity-75 transition-opacity"
+                    >
+                      <span className="text-amber-700 dark:text-amber-600">⚠️</span>
+                      <span className="font-medium text-amber-800 dark:text-amber-300">
+                        {hiddenUnassignedTasks.length} hidden not-planned task{hiddenUnassignedTasks.length === 1 ? '' : 's'} without hours
+                      </span>
+                      <svg className={`w-4 h-4 text-amber-600 dark:text-amber-400 transition-transform ${showHiddenNotPlannedDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7-7-7 7" />
+                      </svg>
+                    </button>
+
+                    {showHiddenNotPlannedDetails && (
+                      <div className="mt-2 space-y-1 max-h-64 overflow-y-auto">
+                        {hiddenUnassignedTasksPreview.map((task) => {
+                          const project = projects.find((p) => Number(p.Id) === Number(task.ProjectId));
+                          return (
+                            <div
+                              key={`hidden-not-planned-${task.Id}`}
+                              className="flex items-center justify-between gap-2 text-xs py-1 px-2 rounded bg-white/50 dark:bg-gray-800/30 hover:bg-white/80 dark:hover:bg-gray-800/50 transition-colors"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="font-medium text-gray-900 dark:text-white truncate">{task.TaskName}</div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400 truncate">
+                                  {project?.ProjectName || `Project #${task.ProjectId}`} • no estimated hours
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleTaskClick(task)}
+                                  className="px-2 py-0.5 text-xs bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors"
+                                  title="Open task"
+                                >
+                                  Open
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {hiddenUnassignedTasks.length > hiddenUnassignedTasksPreview.length && (
+                          <div className="text-xs text-amber-700 dark:text-amber-400 py-1 px-2">
+                            +{hiddenUnassignedTasks.length - hiddenUnassignedTasksPreview.length} more
+                          </div>
+                        )}
+                        <div className="pt-1 px-2">
+                          <button
+                            type="button"
+                            onClick={() => setHideNotPlannedTasks(false)}
+                            className="text-xs font-medium text-amber-800 dark:text-amber-300 underline hover:no-underline"
+                          >
+                            Show them in Not Planned
+                          </button>
+                        </div>
                       </div>
                     )}
                   </>
@@ -8148,6 +8236,22 @@ export default function PlanningPage() {
                             className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500 bg-white dark:bg-gray-700"
                           />
                           Show time entries
+                        </label>
+                      )}
+                      {isResourceGrouping && (
+                        <label className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={hideNotPlannedTasks}
+                            onChange={(e) => setHideNotPlannedTasks(e.target.checked)}
+                            className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                          />
+                          <span>
+                            <span className="block">Hide not-planned tasks without hours</span>
+                            <span className="block text-xs text-gray-500 dark:text-gray-400">
+                              Hides unplanned tasks with no estimated hours. Tasks with hours stay visible; Unscheduled stay on assignee rows.
+                            </span>
+                          </span>
                         </label>
                       )}
                       {isResourceGrouping && (

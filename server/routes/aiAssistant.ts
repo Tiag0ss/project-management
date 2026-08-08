@@ -2,9 +2,14 @@ import express, { Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { pool } from '../config/database';
 import { RowDataPacket } from '../config/database';
-import { decrypt } from '../utils/encryption';
 import { assistantDocumentationSections } from '../utils/assistantDocumentation';
 import logger from '../utils/logger';
+import {
+  chatCompletion,
+  getLlmConfig,
+  llmNotConfiguredMessage,
+  type ChatMessage as LlmChatMessage,
+} from '../utils/llmProvider';
 
 const router = express.Router();
 
@@ -206,31 +211,7 @@ const getUserOrganizationIds = async (userId: number): Promise<number[]> => {
     .filter((id: number) => Number.isFinite(id) && id > 0);
 };
 
-const getGlobalAssistantConfig = async () => {
-  const [globalSettingsRows] = await pool.execute<RowDataPacket[]>(
-    'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?)',
-    ['aiAssistantEnabled', 'openAIApiKey', 'openAIModel', 'openAIBehavior']
-  );
-
-  const settingsMap: Record<string, string> = {};
-  globalSettingsRows.forEach((row: any) => {
-    settingsMap[String(row.SettingKey)] = String(row.SettingValue || '');
-  });
-
-  const aiAssistantEnabled = settingsMap.aiAssistantEnabled === 'true';
-  const encryptedApiKey = String(settingsMap.openAIApiKey || '').trim();
-  const openAiApiKey = encryptedApiKey ? decrypt(encryptedApiKey).trim() : '';
-  const openAIModel = String(settingsMap.openAIModel || '').trim();
-  const openAIBehavior = String(settingsMap.openAIBehavior || '').trim();
-
-  return {
-    aiAssistantEnabled,
-    isConfigured: !!openAiApiKey,
-    openAiApiKey,
-    openAIModel,
-    openAIBehavior,
-  };
-};
+const getGlobalAssistantConfig = async () => getLlmConfig();
 
 const buildFallbackAnswer = (question: string, context: any): string => {
   const lowerQuestion = normalizeSearchText(question);
@@ -500,6 +481,7 @@ router.get('/availability', authenticateToken, async (req: AuthRequest, res: Res
       available: config.aiAssistantEnabled && config.isConfigured,
       enabled: config.aiAssistantEnabled,
       configured: config.isConfigured,
+      provider: config.provider,
       canViewReports: permissions.canViewReports,
     });
   } catch (error) {
@@ -537,12 +519,7 @@ router.post('/chat', authenticateToken, async (req: AuthRequest, res: Response) 
     }
 
     if (!config.isConfigured) {
-      return res.status(400).json({ success: false, message: 'OpenAI API key is not configured in system settings.' });
-    }
-
-    const openAiApiKey = config.openAiApiKey;
-    if (!openAiApiKey) {
-      return res.status(400).json({ success: false, message: 'OpenAI API key is invalid or empty in system settings.' });
+      return res.status(400).json({ success: false, message: llmNotConfiguredMessage(config) });
     }
 
     const safeHistory: ChatMessage[] = historyInput
@@ -550,9 +527,9 @@ router.post('/chat', authenticateToken, async (req: AuthRequest, res: Response) 
       .slice(-8)
       .map((item: any) => ({ role: item.role, content: String(item.content).slice(0, 2000) }));
 
-    const model = config.openAIModel || process.env.OPENAI_MODEL || 'gpt-4o-mini';
-    const behaviorInstruction = config.openAIBehavior
-      ? `Configured behavior: ${config.openAIBehavior}`
+    const model = config.model;
+    const behaviorInstruction = config.behavior
+      ? `Configured behavior: ${config.behavior}`
       : '';
     const docsIntentDetected = detectDocumentationIntent(normalizedMessage);
 
@@ -568,44 +545,34 @@ router.post('/chat', authenticateToken, async (req: AuthRequest, res: Response) 
         behaviorInstruction,
       ].join(' ');
 
-      const llmMessages = [
+      const llmMessages: LlmChatMessage[] = [
         { role: 'system', content: `${docsPrompt}\n\nDocumentationContext:\n${JSON.stringify(docContext)}` },
         ...safeHistory,
         { role: 'user', content: rawMessage },
       ];
 
-      const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openAiApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ model, temperature: 0.2, messages: llmMessages }),
-      });
-
-      if (!llmResponse.ok) {
-        const errorJson = await llmResponse.json().catch(() => ({}));
-        const apiMessage = String(errorJson?.error?.message || errorJson?.message || '').trim();
-        return res.status(502).json({
-          success: false,
-          message: apiMessage || 'OpenAI request failed. Check API key and model configuration.'
+      try {
+        const { content: llmAnswer } = await chatCompletion(config, {
+          messages: llmMessages,
+          temperature: 0.2,
+          model,
         });
-      }
 
-      const llmJson = await llmResponse.json();
-      const llmAnswer = String(llmJson?.choices?.[0]?.message?.content || '').trim();
-
-      return res.json({
-        success: true,
-        data: {
-          answer: llmAnswer || 'I could not generate a documentation answer right now.',
-          context: {
-            generatedAt: new Date().toISOString(),
-            mode: 'docs',
-            selectedSectionIds: docContext.selectedSectionIds,
+        return res.json({
+          success: true,
+          data: {
+            answer: llmAnswer || 'I could not generate a documentation answer right now.',
+            context: {
+              generatedAt: new Date().toISOString(),
+              mode: 'docs',
+              selectedSectionIds: docContext.selectedSectionIds,
+            },
           },
-        },
-      });
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'LLM request failed.';
+        return res.status(502).json({ success: false, message });
+      }
     }
 
     const permissions = await buildRolePermissions(userId);
@@ -1055,32 +1022,25 @@ router.post('/chat', authenticateToken, async (req: AuthRequest, res: Response) 
         behaviorInstruction,
       ].join(' ');
 
-      const llmMessages = [
+      const llmMessages: LlmChatMessage[] = [
         { role: 'system', content: `${systemPrompt}\n\nContext:\n${JSON.stringify(contextPayload)}` },
         ...safeHistory,
         { role: 'user', content: rawMessage },
       ];
 
-      const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openAiApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ model, temperature: 0.2, messages: llmMessages }),
-      });
-
-      if (!llmResponse.ok) {
-        const errorJson = await llmResponse.json().catch(() => ({}));
-        const apiMessage = String(errorJson?.error?.message || errorJson?.message || '').trim();
-        return res.status(502).json({
-          success: false,
-          message: apiMessage || 'OpenAI request failed. Check API key and model configuration.'
+      let llmAnswer = '';
+      try {
+        const result = await chatCompletion(config, {
+          messages: llmMessages,
+          temperature: 0.2,
+          model,
         });
+        llmAnswer = result.content;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'LLM request failed.';
+        return res.status(502).json({ success: false, message });
       }
 
-      const llmJson = await llmResponse.json();
-      const llmAnswer = String(llmJson?.choices?.[0]?.message?.content || '').trim();
       const hasDailySchedule = Array.isArray(contextPayload?.planning?.dailySchedule) && contextPayload.planning.dailySchedule.length > 0;
       const weakScheduleReply = includesAny(normalizeSearchText(llmAnswer), [
         'for a detailed schedule',
@@ -1126,7 +1086,7 @@ router.post('/chat', authenticateToken, async (req: AuthRequest, res: Response) 
   }
 });
 
-// Translate or summarize a piece of text using the configured OpenAI key
+// Translate or summarize a piece of text using the configured LLM provider
 router.post('/text-action', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -1136,7 +1096,7 @@ router.post('/text-action', authenticateToken, async (req: AuthRequest, res: Res
 
     const config = await getGlobalAssistantConfig();
     if (!config.isConfigured) {
-      return res.status(400).json({ success: false, message: 'OpenAI API key is not configured.' });
+      return res.status(400).json({ success: false, message: llmNotConfiguredMessage(config) });
     }
 
     const action = String(req.body?.action || '').toLowerCase();
@@ -1160,33 +1120,20 @@ router.post('/text-action', authenticateToken, async (req: AuthRequest, res: Res
       ? `You are a professional translator. Translate the following text to ${targetLanguage}. Return only the translated text, preserving any markdown or HTML formatting present in the original.`
       : 'You are a professional summarizer. Provide a concise summary of the following text. Keep relevant key points. Return only the summary text, without any preamble.';
 
-    const model = config.openAIModel || 'gpt-4o-mini';
-    const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.openAiApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.3,
+    try {
+      const { content: result } = await chatCompletion(config, {
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: text },
         ],
-        max_tokens: 2000,
-      }),
-    });
-
-    if (!llmResponse.ok) {
-      const errorJson = await llmResponse.json().catch(() => ({}));
-      const apiMessage = String((errorJson as any)?.error?.message || '').trim();
-      return res.status(502).json({ success: false, message: apiMessage || 'OpenAI request failed.' });
+        temperature: 0.3,
+        maxTokens: 2000,
+      });
+      return res.json({ success: true, result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'LLM request failed.';
+      return res.status(502).json({ success: false, message });
     }
-
-    const llmJson = await llmResponse.json() as any;
-    const result = String(llmJson?.choices?.[0]?.message?.content || '').trim();
-    return res.json({ success: true, result });
   } catch (error) {
     logger.error('AI text-action error:', error);
     return res.status(500).json({ success: false, message: 'Failed to process AI request.' });

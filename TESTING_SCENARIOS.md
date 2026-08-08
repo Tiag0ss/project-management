@@ -991,6 +991,21 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Tasks without a done-transition date show on today's column if still open
 - Parent tasks with unscheduled children also appear in the parent row
 
+### TC-PLAN-010b: Hide not-planned tasks without hours (View Options)
+**Steps:**
+1. Open Planning in resource (user) grouping with **Not Planned** parents: at least one with estimated hours &gt; 0 and one with no estimated hours (neither Unscheduled)
+2. Open **View Options** and enable **Hide not-planned tasks without hours**
+3. Confirm Unscheduled tasks still appear on assignee rows
+
+**Expected:**
+- Not-planned tasks with **no** estimated hours disappear from the **Not Planned** row
+- Not-planned tasks that **still have** estimated hours remain visible in **Not Planned**
+- If every remaining Not Planned task is hidden, the row itself disappears
+- An amber top warning shows the count of hidden not-planned tasks without hours (expandable list with Open; link to show them again)
+- Preference persists after refresh (localStorage)
+- Unscheduled work remains visible on the assigned users
+- Disabling the option restores all Not Planned tasks
+
 ### TC-PLAN-011: Move / Replan Allocation Slice
 **Steps:**
 1. In the Planning Gantt, find an existing allocation bar for a task

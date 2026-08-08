@@ -123,9 +123,12 @@ interface SystemSettings {
   autoApproveOutOfOffice?: string;
   frontpageEnabled?: string;
   aiAssistantEnabled?: string;
+  aiProvider?: string;
   openAIApiKey?: string;
   openAIModel?: string;
   openAIBehavior?: string;
+  ollamaBaseUrl?: string;
+  ollamaModel?: string;
   aiViewsAutoCreate?: string;
   aiViewSql_vAI_ProjectOpenTasks?: string;
   aiViewSql_vAI_UserOpenTasks?: string;
@@ -176,9 +179,12 @@ export default function SystemSettings() {
     autoApproveOutOfOffice: 'false',
     frontpageEnabled: 'true',
     aiAssistantEnabled: 'false',
+    aiProvider: 'openai',
     openAIApiKey: '',
     openAIModel: 'gpt-4o-mini',
     openAIBehavior: '',
+    ollamaBaseUrl: 'http://127.0.0.1:11434',
+    ollamaModel: 'llama3.2',
     aiViewsAutoCreate: 'true',
     aiViewSql_vAI_ProjectOpenTasks: '',
     aiViewSql_vAI_UserOpenTasks: '',
@@ -255,9 +261,12 @@ export default function SystemSettings() {
           autoApproveOutOfOffice: data.settings.autoApproveOutOfOffice || 'false',
           frontpageEnabled: data.settings.frontpageEnabled !== undefined ? data.settings.frontpageEnabled : 'true',
           aiAssistantEnabled: data.settings.aiAssistantEnabled || 'false',
+          aiProvider: data.settings.aiProvider === 'ollama' ? 'ollama' : 'openai',
           openAIApiKey: data.settings.openAIApiKey || '',
           openAIModel: data.settings.openAIModel || 'gpt-4o-mini',
           openAIBehavior: data.settings.openAIBehavior || '',
+          ollamaBaseUrl: data.settings.ollamaBaseUrl || 'http://127.0.0.1:11434',
+          ollamaModel: data.settings.ollamaModel || 'llama3.2',
           aiViewsAutoCreate: data.settings.aiViewsAutoCreate || 'true',
           aiViewSql_vAI_ProjectOpenTasks: data.settings.aiViewSql_vAI_ProjectOpenTasks || '',
           aiViewSql_vAI_UserOpenTasks: data.settings.aiViewSql_vAI_UserOpenTasks || '',
@@ -1035,11 +1044,63 @@ export default function SystemSettings() {
                       Enable AI Assistant
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                      Shows/hides AI assistant globally. Requires OpenAI API key configured below.
+                      Shows/hides AI features globally. Configure OpenAI or Ollama below.
                     </div>
                   </div>
                 </label>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    AI Provider
+                  </label>
+                  <select
+                    value={settings.aiProvider === 'ollama' ? 'ollama' : 'openai'}
+                    onChange={(e) => handleChange('aiProvider', e.target.value)}
+                    className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  >
+                    <option value="openai">OpenAI</option>
+                    <option value="ollama">Ollama (local / self-hosted)</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Used by the assistant widget, task translate/summarize, and patch-notes improvement.
+                  </p>
+                </div>
+
+                {settings.aiProvider === 'ollama' ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Ollama Base URL
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.ollamaBaseUrl || 'http://127.0.0.1:11434'}
+                        onChange={(e) => handleChange('ollamaBaseUrl', e.target.value)}
+                        placeholder="http://127.0.0.1:11434"
+                        className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      />
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        From Docker on Linux, try <code className="font-mono">http://172.17.0.1:11434</code> or host networking.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Ollama Model
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.ollamaModel || 'llama3.2'}
+                        onChange={(e) => handleChange('ollamaModel', e.target.value)}
+                        placeholder="llama3.2"
+                        className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      />
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Must already be pulled (`ollama pull llama3.2`).
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     OpenAI API Key
@@ -1076,8 +1137,11 @@ export default function SystemSettings() {
                       Select the model used by the AI assistant backend.
                     </p>
                   </div>
+                  </div>
+                  </>
+                )}
 
-                  <div>
+                <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Assistant Behavior
                     </label>
@@ -1091,7 +1155,6 @@ export default function SystemSettings() {
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                       Optional custom instruction appended to assistant system behavior.
                     </p>
-                  </div>
                 </div>
 
                 <div className="border-t border-gray-200 dark:border-gray-600 pt-4">

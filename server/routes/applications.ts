@@ -5,7 +5,6 @@ import { RowDataPacket, ResultSetHeader } from '../config/database';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import { promises as fs } from 'fs';
-import { decrypt } from '../utils/encryption';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
@@ -23,6 +22,11 @@ import {
   uploadErrorMessage,
   writePublicUpload,
 } from '../utils/publicUploads';
+import {
+  chatCompletion,
+  getLlmConfig,
+  llmNotConfiguredMessage,
+} from '../utils/llmProvider';
 
 const router = Router();
 
@@ -405,20 +409,14 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// GET /api/applications/ai/availability - checks if OpenAI key is configured
+// GET /api/applications/ai/availability - checks if LLM provider is configured
 router.get('/ai/availability', authenticateToken, async (_req: AuthRequest, res: Response) => {
   try {
-    const [rows] = await pool.execute<RowDataPacket[]>(
-      'SELECT SettingValue FROM SystemSettings WHERE SettingKey = ? LIMIT 1',
-      ['openAIApiKey']
-    );
-
-    const encryptedKey = String(rows[0]?.SettingValue || '').trim();
-    const decryptedKey = encryptedKey ? decrypt(encryptedKey).trim() : '';
-
+    const config = await getLlmConfig();
     return res.json({
       success: true,
-      configured: !!decryptedKey,
+      configured: config.isConfigured,
+      provider: config.provider,
     });
   } catch (error: any) {
     logger.error('AI availability check error:', error);
@@ -1495,22 +1493,9 @@ router.post('/:id/versions/improve-patch-notes', authenticateToken, async (req: 
       return res.status(404).json({ success: false, message: 'Application not found or access denied' });
     }
 
-    const [settingRows] = await pool.execute<RowDataPacket[]>(
-      'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?)',
-      ['openAIApiKey', 'openAIModel']
-    );
-
-    const settingsMap: Record<string, string> = {};
-    for (const row of settingRows) {
-      settingsMap[String(row.SettingKey || '')] = String(row.SettingValue || '');
-    }
-
-    const encryptedKey = String(settingsMap.openAIApiKey || '').trim();
-    const openAiApiKey = encryptedKey ? decrypt(encryptedKey).trim() : '';
-    const model = String(settingsMap.openAIModel || '').trim() || 'gpt-4o-mini';
-
-    if (!openAiApiKey) {
-      return res.status(400).json({ success: false, message: 'OpenAI API key is not configured.' });
+    const llmConfig = await getLlmConfig();
+    if (!llmConfig.isConfigured) {
+      return res.status(400).json({ success: false, message: llmNotConfiguredMessage(llmConfig) });
     }
 
     let taskContext: Array<{ id: number; name: string; project: string }> = [];
@@ -1552,33 +1537,20 @@ router.post('/:id/versions/improve-patch-notes', authenticateToken, async (req: 
       instruction: 'Improve clarity and readability while preserving meaning. Keep bullets in the final result.',
     });
 
-    const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openAiApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
+    let improved = '';
+    try {
+      const result = await chatCompletion(llmConfig, {
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-      }),
-    });
-
-    if (!llmResponse.ok) {
-      const errorJson = await llmResponse.json().catch(() => ({}));
-      const apiMessage = String(errorJson?.error?.message || errorJson?.message || '').trim();
-      return res.status(502).json({
-        success: false,
-        message: apiMessage || 'OpenAI request failed. Check API key and model configuration.',
+        temperature: 0.2,
       });
+      improved = result.content;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'LLM request failed.';
+      return res.status(502).json({ success: false, message });
     }
-
-    const llmJson = await llmResponse.json();
-    const improved = String(llmJson?.choices?.[0]?.message?.content || '').trim();
 
     if (!improved) {
       return res.status(500).json({ success: false, message: 'AI returned empty patch notes.' });
