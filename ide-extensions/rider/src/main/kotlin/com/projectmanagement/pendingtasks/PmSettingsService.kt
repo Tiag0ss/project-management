@@ -19,6 +19,13 @@ data class PmSettingsState(
     var kanbanHiddenStatuses: String = "",
     var kanbanMaxVisibleCards: Int = 2,
     var aiInProgressStatusId: Int = 0,
+    /**
+     * Durable fallback for the API token.
+     * PasswordSafe is preferred, but on Linux it is often memory-only
+     * (Settings → Appearance & Behavior → System Settings → Passwords),
+     * which clears the token on every IDE restart.
+     */
+    var apiToken: String = "",
 )
 
 @Service(Service.Level.APP)
@@ -30,6 +37,11 @@ class PmSettingsService : PersistentStateComponent<PmSettingsState> {
 
     override fun loadState(state: PmSettingsState) {
         this.state = state
+        // If PasswordSafe kept a token and XML did not (older versions), mirror it once.
+        val fromSafe = readPasswordSafe()
+        if (this.state.apiToken.isBlank() && fromSafe.isNotEmpty()) {
+            this.state.apiToken = fromSafe
+        }
     }
 
     companion object {
@@ -37,18 +49,50 @@ class PmSettingsService : PersistentStateComponent<PmSettingsState> {
             ApplicationManager.getApplication().getService(PmSettingsService::class.java)
 
         private fun credentialAttributes(): CredentialAttributes =
-            CredentialAttributes(generateServiceName("ProjectManagement", "ApiToken"))
+            CredentialAttributes(
+                generateServiceName("ProjectManagement", "ApiToken"),
+                "api",
+                PmSettingsService::class.java,
+                false,
+            )
+
+        private fun readPasswordSafe(): String {
+            return try {
+                PasswordSafe.instance.get(credentialAttributes())?.getPasswordAsString().orEmpty()
+            } catch (_: Exception) {
+                ""
+            }
+        }
 
         fun getApiToken(): String {
-            val creds = PasswordSafe.instance.get(credentialAttributes())
-            return creds?.getPasswordAsString().orEmpty()
+            val fromSafe = readPasswordSafe()
+            if (fromSafe.isNotEmpty()) return fromSafe
+            return getInstance().state.apiToken
         }
 
         fun setApiToken(token: String) {
-            if (token.isBlank()) {
-                PasswordSafe.instance.set(credentialAttributes(), null)
-            } else {
-                PasswordSafe.instance.set(credentialAttributes(), Credentials("api", token.trim()))
+            val trimmed = token.trim()
+            val attrs = credentialAttributes()
+            val service = getInstance()
+
+            if (trimmed.isBlank()) {
+                try {
+                    PasswordSafe.instance.set(attrs, null)
+                } catch (_: Exception) {
+                    // ignore
+                }
+                service.state.apiToken = ""
+                return
+            }
+
+            // Always persist in plugin state so restarts keep the token even when
+            // PasswordSafe is configured as "Do not save, forget after restart".
+            service.state.apiToken = trimmed
+
+            try {
+                PasswordSafe.instance.set(attrs, Credentials("api", trimmed))
+            } catch (_: Exception) {
+                // State fallback already written.
             }
         }
     }

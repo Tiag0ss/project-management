@@ -51,10 +51,10 @@ data class StatusValuesResponse(
 )
 
 data class ProfileResponse(
+    @SerializedName(value = "username", alternate = ["Username"])
     val username: String? = null,
-    val Username: String? = null,
+    @SerializedName(value = "email", alternate = ["Email"])
     val email: String? = null,
-    val Email: String? = null,
 )
 
 object TaskRules {
@@ -130,7 +130,7 @@ object PmApi {
     fun testConnection(baseUrl: String, token: String): String {
         val body = request(baseUrl, token, "/api/user/profile")
         val profile = gson.fromJson(body, ProfileResponse::class.java)
-        return profile.username ?: profile.Username ?: profile.email ?: profile.Email ?: "user"
+        return profile.username ?: profile.email ?: "user"
     }
 
     fun fetchMyTasks(baseUrl: String, token: String): List<PmTask> {

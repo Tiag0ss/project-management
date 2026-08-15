@@ -8,6 +8,11 @@
   ]]></description>
 
   <depends>com.intellij.modules.platform</depends>
+  <!-- Required since 2026.2: JCEF moved out of the core platform into Web Browser (JCEF). -->
+  <depends>com.intellij.modules.jcef</depends>
+  <dependencies>
+    <module name="intellij.platform.ui.jcef"/>
+  </dependencies>
 
   <extensions defaultExtensionNs="com.intellij">
     <toolWindow id="PM Kanban"

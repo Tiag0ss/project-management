@@ -75,14 +75,14 @@ class PmSettingsConfigurable : Configurable {
     override fun isModified(): Boolean {
         val s = PmSettingsService.getInstance().state
         val token = String(tokenField.password)
-        val tokenChanged = token.isNotEmpty() && token != PmSettingsService.getApiToken()
+        val storedToken = PmSettingsService.getApiToken()
         return baseUrlField.text.trimEnd('/') != s.baseUrl.trimEnd('/') ||
             refreshSpinner.value != s.refreshIntervalSeconds ||
             (layoutCombo.selectedItem as String) != s.kanbanLayout ||
             hiddenStatusesField.text != s.kanbanHiddenStatuses ||
             maxCardsSpinner.value != s.kanbanMaxVisibleCards ||
             aiInProgressSpinner.value != s.aiInProgressStatusId ||
-            tokenChanged
+            token != storedToken
     }
 
     override fun apply() {
@@ -93,10 +93,8 @@ class PmSettingsConfigurable : Configurable {
         service.state.kanbanHiddenStatuses = hiddenStatusesField.text
         service.state.kanbanMaxVisibleCards = maxCardsSpinner.value as Int
         service.state.aiInProgressStatusId = aiInProgressSpinner.value as Int
-        val token = String(tokenField.password)
-        if (token.isNotEmpty()) {
-            PmSettingsService.setApiToken(token)
-        }
+        // Always write the field value (including clear) so persistence stays in sync.
+        PmSettingsService.setApiToken(String(tokenField.password))
     }
 
     override fun reset() {
