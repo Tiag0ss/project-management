@@ -12,6 +12,7 @@ namespace ProjectManagement.PendingTasks
         private string _apiToken = "";
         private int _refreshIntervalSeconds = 300;
         private int _selectedProjectId;
+        private string _selectedSprintFilter = "all";
         private string _kanbanLayout = "horizontal";
         private string _kanbanHiddenStatuses = "";
         private int _kanbanMaxVisibleCards = 2;
@@ -52,6 +53,15 @@ namespace ProjectManagement.PendingTasks
         {
             get => _selectedProjectId;
             set => _selectedProjectId = Math.Max(0, value);
+        }
+
+        [Category("Behaviour")]
+        [DisplayName("Selected sprint filter")]
+        [Description("Last sprint filter in the Kanban tool window: all, backlog, or sprint id (set automatically)")]
+        public string SelectedSprintFilter
+        {
+            get => _selectedSprintFilter;
+            set => _selectedSprintFilter = string.IsNullOrWhiteSpace(value) ? "all" : value.Trim();
         }
 
         [Category("Kanban")]

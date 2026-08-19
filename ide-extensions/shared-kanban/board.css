@@ -85,6 +85,22 @@ body {
   border-left: none;
 }
 
+#sprintFilter {
+  min-width: 180px;
+  height: 32px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+}
+
+#sprintFilter:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 #projectList {
   position: absolute;
   top: calc(100% + 4px);

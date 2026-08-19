@@ -99,6 +99,11 @@ class KanbanPanel : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
                       </button>
                       <ul id="projectList" role="listbox" hidden></ul>
                     </div>
+                    <label for="sprintFilter">Sprint</label>
+                    <select id="sprintFilter" disabled aria-label="Filter by sprint">
+                      <option value="all">All sprints</option>
+                      <option value="backlog">Backlog (no sprint)</option>
+                    </select>
                     <button type="button" id="addTaskBtn" disabled>Add task</button>
                     <button type="button" id="refreshBtn">Refresh</button>
                     <button type="button" id="configureBtn" class="primary">Configure</button>
@@ -143,6 +148,7 @@ class KanbanPanel : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
     private fun pushConfig() {
         val settings = PmSettingsService.getInstance().state
         val selected = settings.selectedProjectId.takeIf { it > 0 }
+        val sprintFilter = settings.selectedSprintFilter.ifBlank { "all" }
         val layout = if (settings.kanbanLayout.equals("vertical", ignoreCase = true)) "vertical" else "horizontal"
         val payload = gson.toJson(
             mapOf(
@@ -151,6 +157,7 @@ class KanbanPanel : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
                 "token" to "",
                 "proxyViaHost" to true,
                 "selectedProjectId" to selected,
+                "selectedSprintFilter" to sprintFilter,
                 "layout" to layout,
                 "hiddenStatuses" to settings.kanbanHiddenStatuses,
                 "maxVisibleCards" to settings.kanbanMaxVisibleCards,
@@ -190,7 +197,18 @@ class KanbanPanel : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
             }
             "projectSelected" -> {
                 val id = obj.get("projectId")?.takeIf { !it.isJsonNull }?.asInt ?: 0
-                PmSettingsService.getInstance().state.selectedProjectId = id
+                val settings = PmSettingsService.getInstance().state
+                settings.selectedProjectId = id
+                settings.selectedSprintFilter = "all"
+            }
+            "sprintSelected" -> {
+                val raw = obj.get("sprintFilter") ?: return
+                val settings = PmSettingsService.getInstance().state
+                settings.selectedSprintFilter = when {
+                    raw.isJsonNull -> "all"
+                    raw.isJsonPrimitive && raw.asJsonPrimitive.isNumber -> raw.asInt.toString()
+                    else -> raw.asString.ifBlank { "all" }
+                }
             }
             "openExternal" -> {
                 val url = obj.get("url")?.asString ?: return

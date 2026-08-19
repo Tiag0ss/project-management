@@ -120,6 +120,11 @@ namespace ProjectManagement.PendingTasks
           </button>
           <ul id=""projectList"" role=""listbox"" hidden></ul>
         </div>
+        <label for=""sprintFilter"">Sprint</label>
+        <select id=""sprintFilter"" disabled aria-label=""Filter by sprint"">
+          <option value=""all"">All sprints</option>
+          <option value=""backlog"">Backlog (no sprint)</option>
+        </select>
         <button type=""button"" id=""addTaskBtn"" disabled>Add task</button>
         <button type=""button"" id=""refreshBtn"">Refresh</button>
         <button type=""button"" id=""configureBtn"" class=""primary"">Configure</button>
@@ -164,6 +169,7 @@ namespace ProjectManagement.PendingTasks
                 token = "",
                 proxyViaHost = true,
                 selectedProjectId = (opt?.SelectedProjectId ?? 0) > 0 ? (int?)opt!.SelectedProjectId : null,
+                selectedSprintFilter = string.IsNullOrWhiteSpace(opt?.SelectedSprintFilter) ? "all" : opt!.SelectedSprintFilter,
                 layout = opt?.KanbanLayout ?? "horizontal",
                 hiddenStatuses = opt?.KanbanHiddenStatuses ?? "",
                 maxVisibleCards = opt?.KanbanMaxVisibleCards ?? 2,
@@ -201,7 +207,23 @@ namespace ProjectManagement.PendingTasks
                         var opt = Options;
                         if (opt == null) break;
                         var id = obj?["projectId"]?.Type == JTokenType.Null ? 0 : (int?)obj?["projectId"] ?? 0;
-                        opt.SelectedProjectId = id;
+                        opt.SelectedProjectId = id ?? 0;
+                        opt.SelectedSprintFilter = "all";
+                    }
+                    break;
+                case "sprintSelected":
+                    {
+                        var opt = Options;
+                        if (opt == null) break;
+                        var raw = obj?["sprintFilter"];
+                        if (raw == null || raw.Type == JTokenType.Null)
+                        {
+                            opt.SelectedSprintFilter = "all";
+                            break;
+                        }
+                        opt.SelectedSprintFilter = raw.Type == JTokenType.Integer
+                            ? raw.ToString()
+                            : raw.ToString();
                     }
                     break;
                 case "openExternal":

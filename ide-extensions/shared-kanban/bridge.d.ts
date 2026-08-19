@@ -4,6 +4,7 @@
  * Board → host:
  *   { type: 'ready' }
  *   { type: 'projectSelected', projectId: number | null }
+ *   { type: 'sprintSelected', sprintFilter: 'all' | 'backlog' | number | string }
  *   { type: 'sendToAi', task: object }
  *   { type: 'openExternal', url: string }
  *   { type: 'openTask', task: object }
@@ -13,7 +14,7 @@
  *   { type: 'error', message: string }
  *
  * Host → board:
- *   { type: 'config', baseUrl: string, token: string, selectedProjectId?: number | null }
+ *   { type: 'config', baseUrl: string, token: string, selectedProjectId?: number | null, selectedSprintFilter?: 'all' | 'backlog' | number | string }
  *   { type: 'refresh' }
  *
  * VS Code: acquireVsCodeApi() as window.__PM_VSCODE__

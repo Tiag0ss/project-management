@@ -481,6 +481,7 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
               COALESCE(tsv.HideFromPlanningAndStatistics, 0) as StatusHideFromPlanningAndStatistics,
               tpv.PriorityName, tpv.ColorCode as PriorityColor, tpv.SortOrder as PrioritySortOrder,
               ttv.TypeName as TaskTypeName, ttv.IconSvg as TaskTypeIconSvg, ttv.ColorCode as TaskTypeColor,
+              sp.Name as SprintName, sp.StartDate as SprintStartDate, sp.EndDate as SprintEndDate,
               COALESCE((SELECT COUNT(*) FROM Tasks st WHERE st.ParentTaskId = t.Id), 0) as SubtaskCount,
               COALESCE((SELECT SUM(Hours) FROM TimeEntries WHERE TaskId = t.Id), 0) as TotalWorked,
               tk.Id as TicketIdRef,
@@ -503,7 +504,8 @@ router.get('/my-tasks', authenticateToken, async (req: AuthRequest, res: Respons
        LEFT JOIN OrganizationJiraIntegrations oji ON tk.OrganizationId = oji.OrganizationId AND oji.IsEnabled = 1
        LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
        LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
-      LEFT JOIN TaskTypeValues ttv ON t.TaskType = ttv.Id
+       LEFT JOIN TaskTypeValues ttv ON t.TaskType = ttv.Id
+       LEFT JOIN Sprints sp ON t.SprintId = sp.Id
        WHERE om.UserId = ?
          AND (
            t.AssignedTo = ?

@@ -28,6 +28,7 @@ Deploy guide: [`DEPLOYMENT.md` §11](../DEPLOYMENT.md#11-ide-extensions-pending-
 
 - Opens in an **editor tab** (VS Code/Cursor) for full width — Activity Bar only launches it
 - Project dropdown → org status columns (ordered by `SortOrder`) + project tasks
+- **Sprint filter** (after project is selected): All sprints, Backlog (no sprint), or a specific sprint
 - Settings: `kanbanLayout` (`horizontal` / `vertical`), `kanbanHiddenStatuses` (`Done; Cancelled`), `kanbanMaxVisibleCards`
 - Drag cards between columns / reorder (uses `POST /api/tasks/reorder-kanban`)
 - Refresh (manual + optional interval on VS Code/Cursor)

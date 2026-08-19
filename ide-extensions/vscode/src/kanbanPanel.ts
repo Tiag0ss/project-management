@@ -6,10 +6,12 @@ import { PmTask } from './tasks';
 import { TaskDetailPanel } from './taskDetailPanel';
 
 const SELECTED_PROJECT_KEY = 'projectManagement.selectedProjectId';
+const SELECTED_SPRINT_KEY = 'projectManagement.selectedSprintFilter';
 
 type BoardToHostMessage =
   | { type: 'ready' }
   | { type: 'projectSelected'; projectId: number | null }
+  | { type: 'sprintSelected'; sprintFilter: string | number }
   | { type: 'sendToAi'; task: PmTask }
   | { type: 'openExternal'; url: string }
   | { type: 'openTask'; task: PmTask }
@@ -147,8 +149,24 @@ export class KanbanPanel {
         const id = msg.projectId == null ? undefined : Number(msg.projectId);
         if (id && id > 0) {
           await this.context.globalState.update(SELECTED_PROJECT_KEY, id);
+          await this.context.globalState.update(SELECTED_SPRINT_KEY, 'all');
         } else {
           await this.context.globalState.update(SELECTED_PROJECT_KEY, undefined);
+          await this.context.globalState.update(SELECTED_SPRINT_KEY, 'all');
+        }
+        break;
+      }
+      case 'sprintSelected': {
+        const filter = msg.sprintFilter;
+        if (filter === 'all' || filter === 'backlog') {
+          await this.context.globalState.update(SELECTED_SPRINT_KEY, filter);
+        } else {
+          const sprintId = Number(filter);
+          if (Number.isFinite(sprintId) && sprintId > 0) {
+            await this.context.globalState.update(SELECTED_SPRINT_KEY, sprintId);
+          } else {
+            await this.context.globalState.update(SELECTED_SPRINT_KEY, 'all');
+          }
         }
         break;
       }
@@ -241,12 +259,15 @@ export class KanbanPanel {
   private async pushConfig(forceRefresh = false): Promise<void> {
     const baseUrl = getBaseUrl();
     const selectedProjectId = this.context.globalState.get<number>(SELECTED_PROJECT_KEY);
+    const selectedSprintFilter =
+      this.context.globalState.get<string | number>(SELECTED_SPRINT_KEY) ?? 'all';
     await this.post({
       type: 'config',
       baseUrl,
       token: '',
       proxyViaHost: true,
       selectedProjectId: selectedProjectId ?? null,
+      selectedSprintFilter,
       layout: getKanbanLayout(),
       hiddenStatuses: getKanbanHiddenStatuses(),
       maxVisibleCards: getKanbanMaxVisibleCards(),
@@ -304,6 +325,11 @@ export class KanbanPanel {
           </button>
           <ul id="projectList" role="listbox" hidden></ul>
         </div>
+        <label for="sprintFilter">Sprint</label>
+        <select id="sprintFilter" disabled aria-label="Filter by sprint">
+          <option value="all">All sprints</option>
+          <option value="backlog">Backlog (no sprint)</option>
+        </select>
         <button type="button" id="addTaskBtn" disabled>Add task</button>
         <button type="button" id="refreshBtn">Refresh</button>
         <button type="button" id="configureBtn" class="primary">Configure</button>

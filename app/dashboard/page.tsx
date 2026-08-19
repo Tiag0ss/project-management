@@ -43,6 +43,16 @@ interface TaskWithProject extends Task {
   IsHobby?: boolean;
   SubtaskCount?: number;
   StatusHideFromPlanningAndStatistics?: number | boolean;
+  OrganizationId?: number;
+  OrganizationName?: string;
+}
+
+type KanbanSprintFilter = 'all' | 'backlog' | number;
+
+interface KanbanSprintOption {
+  Id: number;
+  Name: string;
+  Status?: string;
 }
 
 function AssignedKanbanTab({
@@ -72,6 +82,10 @@ function AssignedKanbanTab({
   const [loadingStatuses, setLoadingStatuses] = useState(false);
   const [isDraggingTask, setIsDraggingTask] = useState(false);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<number | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [selectedSprintFilter, setSelectedSprintFilter] = useState<KanbanSprintFilter>('all');
+  const [sprints, setSprints] = useState<KanbanSprintOption[]>([]);
+  const [loadingSprints, setLoadingSprints] = useState(false);
 
   const getTaskOrganizationId = (task: TaskWithProject): number => {
     const organizationId = Number((task as any).OrganizationId || 0);
@@ -295,6 +309,79 @@ function AssignedKanbanTab({
     }
   }, [groupedTasksByOrganization, selectedOrganizationId]);
 
+  useEffect(() => {
+    setSelectedProjectId(null);
+    setSelectedSprintFilter('all');
+    setSprints([]);
+  }, [selectedOrganizationId]);
+
+  useEffect(() => {
+    if (!selectedProjectId || !token) {
+      setSprints([]);
+      setSelectedSprintFilter('all');
+      return;
+    }
+
+    setSelectedSprintFilter('all');
+    let cancelled = false;
+
+    const loadSprints = async () => {
+      setLoadingSprints(true);
+      try {
+        const response = await fetch(`${getApiUrl()}/api/sprints/project/${selectedProjectId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+          },
+        });
+        const data = await response.json();
+        if (cancelled) return;
+        setSprints(Array.isArray(data.sprints) ? data.sprints : []);
+      } catch {
+        if (!cancelled) setSprints([]);
+      } finally {
+        if (!cancelled) setLoadingSprints(false);
+      }
+    };
+
+    void loadSprints();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProjectId, token]);
+
+  const activeOrganizationId =
+    selectedOrganizationId ?? groupedTasksByOrganization[0]?.organizationId ?? null;
+
+  const projectsInActiveOrg = useMemo(() => {
+    if (!activeOrganizationId) return [] as { id: number; name: string }[];
+
+    const byProject = new Map<number, string>();
+    localTasks.forEach((task) => {
+      if (getTaskOrganizationId(task) !== activeOrganizationId) return;
+      const projectId = Number(task.ProjectId || 0);
+      if (!Number.isFinite(projectId) || projectId <= 0) return;
+      byProject.set(projectId, task.ProjectName || `Project #${projectId}`);
+    });
+
+    return Array.from(byProject.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  }, [localTasks, activeOrganizationId]);
+
+  const taskMatchesKanbanFilters = (task: TaskWithProject, organizationId: number) => {
+    if (getTaskOrganizationId(task) !== organizationId) return false;
+    if (selectedProjectId && Number(task.ProjectId) !== selectedProjectId) return false;
+    if (selectedSprintFilter === 'all') return true;
+    const sprintId = task.SprintId == null ? null : Number(task.SprintId);
+    if (selectedSprintFilter === 'backlog') return sprintId == null || sprintId <= 0;
+    return sprintId === selectedSprintFilter;
+  };
+
+  const filteredTaskCountForOrg = (organizationId: number) =>
+    localTasks.filter((task) => taskMatchesKanbanFilters(task, organizationId)).length;
+
   const getStatusesForOrganization = (organizationId: number) => {
     const catalog = statusCatalogByOrganization[organizationId];
     if (catalog && catalog.length > 0) {
@@ -311,7 +398,10 @@ function AssignedKanbanTab({
 
   const getTasksByStatus = (organizationId: number, statusId: number) => {
     return localTasks
-      .filter((task) => getTaskOrganizationId(task) === organizationId && Number(task.Status) === statusId)
+      .filter(
+        (task) =>
+          taskMatchesKanbanFilters(task, organizationId) && Number(task.Status) === statusId
+      )
       .sort((a, b) => Number(a.DisplayOrder || 0) - Number(b.DisplayOrder || 0));
   };
 
@@ -517,6 +607,71 @@ function AssignedKanbanTab({
         ))}
       </div>
 
+      {activeOrganizationId && (
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div className="min-w-[220px]">
+            <label
+              htmlFor="kanban-project-filter"
+              className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
+            >
+              Project
+            </label>
+            <select
+              id="kanban-project-filter"
+              value={selectedProjectId ?? ''}
+              onChange={(e) => {
+                const value = e.target.value;
+                setSelectedProjectId(value ? Number(value) : null);
+              }}
+              className="w-full h-9 px-3 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+            >
+              <option value="">All projects</option>
+              {projectsInActiveOrg.map((project) => (
+                <option key={`kanban-project-${project.id}`} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="min-w-[220px]">
+            <label
+              htmlFor="kanban-sprint-filter"
+              className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
+            >
+              Sprint
+            </label>
+            <select
+              id="kanban-sprint-filter"
+              value={
+                selectedSprintFilter === 'all'
+                  ? 'all'
+                  : selectedSprintFilter === 'backlog'
+                    ? 'backlog'
+                    : String(selectedSprintFilter)
+              }
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === 'all') setSelectedSprintFilter('all');
+                else if (value === 'backlog') setSelectedSprintFilter('backlog');
+                else setSelectedSprintFilter(Number(value));
+              }}
+              disabled={!selectedProjectId || loadingSprints}
+              className="w-full h-9 px-3 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-60"
+            >
+              <option value="all">All sprints</option>
+              <option value="backlog">Backlog (no sprint)</option>
+              {sprints.map((sprint) => (
+                <option key={`kanban-sprint-${sprint.Id}`} value={sprint.Id}>
+                  {sprint.Name}
+                  {sprint.Status === 'active' ? ' (active)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       {(() => {
         const activeGroup =
           groupedTasksByOrganization.find((group) => group.organizationId === selectedOrganizationId) ||
@@ -536,7 +691,11 @@ function AssignedKanbanTab({
                 {activeGroup.organizationName}
               </h2>
               <span className="px-2.5 py-1 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium">
-                {activeGroup.tasks.length} task{activeGroup.tasks.length === 1 ? '' : 's'}
+                {filteredTaskCountForOrg(activeGroup.organizationId)} task
+                {filteredTaskCountForOrg(activeGroup.organizationId) === 1 ? '' : 's'}
+                {(selectedProjectId || selectedSprintFilter !== 'all') && (
+                  <span className="text-gray-500 dark:text-gray-400"> (filtered)</span>
+                )}
               </span>
             </div>
 

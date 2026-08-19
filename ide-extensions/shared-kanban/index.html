@@ -29,6 +29,11 @@
         </button>
         <ul id="projectList" role="listbox" hidden></ul>
       </div>
+      <label for="sprintFilter">Sprint</label>
+      <select id="sprintFilter" disabled aria-label="Filter by sprint">
+        <option value="all">All sprints</option>
+        <option value="backlog">Backlog (no sprint)</option>
+      </select>
       <button type="button" id="addTaskBtn" disabled>Add task</button>
       <button type="button" id="refreshBtn">Refresh</button>
       <button type="button" id="configureBtn" class="primary">Configure</button>

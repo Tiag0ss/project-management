@@ -1,11 +1,12 @@
 (function () {
   'use strict';
 
-  /** @type {{ baseUrl: string, token: string, selectedProjectId: number | null, proxyViaHost: boolean, layout: string, hiddenStatuses: string, maxVisibleCards: number, aiInProgressStatusId: number }} */
+  /** @type {{ baseUrl: string, token: string, selectedProjectId: number | null, selectedSprintFilter: string | number | null, proxyViaHost: boolean, layout: string, hiddenStatuses: string, maxVisibleCards: number, aiInProgressStatusId: number }} */
   let config = {
     baseUrl: '',
     token: '',
     selectedProjectId: null,
+    selectedSprintFilter: 'all',
     proxyViaHost: false,
     layout: 'horizontal',
     hiddenStatuses: '',
@@ -15,10 +16,14 @@
 
   /** @type {Array<{ Id: number, ProjectName?: string, Name?: string, OrganizationId?: number, OrganizationName?: string }>} */
   let projects = [];
+  /** @type {Array<{ Id: number, Name?: string, Status?: string }>} */
+  let sprints = [];
   /** @type {Array<any>} */
   let statuses = [];
   /** @type {Array<any>} */
   let priorities = [];
+  /** @type {Array<any>} */
+  let allTasks = [];
   /** @type {Array<any>} */
   let tasks = [];
   /** @type {number | null} */
@@ -66,6 +71,7 @@
     projectPickerToggle: /** @type {HTMLButtonElement | null} */ (document.getElementById('projectPickerToggle')),
     projectList: /** @type {HTMLUListElement | null} */ (document.getElementById('projectList')),
     projectPicker: /** @type {HTMLElement | null} */ (document.getElementById('projectPicker')),
+    sprintFilter: /** @type {HTMLSelectElement | null} */ (document.getElementById('sprintFilter')),
     addTaskBtn: /** @type {HTMLButtonElement | null} */ (document.getElementById('addTaskBtn')),
     refreshBtn: /** @type {HTMLButtonElement} */ (document.getElementById('refreshBtn')),
     configureBtn: /** @type {HTMLButtonElement} */ (document.getElementById('configureBtn')),
@@ -192,6 +198,114 @@
     return data;
   }
 
+  function normalizeSprintFilter(raw) {
+    if (raw === null || raw === undefined || raw === '' || raw === 'all') return 'all';
+    if (raw === 'backlog') return 'backlog';
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : 'all';
+  }
+
+  function taskMatchesSprintFilter(task) {
+    const filter = normalizeSprintFilter(config.selectedSprintFilter);
+    if (filter === 'all') return true;
+    const sprintId =
+      task.SprintId == null || task.SprintId === '' ? null : Number(task.SprintId);
+    if (filter === 'backlog') return sprintId == null || sprintId <= 0;
+    return sprintId === filter;
+  }
+
+  function visibleTasks() {
+    return allTasks.filter(taskMatchesSprintFilter);
+  }
+
+  function applyTaskView() {
+    tasks = visibleTasks();
+  }
+
+  function applyViewTaskUpdates(updatedTasks) {
+    const byId = new Map(
+      updatedTasks.map(function (t) {
+        return [Number(t.Id), t];
+      })
+    );
+    allTasks = allTasks.map(function (t) {
+      return byId.has(Number(t.Id)) ? byId.get(Number(t.Id)) : t;
+    });
+    applyTaskView();
+  }
+
+  function sprintLabel(sprint) {
+    const name = sprint.Name || 'Sprint #' + sprint.Id;
+    return sprint.Status === 'active' ? name + ' (active)' : name;
+  }
+
+  function syncSprintFilterOptions() {
+    if (!el.sprintFilter) return;
+    const project = selectedProject();
+    const current = normalizeSprintFilter(config.selectedSprintFilter);
+    el.sprintFilter.innerHTML = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = 'all';
+    allOpt.textContent = 'All sprints';
+    el.sprintFilter.appendChild(allOpt);
+    const backlogOpt = document.createElement('option');
+    backlogOpt.value = 'backlog';
+    backlogOpt.textContent = 'Backlog (no sprint)';
+    el.sprintFilter.appendChild(backlogOpt);
+    sprints.forEach(function (sprint) {
+      const opt = document.createElement('option');
+      opt.value = String(sprint.Id);
+      opt.textContent = sprintLabel(sprint);
+      el.sprintFilter.appendChild(opt);
+    });
+    if (!project) {
+      el.sprintFilter.disabled = true;
+      el.sprintFilter.value = 'all';
+      return;
+    }
+    el.sprintFilter.disabled = false;
+    if (current === 'backlog') {
+      el.sprintFilter.value = 'backlog';
+      return;
+    }
+    if (typeof current === 'number' && sprints.some(function (s) { return Number(s.Id) === current; })) {
+      el.sprintFilter.value = String(current);
+      return;
+    }
+    config.selectedSprintFilter = 'all';
+    el.sprintFilter.value = 'all';
+  }
+
+  function selectSprintFilter(value) {
+    config.selectedSprintFilter = normalizeSprintFilter(value);
+    syncSprintFilterOptions();
+    postHost({ type: 'sprintSelected', sprintFilter: config.selectedSprintFilter });
+    applyTaskView();
+    renderBoard();
+    const project = selectedProject();
+    if (project) {
+      setStatus(
+        '“' + projectLabel(project) + '” · ' + tasks.length + ' assigned to you',
+        false
+      );
+    }
+  }
+
+  async function loadSprintsForProject(projectId) {
+    if (!projectId) {
+      sprints = [];
+      syncSprintFilterOptions();
+      return;
+    }
+    try {
+      const data = await requestJson('/api/sprints/project/' + projectId);
+      sprints = Array.isArray(data.sprints) ? data.sprints : [];
+    } catch (_) {
+      sprints = [];
+    }
+    syncSprintFilterOptions();
+  }
+
   function projectLabel(p) {
     const name = p.ProjectName || p.Name || 'Project #' + p.Id;
     const org = p.OrganizationName ? ' · ' + p.OrganizationName : '';
@@ -297,8 +411,10 @@
 
   async function selectProjectById(id) {
     config.selectedProjectId = id || null;
+    config.selectedSprintFilter = 'all';
     closeProjectList();
     postHost({ type: 'projectSelected', projectId: config.selectedProjectId });
+    postHost({ type: 'sprintSelected', sprintFilter: config.selectedSprintFilter });
     setStatus('Loading board…', false);
     try {
       await loadBoardForSelection();
@@ -632,9 +748,10 @@
           body: { status: targetId },
         });
         nextTask = Object.assign({}, task, { Status: targetId });
-        tasks = tasks.map(function (t) {
+        allTasks = allTasks.map(function (t) {
           return Number(t.Id) === Number(task.Id) ? nextTask : t;
         });
+        applyTaskView();
         renderBoard();
       } catch (err) {
         const msg = err && err.message ? err.message : String(err);
@@ -921,19 +1038,21 @@
         return (Number(a.DisplayOrder) || 0) - (Number(b.DisplayOrder) || 0);
       });
     const newOrder = (colTasks.length + 1) * 10;
-    const prev = tasks.slice();
-    tasks = tasks.map(function (t) {
+    const prevAll = allTasks.slice();
+    allTasks = allTasks.map(function (t) {
       if (Number(t.Id) === Number(srcId)) {
         return Object.assign({}, t, { Status: newStatusId, DisplayOrder: newOrder });
       }
       return t;
     });
+    applyTaskView();
     renderBoard();
     try {
       await reorderKanban([{ taskId: srcId, displayOrder: newOrder, status: newStatusId }]);
       setStatus('Moved “' + (srcTask.TaskName || '') + '”', false);
     } catch (err) {
-      tasks = prev;
+      allTasks = prevAll;
+      applyTaskView();
       renderBoard();
       const msg = err && err.message ? err.message : String(err);
       setStatus(msg, true);
@@ -973,7 +1092,7 @@
       };
     });
 
-    const prev = tasks.slice();
+    const prevAll = allTasks.slice();
     const updatedIds = new Set(
       columnTasks.map(function (t) {
         return Number(t.Id);
@@ -982,18 +1101,20 @@
     const others = tasks.filter(function (t) {
       return !updatedIds.has(Number(t.Id));
     });
-    tasks = others.concat(
+    const nextView = others.concat(
       columnTasks.map(function (t, i) {
         return Object.assign({}, t, { Status: newStatus, DisplayOrder: (i + 1) * 10 });
       })
     );
+    applyViewTaskUpdates(nextView);
     renderBoard();
 
     try {
       await reorderKanban(updates);
       setStatus('Reordered “' + (srcTask.TaskName || '') + '”', false);
     } catch (err) {
-      tasks = prev;
+      allTasks = prevAll;
+      applyTaskView();
       renderBoard();
       const msg = err && err.message ? err.message : String(err);
       setStatus(msg, true);
@@ -1030,7 +1151,10 @@
     if (!project) {
       statuses = [];
       priorities = [];
+      sprints = [];
+      allTasks = [];
       tasks = [];
+      syncSprintFilterOptions();
       renderBoard();
       return;
     }
@@ -1043,6 +1167,7 @@
       requestJson('/api/tasks/project/' + project.Id),
     ]);
     await loadActiveTimer();
+    await loadSprintsForProject(project.Id);
 
     statuses = Array.isArray(statusData.statuses) ? statusData.statuses : [];
     statuses = statuses.slice().sort(function (a, b) {
@@ -1064,19 +1189,20 @@
         sensitivity: 'base',
       });
     });
-    let allTasks = Array.isArray(taskData.tasks) ? taskData.tasks : [];
-    allTasks = allTasks.map(function (t) {
+    const loadedTasks = Array.isArray(taskData.tasks) ? taskData.tasks : [];
+    allTasks = loadedTasks.map(function (t) {
       return Object.assign({}, t, {
         ProjectId: t.ProjectId || project.Id,
         ProjectName: t.ProjectName || project.ProjectName || project.Name,
         OrganizationId: t.OrganizationId || orgId,
       });
     });
-    tasks = currentUserId
-      ? allTasks.filter(function (t) {
-          return taskAssignedToUser(t, currentUserId);
-        })
-      : allTasks;
+    if (currentUserId) {
+      allTasks = allTasks.filter(function (t) {
+        return taskAssignedToUser(t, currentUserId);
+      });
+    }
+    applyTaskView();
     renderBoard();
   }
 
@@ -1086,10 +1212,13 @@
       projects = [];
       statuses = [];
       priorities = [];
+      sprints = [];
+      allTasks = [];
       tasks = [];
       currentUserId = null;
       activeTimer = null;
       syncProjectSearchDisplay();
+      syncSprintFilterOptions();
       updateActiveTimerBar();
       renderBoard();
       setStatus('Configure Base URL and API token.', true);
@@ -1130,6 +1259,11 @@
     config.aiInProgressStatusId = Number.isFinite(aiStatus) && aiStatus > 0 ? aiStatus : 0;
     if (msg.selectedProjectId !== undefined && msg.selectedProjectId !== null && msg.selectedProjectId !== '') {
       config.selectedProjectId = Number(msg.selectedProjectId) || null;
+    }
+    if (msg.selectedSprintFilter !== undefined && msg.selectedSprintFilter !== null && msg.selectedSprintFilter !== '') {
+      config.selectedSprintFilter = normalizeSprintFilter(msg.selectedSprintFilter);
+    } else if (msg.selectedSprintFilter === null || msg.selectedSprintFilter === '') {
+      config.selectedSprintFilter = 'all';
     }
     void fullReload();
   }
@@ -1198,6 +1332,12 @@
     el.projectPickerToggle.addEventListener('click', function () {
       if (projectListOpen) closeProjectList();
       else openProjectList();
+    });
+  }
+
+  if (el.sprintFilter) {
+    el.sprintFilter.addEventListener('change', function () {
+      selectSprintFilter(el.sprintFilter.value);
     });
   }
 
