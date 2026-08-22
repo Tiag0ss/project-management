@@ -133,6 +133,12 @@ function ReportingHubInner() {
   const { permissions, isLoading: permissionsLoading } = usePermissions();
   const formatHours = useFormatHours();
 
+  const formatPortfolioBudget = (amount: number, budgetType: string) => {
+    if (budgetType === 'hours') return formatHours(amount);
+    return `$${Number(amount).toFixed(2)}`;
+  };
+
+
   const [access, setAccess] = useState<ReportingAccessInfo | null>(null);
   const [accessError, setAccessError] = useState('');
   const [orgs, setOrgs] = useState<OrgOption[]>([]);
@@ -920,7 +926,9 @@ function ReportingHubInner() {
                       <th className="text-right px-3 py-2">Planned</th>
                       <th className="text-right px-3 py-2">Logged</th>
                       <th className="text-right px-3 py-2">Variance</th>
-                      <th className="text-right px-3 py-2">Budget</th>
+                      <th className="text-right px-3 py-2">Budget spent</th>
+                      <th className="text-right px-3 py-2">Remaining</th>
+                      <th className="text-right px-3 py-2">Burn</th>
                       <th className="text-left px-3 py-2">End / Due</th>
                     </tr>
                   </thead>
@@ -986,18 +994,33 @@ function ReportingHubInner() {
                               {formatHours(projectVariance)}
                             </td>
                             <td className="px-3 py-2 text-right">
-                              {p.budget != null && Number(p.budget) > 0
-                                ? `${Number(p.budgetSpent || 0).toFixed(0)} / ${Number(p.budget).toFixed(0)}${
-                                    p.budgetType === 'monetary' ? '' : 'h'
-                                  }`
+                              {p.budget != null && Number(p.budget) > 0 ? (
+                                <span title={Number(p.hoursWithoutRate || 0) > 0 ? `${Number(p.hoursWithoutRate).toFixed(1)}h logged without an effective rate` : undefined}>
+                                  {formatPortfolioBudget(Number(p.budgetSpent || 0), String(p.budgetType || 'monetary'))}
+                                  {' / '}
+                                  {formatPortfolioBudget(Number(p.budget), String(p.budgetType || 'monetary'))}
+                                  {Number(p.hoursWithoutRate || 0) > 0 && String(p.budgetType || '') !== 'hours' ? (
+                                    <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">!</span>
+                                  ) : null}
+                                </span>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {p.budgetRemaining != null && p.budget != null && Number(p.budget) > 0
+                                ? formatPortfolioBudget(Number(p.budgetRemaining), String(p.budgetType || 'monetary'))
                                 : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {p.budgetBurnPct != null ? `${p.budgetBurnPct}%` : '—'}
                             </td>
                             <td className="px-3 py-2">{p.endDate ? String(p.endDate).slice(0, 10) : '—'}</td>
                           </tr>
                           {expanded && tasks.length === 0 && (
                             <tr className="bg-gray-50/80 dark:bg-gray-900/30">
                               <td />
-                              <td colSpan={11} className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                              <td colSpan={13} className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
                                 No leaf tasks in this project.
                               </td>
                             </tr>
@@ -1052,6 +1075,19 @@ function ReportingHubInner() {
                                 >
                                   {formatHours(t.varianceHours || 0)}
                                 </td>
+                                <td className="px-3 py-2 text-right">
+                                  {String(p.budgetType || '') === 'monetary'
+                                    ? (
+                                      <span title={Number(t.hoursWithoutRate || 0) > 0 ? 'Some hours lack an effective rate' : undefined}>
+                                        {formatPortfolioBudget(Number(t.costSpent || 0), 'monetary')}
+                                        {Number(t.hoursWithoutRate || 0) > 0 ? (
+                                          <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">!</span>
+                                        ) : null}
+                                      </span>
+                                    )
+                                    : '—'}
+                                </td>
+                                <td className="px-3 py-2 text-right text-gray-400">—</td>
                                 <td className="px-3 py-2 text-right text-gray-400">—</td>
                                 <td className="px-3 py-2">{t.dueDate || '—'}</td>
                               </tr>

@@ -31,6 +31,7 @@ export interface Project {
   GiteaRepo?: string | null;
   Budget?: number | null;
   BudgetType?: 'monetary' | 'hours';
+  HourlyRate?: number | null;
   BudgetSpent?: number;
   ApplicationIds?: number[];
   ApplicationNames?: string[];
@@ -74,6 +75,7 @@ export interface CreateProjectData {
   giteaRepo?: string;
   budget?: number | null;
   budgetType?: 'monetary' | 'hours';
+  hourlyRate?: number | null;
   applicationIds?: number[];
   customFields?: CustomFieldValues;
 }
@@ -95,6 +97,7 @@ export interface UpdateProjectData {
   giteaRepo?: string | null;
   budget?: number | null;
   budgetType?: 'monetary' | 'hours';
+  hourlyRate?: number | null;
   applicationIds?: number[];
   customFields?: CustomFieldValues;
 }

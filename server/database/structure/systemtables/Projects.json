@@ -141,6 +141,13 @@
       "Comment": "Budget mode: monetary or hours"
     },
     {
+      "FieldName": "HourlyRate",
+      "DataType": "decimal(10,2)",
+      "NotNullable": false,
+      "DefaultValue": null,
+      "Comment": "Optional project default hourly rate for monetary budget cost (overrides user rate when task has no rate)"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

@@ -370,10 +370,11 @@ async function fetchProjectStats(projectId: number, since: Date): Promise<{
     LEFT JOIN TaskStatusValues tsv ON CONCAT(t.Status, '') = CONCAT(tsv.Id, '')
      LEFT JOIN (
        SELECT t2.ProjectId,
-              SUM(te2.Hours * COALESCE(u2.HourlyRate, 0)) as CostSpent,
+              SUM(te2.Hours * COALESCE(t2.HourlyRate, p2.HourlyRate, u2.HourlyRate, 0)) as CostSpent,
               SUM(te2.Hours) as HoursSpent
        FROM TimeEntries te2
        INNER JOIN Tasks t2 ON te2.TaskId = t2.Id
+       INNER JOIN Projects p2 ON t2.ProjectId = p2.Id
        LEFT JOIN Users u2 ON te2.UserId = u2.Id
        GROUP BY t2.ProjectId
      ) budgetStats ON p.Id = budgetStats.ProjectId

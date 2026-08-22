@@ -341,6 +341,7 @@ export default function TaskDetailModal({
     dueDateMandatory: task?.DueDateMandatory === 1 || Boolean(initialCreateData?.dueDateMandatory),
     unscheduledWork: task?.UnscheduledWork === 1 || Boolean(initialCreateData?.unscheduledWork),
     estimatedHours: task?.EstimatedHours || initialCreateData?.estimatedHours || undefined,
+    hourlyRate: task?.HourlyRate ?? initialCreateData?.hourlyRate ?? undefined,
     storyPoints: task?.StoryPoints || initialCreateData?.storyPoints || undefined,
     parentTaskId: task?.ParentTaskId || initialCreateData?.parentTaskId || undefined,
     plannedStartDate: task?.PlannedStartDate
@@ -963,6 +964,7 @@ export default function TaskDetailModal({
           dueDateMandatory: !!formData.dueDateMandatory,
           unscheduledWork: !!formData.unscheduledWork,
           estimatedHours: normalizedEstimatedHours,
+          hourlyRate: showTaskHourlyRate ? (formData.hourlyRate ?? null) : null,
           storyPoints: normalizedStoryPoints,
           parentTaskId: normalizedParentTaskId,
           plannedStartDate: formData.plannedStartDate || '',
@@ -1004,6 +1006,7 @@ export default function TaskDetailModal({
           dueDateMandatory: !!formData.dueDateMandatory,
           unscheduledWork: !!formData.unscheduledWork,
           estimatedHours: formData.estimatedHours ?? undefined,
+          hourlyRate: showTaskHourlyRate ? (formData.hourlyRate ?? null) : null,
           storyPoints: formData.storyPoints ?? undefined,
           parentTaskId: formData.parentTaskId ?? undefined,
           plannedStartDate: formData.plannedStartDate || '',
@@ -1902,6 +1905,8 @@ export default function TaskDetailModal({
 
   const canSaveTask = !!(task?.Id ? permissions?.canManageTasks : permissions?.canCreateTasks);
   const canDeleteTask = !!(task?.Id && permissions?.canDeleteTasks);
+  const projectHasBudget = project?.Budget !== null && project?.Budget !== undefined && String(project.Budget) !== '';
+  const showTaskHourlyRate = Boolean(permissions?.canViewBudgetInfo) && projectHasBudget;
   const headerIconButtonClass = 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl';
   const taskCustomerNameFromDirectory = (() => {
     const customerId = Number(task?.CustomerId || 0);
@@ -3190,6 +3195,29 @@ export default function TaskDetailModal({
                     }`}
                     placeholder="e.g., 4.5"
                   />
+                </div>
+                )}
+
+                {showTaskHourlyRate && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Hourly rate
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.hourlyRate ?? ''}
+                      onChange={(e) => setFormData({ ...formData, hourlyRate: e.target.value !== '' ? parseFloat(e.target.value) : undefined })}
+                      className="w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Optional override for this task. Falls back to project rate, then user rate.
+                  </p>
                 </div>
                 )}
 

@@ -2578,3 +2578,16 @@ This document contains comprehensive test scenarios to verify all functionality 
 - **P1 (High)**: Core features (Projects, Tasks, Planning, Time Tracking)
 - **P2 (Medium)**: Integrations (Jira, Outlook, Email Queue, GitHub/Gitea, Memos)
 - **P3 (Low)**: UI polish, Browser compatibility edge cases
+
+
+### TC-BUDGET-RATE-001 — Project/task hourly rate cascade
+
+**Preconditions:** User with `CanViewBudgetInfo`; monetary-budget project; users with/without `HourlyRate`.
+
+1. Set project HourlyRate; leave task rate empty; log time as a user with a different user rate → cost uses **project** rate.
+2. Set task HourlyRate → cost for that task’s time uses **task** rate.
+3. Clear project and task rates; user has HourlyRate → cost uses **user** rate.
+4. Clear all rates → Reporting Portfolio shows hours-without-rate warning; cost treats rate as 0.
+5. Clear project Budget → task HourlyRate field is hidden; saving task clears task HourlyRate.
+6. Portfolio budget spent for monetary projects matches Projects list/detail spend (typed cost, not raw hours).
+

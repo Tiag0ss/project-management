@@ -60,6 +60,7 @@ export default function ProjectFormModal({
     giteaRepo: project?.GiteaRepo || undefined,
     budget: project?.Budget ?? undefined,
     budgetType: project?.BudgetType === 'hours' ? 'hours' : 'monetary',
+    hourlyRate: project?.HourlyRate ?? undefined,
     applicationIds: project?.ApplicationIds || [],
   });
   const [error, setError] = useState('');
@@ -254,7 +255,7 @@ export default function ProjectFormModal({
 
       const requestData: CreateProjectData = canViewBudgetInfo
         ? { ...formData, customFields }
-        : { ...formData, budget: undefined, budgetType: undefined, customFields };
+        : { ...formData, budget: undefined, budgetType: undefined, hourlyRate: undefined, customFields };
 
       if (project) {
         await projectsApi.update(project.Id, requestData, token);
@@ -531,6 +532,27 @@ export default function ProjectFormModal({
                     {formData.budgetType === 'hours'
                       ? 'Optional project budget in total planned hours'
                       : 'Optional project budget in currency units'}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Hourly rate
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-gray-500 dark:text-gray-400">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.hourlyRate ?? ''}
+                      onChange={(e) => setFormData({ ...formData, hourlyRate: e.target.value !== '' ? parseFloat(e.target.value) : undefined })}
+                      className="w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Optional default rate for cost. Falls back to each user&apos;s hourly rate when unset. Task rates override this.
                   </p>
                 </div>
               </>

@@ -6,6 +6,7 @@ import { createNotification } from './notifications';
 import { prepareCustomFieldData } from '../utils/customFields';
 import { logActivity } from './activityLogs';
 import { sanitizeRichText } from '../utils/sanitize';
+import { getReportingAccess } from '../utils/reportingAccess';
 import { computeCompletionPercentages } from '../utils/taskCompletion';
 import { sendNotificationEmail } from '../utils/emailService';
 import { resolveHistoryValues } from '../utils/changeLog';
@@ -21,6 +22,38 @@ import {
   resolveProjectRepoCredentials,
   listCommitsForTask,
 } from '../utils/gitRemote';
+
+
+const parseOptionalHourlyRate = (value: unknown): number | null => {
+  if (value === undefined || value === null || value === '') return null;
+  const n = typeof value === 'number' ? value : parseFloat(String(value));
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+};
+
+/** Task hourly rate only when viewer can see budget and project.Budget is set; otherwise null. */
+async function resolveTaskHourlyRateForSave(
+  userId: number,
+  projectId: number,
+  hourlyRateInput: unknown,
+  options: { allowUndefinedKeep?: number | null } = {}
+): Promise<number | null> {
+  const access = await getReportingAccess(userId);
+  const canView = Boolean(access?.canViewBudgetInfo);
+  const [projects] = await pool.execute<RowDataPacket[]>(
+    'SELECT Budget FROM Projects WHERE Id = ?',
+    [projectId]
+  );
+  const budget = projects[0]?.Budget;
+  const hasBudget = budget !== null && budget !== undefined && budget !== '';
+  if (!canView || !hasBudget) {
+    return null;
+  }
+  if (hourlyRateInput === undefined) {
+    return options.allowUndefinedKeep !== undefined ? options.allowUndefinedKeep : null;
+  }
+  return parseOptionalHourlyRate(hourlyRateInput);
+}
 
 const router = Router();
 
@@ -1104,7 +1137,7 @@ router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res:
 router.post('/', authenticateToken, validateRequest(createTaskSchema), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, customerId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, synapseVaultId, synapseNoteId, synapseMarkerId, synapseNoteUrl, customFields } = req.body;
+    const { projectId, taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, hourlyRate, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, ticketId, customerId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, synapseVaultId, synapseNoteId, synapseMarkerId, synapseNoteUrl, customFields } = req.body;
 
     if (!taskName || !projectId) {
       return res.status(400).json({ 
@@ -1182,6 +1215,7 @@ router.post('/', authenticateToken, validateRequest(createTaskSchema), async (re
     const normalizedEstimatedHours = estimatedHours === undefined || estimatedHours === null || estimatedHours === ''
       ? null
       : Number(estimatedHours);
+    const resolvedHourlyRate = await resolveTaskHourlyRateForSave(Number(userId), Number(projectId), hourlyRate);
     const normalizedStoryPoints = storyPoints === undefined || storyPoints === null || storyPoints === ''
       ? null
       : Number(storyPoints);
@@ -1215,8 +1249,8 @@ router.post('/', authenticateToken, validateRequest(createTaskSchema), async (re
       : null;
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, UnscheduledWork, EstimatedHours, StoryPoints, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, GitHubIssueNumber, GiteaIssueNumber, ApplicationId, ReleaseVersionId, SynapseVaultId, SynapseNoteId, SynapseMarkerId, SynapseNoteUrl, CreatedBy${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
+      `INSERT INTO Tasks (ProjectId, TaskName, Description, Status, Priority, TaskType, AssignedTo, DueDate, DueDateMandatory, UnscheduledWork, EstimatedHours, HourlyRate, StoryPoints, ParentTaskId, DisplayOrder, PlannedStartDate, PlannedEndDate, DependsOnTaskId, TicketId, CustomerId, JiraIssueKey, GitHubIssueNumber, GiteaIssueNumber, ApplicationId, ReleaseVersionId, SynapseVaultId, SynapseNoteId, SynapseMarkerId, SynapseNoteUrl, CreatedBy${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
       [
         projectId,
         taskName,
@@ -1229,6 +1263,7 @@ router.post('/', authenticateToken, validateRequest(createTaskSchema), async (re
         mandatoryDueFlag,
         toBooleanFlag(unscheduledWork),
         normalizedEstimatedHours,
+        resolvedHourlyRate,
         finalStoryPointsForInsert,
         parentTaskId || null,
         order,
@@ -1399,7 +1434,7 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
   try {
     const userId = req.user?.userId;
     const taskId = req.params.id;
-    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, customerId, synapseVaultId, synapseNoteId, synapseMarkerId, synapseNoteUrl, clearSynapseLink, syncAllocationHeaderDates, customFields } = req.body;
+    const { taskName, description, status, priority, taskType, assignedTo, dueDate, dueDateMandatory, unscheduledWork, estimatedHours, hourlyRate, storyPoints, parentTaskId, displayOrder, plannedStartDate, plannedEndDate, dependsOnTaskId, jiraIssueKey, gitHubIssueNumber, giteaIssueNumber, applicationId, releaseVersionId, customerId, synapseVaultId, synapseNoteId, synapseMarkerId, synapseNoteUrl, clearSynapseLink, syncAllocationHeaderDates, customFields } = req.body;
 
     // Verify user has access to this task's project through organization membership and has CanManageTasks permission
     const [access] = await pool.execute<RowDataPacket[]>(
@@ -1537,6 +1572,12 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
     const finalEstimatedHours = estimatedHours !== undefined
       ? (estimatedHours === null || estimatedHours === '' ? null : Number(estimatedHours))
       : (oldTask.EstimatedHours ?? null);
+    const finalHourlyRate = await resolveTaskHourlyRateForSave(
+      Number(userId),
+      Number(oldTask.ProjectId),
+      hourlyRate !== undefined ? hourlyRate : undefined,
+      { allowUndefinedKeep: oldTask.HourlyRate != null ? Number(oldTask.HourlyRate) : null }
+    );
     const finalUnscheduledWork = unscheduledWork !== undefined
       ? toBooleanFlag(unscheduledWork)
       : toBooleanFlag(oldTask.UnscheduledWork);
@@ -1634,7 +1675,7 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
 
     await pool.execute(
       `UPDATE Tasks 
-       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, UnscheduledWork = ?, EstimatedHours = ?, StoryPoints = ?, ParentTaskId = ?, DisplayOrder = ?, PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, JiraIssueKey = ?, GitHubIssueNumber = ?, GiteaIssueNumber = ?, CustomerId = ?, ApplicationId = ?, ReleaseVersionId = ?${customFieldData.updateAssignments.length > 0 ? `, ${customFieldData.updateAssignments.join(', ')}` : ''}
+       SET TaskName = ?, Description = ?, Status = ?, Priority = ?, TaskType = ?, AssignedTo = ?, DueDate = ?, DueDateMandatory = ?, UnscheduledWork = ?, EstimatedHours = ?, HourlyRate = ?, StoryPoints = ?, ParentTaskId = ?, DisplayOrder = ?, PlannedStartDate = ?, PlannedEndDate = ?, DependsOnTaskId = ?, JiraIssueKey = ?, GitHubIssueNumber = ?, GiteaIssueNumber = ?, CustomerId = ?, ApplicationId = ?, ReleaseVersionId = ?${customFieldData.updateAssignments.length > 0 ? `, ${customFieldData.updateAssignments.join(', ')}` : ''}
        WHERE Id = ?`,
       [
         finalTaskName,
@@ -1647,6 +1688,7 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
         finalDueDateMandatory,
         finalUnscheduledWork,
         finalEstimatedHours,
+        finalHourlyRate,
         finalStoryPoints,
         finalParentTaskId,
         finalDisplayOrder,
@@ -1800,6 +1842,9 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
     }
     if (estimatedHours !== undefined && hasChanged(oldTask.EstimatedHours, estimatedHours)) {
       changes.push({ field: 'EstimatedHours', oldVal: String(oldTask.EstimatedHours || ''), newVal: String(estimatedHours || '') });
+    }
+    if (hourlyRate !== undefined && hasChanged(oldTask.HourlyRate, finalHourlyRate)) {
+      changes.push({ field: 'HourlyRate', oldVal: String(oldTask.HourlyRate ?? ''), newVal: String(finalHourlyRate ?? '') });
     }
     if (storyPoints !== undefined && hasChanged(oldTask.StoryPoints, storyPoints)) {
       changes.push({ field: 'StoryPoints', oldVal: String(oldTask.StoryPoints || ''), newVal: String(storyPoints || '') });

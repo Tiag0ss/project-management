@@ -201,7 +201,15 @@ router.get('/organization-overview', authenticateToken, async (req: AuthRequest,
                 INNER JOIN Tasks t ON te.TaskId = t.Id
                 WHERE t.ProjectId = p.Id
                   AND NOT EXISTS (SELECT 1 FROM Tasks c WHERE c.ParentTaskId = t.Id)
-              ) AS BudgetSpent,
+              ) AS HoursSpent,
+              (SELECT COALESCE(SUM(te.Hours * COALESCE(t.HourlyRate, p.HourlyRate, u.HourlyRate, 0)), 0)
+                FROM TimeEntries te
+                INNER JOIN Tasks t ON te.TaskId = t.Id
+                LEFT JOIN Users u ON te.UserId = u.Id
+                WHERE t.ProjectId = p.Id
+                  AND NOT EXISTS (SELECT 1 FROM Tasks c WHERE c.ParentTaskId = t.Id)
+              ) AS CostSpent,
+              COALESCE(p.BudgetType, 'monetary') AS BudgetType,
               (SELECT COUNT(*) FROM Tasks t
                 LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
                 WHERE t.ProjectId = p.Id AND COALESCE(tsv.IsClosed,0)=0 AND COALESCE(tsv.IsCancelled,0)=0
@@ -224,12 +232,16 @@ router.get('/organization-overview', authenticateToken, async (req: AuthRequest,
     );
 
     const withHealth = projects.map((project) => {
+      const hoursSpent = Number(project.HoursSpent || 0);
+      const costSpent = Number(project.CostSpent || 0);
+      const budgetType = String(project.BudgetType || 'monetary');
+      const typedBudgetSpent = budgetType === 'hours' ? hoursSpent : costSpent;
       const health = computeProjectHealth({
         isClosed: project.StatusIsClosed,
         isCancelled: project.StatusIsCancelled,
         canViewBudgetInfo: access.canViewBudgetInfo,
         budget: project.Budget,
-        budgetSpent: project.BudgetSpent,
+        budgetSpent: typedBudgetSpent,
         endDate: project.EndDate,
         overdueTasks: project.HealthOverdueTasks,
         totalTasks: project.HealthTotalTasks,
@@ -249,8 +261,9 @@ router.get('/organization-overview', authenticateToken, async (req: AuthRequest,
         overdueTasks: Number(project.HealthOverdueTasks || 0),
         totalTasks: Number(project.HealthTotalTasks || 0),
         unassignedTasks: Number(project.HealthUnassignedTasks || 0),
+        budgetType,
         budget: access.canViewBudgetInfo ? Number(project.Budget || 0) : null,
-        budgetSpent: access.canViewBudgetInfo ? Number(project.BudgetSpent || 0) : null,
+        budgetSpent: access.canViewBudgetInfo ? typedBudgetSpent : null,
       };
     });
 
@@ -665,6 +678,18 @@ router.get('/portfolio', authenticateToken, async (req: AuthRequest, res: Respon
               (SELECT COALESCE(SUM(te.Hours), 0) FROM TimeEntries te
                 INNER JOIN Tasks t ON te.TaskId = t.Id WHERE t.ProjectId = p.Id
                 AND NOT EXISTS (SELECT 1 FROM Tasks c WHERE c.ParentTaskId = t.Id)) AS LoggedHours,
+              (SELECT COALESCE(SUM(te.Hours * COALESCE(t.HourlyRate, p.HourlyRate, u.HourlyRate, 0)), 0)
+                FROM TimeEntries te
+                INNER JOIN Tasks t ON te.TaskId = t.Id
+                LEFT JOIN Users u ON te.UserId = u.Id
+                WHERE t.ProjectId = p.Id
+                  AND NOT EXISTS (SELECT 1 FROM Tasks c WHERE c.ParentTaskId = t.Id)) AS CostSpent,
+              (SELECT COALESCE(SUM(CASE WHEN COALESCE(t.HourlyRate, p.HourlyRate, u.HourlyRate, 0) = 0 THEN te.Hours ELSE 0 END), 0)
+                FROM TimeEntries te
+                INNER JOIN Tasks t ON te.TaskId = t.Id
+                LEFT JOIN Users u ON te.UserId = u.Id
+                WHERE t.ProjectId = p.Id
+                  AND NOT EXISTS (SELECT 1 FROM Tasks c WHERE c.ParentTaskId = t.Id)) AS HoursWithoutRate,
               (SELECT COALESCE(SUM(COALESCE(t.EstimatedHours, 0)), 0) FROM Tasks t WHERE t.ProjectId = p.Id
                 AND NOT EXISTS (SELECT 1 FROM Tasks c WHERE c.ParentTaskId = t.Id)) AS EstimatedHours,
               (SELECT COUNT(*) FROM Tasks t LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
@@ -704,6 +729,18 @@ router.get('/portfolio', authenticateToken, async (req: AuthRequest, res: Respon
                 SELECT SUM(te.Hours) FROM TimeEntries te WHERE te.TaskId = t.Id
               ), 0) AS LoggedHours,
               COALESCE((
+                SELECT SUM(te.Hours * COALESCE(t.HourlyRate, p.HourlyRate, u2.HourlyRate, 0))
+                FROM TimeEntries te
+                LEFT JOIN Users u2 ON te.UserId = u2.Id
+                WHERE te.TaskId = t.Id
+              ), 0) AS CostSpent,
+              COALESCE((
+                SELECT SUM(CASE WHEN COALESCE(t.HourlyRate, p.HourlyRate, u2.HourlyRate, 0) = 0 THEN te.Hours ELSE 0 END)
+                FROM TimeEntries te
+                LEFT JOIN Users u2 ON te.UserId = u2.Id
+                WHERE te.TaskId = t.Id
+              ), 0) AS HoursWithoutRate,
+              COALESCE((
                 SELECT SUM(ta.AllocatedHours) FROM TaskAllocations ta WHERE ta.TaskId = t.Id
               ), 0) AS PlannedHours
        FROM Tasks t
@@ -728,6 +765,8 @@ router.get('/portfolio', authenticateToken, async (req: AuthRequest, res: Respon
       loggedHours: number;
       plannedHours: number;
       varianceHours: number;
+      costSpent: number;
+      hoursWithoutRate: number;
     }>>();
 
     for (const task of leafTasks) {
@@ -746,6 +785,8 @@ router.get('/portfolio', authenticateToken, async (req: AuthRequest, res: Respon
         loggedHours,
         plannedHours: Number(task.PlannedHours || 0),
         varianceHours: loggedHours - estimatedHours,
+        costSpent: Number(task.CostSpent || 0),
+        hoursWithoutRate: Number(task.HoursWithoutRate || 0),
       };
       const list = tasksByProject.get(projectId) || [];
       list.push(entry);
@@ -754,13 +795,23 @@ router.get('/portfolio', authenticateToken, async (req: AuthRequest, res: Respon
 
     const rows = projects.map((project) => {
       const loggedHours = Number(project.LoggedHours || 0);
-      const budgetType = String(project.BudgetType || 'hours');
+      const costSpent = Number(project.CostSpent || 0);
+      const hoursWithoutRate = Number(project.HoursWithoutRate || 0);
+      const budgetType = String(project.BudgetType || 'monetary');
+      const typedBudgetSpent = budgetType === 'hours' ? loggedHours : costSpent;
+      const budgetTotal = project.Budget != null ? Number(project.Budget) : null;
+      const budgetRemaining =
+        budgetTotal != null && Number.isFinite(budgetTotal) ? budgetTotal - typedBudgetSpent : null;
+      const budgetBurnPct =
+        budgetTotal != null && budgetTotal > 0
+          ? Math.round((typedBudgetSpent / budgetTotal) * 100)
+          : null;
       const health = computeProjectHealth({
         isClosed: project.StatusIsClosed,
         isCancelled: project.StatusIsCancelled,
         canViewBudgetInfo: access.canViewBudgetInfo,
         budget: project.Budget,
-        budgetSpent: loggedHours,
+        budgetSpent: typedBudgetSpent,
         endDate: project.EndDate,
         overdueTasks: project.HealthOverdueTasks,
         totalTasks: project.HealthTotalTasks,
@@ -787,9 +838,13 @@ router.get('/portfolio', authenticateToken, async (req: AuthRequest, res: Respon
         progressPct: total > 0 ? Math.round((completed / total) * 100) : 0,
         estimatedHours: Number(project.EstimatedHours || 0),
         loggedHours,
+        costSpent,
+        hoursWithoutRate,
         budgetType,
-        budget: access.canViewBudgetInfo ? Number(project.Budget || 0) : null,
-        budgetSpent: access.canViewBudgetInfo ? loggedHours : null,
+        budget: access.canViewBudgetInfo ? budgetTotal : null,
+        budgetSpent: access.canViewBudgetInfo ? typedBudgetSpent : null,
+        budgetRemaining: access.canViewBudgetInfo ? budgetRemaining : null,
+        budgetBurnPct: access.canViewBudgetInfo ? budgetBurnPct : null,
         endDate: project.EndDate || null,
         tasks: tasksByProject.get(projectId) || [],
       };

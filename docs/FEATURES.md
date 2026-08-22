@@ -72,6 +72,9 @@ Each user can edit their own profile at `/profile`:
 - **Work start time**: Determines when daily work begins (used for calendar-based planning)
 - **Lunch time**: Inserted as a break in the daily schedule
 - **Hourly rate**: Used in budget calculations (Manager-visible)
+- **Rate cascade for monetary cost**: `COALESCE(task.HourlyRate, project.HourlyRate, user.HourlyRate, 0)` — task overrides project, project overrides user
+- **Project HourlyRate**: optional default on the project (visible with `CanViewBudgetInfo`)
+- **Task HourlyRate**: optional override; UI/API only when the project has `Budget` set and the user has `CanViewBudgetInfo`
 - **Timezone**: IANA timezone for correct date/time display
 - **Email preferences**: Opt in/out of specific notification types (assignment, due-date reminders, work summary, etc.)
 - **Vacations**: Request and manage vacation days (approval workflow when enabled)
@@ -205,7 +208,7 @@ Images in patch notes are fetched at render time. Supported sources:
 ### Project List & Creation
 - `/projects` — lists all projects the user has access to
 - Filters: organization, status, customer, search
-- Fields: Name, Description (rich text), Organization, Status, Start Date, End Date, Budget, Customer, linked Applications, Jira Board ID (when Projects Jira integration is configured), `IsHobby` flag, `IsGlobal`, `IsVisibleToCustomer`
+- Fields: Name, Description (rich text), Organization, Status, Start Date, End Date, Budget, BudgetType (`monetary` | `hours`), optional HourlyRate (default billing rate), Customer, linked Applications, Jira Board ID (when Projects Jira integration is configured), `IsHobby` flag, `IsGlobal`, `IsVisibleToCustomer`
 - **Global Project rule**: When `IsGlobal = true`, project cannot be associated with a customer and `IsVisibleToCustomer` is forced off
 
 ### Project Detail Tabs
@@ -796,7 +799,7 @@ Shared bar: **organization** (required for manager packs), optional **project**,
 ### Packs
 
 - **Organization** — health (RAG counts), effort (leaf estimated, **planned**, logged, leaf with/without hours, unscheduled), delivery throughput, risk signals; **charts** (RAG donut, planned vs logged, top projects, throughput, open vs overdue, estimate/schedule mix, optional RAG snapshot trend); drill into other packs; task/project rows link for quick navigation; optional **email digest** schedule (structured metrics).
-- **Portfolio** — projects in org with RAG, progress, overdue, budget (if `CanViewBudgetInfo`); project name opens `/projects/:id`.
+- **Portfolio** — projects in org with RAG, progress, overdue, budget (if `CanViewBudgetInfo`); expandable leaf tasks; monetary spend uses the rate cascade (task → project → user); shows spent / remaining / burn % and flags hours without an effective rate; project name opens `/projects/:id`.
 - **Delivery** — throughput / active sprints / recently closed for the org period; project and task links for navigation.
 - **Capacity** — planned vs logged by org member; pending time approvals.
 - **Data Quality** — unestimated leaf tasks, unassigned, no sprint (when project has sprints), stale overdue, pending approvals; CSV export; project/task links.

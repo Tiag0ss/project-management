@@ -19,6 +19,15 @@ const normalizeBudgetType = (value: unknown): 'monetary' | 'hours' => {
   return value === 'hours' ? 'hours' : 'monetary';
 };
 
+const parseOptionalHourlyRate = (value: unknown): number | null => {
+  if (value === undefined || value === null || value === '') return null;
+  const n = typeof value === 'number' ? value : parseFloat(String(value));
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+};
+
+
+
 const resolveCanViewBudgetInfo = async (userId: number): Promise<boolean> => {
   const [users] = await pool.execute<RowDataPacket[]>(
     'SELECT isAdmin, IsDeveloper, IsSupport, IsManager FROM Users WHERE Id = ?',
@@ -286,10 +295,11 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
        ) sprintStats ON p.Id = sprintStats.ProjectId
        LEFT JOIN (
          SELECT t2.ProjectId,
-                SUM(te2.Hours * COALESCE(u2.HourlyRate, 0)) as CostSpent,
+                SUM(te2.Hours * COALESCE(t2.HourlyRate, p2.HourlyRate, u2.HourlyRate, 0)) as CostSpent,
                 SUM(te2.Hours) as HoursSpent
          FROM TimeEntries te2
          INNER JOIN Tasks t2 ON te2.TaskId = t2.Id
+         INNER JOIN Projects p2 ON t2.ProjectId = p2.Id
          LEFT JOIN Users u2 ON te2.UserId = u2.Id
          GROUP BY t2.ProjectId
        ) budgetStats ON p.Id = budgetStats.ProjectId
@@ -448,10 +458,11 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
        ) sprintStats ON p.Id = sprintStats.ProjectId
        LEFT JOIN (
          SELECT t2.ProjectId,
-                SUM(te2.Hours * COALESCE(u2.HourlyRate, 0)) as CostSpent,
+                SUM(te2.Hours * COALESCE(t2.HourlyRate, p2.HourlyRate, u2.HourlyRate, 0)) as CostSpent,
                 SUM(te2.Hours) as HoursSpent
          FROM TimeEntries te2
          INNER JOIN Tasks t2 ON te2.TaskId = t2.Id
+         INNER JOIN Projects p2 ON t2.ProjectId = p2.Id
          LEFT JOIN Users u2 ON te2.UserId = u2.Id
          GROUP BY t2.ProjectId
        ) budgetStats ON p.Id = budgetStats.ProjectId
@@ -937,7 +948,7 @@ router.get('/:id/permissions', authenticateToken, async (req: AuthRequest, res: 
 router.post('/', authenticateToken, validateRequest(createProjectSchema), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { organizationId, projectName, description, status, startDate, endDate, isHobby, isGlobal, isVisibleToCustomer, customerId, jiraBoardId, budget, budgetType, applicationIds, customFields } = req.body;
+    const { organizationId, projectName, description, status, startDate, endDate, isHobby, isGlobal, isVisibleToCustomer, customerId, jiraBoardId, budget, budgetType, hourlyRate, applicationIds, customFields } = req.body;
     const finalBudgetType = normalizeBudgetType(budgetType);
     const finalIsGlobal = isGlobal === true || isGlobal === 1;
     const hasCustomerInput = customerId !== undefined && customerId !== null && customerId !== '';
@@ -989,9 +1000,12 @@ router.post('/', authenticateToken, validateRequest(createProjectSchema), async 
 
     const customFieldData = await prepareCustomFieldData('Projects', customFields);
 
+    const canViewBudgetInfo = await resolveCanViewBudgetInfo(Number(userId));
+    const insertHourlyRate = canViewBudgetInfo ? parseOptionalHourlyRate(hourlyRate) : null;
+
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, IsGlobal, IsVisibleToCustomer, CustomerId, JiraBoardId, Budget, BudgetType${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
+      `INSERT INTO Projects (OrganizationId, ProjectName, Description, CreatedBy, Status, StartDate, EndDate, IsHobby, IsGlobal, IsVisibleToCustomer, CustomerId, JiraBoardId, Budget, BudgetType, HourlyRate${customFieldData.insertColumns.length > 0 ? `, ${customFieldData.insertColumns.join(', ')}` : ''}) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${customFieldData.insertPlaceholders.length > 0 ? `, ${customFieldData.insertPlaceholders.join(', ')}` : ''})`,
       [
         organizationId,
         projectName, 
@@ -1007,6 +1021,7 @@ router.post('/', authenticateToken, validateRequest(createProjectSchema), async 
         jiraBoardId || null,
         budget !== undefined && budget !== '' ? parseFloat(budget) : null,
         finalBudgetType,
+        insertHourlyRate,
         ...customFieldData.insertValues
       ]
     );
@@ -1355,7 +1370,7 @@ router.put('/:id', authenticateToken, validateRequest(updateProjectBodySchema), 
   try {
     const userId = req.user?.userId;
     const projectId = req.params.id;
-    const { projectName, description, status, startDate, endDate, isHobby, isGlobal, isVisibleToCustomer, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo, budget, budgetType, applicationIds, customFields } = req.body;
+    const { projectName, description, status, startDate, endDate, isHobby, isGlobal, isVisibleToCustomer, customerId, jiraBoardId, gitHubOwner, gitHubRepo, giteaOwner, giteaRepo, budget, budgetType, hourlyRate, applicationIds, customFields } = req.body;
 
     // Check if project exists and get current data
     const [existing] = await pool.execute<RowDataPacket[]>(
@@ -1406,6 +1421,10 @@ router.put('/:id', authenticateToken, validateRequest(updateProjectBodySchema), 
     const finalBudgetType = budgetType !== undefined
       ? normalizeBudgetType(budgetType)
       : normalizeBudgetType(oldProject.BudgetType);
+    const canViewBudgetInfo = await resolveCanViewBudgetInfo(Number(userId));
+    const finalHourlyRate = canViewBudgetInfo
+      ? (hourlyRate !== undefined ? parseOptionalHourlyRate(hourlyRate) : (oldProject.HourlyRate != null ? Number(oldProject.HourlyRate) : null))
+      : (oldProject.HourlyRate != null ? Number(oldProject.HourlyRate) : null);
     const finalIsGlobal = isGlobal !== undefined
       ? (isGlobal === true || isGlobal === 1)
       : Boolean(oldProject.IsGlobal);
@@ -1492,6 +1511,13 @@ router.put('/:id', authenticateToken, validateRequest(updateProjectBodySchema), 
     if (budgetType !== undefined && finalBudgetType !== normalizeBudgetType(oldProject.BudgetType)) {
       changes.push({ field: 'BudgetType', oldVal: normalizeBudgetType(oldProject.BudgetType), newVal: finalBudgetType });
     }
+    if (canViewBudgetInfo && hourlyRate !== undefined) {
+      const oldRate = oldProject.HourlyRate != null ? String(oldProject.HourlyRate) : '';
+      const newRate = finalHourlyRate != null ? String(finalHourlyRate) : '';
+      if (oldRate !== newRate) {
+        changes.push({ field: 'HourlyRate', oldVal: oldRate, newVal: newRate });
+      }
+    }
 
     if (applicationIds !== undefined && Array.isArray(applicationIds)) {
       const [oldAppRows] = await pool.execute<RowDataPacket[]>(
@@ -1536,9 +1562,9 @@ router.put('/:id', authenticateToken, validateRequest(updateProjectBodySchema), 
 
     await pool.execute(
       `UPDATE Projects 
-       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, IsGlobal = ?, IsVisibleToCustomer = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ?, GiteaOwner = ?, GiteaRepo = ?, Budget = ?, BudgetType = ?${customFieldData.updateAssignments.length > 0 ? `, ${customFieldData.updateAssignments.join(', ')}` : ''}
+       SET ProjectName = ?, Description = ?, Status = ?, StartDate = ?, EndDate = ?, IsHobby = ?, IsGlobal = ?, IsVisibleToCustomer = ?, CustomerId = ?, JiraBoardId = ?, GitHubOwner = ?, GitHubRepo = ?, GiteaOwner = ?, GiteaRepo = ?, Budget = ?, BudgetType = ?, HourlyRate = ?${customFieldData.updateAssignments.length > 0 ? `, ${customFieldData.updateAssignments.join(', ')}` : ''}
        WHERE Id = ?`,
-      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, finalIsGlobal ? 1 : 0, finalIsVisibleToCustomer, finalCustomerId, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, giteaOwner || null, giteaRepo || null, budget !== undefined && budget !== '' ? parseFloat(budget) : null, finalBudgetType, ...customFieldData.updateValues, projectId]
+      [projectName, description, status, normalizedStartDate, normalizedEndDate, isHobby ? 1 : 0, finalIsGlobal ? 1 : 0, finalIsVisibleToCustomer, finalCustomerId, jiraBoardId || null, gitHubOwner || null, gitHubRepo || null, giteaOwner || null, giteaRepo || null, budget !== undefined && budget !== '' ? parseFloat(budget) : null, finalBudgetType, finalHourlyRate, ...customFieldData.updateValues, projectId]
     );
     
     // Log changes to history

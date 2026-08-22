@@ -78,6 +78,13 @@
       "Comment": "Estimated work hours needed for the task"
     },
     {
+      "FieldName": "HourlyRate",
+      "DataType": "decimal(10,2)",
+      "NotNullable": false,
+      "DefaultValue": null,
+      "Comment": "Optional task hourly rate override for monetary budget cost (visible only when project Budget is set)"
+    },
+    {
       "FieldName": "StoryPoints",
       "DataType": "decimal(10,2)",
       "NotNullable": false,

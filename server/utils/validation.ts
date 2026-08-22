@@ -25,6 +25,7 @@ const taskFieldsSchema = z.object({
   dueDateMandatory: z.union([z.boolean(), z.coerce.number(), z.string()]).optional(),
   unscheduledWork: z.union([z.boolean(), z.coerce.number(), z.string()]).optional(),
   estimatedHours: z.union([z.coerce.number(), z.literal(''), z.null()]).optional(),
+  hourlyRate: z.union([z.coerce.number(), z.literal(''), z.null()]).optional(),
   storyPoints: z.union([z.coerce.number(), z.literal(''), z.null()]).optional(),
   parentTaskId: optionalPositiveInt,
   displayOrder: z.coerce.number().int().optional().nullable(),
@@ -77,6 +78,7 @@ export const createProjectSchema = z.object({
   customerId: optionalPositiveInt,
   budget: z.union([z.coerce.number(), z.null(), z.literal('')]).optional(),
   budgetType: z.string().max(50).optional().nullable(),
+  hourlyRate: z.union([z.coerce.number(), z.null(), z.literal('')]).optional(),
   applicationIds: z.array(z.coerce.number().int().positive()).optional(),
   customFields: optionalCustomFields,
 }).passthrough();

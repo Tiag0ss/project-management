@@ -46,6 +46,7 @@ export interface Task {
   DueDateMandatory?: number;
   UnscheduledWork?: number;
   EstimatedHours?: number;
+  HourlyRate?: number | null;
   StoryPoints?: number;
   PlannedHours?: number;
   WorkedHours?: number;
@@ -109,6 +110,7 @@ export interface CreateTaskData {
   dueDateMandatory?: boolean;
   unscheduledWork?: boolean;
   estimatedHours?: number;
+  hourlyRate?: number | null;
   storyPoints?: number;
   parentTaskId?: number;
   displayOrder?: number;
