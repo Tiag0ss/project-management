@@ -825,7 +825,7 @@ Personal open/overdue work stays on the **Dashboard** (and Work Summary) — Rep
 
 | Section | Who |
 |---------|-----|
-| **Organization**, **Portfolio**, **Delivery**, **Data Quality** | Admins or managers (+ org membership) |
+| **Organization**, **Portfolio**, **Delivery**, **Data Quality**, **Expenses** | Admins or managers (+ org membership) |
 | **Capacity** | Admins/managers, or users with `CanViewOthersPlanning` |
 | **Extract** | Internal users with `CanViewReports` |
 | **Explore** | Admins and managers only (advanced pivots / saved reports) |
@@ -843,7 +843,8 @@ Shared bar: **organization** (required for manager packs), optional **project**,
 - **Delivery** — throughput / active sprints / recently closed for the org period; project and task links for navigation.
 - **Capacity** — planned vs logged by org member; pending time approvals.
 - **Data Quality** — unestimated leaf tasks, unassigned, no sprint (when project has sprints), stale overdue, pending approvals; CSV export; project/task links.
-- **Extract** — dataset extract + CSV (former Reports lists).
+- **Expenses** — approved expense lines with category/group/submitter filters, reimbursable cap and reimbursement status (when `expensesEnabled`).
+- **Extract** — CSV export datasets: projects, tasks, time entries, calls, customers, applications, releases, tickets, planning allocations, vacations, out-of-office, memos, and expenses (when the module is enabled).
 - **Explore** — advanced pivot builder (former Advanced Reports); also `/web-reports` for managers/admins.
 
 ### History & digests (Phase 3)

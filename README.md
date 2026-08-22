@@ -17,7 +17,7 @@ This project is a work in progress — bugs may still be found; please report th
 - 📋 **Project & Task Management** — Kanban boards, Gantt view, task hierarchy (parent/subtasks), dependencies, custom statuses/priorities/types with Lucide icons, and quick navigation between tasks and projects
 - 📊 **Resource Planning** — Gantt chart with drag-and-drop allocation, user availability tracking, intelligent replanning, recurring blocks, Outlook calendar overlay (loads in background), and split planning
 - ⏱️ **Time Tracking** — Daily and weekly timesheet views, per-task time entries, timers, CSV export
-- ✅ **Approvals Center** — Team-lead/admin approval flows for time entries and vacations with batch actions
+- ✅ **Approvals Center** — Team-lead/admin approval flows for time entries, vacations, and expenses (partial reimbursement supported)
 - 🏖️ **Vacations & Holidays** — Annual vacation management, out-of-office requests, non-working-day-aware requests, and country holiday calendars
 - 👥 **Multi-Tenant Organizations** — Multiple organizations, team management, permission groups
 - 🔐 **Role-Based Permissions** — Developer, Support, Manager roles with granular permission control
@@ -37,11 +37,14 @@ This project is a work in progress — bugs may still be found; please report th
 - 🔑 **Password Recovery** — Forgot-password flow with temporary email reset links
 - 🚦 **RAG Health Score** — Automatic Red/Amber/Green project health indicator
 - 📈 **Dashboard KPIs & Statistics** — Configurable widgets and aggregate reporting
+- 📊 **Reporting Hub** — Organization/portfolio/delivery/capacity packs, expense analytics (optional module), CSV extract, and advanced Explore pivots (`/reporting`)
+- 💸 **Expenses (optional)** — Project/internal costs, invoice attachments, approval and reimbursement workflow with category caps
 - 🔍 **Global Search** — Cross-entity search with paginated results
 - 🔔 **Real-Time Updates** — Socket.io notifications and live UI refresh
 - 🌙 **Dark Mode** — Full dark mode support across the UI
 - 📱 **Responsive Design** — Mobile-friendly interface with grouped navigation
 - 🖥️ **Desktop App** — Optional Electron wrapper (`pnpm run desktop:dev`)
+- 🧩 **IDE Extensions** — VS Code / Cursor Kanban sidebar for tasks linked to this app ([ide-extensions/README.md](ide-extensions/README.md))
 - 🧙 **Install Wizard** — Guided first-time setup
 - ⚡ **Optional Redis Cache** — Read-through cache with invalidate-on-write for faster loads; disabled by default
 - 🧠 **[PM Synapse](https://github.com/tiag0ss/pm-synapse)** — Companion Markdown vaults (SSO with this app; optional checkbox→task push). Placeholder repo URL — update when the Synapse repository is published.
@@ -50,6 +53,7 @@ This project is a work in progress — bugs may still be found; please report th
 
 - This README is intentionally concise to comply with Docker Hub overview size limits.
 - For feature walkthroughs and conventions, see [AGENTS.md](AGENTS.md), [docs/FEATURES.md](docs/FEATURES.md), and the in-app user manual at `/docs`.
+- Legacy `/reports` redirects to **Reporting → Extract**; manager analytics live under `/reporting`.
 - API documentation (Swagger): `http://localhost:3000/api-docs` when the server is running.
 
 ## Tech Stack

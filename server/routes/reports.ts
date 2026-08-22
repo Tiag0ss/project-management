@@ -4,6 +4,7 @@ import { RowDataPacket } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import logger from '../utils/logger';
 import { canAccessReportingHub, getReportingAccess } from '../utils/reportingAccess';
+import { isExpensesModuleEnabled } from '../queries/expenseReporting';
 
 const router = Router();
 
@@ -15,8 +16,14 @@ type ReportDatasetKey =
   | 'timeAndCalls'
   | 'customers'
   | 'applications'
+  | 'releases'
   | 'tickets'
-  | 'allocationDates';
+  | 'allocationDates'
+  | 'vacations'
+  | 'outOfOffice'
+  | 'memos'
+  | 'expenses'
+  | 'expenseReimbursements';
 
 const SUPPORTED_DATASETS = new Set<ReportDatasetKey>([
   'projects',
@@ -26,9 +33,82 @@ const SUPPORTED_DATASETS = new Set<ReportDatasetKey>([
   'timeAndCalls',
   'customers',
   'applications',
+  'releases',
   'tickets',
   'allocationDates',
+  'vacations',
+  'outOfOffice',
+  'memos',
+  'expenses',
+  'expenseReimbursements',
 ]);
+
+type ExpenseExtractAccess = {
+  allowed: boolean;
+  canSeeAll: boolean;
+  isTeamLeader: boolean;
+};
+
+const getExpenseExtractAccess = async (userId: number, isAdmin: boolean): Promise<ExpenseExtractAccess> => {
+  if (isAdmin) {
+    return { allowed: true, canSeeAll: true, isTeamLeader: true };
+  }
+
+  const [userRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT IsDeveloper, IsSupport, IsManager FROM Users WHERE Id = ?',
+    [userId]
+  );
+  const user = userRows[0];
+  const roles: string[] = [];
+  if (user?.IsDeveloper) roles.push('Developer');
+  if (user?.IsSupport) roles.push('Support');
+  if (user?.IsManager) roles.push('Manager');
+
+  let canViewExpenses = false;
+  let canCreateExpenses = false;
+  let canManageExpenses = false;
+  let canApproveExpenses = false;
+
+  if (roles.length > 0) {
+    const placeholders = roles.map(() => '?').join(',');
+    const [perms] = await pool.execute<RowDataPacket[]>(
+      `SELECT CanViewExpenses, CanCreateExpenses, CanManageExpenses, CanApproveExpenses
+       FROM RolePermissions WHERE RoleName IN (${placeholders})`,
+      roles
+    );
+    for (const p of perms) {
+      if (p.CanViewExpenses) canViewExpenses = true;
+      if (p.CanCreateExpenses) canCreateExpenses = true;
+      if (p.CanManageExpenses) canManageExpenses = true;
+      if (p.CanApproveExpenses) canApproveExpenses = true;
+    }
+  }
+
+  const [groupPerms] = await pool.execute<RowDataPacket[]>(
+    `SELECT pg.CanViewExpenses, pg.CanCreateExpenses, pg.CanManageExpenses, pg.CanApproveExpenses
+     FROM PermissionGroups pg
+     INNER JOIN OrganizationMembers om ON om.PermissionGroupId = pg.Id
+     WHERE om.UserId = ?`,
+    [userId]
+  );
+  for (const p of groupPerms) {
+    if (p.CanViewExpenses) canViewExpenses = true;
+    if (p.CanCreateExpenses) canCreateExpenses = true;
+    if (p.CanManageExpenses) canManageExpenses = true;
+    if (p.CanApproveExpenses) canApproveExpenses = true;
+  }
+
+  const [subs] = await pool.execute<RowDataPacket[]>(
+    'SELECT COUNT(*) AS Count FROM Users WHERE TeamLeaderId = ? AND IsActive = 1',
+    [userId]
+  );
+  const isTeamLeader = Number(subs[0]?.Count || 0) > 0;
+  const canSeeAll = canManageExpenses || canApproveExpenses;
+  const allowed =
+    canViewExpenses || canCreateExpenses || canManageExpenses || canApproveExpenses || isTeamLeader;
+
+  return { allowed, canSeeAll, isTeamLeader };
+};
 
 const isInternalTicketsEnabled = async (): Promise<boolean> => {
   const [rows] = await pool.execute<RowDataPacket[]>(
@@ -71,6 +151,20 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
       }
     }
 
+    let expenseAccess: ExpenseExtractAccess | null = null;
+    if (dataset === 'expenses' || dataset === 'expenseReimbursements') {
+      if (!(await isExpensesModuleEnabled())) {
+        return res.status(403).json({ success: false, message: 'Expenses module is disabled' });
+      }
+      expenseAccess = await getExpenseExtractAccess(userId, access.isAdmin);
+      if (!expenseAccess.allowed && (access.isAdmin || access.isManager)) {
+        expenseAccess = { allowed: true, canSeeAll: true, isTeamLeader: false };
+      }
+      if (!expenseAccess.allowed) {
+        return res.status(403).json({ success: false, message: 'Expense access denied' });
+      }
+    }
+
     let query = '';
     let params: Array<number | string> = [];
 
@@ -87,8 +181,13 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
             p.StartDate,
             p.EndDate,
             p.CreatedAt,
+            p.UpdatedAt,
+            p.Budget,
+            p.BudgetType,
+            p.HourlyRate,
             COALESCE(p.IsHobby, 0) as IsHobby,
             COALESCE(p.IsGlobal, 0) as IsGlobal,
+            COALESCE(p.IsVisibleToCustomer, 0) as IsVisibleToCustomer,
             o.Name as OrganizationName,
             CASE
               WHEN c.ExternalName IS NOT NULL AND c.ExternalName <> '' THEN c.ExternalName
@@ -152,7 +251,12 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
             t.EstimatedHours,
             t.PlannedStartDate,
             t.PlannedEndDate,
+            t.DueDate,
+            t.ParentTaskId,
+            t.SprintId,
+            t.JiraIssueKey,
             t.CreatedAt,
+            t.UpdatedAt,
             p.ProjectName,
             o.Name as OrganizationName,
             CASE
@@ -167,6 +271,8 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
             COALESCE(tsv.IsClosed, 0) as StatusIsClosed,
             COALESCE(tsv.IsCancelled, 0) as StatusIsCancelled,
             tpv.PriorityName,
+            ttv.TypeName as TaskTypeName,
+            s.Name as SprintName,
             COALESCE(worked.WorkedHours, 0) as WorkedHours
           FROM Tasks t
           INNER JOIN Projects p ON t.ProjectId = p.Id
@@ -178,6 +284,8 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
           LEFT JOIN Users creator ON t.CreatedBy = creator.Id
           LEFT JOIN TaskStatusValues tsv ON t.Status = tsv.Id
           LEFT JOIN TaskPriorityValues tpv ON t.Priority = tpv.Id
+          LEFT JOIN TaskTypeValues ttv ON t.TaskType = ttv.Id
+          LEFT JOIN Sprints s ON t.SprintId = s.Id
           LEFT JOIN (
             SELECT TaskId, SUM(Hours) as WorkedHours
             FROM TimeEntries
@@ -204,6 +312,7 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
             te.Description,
             te.ApprovalStatus,
             te.CreatedAt,
+            te.UpdatedAt,
             worker.Username as UserName,
             t.TaskName,
             p.ProjectName,
@@ -487,6 +596,200 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
         params = [userId, userId];
         break;
 
+      case 'releases':
+        query = `
+          SELECT
+            av.Id,
+            av.ApplicationId,
+            a.OrganizationId,
+            av.VersionNumber,
+            av.VersionName,
+            av.Status,
+            av.ReleaseDate,
+            av.IsCustomerSpecific,
+            av.CustomerId,
+            av.CreatedAt,
+            av.UpdatedAt,
+            a.Name as ApplicationName,
+            o.Name as OrganizationName,
+            creator.Username as CreatorName
+          FROM ApplicationVersions av
+          INNER JOIN Applications a ON av.ApplicationId = a.Id
+          INNER JOIN OrganizationMembers om ON a.OrganizationId = om.OrganizationId AND om.UserId = ?
+          LEFT JOIN Organizations o ON a.OrganizationId = o.Id
+          LEFT JOIN Users creator ON av.CreatedBy = creator.Id
+          ORDER BY av.ReleaseDate DESC, av.Id DESC
+        `;
+        params = [userId];
+        break;
+
+      case 'vacations':
+        query = `
+          SELECT DISTINCT
+            uv.Id,
+            uv.UserId,
+            uv.VacationDate,
+            uv.DayPortion,
+            uv.Status,
+            uv.Notes,
+            uv.ApprovedBy,
+            uv.ApprovedAt,
+            uv.CreatedAt,
+            uv.UpdatedAt,
+            u.Username as UserName,
+            u.FirstName as UserFirstName,
+            u.LastName as UserLastName,
+            approver.Username as ApprovedByName
+          FROM UserVacations uv
+          INNER JOIN Users u ON uv.UserId = u.Id
+          INNER JOIN OrganizationMembers om ON u.Id = om.UserId
+          INNER JOIN OrganizationMembers myOm ON om.OrganizationId = myOm.OrganizationId AND myOm.UserId = ?
+          LEFT JOIN Users approver ON uv.ApprovedBy = approver.Id
+          ORDER BY uv.VacationDate DESC, uv.Id DESC
+        `;
+        params = [userId];
+        break;
+
+      case 'outOfOffice':
+        query = `
+          SELECT DISTINCT
+            uoo.Id,
+            uoo.UserId,
+            uoo.OutOfOfficeDate,
+            uoo.DayPortion,
+            uoo.Status,
+            uoo.Notes,
+            uoo.ApprovedBy,
+            uoo.ApprovedAt,
+            uoo.CreatedAt,
+            uoo.UpdatedAt,
+            u.Username as UserName,
+            u.FirstName as UserFirstName,
+            u.LastName as UserLastName,
+            approver.Username as ApprovedByName
+          FROM UserOutOfOffice uoo
+          INNER JOIN Users u ON uoo.UserId = u.Id
+          INNER JOIN OrganizationMembers om ON u.Id = om.UserId
+          INNER JOIN OrganizationMembers myOm ON om.OrganizationId = myOm.OrganizationId AND myOm.UserId = ?
+          LEFT JOIN Users approver ON uoo.ApprovedBy = approver.Id
+          ORDER BY uoo.OutOfOfficeDate DESC, uoo.Id DESC
+        `;
+        params = [userId];
+        break;
+
+      case 'memos':
+        query = `
+          SELECT
+            m.Id,
+            m.UserId,
+            m.Title,
+            m.Visibility,
+            m.CreatedAt,
+            m.UpdatedAt,
+            u.Username as AuthorName,
+            u.FirstName as AuthorFirstName,
+            u.LastName as AuthorLastName
+          FROM Memos m
+          INNER JOIN Users u ON m.UserId = u.Id
+          WHERE m.UserId = ?
+             OR m.Visibility = 'public'
+             OR (
+               m.Visibility = 'organizations'
+               AND EXISTS (
+                 SELECT 1
+                 FROM OrganizationMembers omAuthor
+                 INNER JOIN OrganizationMembers omViewer ON omAuthor.OrganizationId = omViewer.OrganizationId
+                 WHERE omAuthor.UserId = m.UserId AND omViewer.UserId = ?
+               )
+             )
+          ORDER BY m.CreatedAt DESC, m.Id DESC
+        `;
+        params = [userId, userId];
+        break;
+
+      case 'expenses': {
+        query = `
+          SELECT
+            e.Id,
+            e.OrganizationId,
+            e.ProjectId,
+            e.TaskId,
+            e.CategoryId,
+            e.SubmittedByUserId,
+            e.Title,
+            e.Description,
+            e.Vendor,
+            e.Amount,
+            e.ReimbursableAmount,
+            e.ExpenseDate,
+            e.PaidBy,
+            e.ApprovalStatus,
+            e.ApprovedBy,
+            e.ApprovedAt,
+            e.ReimbursedAmount,
+            e.ReimbursementStatus,
+            e.ReimbursedBy,
+            e.ReimbursedAt,
+            e.CreatedAt,
+            e.UpdatedAt,
+            o.Name AS OrganizationName,
+            p.ProjectName,
+            t.TaskName,
+            cat.CategoryName,
+            grp.GroupName AS CategoryGroupName,
+            cat.MaxReimbursementAmount AS CategoryMaxReimbursement,
+            u.Username AS SubmittedByUsername,
+            u.FirstName AS SubmittedByFirstName,
+            u.LastName AS SubmittedByLastName,
+            COALESCE(e.ReimbursableAmount, e.Amount) AS ReimbursableCap,
+            GREATEST(0, COALESCE(e.ReimbursableAmount, e.Amount) - e.ReimbursedAmount) AS RemainingAmount,
+            (SELECT COUNT(*) FROM ExpenseAttachments ea WHERE ea.ExpenseId = e.Id) AS AttachmentCount
+          FROM Expenses e
+          INNER JOIN OrganizationMembers om ON e.OrganizationId = om.OrganizationId AND om.UserId = ?
+          INNER JOIN Organizations o ON e.OrganizationId = o.Id
+          INNER JOIN Users u ON e.SubmittedByUserId = u.Id
+          LEFT JOIN Projects p ON e.ProjectId = p.Id
+          LEFT JOIN Tasks t ON e.TaskId = t.Id
+          LEFT JOIN ExpenseCategoryValues cat ON e.CategoryId = cat.Id
+          LEFT JOIN ExpenseCategoryGroups grp ON cat.GroupId = grp.Id
+          ORDER BY e.ExpenseDate DESC, e.Id DESC
+        `;
+        params = [userId];
+        break;
+      }
+
+      case 'expenseReimbursements': {
+        query = `
+          SELECT
+            erp.Id,
+            erp.ExpenseId,
+            erp.Amount,
+            erp.Notes,
+            erp.CreatedByUserId,
+            erp.CreatedAt,
+            e.OrganizationId,
+            e.ProjectId,
+            e.Title AS ExpenseTitle,
+            e.ExpenseDate,
+            e.ApprovalStatus,
+            e.ReimbursementStatus,
+            o.Name AS OrganizationName,
+            p.ProjectName,
+            submitter.Username AS SubmittedByUsername,
+            recorder.Username AS RecordedByUsername
+          FROM ExpenseReimbursementPayments erp
+          INNER JOIN Expenses e ON erp.ExpenseId = e.Id
+          INNER JOIN OrganizationMembers om ON e.OrganizationId = om.OrganizationId AND om.UserId = ?
+          INNER JOIN Organizations o ON e.OrganizationId = o.Id
+          INNER JOIN Users submitter ON e.SubmittedByUserId = submitter.Id
+          LEFT JOIN Projects p ON e.ProjectId = p.Id
+          LEFT JOIN Users recorder ON erp.CreatedByUserId = recorder.Id
+          ORDER BY erp.CreatedAt DESC, erp.Id DESC
+        `;
+        params = [userId];
+        break;
+      }
+
       case 'allocationDates':
         query = `
           SELECT
@@ -564,6 +867,27 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
         const childNames = Array.from(childNamesByAllocation.get(key) || []);
         record.ChildTaskNames = childNames.join(', ');
       });
+    }
+
+    if (dataset === 'memos' && records.length > 0) {
+      const memoIds = records.map((row) => Number(row.Id)).filter((id) => id > 0);
+      if (memoIds.length > 0) {
+        const placeholders = memoIds.map(() => '?').join(',');
+        const [tagRows] = await pool.execute<RowDataPacket[]>(
+          `SELECT MemoId, TagName FROM MemoTags WHERE MemoId IN (${placeholders}) ORDER BY TagName ASC`,
+          memoIds
+        );
+        const tagsByMemo = new Map<number, string[]>();
+        tagRows.forEach((row) => {
+          const memoId = Number(row.MemoId);
+          if (!tagsByMemo.has(memoId)) tagsByMemo.set(memoId, []);
+          tagsByMemo.get(memoId)?.push(String(row.TagName || ''));
+        });
+        records.forEach((record) => {
+          const tags = tagsByMemo.get(Number(record.Id)) || [];
+          record.Tags = tags.join(', ');
+        });
+      }
     }
 
     res.json({ success: true, records });

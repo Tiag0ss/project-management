@@ -15,6 +15,7 @@ import TaskDetailModal from '@/components/TaskDetailModal';
 import { getApiUrl } from '@/lib/api/config';
 import { reportingApi, ReportingAccessInfo, DeltaMetric } from '@/lib/api/reporting';
 import { defaultReportingRange, formatDelta, previousPeriod } from '@/lib/reporting/period';
+import { EXTRACT_DATASETS, EXTRACT_FILTER_CONFIG } from '@/lib/reporting/extractDatasets';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { WebReportsExplorer } from '@/app/web-reports/page';
@@ -80,6 +81,18 @@ function MetricCard({
 function formatDeltaMetric(metric: DeltaMetric | undefined, hours = false): string | undefined {
   if (!metric) return undefined;
   return formatDelta(metric.delta, metric.deltaPct, hours ? 'h' : '');
+}
+
+function normalizeExtractRowDate(raw: unknown): string | null {
+  if (raw == null || raw === '') return null;
+  if (raw instanceof Date) {
+    const y = raw.getFullYear();
+    const m = String(raw.getMonth() + 1).padStart(2, '0');
+    const d = String(raw.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const match = String(raw).match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : null;
 }
 
 function renderExtractCell(row: Record<string, unknown>, key: string) {
@@ -193,6 +206,7 @@ function ReportingHubInner() {
   const [capacity, setCapacity] = useState<any>(null);
   const [dataQuality, setDataQuality] = useState<any>(null);
   const [expensesEnabled, setExpensesEnabled] = useState(false);
+  const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
   const [expenseReport, setExpenseReport] = useState<any>(null);
   const [expenseGroupId, setExpenseGroupId] = useState<number | ''>('');
   const [expenseCategoryId, setExpenseCategoryId] = useState<number | ''>('');
@@ -304,9 +318,25 @@ function ReportingHubInner() {
   // Extract
   const [extractDataset, setExtractDataset] = useState('tasks');
   const [extractRecords, setExtractRecords] = useState<any[]>([]);
+  const [extractLoadedCount, setExtractLoadedCount] = useState<number | null>(null);
   const [extractLoading, setExtractLoading] = useState(false);
 
   const prev = useMemo(() => previousPeriod(dateFrom, dateTo), [dateFrom, dateTo]);
+
+  const extractDatasetOptions = useMemo(
+    () =>
+      EXTRACT_DATASETS.filter((d) => {
+        if (d.requiresExpensesModule && !expensesEnabled) return false;
+        if (d.requiresInternalTickets && !internalTicketsEnabled) return false;
+        return true;
+      }),
+    [expensesEnabled, internalTicketsEnabled]
+  );
+
+  const extractColumnKeys = useMemo(
+    () => (extractRecords.length > 0 ? Object.keys(extractRecords[0]) : []),
+    [extractRecords]
+  );
 
   const filteredProjects = useMemo(() => {
     if (!organizationId) return projects;
@@ -348,6 +378,7 @@ function ReportingHubInner() {
         if (cancelled) return;
         const flagsData = flagsRes.ok ? await flagsRes.json() : {};
         setExpensesEnabled(flagsData.expensesEnabled === true);
+        setInternalTicketsEnabled(flagsData.internalTicketsEnabled !== false);
         const organizations = (orgRes.organizations || []).map((o: any) => ({
           Id: Number(o.Id),
           Name: String(o.Name || `Organization #${o.Id}`),
@@ -415,8 +446,7 @@ function ReportingHubInner() {
           reimbursementStatus: expenseReimbFilter || null,
           internalOnly: expenseInternalOnly,
         });
-        const report = res.data?.totals != null ? res.data : res.data?.data;
-        setExpenseReport(report ?? null);
+        setExpenseReport(res.data ?? null);
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to load report');
@@ -442,6 +472,12 @@ function ReportingHubInner() {
     expenseDateFrom,
     expenseDateTo,
   ]);
+
+  useEffect(() => {
+    if (!extractDatasetOptions.some((d) => d.id === extractDataset)) {
+      setExtractDataset(extractDatasetOptions[0]?.id || 'tasks');
+    }
+  }, [extractDataset, extractDatasetOptions]);
 
   useEffect(() => {
     void loadTabData();
@@ -477,22 +513,37 @@ function ReportingHubInner() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Failed to load dataset');
       let records = data.records || [];
-      if (organizationId) {
+      setExtractLoadedCount(records.length);
+      const filterConfig =
+        EXTRACT_FILTER_CONFIG[extractDataset] ?? {
+          organizationField: 'OrganizationId' as const,
+          projectField: 'ProjectId' as const,
+          dateFields: ['CreatedAt', 'UpdatedAt'],
+        };
+
+      if (organizationId && filterConfig.organizationField) {
+        const orgKey = filterConfig.organizationField;
         records = records.filter(
-          (r: any) => Number(r.OrganizationId || 0) === Number(organizationId)
+          (r: any) => Number(r[orgKey] || 0) === Number(organizationId)
         );
       }
-      if (projectId) {
-        records = records.filter((r: any) => Number(r.ProjectId || 0) === Number(projectId));
+      if (projectId && filterConfig.projectField) {
+        const projectKey = filterConfig.projectField;
+        records = records.filter((r: any) => Number(r[projectKey] || 0) === Number(projectId));
       }
-      if (dateFrom || dateTo) {
-        const dateKeys = ['WorkDate', 'CallDate', 'CreatedAt', 'DueDate', 'StartDate', 'AllocationDate'];
+      const skipDateFilter = extractDataset === 'expenses' || extractDataset === 'expenseReimbursements';
+      if (!skipDateFilter && (dateFrom || dateTo)) {
+        let from = dateFrom;
+        let to = dateTo;
+        if (from && to && from > to) {
+          [from, to] = [to, from];
+        }
         records = records.filter((r: any) => {
-          const raw = dateKeys.map((k) => r[k]).find(Boolean);
-          if (!raw) return true;
-          const d = String(raw).slice(0, 10);
-          if (dateFrom && d < dateFrom) return false;
-          if (dateTo && d > dateTo) return false;
+          const raw = filterConfig.dateFields.map((k) => r[k]).find((v) => v != null && v !== '');
+          const d = normalizeExtractRowDate(raw);
+          if (!d) return true;
+          if (from && d < from) return false;
+          if (to && d > to) return false;
           return true;
         });
       }
@@ -500,6 +551,7 @@ function ReportingHubInner() {
     } catch (err: any) {
       setError(err?.message || 'Extract failed');
       setExtractRecords([]);
+      setExtractLoadedCount(null);
     } finally {
       setExtractLoading(false);
     }
@@ -1706,84 +1758,98 @@ function ReportingHubInner() {
               </div>
             )}
 
-            {activeTab === 'expenses' && !expenseReport && (
+            {activeTab === 'expenses' && !expenseReport && !loading && (
               <div className="text-sm text-gray-500 dark:text-gray-400 py-8 text-center">
-                {organizationId ? 'Loading expense report…' : 'Select an organization to view expenses.'}
+                {organizationId
+                  ? 'No expense data loaded. Adjust filters and click Refresh, or wait for the report to load.'
+                  : 'Select an organization to view expenses.'}
+              </div>
+            )}
+
+            {activeTab === 'expenses' && !expenseReport && loading && (
+              <div className="text-sm text-gray-500 dark:text-gray-400 py-8 text-center">
+                Loading expense report…
               </div>
             )}
 
             {activeTab === 'extract' && (
               <div className="space-y-4">
-                <div className="flex flex-wrap gap-2 items-end">
-                  <div>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Export raw rows to CSV. Use organization and project filters in the toolbar to narrow results
+                  client-side. Expense datasets include all dates unless you filter on the Expenses tab. CSV includes
+                  every column; the preview shows up to 200 rows.
+                </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                  <div className="w-full sm:w-auto sm:min-w-[240px] sm:max-w-sm">
                     <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                       Dataset
                     </label>
                     <select
                       value={extractDataset}
                       onChange={(e) => setExtractDataset(e.target.value)}
-                      className="h-10 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
+                      className="h-10 w-full px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
                     >
-                      {[
-                        'projects',
-                        'tasks',
-                        'timeEntries',
-                        'callRecords',
-                        'timeAndCalls',
-                        'customers',
-                        'applications',
-                        'tickets',
-                        'allocationDates',
-                      ].map((d) => (
-                        <option key={d} value={d}>
-                          {d}
+                      {extractDatasetOptions.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.label}
                         </option>
                       ))}
                     </select>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void loadExtract()}
-                    className="h-10 px-4 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700"
-                  >
-                    {extractLoading ? 'Loading…' : 'Load data'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={exportExtractCsv}
-                    disabled={!extractRecords.length}
-                    className="h-10 px-4 rounded-lg text-sm font-medium border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-                  >
-                    Export CSV
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void loadExtract()}
+                      className="h-10 px-4 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                      {extractLoading ? 'Loading…' : 'Load data'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={exportExtractCsv}
+                      disabled={!extractRecords.length}
+                      className="h-10 px-4 rounded-lg text-sm font-medium border border-gray-300 dark:border-gray-600 disabled:opacity-50 text-gray-900 dark:text-white"
+                    >
+                      Export CSV
+                    </button>
+                  </div>
                 </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 -mt-1">
+                  {extractDatasetOptions.find((d) => d.id === extractDataset)?.description}
+                </p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {extractRecords.length} row(s) loaded (filters applied client-side where fields exist).
+                  {extractRecords.length} row(s), {extractColumnKeys.length} column(s)
+                  {extractRecords.length > 200 ? ' — preview limited to 200 rows' : ''}.
+                  {extractLoadedCount != null &&
+                    extractLoadedCount > extractRecords.length &&
+                    ` ${extractLoadedCount} loaded; toolbar filters removed ${extractLoadedCount - extractRecords.length}.`}
+                  {extractLoadedCount === 0 &&
+                    ' No rows returned — check permissions or try another dataset.'}
+                  {extractLoadedCount != null &&
+                    extractLoadedCount > 0 &&
+                    extractRecords.length === 0 &&
+                    ' Widen or clear organization, project, and date filters above.'}
                 </p>
                 {extractRecords.length > 0 && (
                   <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-auto max-h-[60vh]">
                     <table className="min-w-full text-xs">
                       <thead className="sticky top-0 bg-gray-50 dark:bg-gray-900/40">
                         <tr>
-                          {Object.keys(extractRecords[0])
-                            .slice(0, 12)
-                            .map((k) => (
-                              <th key={k} className="text-left px-2 py-2 whitespace-nowrap">
-                                {k}
-                              </th>
-                            ))}
+                          {extractColumnKeys.map((k) => (
+                            <th key={k} className="text-left px-2 py-2 whitespace-nowrap">
+                              {k}
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody>
                         {extractRecords.slice(0, 200).map((row, idx) => (
                           <tr key={idx} className="border-t border-gray-100 dark:border-gray-700">
-                            {Object.keys(extractRecords[0])
-                              .slice(0, 12)
-                              .map((k) => (
-                                <td key={k} className="px-2 py-1 whitespace-nowrap max-w-[200px] truncate">
-                                  {renderExtractCell(row, k)}
-                                </td>
-                              ))}
+                            {extractColumnKeys.map((k) => (
+                              <td key={k} className="px-2 py-1 whitespace-nowrap max-w-[240px] truncate">
+                                {renderExtractCell(row, k)}
+                              </td>
+                            ))}
                           </tr>
                         ))}
                       </tbody>
