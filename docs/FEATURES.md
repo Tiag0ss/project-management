@@ -25,6 +25,7 @@ Comprehensive documentation of all features available in the application. Use th
 13. [Dashboard & Analytics](#13-dashboard--analytics)
 14. [Portfolio](#14-portfolio)
 15. [Work Summary](#15-work-summary)
+15b. [Reporting Hub](#15b-reporting-hub)
 16. [Permissions System](#16-permissions-system)
 17. [Jira Integration](#17-jira-integration)
 18. [Email & Notifications](#18-email--notifications)
@@ -771,6 +772,48 @@ Automated emails sent by `workSummaryScheduler.ts`:
 
 ---
 
+## 15b. Reporting Hub
+
+Unified reporting at **`/reporting`** (nav: **Reporting**). Replaces standalone **Reports** (`/reports`) and **Advanced Reports** (`/web-reports`) as primary entry points; old URLs redirect into the hub (`/reports` → Extract; Explore remains `/web-reports` for admins/managers, linked from the hub).
+
+Personal open/overdue work stays on the **Dashboard** (and Work Summary) — Reporting does not duplicate a My Work pack.
+
+### Audience & gates
+
+| Section | Who |
+|---------|-----|
+| **Organization**, **Portfolio**, **Delivery**, **Data Quality** | Admins or managers (+ org membership) |
+| **Capacity** | Admins/managers, or users with `CanViewOthersPlanning` |
+| **Extract** | Internal users with `CanViewReports` |
+| **Explore** | Admins and managers only (advanced pivots / saved reports) |
+
+Customer portal users never see org-wide packs or Explore. APIs under `/api/reporting/*`, `/api/reports`, `/api/saved-reports`, and `/api/dynamic-reports` enforce the same rules.
+
+### Filters
+
+Shared bar: **organization** (required for manager packs), optional **project**, **date range**. Manager packs show metrics vs the **previous period of equal length**. Org context sticks across Organization / Portfolio / Delivery / Capacity / Data Quality.
+
+### Packs
+
+- **Organization** — health (RAG counts), effort (leaf estimated, **planned**, logged, leaf with/without hours, unscheduled), delivery throughput, risk signals; **charts** (RAG donut, planned vs logged, top projects, throughput, open vs overdue, estimate/schedule mix, optional RAG snapshot trend); drill into other packs; task/project rows link for quick navigation; optional **email digest** schedule (structured metrics).
+- **Portfolio** — projects in org with RAG, progress, overdue, budget (if `CanViewBudgetInfo`); project name opens `/projects/:id`.
+- **Delivery** — throughput / active sprints / recently closed for the org period; project and task links for navigation.
+- **Capacity** — planned vs logged by org member; pending time approvals.
+- **Data Quality** — unestimated leaf tasks, unassigned, no sprint (when project has sprints), stale overdue, pending approvals; CSV export; project/task links.
+- **Extract** — dataset extract + CSV (former Reports lists).
+- **Explore** — advanced pivot builder (former Advanced Reports); also `/web-reports` for managers/admins.
+
+### History & digests (Phase 3)
+
+- **`ProjectHealthSnapshots`** — daily job persists per-project health + key counts for trend charts.
+- **`OrganizationReportDigests`** — weekly/monthly overview email to configured recipients (no LLM narrative).
+
+### Out of scope here
+
+AI narrative summaries; replacing project-level Reporting / scheduled project PDFs; full BI / arbitrary SQL for all users.
+
+---
+
 ## 16. Permissions System
 
 Permissions are evaluated at two levels: **Global Role Permissions** and **Organization Permission Groups**.
@@ -783,7 +826,7 @@ The `RolePermissions` table defines allowed actions per role:
 |---|---|
 | `CanViewDashboard` | Access dashboard and analytics |
 | `CanViewPlanning` | Access the planning/Gantt page |
-| `CanViewReports` | Access project reports |
+| `CanViewReports` | Access Reporting hub (Extract + manager packs by role); manager packs need admin/manager role |
 | `CanViewBudgetInfo` | See budget-related data (project costs, hourly rates) |
 | `CanManageProjects` | Edit existing project details |
 | `CanCreateProjects` | Create new projects |
@@ -1216,4 +1259,6 @@ Planning remains desktop-first for editing.
 | `EmailTaskQueue` | Pending emails for task import per user |
 | `SLARules` | Per-org per-priority SLA thresholds |
 | `ProjectReportSchedules` | Scheduled PDF report config |
+| `ProjectHealthSnapshots` | Weekly/daily org project health bands for Reporting trends |
+| `OrganizationReportDigests` | Scheduled Organization Overview email digests |
 | `DashboardKPIs` | Configurable KPI widget definitions |

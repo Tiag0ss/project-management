@@ -6,8 +6,11 @@ import { dbProvider } from '../config/database';
 import fs from 'fs';
 import path from 'path';
 import logger from '../utils/logger';
+import { requireManagerReportingMiddleware } from '../utils/reportingAccess';
 
 const router = express.Router();
+
+router.use(authenticateToken, requireManagerReportingMiddleware);
 
 /**
  * @swagger

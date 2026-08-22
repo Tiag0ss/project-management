@@ -2478,9 +2478,62 @@ This document contains comprehensive test scenarios to verify all functionality 
 
 ---
 
-## Summary
+### TC-REPORT-001: Reporting hub — personal user
+**Steps:**
+1. Login as internal user with `CanViewReports` who is not admin/manager
+2. Open Reporting from nav (`/reporting`)
+3. Confirm default tab is **Extract** (no My Work pack — personal work stays on Dashboard)
+4. Confirm Organization / Portfolio / Explore tabs are not shown
+5. Open **Extract**, load a dataset, export CSV
 
-This document contains **220+ test scenarios** covering all major features and edge cases. For a full validation:
+**Expected:**
+- Hub loads on Extract only for non-managers
+- No org-wide packs or Explore
+- Extract returns data scoped by membership / filters
+
+### TC-REPORT-002: Reporting hub — manager organization overview
+**Steps:**
+1. Login as manager or admin with org membership
+2. Open `/reporting` — default should be **Organization**
+3. Select organization + date range; note “vs previous” deltas
+4. Click Health / Risk cards to drill to Portfolio / Data Quality
+5. Open Capacity and Data Quality; export one Data Quality CSV
+6. From Portfolio / Delivery / Data Quality, open a project link and a task (task opens Task Detail modal)
+
+**Expected:**
+- Overview shows health/effort/delivery/risk with period comparison
+- Drill keeps org + date context
+- Project links go to `/projects/:id`; tasks open Task Detail modal
+- No cross-org data for orgs the user does not belong to
+
+### TC-REPORT-003: Explore gated to admins/managers
+**Steps:**
+1. As non-manager with `CanViewReports`, try `/reporting?tab=explore` and `/web-reports`
+2. As manager, open Explore from hub and `/web-reports`
+
+**Expected:**
+- Non-manager denied / redirected to Extract; API `/api/saved-reports` returns 403
+- Manager can use pivots and saved reports
+
+### TC-REPORT-004: Customer user excluded
+**Steps:**
+1. Login as customer portal user
+2. Attempt `/reporting` and `/api/reporting/organization-overview`
+
+**Expected:**
+- UI blocked / redirected; APIs return 403; no org effort data
+
+### TC-REPORT-005: Digest schedule
+**Steps:**
+1. As manager, on Organization tab add a weekly digest with a test recipient
+2. Confirm schedule appears in list; delete it
+
+**Expected:**
+- Row stored in `OrganizationReportDigests`; delete removes it
+
+---
+
+## Summary
 
 1. **Critical Path**: Execute all TC-E2E-* scenarios first
 2. **Feature Coverage**: Run all TC-*-001 scenarios for basic feature validation
@@ -2512,6 +2565,7 @@ This document contains **220+ test scenarios** covering all major features and e
 - [ ] All Redis Cache tests passed (if `REDIS_ENABLED=true`)
 - [ ] All Email notification tests passed
 - [ ] All Search tests passed
+- [ ] All Reporting Hub tests passed (TC-REPORT-*)
 - [ ] All UI tests passed
 - [ ] All E2E scenarios passed
 - [ ] All Security tests passed

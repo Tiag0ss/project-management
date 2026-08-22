@@ -1,7 +1,8 @@
 'use client';
 
 import { getApiUrl } from '@/lib/api/config';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import Navbar from '@/components/Navbar';
@@ -11,6 +12,7 @@ import CustomerUserGuard from '@/components/CustomerUserGuard';
 import DynamicQueryBuilder from '@/components/DynamicQueryBuilder';
 import * as savedReportsApi from '@/lib/api/savedReports';
 import { downloadTablePdf } from '@/lib/api/pdfExport';
+import Link from 'next/link';
 
 interface ReportField {
   key: string;
@@ -104,9 +106,26 @@ interface ChartPoint {
 }
 
 export default function WebReportsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <WebReportsPageFromQuery />
+    </Suspense>
+  );
+}
+
+function WebReportsPageFromQuery() {
+  const searchParams = useSearchParams();
+  const embed = searchParams.get('embed') === '1';
+  return <WebReportsExplorer embedded={embed} />;
+}
+
+/** Pivot explorer — use `embedded` inside the Reporting hub (no page chrome / hero). */
+export function WebReportsExplorer({ embedded = false }: { embedded?: boolean }) {
   const { mapColor } = useColorVision();
-  const { user, token, isLoading } = useAuth();
+  const { user, token, isLoading, isCustomerUser } = useAuth();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
+  const canExplore = !!(user?.isAdmin || user?.isManager);
+  const embed = embedded;
   const [dataSource, setDataSource] = useState<string>('time-entries');
   const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
   const [modalState, setModalState] = useState<ModalState>({ type: null });
@@ -1356,15 +1375,20 @@ export default function WebReportsPage() {
     return null;
   }
 
-  if (!isLoadingPermissions && !permissions?.canViewReports) {
+  if (isCustomerUser || (!isLoadingPermissions && (!permissions?.canViewReports || !canExplore))) {
     return (
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        <Navbar />
-        <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        {!embed && <Navbar />}
+        <main className="w-full py-6 px-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
             <div className="text-5xl mb-4">🔒</div>
             <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Access Denied</h2>
-            <p className="text-gray-500 dark:text-gray-400">You don&apos;t have permission to view reports.</p>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">
+              Explore (Advanced Reports) is limited to admins and managers.
+            </p>
+            <Link href="/reporting" className="text-blue-600 dark:text-blue-400 hover:underline">
+              Back to Reporting
+            </Link>
           </div>
         </main>
       </div>
@@ -1373,12 +1397,19 @@ export default function WebReportsPage() {
 
   return (
     <CustomerUserGuard>
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        <Navbar />
+      <div className={embed ? 'w-full' : 'min-h-screen bg-gray-100 dark:bg-gray-900'}>
+        {!embed && <Navbar />}
 
-        <main className="w-full  mx-auto py-6 sm:px-6 lg:px-8">
-          <div className="px-4 py-6 sm:px-0">
-            {/* Page Header */}
+        <main className={embed ? 'w-full' : 'w-full mx-auto py-6 sm:px-6 lg:px-8'}>
+          <div className={embed ? 'w-full' : 'px-4 py-6 sm:px-0'}>
+            {!embed && (
+              <div className="mb-4">
+                <Link href="/reporting?tab=explore" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                  ← Reporting hub
+                </Link>
+              </div>
+            )}
+            {!embed && (
             <div className="bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg shadow p-6 text-white mb-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -1388,6 +1419,7 @@ export default function WebReportsPage() {
                 <div className="text-5xl opacity-80">📈</div>
               </div>
             </div>
+            )}
 
             {error && (
               <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
@@ -2527,7 +2559,7 @@ export default function WebReportsPage() {
         </main>
       </div>
 
-      <ScrollToTopButton />
+      {!embed && <ScrollToTopButton />}
     </CustomerUserGuard>
   );
 }

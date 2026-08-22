@@ -4,8 +4,11 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { RowDataPacket, ResultSetHeader } from '../config/database';
 import { dbProvider } from '../config/database';
 import logger from '../utils/logger';
+import { requireManagerReportingMiddleware } from '../utils/reportingAccess';
 
 const router = express.Router();
+
+router.use(authenticateToken, requireManagerReportingMiddleware);
 
 type DefaultSavedReport = {
   Id: number;

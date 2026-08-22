@@ -3,6 +3,7 @@ import { pool } from '../config/database';
 import { RowDataPacket } from '../config/database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import logger from '../utils/logger';
+import { canAccessReportingHub, getReportingAccess } from '../utils/reportingAccess';
 
 const router = Router();
 
@@ -52,6 +53,11 @@ router.get('/datasets/:dataset', authenticateToken, async (req: AuthRequest, res
 
     if (!userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const access = await getReportingAccess(userId, req.user?.customerId);
+    if (!access || !canAccessReportingHub(access)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
     if (!SUPPORTED_DATASETS.has(dataset)) {

@@ -83,12 +83,14 @@ import outlookCalendarRoutes from './routes/outlookCalendar';
 import emailTaskQueueRoutes, { webhookRouter as emailTaskQueueWebhookRoutes } from './routes/emailTaskQueue';
 import apiTokensRoutes from './routes/apiTokens';
 import reportsRoutes from './routes/reports';
+import reportingRoutes from './routes/reporting';
 import ssoRoutes from './routes/sso';
 import { ensureAiAssistantViews } from './utils/aiAssistantViews';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
 import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler';
 import { startPdfReportScheduler } from './utils/pdfReportScheduler';
 import { startSlaAutoTransitionScheduler } from './utils/slaAutoTransitionScheduler';
+import { startReportingSchedulers } from './utils/reportingSchedulers';
 import { initSocketHub } from './utils/socketHub';
 
 const customFieldsRoutes = require(path.join(__dirname, 'routes', 'customFields')).default;
@@ -289,6 +291,7 @@ app.prepare().then(async () => {
   server.use('/api/dev-support', devSupportRoutes);
   server.use('/api/pdf-exports', pdfExportsRoutes);
   server.use('/api/reports', reportsRoutes);
+  server.use('/api/reporting', reportingRoutes);
   server.use('/api/ai-assistant', aiAssistantRoutes);
   server.use('/api/api-tokens', apiTokensRoutes);
   server.use('/api/sso', ssoRoutes);
@@ -414,6 +417,9 @@ app.prepare().then(async () => {
 
     // Start the PDF report scheduler
     startPdfReportScheduler();
+
+    // Organization health snapshots + digest emails
+    startReportingSchedulers();
 
     // Start SLA auto-transition scheduler
     startSlaAutoTransitionScheduler();

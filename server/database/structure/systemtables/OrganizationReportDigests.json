@@ -1,0 +1,76 @@
+{
+  "TableName": "OrganizationReportDigests",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "Frequency",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "weekly",
+      "Comment": "weekly or monthly"
+    },
+    {
+      "FieldName": "DayOfWeek",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "0=Sunday ... 6=Saturday; used when Frequency=weekly"
+    },
+    {
+      "FieldName": "DayOfMonth",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "1-28; used when Frequency=monthly"
+    },
+    {
+      "FieldName": "Recipients",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Comma-separated email addresses"
+    },
+    {
+      "FieldName": "IsActive",
+      "DataType": "tinyint",
+      "NotNullable": true,
+      "DefaultValue": "1"
+    },
+    {
+      "FieldName": "LastSentAt",
+      "DataType": "datetime",
+      "NotNullable": false
+    },
+    {
+      "FieldName": "CreatedBy",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "datetime",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "datetime",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ],
+  "Indexes": [
+    {
+      "IndexName": "IX_OrganizationReportDigests_Org",
+      "Fields": "OrganizationId"
+    }
+  ]
+}

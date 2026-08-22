@@ -1,0 +1,80 @@
+{
+  "TableName": "ProjectHealthSnapshots",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "ProjectId",
+      "DataType": "int",
+      "NotNullable": true
+    },
+    {
+      "FieldName": "SnapshotDate",
+      "DataType": "date",
+      "NotNullable": true,
+      "Comment": "Calendar date of the snapshot (usually weekly)"
+    },
+    {
+      "FieldName": "HealthStatus",
+      "DataType": "varchar(10)",
+      "NotNullable": true,
+      "Comment": "red | amber | green"
+    },
+    {
+      "FieldName": "HealthReasons",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "JSON array of reason strings"
+    },
+    {
+      "FieldName": "OpenTasks",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "OverdueTasks",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "EstimatedHours",
+      "DataType": "decimal(10,2)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "LoggedHours",
+      "DataType": "decimal(10,2)",
+      "NotNullable": true,
+      "DefaultValue": "0"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "datetime",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP"
+    }
+  ],
+  "Indexes": [
+    {
+      "IndexName": "IX_ProjectHealthSnapshots_OrgDate",
+      "Fields": "OrganizationId, SnapshotDate"
+    },
+    {
+      "IndexName": "IX_ProjectHealthSnapshots_ProjectDate",
+      "Fields": "ProjectId, SnapshotDate"
+    }
+  ]
+}
