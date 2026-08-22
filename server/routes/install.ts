@@ -304,12 +304,34 @@ router.post('/setup', async (req: Request, res: Response) => {
         );
       }
 
+      // Expense category defaults (groups + categories) — same catalogue as ensureExpenseCategoryDefaults
+      const { DEFAULT_EXPENSE_CATEGORY_CATALOGUE } = await import('../utils/expenseCategoryDefaults');
+      for (const group of DEFAULT_EXPENSE_CATEGORY_CATALOGUE) {
+        const [groupResult] = await connection.execute(
+          `INSERT INTO ExpenseCategoryGroups
+           (OrganizationId, GroupName, ColorCode, SortOrder, IsDefault)
+           VALUES (?, ?, ?, ?, ?)`,
+          [organizationId, group.groupName, group.color, group.order, group.isDefault]
+        );
+        const groupId = Number((groupResult as any).insertId);
+        for (const cat of group.categories) {
+          await connection.execute(
+            `INSERT INTO ExpenseCategoryValues
+             (OrganizationId, GroupId, CategoryName, ColorCode, SortOrder, IsDefault)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [organizationId, groupId, cat.name, cat.color, cat.order, cat.isDefault]
+          );
+        }
+      }
+
       // 9. Set default system settings
       const defaultSettings = [
         ['allowPublicRegistration', 'false'],
         ['publicRegistrationType', 'internal'],
         ['internalTicketsEnabled', 'true'],
         ['memosEnabled', 'true'],
+        ['expensesEnabled', 'false'],
+        ['autoApproveExpenses', 'false'],
         ['autoApproveTimeEntries', 'false'],
         ['autoApproveVacations', 'false'],
         ['autoApproveOutOfOffice', 'false'],

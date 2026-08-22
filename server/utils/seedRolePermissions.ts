@@ -38,6 +38,10 @@ const DEFAULT_ROLE_PERMISSIONS = [
       CanCreateApplications: 0,
       CanDeleteApplications: 0,
       CanManageReleases: 0,
+      CanViewExpenses: 1,
+      CanCreateExpenses: 1,
+      CanManageExpenses: 0,
+      CanApproveExpenses: 0,
     },
   },
   {
@@ -75,6 +79,10 @@ const DEFAULT_ROLE_PERMISSIONS = [
       CanCreateApplications: 0,
       CanDeleteApplications: 0,
       CanManageReleases: 0,
+      CanViewExpenses: 1,
+      CanCreateExpenses: 1,
+      CanManageExpenses: 0,
+      CanApproveExpenses: 0,
     },
   },
   {
@@ -112,6 +120,10 @@ const DEFAULT_ROLE_PERMISSIONS = [
       CanCreateApplications: 1,
       CanDeleteApplications: 1,
       CanManageReleases: 1,
+      CanViewExpenses: 1,
+      CanCreateExpenses: 1,
+      CanManageExpenses: 1,
+      CanApproveExpenses: 1,
     },
   },
 ];
@@ -125,6 +137,27 @@ export async function seedRolePermissions(): Promise<void> {
 
     if (existing[0].count > 0) {
       logger.info('RolePermissions already seeded, skipping...');
+      // Backfill expense permissions for Manager on existing installs
+      try {
+        await pool.execute(
+          `UPDATE RolePermissions SET
+            CanViewExpenses = 1,
+            CanCreateExpenses = 1,
+            CanManageExpenses = 1,
+            CanApproveExpenses = 1
+           WHERE RoleName = 'Manager'`
+        );
+        await pool.execute(
+          `UPDATE RolePermissions SET
+            CanViewExpenses = 1,
+            CanCreateExpenses = 1
+           WHERE RoleName IN ('Developer', 'Support')`
+        );
+      } catch (backfillErr: any) {
+        if (backfillErr?.code !== 'ER_BAD_FIELD_ERROR') {
+          logger.warn('Expense permission backfill skipped', { error: backfillErr?.message });
+        }
+      }
       return;
     }
 
@@ -168,9 +201,13 @@ export async function seedRolePermissions(): Promise<void> {
           CanCreateApplications,
           CanDeleteApplications,
           CanManageReleases,
+          CanViewExpenses,
+          CanCreateExpenses,
+          CanManageExpenses,
+          CanApproveExpenses,
           CreatedAt,
           UpdatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [
           roleName,
           permissions.CanViewDashboard,
@@ -205,6 +242,10 @@ export async function seedRolePermissions(): Promise<void> {
           permissions.CanCreateApplications,
           permissions.CanDeleteApplications,
           permissions.CanManageReleases,
+          permissions.CanViewExpenses,
+          permissions.CanCreateExpenses,
+          permissions.CanManageExpenses,
+          permissions.CanApproveExpenses,
         ]
       );
 

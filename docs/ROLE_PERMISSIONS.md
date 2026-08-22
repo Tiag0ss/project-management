@@ -14,9 +14,9 @@ Default permissions are defined in [`server/database/structure/systemtables/Role
 
 | Role | Typical capabilities |
 |------|---------------------|
-| **Developer** | Manage time entries, manage tickets |
-| **Support** | View dashboard, manage/create/assign tickets |
-| **Manager** | All permissions |
+| **Developer** | Manage time entries, create tickets, view/create expenses |
+| **Support** | View dashboard, manage/create/assign tickets, view/create expenses |
+| **Manager** | All permissions (including manage/approve expenses) |
 
 ### Frontend Usage
 
@@ -123,6 +123,10 @@ Organizations can define `PermissionGroups` that are assigned per member, provid
 | `CanManageMembers` | Add/remove org members and change their roles |
 | `CanManageSettings` | Change org-level settings and custom statuses |
 | `CanViewBudgetInfo` | See budget and cost data for this org's projects |
+| `CanViewExpenses` | View expenses within this organization |
+| `CanCreateExpenses` | Submit expenses within this organization |
+| `CanManageExpenses` | Manage expenses and expense categories within this organization |
+| `CanApproveExpenses` | Approve expenses and record reimbursements within this organization |
 
 ### How Groups Apply
 

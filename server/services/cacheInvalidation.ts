@@ -44,6 +44,7 @@ export type CacheEntityType =
   | 'ooo'
   | 'devSupport'
   | 'callRecord'
+  | 'expense'
   | 'recurringAllocation'
   | 'childAllocation'
   | 'user'
@@ -498,6 +499,10 @@ export async function invalidateByEntity(type: CacheEntityType, payload: Invalid
       break;
     case 'callRecord':
       await invalidateCallRecordCaches(String(normalizeId(payload.orgId) ?? 'global'), normalizeId(payload.orgId));
+      break;
+    case 'expense':
+      await invalidateAggregateCaches(normalizeId(payload.orgId), normalizeId(payload.projectId));
+      if (payload.orgId !== undefined) await invalidateStatusValueCaches(normalizeId(payload.orgId)!, 'expense');
       break;
     case 'recurringAllocation':
       await invalidateRecurringAllocationCaches(String(payload.userId ?? normalizeId(payload.orgId) ?? 'global'), normalizeId(payload.orgId));

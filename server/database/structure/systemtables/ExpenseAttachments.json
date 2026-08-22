@@ -1,0 +1,56 @@
+{
+  "TableName": "ExpenseAttachments",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique attachment identifier"
+    },
+    {
+      "FieldName": "ExpenseId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Expenses.Id"
+    },
+    {
+      "FieldName": "UploadedByUserId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who uploaded the file"
+    },
+    {
+      "FieldName": "FileName",
+      "DataType": "varchar(255)",
+      "NotNullable": true,
+      "Comment": "Original filename of the attachment"
+    },
+    {
+      "FieldName": "FileType",
+      "DataType": "varchar(100)",
+      "NotNullable": true,
+      "Comment": "MIME type of the file (e.g., image/png, application/pdf)"
+    },
+    {
+      "FieldName": "FileSize",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "File size in bytes"
+    },
+    {
+      "FieldName": "FileData",
+      "DataType": "longtext",
+      "NotNullable": true,
+      "Comment": "File content encoded in Base64"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the file was uploaded"
+    }
+  ]
+}

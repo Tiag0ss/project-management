@@ -1,0 +1,44 @@
+{
+  "TableName": "ExpenseReimbursementPayments",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique reimbursement payment identifier"
+    },
+    {
+      "FieldName": "ExpenseId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Expenses.Id"
+    },
+    {
+      "FieldName": "Amount",
+      "DataType": "decimal(15,2)",
+      "NotNullable": true,
+      "Comment": "Payment amount for this reimbursement installment"
+    },
+    {
+      "FieldName": "Notes",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Optional notes for this payment"
+    },
+    {
+      "FieldName": "CreatedByUserId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who recorded the payment"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the payment was recorded"
+    }
+  ]
+}

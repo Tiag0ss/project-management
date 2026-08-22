@@ -118,6 +118,8 @@ interface SystemSettings {
   defaultTimezone?: string;
   internalTicketsEnabled?: string;
   memosEnabled?: string;
+  expensesEnabled?: string;
+  autoApproveExpenses?: string;
   autoApproveTimeEntries?: string;
   autoApproveVacations?: string;
   autoApproveOutOfOffice?: string;
@@ -174,6 +176,8 @@ export default function SystemSettings() {
     defaultTimezone: '',
     internalTicketsEnabled: 'true',
     memosEnabled: 'true',
+    expensesEnabled: 'false',
+    autoApproveExpenses: 'false',
     autoApproveTimeEntries: 'false',
     autoApproveVacations: 'false',
     autoApproveOutOfOffice: 'false',
@@ -256,6 +260,8 @@ export default function SystemSettings() {
           defaultTimezone: data.settings.defaultTimezone || '',
           internalTicketsEnabled: data.settings.internalTicketsEnabled || 'true',
           memosEnabled: data.settings.memosEnabled || 'true',
+          expensesEnabled: data.settings.expensesEnabled || 'false',
+          autoApproveExpenses: data.settings.autoApproveExpenses || 'false',
           autoApproveTimeEntries: data.settings.autoApproveTimeEntries || 'false',
           autoApproveVacations: data.settings.autoApproveVacations || 'false',
           autoApproveOutOfOffice: data.settings.autoApproveOutOfOffice || 'false',
@@ -970,6 +976,40 @@ export default function SystemSettings() {
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
                       Only controls visibility of Memos in the navbar.
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.expensesEnabled === 'true'}
+                    onChange={(e) => handleChange('expensesEnabled', e.target.checked ? 'true' : 'false')}
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      Enable Expenses Module
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      Shows/hides the project expenses module globally. When disabled, expense APIs return 403.
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.autoApproveExpenses === 'true'}
+                    onChange={(e) => handleChange('autoApproveExpenses', e.target.checked ? 'true' : 'false')}
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      Auto-approve Expenses
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      When enabled, new expenses are created as approved instead of pending.
                     </div>
                   </div>
                 </label>

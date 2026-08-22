@@ -1,0 +1,64 @@
+{
+  "TableName": "ExpenseCategoryValues",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique expense category identifier"
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id"
+    },
+    {
+      "FieldName": "GroupId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to ExpenseCategoryGroups.Id (same organization)"
+    },
+    {
+      "FieldName": "CategoryName",
+      "DataType": "varchar(100)",
+      "NotNullable": true,
+      "Comment": "Display name of the expense category"
+    },
+    {
+      "FieldName": "ColorCode",
+      "DataType": "varchar(7)",
+      "NotNullable": false,
+      "Comment": "Color code in hex format (e.g., #FF5733) for UI display"
+    },
+    {
+      "FieldName": "SortOrder",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Order for displaying categories in lists"
+    },
+    {
+      "FieldName": "IsDefault",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Whether this is the default category for new expenses"
+    },
+    {
+      "FieldName": "MaxReimbursementAmount",
+      "DataType": "decimal(15,2)",
+      "NotNullable": false,
+      "Comment": "Optional maximum reimbursable amount per expense in this category; null = no cap"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the category was created"
+    }
+  ]
+}

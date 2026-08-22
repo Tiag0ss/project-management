@@ -6,6 +6,7 @@ import { cachedJson, ENTITY_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import { invalidateByEntity } from '../services/cacheInvalidation';
 import logger from '../utils/logger';
+import { ensureExpenseCategoryDefaults } from '../utils/expenseCategoryDefaults';
 
 const router = Router();
 
@@ -2028,6 +2029,280 @@ router.delete('/ticket-priority/:id', authenticateToken, async (req: AuthRequest
   } catch (error) {
     logger.error('Delete ticket priority error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete ticket priority' });
+  }
+});
+
+// ---- Expense category groups & categories (org-scoped) ----
+
+const canManageOrgExpenseTaxonomy = async (orgId: number, userId: number | undefined): Promise<boolean> => {
+  if (!userId) return false;
+  const [admin] = await pool.execute<RowDataPacket[]>('SELECT isAdmin FROM Users WHERE Id = ?', [userId]);
+  if (admin[0]?.isAdmin) return true;
+  const [member] = await pool.execute<RowDataPacket[]>(
+    `SELECT om.Role, pg.CanManageSettings, pg.CanManageExpenses
+     FROM OrganizationMembers om
+     LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+     WHERE om.OrganizationId = ? AND om.UserId = ?`,
+    [orgId, userId]
+  );
+  if (!member.length) return false;
+  const m = member[0];
+  return m.Role === 'Owner' || m.Role === 'Admin' || !!m.CanManageSettings || !!m.CanManageExpenses;
+};
+
+router.get('/expense-category-group/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = parseInt(req.params.orgId as string);
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+    if (access.length === 0 && !req.user?.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    await ensureExpenseCategoryDefaults(orgId);
+
+    const [groups] = await pool.execute<RowDataPacket[]>(
+      `SELECT g.*,
+        (SELECT COUNT(*) FROM ExpenseCategoryValues c WHERE c.GroupId = g.Id) AS CategoryCount
+       FROM ExpenseCategoryGroups g
+       WHERE g.OrganizationId = ?
+       ORDER BY g.SortOrder, g.GroupName`,
+      [orgId]
+    );
+    res.json({ success: true, groups });
+  } catch (error) {
+    logger.error('Get expense category groups error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch expense category groups' });
+  }
+});
+
+router.post('/expense-category-group', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, groupName, colorCode, sortOrder, isDefault } = req.body;
+    if (!organizationId || !groupName) {
+      return res.status(400).json({ success: false, message: 'Organization ID and group name are required' });
+    }
+    if (!(await canManageOrgExpenseTaxonomy(organizationId, userId))) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+    if (isDefault) {
+      await pool.execute('UPDATE ExpenseCategoryGroups SET IsDefault = 0 WHERE OrganizationId = ?', [organizationId]);
+    }
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO ExpenseCategoryGroups (OrganizationId, GroupName, ColorCode, SortOrder, IsDefault)
+       VALUES (?, ?, ?, ?, ?)`,
+      [organizationId, groupName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
+    );
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'expense' });
+    res.status(201).json({ success: true, groupId: result.insertId });
+  } catch (error) {
+    logger.error('Create expense category group error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create expense category group' });
+  }
+});
+
+router.put('/expense-category-group/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const groupId = Number(req.params.id);
+    const { groupName, colorCode, sortOrder, isDefault } = req.body;
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM ExpenseCategoryGroups WHERE Id = ?',
+      [groupId]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Group not found' });
+    const orgId = rows[0].OrganizationId;
+    if (!(await canManageOrgExpenseTaxonomy(orgId, userId))) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+    if (isDefault) {
+      await pool.execute('UPDATE ExpenseCategoryGroups SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, groupId]);
+    }
+    await pool.execute(
+      `UPDATE ExpenseCategoryGroups SET GroupName = ?, ColorCode = ?, SortOrder = ?, IsDefault = ? WHERE Id = ?`,
+      [groupName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0, groupId]
+    );
+    await invalidateByEntity('statusValue', { orgId, statusType: 'expense' });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Update expense category group error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update expense category group' });
+  }
+});
+
+router.delete('/expense-category-group/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const groupId = Number(req.params.id);
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM ExpenseCategoryGroups WHERE Id = ?',
+      [groupId]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Group not found' });
+    const orgId = rows[0].OrganizationId;
+    if (!(await canManageOrgExpenseTaxonomy(orgId, userId))) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+    const [cats] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM ExpenseCategoryValues WHERE GroupId = ? LIMIT 1',
+      [groupId]
+    );
+    if (cats.length) {
+      return res.status(400).json({ success: false, message: 'Cannot delete a group that still has categories' });
+    }
+    await pool.execute('DELETE FROM ExpenseCategoryGroups WHERE Id = ?', [groupId]);
+    await invalidateByEntity('statusValue', { orgId, statusType: 'expense' });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Delete expense category group error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete expense category group' });
+  }
+});
+
+router.get('/expense-category/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = parseInt(req.params.orgId as string);
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+    if (access.length === 0 && !req.user?.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    await ensureExpenseCategoryDefaults(orgId);
+
+    const [categories] = await pool.execute<RowDataPacket[]>(
+      `SELECT c.*, g.GroupName, g.ColorCode AS GroupColorCode, g.SortOrder AS GroupSortOrder
+       FROM ExpenseCategoryValues c
+       INNER JOIN ExpenseCategoryGroups g ON c.GroupId = g.Id
+       WHERE c.OrganizationId = ?
+       ORDER BY g.SortOrder, g.GroupName, c.SortOrder, c.CategoryName`,
+      [orgId]
+    );
+    res.json({ success: true, categories });
+  } catch (error) {
+    logger.error('Get expense categories error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch expense categories' });
+  }
+});
+
+router.post('/expense-category', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, groupId, categoryName, colorCode, sortOrder, isDefault, maxReimbursementAmount } = req.body;
+    if (!organizationId || !groupId || !categoryName) {
+      return res.status(400).json({ success: false, message: 'Organization ID, group ID and category name are required' });
+    }
+    if (!(await canManageOrgExpenseTaxonomy(organizationId, userId))) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+    const [groups] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM ExpenseCategoryGroups WHERE Id = ? AND OrganizationId = ?',
+      [groupId, organizationId]
+    );
+    if (!groups.length) {
+      return res.status(400).json({ success: false, message: 'Invalid group for organization' });
+    }
+    if (isDefault) {
+      await pool.execute('UPDATE ExpenseCategoryValues SET IsDefault = 0 WHERE OrganizationId = ?', [organizationId]);
+    }
+    const maxReimb =
+      maxReimbursementAmount === null || maxReimbursementAmount === undefined || maxReimbursementAmount === ''
+        ? null
+        : Number(maxReimbursementAmount);
+    if (maxReimb !== null && (!Number.isFinite(maxReimb) || maxReimb < 0)) {
+      return res.status(400).json({ success: false, message: 'Invalid max reimbursement amount' });
+    }
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO ExpenseCategoryValues (OrganizationId, GroupId, CategoryName, ColorCode, SortOrder, IsDefault, MaxReimbursementAmount)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [organizationId, groupId, categoryName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0, maxReimb]
+    );
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'expense' });
+    res.status(201).json({ success: true, categoryId: result.insertId });
+  } catch (error) {
+    logger.error('Create expense category error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create expense category' });
+  }
+});
+
+router.put('/expense-category/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const categoryId = Number(req.params.id);
+    const { groupId, categoryName, colorCode, sortOrder, isDefault, maxReimbursementAmount } = req.body;
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM ExpenseCategoryValues WHERE Id = ?',
+      [categoryId]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Category not found' });
+    const orgId = rows[0].OrganizationId;
+    if (!(await canManageOrgExpenseTaxonomy(orgId, userId))) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+    if (groupId) {
+      const [groups] = await pool.execute<RowDataPacket[]>(
+        'SELECT Id FROM ExpenseCategoryGroups WHERE Id = ? AND OrganizationId = ?',
+        [groupId, orgId]
+      );
+      if (!groups.length) {
+        return res.status(400).json({ success: false, message: 'Invalid group for organization' });
+      }
+    }
+    if (isDefault) {
+      await pool.execute('UPDATE ExpenseCategoryValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, categoryId]);
+    }
+    const maxReimb =
+      maxReimbursementAmount === null || maxReimbursementAmount === undefined || maxReimbursementAmount === ''
+        ? null
+        : Number(maxReimbursementAmount);
+    if (maxReimb !== null && (!Number.isFinite(maxReimb) || maxReimb < 0)) {
+      return res.status(400).json({ success: false, message: 'Invalid max reimbursement amount' });
+    }
+    await pool.execute(
+      `UPDATE ExpenseCategoryValues SET GroupId = ?, CategoryName = ?, ColorCode = ?, SortOrder = ?, IsDefault = ?, MaxReimbursementAmount = ? WHERE Id = ?`,
+      [groupId, categoryName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0, maxReimb, categoryId]
+    );
+    await invalidateByEntity('statusValue', { orgId, statusType: 'expense' });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Update expense category error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update expense category' });
+  }
+});
+
+router.delete('/expense-category/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const categoryId = Number(req.params.id);
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM ExpenseCategoryValues WHERE Id = ?',
+      [categoryId]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Category not found' });
+    const orgId = rows[0].OrganizationId;
+    if (!(await canManageOrgExpenseTaxonomy(orgId, userId))) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+    const [used] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM Expenses WHERE CategoryId = ? LIMIT 1',
+      [categoryId]
+    );
+    if (used.length) {
+      return res.status(400).json({ success: false, message: 'Cannot delete a category that is used by expenses' });
+    }
+    await pool.execute('DELETE FROM ExpenseCategoryValues WHERE Id = ?', [categoryId]);
+    await invalidateByEntity('statusValue', { orgId, statusType: 'expense' });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Delete expense category error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete expense category' });
   }
 });
 

@@ -118,6 +118,7 @@ export default function Navbar() {
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
   const [memosEnabled, setMemosEnabled] = useState(true);
+  const [expensesEnabled, setExpensesEnabled] = useState(false);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [companyName, setCompanyName] = useState('Project Management');
   const [companyLogoUrl, setCompanyLogoUrl] = useState('');
@@ -315,6 +316,7 @@ export default function Navbar() {
         if (!token) {
           setInternalTicketsEnabled(true);
           setMemosEnabled(true);
+          setExpensesEnabled(false);
           return;
         }
 
@@ -328,13 +330,16 @@ export default function Navbar() {
           const flagsData = await flagsRes.json();
           setInternalTicketsEnabled(flagsData.internalTicketsEnabled !== false);
           setMemosEnabled(flagsData.memosEnabled !== false);
+          setExpensesEnabled(flagsData.expensesEnabled === true);
         } else {
           setInternalTicketsEnabled(true);
           setMemosEnabled(true);
+          setExpensesEnabled(false);
         }
       } catch {
         setInternalTicketsEnabled(true);
         setMemosEnabled(true);
+        setExpensesEnabled(false);
         setCompanyName('Project Management');
         setCompanyLogoUrl('');
         setIsDemoMode(false);
@@ -1653,7 +1658,22 @@ export default function Navbar() {
   const canShowVacationApprovalsOption = canAccessVacationApprovals;
   const canShowOutOfOfficeApprovalsOption = canAccessOutOfOfficeApprovals;
   const canShowDevSupportManagementOption = canAccessDevSupportManagement;
-  const canShowAnyApprovalsOption = canShowApprovalsOption || canShowVacationApprovalsOption || canShowOutOfOfficeApprovalsOption;
+  const canShowExpenseApprovalsOption =
+    expensesEnabled &&
+    (permissionsLoading || !!permissions?.canApproveExpenses || !!permissions?.canManageExpenses || !!user?.isAdmin);
+  const canShowAnyApprovalsOption =
+    canShowApprovalsOption ||
+    canShowVacationApprovalsOption ||
+    canShowOutOfOfficeApprovalsOption ||
+    canShowExpenseApprovalsOption;
+  const approvalsMenuLabel = expensesEnabled ? 'Approvals & Expenses' : 'Approvals';
+  const approvalsMenuHref = canShowApprovalsOption
+    ? '/approvals?tab=time'
+    : canShowExpenseApprovalsOption
+      ? '/approvals?tab=expenses'
+      : canShowVacationApprovalsOption
+        ? '/approvals?tab=vacations'
+        : '/approvals?tab=out-of-office';
 
   const canShowDashboardLink = isCustomerUser || (!isCustomerUser && (permissionsLoading || permissions?.canViewDashboard));
   const canShowProjectsLink = !isCustomerUser && (permissionsLoading || permissions?.canViewProjects || permissions?.canManageProjects || permissions?.canCreateProjects);
@@ -1661,6 +1681,10 @@ export default function Navbar() {
   const canShowTicketsLink = internalTicketsEnabled && (user?.isSupport || isCustomerUser || permissions?.canManageTickets || permissions?.canCreateTickets);
   const canShowMemosLink = !isCustomerUser && memosEnabled;
   const canShowTimesheetLink = !isCustomerUser;
+  const canShowExpensesLink =
+    !isCustomerUser &&
+    expensesEnabled &&
+    (permissionsLoading || permissions?.canViewExpenses || permissions?.canCreateExpenses || !!user?.isAdmin);
   const canShowCallRecordsLink = !isCustomerUser;
   const canShowWorkSummaryLink = !isCustomerUser;
   const canShowReportsLink = !isCustomerUser && (permissionsLoading || permissions?.canViewReports || permissions?.canManageOrganizations || !!user?.isAdmin);
@@ -1668,7 +1692,7 @@ export default function Navbar() {
 
   const showOverviewSection = canShowDashboardLink;
   const showDeliverySection = canShowProjectsLink || canShowPlanningLink;
-  const showWorkLogsSection = canShowTimesheetLink || canShowCallRecordsLink || canShowWorkSummaryLink;
+  const showWorkLogsSection = canShowTimesheetLink || canShowExpensesLink || canShowCallRecordsLink || canShowWorkSummaryLink;
   const showServiceSection = canShowTicketsLink || canShowMemosLink;
   const showManagementSection = canShowCustomersOption || canShowApplicationsOption || canShowOrganizationsOption || canShowAnyApprovalsOption || canShowDevSupportManagementOption;
   const showReportingSection = canShowReportsLink;
@@ -1903,6 +1927,11 @@ export default function Navbar() {
                       <span className="w-5 text-center">📝</span>{!isSidebarEffectivelyCollapsed && <span>Timesheet</span>}
                     </a>
                   )}
+                  {canShowExpensesLink && (
+                    <a href="/expenses" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">💸</span>{!isSidebarEffectivelyCollapsed && <span>Expenses</span>}
+                    </a>
+                  )}
                   {canShowCallRecordsLink && (
                     <a href="/call-records" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">📞</span>{!isSidebarEffectivelyCollapsed && <span>Call Records</span>}
@@ -1951,8 +1980,8 @@ export default function Navbar() {
                     </a>
                   )}
                   {canShowAnyApprovalsOption && (
-                    <a href="/approvals" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                      <span className="w-5 text-center">✅</span>{!isSidebarEffectivelyCollapsed && <span>Approvals</span>}
+                    <a href={approvalsMenuHref} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                      <span className="w-5 text-center">✅</span>{!isSidebarEffectivelyCollapsed && <span>{approvalsMenuLabel}</span>}
                     </a>
                   )}
                   {canShowDevSupportManagementOption && (
@@ -2129,6 +2158,12 @@ export default function Navbar() {
                         onClick: () => setWorkLogsMenuOpen(false),
                       },
                       {
+                        label: '💸 Expenses',
+                        href: '/expenses',
+                        visible: canShowExpensesLink,
+                        onClick: () => setWorkLogsMenuOpen(false),
+                      },
+                      {
                         label: '📞 Call Records',
                         href: '/call-records',
                         visible: true,
@@ -2193,10 +2228,8 @@ export default function Navbar() {
                         onClick: () => setManagementMenuOpen(false),
                       },
                       {
-                        label: '✅ Approvals',
-                        href: canShowApprovalsOption
-                          ? '/approvals?tab=time'
-                          : (canShowVacationApprovalsOption ? '/approvals?tab=vacations' : '/approvals?tab=out-of-office'),
+                        label: `✅ ${approvalsMenuLabel}`,
+                        href: approvalsMenuHref,
                         visible: !!canShowAnyApprovalsOption,
                         onClick: () => setManagementMenuOpen(false),
                       },
@@ -2709,6 +2742,15 @@ export default function Navbar() {
                     >
                       📝 Timesheet
                     </a>
+                    {canShowExpensesLink && (
+                    <a
+                      href="/expenses"
+                      className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      onClick={() => setDropdownOpen(false)}
+                    >
+                      💸 Expenses
+                    </a>
+                    )}
                     <a
                       href="/call-records"
                       className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -2825,6 +2867,11 @@ export default function Navbar() {
                   <span>📝</span><span>Timesheet</span>
                 </a>
               )}
+              {canShowExpensesLink && (
+                <a href="/expenses" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                  <span>💸</span><span>Expenses</span>
+                </a>
+              )}
               {canShowCallRecordsLink && (
                 <a href="/call-records" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>📞</span><span>Call Records</span>
@@ -2862,15 +2909,11 @@ export default function Navbar() {
               )}
               {canShowAnyApprovalsOption && (
                 <a
-                  href={
-                    canShowApprovalsOption
-                      ? '/approvals?tab=time'
-                      : (canShowVacationApprovalsOption ? '/approvals?tab=vacations' : '/approvals?tab=out-of-office')
-                  }
+                  href={approvalsMenuHref}
                   className={topMobileNavItemClass}
                   onClick={closeTopMobileNav}
                 >
-                  <span>✅</span><span>Approvals</span>
+                  <span>✅</span><span>{approvalsMenuLabel}</span>
                 </a>
               )}
               {canShowDevSupportManagementOption && (

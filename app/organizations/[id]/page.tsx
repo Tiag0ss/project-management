@@ -22,6 +22,7 @@ import { useFormatHours } from '@/lib/useFormatHours';
 import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
 import { TaskTypeIcon, TaskTypeIconPicker, resolveTaskTypeIcon } from '@/lib/taskTypeIcons';
 import TaskFormVisibilitySettingsPanel from '@/components/admin/TaskFormVisibilitySettingsPanel';
+import ExpenseTaxonomyManager from '@/components/ExpenseTaxonomyManager';
 import { useUrlTab } from '@/hooks/useUrlTab';
 
 const ORGANIZATION_DETAIL_TABS = [
@@ -30,6 +31,7 @@ const ORGANIZATION_DETAIL_TABS = [
   'projects',
   'permissions',
   'statuses',
+  'expense-categories',
   'tags',
   'integrations',
   'sla',
@@ -355,6 +357,7 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
               { id: 'projects' as const, label: 'Projects', icon: '📁' },
               { id: 'permissions' as const, label: 'Permissions', icon: '🔐' },
               { id: 'statuses' as const, label: 'Statuses', icon: '🎨' },
+              { id: 'expense-categories' as const, label: 'Expenses', icon: '💸' },
               { id: 'tags' as const, label: 'Tags', icon: '🏷️' },
               ...(canManageSettings
                 ? [
@@ -457,6 +460,16 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
                 }`}
               >
                 🎨 Status & Priorities
+              </button>
+              <button
+                onClick={() => setActiveTab('expense-categories')}
+                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                  activeTab === 'expense-categories'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                💸 Expense Categories
               </button>
               <button
                 onClick={() => setActiveTab('tags')}
@@ -572,6 +585,13 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
                 token={token!}
                 showConfirm={showConfirm}
                 internalTicketsEnabled={internalTicketsEnabled}
+              />
+            )}
+            {activeTab === 'expense-categories' && token && (
+              <ExpenseTaxonomyManager
+                orgId={orgId}
+                token={token}
+                canManage={canManageSettings || !!permissions?.canManageExpenses || !!user?.isAdmin}
               />
             )}
             {activeTab === 'tags' && <TagsTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}

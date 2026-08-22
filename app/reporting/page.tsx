@@ -26,6 +26,7 @@ const MANAGER_TABS = [
   'delivery',
   'capacity',
   'data-quality',
+  'expenses',
   'extract',
   'explore',
 ] as const;
@@ -43,6 +44,10 @@ function projectHref(projectId: number | string) {
 
 function userHref(userId: number | string) {
   return `/users/${Number(userId)}`;
+}
+
+function formatMoney(n: number | string | null | undefined) {
+  return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function MetricCard({
@@ -187,6 +192,16 @@ function ReportingHubInner() {
   const [delivery, setDelivery] = useState<any>(null);
   const [capacity, setCapacity] = useState<any>(null);
   const [dataQuality, setDataQuality] = useState<any>(null);
+  const [expensesEnabled, setExpensesEnabled] = useState(false);
+  const [expenseReport, setExpenseReport] = useState<any>(null);
+  const [expenseGroupId, setExpenseGroupId] = useState<number | ''>('');
+  const [expenseCategoryId, setExpenseCategoryId] = useState<number | ''>('');
+  const [expenseUserId, setExpenseUserId] = useState<number | ''>('');
+  const [expenseReimbFilter, setExpenseReimbFilter] = useState('');
+  const [expenseInternalOnly, setExpenseInternalOnly] = useState(false);
+  const [expenseDateFrom, setExpenseDateFrom] = useState('');
+  const [expenseDateTo, setExpenseDateTo] = useState('');
+  const [expenseBreakdown, setExpenseBreakdown] = useState<'rows' | 'category' | 'group'>('rows');
   const [dqSubTab, setDqSubTab] = useState<
     'unestimated' | 'unassigned' | 'noSprint' | 'staleOverdue' | 'pendingApprovals'
   >('unestimated');
@@ -323,11 +338,16 @@ function ReportingHubInner() {
     let cancelled = false;
     (async () => {
       try {
-        const [orgRes, projRes] = await Promise.all([
+        const [orgRes, projRes, flagsRes] = await Promise.all([
           organizationsApi.getAll(token),
           projectsApi.getAll(token),
+          fetch(`${getApiUrl()}/api/system-settings/user-flags`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
         ]);
         if (cancelled) return;
+        const flagsData = flagsRes.ok ? await flagsRes.json() : {};
+        setExpensesEnabled(flagsData.expensesEnabled === true);
         const organizations = (orgRes.organizations || []).map((o: any) => ({
           Id: Number(o.Id),
           Name: String(o.Name || `Organization #${o.Id}`),
@@ -383,6 +403,20 @@ function ReportingHubInner() {
           projectId ? Number(projectId) : null
         );
         setDataQuality(res.data);
+      } else if (activeTab === 'expenses' && organizationId && canManager && expensesEnabled) {
+        const res = await reportingApi.getExpensesReport(token, {
+          organizationId: Number(organizationId),
+          from: expenseDateFrom || null,
+          to: expenseDateTo || null,
+          projectId: projectId ? Number(projectId) : null,
+          groupId: expenseGroupId ? Number(expenseGroupId) : null,
+          categoryId: expenseCategoryId ? Number(expenseCategoryId) : null,
+          userId: expenseUserId ? Number(expenseUserId) : null,
+          reimbursementStatus: expenseReimbFilter || null,
+          internalOnly: expenseInternalOnly,
+        });
+        const report = res.data?.totals != null ? res.data : res.data?.data;
+        setExpenseReport(report ?? null);
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to load report');
@@ -399,6 +433,14 @@ function ReportingHubInner() {
     projectId,
     canManager,
     canCapacity,
+    expensesEnabled,
+    expenseGroupId,
+    expenseCategoryId,
+    expenseUserId,
+    expenseReimbFilter,
+    expenseInternalOnly,
+    expenseDateFrom,
+    expenseDateTo,
   ]);
 
   useEffect(() => {
@@ -410,7 +452,7 @@ function ReportingHubInner() {
       setActiveTab(defaultTab);
     }
     if (
-      ['organization', 'portfolio', 'delivery', 'capacity', 'data-quality'].includes(activeTab) &&
+      ['organization', 'portfolio', 'delivery', 'capacity', 'data-quality', 'expenses'].includes(activeTab) &&
       !canManager &&
       activeTab !== 'capacity'
     ) {
@@ -419,7 +461,10 @@ function ReportingHubInner() {
     if (activeTab === 'capacity' && !canCapacity) {
       setActiveTab(defaultTab);
     }
-  }, [activeTab, canExplore, canManager, canCapacity, defaultTab, setActiveTab]);
+    if (activeTab === 'expenses' && (!canManager || !expensesEnabled)) {
+      setActiveTab(defaultTab);
+    }
+  }, [activeTab, canExplore, canManager, canCapacity, expensesEnabled, defaultTab, setActiveTab]);
 
   const loadExtract = async () => {
     if (!token) return;
@@ -540,6 +585,7 @@ function ReportingHubInner() {
     { id: 'delivery', label: 'Delivery', show: canManager },
     { id: 'capacity', label: 'Capacity', show: canCapacity },
     { id: 'data-quality', label: 'Data Quality', show: canManager },
+    { id: 'expenses', label: 'Expenses', show: canManager && expensesEnabled },
     { id: 'extract', label: 'Extract', show: true },
     { id: 'explore', label: 'Explore (advanced)', show: canExplore },
   ];
@@ -570,6 +616,11 @@ function ReportingHubInner() {
                     onChange={(e) => {
                       setOrganizationId(e.target.value ? Number(e.target.value) : '');
                       setProjectId('');
+                      setExpenseGroupId('');
+                      setExpenseCategoryId('');
+                      setExpenseUserId('');
+                      setExpenseReimbFilter('');
+                      setExpenseInternalOnly(false);
                     }}
                     className="h-10 min-w-[200px] px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
                   >
@@ -584,6 +635,7 @@ function ReportingHubInner() {
               {(activeTab === 'organization' ||
                 activeTab === 'delivery' ||
                 activeTab === 'data-quality' ||
+                activeTab === 'expenses' ||
                 activeTab === 'extract') && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -603,7 +655,7 @@ function ReportingHubInner() {
                   </select>
                 </div>
               )}
-              {activeTab !== 'explore' && activeTab !== 'data-quality' && activeTab !== 'portfolio' && (
+              {activeTab !== 'explore' && activeTab !== 'data-quality' && activeTab !== 'portfolio' && activeTab !== 'expenses' && (
                 <>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">From</label>
@@ -653,6 +705,109 @@ function ReportingHubInner() {
                     className="h-10 min-w-[180px] px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
                   />
                 </div>
+              )}
+              {activeTab === 'expenses' && (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Expense from</label>
+                    <input
+                      type="date"
+                      value={expenseDateFrom}
+                      onChange={(e) => setExpenseDateFrom(e.target.value)}
+                      className="h-10 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Expense to</label>
+                    <input
+                      type="date"
+                      value={expenseDateTo}
+                      onChange={(e) => setExpenseDateTo(e.target.value)}
+                      className="h-10 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Group</label>
+                    <select
+                      value={expenseGroupId}
+                      onChange={(e) => {
+                        setExpenseGroupId(e.target.value ? Number(e.target.value) : '');
+                        setExpenseCategoryId('');
+                      }}
+                      className="h-10 min-w-[160px] px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    >
+                      <option value="">All groups</option>
+                      {(expenseReport?.filterOptions?.groups || []).map((g: any) => (
+                        <option key={g.id} value={g.id}>{g.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Category</label>
+                    <select
+                      value={expenseCategoryId}
+                      onChange={(e) => setExpenseCategoryId(e.target.value ? Number(e.target.value) : '')}
+                      className="h-10 min-w-[180px] px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    >
+                      <option value="">All categories</option>
+                      {(expenseReport?.filterOptions?.categories || [])
+                        .filter((c: any) => !expenseGroupId || c.groupId === expenseGroupId)
+                        .map((c: any) => (
+                          <option key={c.id} value={c.id}>{c.groupName} / {c.name}</option>
+                        ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Submitted by</label>
+                    <select
+                      value={expenseUserId}
+                      onChange={(e) => setExpenseUserId(e.target.value ? Number(e.target.value) : '')}
+                      className="h-10 min-w-[160px] px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    >
+                      <option value="">All users</option>
+                      {(expenseReport?.submitters || []).map((u: any) => (
+                        <option key={u.id} value={u.id}>
+                          {u.firstName || u.username || `User #${u.id}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Reimbursement</label>
+                    <select
+                      value={expenseReimbFilter}
+                      onChange={(e) => setExpenseReimbFilter(e.target.value)}
+                      className="h-10 min-w-[160px] px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    >
+                      <option value="">All</option>
+                      <option value="needs_reimbursement">Needs reimbursement</option>
+                      <option value="reimbursed">Fully reimbursed</option>
+                      <option value="partial">Partial</option>
+                      <option value="pending">Pending</option>
+                    </select>
+                  </div>
+                  <label className="inline-flex items-center gap-2 h-10 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={expenseInternalOnly}
+                      onChange={(e) => setExpenseInternalOnly(e.target.checked)}
+                      className="rounded border-gray-300"
+                    />
+                    Internal only
+                  </label>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">View</label>
+                    <select
+                      value={expenseBreakdown}
+                      onChange={(e) => setExpenseBreakdown(e.target.value as typeof expenseBreakdown)}
+                      className="h-10 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    >
+                      <option value="rows">Expense lines</option>
+                      <option value="category">By category</option>
+                      <option value="group">By group</option>
+                    </select>
+                  </div>
+                </>
               )}
               {activeTab === 'delivery' && (
                 <div>
@@ -741,6 +896,46 @@ function ReportingHubInner() {
                     />
                   </div>
                 </section>
+                {overview.expenses && (
+                  <section>
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Expenses (approved)</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-3">
+                      <MetricCard
+                        label="Project expenses"
+                        value={formatMoney(overview.expenses.totals?.ProjectTotal)}
+                        onClick={() => drillTo('expenses')}
+                      />
+                      <MetricCard
+                        label="Internal expenses"
+                        value={formatMoney(overview.expenses.totals?.InternalTotal)}
+                        onClick={() => drillTo('expenses')}
+                      />
+                      <MetricCard
+                        label="Reimbursable cap"
+                        value={formatMoney(overview.expenses.totals?.ReimbursableCapTotal)}
+                        onClick={() => drillTo('expenses')}
+                      />
+                      <MetricCard
+                        label="Reimbursed"
+                        value={formatMoney(overview.expenses.totals?.ReimbursedTotal)}
+                        onClick={() => drillTo('expenses')}
+                      />
+                      <MetricCard
+                        label="Remaining to reimburse"
+                        value={formatMoney(overview.expenses.totals?.RemainingTotal)}
+                        onClick={() => drillTo('expenses')}
+                      />
+                      <MetricCard
+                        label="Fully reimbursed"
+                        value={String(overview.expenses.totals?.FullyReimbursedCount || 0)}
+                        onClick={() => drillTo('expenses')}
+                      />
+                    </div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Open the Expenses tab for breakdown by group, category, submitter, and line detail.
+                    </p>
+                  </section>
+                )}
                 <section>
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Effort</h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -1363,6 +1558,159 @@ function ReportingHubInner() {
                 </div>
               );
             })()}
+
+            {activeTab === 'expenses' && expenseReport && (
+              <div className="space-y-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Approved expenses
+                  {expenseDateFrom || expenseDateTo
+                    ? ` with expense date ${expenseDateFrom || '…'} – ${expenseDateTo || '…'}`
+                    : ' (all dates)'}
+                  . Use Expense from/to above to narrow by invoice date.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+                  <MetricCard label="Expenses" value={String(expenseReport.totals?.ExpenseCount || 0)} />
+                  <MetricCard label="Total amount" value={formatMoney(expenseReport.totals?.GrandTotal)} />
+                  <MetricCard label="Reimbursable cap" value={formatMoney(expenseReport.totals?.ReimbursableCapTotal)} />
+                  <MetricCard label="Reimbursed" value={formatMoney(expenseReport.totals?.ReimbursedTotal)} />
+                  <MetricCard label="Remaining" value={formatMoney(expenseReport.totals?.RemainingTotal)} />
+                  <MetricCard label="Fully reimbursed" value={String(expenseReport.totals?.FullyReimbursedCount || 0)} />
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 max-h-[65vh] overflow-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="sticky top-0 bg-gray-50 dark:bg-gray-900/40 text-gray-600 dark:text-gray-300">
+                      {expenseBreakdown === 'rows' ? (
+                        <tr>
+                          <th className="text-left px-3 py-2">Date</th>
+                          <th className="text-left px-3 py-2">Title</th>
+                          <th className="text-left px-3 py-2">Submitted by</th>
+                          <th className="text-left px-3 py-2">Group</th>
+                          <th className="text-left px-3 py-2">Category</th>
+                          <th className="text-left px-3 py-2">Project</th>
+                          <th className="text-right px-3 py-2">Amount</th>
+                          <th className="text-right px-3 py-2">Reimb. cap</th>
+                          <th className="text-right px-3 py-2">Reimbursed</th>
+                          <th className="text-right px-3 py-2">Remaining</th>
+                          <th className="text-left px-3 py-2">Reimb. status</th>
+                        </tr>
+                      ) : expenseBreakdown === 'category' ? (
+                        <tr>
+                          <th className="text-left px-3 py-2">Group</th>
+                          <th className="text-left px-3 py-2">Category</th>
+                          <th className="text-right px-3 py-2">Count</th>
+                          <th className="text-right px-3 py-2">Total</th>
+                          <th className="text-right px-3 py-2">Reimb. cap</th>
+                          <th className="text-right px-3 py-2">Reimbursed</th>
+                          <th className="text-right px-3 py-2">Remaining</th>
+                        </tr>
+                      ) : (
+                        <tr>
+                          <th className="text-left px-3 py-2">Group</th>
+                          <th className="text-right px-3 py-2">Total</th>
+                          <th className="text-right px-3 py-2">Reimb. cap</th>
+                          <th className="text-right px-3 py-2">Reimbursed</th>
+                          <th className="text-right px-3 py-2">Remaining</th>
+                        </tr>
+                      )}
+                    </thead>
+                    <tbody>
+                      {expenseBreakdown === 'rows' &&
+                        ((expenseReport.rows || []).length === 0 ? (
+                          <tr>
+                            <td colSpan={11} className="px-3 py-6 text-center text-gray-500 dark:text-gray-400">
+                              No approved expenses in this period for the selected filters.
+                            </td>
+                          </tr>
+                        ) : (
+                          expenseReport.rows.map((row: any) => {
+                            const submitter =
+                              [row.submittedByFirstName, row.submittedByLastName].filter(Boolean).join(' ') ||
+                              row.submittedByUsername ||
+                              `User #${row.submittedByUserId}`;
+                            const reimbLabel =
+                              row.reimbursementStatus === 'not_applicable'
+                                ? 'Not applicable'
+                                : row.reimbursementStatus === 'reimbursed'
+                                  ? 'Fully reimbursed'
+                                  : row.reimbursementStatus || '—';
+                            return (
+                              <tr key={row.id} className="border-t border-gray-100 dark:border-gray-700">
+                                <td className="px-3 py-2 text-gray-900 dark:text-white whitespace-nowrap">{row.expenseDate}</td>
+                                <td className="px-3 py-2 text-gray-900 dark:text-white">{row.title}</td>
+                                <td className="px-3 py-2">
+                                  <Link href={userHref(row.submittedByUserId)} className="text-blue-600 dark:text-blue-400 hover:underline">
+                                    {submitter}
+                                  </Link>
+                                </td>
+                                <td className="px-3 py-2 text-gray-900 dark:text-white">{row.groupName || '—'}</td>
+                                <td className="px-3 py-2 text-gray-900 dark:text-white">{row.categoryName || '—'}</td>
+                                <td className="px-3 py-2">
+                                  {row.projectId ? (
+                                    <Link href={projectHref(row.projectId)} className="text-blue-600 dark:text-blue-400 hover:underline">
+                                      {row.projectName || `Project #${row.projectId}`}
+                                    </Link>
+                                  ) : (
+                                    <span className="text-gray-500 dark:text-gray-400">Internal</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-right text-gray-900 dark:text-white">{formatMoney(row.amount)}</td>
+                                <td className="px-3 py-2 text-right text-gray-900 dark:text-white">{formatMoney(row.reimbursableCap)}</td>
+                                <td className="px-3 py-2 text-right text-gray-900 dark:text-white">{formatMoney(row.reimbursedAmount)}</td>
+                                <td className="px-3 py-2 text-right text-gray-900 dark:text-white">{formatMoney(row.remainingAmount)}</td>
+                                <td className="px-3 py-2 text-gray-900 dark:text-white">{reimbLabel}</td>
+                              </tr>
+                            );
+                          })
+                        ))}
+                      {expenseBreakdown === 'category' &&
+                        ((expenseReport.byCategory || []).length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="px-3 py-6 text-center text-gray-500 dark:text-gray-400">
+                              No data for the selected filters.
+                            </td>
+                          </tr>
+                        ) : (
+                          expenseReport.byCategory.map((row: any) => (
+                            <tr key={`${row.groupName}-${row.categoryName}`} className="border-t border-gray-100 dark:border-gray-700">
+                              <td className="px-3 py-2 text-gray-900 dark:text-white">{row.groupName}</td>
+                              <td className="px-3 py-2 text-gray-900 dark:text-white">{row.categoryName}</td>
+                              <td className="px-3 py-2 text-right text-gray-900 dark:text-white">{row.expenseCount}</td>
+                              <td className="px-3 py-2 text-right text-gray-900 dark:text-white">{formatMoney(row.totalAmount)}</td>
+                              <td className="px-3 py-2 text-right text-gray-900 dark:text-white">{formatMoney(row.reimbursableCap)}</td>
+                              <td className="px-3 py-2 text-right text-gray-900 dark:text-white">{formatMoney(row.reimbursed)}</td>
+                              <td className="px-3 py-2 text-right text-gray-900 dark:text-white">{formatMoney(row.remaining)}</td>
+                            </tr>
+                          ))
+                        ))}
+                      {expenseBreakdown === 'group' &&
+                        ((expenseReport.byGroup || []).length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="px-3 py-6 text-center text-gray-500 dark:text-gray-400">
+                              No data for the selected filters.
+                            </td>
+                          </tr>
+                        ) : (
+                          expenseReport.byGroup.map((row: any) => (
+                            <tr key={row.groupName} className="border-t border-gray-100 dark:border-gray-700">
+                              <td className="px-3 py-2 text-gray-900 dark:text-white">{row.groupName}</td>
+                              <td className="px-3 py-2 text-right text-gray-900 dark:text-white">{formatMoney(row.totalAmount)}</td>
+                              <td className="px-3 py-2 text-right text-gray-900 dark:text-white">{formatMoney(row.reimbursableCap)}</td>
+                              <td className="px-3 py-2 text-right text-gray-900 dark:text-white">{formatMoney(row.reimbursed)}</td>
+                              <td className="px-3 py-2 text-right text-gray-900 dark:text-white">{formatMoney(row.remaining)}</td>
+                            </tr>
+                          ))
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'expenses' && !expenseReport && (
+              <div className="text-sm text-gray-500 dark:text-gray-400 py-8 text-center">
+                {organizationId ? 'Loading expense report…' : 'Select an organization to view expenses.'}
+              </div>
+            )}
 
             {activeTab === 'extract' && (
               <div className="space-y-4">

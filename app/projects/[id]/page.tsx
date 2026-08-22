@@ -22,6 +22,7 @@ import TaskDetailModal from '@/components/TaskDetailModal';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
+import ProjectExpensesSection from '@/components/ProjectExpensesSection';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
@@ -5638,6 +5639,14 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
           </div>
         );
       })()}
+
+      {token && (
+        <ProjectExpensesSection
+          projectId={project.Id}
+          token={token}
+          canViewBudgetInfo={canViewBudgetInfo}
+        />
+      )}
 
       {/* ── Priority Breakdown + Attention ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

@@ -400,6 +400,9 @@ router.post('/', authenticateToken, validateRequest(createOrganizationSchema), a
 
     await seedOrgTaskFieldVisibility(orgId);
 
+    const { ensureExpenseCategoryDefaults } = await import('../utils/expenseCategoryDefaults');
+    await ensureExpenseCategoryDefaults(orgId);
+
     // Log organization creation
     await logActivity(
       userId ?? null,

@@ -1,0 +1,145 @@
+{
+  "TableName": "Expenses",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique expense identifier"
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id"
+    },
+    {
+      "FieldName": "ProjectId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Optional foreign key - reference to Projects.Id; null for internal/overhead expenses"
+    },
+    {
+      "FieldName": "TaskId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Optional foreign key - reference to Tasks.Id; requires ProjectId"
+    },
+    {
+      "FieldName": "CategoryId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to ExpenseCategoryValues.Id"
+    },
+    {
+      "FieldName": "SubmittedByUserId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Users.Id who submitted the expense"
+    },
+    {
+      "FieldName": "Title",
+      "DataType": "varchar(255)",
+      "NotNullable": true,
+      "Comment": "Short title of the expense"
+    },
+    {
+      "FieldName": "Description",
+      "DataType": "text",
+      "NotNullable": false,
+      "Comment": "Optional detailed description"
+    },
+    {
+      "FieldName": "Vendor",
+      "DataType": "varchar(255)",
+      "NotNullable": false,
+      "Comment": "Optional vendor or merchant name"
+    },
+    {
+      "FieldName": "Amount",
+      "DataType": "decimal(15,2)",
+      "NotNullable": true,
+      "Comment": "Expense amount in currency units (invoice/total; does not change when settling for less)"
+    },
+    {
+      "FieldName": "ReimbursableAmount",
+      "DataType": "decimal(15,2)",
+      "NotNullable": false,
+      "Comment": "Amount approved to reimburse; null means equal to Amount; may be less than Amount to settle remaining as not owed"
+    },
+    {
+      "FieldName": "ExpenseDate",
+      "DataType": "date",
+      "NotNullable": true,
+      "Comment": "Date when the expense was incurred"
+    },
+    {
+      "FieldName": "PaidBy",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "employee",
+      "Comment": "Who paid: employee or company"
+    },
+    {
+      "FieldName": "ApprovalStatus",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "pending",
+      "Comment": "Approval status: pending, approved, rejected"
+    },
+    {
+      "FieldName": "ApprovedBy",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - reference to Users.Id who approved or rejected"
+    },
+    {
+      "FieldName": "ApprovedAt",
+      "DataType": "timestamp",
+      "NotNullable": false,
+      "Comment": "Timestamp when approved or rejected"
+    },
+    {
+      "FieldName": "ReimbursedAmount",
+      "DataType": "decimal(15,2)",
+      "NotNullable": true,
+      "DefaultValue": "0.00",
+      "Comment": "Cumulative amount reimbursed to the employee"
+    },
+    {
+      "FieldName": "ReimbursementStatus",
+      "DataType": "varchar(20)",
+      "NotNullable": true,
+      "DefaultValue": "pending",
+      "Comment": "Reimbursement status: not_required, pending, partial, reimbursed, not_applicable (rejected approval)"
+    },
+    {
+      "FieldName": "ReimbursedBy",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Foreign key - Users.Id who recorded the last reimbursement payment"
+    },
+    {
+      "FieldName": "ReimbursedAt",
+      "DataType": "timestamp",
+      "NotNullable": false,
+      "Comment": "Timestamp of the last reimbursement payment"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the expense was created"
+    },
+    {
+      "FieldName": "UpdatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the expense was last updated"
+    }
+  ]
+}

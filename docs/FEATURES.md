@@ -22,6 +22,7 @@ Comprehensive documentation of all features available in the application. Use th
 10. [Call Records](#10-call-records)
 11. [Active Timers](#11-active-timers)
 12. [Memos](#12-memos)
+12b. [Expenses (Optional)](#12b-expenses-optional)
 13. [Dashboard & Analytics](#13-dashboard--analytics)
 14. [Portfolio](#14-portfolio)
 15. [Work Summary](#15-work-summary)
@@ -715,6 +716,45 @@ Memos are personal or shared notes with calendar integration.
 - **Tag filter**: Click a tag to activate; click again to remove; multiple tags can be active (AND logic)
 - "Clear All Filters" button appears when any filter is active
 - "Show All Memos" shortcut shown when date filter is active and returns no results
+
+---
+
+## 12b. Expenses (Optional)
+
+Optional module for project and internal (overhead) expenses with invoice attachments, approval, and partial reimbursement.
+
+### Feature flags (Administration → Features & AI)
+- `expensesEnabled` — default **off**; when disabled, APIs return 403 and the navbar link is hidden
+- `autoApproveExpenses` — when on, new expenses are created as approved
+
+### Permissions
+- `CanViewExpenses` / `CanCreateExpenses` / `CanManageExpenses` / `CanApproveExpenses`
+- Team leaders can approve subordinates’ expenses (same pattern as time entries)
+- Customer users never see the module
+
+### Data model
+- **ExpenseCategoryGroups** / **ExpenseCategoryValues** — per organization; default catalogue seeded on org create and lazy backfill; optional **MaxReimbursementAmount** per category caps reimbursable total
+- **Expenses** — org-scoped; optional `ProjectId` / `TaskId` (null project = internal); `PaidBy` employee|company
+- **ExpenseAttachments** — Base64 images/PDF invoices
+- **ExpenseReimbursementPayments** — payment history for partial reimbursements
+
+### Workflow
+1. Submit expense (category, amount, date, optional project/task, invoice files)
+2. Approve / reject (`Approvals & Expenses` → Expenses tab only; not on `/expenses`); rejected expenses set reimbursement to **not applicable**
+3. Admins can **revert rejected** expenses back to pending for re-review
+4. Manager/admin sets **amount to reimburse** (may be less than expense total) and records payments; can mark fully settled after a partial payment
+5. After any reimbursement payment, submitters may only update **description** and **attachments**; admins can correct other fields from Approvals
+6. Delete is allowed while `ApprovalStatus` is `pending`; **admins** may delete anytime from Approvals
+
+### Surfaces
+- `/expenses` list and form (create/edit while allowed; status is view-only)
+- Organization detail → Expense Categories (groups + categories)
+- Project overview → expenses section + approved total
+- Approvals & Expenses → Expenses tab (approve/reject, reimbursement, admin corrections)
+- Dashboard pending-approval badge
+- Reporting Hub organization overview → approved expense totals (project vs internal, by group)
+
+Expense amounts are **not** mixed into hourly `CostSpent` / budget hours calculations.
 
 ---
 

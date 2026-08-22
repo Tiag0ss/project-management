@@ -54,6 +54,8 @@ import installRoutes from './routes/install';
 import savedReportsRoutes from './routes/savedReports';
 import dynamicReportsRoutes from './routes/dynamicReports';
 import memosRoutes from './routes/memos';
+import expensesRoutes from './routes/expenses';
+import expenseAttachmentsRoutes from './routes/expenseAttachments';
 import jiraIntegrationsRoutes from './routes/jiraIntegrations';
 import githubIntegrationsRoutes from './routes/githubIntegrations';
 import giteaIntegrationsRoutes from './routes/giteaIntegrations';
@@ -267,6 +269,8 @@ app.prepare().then(async () => {
   server.use('/api/saved-reports', savedReportsRoutes);
   server.use('/api/dynamic-reports', dynamicReportsRoutes);
   server.use('/api/memos', memosRoutes);
+  server.use('/api/expenses', expensesRoutes);
+  server.use('/api/expense-attachments', expenseAttachmentsRoutes);
   server.use('/api/jira-integrations', jiraIntegrationsRoutes);
   server.use('/api/github-integrations', githubIntegrationsRoutes);
   server.use('/api/gitea-integrations', giteaIntegrationsRoutes);

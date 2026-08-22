@@ -54,6 +54,33 @@ export const reportingApi = {
     if (params.projectId) qs.set('projectId', String(params.projectId));
     return reportingFetch<{ success: boolean; data: any }>(`/api/reporting/organization-overview?${qs}`, token);
   },
+  getExpensesReport(
+    token: string,
+    params: {
+      organizationId: number;
+      from?: string | null;
+      to?: string | null;
+      projectId?: number | null;
+      groupId?: number | null;
+      categoryId?: number | null;
+      userId?: number | null;
+      reimbursementStatus?: string | null;
+      internalOnly?: boolean;
+    }
+  ) {
+    const qs = new URLSearchParams({
+      organizationId: String(params.organizationId),
+    });
+    if (params.from) qs.set('from', params.from);
+    if (params.to) qs.set('to', params.to);
+    if (params.projectId) qs.set('projectId', String(params.projectId));
+    if (params.groupId) qs.set('groupId', String(params.groupId));
+    if (params.categoryId) qs.set('categoryId', String(params.categoryId));
+    if (params.userId) qs.set('userId', String(params.userId));
+    if (params.reimbursementStatus) qs.set('reimbursementStatus', params.reimbursementStatus);
+    if (params.internalOnly) qs.set('internalOnly', 'true');
+    return reportingFetch<{ success: boolean; data: any }>(`/api/reporting/expenses?${qs}`, token);
+  },
   getPortfolio(token: string, organizationId: number) {
     return reportingFetch<{ success: boolean; data: any }>(
       `/api/reporting/portfolio?organizationId=${organizationId}`,

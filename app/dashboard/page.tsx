@@ -1156,8 +1156,10 @@ function DashboardContent() {
   const [pendingApprovals, setPendingApprovals] = useState({
     timeEntries: 0,
     vacations: 0,
+    expenses: 0,
     canApproveTime: false,
     canApproveVacations: false,
+    canApproveExpenses: false,
   });
   const [kpiWidgets, setKpiWidgets] = useState<DashboardKpiWidget[]>([]);
   const [kpiValues, setKpiValues] = useState<Record<string, DashboardKpiMetricValue>>({});
@@ -1193,7 +1195,8 @@ function DashboardContent() {
 
   const showPendingApprovalAlert =
     (pendingApprovals.canApproveTime && pendingApprovals.timeEntries > 0) ||
-    (pendingApprovals.canApproveVacations && pendingApprovals.vacations > 0);
+    (pendingApprovals.canApproveVacations && pendingApprovals.vacations > 0) ||
+    (pendingApprovals.canApproveExpenses && pendingApprovals.expenses > 0);
 
   const selectableKpiTemplates = useMemo(() => {
     const templates = internalTicketsEnabled
@@ -2252,28 +2255,40 @@ function DashboardContent() {
       setPendingApprovals({
         timeEntries: 0,
         vacations: 0,
+        expenses: 0,
         canApproveTime: false,
         canApproveVacations: false,
+        canApproveExpenses: false,
       });
       return;
     }
 
     try {
-      const [timeScopeRes, vacationScopeRes] = await Promise.all([
+      const [timeScopeRes, vacationScopeRes, flagsRes, expenseScopeRes] = await Promise.all([
         fetch(`${getApiUrl()}/api/time-entries/approval-scope`, {
           headers: { 'Authorization': `Bearer ${token}` },
         }),
         fetch(`${getApiUrl()}/api/vacations/approval-scope`, {
           headers: { 'Authorization': `Bearer ${token}` },
         }),
+        fetch(`${getApiUrl()}/api/system-settings/user-flags`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }),
+        fetch(`${getApiUrl()}/api/expenses/approval-scope`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }),
       ]);
 
       const canApproveTime = timeScopeRes.ok ? !!(await timeScopeRes.json())?.canApprove : false;
       const canApproveVacations = vacationScopeRes.ok ? !!(await vacationScopeRes.json())?.canApprove : false;
+      const flags = flagsRes.ok ? await flagsRes.json() : {};
+      const expensesModuleEnabled = flags.expensesEnabled === true;
+      const expenseScope = expenseScopeRes.ok ? await expenseScopeRes.json() : {};
+      const canApproveExpenses = expensesModuleEnabled && (!!expenseScope?.canApprove || !!user.isAdmin);
       const effectiveCanApproveTime = canApproveTime || !!user.isAdmin;
       const effectiveCanApproveVacations = canApproveVacations || !!user.isAdmin;
 
-      const [timeCount, vacationCount] = await Promise.all([
+      const [timeCount, vacationCount, expenseCount] = await Promise.all([
         effectiveCanApproveTime
           ? fetch(`${getApiUrl()}/api/time-entries/pending-approval/team?status=pending`, {
               headers: { 'Authorization': `Bearer ${token}` },
@@ -2296,21 +2311,36 @@ function DashboardContent() {
               })
               .catch(() => 0)
           : Promise.resolve(0),
+        canApproveExpenses
+          ? fetch(`${getApiUrl()}/api/expenses?approvalStatus=pending`, {
+              headers: { 'Authorization': `Bearer ${token}` },
+            })
+              .then(async (response) => {
+                if (!response.ok) return 0;
+                const data = await response.json();
+                return Array.isArray(data.data) ? data.data.length : 0;
+              })
+              .catch(() => 0)
+          : Promise.resolve(0),
       ]);
 
       setPendingApprovals({
         timeEntries: timeCount,
         vacations: vacationCount,
+        expenses: expenseCount,
         canApproveTime: effectiveCanApproveTime,
         canApproveVacations: effectiveCanApproveVacations,
+        canApproveExpenses,
       });
     } catch (err) {
       console.error('Failed to load pending approvals:', err);
       setPendingApprovals({
         timeEntries: 0,
         vacations: 0,
+        expenses: 0,
         canApproveTime: false,
         canApproveVacations: false,
+        canApproveExpenses: false,
       });
     }
   };
@@ -2815,6 +2845,15 @@ function DashboardContent() {
                               title="Open vacations approval"
                             >
                               {pendingApprovals.vacations} vacation{pendingApprovals.vacations === 1 ? '' : 's'}
+                            </button>
+                          )}
+                          {pendingApprovals.expenses > 0 && pendingApprovals.canApproveExpenses && (
+                            <button
+                              onClick={() => router.push('/approvals?tab=expenses')}
+                              className="px-2.5 py-1 rounded bg-white/20 hover:bg-white/30 text-xs font-medium transition-colors"
+                              title="Open expenses approval"
+                            >
+                              {pendingApprovals.expenses} expense{pendingApprovals.expenses === 1 ? '' : 's'}
                             </button>
                           )}
                         </div>

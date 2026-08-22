@@ -125,8 +125,8 @@ router.get('/user-flags', authenticateToken, async (req: AuthRequest, res: Respo
       ENTITY_TTL_SECONDS,
       async () => {
         const [settings] = await pool.execute<RowDataPacket[]>(
-          'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?, ?)',
-          ['autoApproveTimeEntries', 'autoApproveVacations', 'autoApproveOutOfOffice', 'internalTicketsEnabled', 'memosEnabled']
+          'SELECT SettingKey, SettingValue FROM SystemSettings WHERE SettingKey IN (?, ?, ?, ?, ?, ?, ?)',
+          ['autoApproveTimeEntries', 'autoApproveVacations', 'autoApproveOutOfOffice', 'internalTicketsEnabled', 'memosEnabled', 'expensesEnabled', 'autoApproveExpenses']
         );
 
         const settingsObj: Record<string, string> = {};
@@ -140,6 +140,8 @@ router.get('/user-flags', authenticateToken, async (req: AuthRequest, res: Respo
           autoApproveOutOfOffice: parseBooleanSetting(settingsObj.autoApproveOutOfOffice),
           internalTicketsEnabled: settingsObj.internalTicketsEnabled !== 'false',
           memosEnabled: settingsObj.memosEnabled !== 'false',
+          expensesEnabled: settingsObj.expensesEnabled === 'true',
+          autoApproveExpenses: parseBooleanSetting(settingsObj.autoApproveExpenses),
         };
       }
     );

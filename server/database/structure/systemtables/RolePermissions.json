@@ -240,6 +240,34 @@
       "Comment": "Permission to create, edit and delete application releases/versions"
     },
     {
+      "FieldName": "CanViewExpenses",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1",
+      "Comment": "Permission to view expenses"
+    },
+    {
+      "FieldName": "CanCreateExpenses",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "1",
+      "Comment": "Permission to create and submit expenses"
+    },
+    {
+      "FieldName": "CanManageExpenses",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to edit/delete others expenses and manage expense categories"
+    },
+    {
+      "FieldName": "CanApproveExpenses",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Permission to approve/reject expenses and record reimbursements"
+    },
+    {
       "FieldName": "CreatedAt",
       "DataType": "timestamp",
       "NotNullable": true,

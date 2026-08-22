@@ -37,6 +37,10 @@ export interface RolePermission {
   CanCreateApplications: boolean;
   CanDeleteApplications: boolean;
   CanManageReleases: boolean;
+  CanViewExpenses: boolean;
+  CanCreateExpenses: boolean;
+  CanManageExpenses: boolean;
+  CanApproveExpenses: boolean;
   CreatedAt?: string;
   UpdatedAt?: string;
 }
@@ -74,6 +78,10 @@ export interface UserPermissions {
   canCreateApplications: boolean;
   canDeleteApplications: boolean;
   canManageReleases: boolean;
+  canViewExpenses: boolean;
+  canCreateExpenses: boolean;
+  canManageExpenses: boolean;
+  canApproveExpenses: boolean;
 }
 
 export const getRolePermissions = async (token: string): Promise<RolePermission[]> => {

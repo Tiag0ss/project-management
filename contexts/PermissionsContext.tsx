@@ -59,6 +59,10 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
         canCreateApplications: true,
         canDeleteApplications: true,
         canManageReleases: true,
+        canViewExpenses: true,
+        canCreateExpenses: true,
+        canManageExpenses: true,
+        canApproveExpenses: true,
       });
       setIsLoading(false);
       return;
@@ -104,6 +108,10 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
         canCreateApplications: false,
         canDeleteApplications: false,
         canManageReleases: false,
+        canViewExpenses: false,
+        canCreateExpenses: false,
+        canManageExpenses: false,
+        canApproveExpenses: false,
       });
     } finally {
       setIsLoading(false);

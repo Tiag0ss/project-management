@@ -167,6 +167,45 @@ export const createTimeEntrySchema = z.object({
   customFields: optionalCustomFields,
 }).passthrough();
 
+export const createExpenseSchema = z.object({
+  organizationId: z.coerce.number().int().positive(),
+  categoryId: z.coerce.number().int().positive(),
+  title: z.string().min(1).max(255),
+  amount: z.coerce.number().positive(),
+  expenseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
+  projectId: z.coerce.number().int().positive().optional().nullable(),
+  taskId: z.coerce.number().int().positive().optional().nullable(),
+  description: z.string().max(5000).optional().nullable(),
+  vendor: z.string().max(255).optional().nullable(),
+  paidBy: z.enum(['employee', 'company']).optional().default('employee'),
+}).passthrough();
+
+export const updateExpenseSchema = z.object({
+  categoryId: z.coerce.number().int().positive().optional(),
+  title: z.string().min(1).max(255).optional(),
+  amount: z.coerce.number().positive().optional(),
+  reimbursableAmount: z.coerce.number().min(0).optional().nullable(),
+  expenseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)').optional(),
+  projectId: z.coerce.number().int().positive().optional().nullable(),
+  taskId: z.coerce.number().int().positive().optional().nullable(),
+  description: z.string().max(5000).optional().nullable(),
+  vendor: z.string().max(255).optional().nullable(),
+  paidBy: z.enum(['employee', 'company']).optional(),
+}).passthrough();
+
+export const expenseApprovalSchema = z.object({
+  status: z.enum(['approved', 'rejected', 'pending']),
+}).passthrough();
+
+export const expenseReimbursementSchema = z.object({
+  amount: z.coerce.number().positive(),
+  notes: z.string().max(2000).optional().nullable(),
+  /** When set, updates the reimbursable cap before applying this payment (total Amount unchanged). */
+  reimbursableAmount: z.coerce.number().min(0).optional().nullable(),
+  /** If true, after this payment mark as fully reimbursed even if below the previous cap (sets reimbursable to new reimbursed total). */
+  settleRemaining: z.boolean().optional(),
+}).passthrough();
+
 export const formatZodError = (error: z.ZodError) => {
   const errors = error.issues.map((e: z.ZodIssue) => ({
     field: e.path.join('.'),

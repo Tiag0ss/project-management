@@ -41,6 +41,10 @@ const emptyUserPermissions = {
   canCreateApplications: false,
   canDeleteApplications: false,
   canManageReleases: false,
+  canViewExpenses: false,
+  canCreateExpenses: false,
+  canManageExpenses: false,
+  canApproveExpenses: false,
 };
 
 const adminUserPermissions = {
@@ -75,6 +79,10 @@ const adminUserPermissions = {
   canCreateApplications: true,
   canDeleteApplications: true,
   canManageReleases: true,
+  canViewExpenses: true,
+  canCreateExpenses: true,
+  canManageExpenses: true,
+  canApproveExpenses: true,
 };
 
 const fetchUserPermissions = async (userId: number) => {
@@ -143,6 +151,10 @@ const fetchUserPermissions = async (userId: number) => {
     if (perm.CanCreateApplications) combined.canCreateApplications = true;
     if (perm.CanDeleteApplications) combined.canDeleteApplications = true;
     if (perm.CanManageReleases) combined.canManageReleases = true;
+    if (perm.CanViewExpenses) combined.canViewExpenses = true;
+    if (perm.CanCreateExpenses) combined.canCreateExpenses = true;
+    if (perm.CanManageExpenses) combined.canManageExpenses = true;
+    if (perm.CanApproveExpenses) combined.canApproveExpenses = true;
   });
 
   const [orgGroupPerms] = await pool.execute<RowDataPacket[]>(
@@ -175,6 +187,10 @@ const fetchUserPermissions = async (userId: number) => {
     if (perm.CanCreateApplications) combined.canCreateApplications = true;
     if (perm.CanDeleteApplications) combined.canDeleteApplications = true;
     if (perm.CanManageReleases) combined.canManageReleases = true;
+    if (perm.CanViewExpenses) combined.canViewExpenses = true;
+    if (perm.CanCreateExpenses) combined.canCreateExpenses = true;
+    if (perm.CanManageExpenses) combined.canManageExpenses = true;
+    if (perm.CanApproveExpenses) combined.canApproveExpenses = true;
   });
 
   return combined;
@@ -396,6 +412,10 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
     const canCreateApplications = getValue('CanCreateApplications', 'canCreateApplications');
     const canDeleteApplications = getValue('CanDeleteApplications', 'canDeleteApplications');
     const canManageReleases = getValue('CanManageReleases', 'canManageReleases');
+    const canViewExpenses = getValue('CanViewExpenses', 'canViewExpenses');
+    const canCreateExpenses = getValue('CanCreateExpenses', 'canCreateExpenses');
+    const canManageExpenses = getValue('CanManageExpenses', 'canManageExpenses');
+    const canApproveExpenses = getValue('CanApproveExpenses', 'canApproveExpenses');
     const canViewCustomers = getValue('CanViewCustomers', 'canViewCustomers');
     const canManageCustomers = getValue('CanManageCustomers', 'canManageCustomers');
     const canCreateCustomers = getValue('CanCreateCustomers', 'canCreateCustomers');
@@ -443,7 +463,11 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
           CanManageApplications = ?,
           CanCreateApplications = ?,
           CanDeleteApplications = ?,
-          CanManageReleases = ?
+          CanManageReleases = ?,
+          CanViewExpenses = ?,
+          CanCreateExpenses = ?,
+          CanManageExpenses = ?,
+          CanApproveExpenses = ?
         WHERE RoleName = ?`,
         [
           canViewDashboard ? 1 : 0,
@@ -478,6 +502,10 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
           canCreateApplications ? 1 : 0,
           canDeleteApplications ? 1 : 0,
           canManageReleases ? 1 : 0,
+          canViewExpenses ? 1 : 0,
+          canCreateExpenses ? 1 : 0,
+          canManageExpenses ? 1 : 0,
+          canApproveExpenses ? 1 : 0,
           roleName
         ]
       );
@@ -517,8 +545,12 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
           CanManageApplications,
           CanCreateApplications,
           CanDeleteApplications,
-          CanManageReleases
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          CanManageReleases,
+          CanViewExpenses,
+          CanCreateExpenses,
+          CanManageExpenses,
+          CanApproveExpenses
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           roleName,
           canViewDashboard ? 1 : 0,
@@ -552,7 +584,11 @@ router.put('/:roleName', authenticateToken, async (req: AuthRequest, res: Respon
           canManageApplications ? 1 : 0,
           canCreateApplications ? 1 : 0,
           canDeleteApplications ? 1 : 0,
-          canManageReleases ? 1 : 0
+          canManageReleases ? 1 : 0,
+          canViewExpenses ? 1 : 0,
+          canCreateExpenses ? 1 : 0,
+          canManageExpenses ? 1 : 0,
+          canApproveExpenses ? 1 : 0
         ]
       );
     }

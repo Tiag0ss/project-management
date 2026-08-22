@@ -1,0 +1,52 @@
+{
+  "TableName": "ExpenseCategoryGroups",
+  "PrimaryKeyFields": "Id",
+  "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique expense category group identifier"
+    },
+    {
+      "FieldName": "OrganizationId",
+      "DataType": "int",
+      "NotNullable": true,
+      "Comment": "Foreign key - reference to Organizations.Id"
+    },
+    {
+      "FieldName": "GroupName",
+      "DataType": "varchar(100)",
+      "NotNullable": true,
+      "Comment": "Display name of the expense category group"
+    },
+    {
+      "FieldName": "ColorCode",
+      "DataType": "varchar(7)",
+      "NotNullable": false,
+      "Comment": "Color code in hex format (e.g., #FF5733) for UI display"
+    },
+    {
+      "FieldName": "SortOrder",
+      "DataType": "int",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Order for displaying groups in lists"
+    },
+    {
+      "FieldName": "IsDefault",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Whether this is the default group for new categories"
+    },
+    {
+      "FieldName": "CreatedAt",
+      "DataType": "timestamp",
+      "NotNullable": true,
+      "DefaultValue": "CURRENT_TIMESTAMP",
+      "Comment": "Date and time when the group was created"
+    }
+  ]
+}

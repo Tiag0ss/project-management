@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import RichTextEditor from '@/components/RichTextEditor';
 import { useFormatHours } from '@/lib/useFormatHours';
 import ApprovalStatusBadge from '@/components/ApprovalStatusBadge';
+import ExpenseApprovalsPanel from '@/components/ExpenseApprovalsPanel';
 
 interface PendingEntry {
   Id: number;
@@ -104,10 +105,12 @@ export default function ApprovalsPage() {
   const router = useRouter();
   const [initialTabFromQuery, setInitialTabFromQuery] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'time' | 'vacations' | 'outOfOffice'>('time');
+  const [activeTab, setActiveTab] = useState<'time' | 'vacations' | 'outOfOffice' | 'expenses'>('time');
   const [canApproveTime, setCanApproveTime] = useState(false);
   const [canApproveVacations, setCanApproveVacations] = useState(false);
   const [canApproveOutOfOffice, setCanApproveOutOfOffice] = useState(false);
+  const [canApproveExpenses, setCanApproveExpenses] = useState(false);
+  const [expensesEnabled, setExpensesEnabled] = useState(false);
   const [scopeLoaded, setScopeLoaded] = useState(false);
 
   const [entries, setEntries] = useState<PendingEntry[]>([]);
@@ -165,7 +168,7 @@ export default function ApprovalsPage() {
     if (!token || !user) return;
     const loadScopes = async () => {
       try {
-        const [timeScopeRes, vacationScopeRes, outOfOfficeScopeRes] = await Promise.all([
+        const [timeScopeRes, vacationScopeRes, outOfOfficeScopeRes, flagsRes, expenseScopeRes] = await Promise.all([
           fetch(`${getApiUrl()}/api/time-entries/approval-scope`, {
             headers: { 'Authorization': `Bearer ${token}` },
           }),
@@ -175,19 +178,36 @@ export default function ApprovalsPage() {
           fetch(`${getApiUrl()}/api/out-of-office/approval-scope`, {
             headers: { 'Authorization': `Bearer ${token}` },
           }),
+          fetch(`${getApiUrl()}/api/system-settings/user-flags`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+          }),
+          fetch(`${getApiUrl()}/api/expenses/approval-scope`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+          }),
         ]);
 
         const canTime = timeScopeRes.ok ? !!(await timeScopeRes.json())?.canApprove : false;
         const canVacation = vacationScopeRes.ok ? !!(await vacationScopeRes.json())?.canApprove : false;
         const canOutOfOffice = outOfOfficeScopeRes.ok ? !!(await outOfOfficeScopeRes.json())?.canApprove : false;
+        const flags = flagsRes.ok ? await flagsRes.json() : {};
+        const expenseEnabled = flags.expensesEnabled === true;
+        setExpensesEnabled(expenseEnabled);
+        let canExpense = false;
+        if (expenseEnabled && expenseScopeRes.ok) {
+          const expenseScope = await expenseScopeRes.json();
+          canExpense = !!expenseScope?.canApprove;
+        }
 
         setCanApproveTime(canTime || !!user.isAdmin);
         setCanApproveVacations(canVacation || !!user.isAdmin);
         setCanApproveOutOfOffice(canOutOfOffice || !!user.isAdmin);
+        setCanApproveExpenses((canExpense || !!user.isAdmin) && expenseEnabled);
       } catch {
         setCanApproveTime(!!user.isAdmin);
         setCanApproveVacations(!!user.isAdmin);
         setCanApproveOutOfOffice(!!user.isAdmin);
+        setCanApproveExpenses(false);
+        setExpensesEnabled(false);
       } finally {
         setScopeLoaded(true);
       }
@@ -205,6 +225,10 @@ export default function ApprovalsPage() {
   useEffect(() => {
     if (!scopeLoaded) return;
     const tab = initialTabFromQuery;
+    if (tab === 'expenses' && canApproveExpenses) {
+      setActiveTab('expenses');
+      return;
+    }
     if (tab === 'vacations' && canApproveVacations) {
       setActiveTab('vacations');
       return;
@@ -225,8 +249,12 @@ export default function ApprovalsPage() {
       setActiveTab('outOfOffice');
       return;
     }
+    if (!canApproveTime && !canApproveVacations && !canApproveOutOfOffice && canApproveExpenses) {
+      setActiveTab('expenses');
+      return;
+    }
     setActiveTab('time');
-  }, [initialTabFromQuery, canApproveTime, canApproveVacations, canApproveOutOfOffice, scopeLoaded]);
+  }, [initialTabFromQuery, canApproveTime, canApproveVacations, canApproveOutOfOffice, canApproveExpenses, scopeLoaded]);
 
   const loadEntries = useCallback(async () => {
     if (!token || !canApproveTime) {
@@ -650,7 +678,9 @@ export default function ApprovalsPage() {
 
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Approvals</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            {expensesEnabled ? 'Approvals & Expenses' : 'Approvals'}
+          </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Review and manage team approvals in one place.
           </p>
@@ -693,15 +723,31 @@ export default function ApprovalsPage() {
           >
             Out Of Office
           </button>
+          {expensesEnabled && (
+            <button
+              onClick={() => {
+                setActiveTab('expenses');
+                router.replace('/approvals?tab=expenses');
+              }}
+              disabled={!canApproveExpenses}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'expenses'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
+            >
+              Expenses
+            </button>
+          )}
         </div>
 
-        {!canApproveTime && !canApproveVacations && !canApproveOutOfOffice && (
+        {!canApproveTime && !canApproveVacations && !canApproveOutOfOffice && !canApproveExpenses && (
           <div className="mb-6 p-4 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 text-yellow-700 dark:text-yellow-300 rounded-lg">
-            You don't currently have approval scope for time entries, vacations, or out-of-office.
+            You don't currently have approval scope for time entries, vacations, out-of-office, or expenses.
           </div>
         )}
 
-        {activeTab === 'time' ? (
+        {activeTab === 'expenses' && token ? (
+          <ExpenseApprovalsPanel token={token} />
+        ) : activeTab === 'time' ? (
           <>
 
         {error && (

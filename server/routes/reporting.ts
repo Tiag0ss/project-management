@@ -13,14 +13,22 @@ import {
   previousPeriod,
   userBelongsToOrganization,
 } from '../utils/reportingAccess';
+import { isExpensesModuleEnabled, normalizeExpenseReportPeriod, queryExpenseReporting } from '../queries/expenseReporting';
 
 const router = Router();
+
+const formatLocalDate = (date: Date): string => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
 
 const defaultDateRange = (): { from: string; to: string } => {
   const to = new Date();
   const from = new Date(to);
   from.setDate(from.getDate() - 29);
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+  return { from: formatLocalDate(from), to: formatLocalDate(to) };
 };
 
 async function requireHubAccess(req: AuthRequest, res: Response) {
@@ -534,11 +542,79 @@ router.get('/organization-overview', authenticateToken, async (req: AuthRequest,
           ragTrend: Array.from(trendByDate.values()),
         },
         healthTrend: snapshots,
+        expenses: await (async () => {
+          try {
+            if (!(await isExpensesModuleEnabled())) {
+              return null;
+            }
+            const report = await queryExpenseReporting({
+              organizationId,
+              projectId,
+              approvalStatus: 'approved',
+            });
+            return { totals: report.totals };
+          } catch (error) {
+            logger.error('Organization expense totals failed', {
+              error: error instanceof Error ? error.message : error,
+            });
+            return null;
+          }
+        })(),
       },
     });
   } catch (error) {
     logger.error('Organization overview error:', error);
     return res.status(500).json({ success: false, message: 'Failed to load organization overview' });
+  }
+});
+
+router.get('/expenses', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const access = await requireManagerAccess(req, res);
+    if (!access) return;
+
+    if (!(await isExpensesModuleEnabled())) {
+      return res.status(403).json({ success: false, message: 'Expenses module is disabled' });
+    }
+
+    const organizationId = Number(req.query.organizationId || 0);
+    if (!organizationId) {
+      return res.status(400).json({ success: false, message: 'organizationId is required' });
+    }
+    if (!(await userBelongsToOrganization(access.userId, organizationId)) && !access.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Not a member of this organization' });
+    }
+
+    const parsedFrom = parseDateOnly(req.query.from);
+    const parsedTo = parseDateOnly(req.query.to);
+    const period = normalizeExpenseReportPeriod(parsedFrom, parsedTo);
+    const projectId = Number(req.query.projectId || 0) || null;
+    const groupId = Number(req.query.groupId || 0) || null;
+    const categoryId = Number(req.query.categoryId || 0) || null;
+    const userId = Number(req.query.userId || 0) || null;
+    const reimbursementStatus = req.query.reimbursementStatus
+      ? String(req.query.reimbursementStatus)
+      : null;
+    const internalOnly =
+      req.query.internalOnly === 'true' || req.query.internalOnly === '1';
+
+    const data = await queryExpenseReporting({
+      organizationId,
+      from: period.from,
+      to: period.to,
+      projectId,
+      groupId,
+      categoryId,
+      userId,
+      reimbursementStatus,
+      internalOnly,
+      approvalStatus: 'approved',
+    });
+
+    res.json({ success: true, data });
+  } catch (error) {
+    logger.error('Expense reporting error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load expense report' });
   }
 });
 

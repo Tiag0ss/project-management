@@ -70,6 +70,15 @@ const PERMISSION_CATEGORIES = [
       'CanCreateTaskFromTicket',
     ]
   },
+  {
+    name: 'Expense Management',
+    permissions: [
+      'CanViewExpenses',
+      'CanCreateExpenses',
+      'CanManageExpenses',
+      'CanApproveExpenses',
+    ]
+  },
 ];
 
 const PERMISSION_LABELS: { [key: string]: string } = {
@@ -100,6 +109,10 @@ const PERMISSION_LABELS: { [key: string]: string } = {
   CanCreateTaskFromTicket: 'Create Task from Ticket',
   CanPlanTasks: 'Plan Tasks',
   CanViewOthersPlanning: "View Others' Planning",
+  CanViewExpenses: 'View Expenses',
+  CanCreateExpenses: 'Create Expenses',
+  CanManageExpenses: 'Manage Expenses',
+  CanApproveExpenses: 'Approve Expenses',
 };
 
 export default function RolePermissionsManagement() {
@@ -224,6 +237,10 @@ export default function RolePermissionsManagement() {
         CanCreateTaskFromTicket: currentPerms.CanCreateTaskFromTicket,
         CanPlanTasks: currentPerms.CanPlanTasks,
         CanViewOthersPlanning: currentPerms.CanViewOthersPlanning,
+        CanViewExpenses: currentPerms.CanViewExpenses,
+        CanCreateExpenses: currentPerms.CanCreateExpenses,
+        CanManageExpenses: currentPerms.CanManageExpenses,
+        CanApproveExpenses: currentPerms.CanApproveExpenses,
       });
 
       await loadPermissions();
