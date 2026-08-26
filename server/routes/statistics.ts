@@ -5,6 +5,7 @@ import { RowDataPacket } from '../config/database';
 import { cachedJson, AGGREGATE_TTL_SECONDS } from '../utils/cachedJson';
 import { cacheKeys } from '../services/cacheKeys';
 import logger from '../utils/logger';
+import { queryTaskAnalytics } from '../queries/taskAnalytics';
 
 const router = Router();
 
@@ -390,7 +391,8 @@ router.get('/global', authenticateToken, async (req: AuthRequest, res: Response)
               id: u.Id,
               name: u.FirstName && u.LastName ? `${u.FirstName} ${u.LastName}` : u.Username,
               hours: Number(u.hoursThisMonth)
-            }))
+            })),
+            taskAnalytics: await queryTaskAnalytics({}),
           }
         };
       }

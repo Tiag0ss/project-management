@@ -3,7 +3,7 @@
 import { getApiUrl } from '@/lib/api/config';
 import { parseCsv } from '@/lib/csv';
 
-import React, { useState, useEffect, useRef, use, Suspense } from 'react';
+import React, { useState, useEffect, useRef, use, Suspense, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -23,6 +23,8 @@ import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import ProjectExpensesSection from '@/components/ProjectExpensesSection';
+import { TaskAnalyticsCharts } from '@/components/reporting/TaskAnalyticsCharts';
+import { buildTaskAnalytics } from '@/lib/reporting/taskAnalytics';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
@@ -2788,7 +2790,15 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
           )}
 
           {activeTab === 'overview' && (
-            <OverviewTab project={project} tasks={tasks} tickets={tickets} internalTicketsEnabled={internalTicketsEnabled} canViewBudgetInfo={permissions?.canViewBudgetInfo || false} token={token || ''} />
+            <OverviewTab
+              project={project}
+              tasks={tasks}
+              tickets={tickets}
+              internalTicketsEnabled={internalTicketsEnabled}
+              canViewBudgetInfo={permissions?.canViewBudgetInfo || false}
+              token={token || ''}
+              onViewTasks={() => setActiveTab('tasks')}
+            />
           )}
 
           {activeTab === 'tasks' && (
@@ -5224,9 +5234,26 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 }
 
 // Overview Tab Component
-function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewBudgetInfo, token }: { project: Project; tasks: Task[]; tickets: any[]; internalTicketsEnabled: boolean; canViewBudgetInfo: boolean; token: string }) {
+function OverviewTab({
+  project,
+  tasks,
+  tickets,
+  internalTicketsEnabled,
+  canViewBudgetInfo,
+  token,
+  onViewTasks,
+}: {
+  project: Project;
+  tasks: Task[];
+  tickets: any[];
+  internalTicketsEnabled: boolean;
+  canViewBudgetInfo: boolean;
+  token: string;
+  onViewTasks?: () => void;
+}) {
   const decimalHoursToHMS = useFormatHours();
   const { pillStyle, backgroundStyle } = useColorVision();
+  const taskAnalytics = useMemo(() => buildTaskAnalytics(tasks), [tasks]);
   // Calculate task statistics (all tasks including subtasks)
   const parentTasks = tasks.filter(t => !t.ParentTaskId);
   const totalTasks = tasks.length;
@@ -5251,11 +5278,6 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
   const openTickets = tickets.filter(t => t.StatusIsClosed === 0).length;
   const resolvedTickets = tickets.filter(t => t.StatusIsClosed === 1).length;
   const unresolvedTickets = totalTickets - resolvedTickets;
-  
-  // Priority breakdown (all tasks including subtasks)
-  const highPriorityTasks = tasks.filter(t => t.PriorityName?.toLowerCase() === 'high' || t.PriorityName?.toLowerCase() === 'critical').length;
-  const mediumPriorityTasks = tasks.filter(t => t.PriorityName?.toLowerCase() === 'medium').length;
-  const lowPriorityTasks = tasks.filter(t => t.PriorityName?.toLowerCase() === 'low').length;
   
   // Overdue tasks (all tasks with due date in the past and not completed)
   const today = new Date();
@@ -5497,6 +5519,8 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
         </div>
       </div>
 
+      <TaskAnalyticsCharts data={taskAnalytics} onViewAll={onViewTasks} />
+
       {/* ── Key Metrics Strip ── */}
       <div className={`grid grid-cols-2 ${internalTicketsEnabled ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
         {project.StartDate && (
@@ -5648,40 +5672,20 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
         />
       )}
 
-      {/* ── Priority Breakdown + Attention ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-        {/* Priority with proportion bars */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6">
-          <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-5">Priority Breakdown</h2>
-          {totalTasks === 0 ? (
-            <p className="text-sm text-gray-400 dark:text-gray-500 py-4 text-center">No tasks yet</p>
-          ) : (
-            <div className="space-y-4">
-              {[
-                { label: 'High / Critical', count: highPriorityTasks,  color: 'bg-red-500',   text: 'text-red-600 dark:text-red-400' },
-                { label: 'Medium',          count: mediumPriorityTasks, color: 'bg-amber-400',  text: 'text-amber-600 dark:text-amber-400' },
-                { label: 'Low',             count: lowPriorityTasks,    color: 'bg-green-500',  text: 'text-green-600 dark:text-green-400' },
-              ].map(({ label, count, color, text }) => (
-                <div key={label}>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
-                    <span className={`text-sm font-bold ${text}`}>{count}</span>
-                  </div>
-                  <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5">
-                    <div className={`${color} h-2.5 rounded-full transition-all`}
-                      style={{ width: totalTasks > 0 ? `${Math.round((count / totalTasks) * 100)}%` : '0%' }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Attention items */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6">
-          <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-5">Requires Attention</h2>
-          <div className="space-y-3">
+      {/* ── Requires Attention ── */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6">
+        <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-5">
+          Requires Attention
+        </h2>
+        {overdueTasks.length === 0 && upcomingTasks.length === 0 && unassignedTasks.length === 0 ? (
+          <div className="text-center py-6 text-gray-500 dark:text-gray-400">
+            <svg className="w-8 h-8 mx-auto mb-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm">All good! No items require attention.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {overdueTasks.length > 0 && (
               <div className="flex items-center justify-between px-4 py-3 bg-red-50 dark:bg-red-900/20 rounded-xl">
                 <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
@@ -5690,7 +5694,9 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
                   </svg>
                   <span className="text-sm font-medium">Overdue Tasks</span>
                 </div>
-                <span className="text-sm font-bold text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-900/40 px-2.5 py-0.5 rounded-full">{overdueTasks.length}</span>
+                <span className="text-sm font-bold text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-900/40 px-2.5 py-0.5 rounded-full">
+                  {overdueTasks.length}
+                </span>
               </div>
             )}
             {upcomingTasks.length > 0 && (
@@ -5701,19 +5707,26 @@ function OverviewTab({ project, tasks, tickets, internalTicketsEnabled, canViewB
                   </svg>
                   <span className="text-sm font-medium">Due This Week</span>
                 </div>
-                <span className="text-sm font-bold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40 px-2.5 py-0.5 rounded-full">{upcomingTasks.length}</span>
+                <span className="text-sm font-bold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40 px-2.5 py-0.5 rounded-full">
+                  {upcomingTasks.length}
+                </span>
               </div>
             )}
-            {overdueTasks.length === 0 && upcomingTasks.length === 0 && (
-              <div className="text-center py-6 text-gray-500 dark:text-gray-400">
-                <svg className="w-8 h-8 mx-auto mb-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="text-sm">All good! No items require attention.</p>
+            {unassignedTasks.length > 0 && (
+              <div className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-900/30 rounded-xl">
+                <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span className="text-sm font-medium">Unassigned</span>
+                </div>
+                <span className="text-sm font-bold text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 px-2.5 py-0.5 rounded-full">
+                  {unassignedTasks.length}
+                </span>
               </div>
             )}
           </div>
-        </div>
+        )}
       </div>
 
       {/* ── Overdue + Upcoming task lists ── */}

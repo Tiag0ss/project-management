@@ -14,6 +14,7 @@ import {
   userBelongsToOrganization,
 } from '../utils/reportingAccess';
 import { isExpensesModuleEnabled, normalizeExpenseReportPeriod, queryExpenseReporting } from '../queries/expenseReporting';
+import { queryTaskAnalytics } from '../queries/taskAnalytics';
 
 const router = Router();
 
@@ -541,6 +542,10 @@ router.get('/organization-overview', authenticateToken, async (req: AuthRequest,
           ],
           ragTrend: Array.from(trendByDate.values()),
         },
+        taskAnalytics: await queryTaskAnalytics({
+          organizationId,
+          projectId: projectId || null,
+        }),
         healthTrend: snapshots,
         expenses: await (async () => {
           try {

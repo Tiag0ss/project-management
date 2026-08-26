@@ -28,6 +28,8 @@ import ScrollToTopButton from '@/components/ScrollToTopButton';
 import EmptyState from '@/components/EmptyState';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import TaskDetailModal from '@/components/TaskDetailModal';
+import { TaskAnalyticsCharts } from '@/components/reporting/TaskAnalyticsCharts';
+import type { TaskAnalyticsData } from '@/lib/reporting/taskAnalytics';
 import SegmentedTagBadge from '@/components/tags/SegmentedTagBadge';
 import InstallAppPrompt from '@/components/InstallAppPrompt';
 import { useColorVision } from '@/hooks/useColorVision';
@@ -1125,6 +1127,7 @@ function DashboardContent() {
     hours: { totalEstimated: number; totalWorked: number; thisWeek: number; thisMonth: number; totalEstimatedHobby: number; totalWorkedHobby: number; thisWeekHobby: number; thisMonthHobby: number };
     topProjects: { id: number; name: string; organization: string; hours: number }[];
     topUsers: { id: number; name: string; hours: number }[];
+    taskAnalytics?: TaskAnalyticsData;
   } | null>(null);
   const [calendarView, setCalendarView] = useState<'month' | 'week'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -3748,6 +3751,10 @@ function DashboardContent() {
                       <p className="text-xs text-orange-500 mt-1">tasks not allocated</p>
                     </div>
                   </div>
+
+                  {globalStats.taskAnalytics && (
+                    <TaskAnalyticsCharts data={globalStats.taskAnalytics} />
+                  )}
 
                   {internalTicketsEnabled && (
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">

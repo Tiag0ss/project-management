@@ -20,6 +20,7 @@ import { downloadCsv, toCsv } from '@/lib/csv';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { WebReportsExplorer } from '@/app/web-reports/page';
 import { OrganizationCharts } from '@/components/reporting/OrganizationCharts';
+import { TaskAnalyticsCharts } from '@/components/reporting/TaskAnalyticsCharts';
 
 const MANAGER_TABS = [
   'organization',
@@ -1058,6 +1059,13 @@ function ReportingHubInner() {
                 </section>
 
                 <OrganizationCharts charts={overview.charts} formatHours={formatHours} />
+
+                {overview.taskAnalytics && (
+                  <TaskAnalyticsCharts
+                    data={overview.taskAnalytics}
+                    viewAllHref="/reporting?tab=data-quality"
+                  />
+                )}
 
                 <section className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">

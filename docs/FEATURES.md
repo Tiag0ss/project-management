@@ -217,7 +217,8 @@ Images in patch notes are fetched at render time. Supported sources:
 #### Overview Tab
 - **RAG health score**: Automatic Red/Amber/Green banner based on overdue tasks, unassigned work, and budget burn
 - **Quick stats**: Dates, estimated hours (leaf tasks only — no double counting), open tickets, team size
-- **Priority breakdown**: High/Medium/Low task counts (all tasks, including subtasks)
+- **Task analytics** widgets: priority breakdown, types of work (%), team workload (open by assignee), parent-task progress (Done / In progress / To do)
+- **Requires attention**: overdue, due this week, and unassigned summary chips
 - **Alerts**: Overdue tasks, upcoming tasks (next 7 days), unassigned tasks
 - **Team members grid**: Per-user progress, task counts, hours assigned
 
@@ -764,7 +765,7 @@ Expense amounts are **not** mixed into hourly `CostSpent` / budget hours calcula
 Tabs:
 - **Overview**: KPI cards (open tasks, overdue tasks, pending time entries, open tickets)
 - **Calendar**: Month view showing tasks due on each day; click a day to see all tasks
-- **Analytics**: Charts and metrics for the current period
+- **Analytics**: Admin-only global KPIs, hours, top projects/contributors, plus a **Task analytics** 2×2 widget grid (priority breakdown, types of work, team workload, parent-task progress). Task widgets are a current-state snapshot; the period selector still drives hours and other period KPIs.
 
 ### KPI Cards & Drilldown
 - Each KPI card is configurable (widget system via `DashboardKPIs` table)
@@ -838,7 +839,7 @@ Shared bar: **organization** (required for manager packs), optional **project**,
 
 ### Packs
 
-- **Organization** — health (RAG counts), effort (leaf estimated, **planned**, logged, leaf with/without hours, unscheduled), delivery throughput, risk signals; **charts** (RAG donut, planned vs logged, top projects, throughput, open vs overdue, estimate/schedule mix, optional RAG snapshot trend); drill into other packs; task/project rows link for quick navigation; optional **email digest** schedule (structured metrics).
+- **Organization** — health (RAG counts), effort (leaf estimated, **planned**, logged, leaf with/without hours, unscheduled), delivery throughput, risk signals; **charts** (RAG donut, planned vs logged, top projects, throughput, open vs overdue, estimate/schedule mix, optional RAG snapshot trend); **task analytics** widgets (priority, type, assignee workload, parent progress); drill into other packs; task/project rows link for quick navigation; optional **email digest** schedule (structured metrics).
 - **Portfolio** — projects in org with RAG, progress, overdue, budget (if `CanViewBudgetInfo`); expandable leaf tasks; monetary spend uses the rate cascade (task → project → user); shows spent / remaining / burn % and flags hours without an effective rate; project name opens `/projects/:id`.
 - **Delivery** — throughput / active sprints / recently closed for the org period; project and task links for navigation.
 - **Capacity** — planned vs logged by org member; pending time approvals.
