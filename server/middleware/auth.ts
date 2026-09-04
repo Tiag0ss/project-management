@@ -152,7 +152,8 @@ export async function authenticateToken(req: AuthRequest, res: Response, next: N
           isSupport: decoded.isSupport,
           isDeveloper: decoded.isDeveloper,
           isManager: decoded.isManager,
-          customerId: decoded.customerId
+          customerId: decoded.customerId,
+          ...(decoded.sso ? { sso: true } : {}),
         },
         JWT_SECRET!,
         { expiresIn: '24h' }

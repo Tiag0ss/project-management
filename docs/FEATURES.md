@@ -1122,9 +1122,12 @@ Minimal OAuth-style handoff so companion apps (e.g. **PM Synapse**) can use the 
 1. Companion redirects the browser to `/sso/authorize?redirect_uri=…&state=…&client_id=…`
 2. User logs in on PM if needed (`returnUrl` supported on `/login`)
 3. PM issues a one-time code via `POST /api/sso/handoff` (authenticated)
-4. Companion backend exchanges the code at `POST /api/sso/token` for a short-lived PM JWT
+4. Companion backend exchanges the code at `POST /api/sso/token` for a short-lived PM **access** JWT plus a longer **refresh** JWT
+5. Before the access token expires (or after idle), companion calls `POST /api/sso/token` with `grant_type=refresh_token` + `refresh_token` (same client credentials) to get a new pair without browser login
 
 Env: `ALLOWED_SSO_REDIRECTS`, `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` (or `SSO_CLIENTS`). No Navbar or task deep links.
+
+Access JWT TTL: 8h. Refresh JWT TTL: 30 days (`typ: sso_refresh`). Sliding `X-New-Token` on authenticated API calls still applies when the companion is actively calling PM.
 
 ---
 

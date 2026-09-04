@@ -9,6 +9,11 @@ const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET!;
 const SSO_SHARED_SECRET = process.env.SSO_SHARED_SECRET || process.env.JWT_SECRET || '';
 
+/** Access JWT lifetime for companion apps (Synapse). */
+const ACCESS_TTL_SEC = 8 * 60 * 60;
+/** Refresh JWT lifetime — allows silent renew without browser login. */
+const REFRESH_TTL_SEC = 30 * 24 * 60 * 60;
+
 interface SsoCodeRecord {
   userId: number;
   username: string;
@@ -18,6 +23,14 @@ interface SsoCodeRecord {
   redirectUri: string;
   clientId: string;
   expiresAt: number;
+}
+
+interface SsoUserClaims {
+  userId: number;
+  username: string;
+  email: string;
+  isAdmin?: boolean;
+  customerId?: number | null;
 }
 
 /** One-time authorization codes (in-memory; fine for single-node v1). */
@@ -78,6 +91,66 @@ function verifyClient(clientId: string, clientSecret: string): boolean {
   return clients.some((c) => c.clientId === clientId && c.clientSecret === clientSecret);
 }
 
+function issueSsoTokenPair(user: SsoUserClaims): {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  refreshExpiresIn: number;
+} {
+  const accessToken = jwt.sign(
+    {
+      userId: user.userId,
+      username: user.username,
+      email: user.email,
+      isAdmin: user.isAdmin,
+      customerId: user.customerId,
+      sso: true,
+    },
+    JWT_SECRET,
+    { expiresIn: ACCESS_TTL_SEC }
+  );
+
+  const refreshToken = jwt.sign(
+    {
+      typ: 'sso_refresh',
+      userId: user.userId,
+      username: user.username,
+      email: user.email,
+      isAdmin: user.isAdmin,
+      customerId: user.customerId,
+      sso: true,
+    },
+    JWT_SECRET,
+    { expiresIn: REFRESH_TTL_SEC }
+  );
+
+  return {
+    accessToken,
+    refreshToken,
+    expiresIn: ACCESS_TTL_SEC,
+    refreshExpiresIn: REFRESH_TTL_SEC,
+  };
+}
+
+function tokenResponse(user: SsoUserClaims) {
+  const pair = issueSsoTokenPair(user);
+  return {
+    success: true,
+    data: {
+      accessToken: pair.accessToken,
+      refreshToken: pair.refreshToken,
+      tokenType: 'Bearer',
+      expiresIn: pair.expiresIn,
+      refreshExpiresIn: pair.refreshExpiresIn,
+      user: {
+        id: user.userId,
+        username: user.username,
+        email: user.email,
+      },
+    },
+  };
+}
+
 /**
  * POST /api/sso/handoff
  * Authenticated. Creates a one-time code for the given redirect_uri.
@@ -128,24 +201,80 @@ router.post('/handoff', authenticateToken, async (req: AuthRequest, res: Respons
 
 /**
  * POST /api/sso/token
- * Exchange one-time code for a PM access JWT (for Synapse server).
+ * - Exchange one-time code for access + refresh JWTs (companion apps).
+ * - Or refresh: { grant_type: "refresh_token", refresh_token, client_id, client_secret }
  */
 router.post('/token', async (req, res: Response) => {
   try {
     pruneCodes();
-    const code = String(req.body?.code || '').trim();
+    const grantType = String(req.body?.grant_type || req.body?.grantType || 'authorization_code')
+      .trim()
+      .toLowerCase();
     const clientId = String(req.body?.client_id || req.body?.clientId || '').trim();
     const clientSecret = String(req.body?.client_secret || req.body?.clientSecret || '').trim();
-    const redirectUri = String(req.body?.redirect_uri || req.body?.redirectUri || '').trim();
 
-    if (!code || !clientId || !clientSecret) {
+    if (!clientId || !clientSecret) {
       return res.status(400).json({
         success: false,
-        message: 'code, client_id, and client_secret are required',
+        message: 'client_id and client_secret are required',
       });
     }
     if (!verifyClient(clientId, clientSecret)) {
       return res.status(401).json({ success: false, message: 'Invalid client credentials' });
+    }
+
+    if (grantType === 'refresh_token') {
+      const refreshToken = String(req.body?.refresh_token || req.body?.refreshToken || '').trim();
+      if (!refreshToken) {
+        return res.status(400).json({
+          success: false,
+          message: 'refresh_token is required',
+        });
+      }
+
+      let decoded: jwt.JwtPayload;
+      try {
+        decoded = jwt.verify(refreshToken, JWT_SECRET) as jwt.JwtPayload;
+      } catch {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid or expired refresh token',
+        });
+      }
+
+      if (decoded.typ !== 'sso_refresh' || !decoded.sso) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid refresh token type',
+        });
+      }
+
+      const userId = Number(decoded.userId);
+      if (!Number.isFinite(userId) || userId <= 0) {
+        return res.status(401).json({ success: false, message: 'Invalid refresh token subject' });
+      }
+
+      logger.info('SSO refresh token exchanged', { userId, clientId });
+      return res.json(
+        tokenResponse({
+          userId,
+          username: String(decoded.username || ''),
+          email: String(decoded.email || ''),
+          isAdmin: Boolean(decoded.isAdmin),
+          customerId: decoded.customerId ?? null,
+        })
+      );
+    }
+
+    // Default: authorization_code
+    const code = String(req.body?.code || '').trim();
+    const redirectUri = String(req.body?.redirect_uri || req.body?.redirectUri || '').trim();
+
+    if (!code) {
+      return res.status(400).json({
+        success: false,
+        message: 'code, client_id, and client_secret are required',
+      });
     }
 
     const record = pendingCodes.get(code);
@@ -164,32 +293,15 @@ router.post('/token', async (req, res: Response) => {
       return res.status(400).json({ success: false, message: 'redirect_uri mismatch' });
     }
 
-    const accessToken = jwt.sign(
-      {
+    return res.json(
+      tokenResponse({
         userId: record.userId,
         username: record.username,
         email: record.email,
         isAdmin: record.isAdmin,
         customerId: record.customerId,
-        sso: true,
-      },
-      JWT_SECRET,
-      { expiresIn: '8h' }
+      })
     );
-
-    return res.json({
-      success: true,
-      data: {
-        accessToken,
-        tokenType: 'Bearer',
-        expiresIn: 8 * 60 * 60,
-        user: {
-          id: record.userId,
-          username: record.username,
-          email: record.email,
-        },
-      },
-    });
   } catch (error) {
     logger.error('SSO token exchange error:', error);
     return res.status(500).json({ success: false, message: 'Failed to exchange SSO token' });
