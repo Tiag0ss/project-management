@@ -8,11 +8,11 @@ jest.mock('../../server/config/database', () => ({
   pool: { execute: jest.fn() },
 }));
 
-jest.mock('../../server/routes/notifications', () => ({
+jest.mock('../../server/modules/notifications/notifications', () => ({
   createNotification: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('../../server/routes/activityLogs', () => ({
+jest.mock('../../server/modules/admin/activityLogs', () => ({
   logActivity: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -43,7 +43,7 @@ let app: express.Application;
 beforeAll(() => {
   // Import router after mocks are in place
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const tasksRouter = require('../../server/routes/tasks').default;
+  const tasksRouter = require('../../server/modules/projects/tasks').default;
   app = express();
   app.use(express.json());
   app.use('/api/tasks', tasksRouter);

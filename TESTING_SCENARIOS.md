@@ -1,3 +1,5 @@
+> Rebuild roadmap: [docs/REBUILD_ROADMAP.md](docs/REBUILD_ROADMAP.md)
+
 # Testing Scenarios - Project Management App
 
 This document contains comprehensive test scenarios to verify all functionality is working correctly. Test scenarios are organized by feature area with detailed steps and expected results. Updated for Redis cache, API tokens, Outlook calendar/queue, task type icons, and GitHub/Gitea integrations.
@@ -732,7 +734,7 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Each bar independently movable via drag
 
 ### TC-TASK-013: Import Task from Outlook Email Queue
-**Prerequisites:** Cloudflare Email Worker configured; user has pending queue items ([cloudflare/README.md](cloudflare/README.md))  
+**Prerequisites:** Cloudflare Email Worker configured; user has pending queue items ([cloudflare/README.md](extras/cloudflare/README.md))  
 **Steps:**
 1. Send an email from your registered user address to the configured queue address
 2. Verify webhook accepted (Activity Log: `EMAIL_QUEUE_RECEIVED`)
@@ -1832,7 +1834,7 @@ This document contains comprehensive test scenarios to verify all functionality 
 ## Email Task Queue (Cloudflare)
 
 ### TC-QUEUE-001: Webhook Receives Email
-**Prerequisites:** Cloudflare Worker deployed per [cloudflare/README.md](cloudflare/README.md)  
+**Prerequisites:** Cloudflare Worker deployed per [cloudflare/README.md](extras/cloudflare/README.md)  
 **Steps:**
 1. Send email from registered user to queue address
 2. Check Activity Logs for `EMAIL_QUEUE_RECEIVED`

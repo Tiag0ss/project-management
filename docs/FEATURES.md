@@ -2,6 +2,7 @@
 
 Comprehensive documentation of all features available in the application. Use this as the primary reference when implementing new features, writing tests, or onboarding new team members.
 
+**Rebuild roadmap:** [REBUILD_ROADMAP.md](REBUILD_ROADMAP.md) — live shell `app/(app)` + `server/modules`; archive `old/`.  
 **End-user manual (in-app):** `/docs` — step-by-step workflows, playbooks, and permission matrices.  
 **Test scenarios:** [TESTING_SCENARIOS.md](../TESTING_SCENARIOS.md)  
 **Deploy/ops:** [README.md](../README.md), [DEPLOYMENT.md](../DEPLOYMENT.md)
@@ -1152,7 +1153,7 @@ System Settings → Outlook calendar:
 
 ## 23. Email Task Queue (Cloudflare)
 
-Per-user queue for turning emails into tasks. Setup: [cloudflare/README.md](../cloudflare/README.md).
+Per-user queue for turning emails into tasks. Setup: [cloudflare/README.md](../extras/cloudflare/README.md).
 
 ### Flow
 1. Cloudflare Email Routing delivers mail to a Worker
@@ -1208,15 +1209,15 @@ Docker: `docker compose --profile redis up -d`
 
 ## 26. IDE Extensions (Project Kanban)
 
-IDE plugins that show a **project Kanban** (project dropdown, drag-and-drop status columns) using `pt_` API tokens. Shared board UI under [`ide-extensions/shared-kanban`](../ide-extensions/shared-kanban/).
+IDE plugins that show a **project Kanban** (project dropdown, drag-and-drop status columns) using `pt_` API tokens. Shared board UI under [`ide-extensions/shared-kanban`](../extras/ide-extensions/shared-kanban/).
 
 | IDE | Location |
 |-----|----------|
-| VS Code / Cursor | [`ide-extensions/vscode`](../ide-extensions/vscode/) |
-| Rider | [`ide-extensions/rider`](../ide-extensions/rider/) |
-| Visual Studio 2022 | [`ide-extensions/visualstudio`](../ide-extensions/visualstudio/) |
+| VS Code / Cursor | [`ide-extensions/vscode`](../extras/ide-extensions/vscode/) |
+| Rider | [`ide-extensions/rider`](../extras/ide-extensions/rider/) |
+| Visual Studio 2022 | [`ide-extensions/visualstudio`](../extras/ide-extensions/visualstudio/) |
 
-Setup, contract, and test checklist: [`ide-extensions/README.md`](../ide-extensions/README.md) · [`ide-extensions/CONTRACT.md`](../ide-extensions/CONTRACT.md)
+Setup, contract, and test checklist: [`ide-extensions/README.md`](../extras/ide-extensions/README.md) · [`ide-extensions/CONTRACT.md`](../extras/ide-extensions/CONTRACT.md)
 
 ### Behaviour
 - Auth: `Authorization: Bearer pt_…` + Base URL

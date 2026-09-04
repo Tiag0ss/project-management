@@ -8,8 +8,6 @@ import BrandingRuntime from "@/components/BrandingRuntime";
 import PreferencesRuntime from "@/components/PreferencesRuntime";
 import PwaRegister from "@/components/PwaRegister";
 import { PREFERENCES_EARLY_APPLY_SCRIPT } from "@/lib/colorVision";
-import GlobalGridEnhancer from "@/components/GlobalGridEnhancer";
-import AIAssistantWidget from "@/components/AIAssistantWidget";
 import { getPublicBranding, inferFaviconType } from "@/lib/branding/publicBranding.server";
 
 const geistSans = Geist({
@@ -74,9 +72,7 @@ export default function RootLayout({
               <PreferencesRuntime />
               <BrandingRuntime />
               <PwaRegister />
-              <GlobalGridEnhancer />
               {children}
-              <AIAssistantWidget />
             </ToastProvider>
           </PermissionsProvider>
         </AuthProvider>

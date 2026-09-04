@@ -113,3 +113,91 @@ table.grid-density-compact td {
   outline-offset: -1px;
   animation: timer-glow-pulse-other 1.6s ease-in-out infinite;
 }
+
+/* New AppShell (Synapse) — scoped under .pm-app so /old and auth keep current look */
+.pm-app {
+  --pm-bg: #0a0e13;
+  --pm-panel: #111820;
+  --pm-surface: #0e141c;
+  --pm-surface-2: #1a2430;
+  --pm-border: #243041;
+  --pm-text: #e8eef6;
+  --pm-muted: #8b98a8;
+  --pm-accent: #14b8a6;
+  --pm-accent-soft: #5eead4;
+  --pm-danger: #f87171;
+  --pm-warn: #fbbf24;
+  color-scheme: dark;
+}
+
+/* New shell owns rail offset — never apply legacy body padding inside .pm-app */
+.pm-app ~ *,
+body:has(.pm-app) {
+  /* handled below */
+}
+body:has(.pm-app).nav-left-fixed-expanded,
+body:has(.pm-app).nav-left-fixed-collapsed {
+  padding-left: 0 !important;
+}
+
+/*
+ * Synapse remaps for copied page chrome under .pm-app.
+ * Prefer layout/chrome utilities; leave inline status colors alone.
+ */
+.pm-app .bg-gray-100,
+.pm-app .dark\:bg-gray-900 {
+  background-color: var(--pm-bg) !important;
+}
+.pm-app .bg-white,
+.pm-app .dark\:bg-gray-800,
+.pm-app .bg-gray-50,
+.pm-app .dark\:bg-gray-700\/50 {
+  background-color: var(--pm-panel) !important;
+}
+.pm-app .dark\:bg-gray-700,
+.pm-app .bg-gray-200 {
+  background-color: var(--pm-surface-2) !important;
+}
+.pm-app .text-gray-900,
+.pm-app .dark\:text-white,
+.pm-app .text-gray-800,
+.pm-app .dark\:text-gray-100 {
+  color: var(--pm-text) !important;
+}
+.pm-app .text-gray-600,
+.pm-app .text-gray-500,
+.pm-app .text-gray-400,
+.pm-app .dark\:text-gray-400,
+.pm-app .dark\:text-gray-300,
+.pm-app .dark\:text-gray-500 {
+  color: var(--pm-muted) !important;
+}
+.pm-app .border-gray-200,
+.pm-app .border-gray-300,
+.pm-app .dark\:border-gray-700,
+.pm-app .dark\:border-gray-600 {
+  border-color: var(--pm-border) !important;
+}
+.pm-app .bg-blue-600,
+.pm-app .hover\:bg-blue-700:hover,
+.pm-app .dark\:bg-blue-600 {
+  background-color: var(--pm-accent) !important;
+  color: var(--pm-bg) !important;
+}
+.pm-app .text-blue-600,
+.pm-app .dark\:text-blue-400,
+.pm-app .hover\:text-blue-600:hover,
+.pm-app .dark\:hover\:text-blue-400:hover {
+  color: var(--pm-accent-soft) !important;
+}
+.pm-app .ring-blue-500,
+.pm-app .focus\:ring-blue-500:focus,
+.pm-app .focus\:border-blue-500:focus {
+  --tw-ring-color: var(--pm-accent);
+  border-color: var(--pm-accent);
+}
+.pm-app .shadow,
+.pm-app .shadow-lg,
+.pm-app .shadow-sm {
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}

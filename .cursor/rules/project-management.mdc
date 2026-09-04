@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Project Management — agent master context
 
-Read this rule first. For depth, also use scoped rules in `.cursor/rules/` and [.github/copilot-instructions.md](../../.github/copilot-instructions.md).
+Read this rule first. For depth, use scoped rules in `.cursor/rules/` and skills in `.cursor/skills/`. Progress: [docs/REBUILD_ROADMAP.md](../../docs/REBUILD_ROADMAP.md).
 
 ## Language (mandatory)
 
@@ -18,27 +18,28 @@ Read this rule first. For depth, also use scoped rules in `.cursor/rules/` and [
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | Next.js 16 App Router, React 19, Tailwind 4, dark mode |
-| Backend | Express 5, TypeScript, `server/index.ts` |
+| Frontend | Next.js 16 App Router, React 19, Tailwind 4, Synapse dark (new UI) |
+| Backend | Express 5, TypeScript — `server/modules/*` only (live API) |
 | Database | MySQL 8+ **or** MSSQL via `server/config/database.ts` (`DB_PROVIDER=mysql\|mssql`) |
-| Cache | Optional Redis (`REDIS_ENABLED`) — `server/services/cache.ts`, invalidate-on-write |
+| Cache | Optional Redis (`REDIS_ENABLED`) — invalidate-on-write |
 | Auth | JWT + HTTP-only cookie; API tokens for integrations |
-| Validation | Zod — `server/utils/validation.ts` + `validateRequest` middleware |
+| Validation | Zod + `validateRequest` middleware |
 
 ## Repository map (where to edit)
 
 ```
-app/                    # Next.js pages (App Router, 'use client' where needed)
-components/             # Shared UI (ConfirmAlertModal, Navbar, modals, admin/*)
+app/(app)/              # Authenticated UI (Synapse AppShell)
+app/docs/               # In-app manual (frozen)
+components/             # Live UI components
 lib/api/                # Frontend API clients + getApiUrl()
-server/routes/          # Express route handlers (one file per domain)
-server/queries/         # Extracted SQL/query helpers (prefer for reuse)
-server/types/           # Shared row/interface types for query results
-server/services/        # cache, cacheInvalidation, cacheKeys
-server/utils/           # validation, logger, changeLog, schedulers
-server/database/structure/systemtables/*.json   # Schema source of truth
-.github/prompts/        # Task templates (skills) — open matching skill before coding
-docs/                   # FEATURES.md, ROLE_PERMISSIONS.md, TESTING_SCENARIOS.md
+server/modules/         # Live API domains (routes + helpers) — only mount
+server/shared/          # Shared middleware, logger, validation, cache (as extracted)
+server/database/structure/systemtables/*.json   # Schema SOT (shared)
+old/                    # Dead archive (frontend/ + backend/) — never import/mount
+extras/                 # ide-extensions, cloudflare, desktop, release
+__tests__/unit/         # Unit tests (required for new domain logic)
+.cursor/skills/         # Task skills
+docs/REBUILD_ROADMAP.md # Phased rebuild status
 ```
 
 ## Non-negotiables (never violate)
@@ -52,17 +53,19 @@ docs/                   # FEATURES.md, ROLE_PERMISSIONS.md, TESTING_SCENARIOS.md
 
 ### Backend routes
 - Protected routes: `authenticateToken` + **server-side permission checks** on every mutation.
-- Write routes: wire `validateRequest(schema)` from `server/utils/validation.ts` (or `validatePayload` after decrypt for auth).
-- Errors: `logger.error(...)` from `server/utils/logger.ts` — **not** `console.error`.
-- Redis: after successful writes that affect cached reads, call `invalidateByEntity(...)` — see `redis-cache.mdc`.
+- Write routes: wire `validateRequest(schema)`.
+- Errors: `logger.error(...)` — **not** `console.error`.
+- Redis: after successful writes that affect cached reads, call `invalidateByEntity(...)`.
 - Response shape: `{ success: true, data?, message? }` / `{ success: false, message, errors? }`.
+- Keep **stable `/api/...` paths**. Live server mounts **only** `server/modules/*` — never import or load `old/backend`.
 
 ### Frontend
+- New UI: Synapse tokens, AppShell, PageTabs; top-bar org switcher; account-only user menu.
 - Full-width pages: outer `w-full` — **no** `container` unless user asks.
-- Dark mode on all new UI: `bg-white dark:bg-gray-800`, `text-gray-900 dark:text-white`, etc.
-- **No** `alert()` / `confirm()` — use [`components/ConfirmAlertModal.tsx`](../../components/ConfirmAlertModal.tsx).
-- API URL: `getApiUrl()` from `@/lib/api/config` (relative `/api/...` by default).
+- **No** `alert()` / `confirm()` — use ConfirmAlertModal.
+- API URL: `getApiUrl()` from `@/lib/api/config`.
 - Permissions: `usePermissions()` before showing actions; backend must still enforce.
+- **Never import from `old/`** into the live app.
 
 ### Domain rules
 - **Aggregated hours**: leaf tasks only (no parent + child double-count).
@@ -71,46 +74,45 @@ docs/                   # FEATURES.md, ROLE_PERMISSIONS.md, TESTING_SCENARIOS.md
 - **Planning bars**: header-driven (`TaskAllocationHeaderId`); include `TaskChildAllocations` in availability.
 - **Customer users**: cannot set `projectId` when creating tickets.
 
-## Scoped rules (open when editing matching files)
+### Tests
+- New/changed pure logic → `__tests__/unit/` coverage. Run `pnpm run test:unit`.
+
+## Scoped rules
 
 | Rule file | Applies to |
 |-----------|------------|
 | `backend-express.mdc` | `server/**/*.ts` |
 | `frontend-nextjs.mdc` | `app/**`, `components/**`, `lib/**` |
 | `database-json-schema.mdc` | `server/database/**` |
-| `planning-gantt.mdc` | `app/planning/**`, allocation routes |
+| `planning-gantt.mdc` | planning UI + allocation routes |
 | `redis-cache.mdc` | cache + cached routes |
 | `permissions-auth.mdc` | auth, permissions, portal |
 | `integrations.mdc` | Jira, GitHub, Outlook, email queue |
 | `testing-quality.mdc` | tests, CI |
 
-## Prompt library (use before implementing)
+## Skills (`.cursor/skills/`)
 
-Match task → read template in `.github/prompts/`:
-
-| Task | Skill file |
-|------|------------|
-| New/changed API route | `skill-backend-route.prompt.md` |
-| DB column/table | `skill-db-schema-json.prompt.md` |
-| UI page/feature | `skill-frontend-feature.prompt.md` |
-| Permission-gated UI | `skill-permission-gated-ui.prompt.md` |
-| Zod on routes | `skill-validated-route.prompt.md` |
-| KPI drill-down | `skill-dashboard-kpi-drilldown.prompt.md` |
-| Jira | `skill-jira-integration.prompt.md` |
-| Bug fix | `skill-bugfix-debug.prompt.md` |
+| Task | Skill folder |
+|------|--------------|
+| API route / module | `backend-route`, `new-api-route`, `validated-route` |
+| UI feature | `frontend-feature`, `new-ui-feature` |
+| DB schema JSON | `db-schema-json` |
+| Permissions UI | `permission-gated-ui` |
+| KPI drill-down | `dashboard-kpi-drilldown` |
+| Jira | `jira-integration` |
+| Bug fix | `bugfix-debug` |
 
 ## Quality bar
 
-- TypeScript strict; avoid `any` — use interfaces in `server/types/` or colocated types.
-- Minimal diff: do not refactor unrelated code.
-- No new features unless asked; bug fixes and requested scope only.
+- TypeScript strict; avoid `any`.
+- Minimal diff; no drive-by refactors.
 - Do not edit plan files (`.cursor/plans/`) unless user asks.
 - Git: commit only when user explicitly requests.
 
 ## Key docs
 
-- [AGENTS.md](../../AGENTS.md) — Cursor entry point
-- [docs/FEATURES.md](../../docs/FEATURES.md) — feature reference
-- [docs/ROLE_PERMISSIONS.md](../../docs/ROLE_PERMISSIONS.md) — permissions
-- [TESTING_SCENARIOS.md](../../TESTING_SCENARIOS.md) — manual test catalog
-- In-app user manual: `/docs`
+- [AGENTS.md](../../AGENTS.md)
+- [docs/REBUILD_ROADMAP.md](../../docs/REBUILD_ROADMAP.md)
+- [docs/FEATURES.md](../../docs/FEATURES.md)
+- [docs/ROLE_PERMISSIONS.md](../../docs/ROLE_PERMISSIONS.md)
+- [TESTING_SCENARIOS.md](../../TESTING_SCENARIOS.md)

@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Planning / Gantt
 
-Full spec: [.github/copilot-instructions.md](../../.github/copilot-instructions.md) § Resource Planning · Page: `app/planning/page.tsx`
+Page: `app/(app)/planning/page.tsx` · Archive reference: `old/frontend/app/planning` (do not import).
 
 ## Core model
 

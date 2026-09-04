@@ -1,6 +1,6 @@
 ---
 description: External integrations — Jira, GitHub, Gitea, Outlook, email queue, API tokens
-globs: server/routes/jiraIntegrations.ts,server/routes/githubIntegrations.ts,server/routes/giteaIntegrations.ts,server/routes/outlookCalendar.ts,server/routes/emailTaskQueue.ts,server/routes/apiTokens.ts,cloudflare/**/*
+globs: server/**/jiraIntegrations.ts,server/**/githubIntegrations.ts,server/**/giteaIntegrations.ts,server/**/outlookCalendar.ts,server/**/emailTaskQueue.ts,server/**/apiTokens.ts,extras/cloudflare/**/*
 alwaysApply: false
 ---
 
@@ -32,7 +32,7 @@ Docs: [docs/FEATURES.md](../../docs/FEATURES.md) · Skills: `skill-jira-integrat
 
 ## Email → task queue
 
-- `EmailTaskQueue` table; webhook from Cloudflare Worker ([cloudflare/README.md](../../cloudflare/README.md)).
+- `EmailTaskQueue` table; webhook from Cloudflare Worker ([cloudflare/README.md](../../extras/cloudflare/README.md)).
 - Import creates tasks; invalidate task/project caches on import.
 - Outlook add-in: [outlook-addin/README.md](../../outlook-addin/README.md).
 

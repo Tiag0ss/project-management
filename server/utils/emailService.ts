@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import { pool } from '../config/database';
 import { RowDataPacket } from '../config/database';
-import { logActivity } from '../routes/activityLogs';
+import { logActivity } from '../modules/admin/activityLogs';
 import { shouldSendEmail } from './emailPreferencesHelper';
 import { decrypt } from './encryption';
 import logger from './logger';

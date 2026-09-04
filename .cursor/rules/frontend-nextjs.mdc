@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Frontend — Next.js & React
 
-Skill: [skill-frontend-feature.prompt.md](../../.github/prompts/skill-frontend-feature.prompt.md) · Grid reference: `app/applications/page.tsx`
+Skill: [.cursor/skills/frontend-feature/SKILL.md](../skills/frontend-feature/SKILL.md) · Live UI: `app/(app)` + `components/` (Synapse). Legacy archive: root `old/frontend` (do not import).
 
 ## Component skeleton
 

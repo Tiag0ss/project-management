@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Auth & permissions
 
-Docs: [docs/ROLE_PERMISSIONS.md](../../docs/ROLE_PERMISSIONS.md) · Skill: [skill-permission-gated-ui.prompt.md](../../.github/prompts/skill-permission-gated-ui.prompt.md)
+Docs: [docs/ROLE_PERMISSIONS.md](../../docs/ROLE_PERMISSIONS.md) · Skill: [.cursor/skills/permission-gated-ui/SKILL.md](../skills/permission-gated-ui/SKILL.md)
 
 ## Authentication layers
 

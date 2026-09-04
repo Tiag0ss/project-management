@@ -413,9 +413,9 @@ ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 
 ## 11. IDE Extensions (Project Kanban)
 
-Plugins live in [`ide-extensions/`](ide-extensions/). They talk to your **deployed** app API with a user `pt_` token and host a shared Kanban board (webview / JBCef / WebView2). Same VS Code `.vsix` works in **Cursor**.
+Plugins live in [`extras/ide-extensions/`](extras/ide-extensions/). They talk to your **deployed** app API with a user `pt_` token and host a shared Kanban board (webview / JBCef / WebView2). Same VS Code `.vsix` works in **Cursor**.
 
-Contract and checklist: [`ide-extensions/README.md`](ide-extensions/README.md), [`ide-extensions/CONTRACT.md`](ide-extensions/CONTRACT.md).
+Contract and checklist: [`extras/ide-extensions/README.md`](extras/ide-extensions/README.md), [`extras/ide-extensions/CONTRACT.md`](extras/ide-extensions/CONTRACT.md).
 
 ### Prerequisites (users)
 
@@ -429,7 +429,7 @@ Contract and checklist: [`ide-extensions/README.md`](ide-extensions/README.md), 
 Produces a `.vsix` installable in both editors:
 
 ```bash
-cd ide-extensions/vscode
+cd extras/ide-extensions/vscode
 # Required: ignore the monorepo workspace so deps land in this folder
 pnpm install --ignore-workspace
 pnpm run package
@@ -451,7 +451,7 @@ If `pnpm install` alone reports “Already up to date” but there is no local `
 **Dev loop (no VSIX)**
 
 ```bash
-cd ide-extensions/vscode
+cd extras/ide-extensions/vscode
 pnpm install --ignore-workspace
 pnpm run compile
 # Open this folder in Cursor/VS Code → F5 (Extension Development Host)
@@ -459,7 +459,7 @@ pnpm run compile
 
 **Releasing a new version**
 
-1. Bump `"version"` in `ide-extensions/vscode/package.json`.
+1. Bump `"version"` in `extras/ide-extensions/vscode/package.json`.
 2. Sync shared board if needed: `pnpm run sync-kanban`
 3. `pnpm install --ignore-workspace && pnpm run package`
 4. Distribute the new `.vsix`; users Install from VSIX again (or replace the previous install).
@@ -467,7 +467,7 @@ pnpm run compile
 ### Build & deploy — Rider
 
 ```bash
-cd ide-extensions/rider
+cd extras/ide-extensions/rider
 cp ../shared-kanban/board.css ../shared-kanban/board.js src/main/resources/kanban/
 # Once, if wrapper missing:
 # gradle wrapper --gradle-version 8.7
@@ -480,7 +480,7 @@ Configure: **Settings → Tools → Project Management**. Tool window: **PM Kanb
 
 ### Build & deploy — Visual Studio 2022
 
-1. Open `ide-extensions/visualstudio/ProjectManagement.PendingTasks.sln` with the **Visual Studio extension development** workload.
+1. Open `extras/ide-extensions/visualstudio/ProjectManagement.PendingTasks.sln` with the **Visual Studio extension development** workload.
 2. Ensure WebView2 package restore succeeds; copy `shared-kanban` assets into `Resources/kanban/` if needed.
 3. Build **Release** → produces a `.vsix`.
 4. Install on target PCs (double-click `.vsix` or Extensions → Install from disk).

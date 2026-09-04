@@ -1,0 +1,514 @@
+import { Router, Response } from 'express';
+import { pool } from '../../config/database';
+import { RowDataPacket, ResultSetHeader } from '../../config/database';
+import { authenticateToken, AuthRequest } from '../../middleware/auth';
+import logger from '../../utils/logger';
+
+const router = Router();
+
+const isInternalTicketsEnabled = async (): Promise<boolean> => {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT SettingValue FROM SystemSettings WHERE SettingKey = ?',
+    ['internalTicketsEnabled']
+  );
+
+  if (rows.length === 0) return true;
+  return rows[0].SettingValue !== 'false';
+};
+
+router.use(authenticateToken, async (_req: AuthRequest, res: Response, next) => {
+  try {
+    const enabled = await isInternalTicketsEnabled();
+    if (!enabled) {
+      return res.status(403).json({ success: false, message: 'Internal ticket system is disabled' });
+    }
+    next();
+  } catch (error) {
+    logger.error('Ticket attachments feature flag check error:', error);
+    res.status(500).json({ success: false, message: 'Failed to validate ticket system setting' });
+  }
+});
+
+/**
+ * @swagger
+ * tags:
+ *   name: TicketAttachments
+ *   description: File attachments for tickets
+ */
+
+// Allowed file types
+const ALLOWED_TYPES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/zip',
+  'application/x-zip-compressed',
+  'text/plain',
+];
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+/**
+ * @swagger
+ * /api/ticket-attachments/ticket/{ticketId}:
+ *   get:
+ *     summary: Get attachments for a ticket
+ *     tags: [TicketAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachments retrieved successfully
+ */
+// Get attachments for a ticket
+router.get('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { ticketId } = req.params;
+    const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
+
+    // Verify access to ticket
+    const [tickets] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM Tickets WHERE Id = ?',
+      [ticketId]
+    );
+
+    if (tickets.length === 0) {
+      return res.status(404).json({ success: false, message: 'Ticket not found' });
+    }
+
+    const ticket = tickets[0];
+
+    // Check access
+    if (customerId) {
+      if (ticket.CustomerId !== customerId) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+    } else {
+      const [orgMembers] = await pool.execute<RowDataPacket[]>(
+        'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+        [ticket.OrganizationId, userId]
+      );
+
+      if (orgMembers.length === 0) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+    }
+
+    // Get attachments (without FileData for listing)
+    const [attachments] = await pool.execute<RowDataPacket[]>(
+      `SELECT 
+        ta.Id, ta.TicketId, ta.CommentId, ta.UploadedByUserId, ta.FileName, ta.FileType, ta.FileSize, ta.CreatedAt,
+        u.FirstName, u.LastName, u.Username
+      FROM TicketAttachments ta
+      LEFT JOIN Users u ON ta.UploadedByUserId = u.Id
+      WHERE ta.TicketId = ? AND ta.CommentId IS NULL
+      ORDER BY ta.CreatedAt DESC`,
+      [ticketId]
+    );
+
+    res.json({ success: true, data: attachments });
+  } catch (error) {
+    logger.error('Error fetching ticket attachments:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch attachments' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/ticket-attachments/{id}:
+ *   get:
+ *     summary: Get a specific attachment
+ *     tags: [TicketAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachment retrieved successfully
+ *       404:
+ *         description: Attachment not found
+ */
+// Get single attachment with data
+router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
+
+    // Get attachment
+    const [attachments] = await pool.execute<RowDataPacket[]>(
+      `SELECT ta.*, t.CustomerId, t.OrganizationId
+      FROM TicketAttachments ta
+      JOIN Tickets t ON ta.TicketId = t.Id
+      WHERE ta.Id = ?`,
+      [id]
+    );
+
+    if (attachments.length === 0) {
+      return res.status(404).json({ success: false, message: 'Attachment not found' });
+    }
+
+    const attachment = attachments[0];
+
+    // Check access
+    if (customerId) {
+      if (attachment.CustomerId !== customerId) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+    } else {
+      const [orgMembers] = await pool.execute<RowDataPacket[]>(
+        'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+        [attachment.OrganizationId, userId]
+      );
+
+      if (orgMembers.length === 0) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+    }
+
+    res.json({ success: true, data: attachment });
+  } catch (error) {
+    logger.error('Error fetching attachment:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch attachment' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/ticket-attachments/ticket/{ticketId}:
+ *   post:
+ *     summary: Upload attachment to ticket
+ *     tags: [TicketAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201:
+ *         description: Attachment uploaded successfully
+ */
+// Upload attachment
+router.post('/ticket/:ticketId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { ticketId } = req.params;
+    const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
+    const { fileName, fileType, fileSize, fileData } = req.body;
+
+    if (!fileName || !fileType || !fileSize || !fileData) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    // Validate file type
+    if (!ALLOWED_TYPES.includes(fileType)) {
+      return res.status(400).json({ success: false, message: 'File type not allowed' });
+    }
+
+    // Validate file size
+    if (fileSize > MAX_FILE_SIZE) {
+      return res.status(400).json({ success: false, message: 'File size exceeds 10MB limit' });
+    }
+
+    // Verify access to ticket
+    const [tickets] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM Tickets WHERE Id = ?',
+      [ticketId]
+    );
+
+    if (tickets.length === 0) {
+      return res.status(404).json({ success: false, message: 'Ticket not found' });
+    }
+
+    const ticket = tickets[0];
+
+    // Check access
+    if (customerId) {
+      if (ticket.CustomerId !== customerId) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+    } else {
+      const [orgMembers] = await pool.execute<RowDataPacket[]>(
+        'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+        [ticket.OrganizationId, userId]
+      );
+
+      if (orgMembers.length === 0) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+    }
+
+    // Insert attachment
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO TicketAttachments (TicketId, CommentId, UploadedByUserId, FileName, FileType, FileSize, FileData)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [ticketId, null, userId, fileName, fileType, fileSize, fileData]
+    );
+
+    res.json({ success: true, attachmentId: result.insertId });
+  } catch (error) {
+    logger.error('Error uploading attachment:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload attachment' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/ticket-attachments/{id}:
+ *   delete:
+ *     summary: Delete attachment
+ *     tags: [TicketAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachment deleted successfully
+ *       404:
+ *         description: Attachment not found
+ */
+// Delete attachment
+router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.userId;
+    const isAdmin = req.user?.isAdmin;
+
+    // Get attachment
+    const [attachments] = await pool.execute<RowDataPacket[]>(
+      `SELECT ta.*, t.OrganizationId
+      FROM TicketAttachments ta
+      JOIN Tickets t ON ta.TicketId = t.Id
+      WHERE ta.Id = ?`,
+      [id]
+    );
+
+    if (attachments.length === 0) {
+      return res.status(404).json({ success: false, message: 'Attachment not found' });
+    }
+
+    const attachment = attachments[0];
+
+    // Only uploader or admin can delete
+    if (!isAdmin && attachment.UploadedByUserId !== userId) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    await pool.execute('DELETE FROM TicketAttachments WHERE Id = ?', [id]);
+
+    res.json({ success: true, message: 'Attachment deleted successfully' });
+  } catch (error) {
+    logger.error('Error deleting attachment:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete attachment' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/ticket-attachments/comment/{commentId}:
+ *   get:
+ *     summary: Get attachments for a ticket comment
+ *     tags: [TicketAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Comment attachments retrieved successfully
+ */
+// Get attachments for a comment
+router.get('/comment/:commentId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { commentId } = req.params;
+    const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
+
+    // Get comment and ticket info
+    const [comments] = await pool.execute<RowDataPacket[]>(
+      `SELECT tc.*, t.CustomerId, t.OrganizationId
+       FROM TicketComments tc
+       JOIN Tickets t ON tc.TicketId = t.Id
+       WHERE tc.Id = ?`,
+      [commentId]
+    );
+
+    if (comments.length === 0) {
+      return res.status(404).json({ success: false, message: 'Comment not found' });
+    }
+
+    const comment = comments[0];
+
+    // Check access
+    if (customerId) {
+      if (comment.CustomerId !== customerId) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+    } else {
+      const [orgMembers] = await pool.execute<RowDataPacket[]>(
+        'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+        [comment.OrganizationId, userId]
+      );
+
+      if (orgMembers.length === 0) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+    }
+
+    // Get attachments
+    const [attachments] = await pool.execute<RowDataPacket[]>(
+      `SELECT 
+        ta.Id, ta.TicketId, ta.CommentId, ta.UploadedByUserId, ta.FileName, ta.FileType, ta.FileSize, ta.CreatedAt,
+        u.FirstName, u.LastName, u.Username
+      FROM TicketAttachments ta
+      LEFT JOIN Users u ON ta.UploadedByUserId = u.Id
+      WHERE ta.CommentId = ?
+      ORDER BY ta.CreatedAt DESC`,
+      [commentId]
+    );
+
+    res.json({ success: true, data: attachments });
+  } catch (error) {
+    logger.error('Error fetching comment attachments:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch attachments' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/ticket-attachments/comment/{commentId}:
+ *   post:
+ *     summary: Upload attachment to a ticket comment
+ *     tags: [TicketAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201:
+ *         description: Attachment uploaded to comment successfully
+ */
+// Upload attachment to comment
+router.post('/comment/:commentId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { commentId } = req.params;
+    const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
+    const { fileName, fileType, fileSize, fileData } = req.body;
+
+    if (!fileName || !fileType || !fileSize || !fileData) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    // Validate file type
+    if (!ALLOWED_TYPES.includes(fileType)) {
+      return res.status(400).json({ success: false, message: 'File type not allowed' });
+    }
+
+    // Validate file size
+    if (fileSize > MAX_FILE_SIZE) {
+      return res.status(400).json({ success: false, message: 'File size exceeds 10MB limit' });
+    }
+
+    // Get comment and ticket info
+    const [comments] = await pool.execute<RowDataPacket[]>(
+      `SELECT tc.*, t.CustomerId, t.OrganizationId
+       FROM TicketComments tc
+       JOIN Tickets t ON tc.TicketId = t.Id
+       WHERE tc.Id = ?`,
+      [commentId]
+    );
+
+    if (comments.length === 0) {
+      return res.status(404).json({ success: false, message: 'Comment not found' });
+    }
+
+    const comment = comments[0];
+
+    // Check access
+    if (customerId) {
+      if (comment.CustomerId !== customerId) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+    } else {
+      const [orgMembers] = await pool.execute<RowDataPacket[]>(
+        'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+        [comment.OrganizationId, userId]
+      );
+
+      if (orgMembers.length === 0) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+    }
+
+    // Insert attachment
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO TicketAttachments (TicketId, CommentId, UploadedByUserId, FileName, FileType, FileSize, FileData)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [comment.TicketId, commentId, userId, fileName, fileType, fileSize, fileData]
+    );
+
+    res.json({ success: true, attachmentId: result.insertId });
+  } catch (error) {
+    logger.error('Error uploading comment attachment:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload attachment' });
+  }
+});
+
+export default router;
+

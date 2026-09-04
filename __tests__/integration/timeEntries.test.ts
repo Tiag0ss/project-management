@@ -21,7 +21,7 @@ let app: express.Application;
 
 beforeAll(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const timeEntriesRouter = require('../../server/routes/timeEntries').default;
+  const timeEntriesRouter = require('../../server/modules/time/timeEntries').default;
   app = express();
   app.use(express.json());
   app.use('/api/time-entries', timeEntriesRouter);
