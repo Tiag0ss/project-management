@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import GlobalGridEnhancer from '@/components/old/GlobalGridEnhancer';
-import AIAssistantWidget from '@/components/old/AIAssistantWidget';
+import GlobalGridEnhancer from '../components/GlobalGridEnhancer';
+import AIAssistantWidget from '../components/AIAssistantWidget';
 
 /** Legacy UI under `/old/*` — frozen; do not add features here. */
 export default function OldLayout({ children }: { children: React.ReactNode }) {

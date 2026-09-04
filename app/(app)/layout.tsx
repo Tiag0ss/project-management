@@ -1,6 +1,7 @@
 'use client';
 
 import AppShell from '@/components/AppShell';
+import GlobalGridEnhancer from '@/components/GlobalGridEnhancer';
 import { ActiveOrganizationProvider } from '@/contexts/ActiveOrganizationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
@@ -26,6 +27,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <ActiveOrganizationProvider>
+      <GlobalGridEnhancer />
       <AppShell>{children}</AppShell>
     </ActiveOrganizationProvider>
   );
