@@ -38,6 +38,7 @@ import dynamic from 'next/dynamic';
 import CalendarTabComponent from './CalendarTab';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { TaskTypeIconMark } from '@/lib/taskTypeIcons';
+import { Check, Pencil, X } from 'lucide-react';
 
 interface TaskWithProject extends Task {
   ProjectName?: string;
@@ -2687,170 +2688,111 @@ function DashboardContent() {
       ) : (
         /* Regular user view — top PageTabs (no second sidebar) */
         <div className="flex w-full flex-col">
-          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h1 className="text-xl font-semibold text-[var(--pm-text)]">Dashboard</h1>
-              <p className="text-sm text-[var(--pm-muted)]">
-                {new Date().toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </p>
-            </div>
-            <div className="flex flex-col items-stretch gap-2 sm:items-end">
-              {showPendingApprovalAlert && (
-                <div className="rounded-lg border border-[var(--pm-warn)]/40 bg-[var(--pm-warn)]/15 px-3 py-2 text-[var(--pm-text)]">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--pm-warn)]">
-                    Approval Required
-                  </div>
-                  <div className="mt-1 flex flex-wrap justify-end gap-2">
-                    {pendingApprovals.timeEntries > 0 && pendingApprovals.canApproveTime && (
-                      <button
-                        type="button"
-                        onClick={() => router.push('/approvals?tab=time')}
-                        className="rounded bg-[var(--pm-surface-2)] px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[var(--pm-accent)] hover:text-[var(--pm-bg)]"
-                        title="Open time entries approval"
-                      >
-                        {pendingApprovals.timeEntries} time entr
-                        {pendingApprovals.timeEntries === 1 ? 'y' : 'ies'}
-                      </button>
-                    )}
-                    {pendingApprovals.vacations > 0 && pendingApprovals.canApproveVacations && (
-                      <button
-                        type="button"
-                        onClick={() => router.push('/approvals?tab=vacations')}
-                        className="rounded bg-[var(--pm-surface-2)] px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[var(--pm-accent)] hover:text-[var(--pm-bg)]"
-                        title="Open vacations approval"
-                      >
-                        {pendingApprovals.vacations} vacation
-                        {pendingApprovals.vacations === 1 ? '' : 's'}
-                      </button>
-                    )}
-                    {pendingApprovals.expenses > 0 && pendingApprovals.canApproveExpenses && (
-                      <button
-                        type="button"
-                        onClick={() => router.push('/approvals?tab=expenses')}
-                        className="rounded bg-[var(--pm-surface-2)] px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[var(--pm-accent)] hover:text-[var(--pm-bg)]"
-                        title="Open expenses approval"
-                      >
-                        {pendingApprovals.expenses} expense
-                        {pendingApprovals.expenses === 1 ? '' : 's'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-              {summaryStats.overdueTasks > 0 && (
-                <div className="rounded-lg border border-[var(--pm-danger)]/40 bg-[var(--pm-danger)]/15 px-3 py-2 text-sm font-medium text-[var(--pm-danger)]">
-                  {summaryStats.overdueTasks} overdue task
-                  {summaryStats.overdueTasks > 1 ? 's' : ''}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <PageTabs
-            tabs={[
-              { id: 'overview', label: 'Overview' },
-              ...(!showCalendarInOverview ? [{ id: 'calendar', label: 'Calendar' }] : []),
-              { id: 'kanban', label: 'Kanban' },
-              ...(user?.isAdmin ? [{ id: 'analytics', label: 'Analytics' }] : []),
-            ]}
-            activeId={activeTab}
-            onChange={(id) => {
-              const next = id as typeof activeTab;
-              setActiveTab(next);
-              window.history.pushState(
-                {},
-                '',
-                next === 'overview' ? '/dashboard' : `/dashboard?tab=${next}`
-              );
-            }}
-          />
-
-          <main ref={scrollContainerRef} className="min-w-0 flex-1 overflow-auto pt-4">
-            <InstallAppPrompt className="mb-4" />
-            {/* Overview Tab */}
-            {activeTab === 'overview' && (
-            overviewLoading ? (
-              <div className="space-y-6 animate-pulse">
-                <div className={`grid grid-cols-1 md:grid-cols-2 ${internalTicketsEnabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
-                  {Array.from({ length: internalTicketsEnabled ? 5 : 4 }).map((_, idx) => (
-                    <div key={`overview-kpi-skeleton-${idx}`} className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 h-24" />
+          {/* Title + KPIs on one row; tabs below */}
+          <div className="mb-2 space-y-2">
+            {kpiEditMode && (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <select
+                  value={kpiAddType}
+                  onChange={(e) => setKpiAddType(e.target.value as DashboardKpiType | '')}
+                  className="h-8 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-2 text-sm text-[var(--pm-text)]"
+                >
+                  <option value="">Select KPI</option>
+                  {selectableKpiTemplates.map((template) => (
+                    <option key={template.type} value={template.type}>{template.label}</option>
                   ))}
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 h-72" />
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 h-72" />
-                </div>
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 h-80" />
+                </select>
+                <button
+                  type="button"
+                  onClick={handleAddWidget}
+                  className="h-8 rounded-md bg-[var(--pm-accent)] px-3 text-sm font-semibold text-[var(--pm-accent-fg)] disabled:opacity-50"
+                  disabled={!kpiAddType}
+                >
+                  Add KPI
+                </button>
               </div>
-            ) : (
-            <div className="space-y-6">
-              {/* Summary Stats Grid */}
-              <div className="space-y-4">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">KPIs</h3>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {kpiEditMode ? (
-                      <>
-                        <select
-                          value={kpiAddType}
-                          onChange={(e) => setKpiAddType(e.target.value as DashboardKpiType | '')}
-                          className="h-10 px-3 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                        >
-                          <option value="">Select KPI</option>
-                          {selectableKpiTemplates.map((template) => (
-                            <option key={template.type} value={template.type}>{template.label}</option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={handleAddWidget}
-                          className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
-                          disabled={!kpiAddType}
-                        >
-                          Add KPI
-                        </button>
-                        <button
-                          onClick={handleSaveKpis}
-                          className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
-                          disabled={kpiSaving}
-                        >
-                          {kpiSaving ? 'Saving...' : 'Save'}
-                        </button>
-                        <button
-                          onClick={handleCancelKpiEdit}
-                          className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white"
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        onClick={() => setKpiEditMode(true)}
-                        className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white"
-                      >
-                        Edit KPIs
-                      </button>
-                    )}
-                  </div>
-                </div>
+            )}
 
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <div className="shrink-0 sm:max-w-[14rem]">
+                <h1 className="text-xl font-semibold leading-tight text-[var(--pm-text)]">Dashboard</h1>
+                <p className="text-xs leading-snug text-[var(--pm-muted)] sm:text-sm">
+                  {new Date().toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
+                </p>
+                <div className="mt-1.5 flex flex-col gap-1.5">
+                  {showPendingApprovalAlert && (
+                    <div className="rounded-md border border-[var(--pm-warn)]/40 bg-[var(--pm-warn)]/15 px-2 py-1.5 text-[var(--pm-text)]">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--pm-warn)]">
+                        Approval Required
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {pendingApprovals.timeEntries > 0 && pendingApprovals.canApproveTime && (
+                          <button
+                            type="button"
+                            onClick={() => router.push('/approvals?tab=time')}
+                            className="rounded bg-[var(--pm-surface-2)] px-2 py-0.5 text-[11px] font-medium transition-colors hover:bg-[var(--pm-accent)] hover:text-[var(--pm-bg)]"
+                            title="Open time entries approval"
+                          >
+                            {pendingApprovals.timeEntries} time entr
+                            {pendingApprovals.timeEntries === 1 ? 'y' : 'ies'}
+                          </button>
+                        )}
+                        {pendingApprovals.vacations > 0 && pendingApprovals.canApproveVacations && (
+                          <button
+                            type="button"
+                            onClick={() => router.push('/approvals?tab=vacations')}
+                            className="rounded bg-[var(--pm-surface-2)] px-2 py-0.5 text-[11px] font-medium transition-colors hover:bg-[var(--pm-accent)] hover:text-[var(--pm-bg)]"
+                            title="Open vacations approval"
+                          >
+                            {pendingApprovals.vacations} vacation
+                            {pendingApprovals.vacations === 1 ? '' : 's'}
+                          </button>
+                        )}
+                        {pendingApprovals.expenses > 0 && pendingApprovals.canApproveExpenses && (
+                          <button
+                            type="button"
+                            onClick={() => router.push('/approvals?tab=expenses')}
+                            className="rounded bg-[var(--pm-surface-2)] px-2 py-0.5 text-[11px] font-medium transition-colors hover:bg-[var(--pm-accent)] hover:text-[var(--pm-bg)]"
+                            title="Open expenses approval"
+                          >
+                            {pendingApprovals.expenses} expense
+                            {pendingApprovals.expenses === 1 ? '' : 's'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {summaryStats.overdueTasks > 0 && (
+                    <div className="rounded-md border border-[var(--pm-danger)]/40 bg-[var(--pm-danger)]/15 px-2 py-1 text-xs font-medium text-[var(--pm-danger)]">
+                      {summaryStats.overdueTasks} overdue task
+                      {summaryStats.overdueTasks > 1 ? 's' : ''}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="min-w-0 flex-1">
                 {kpiSectionLoading ? (
-                  <div className={`grid grid-cols-1 md:grid-cols-2 ${internalTicketsEnabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
+                  <div className="flex items-stretch gap-2">
                     {Array.from({ length: internalTicketsEnabled ? 5 : 4 }).map((_, idx) => (
-                      <div key={`kpi-card-skeleton-${idx}`} className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 h-36 animate-pulse" />
+                      <div key={`kpi-card-skeleton-${idx}`} className="h-14 min-w-0 flex-1 animate-pulse rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)]" />
                     ))}
-                  </div>
-                ) : kpiWidgets.length === 0 ? (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700 text-center text-gray-600 dark:text-gray-300">
-                    No KPI cards configured. Enter edit mode to add KPI cards.
+                    <div className="h-14 w-9 shrink-0 animate-pulse rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)]" />
                   </div>
                 ) : (
-                  <div className={`grid grid-cols-1 md:grid-cols-2 ${kpiWidgets.length >= 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
-                    {kpiWidgets.map((widget) => {
+                  <div className="flex items-stretch gap-2 overflow-x-auto">
+                    {kpiWidgets.length === 0 ? (
+                      <div className="flex min-h-14 min-w-0 flex-1 items-center justify-center rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 text-center text-sm text-[var(--pm-muted)]">
+                        No KPI cards configured.
+                      </div>
+                    ) : (
+                      <>
+                        {kpiWidgets.map((widget) => {
                       const template = getKpiTemplate(widget.type);
                       const valueData = kpiValues[widget.id] || { value: 0 };
                       const numericValue = Number(valueData.value || 0);
@@ -2869,17 +2811,17 @@ function DashboardContent() {
                           }}
                           onDrop={() => handleKpiDrop(widget.id)}
                           onClick={() => !kpiEditMode && openKpiDetailModal(widget)}
-                          className={`bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 kpi-widget-border ${template?.borderClass || 'border-gray-400'} ${kpiEditMode ? 'cursor-move' : 'cursor-pointer hover:shadow-lg transition-shadow'}`}
+                          className={`min-w-[7.5rem] flex-1 rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] px-2.5 py-1.5 border-l-4 kpi-widget-border ${template?.borderClass || 'border-gray-400'} ${kpiEditMode ? 'cursor-move' : 'cursor-pointer hover:bg-[var(--pm-surface-2)] transition-colors'}`}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm text-gray-500 dark:text-gray-400">{getWidgetDisplayTitle(widget)}</p>
-                              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{formattedValue}{valueData.suffix || ''}</p>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-[11px] leading-tight text-[var(--pm-muted)]">{getWidgetDisplayTitle(widget)}</p>
+                              <p className="mt-0.5 text-lg font-bold leading-none text-[var(--pm-text)]">{formattedValue}{valueData.suffix || ''}</p>
                               {valueData.subtitle && (
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{valueData.subtitle}</p>
+                                <p className="mt-0.5 truncate text-[10px] text-gray-500 dark:text-gray-400">{valueData.subtitle}</p>
                               )}
                             </div>
-                            <div className="text-3xl opacity-60">{template?.icon || '📌'}</div>
+                            <div className="shrink-0 text-base opacity-70">{template?.icon || '📌'}</div>
                           </div>
 
                           {kpiEditMode && (
@@ -3039,9 +2981,78 @@ function DashboardContent() {
                         </div>
                       );
                     })}
+                  </>
+                )}
+
+                {kpiEditMode ? (
+                  <div className="flex w-9 shrink-0 flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={handleSaveKpis}
+                      disabled={kpiSaving}
+                      title={kpiSaving ? 'Saving…' : 'Save KPIs'}
+                      aria-label={kpiSaving ? 'Saving KPIs' : 'Save KPIs'}
+                      className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-[var(--pm-accent)]/50 bg-[var(--pm-accent)]/15 text-[var(--pm-accent-soft)] hover:bg-[var(--pm-accent)]/25 disabled:opacity-50"
+                    >
+                      <Check size={16} strokeWidth={2} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelKpiEdit}
+                      title="Cancel"
+                      aria-label="Cancel KPI edit"
+                      className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] text-[var(--pm-muted)] hover:bg-[var(--pm-surface-2)] hover:text-[var(--pm-text)]"
+                    >
+                      <X size={16} strokeWidth={2} />
+                    </button>
                   </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setKpiEditMode(true)}
+                    title="Edit KPIs"
+                    aria-label="Edit KPIs"
+                    className="inline-flex w-9 shrink-0 items-center justify-center self-stretch rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] text-[var(--pm-muted)] hover:bg-[var(--pm-surface-2)] hover:text-[var(--pm-accent-soft)]"
+                  >
+                    <Pencil size={16} strokeWidth={1.75} />
+                  </button>
                 )}
               </div>
+            )}
+              </div>
+            </div>
+          </div>
+
+          <PageTabs
+            tabs={[
+              { id: 'overview', label: 'Overview' },
+              ...(!showCalendarInOverview ? [{ id: 'calendar', label: 'Calendar' }] : []),
+              { id: 'kanban', label: 'Kanban' },
+              ...(user?.isAdmin ? [{ id: 'analytics', label: 'Analytics' }] : []),
+            ]}
+            activeId={activeTab}
+            onChange={(id) => {
+              const next = id as typeof activeTab;
+              setActiveTab(next);
+              window.history.pushState(
+                {},
+                '',
+                next === 'overview' ? '/dashboard' : `/dashboard?tab=${next}`
+              );
+            }}
+          />
+
+          <main ref={scrollContainerRef} className="min-w-0 flex-1 overflow-auto pt-2">
+            <InstallAppPrompt className="mb-4" />
+            {/* Overview Tab */}
+            {activeTab === 'overview' && (
+            overviewLoading ? (
+              <div className="space-y-4 animate-pulse">
+                <div className="rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] h-20" />
+                <div className="rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] h-[520px]" />
+              </div>
+            ) : (
+            <div className="space-y-6">
 
               {showCalendarInOverview ? (
                 calendarLoading ? (

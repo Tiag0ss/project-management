@@ -230,7 +230,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="w-full flex-1 p-3 md:p-4">{children}</main>
+        <main className="pm-density w-full flex-1 p-2 md:p-3">{children}</main>
       </div>
     </div>
   );
