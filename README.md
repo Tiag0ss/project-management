@@ -12,10 +12,6 @@ A full-stack, self-hosted project management application with task tracking, res
 
 This project is a work in progress — bugs may still be found; please report them on GitHub.
 
-## Rebuild roadmap
-
-Phased UI + server rebuild status: [docs/REBUILD_ROADMAP.md](docs/REBUILD_ROADMAP.md).
-
 ## Features
 
 - 📋 **Project & Task Management** — Kanban boards, Gantt view, task hierarchy (parent/subtasks), dependencies, custom statuses/priorities/types with Lucide icons, and quick navigation between tasks and projects
@@ -32,7 +28,6 @@ Phased UI + server rebuild status: [docs/REBUILD_ROADMAP.md](docs/REBUILD_ROADMA
 - 🛠️ **Application Lifecycle Management** — Application registry, version control, release management with PDF exports, task-to-release linking
 - 🔗 **Integrations** — Jira, GitHub, Gitea, and Outlook calendar (Microsoft Graph); credentials encrypted at rest
 - 📬 **Outlook Email Task Queue** — Route emails via Cloudflare Email Routing to a per-user queue; import as tasks from the project UI ([setup guide](extras/cloudflare/README.md))
-- 📧 **Outlook Add-in** — Create tasks from Outlook desktop/web ([outlook-addin/README.md](outlook-addin/README.md))
 - 🔑 **API Tokens** — Personal `pt_...` tokens for webhooks, Workers, and integrations (Profile → API Tokens)
 - 📝 **Rich Text Editor** — Tiptap-based editor with formatting, images (inline base64), and markdown support
 - 📔 **Memos System** — Calendar-based notes with visibility controls (Private, Organizations, Public), tags, and rich content
@@ -352,5 +347,4 @@ MIT
 - 🐛 [Report Issues](https://github.com/tiag0ss/project-management/issues)
 - 📖 [Source Code](https://github.com/tiag0ss/project-management)
 - 📬 [Cloudflare Email Task Queue](extras/cloudflare/README.md)
-- 📧 [Outlook Add-in](outlook-addin/README.md)
 - 🧪 [Testing Scenarios](TESTING_SCENARIOS.md)

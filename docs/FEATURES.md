@@ -2,7 +2,6 @@
 
 Comprehensive documentation of all features available in the application. Use this as the primary reference when implementing new features, writing tests, or onboarding new team members.
 
-**Rebuild roadmap:** [REBUILD_ROADMAP.md](REBUILD_ROADMAP.md) — live shell `app/` + `server/modules`; archive `old/`.  
 **End-user manual (in-app):** `/docs` — step-by-step workflows, playbooks, and permission matrices.  
 **Test scenarios:** [TESTING_SCENARIOS.md](../TESTING_SCENARIOS.md)  
 **Deploy/ops:** [README.md](../README.md), [DEPLOYMENT.md](../DEPLOYMENT.md)
@@ -1094,7 +1093,7 @@ Server operators may also set `REDIS_ENABLED` and related env vars (see [Redis C
 
 ## 21. API Tokens
 
-Personal integration tokens for scripts, Cloudflare Workers, the Outlook add-in, and IDE extensions.
+Personal integration tokens for scripts, Cloudflare Workers, and IDE extensions.
 
 ### Creating Tokens
 1. **My Profile → API Tokens** (any signed-in user) — manage your own tokens
@@ -1165,9 +1164,6 @@ Per-user queue for turning emails into tasks. Setup: [cloudflare/README.md](../e
 - `ExternalMessageId` (Message-ID header) deduplicates retries
 - Unknown senders accepted with 202 but not queued
 - API token required on webhook; queue owner resolved from email From address
-
-### Outlook Add-in
-The [outlook-addin](../outlook-addin/README.md) settings pane can store an API endpoint/token. **Task creation from the add-in is no longer supported** — create tasks in the web app or via the email task queue.
 
 ---
 

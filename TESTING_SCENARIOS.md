@@ -1,5 +1,3 @@
-> Rebuild roadmap: [docs/REBUILD_ROADMAP.md](docs/REBUILD_ROADMAP.md)
-
 # Testing Scenarios - Project Management App
 
 This document contains comprehensive test scenarios to verify all functionality is working correctly. Test scenarios are organized by feature area with detailed steps and expected results. Updated for Redis cache, API tokens, Outlook calendar/queue, task type icons, and GitHub/Gitea integrations.

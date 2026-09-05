@@ -12,14 +12,13 @@ Cursor agents: read **`.cursor/rules/project-management.mdc`** (always on) plus 
 
 | Need | Read |
 |------|------|
-| Rebuild roadmap (progress) | [docs/REBUILD_ROADMAP.md](docs/REBUILD_ROADMAP.md) |
 | Feature reference | [docs/FEATURES.md](docs/FEATURES.md) |
 | Permissions | [docs/ROLE_PERMISSIONS.md](docs/ROLE_PERMISSIONS.md) |
 | Manual test catalog | [TESTING_SCENARIOS.md](TESTING_SCENARIOS.md) |
 | End-user manual | `/docs` in app |
 | Deploy / Redis / env | [README.md](README.md) |
 
-## Layout (rebuild)
+## Layout
 
 | Path | Role |
 |------|------|

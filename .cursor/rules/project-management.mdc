@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Project Management — agent master context
 
-Read this rule first. For depth, use scoped rules in `.cursor/rules/` and skills in `.cursor/skills/`. Progress: [docs/REBUILD_ROADMAP.md](../../docs/REBUILD_ROADMAP.md).
+Read this rule first. For depth, use scoped rules in `.cursor/rules/` and skills in `.cursor/skills/`.
 
 ## Language (mandatory)
 
@@ -39,7 +39,7 @@ old/                    # Dead archive (frontend/ + backend/) — never import/m
 extras/                 # ide-extensions, cloudflare, desktop, release
 __tests__/unit/         # Unit tests (required for new domain logic)
 .cursor/skills/         # Task skills
-docs/REBUILD_ROADMAP.md # Phased rebuild status
+docs/                   # FEATURES, ROLE_PERMISSIONS, etc.
 ```
 
 ## Non-negotiables (never violate)
@@ -112,7 +112,6 @@ docs/REBUILD_ROADMAP.md # Phased rebuild status
 ## Key docs
 
 - [AGENTS.md](../../AGENTS.md)
-- [docs/REBUILD_ROADMAP.md](../../docs/REBUILD_ROADMAP.md)
 - [docs/FEATURES.md](../../docs/FEATURES.md)
 - [docs/ROLE_PERMISSIONS.md](../../docs/ROLE_PERMISSIONS.md)
 - [TESTING_SCENARIOS.md](../../TESTING_SCENARIOS.md)

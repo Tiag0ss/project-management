@@ -21,7 +21,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-/** Synapse shell fonts (see pm-synapse / rebuild plan). */
+/** Synapse shell fonts. */
 const dmSans = DM_Sans({
   subsets: ["latin"],
   style: ["normal", "italic"],

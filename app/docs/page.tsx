@@ -980,7 +980,7 @@ const featureDetails: FeatureDetailSection[] = [
       { option: 'Last Used At', meaning: 'Updated when token authenticates a request.' },
     ],
     moduleRelations: [
-      'Used by Cloudflare email queue webhook, Outlook add-in, and custom scripts.',
+      'Used by Cloudflare email queue webhook and custom scripts.',
       'Token acts as the owning user for permission checks.',
     ],
     imagePlaceholders: [
@@ -1039,8 +1039,7 @@ const featureDetails: FeatureDetailSection[] = [
       { option: 'Body', meaning: 'Normalized to task description (HTML/plain cleaned).' },
     ],
     moduleRelations: [
-      'Requires Cloudflare Worker + API token (see repository cloudflare/README.md).',
-      'Distinct from Outlook add-in which creates tasks directly from Outlook UI.',
+      'Requires Cloudflare Worker + API token (see repository extras/cloudflare/README.md).',
     ],
     imagePlaceholders: [
       { label: 'Queue import modal', fileName: 'docs-detail-email-queue-import.png', note: 'Capture pending items list and import action.' },
@@ -1287,7 +1286,7 @@ const workflowPlaybooks: WorkflowPlaybook[] = [
     goal: 'Capture work from email into the correct project task with minimal manual entry.',
     modulesInvolved: ['Email Task Queue', 'Projects', 'Tasks', 'Planning'],
     steps: [
-      'Send email from your registered address to the queue inbox (or use Outlook add-in for direct create).',
+      'Send email from your registered address to the queue inbox.',
       'Open target project → Import from Outlook Queue when the menu appears.',
       'Import into the correct project; verify task name and description.',
       'Assign owner, set status/priority/type, and plan in Gantt if needed.',

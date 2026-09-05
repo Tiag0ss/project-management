@@ -34,7 +34,6 @@ Docs: [docs/FEATURES.md](../../docs/FEATURES.md) · Skills: `skill-jira-integrat
 
 - `EmailTaskQueue` table; webhook from Cloudflare Worker ([cloudflare/README.md](../../extras/cloudflare/README.md)).
 - Import creates tasks; invalidate task/project caches on import.
-- Outlook add-in: [outlook-addin/README.md](../../outlook-addin/README.md).
 
 ## API tokens
 

@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Testing & quality
 
-Catalog: [TESTING_SCENARIOS.md](../../TESTING_SCENARIOS.md) · Roadmap: [docs/REBUILD_ROADMAP.md](../../docs/REBUILD_ROADMAP.md) · CI: `.github/workflows/ci.yml`
+Catalog: [TESTING_SCENARIOS.md](../../TESTING_SCENARIOS.md) · CI: `.github/workflows/ci.yml`
 
 ## Commands
 
@@ -36,8 +36,8 @@ When changing `server/utils/validation.ts`, update `__tests__/unit/validation.te
 
 ```
 __tests__/
-  unit/           # gate requirement for rebuild phases
-  integration/    # optional; not required for phase gates
+  unit/           # required for new/changed domain logic
+  integration/    # optional
   setup.ts
 ```
 
@@ -48,13 +48,12 @@ __tests__/
 ## Integration tests (optional)
 
 - Mock DB at `pool.execute`; use supertest.
-- Not required to complete a rebuild phase gate.
+- Optional; not required for every change.
 
-## Before PR / phase gate
+## Before PR
 
 1. `pnpm run test:unit`
-2. Manual smoke from `docs/REBUILD_ROADMAP.md`
-3. Update roadmap status checkbox/row
+2. Manual smoke from [TESTING_SCENARIOS.md](../../TESTING_SCENARIOS.md) when the change affects user flows
 
 ## Do not
 

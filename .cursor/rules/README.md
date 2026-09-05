@@ -1,6 +1,6 @@
 # Cursor rules index
 
-Rules in this folder guide Cursor agents. See [AGENTS.md](../../AGENTS.md) and [docs/REBUILD_ROADMAP.md](../../docs/REBUILD_ROADMAP.md).
+Rules in this folder guide Cursor agents. See [AGENTS.md](../../AGENTS.md).
 
 ## Always active
 
