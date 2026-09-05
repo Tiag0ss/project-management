@@ -938,15 +938,12 @@ export default function TimesheetPage() {
       <div className="w-full">
 
         <main className="w-full mx-auto py-6 sm:px-6 lg:px-8">
-          <div className="px-4 py-6 sm:px-0">
-            {/* Page Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow p-6 text-white mb-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-3xl font-bold">Timesheet</h1>
-                  <p className="text-blue-100 mt-1">Track your hours and review your time entries</p>
-                </div>
-              </div>
+          <div className="px-4 sm:px-0 space-y-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Timesheet</h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Track your hours and review your time entries.
+              </p>
             </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">

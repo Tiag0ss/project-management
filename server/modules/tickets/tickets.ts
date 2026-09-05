@@ -568,7 +568,7 @@ router.post('/', authenticateToken, validateRequest(createTicketSchema), async (
       logger.info('[Ticket Creation] No customer for this ticket (neither from user nor project)');
     }
 
-    // Resolve StatusId (default for org) and PriorityId from name
+    // Resolve StatusId (default for org) and PriorityId from FK id
     const [defaultStatusRows] = await pool.execute<RowDataPacket[]>(
       'SELECT Id FROM TicketStatusValues WHERE OrganizationId = ? AND IsDefault = 1 LIMIT 1',
       [organizationId]
@@ -579,16 +579,12 @@ router.post('/', authenticateToken, validateRequest(createTicketSchema), async (
     );
     const newStatusId = defaultStatusRows[0]?.Id || firstStatusRows[0]?.Id || null;
 
-    const priorityName = priority;
+    const priorityId = Number(priority);
     const [priorityRows] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id FROM TicketPriorityValues WHERE OrganizationId = ? AND PriorityName = ?',
-      [organizationId, priorityName]
+      'SELECT Id FROM TicketPriorityValues WHERE OrganizationId = ? AND Id = ?',
+      [organizationId, priorityId]
     );
-    const [defaultPriorityRows] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id FROM TicketPriorityValues WHERE OrganizationId = ? AND IsDefault = 1 LIMIT 1',
-      [organizationId]
-    );
-    const newPriorityId = priorityRows[0]?.Id || defaultPriorityRows[0]?.Id || null;
+    const newPriorityId = priorityRows[0]?.Id || null;
 
     if (!newStatusId) {
       return res.status(400).json({ success: false, message: 'Ticket status is required but no status values are configured for this organization' });
@@ -751,11 +747,11 @@ router.put('/:id', authenticateToken, validateRequest(updateTicketBodySchema), a
     const userId = req.user?.userId;
     const customerId = req.user?.customerId;
     
-    // Normalize all string values from request body
+    // Normalize string fields; status/priority are FK int IDs from validateRequest
     const title = normalizeString(req.body.title);
     const description = normalizeString(req.body.description);
-    const status = normalizeString(req.body.status);
-    const priority = normalizeString(req.body.priority);
+    const status = req.body.status as number | undefined;
+    const priority = req.body.priority as number | undefined;
     const category = normalizeString(req.body.category);
     const assignedToUserId = req.body.assignedToUserId;
     const projectId = req.body.projectId;
@@ -765,11 +761,11 @@ router.put('/:id', authenticateToken, validateRequest(updateTicketBodySchema), a
     const customerId_new = req.body.customerId; // Different from user's customerId
     const customFields = req.body.customFields;
 
-    if (status !== undefined && status !== null && status === '') {
+    if (status !== undefined && status !== null && !Number.isFinite(Number(status))) {
       return res.status(400).json({ success: false, message: 'Status is required' });
     }
 
-    if (priority !== undefined && priority !== null && priority === '') {
+    if (priority !== undefined && priority !== null && !Number.isFinite(Number(priority))) {
       return res.status(400).json({ success: false, message: 'Priority is required' });
     }
 
@@ -837,19 +833,20 @@ router.put('/:id', authenticateToken, validateRequest(updateTicketBodySchema), a
         await logTicketHistory(ticketId, userId!, 'Updated', change.field, change.oldVal, change.newVal);
       }
       if (status !== undefined) {
-        // Resolve new StatusId from name
+        // Resolve status by FK id for this organization
         const [statusRow] = await pool.execute<RowDataPacket[]>(
-          'SELECT Id, IsClosed FROM TicketStatusValues WHERE OrganizationId = ? AND StatusName = ?',
+          'SELECT Id, StatusName, IsClosed FROM TicketStatusValues WHERE OrganizationId = ? AND Id = ?',
           [ticket.OrganizationId, status]
         );
         if (statusRow.length === 0) {
           return res.status(400).json({ success: false, message: `Invalid status: ${status}` });
         }
         const newStatusId = statusRow[0].Id;
+        const newStatusName = statusRow[0].StatusName as string;
         const newStatusIsClosed = statusRow[0].IsClosed;
 
-        if (status !== ticket.Status) {
-          await logTicketHistory(ticketId, userId!, 'StatusChanged', 'Status', ticket.Status, status);
+        if (newStatusName !== ticket.Status) {
+          await logTicketHistory(ticketId, userId!, 'StatusChanged', 'Status', ticket.Status, newStatusName);
           
           // Notify ticket creator about ANY status change (if they're not the one making the change)
           if (ticket.CreatedByUserId && ticket.CreatedByUserId !== userId) {
@@ -857,7 +854,7 @@ router.put('/:id', authenticateToken, validateRequest(updateTicketBodySchema), a
               ticket.CreatedByUserId,
               'ticket_status',
               'Ticket Status Changed',
-              `Your ticket ${ticket.TicketNumber} status changed from "${ticket.Status}" to "${status}"`,
+              `Your ticket ${ticket.TicketNumber} status changed from "${ticket.Status}" to "${newStatusName}"`,
               `/tickets/${ticketId}`
             );
           }
@@ -868,7 +865,7 @@ router.put('/:id', authenticateToken, validateRequest(updateTicketBodySchema), a
               ticket.AssignedToUserId,
               'ticket_status',
               'Assigned Ticket Status Changed',
-              `Ticket ${ticket.TicketNumber} status changed from "${ticket.Status}" to "${status}"`,
+              `Ticket ${ticket.TicketNumber} status changed from "${ticket.Status}" to "${newStatusName}"`,
               `/tickets/${ticketId}`
             );
           }
@@ -885,18 +882,19 @@ router.put('/:id', authenticateToken, validateRequest(updateTicketBodySchema), a
         }
       }
       if (priority !== undefined) {
-        // Resolve new PriorityId from name
+        // Resolve priority by FK id for this organization
         const [priorityRow] = await pool.execute<RowDataPacket[]>(
-          'SELECT Id FROM TicketPriorityValues WHERE OrganizationId = ? AND PriorityName = ?',
+          'SELECT Id, PriorityName FROM TicketPriorityValues WHERE OrganizationId = ? AND Id = ?',
           [ticket.OrganizationId, priority]
         );
         if (priorityRow.length === 0) {
           return res.status(400).json({ success: false, message: `Invalid priority: ${priority}` });
         }
         const newPriorityId = priorityRow[0].Id;
+        const newPriorityName = priorityRow[0].PriorityName as string;
 
-        if (priority !== ticket.Priority) {
-          await logTicketHistory(ticketId, userId!, 'PriorityChanged', 'Priority', ticket.Priority, priority);
+        if (newPriorityName !== ticket.Priority) {
+          await logTicketHistory(ticketId, userId!, 'PriorityChanged', 'Priority', ticket.Priority, newPriorityName);
         }
         updates.push('PriorityId = ?');
         params.push(newPriorityId);

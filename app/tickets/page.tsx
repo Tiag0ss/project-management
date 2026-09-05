@@ -200,9 +200,10 @@ export default function TicketsPage() {
     if (createForm.priority) return;
     if (ticketPriorities.length === 0) return;
 
-    const defaultPriority = ticketPriorities.find((priority) => priority.IsDefault)?.PriorityName || ticketPriorities[0]?.PriorityName || '';
+    const defaultPriority =
+      ticketPriorities.find((priority) => priority.IsDefault)?.Id ?? ticketPriorities[0]?.Id;
     if (defaultPriority) {
-      setCreateForm((prev) => ({ ...prev, priority: defaultPriority }));
+      setCreateForm((prev) => ({ ...prev, priority: String(defaultPriority) }));
     }
   }, [showCreateModal, createForm.priority, ticketPriorities]);
 
@@ -544,7 +545,7 @@ export default function TicketsPage() {
             projectId: isCustomerUser ? null : (createForm.projectId ? parseInt(createForm.projectId) : null),
             title: createForm.title.trim(),
             description: createForm.description || null,
-            priority: createForm.priority,
+            priority: parseInt(createForm.priority, 10),
             category: createForm.category,
             externalTicketId: createForm.externalTicketId || null,
             customFields: createForm.customFields,
@@ -606,7 +607,7 @@ export default function TicketsPage() {
         projectId: '',
         title: '',
         description: '',
-        priority: ticketPriorities.find(p => p.IsDefault)?.PriorityName || ticketPriorities[0]?.PriorityName || '',
+        priority: String(ticketPriorities.find(p => p.IsDefault)?.Id || ticketPriorities[0]?.Id || ''),
         category: 'Support',
         externalTicketId: '',
         customFields: {},
@@ -1343,10 +1344,15 @@ export default function TicketsPage() {
                                   onClick={() => {
                                     const mapPriority = (jiraPriority: string) => {
                                       const lower = jiraPriority?.toLowerCase() || '';
-                                      if (lower.includes('highest') || lower.includes('critical')) return 'High';
-                                      if (lower.includes('high')) return 'High';
-                                      if (lower.includes('low') || lower.includes('lowest')) return 'Low';
-                                      return 'Medium';
+                                      let name = 'Medium';
+                                      if (lower.includes('highest') || lower.includes('critical')) name = 'High';
+                                      else if (lower.includes('high')) name = 'High';
+                                      else if (lower.includes('low') || lower.includes('lowest')) name = 'Low';
+                                      const match =
+                                        ticketPriorities.find((p) => p.PriorityName === name) ||
+                                        ticketPriorities.find((p) => p.IsDefault) ||
+                                        ticketPriorities[0];
+                                      return match ? String(match.Id) : '';
                                     };
 
                                     const mapCategory = (issueType: string) => {
@@ -1482,7 +1488,7 @@ export default function TicketsPage() {
                       >
                         <option value="">Select priority...</option>
                         {ticketPriorities.map(p => (
-                          <option key={p.Id} value={p.PriorityName}>{p.PriorityName}</option>
+                          <option key={p.Id} value={p.Id}>{p.PriorityName}</option>
                         ))}
                       </select>
                     </div>

@@ -342,8 +342,8 @@ export default function TicketDetailPage() {
       setEditForm({
         title: data.ticket.Title,
         description: data.ticket.Description || '',
-        status: data.ticket.Status || '',
-        priority: data.ticket.Priority || '',
+        status: data.ticket.StatusId != null ? String(data.ticket.StatusId) : '',
+        priority: data.ticket.PriorityId != null ? String(data.ticket.PriorityId) : '',
         category: data.ticket.Category || '',
         assignedToUserId: data.ticket.AssignedToUserId?.toString() || '',
         developerUserId: data.ticket.DeveloperUserId?.toString() || '',
@@ -662,8 +662,8 @@ export default function TicketDetailPage() {
           body: JSON.stringify({
             title: editForm.title.trim(),
             description: editForm.description || null,
-            status: editForm.status,
-            priority: editForm.priority,
+            status: editForm.status ? parseInt(editForm.status, 10) : undefined,
+            priority: editForm.priority ? parseInt(editForm.priority, 10) : undefined,
             category: editForm.category,
             assignedToUserId: editForm.assignedToUserId ? parseInt(editForm.assignedToUserId) : null,
             developerUserId: editForm.developerUserId ? parseInt(editForm.developerUserId) : null,
@@ -1525,7 +1525,7 @@ export default function TicketDetailPage() {
                       onChange={(e) => setEditForm(prev => ({ ...prev, status: e.target.value }))}
                       className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
                     >
-                      {ticketStatuses.map(s => <option key={s.Id} value={s.StatusName}>{s.StatusName}</option>)}
+                      {ticketStatuses.map(s => <option key={s.Id} value={s.Id}>{s.StatusName}</option>)}
                     </select>
                   ) : (
                     <dd className="mt-1 inline-block px-2 py-1 text-sm rounded-full" style={getStatusStyle(ticket.Status)}>
@@ -1543,7 +1543,7 @@ export default function TicketDetailPage() {
                       onChange={(e) => setEditForm(prev => ({ ...prev, priority: e.target.value }))}
                       className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
                     >
-                      {ticketPriorities.map(p => <option key={p.Id} value={p.PriorityName}>{p.PriorityName}</option>)}
+                      {ticketPriorities.map(p => <option key={p.Id} value={p.Id}>{p.PriorityName}</option>)}
                     </select>
                   ) : (
                     <dd className="mt-1 inline-block px-2 py-1 text-sm rounded-full" style={getPriorityStyle(ticket.Priority)}>
