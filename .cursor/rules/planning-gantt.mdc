@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Planning / Gantt
 
-Page: `app/(app)/planning/page.tsx` · Archive reference: `old/frontend/app/planning` (do not import).
+Page: `app/planning/page.tsx` · Archive reference: `old/frontend/app/planning` (do not import).
 
 ## Core model
 

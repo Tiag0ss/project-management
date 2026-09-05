@@ -23,7 +23,7 @@ Cursor agents: read **`.cursor/rules/project-management.mdc`** (always on) plus 
 
 | Path | Role |
 |------|------|
-| `app/(app)/` | Authenticated UI (Synapse AppShell) |
+| `app/` | App Router UI (public auth pages + authenticated routes; shell via `AuthenticatedAppGate`) |
 | `components/` | Live UI components |
 | `server/modules/` | Live API domains (only mount point) |
 | `server/database/` | Shared JSON schema SOT |

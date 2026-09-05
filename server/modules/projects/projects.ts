@@ -12,6 +12,7 @@ import { cacheKeys } from '../../services/cacheKeys';
 import { invalidateByEntity } from '../../services/cacheInvalidation';
 import logger from '../../utils/logger';
 import { createProjectSchema, updateProjectBodySchema, validateRequest } from '../../utils/validation';
+import { buildBurndownSeries, toDateOnlyString } from '../../utils/burndownSeries';
 
 const router = Router();
 
@@ -579,43 +580,28 @@ router.get('/:id/burndown', authenticateToken, async (req: AuthRequest, res: Res
           [projectId]
         );
 
-        const firstEntry = dailyEntries.length > 0 ? dailyEntries[0].WorkDate : null;
-        const today = new Date().toISOString().split('T')[0];
+        const firstEntry = dailyEntries.length > 0 ? toDateOnlyString(String(dailyEntries[0].WorkDate)) : null;
+        const today = toDateOnlyString(new Date());
         const startDate = project.StartDate
-          ? new Date(project.StartDate).toISOString().split('T')[0]
+          ? toDateOnlyString(project.StartDate)
           : (firstEntry || today);
         const endDate = project.EndDate
-          ? new Date(project.EndDate).toISOString().split('T')[0]
+          ? toDateOnlyString(project.EndDate)
           : today;
 
         const dailyMap: Record<string, number> = {};
         for (const row of dailyEntries) {
-          dailyMap[row.WorkDate] = parseFloat(row.DailyHours);
+          dailyMap[toDateOnlyString(String(row.WorkDate))] = parseFloat(row.DailyHours);
         }
 
         const maxDate = endDate > today ? endDate : today;
-        const series: { date: string; worked: number; cumulative: number; remaining: number; ideal: number }[] = [];
-        const start = new Date(startDate);
-        const end = new Date(maxDate);
-        const totalDays = Math.max(1, Math.round((new Date(endDate).getTime() - start.getTime()) / 86400000));
-
-        let cumulative = 0;
-        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-          const dateStr = d.toISOString().split('T')[0];
-          const worked = dailyMap[dateStr] || 0;
-          cumulative += worked;
-          const daysFromStart = Math.round((d.getTime() - start.getTime()) / 86400000);
-          const idealProgress = totalEstimatedHours > 0
-            ? Math.max(0, totalEstimatedHours - (totalEstimatedHours * (daysFromStart / totalDays)))
-            : 0;
-          series.push({
-            date: dateStr,
-            worked,
-            cumulative,
-            remaining: Math.max(0, totalEstimatedHours - cumulative),
-            ideal: Math.round(idealProgress * 100) / 100
-          });
-        }
+        const series = buildBurndownSeries({
+          startDate,
+          endDate,
+          maxDate,
+          totalEstimatedHours,
+          dailyMap,
+        });
 
         return {
           success: true,

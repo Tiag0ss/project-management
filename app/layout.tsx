@@ -7,6 +7,7 @@ import { ToastProvider } from "@/contexts/ToastContext";
 import BrandingRuntime from "@/components/BrandingRuntime";
 import PreferencesRuntime from "@/components/PreferencesRuntime";
 import PwaRegister from "@/components/PwaRegister";
+import AuthenticatedAppGate from "@/components/AuthenticatedAppGate";
 import { PREFERENCES_EARLY_APPLY_SCRIPT } from "@/lib/colorVision";
 import { getPublicBranding, inferFaviconType } from "@/lib/branding/publicBranding.server";
 
@@ -87,7 +88,7 @@ export default function RootLayout({
               <PreferencesRuntime />
               <BrandingRuntime />
               <PwaRegister />
-              {children}
+              <AuthenticatedAppGate>{children}</AuthenticatedAppGate>
             </ToastProvider>
           </PermissionsProvider>
         </AuthProvider>

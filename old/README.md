@@ -7,5 +7,5 @@ This folder is a **dead archive** of the pre-rebuild UI and Express routers.
 - Do **not** add features here
 
 Live code:
-- UI: `app/(app)/`, `components/`
+- UI: `app/`, `components/`
 - API: `server/modules/`

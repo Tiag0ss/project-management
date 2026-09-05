@@ -13,7 +13,7 @@ Implement or update Jira integration behavior across organization settings, proj
 
 ## Placement
 
-- Prefer new/changed API under `server/modules/**`; UI under `app/(app)/` and admin/settings components.
+- Prefer new/changed API under `server/modules/**`; UI under `app/` and admin/settings components.
 - Do not add features under `*/old/**`.
 - New domain logic requires unit tests under `__tests__/unit/`.
 

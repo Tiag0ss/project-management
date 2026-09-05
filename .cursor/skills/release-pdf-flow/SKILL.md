@@ -13,7 +13,7 @@ Implement or refine application release workflows, task linkage, and PDF exports
 
 ## Placement
 
-- Prefer new/changed API under `server/modules/**`; UI under `app/(app)/`.
+- Prefer new/changed API under `server/modules/**`; UI under `app/`.
 - Do not add features under `*/old/**`.
 - New domain logic (assignment rules, PDF builders) requires unit tests under `__tests__/unit/`.
 

@@ -13,7 +13,7 @@ Implement or adjust Dashboard KPI cards so card totals and drill-down details ar
 
 ## Placement
 
-- Prefer new/changed API under `server/modules/**`; UI under `app/(app)/` (dashboard pages).
+- Prefer new/changed API under `server/modules/**`; UI under `app/` (dashboard pages).
 - Do not add features under `*/old/**`.
 - New domain/query logic requires unit tests under `__tests__/unit/`.
 

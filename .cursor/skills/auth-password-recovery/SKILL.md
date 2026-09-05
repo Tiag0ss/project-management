@@ -13,7 +13,7 @@ Implement or modify forgot-password and reset-password functionality with secure
 
 ## Placement
 
-- Prefer auth UI under `app/(app)/` or existing auth routes; API under `server/modules/**` when restructuring — not `*/old/**`.
+- Prefer auth UI under `app/` or existing auth routes; API under `server/modules/**` when restructuring — not `*/old/**`.
 - Do not add features under `*/old/**`.
 - New domain logic (token helpers, validation) requires unit tests under `__tests__/unit/`.
 

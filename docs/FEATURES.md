@@ -2,7 +2,7 @@
 
 Comprehensive documentation of all features available in the application. Use this as the primary reference when implementing new features, writing tests, or onboarding new team members.
 
-**Rebuild roadmap:** [REBUILD_ROADMAP.md](REBUILD_ROADMAP.md) — live shell `app/(app)` + `server/modules`; archive `old/`.  
+**Rebuild roadmap:** [REBUILD_ROADMAP.md](REBUILD_ROADMAP.md) — live shell `app/` + `server/modules`; archive `old/`.  
 **End-user manual (in-app):** `/docs` — step-by-step workflows, playbooks, and permission matrices.  
 **Test scenarios:** [TESTING_SCENARIOS.md](../TESTING_SCENARIOS.md)  
 **Deploy/ops:** [README.md](../README.md), [DEPLOYMENT.md](../DEPLOYMENT.md)

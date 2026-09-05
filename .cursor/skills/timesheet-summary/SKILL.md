@@ -13,7 +13,7 @@ Implement or adjust grouping/summarization in Timesheet "All Entries"/"Resume" f
 
 ## Placement
 
-- Prefer timesheet UI under `app/(app)/` (or existing `app/timesheet/` until migrated); helpers/domain under shared modules — not `*/old/**`.
+- Prefer timesheet UI under `app/` (or existing `app/timesheet/` until migrated); helpers/domain under shared modules — not `*/old/**`.
 - Prefer related API under `server/modules/**` when backend changes are needed.
 - New grouping/summary domain logic requires unit tests under `__tests__/unit/`.
 

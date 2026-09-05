@@ -13,7 +13,7 @@ Implement UI features that correctly respect role-based and permission-based acc
 
 ## Placement
 
-- Prefer new UI under `app/(app)/` and shared components under `components/`.
+- Prefer new UI under `app/` and shared components under `components/`.
 - Prefer related API checks under `server/modules/**`.
 - Do not add features under `*/old/**`.
 - New permission-helper domain logic requires unit tests under `__tests__/unit/`.

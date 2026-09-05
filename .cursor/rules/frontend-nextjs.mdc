@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Frontend — Next.js & React
 
-Skill: [.cursor/skills/frontend-feature/SKILL.md](../skills/frontend-feature/SKILL.md) · Live UI: `app/(app)` + `components/` (Synapse). Legacy archive: root `old/frontend` (do not import).
+Skill: [.cursor/skills/frontend-feature/SKILL.md](../skills/frontend-feature/SKILL.md) · Live UI: `app/` + `components/` (Synapse). Legacy archive: root `old/frontend` (do not import).
 
 ## Component skeleton
 

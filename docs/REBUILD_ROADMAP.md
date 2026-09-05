@@ -4,7 +4,7 @@ Source of truth for phased rebuild progress. Design notes may live in Cursor pla
 
 ## Rules
 
-- Live UI: `app/(app)/` + `components/` (Synapse dark AppShell + PageTabs).
+- Live UI: `app/` + `components/` (Synapse dark AppShell + PageTabs).
 - Live API: `server/modules/<domain>/` only — **no** runtime imports/mounts of archived routers.
 - Legacy archive (dead): root [`old/`](../old/) (`old/frontend`, `old/backend`) — never import, never mount, never add features.
 - Keep stable `/api/...` paths.
@@ -19,7 +19,7 @@ Source of truth for phased rebuild progress. Design notes may live in Cursor pla
 | −1t | Unit tests + CI baseline | done |
 | 0a | Freeze legacy UI under archive | done |
 | 0b | AppShell + modules layout | done |
-| 1–14 | Domains under `app/(app)` + `server/modules` | done |
+| 1–14 | Domains under `app/` + `server/modules` | done |
 | — | Isolate archive at root `old/`; modules own route bodies | done |
 
 ## Waves

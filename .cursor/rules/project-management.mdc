@@ -28,7 +28,7 @@ Read this rule first. For depth, use scoped rules in `.cursor/rules/` and skills
 ## Repository map (where to edit)
 
 ```
-app/(app)/              # Authenticated UI (Synapse AppShell)
+app/                   # App Router (shell via AuthenticatedAppGate)
 app/docs/               # In-app manual (frozen)
 components/             # Live UI components
 lib/api/                # Frontend API clients + getApiUrl()

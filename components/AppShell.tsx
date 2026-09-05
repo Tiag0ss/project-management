@@ -108,7 +108,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="pm-app flex min-h-screen w-full bg-[var(--pm-bg)] text-[var(--pm-text)]">
+    <div className="pm-app flex h-dvh min-h-0 w-full overflow-hidden bg-[var(--pm-bg)] text-[var(--pm-text)]">
       {/* Spacer: collapsed rail always; full width only when pinned */}
       <div
         className={[
@@ -122,7 +122,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className={[
-          'fixed left-0 top-0 z-50 flex h-screen flex-col overflow-hidden border-r border-[var(--pm-border)] bg-[var(--pm-panel)] shadow-xl transition-[width] duration-200',
+          'fixed left-0 top-0 z-50 flex h-dvh flex-col overflow-hidden border-r border-[var(--pm-border)] bg-[var(--pm-panel)] shadow-xl transition-[width] duration-200',
           expanded ? 'w-72' : 'w-16',
         ].join(' ')}
       >
@@ -199,8 +199,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-40 flex min-h-12 items-center gap-3 border-b border-[var(--pm-border)] bg-[var(--pm-panel)] px-2 py-1.5 sm:px-3">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="z-40 flex min-h-12 shrink-0 items-center gap-3 border-b border-[var(--pm-border)] bg-[var(--pm-panel)] px-2 py-1.5 sm:px-3">
           <div className="z-10 flex min-w-[10rem] shrink-0 items-center gap-2 sm:min-w-[12rem]">
             <Building2 size={16} className="shrink-0 text-[var(--pm-accent)]" />
             {orgLoading ? (
@@ -230,7 +230,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="pm-density w-full flex-1 p-2 md:p-3">{children}</main>
+        <main className="pm-density flex min-h-0 w-full flex-1 flex-col overflow-y-auto p-2 md:p-3">{children}</main>
       </div>
     </div>
   );

@@ -14,7 +14,7 @@ Apply database field/table changes using JSON schema files under `server/databas
 ## Placement
 
 - Schema source of truth: `server/database/structure/systemtables/*.json` only.
-- Dependent API/domain code: prefer `server/modules/**`; UI under `app/(app)/` when needed.
+- Dependent API/domain code: prefer `server/modules/**`; UI under `app/` when needed.
 - Do not add features under `*/old/**`.
 - New domain logic that consumes schema changes requires unit tests under `__tests__/unit/`.
 

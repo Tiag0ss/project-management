@@ -13,7 +13,7 @@ Implement or update a frontend feature in this project following existing patter
 
 ## Placement
 
-- Prefer new app pages/features under `app/(app)/` (App Router route groups).
+- Prefer new app pages/features under `app/` (App Router).
 - Do not add features under `*/old/**`.
 - New domain logic (shared helpers, transforms) requires unit tests under `__tests__/unit/`.
 

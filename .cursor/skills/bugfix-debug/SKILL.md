@@ -13,7 +13,7 @@ Fix a bug by identifying root cause, implementing minimal safe change, and valid
 
 ## Placement
 
-- Prefer fixes in current modules: `server/modules/**`, `app/(app)/` — not under `*/old/**`.
+- Prefer fixes in current modules: `server/modules/**`, `app/` — not under `*/old/**`.
 - Do not revive or extend `*/old/**` code paths for new behavior.
 - When the fix adds or changes domain logic, add unit tests under `__tests__/unit/`.
 
