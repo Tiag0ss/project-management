@@ -251,6 +251,78 @@ router.get('/approval-scope', async (req: AuthRequest, res: Response) => {
   }
 });
 
+/** Aggregate KPIs for the approvals panel (independent of list filters). */
+router.get('/approval-kpis', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const perms = await getExpensePermissions(userId, !!req.user?.isAdmin);
+    if (!perms.canViewExpenses && !perms.canCreateExpenses && !perms.isAdmin && !perms.isTeamLeader) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    const canSeeAll = perms.isAdmin || perms.canManageExpenses || perms.canApproveExpenses;
+    if (!canSeeAll) {
+      if (perms.isTeamLeader) {
+        conditions.push('(e.SubmittedByUserId = ? OR u.TeamLeaderId = ?)');
+        params.push(userId, userId);
+      } else {
+        conditions.push('e.SubmittedByUserId = ?');
+        params.push(userId);
+      }
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      `SELECT
+         COALESCE(SUM(CASE WHEN e.ApprovalStatus = 'pending' THEN 1 ELSE 0 END), 0) AS PendingCount,
+         COALESCE(SUM(CASE WHEN e.ApprovalStatus = 'approved' THEN 1 ELSE 0 END), 0) AS ApprovedCount,
+         COALESCE(SUM(CASE WHEN e.ApprovalStatus = 'rejected' THEN 1 ELSE 0 END), 0) AS RejectedCount,
+         COALESCE(COUNT(*), 0) AS TotalCount,
+         COALESCE(SUM(e.Amount), 0) AS TotalAmount,
+         COALESCE(SUM(CASE
+           WHEN e.ApprovalStatus = 'approved'
+            AND e.PaidBy = 'employee'
+            AND e.ReimbursementStatus IN ('pending', 'partial')
+           THEN CASE
+             WHEN (COALESCE(e.ReimbursableAmount, e.Amount) - e.ReimbursedAmount) > 0
+             THEN (COALESCE(e.ReimbursableAmount, e.Amount) - e.ReimbursedAmount)
+             ELSE 0
+           END
+           ELSE 0
+         END), 0) AS RemainingToReimburse,
+         COALESCE(SUM(CASE
+           WHEN e.ApprovalStatus = 'approved'
+            AND e.PaidBy = 'employee'
+            AND e.ReimbursementStatus IN ('pending', 'partial')
+           THEN 1 ELSE 0
+         END), 0) AS NeedsReimbursementCount
+       FROM Expenses e
+       LEFT JOIN Users u ON e.SubmittedByUserId = u.Id
+       ${where}`,
+      params
+    );
+
+    const row = rows[0] || {};
+    res.json({
+      success: true,
+      data: {
+        pendingCount: Number(row.PendingCount || 0),
+        approvedCount: Number(row.ApprovedCount || 0),
+        rejectedCount: Number(row.RejectedCount || 0),
+        totalCount: Number(row.TotalCount || 0),
+        totalAmount: Number(row.TotalAmount || 0),
+        remainingToReimburse: Number(row.RemainingToReimburse || 0),
+        needsReimbursementCount: Number(row.NeedsReimbursementCount || 0),
+      },
+    });
+  } catch (error) {
+    logger.error('Expense approval KPIs failed', { error: error instanceof Error ? error.message : error });
+    res.status(500).json({ success: false, message: 'Failed to load expense approval KPIs' });
+  }
+});
+
 router.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;

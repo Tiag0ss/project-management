@@ -129,6 +129,27 @@ export async function getExpenseSummary(token: string, organizationId?: number) 
   return (await res.json()).data;
 }
 
+export type ExpenseApprovalKpis = {
+  pendingCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  totalCount: number;
+  totalAmount: number;
+  remainingToReimburse: number;
+  needsReimbursementCount: number;
+};
+
+export async function getExpenseApprovalKpis(token: string): Promise<ExpenseApprovalKpis> {
+  const res = await fetch(`${API_URL}/api/expenses/approval-kpis`, {
+    headers: authHeaders(token),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to load expense approval KPIs');
+  }
+  return (await res.json()).data;
+}
+
 export async function createExpense(token: string, payload: Record<string, unknown>): Promise<Expense> {
   const res = await fetch(`${API_URL}/api/expenses`, {
     method: 'POST',

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
@@ -22,12 +22,12 @@ import {
   StickyNote,
   Ticket,
   Timer,
-  Users,
   Wallet,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveOrganization } from '@/contexts/ActiveOrganizationContext';
 import AppChromeTools from '@/components/AppChromeTools';
+import { getApiUrl } from '@/lib/api/config';
 
 type NavItem = {
   href: string;
@@ -37,25 +37,33 @@ type NavItem = {
 };
 
 /** Main product nav — account / search / timer / quick actions live in the top bar. */
-const NAV: NavItem[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/projects', label: 'Projects', icon: FolderKanban, section: 'Delivery' },
-  { href: '/planning', label: 'Planning', icon: GanttChart, section: 'Delivery' },
-  { href: '/timesheet', label: 'Timesheet', icon: Timer, section: 'Work' },
-  { href: '/expenses', label: 'Expenses', icon: Wallet, section: 'Work' },
-  { href: '/call-records', label: 'Call Records', icon: Phone, section: 'Work' },
-  { href: '/work-summary', label: 'Work Summary', icon: BookOpen, section: 'Work' },
-  { href: '/tickets', label: 'Tickets', icon: Ticket, section: 'Service' },
-  { href: '/memos', label: 'Memos', icon: StickyNote, section: 'Service' },
-  { href: '/customers', label: 'Customers', icon: Building2, section: 'Management' },
-  { href: '/applications', label: 'Applications', icon: Boxes, section: 'Management' },
-  { href: '/organizations', label: 'Organizations', icon: Landmark, section: 'Management' },
-  { href: '/approvals', label: 'Approvals', icon: CheckSquare, section: 'Management' },
-  { href: '/users', label: 'Users', icon: Users, section: 'Management' },
-  { href: '/dev-support', label: 'Dev Support', icon: Code2, section: 'Management' },
-  { href: '/reporting', label: 'Reporting', icon: BarChart3, section: 'Reporting' },
-  { href: '/portal', label: 'Portal', icon: Globe, section: 'Portal' },
-];
+function buildNav(expensesEnabled: boolean): NavItem[] {
+  return [
+    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/projects', label: 'Projects', icon: FolderKanban, section: 'Delivery' },
+    { href: '/planning', label: 'Planning', icon: GanttChart, section: 'Delivery' },
+    { href: '/timesheet', label: 'Timesheet', icon: Timer, section: 'Work' },
+    ...(expensesEnabled
+      ? [{ href: '/expenses', label: 'Expenses', icon: Wallet, section: 'Work' } as NavItem]
+      : []),
+    { href: '/call-records', label: 'Call Records', icon: Phone, section: 'Work' },
+    { href: '/work-summary', label: 'Work Summary', icon: BookOpen, section: 'Work' },
+    { href: '/tickets', label: 'Tickets', icon: Ticket, section: 'Service' },
+    { href: '/memos', label: 'Memos', icon: StickyNote, section: 'Service' },
+    { href: '/customers', label: 'Customers', icon: Building2, section: 'Management' },
+    { href: '/applications', label: 'Applications', icon: Boxes, section: 'Management' },
+    { href: '/organizations', label: 'Organizations', icon: Landmark, section: 'Management' },
+    {
+      href: '/approvals',
+      label: expensesEnabled ? 'Approvals & Expenses' : 'Approvals',
+      icon: CheckSquare,
+      section: 'Management',
+    },
+    { href: '/dev-support', label: 'Dev Support', icon: Code2, section: 'Management' },
+    { href: '/reporting', label: 'Reporting', icon: BarChart3, section: 'Reporting' },
+    { href: '/portal', label: 'Portal', icon: Globe, section: 'Portal' },
+  ];
+}
 
 function SectionSplitter({ title, expanded }: { title: string; expanded: boolean }) {
   // Fixed 20px row — title must not change height vs divider (legacy Navbar h-5).
@@ -76,19 +84,45 @@ function SectionSplitter({ title, expanded }: { title: string; expanded: boolean
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [pinnedExpanded, setPinnedExpanded] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [expensesEnabled, setExpensesEnabled] = useState(false);
   const expanded = pinnedExpanded || hovered;
   // Hover-only expand overlays; pinned expand must reserve content width.
   const contentOffsetClass = pinnedExpanded ? 'w-72' : 'w-16';
   const pathname = usePathname();
-  const { user, isCustomerUser } = useAuth();
+  const { user, token, isCustomerUser } = useAuth();
   const { organizations, activeOrganizationId, setActiveOrganizationId, loading: orgLoading } =
     useActiveOrganization();
+
+  useEffect(() => {
+    if (!token) {
+      setExpensesEnabled(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const flagsRes = await fetch(`${getApiUrl()}/api/system-settings/user-flags`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!flagsRes.ok || cancelled) return;
+        const flagsData = await flagsRes.json();
+        if (!cancelled) setExpensesEnabled(flagsData.expensesEnabled === true);
+      } catch {
+        if (!cancelled) setExpensesEnabled(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const NAV = useMemo(() => buildNav(expensesEnabled), [expensesEnabled]);
 
   const visibleNav = NAV.filter((item) => {
     if (item.href === '/portal') return isCustomerUser || Boolean(user?.customerId);
     if (
       isCustomerUser &&
-      ['/planning', '/timesheet', '/users', '/dev-support', '/reporting'].includes(item.href)
+      ['/planning', '/timesheet', '/dev-support', '/reporting', '/expenses'].includes(item.href)
     ) {
       return false;
     }

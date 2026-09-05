@@ -12,6 +12,8 @@ import RichTextEditor from '@/components/RichTextEditor';
 import { useFormatHours } from '@/lib/useFormatHours';
 import ApprovalStatusBadge from '@/components/ApprovalStatusBadge';
 import ExpenseApprovalsPanel from '@/components/ExpenseApprovalsPanel';
+import PageTabs from '@/components/PageTabs';
+import PageStickyChrome from '@/components/PageStickyChrome';
 
 interface PendingEntry {
   Id: number;
@@ -695,76 +697,55 @@ export default function ApprovalsPage() {
   ].reduce((a, b) => a + b, 0);
 
   return (
-    <div className="w-full">
-      <main className="w-full mx-auto px-4 py-4 sm:py-6 space-y-2 sm:px-6 lg:px-8">
-
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">
-              {expensesEnabled ? 'Approvals & Expenses' : 'Approvals'}
-            </h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Review and manage team approvals in one place.
-            </p>
-          </div>
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <PageStickyChrome>
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold leading-tight text-[var(--pm-text)]">
+            {expensesEnabled ? 'Approvals & Expenses' : 'Approvals'}
+          </h1>
+          <p className="text-xs text-[var(--pm-muted)]">
+            Review and manage team approvals in one place.
+          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => {
-              setActiveTab('time');
-              router.replace('/approvals?tab=time');
-            }}
-            disabled={!canApproveTime}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'time'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
-          >
-            Time Entries
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab('vacations');
-              router.replace('/approvals?tab=vacations');
-            }}
-            disabled={!canApproveVacations && !user?.isAdmin}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'vacations'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
-          >
-            Vacations
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab('outOfOffice');
-              router.replace('/approvals?tab=out-of-office');
-            }}
-            disabled={!canApproveOutOfOffice && !user?.isAdmin}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'outOfOffice'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
-          >
-            Out Of Office
-          </button>
-          {expensesEnabled && (
-            <button
-              onClick={() => {
-                setActiveTab('expenses');
-                router.replace('/approvals?tab=expenses');
-              }}
-              disabled={!canApproveExpenses}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'expenses'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
-            >
-              Expenses
-            </button>
-          )}
-        </div>
+        <PageTabs
+          tabs={[
+            { id: 'time', label: 'Time Entries', disabled: !canApproveTime },
+            {
+              id: 'vacations',
+              label: 'Vacations',
+              disabled: !canApproveVacations && !user?.isAdmin,
+            },
+            {
+              id: 'outOfOffice',
+              label: 'Out Of Office',
+              disabled: !canApproveOutOfOffice && !user?.isAdmin,
+            },
+            ...(expensesEnabled
+              ? [{ id: 'expenses', label: 'Expenses', disabled: !canApproveExpenses }]
+              : []),
+          ]}
+          activeId={activeTab}
+          onChange={(id) => {
+            const next = id as typeof activeTab;
+            setActiveTab(next);
+            const query =
+              next === 'outOfOffice'
+                ? 'out-of-office'
+                : next === 'vacations'
+                  ? 'vacations'
+                  : next === 'expenses'
+                    ? 'expenses'
+                    : 'time';
+            router.replace(`/approvals?tab=${query}`);
+          }}
+        />
+      </PageStickyChrome>
 
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto pt-3">
         {!canApproveTime && !canApproveVacations && !canApproveOutOfOffice && !canApproveExpenses && (
           <div className="mb-6 p-4 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 text-yellow-700 dark:text-yellow-300 rounded-lg">
-            You don't currently have approval scope for time entries, vacations, out-of-office, or expenses.
+            You don&apos;t currently have approval scope for time entries, vacations, out-of-office, or expenses.
           </div>
         )}
 
