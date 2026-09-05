@@ -7,13 +7,6 @@ export const MOBILE_MAX_WIDTH = 767;
 
 const MOBILE_MEDIA_QUERY = `(max-width: ${MOBILE_MAX_WIDTH}px)`;
 
-function getMatches(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return false;
-  }
-  return window.matchMedia(MOBILE_MEDIA_QUERY).matches;
-}
-
 /**
  * True when the viewport is at most {@link MOBILE_MAX_WIDTH}px (Tailwind `md` cutoff).
  * SSR / first paint default is `false` to avoid hydration mismatch.

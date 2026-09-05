@@ -161,7 +161,7 @@ export function WebReportsExplorer({ embedded = false }: { embedded?: boolean })
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [dynamicFields, setDynamicFields] = useState<ReportField[]>([]); // For dynamic data source
   const [dynamicQueryConfigToLoad, setDynamicQueryConfigToLoad] = useState<DynamicQueryConfig | null>(null);
-  const [printLayout, setPrintLayout] = useState<'horizontal' | 'vertical' | null>(null);
+  const [_printLayout, setPrintLayout] = useState<'horizontal' | 'vertical' | null>(null);
 
   const dataSources: DataSource[] = [
     {
@@ -481,8 +481,6 @@ export function WebReportsExplorer({ embedded = false }: { embedded?: boolean })
         // For text and date fields, use string comparison
         const fieldValue = String(rawValue || '').toLowerCase();
         const filterValue = filter.value.toLowerCase();
-        const filterValue2 = filter.value2?.toLowerCase() || '';
-
         switch (filter.operator) {
           case 'equals':
             return fieldValue === filterValue;
@@ -549,7 +547,7 @@ export function WebReportsExplorer({ embedded = false }: { embedded?: boolean })
   };
 
   // Helper function to format date for display (user-friendly)
-  const formatDateForDisplay = (value: any): string => {
+  const _formatDateForDisplay = (value: any): string => {
     if (!value || value === 'N/A') return 'N/A';
     
     // Try to parse as date
@@ -585,7 +583,7 @@ export function WebReportsExplorer({ embedded = false }: { embedded?: boolean })
   };
 
   // Helper function to sort column values (handles dates properly)
-  const sortColumnValues = (values: string[], columnFields: string[]): string[] => {
+  const _sortColumnValues = (values: string[], columnFields: string[]): string[] => {
     // Check if any of the column fields are date types
     const hasDateField = columnFields.some(field => isDateField(field));
     
@@ -795,7 +793,7 @@ export function WebReportsExplorer({ embedded = false }: { embedded?: boolean })
     setPivotData({ rows: flatData, columns: columnKeys });
   };
 
-  const handleAddField = (type: 'rows' | 'columns' | 'values', field: string) => {
+  const _handleAddField = (type: 'rows' | 'columns' | 'values', field: string) => {
     if (type === 'values') {
       setPivotConfig(prev => ({
         ...prev,
@@ -1335,7 +1333,7 @@ export function WebReportsExplorer({ embedded = false }: { embedded?: boolean })
 
   const handleDrillDown = (row: any, colKey: string) => {
     // Parse column key to filter records
-    const [colValue, field, aggregation] = colKey.split('|||');
+    const [colValue] = colKey.split('|||');
     
     let records = row.rawRecords || [];
     
@@ -2370,7 +2368,7 @@ export function WebReportsExplorer({ embedded = false }: { embedded?: boolean })
                         </tr>
                       </thead>
                       <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                        {pivotData.rows.map((row: any, idx: number) => {
+                        {pivotData.rows.map((row: any, _idx: number) => {
                           const rowTotal = pivotData.columns.reduce((sum: number, col: string) => sum + (row.data[col] || 0), 0);
                           const isExpanded = expandedRows.has(row.key);
 

@@ -118,7 +118,7 @@ export default function CommitMessage({
       cancelled = true;
     };
     // resolvedNames intentionally omitted — only re-fetch when ids/token change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [token, taskIds.join(',')]);
 
   return (

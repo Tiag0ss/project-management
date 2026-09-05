@@ -693,7 +693,7 @@ function ProfilePageContent() {
       } else {
         setMessage('Failed to save email preferences');
       }
-    } catch (err: any) {
+    } catch (_err: any) {
       setMessage('Failed to save email preferences');
     } finally {
       setIsSavingEmailPrefs(false);
@@ -735,7 +735,7 @@ function ProfilePageContent() {
         setMessage(data.message || 'Failed to send test email');
       }
       setTimeout(() => setMessage(''), 5000);
-    } catch (err: any) {
+    } catch (_err: any) {
       setMessage('Failed to send test email');
       setTimeout(() => setMessage(''), 5000);
     } finally {
@@ -851,7 +851,7 @@ function ProfilePageContent() {
       setMessage('Recurring task deleted successfully');
       await loadRecurringAllocations();
       setTimeout(() => setMessage(''), 3000);
-    } catch (err: any) {
+    } catch (_err: any) {
       setMessage('Failed to delete recurring task');
     }
   };

@@ -10,7 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
 import { projectsApi, Project, CreateProjectData } from '@/lib/api/projects';
-import { organizationsApi, Organization } from '@/lib/api/organizations';
+import { organizationsApi } from '@/lib/api/organizations';
 import { getCustomers, Customer } from '@/lib/api/customers';
 import { downloadCsv, parseBooleanLike, parseCsv, parseNumberLike, toCsv } from '@/lib/csv';
 import CustomerUserGuard from '@/components/CustomerUserGuard';

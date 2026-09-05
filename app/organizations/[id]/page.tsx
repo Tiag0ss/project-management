@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation'
 import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import { organizationsApi, Organization, OrganizationMember, AddMemberData } from '@/lib/api/organizations';
+import { organizationsApi, Organization, OrganizationMember } from '@/lib/api/organizations';
 import { permissionGroupsApi, PermissionGroup, CreatePermissionGroupData } from '@/lib/api/permissionGroups';
 import { statusValuesApi, StatusValue, CreateStatusValueData } from '@/lib/api/statusValues';
 import { workflowTransitionPoliciesApi, WorkflowTransitionPolicy, UpsertWorkflowTransitionPolicyData } from '@/lib/api/workflowTransitionPolicies';
@@ -57,7 +57,6 @@ export default function OrganizationDetailPage(props: { params: Promise<{ id: st
     </Suspense>
   );
 }
-
 function OrganizationDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const orgId = parseInt(resolvedParams.id);
@@ -3908,7 +3907,7 @@ function TagsTab({
 
 // Attachments Tab Component
 function AttachmentsTab({ 
-  orgId, 
+  orgId: _orgId,
   token, 
   attachments,
   uploadingFile,
@@ -4616,33 +4615,3 @@ function SlaTab({
   );
 }
 
-function ConfirmModal({ message, onClose, onConfirm }: { message: { title: string; message: string }; onClose: () => void; onConfirm: () => void }) {
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
-        <div className="p-6">
-          <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
-            {message.title}
-          </h3>
-          <p className="text-gray-700 dark:text-gray-300 mb-6">
-            {message.message}
-          </p>
-          <div className="flex gap-3 justify-end">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={onConfirm}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-            >
-              Confirm
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}

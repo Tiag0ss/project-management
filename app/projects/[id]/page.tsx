@@ -29,7 +29,6 @@ import ProjectExpensesSection from '@/components/ProjectExpensesSection';
 import { TaskAnalyticsCharts } from '@/components/reporting/TaskAnalyticsCharts';
 import { buildTaskAnalytics } from '@/lib/reporting/taskAnalytics';
 import { recordRecentNavAccess } from '@/lib/recentNavAccess';
-import RichTextEditor from '@/components/RichTextEditor';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import { isUnplannedLeafTask } from '@/lib/tasks/isUnplannedTask';
@@ -78,7 +77,7 @@ export default function ProjectDetailPage(props: { params: Promise<{ id: string 
 
 function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
-  const { backgroundStyle, pillStyle } = useColorVision();
+  const { pillStyle } = useColorVision();
   const projectId = resolvedParams.id;
   const searchParams = useSearchParams();
   const deepLinkHandledRef = useRef(false);
@@ -1702,15 +1701,6 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
     setSelectedIssues(newSelection);
   };
 
-  const toggleAllIssues = () => {
-    const availableIssues = jiraIssues.filter(issue => !existingIssueIds.has(issue.key));
-    if (selectedIssues.size === availableIssues.length) {
-      setSelectedIssues(new Set());
-    } else {
-      setSelectedIssues(new Set(availableIssues.map(issue => issue.key)));
-    }
-  };
-
   // Filter and sort Jira issues hierarchically (parents followed by their subtasks)
   const getSortedFilteredJiraIssues = () => {
     const statusFilter = normalizeLookup(jiraFilters.status);
@@ -1839,9 +1829,6 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
     return result;
   };
   
-  // Keep for backward compatibility
-  const getFilteredJiraIssues = getSortedFilteredJiraIssues;
-
   // ======= GITHUB INTEGRATION FUNCTIONS =======
   
   // GitHub Import Functions
@@ -5248,7 +5235,6 @@ function OverviewTab({
   
   // Ticket statistics
   const totalTickets = tickets.length;
-  const openTickets = tickets.filter(t => t.StatusIsClosed === 0).length;
   const resolvedTickets = tickets.filter(t => t.StatusIsClosed === 1).length;
   const unresolvedTickets = totalTickets - resolvedTickets;
   
@@ -5320,28 +5306,6 @@ function OverviewTab({
   // Sprint computations
   const activeSprints = overviewSprints.filter((s) => s.Status === 'active');
   const plannedSprints = overviewSprints.filter((s) => s.Status === 'planned');
-  const upcomingMilestonesSoon = milestones.filter((m) => {
-    if (m.IsCompleted || !m.DueDate) return false;
-    const due = new Date(m.DueDate);
-    due.setHours(0, 0, 0, 0);
-    const daysLeft = Math.ceil((due.getTime() - today.getTime()) / 86400000);
-    return daysLeft > 0 && daysLeft <= 7;
-  }).length;
-  const nextOpenMilestoneDueDate = milestones
-    .filter((m) => !m.IsCompleted && m.DueDate)
-    .map((m) => new Date(m.DueDate as string))
-    .filter((date) => !Number.isNaN(date.getTime()) && date >= today)
-    .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
-  const overdueActiveSprints = activeSprints.filter((s) => {
-    if (!s.EndDate) return false;
-    const end = new Date(s.EndDate);
-    end.setHours(0, 0, 0, 0);
-    return end < today;
-  }).length;
-  const activeSprintEndDate = activeSprints
-    .map((s) => (s.EndDate ? new Date(s.EndDate) : null))
-    .filter((date): date is Date => !!date && !Number.isNaN(date.getTime()))
-    .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
   const rag = {
     status: project.HealthStatus || 'green',
     reasons: Array.isArray(project.HealthReasons) ? project.HealthReasons : [],
@@ -6005,7 +5969,7 @@ function TasksTab({
   onImportFromGitea,
   onCheckJiraTicketStatus,
   onCheckJiraBoardStatus,
-  internalTicketsEnabled,
+  internalTicketsEnabled: _internalTicketsEnabled,
   canCreate,
   canManage,
   canDelete,
@@ -9465,7 +9429,6 @@ function UtilitiesTab({ projectId, token, onTasksUpdated }: { projectId: number;
 
 // Gantt View Tab Component (Read-only)
 function GanttViewTab({ tasks }: { tasks: Task[] }) {
-  const { pillStyle } = useColorVision();
   type ViewMode = 'Week' | 'Month' | 'Year';
   const [viewMode, setViewMode] = useState<ViewMode>('Month');
   const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
@@ -9908,7 +9871,7 @@ function KanbanTab({
   canCreate: boolean;
   canManage: boolean;
 }) {
-  const { mapColor, pillStyle, borderLeftStyle } = useColorVision();
+  const { pillStyle, borderLeftStyle } = useColorVision();
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [draggedOverTask, setDraggedOverTask] = useState<number | null>(null);
@@ -9993,7 +9956,6 @@ function KanbanTab({
     // Optimistic local update
     const prev = localTasks;
     setLocalTasks(current => {
-      const others = current.filter(t => t.Status !== newStatus || (t.Status === srcTask.Status && newStatus !== srcTask.Status));
       const updated = columnTasks.map((t, i) => ({ ...t, Status: newStatus, DisplayOrder: (i + 1) * 10 }));
       return [...current.filter(t => t.Status !== newStatus && t.Id !== srcId), ...updated];
     });
@@ -10235,7 +10197,6 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
   const [loadingTaskDetails, setLoadingTaskDetails] = useState(false);
   const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
   const [expandedUsers, setExpandedUsers] = useState<Set<number>>(new Set());
-  const [taskDetailTab, setTaskDetailTab] = useState<'info' | 'history'>('info');
   const [alertMessage, setAlertMessage] = useState<{ title: string; message: string } | null>(null);
 
   // Report schedule state
@@ -10291,7 +10252,6 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
   };
 
   const getSubtasks = (parentId: number) => tasks.filter(t => t.ParentTaskId === parentId);
-  const hasSubtasks = (taskId: number) => tasks.some(t => t.ParentTaskId === taskId);
   const parentTasks = tasks.filter(t => !t.ParentTaskId);
 
   // Calculate recursive total worked hours for a task (sum of all leaf descendants)
@@ -12696,7 +12656,7 @@ function ProjectMappingsTab({ project, token, onSaved }: { project: Project; tok
   const [isLoading, setIsLoading] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
+  const [_success, setSuccess] = useState(false);
 
   const parseProjectMapping = (value: unknown): Record<string, string> => {
     if (!value || typeof value !== 'string') {
@@ -12943,7 +12903,7 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
   const [showTransferConfirm, setShowTransferConfirm] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [_success, setSuccess] = useState(false);
   const [customFields, setCustomFields] = useState<CustomFieldValues>(() => extractCustomFieldValues(project));
 
   useEffect(() => {
@@ -14324,479 +14284,6 @@ function SearchableSelect({
   );
 }
 
-// Task Modal Component
-function TaskModal({
-  projectId,
-  task,
-  project,
-  tasks,
-  onClose,
-  onSaved,
-  token,
-}: {
-  projectId: number;
-  task: Task | null;
-  project: Project;
-  tasks: Task[];
-  onClose: () => void;
-  onSaved: () => void;
-  token: string;
-}) {
-  const [formData, setFormData] = useState<CreateTaskData>({
-    projectId,
-    taskName: task?.TaskName || '',
-    description: task?.Description || '',
-    status: task?.Status ?? null,
-    priority: task?.Priority ?? null,
-    taskType: task?.TaskType ?? null,
-    assignedTo: task?.AssignedTo || undefined,
-    dueDate: task?.DueDate ? task.DueDate.split('T')[0] : '',
-    estimatedHours: task?.EstimatedHours ?? undefined,
-    storyPoints: task?.StoryPoints ?? undefined,
-    parentTaskId: task?.ParentTaskId || undefined,
-    dependsOnTaskId: task?.DependsOnTaskId || undefined,
-  });
-  const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
-  const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
-  const [taskTypes, setTaskTypes] = useState<StatusValue[]>([]);
-  const [organizationUsers, setOrganizationUsers] = useState<User[]>([]);
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-
-  // Calculate if this task has subtasks and their total hours
-  const subtasks = task ? tasks.filter(t => t.ParentTaskId === task.Id) : [];
-  const hasSubtasks = subtasks.length > 0;
-  const subtasksTotal = hasSubtasks 
-    ? subtasks.reduce((sum, st) => sum + (parseFloat(st.EstimatedHours as any) || 0), 0) 
-    : 0;
-
-  // Update estimated hours when subtasks change
-  useEffect(() => {
-    if (hasSubtasks && task) {
-      setFormData(prev => ({ ...prev, estimatedHours: subtasksTotal }));
-    }
-  }, [hasSubtasks, subtasksTotal, task]);
-
-  useEffect(() => {
-    loadTaskStatuses();
-    loadTaskPriorities();
-    loadTaskTypes();
-    loadOrganizationUsers();
-  }, []);
-
-  // Set default values when creating a new task
-  useEffect(() => {
-    if (!task && taskStatuses.length > 0 && taskPriorities.length > 0 && taskTypes.length > 0) {
-      setFormData(prev => {
-        const updates: Partial<CreateTaskData> = {};
-        
-        // Set default status if not already set
-        if (prev.status === null) {
-          const defaultStatus = taskStatuses.find(s => s.IsDefault);
-          if (defaultStatus) {
-            updates.status = defaultStatus.Id;
-          }
-        }
-        
-        // Set default priority if not already set
-        if (prev.priority === null) {
-          const defaultPriority = taskPriorities.find(p => p.IsDefault);
-          if (defaultPriority) {
-            updates.priority = defaultPriority.Id;
-          }
-        }
-
-        if (prev.taskType === null || prev.taskType === undefined) {
-          const defaultType = taskTypes.find(t => t.IsDefault);
-          if (defaultType) {
-            updates.taskType = defaultType.Id;
-          }
-        }
-        
-        return Object.keys(updates).length > 0 ? { ...prev, ...updates } : prev;
-      });
-    }
-  }, [task, taskStatuses, taskPriorities, taskTypes]);
-
-  const loadTaskStatuses = async () => {
-    try {
-      const response = await statusValuesApi.getTaskStatuses(project.OrganizationId, token);
-      setTaskStatuses(response.statuses);
-    } catch (err: any) {
-      console.error('Failed to load task statuses:', err);
-    }
-  };
-
-  const loadTaskPriorities = async () => {
-    try {
-      const response = await statusValuesApi.getTaskPriorities(project.OrganizationId, token);
-      setTaskPriorities(response.priorities);
-    } catch (err: any) {
-      console.error('Failed to load task priorities:', err);
-    }
-  };
-
-  const loadTaskTypes = async () => {
-    try {
-      const response = await statusValuesApi.getTaskTypes(project.OrganizationId, token);
-      setTaskTypes(response.types);
-    } catch (err: any) {
-      console.error('Failed to load task types:', err);
-    }
-  };
-
-  const loadOrganizationUsers = async () => {
-    try {
-      const response = await usersApi.getByOrganization(project.OrganizationId, token);
-      setOrganizationUsers(response.users);
-    } catch (err: any) {
-      console.error('Failed to load organization users:', err);
-    }
-  };
-
-  // Get all descendants of a task (recursively) to prevent circular references
-  const getDescendants = (taskId: number): number[] => {
-    const descendants: number[] = [];
-    const directChildren = tasks.filter(t => t.ParentTaskId === taskId);
-    
-    for (const child of directChildren) {
-      descendants.push(child.Id);
-      descendants.push(...getDescendants(child.Id));
-    }
-    
-    return descendants;
-  };
-
-  // Get available tasks for Parent Task dropdown (exclude self and descendants)
-  const getAvailableParentTasks = (): { id: number; label: string }[] => {
-    if (!task) {
-      // Creating new task - all tasks are available
-      return tasks.map(t => ({
-        id: t.Id,
-        label: t.TaskName,
-      }));
-    }
-    
-    // Editing existing task - exclude self and descendants
-    const descendants = getDescendants(task.Id);
-    const excludeIds = [task.Id, ...descendants];
-    
-    return tasks
-      .filter(t => !excludeIds.includes(t.Id))
-      .map(t => ({
-        id: t.Id,
-        label: t.TaskName,
-      }));
-  };
-
-  // Get available tasks for Depends On dropdown (exclude self and descendants)
-  const getAvailableDependencyTasks = (): { id: number; label: string }[] => {
-    if (!task) {
-      // Creating new task - all tasks are available
-      return tasks.map(t => ({
-        id: t.Id,
-        label: t.TaskName,
-      }));
-    }
-    
-    // Editing existing task - exclude self
-    return tasks
-      .filter(t => t.Id !== task.Id)
-      .map(t => ({
-        id: t.Id,
-        label: t.TaskName,
-      }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-
-    if (!formData.taskType) {
-      setError('Task type is required');
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      if (task) {
-        await tasksApi.update(task.Id, formData, token);
-      } else {
-        await tasksApi.create(formData, token);
-      }
-      onSaved();
-    } catch (err: any) {
-      setError(err.message || 'Failed to save task');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full">
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {task ? 'Edit Task' : 'Create New Task'}
-            </h2>
-            <button
-              onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
-            >
-              ×
-            </button>
-          </div>
-
-          {error && (
-            <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded">
-              {error}
-            </div>
-          )}
-
-          {task && task.CreatorName && (
-            <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
-              <div className="text-sm text-gray-700 dark:text-gray-300">
-                <span className="font-medium">Created by:</span> {task.CreatorName}
-                <span className="text-gray-500 dark:text-gray-400 ml-2">
-                  on {new Date(task.CreatedAt).toLocaleDateString()}
-                </span>
-              </div>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Task Name *
-              </label>
-              <input
-                type="text"
-                value={formData.taskName}
-                onChange={(e) => setFormData({ ...formData, taskName: e.target.value })}
-                required
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                placeholder="Enter task name"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Description
-              </label>
-              <RichTextEditor
-                content={formData.description || ''}
-                onChange={(html) => setFormData({ ...formData, description: html })}
-                placeholder="Enter task description..."
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Status
-                </label>
-                <select
-                  value={formData.status ?? ''}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value ? parseInt(e.target.value) : null })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  {taskStatuses.length > 0 ? (
-                    <>
-                      <option value="">Select a status</option>
-                      {taskStatuses.sort((a, b) => a.SortOrder - b.SortOrder).map((status) => (
-                        <option key={status.Id} value={status.Id}>
-                          {status.StatusName}
-                        </option>
-                      ))}
-                    </>
-                  ) : (
-                    <option value="">No statuses available</option>
-                  )}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Priority
-                </label>
-                <select
-                  value={formData.priority ?? ''}
-                  onChange={(e) => setFormData({ ...formData, priority: e.target.value ? parseInt(e.target.value) : null })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  {taskPriorities.length > 0 ? (
-                    <>
-                      <option value="">Select a priority</option>
-                      {taskPriorities.sort((a, b) => a.SortOrder - b.SortOrder).map((priority) => (
-                        <option key={priority.Id} value={priority.Id}>
-                          {priority.PriorityName}
-                        </option>
-                      ))}
-                    </>
-                  ) : (
-                    <option value="">No priorities available</option>
-                  )}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Task Type *
-                </label>
-                <select
-                  value={formData.taskType ?? ''}
-                  onChange={(e) => setFormData({ ...formData, taskType: e.target.value ? parseInt(e.target.value) : null })}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  {taskTypes.length > 0 ? (
-                    <>
-                      <option value="">Select a task type</option>
-                      {taskTypes.sort((a, b) => a.SortOrder - b.SortOrder).map((type) => (
-                        <option key={type.Id} value={type.Id}>
-                          {type.TypeName || type.StatusName}
-                        </option>
-                      ))}
-                    </>
-                  ) : (
-                    <option value="">No task types available</option>
-                  )}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Assigned To
-              </label>
-              <SearchableSelect
-                value={formData.assignedTo}
-                onChange={(value) => setFormData({ ...formData, assignedTo: value })}
-                options={organizationUsers.map(user => ({
-                  id: user.Id,
-                  label: `${user.Username}${user.FirstName && user.LastName ? ` (${user.FirstName} ${user.LastName})` : ''}`
-                }))}
-                placeholder="Unassigned"
-                emptyMessage="No users available"
-              />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Select a user to assign this task
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Due Date
-              </label>
-              <input
-                type="date"
-                value={formData.dueDate}
-                onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Estimated Hours
-                {hasSubtasks && (
-                  <span className="ml-2 text-xs text-blue-600 dark:text-blue-400">(Auto-calculated from subtasks)</span>
-                )}
-              </label>
-              <input
-                type="number"
-                step="0.5"
-                min="0"
-                value={formData.estimatedHours ?? ''}
-                onChange={(e) => setFormData({ ...formData, estimatedHours: e.target.value ? parseFloat(e.target.value) : undefined })}
-                disabled={hasSubtasks}
-                className={`w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white ${
-                  hasSubtasks 
-                    ? 'bg-gray-100 dark:bg-gray-700 cursor-not-allowed opacity-75' 
-                    : 'bg-white dark:bg-gray-700'
-                }`}
-                placeholder="e.g., 4.5"
-              />
-              {hasSubtasks && (
-                <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                  This task has {subtasks.length} subtask{subtasks.length !== 1 ? 's' : ''} totaling {subtasksTotal.toFixed(2)} hours
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Story Points
-              </label>
-              <input
-                type="number"
-                step="0.5"
-                min="0"
-                value={formData.storyPoints ?? ''}
-                onChange={(e) => setFormData({ ...formData, storyPoints: e.target.value ? parseFloat(e.target.value) : undefined })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                placeholder="e.g., 3"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Parent Task (Optional)
-              </label>
-              <SearchableSelect
-                value={formData.parentTaskId}
-                onChange={(value) => setFormData({ ...formData, parentTaskId: value })}
-                options={getAvailableParentTasks()}
-                placeholder="No Parent (Top-level task)"
-                emptyMessage="No tasks available"
-              />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Select a parent task to create a subtask (supports multi-level hierarchy)
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Depends On (Optional)
-              </label>
-              <SearchableSelect
-                value={formData.dependsOnTaskId}
-                onChange={(value) => setFormData({ ...formData, dependsOnTaskId: value })}
-                options={getAvailableDependencyTasks()}
-                placeholder="No dependency"
-                emptyMessage="No tasks available"
-              />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                This task cannot start until the selected task is completed
-              </p>
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-              >
-                {isLoading ? 'Saving...' : task ? 'Update Task' : 'Create Task'}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Burndown / Burnup Chart Tab ─────────────────────────────────────────────
 function BurndownTab({ projectId, token }: { projectId: number; token: string }) {
   const decimalHoursToHMS = useFormatHours();
   const [data, setData] = useState<{
@@ -15060,7 +14547,7 @@ function BurndownTab({ projectId, token }: { projectId: number; token: string })
 
 // ── SaveTemplateModal ──────────────────────────────────────────────────────
 function SaveTemplateModal({
-  projectId,
+  projectId: _projectId,
   organizationId,
   tasks,
   token,
@@ -16366,7 +15853,6 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
   const backlogStatuses = [...new Set(backlog.map(t => t.StatusName).filter(Boolean))];
   const backlogPriorities = [...new Set(backlog.map(t => t.PriorityName).filter(Boolean))];
   const backlogAssignees = [...new Set(backlog.map(t => t.FirstName ? `${t.FirstName} ${t.LastName}`.trim() : t.AssigneeName || '').filter(Boolean))];
-  const filteredBacklog = applyFilter(backlog, backlogFilter);
   const hasSprintTaskFilter = !!(sprintTaskFilter.search || sprintTaskFilter.status || sprintTaskFilter.priority || sprintTaskFilter.assignee);
   const hasBacklogFilter = !!(backlogFilter.search || backlogFilter.status || backlogFilter.priority || backlogFilter.assignee);
 
@@ -16809,7 +16295,15 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
                                   {hasChildren ? (
                                     <button
                                       type="button"
-                                      onClick={e => { e.stopPropagation(); setExpandedTaskIds(prev => { const s = new Set(prev); s.has(task.Id) ? s.delete(task.Id) : s.add(task.Id); return s; }); }}
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        setExpandedTaskIds(prev => {
+                                          const s = new Set(prev);
+                                          if (s.has(task.Id)) s.delete(task.Id);
+                                          else s.add(task.Id);
+                                          return s;
+                                        });
+                                      }}
                                       className="mr-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-xs w-4 shrink-0"
                                     >
                                       {expandedTaskIds.has(task.Id) ? '▾' : '▸'}
@@ -16942,7 +16436,15 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
                       {hasChildren ? (
                         <button
                           type="button"
-                          onClick={e => { e.stopPropagation(); setExpandedTaskIds(prev => { const s = new Set(prev); s.has(task.Id) ? s.delete(task.Id) : s.add(task.Id); return s; }); }}
+                          onClick={e => {
+                            e.stopPropagation();
+                            setExpandedTaskIds(prev => {
+                              const s = new Set(prev);
+                              if (s.has(task.Id)) s.delete(task.Id);
+                              else s.add(task.Id);
+                              return s;
+                            });
+                          }}
                           className="mr-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-xs w-4 shrink-0"
                         >
                           {expandedTaskIds.has(task.Id) ? '▾' : '▸'}

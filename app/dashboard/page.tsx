@@ -988,9 +988,9 @@ function DashboardContent() {
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const taskDeepLinkHandledRef = useRef<string | null>(null);
   const decimalHoursToHMS = useFormatHours();
-  const { mapColor, pillStyle } = useColorVision();
+  const { pillStyle } = useColorVision();
   const { user, isLoading, token, isCustomerUser } = useAuth();
-  const { permissions, isLoading: isLoadingPermissions } = usePermissions();
+  const { permissions, isLoading: _isLoadingPermissions } = usePermissions();
   const { showToast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1011,8 +1011,8 @@ function DashboardContent() {
   // (removed duplicate detailsJiraIntegration declaration)
 
   const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>('thisMonth');
-  const [userProfile, setUserProfile] = useState<User | null>(null);
-  const [workHours, setWorkHours] = useState({
+  const [_userProfile, setUserProfile] = useState<User | null>(null);
+  const [_workHours, setWorkHours] = useState({
     monday: 8,
     tuesday: 8,
     wednesday: 8,
@@ -1032,7 +1032,7 @@ function DashboardContent() {
   });
   const [lunchTime, setLunchTime] = useState('12:00');
   const [lunchDuration, setLunchDuration] = useState(60); // minutes
-  const [hobbyStartTimes, setHobbyStartTimes] = useState({
+  const [_hobbyStartTimes, setHobbyStartTimes] = useState({
     monday: '19:00',
     tuesday: '19:00',
     wednesday: '19:00',
@@ -1041,7 +1041,7 @@ function DashboardContent() {
     saturday: '10:00',
     sunday: '10:00',
   });
-  const [hobbyHours, setHobbyHours] = useState({
+  const [_hobbyHours, setHobbyHours] = useState({
     monday: 0,
     tuesday: 0,
     wednesday: 0,
@@ -1050,8 +1050,6 @@ function DashboardContent() {
     saturday: 4,
     sunday: 4,
   });
-  const [isSaving, setIsSaving] = useState(false);
-  const [message, setMessage] = useState('');
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [myTasks, setMyTasks] = useState<TaskWithProject[]>([]);
   const [modalMessage, setModalMessage] = useState<{
@@ -1093,7 +1091,7 @@ function DashboardContent() {
   const [detailsTask, setDetailsTask] = useState<Task | null>(null);
   const [detailsProject, setDetailsProject] = useState<Project | null>(null);
   // --- Integration state for TaskDetailModal ---
-  const [detailsJiraIntegration, setDetailsJiraIntegration] = useState<any>(null);
+  const [_detailsJiraIntegration, setDetailsJiraIntegration] = useState<any>(null);
 
   useEffect(() => {
     if (showTaskDetailsModal && detailsProject) {
@@ -1112,7 +1110,7 @@ function DashboardContent() {
           } else {
             setDetailsJiraIntegration(null);
           }
-        } catch (err) {
+        } catch (_err) {
           setDetailsJiraIntegration(null);
         }
       };
@@ -1136,9 +1134,6 @@ function DashboardContent() {
     topUsers: { id: number; name: string; hours: number }[];
     taskAnalytics?: TaskAnalyticsData;
   } | null>(null);
-  const [calendarView, setCalendarView] = useState<'month' | 'week'>('week');
-  const [currentDate, setCurrentDate] = useState(new Date());
-  
   // Customer portal state
   const [portalData, setPortalData] = useState<{
     customer: { Id: number; Name: string; Email: string | null; Phone: string | null; ContactPerson: string | null; ContactEmail: string | null; Website: string | null };
@@ -1237,12 +1232,8 @@ function DashboardContent() {
     if (kpiEditMode) {
       void loadKpiAvailableReports();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [kpiEditMode]);
-
-  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
-    setModalMessage({ type: 'confirm', title, message, onConfirm });
-  };
 
   const closeModal = () => {
     setModalMessage(null);
@@ -1478,14 +1469,6 @@ function DashboardContent() {
     if (analyticsPeriod === 'allTime') return null;
     return getPeriodRange(analyticsPeriod);
   }, [analyticsPeriod]);
-
-  // Helper function to normalize date for comparison
-  const normalizeDateString = (dateValue: any): string => {
-    if (dateValue instanceof Date) {
-      return dateValue.toISOString().split('T')[0];
-    }
-    return String(dateValue).split('T')[0];
-  };
 
   const unscheduledPendingTasks = useMemo(() => {
     return pendingTasks.filter((task) => Number(task.UnscheduledWork || 0) === 1);

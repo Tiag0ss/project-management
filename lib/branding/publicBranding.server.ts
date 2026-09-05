@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { pool, RowDataPacket } from '../../server/config/database';
-import { inferFaviconType, resolveFaviconUrl as resolveSharedFaviconUrl } from './favicon.shared';
+import { resolveFaviconUrl as resolveSharedFaviconUrl } from './favicon.shared';
 import { getDefaultFaviconPath, resolveFaviconUrl } from './favicon.server';
 
 export { inferFaviconType } from './favicon.shared';

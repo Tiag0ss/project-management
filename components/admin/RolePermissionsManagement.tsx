@@ -132,7 +132,7 @@ export default function RolePermissionsManagement({
 
   useEffect(() => {
     void loadPermissions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [token]);
 
   const loadPermissions = async () => {
@@ -272,7 +272,7 @@ export default function RolePermissionsManagement({
       },
     });
     return () => onActionsStateChange(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isLoading, isSaving, selectedRole, permissions]);
 
   if (isLoading) {

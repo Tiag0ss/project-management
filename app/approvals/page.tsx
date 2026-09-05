@@ -104,7 +104,7 @@ const formatLeaveDays = (value: number): string => {
 export default function ApprovalsPage() {
   const decimalHoursToHMS = useFormatHours();
   const { user, token } = useAuth();
-  const { permissions } = usePermissions();
+  const { permissions: _permissions } = usePermissions();
   const router = useRouter();
   const [initialTabFromQuery, setInitialTabFromQuery] = useState<string | null>(null);
 
@@ -657,6 +657,15 @@ export default function ApprovalsPage() {
       }, {} as Record<string, { user: VacationRequest; requests: VacationRequest[] }>)
     : null;
 
+  // Hooks must stay above any early return (rules-of-hooks).
+  const defaultTimesheetDateFrom = useMemo(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().split('T')[0];
+  }, []);
+  const defaultTimesheetDateTo = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+
   if (!user) return null;
 
   const selectedVacationMember = vacationMembers.find((m) => String(m.Id) === selectedMemberId);
@@ -673,14 +682,6 @@ export default function ApprovalsPage() {
     .reduce((sum, request) => sum + getLeaveDayWeight(request), 0);
   const totalVacationDays = sortedVacationRequests.reduce((sum, request) => sum + getLeaveDayWeight(request), 0);
   const uniqueVacationUsers = new Set(sortedVacationRequests.map((r) => r.UserId)).size;
-
-  const defaultTimesheetDateFrom = useMemo(() => {
-    const d = new Date();
-    d.setDate(1);
-    return d.toISOString().split('T')[0];
-  }, []);
-  const defaultTimesheetDateTo = useMemo(() => new Date().toISOString().split('T')[0], []);
-  const currentYear = useMemo(() => new Date().getFullYear(), []);
 
   const timesheetFilterActiveCount = [
     filterStatus !== 'pending' ? 1 : 0,

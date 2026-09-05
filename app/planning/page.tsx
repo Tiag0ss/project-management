@@ -152,17 +152,16 @@ export default function PlanningPage() {
     d.setHours(0, 0, 0, 0);
     return d;
   });
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
   const [hoveredDropCell, setHoveredDropCell] = useState<{ userId: number; dateKey: string } | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [jiraIntegrationByOrg, setJiraIntegrationByOrg] = useState<Record<number, any>>({});
-  const [taskAllocations, setTaskAllocations] = useState<any[]>([]);
+  const [_taskAllocations, setTaskAllocations] = useState<any[]>([]);
   const [projectMilestones, setProjectMilestones] = useState<ProjectMilestone[]>([]);
   const [allAllocations, setAllAllocations] = useState<{Id?: number; TaskId: number; TaskAllocationHeaderId?: number | null; UserId: number; AllocationDate: string; AllocatedHours: number; IsHobby: number; IsManual?: number; StartTime?: string; EndTime?: string; PlannedStartDate?: string | null; PlannedEndDate?: string | null; HoursPerDay?: number | null}[]>([]);
   const [childAllocations, setChildAllocations] = useState<{ParentTaskId: number; ChildTaskId: number; TaskAllocationHeaderId?: number | null; AllocationDate: string; AllocatedHours: number; Level: number}[]>([]);
-  const [taskTimeEntries, setTaskTimeEntries] = useState<any[]>([]);
+  const [_taskTimeEntries, setTaskTimeEntries] = useState<any[]>([]);
   const [recurringAllocations, setRecurringAllocations] = useState<any[]>([]);
   const [outlookTimelineEvents, setOutlookTimelineEvents] = useState<PlannerOutlookEvent[]>([]);
   const [isLoadingOutlookCalendar, setIsLoadingOutlookCalendar] = useState(false);
@@ -227,7 +226,6 @@ export default function PlanningPage() {
     projectId: '',
     taskName: ''
   });
-  const [expandedAllocationRows, setExpandedAllocationRows] = useState<Set<number>>(new Set());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const ganttContainerRef = useRef<HTMLDivElement>(null);
   const ganttViewOptionsRef = useRef<HTMLDivElement>(null);
@@ -2145,30 +2143,6 @@ export default function PlanningPage() {
     return closedDates[0] ? new Date(closedDates[0]) : today;
   };
 
-  const getUnscheduledDoneTransitionDates = (task: Task, userId?: number): string[] => {
-    const relevantTasks = getRelevantUnscheduledTasks(task, userId);
-    if (relevantTasks.length === 0) {
-      return [];
-    }
-
-    const uniqueDates = new Set<string>();
-
-    relevantTasks.forEach((candidate) => {
-      const transitions = Array.isArray(candidate.DoneTransitionsByDay) ? candidate.DoneTransitionsByDay : [];
-      transitions.forEach((transition) => {
-        const rawDate = transition?.date;
-        if (!rawDate) return;
-
-        const normalizedDate = normalizeDateOnly(String(rawDate));
-        if (normalizedDate) {
-          uniqueDates.add(normalizedDate);
-        }
-      });
-    });
-
-    return Array.from(uniqueDates).sort((a, b) => a.localeCompare(b));
-  };
-
   const getUnscheduledRenderDates = (task: Task, userId?: number): Array<{ date: string; source: 'done' | 'openToday'; startDate?: string | null }> => {
     const relevantTasks = getRelevantUnscheduledTasks(task, userId);
     if (relevantTasks.length === 0) {
@@ -2851,7 +2825,7 @@ export default function PlanningPage() {
     if ((ganttGroupBy === 'time-entries' || showTimeEntriesOverlay) && token) {
       loadPlannerTimeEntries();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [ganttGroupBy, showTimeEntriesOverlay, viewStartDate, viewMode, customStartDate, customEndDate, token]);
 
   const getTasksForUser = (userId: number | null) => {
@@ -5008,22 +4982,14 @@ export default function PlanningPage() {
 
       let existingTaskNames: string[] = [];
       let hasExistingAllocations = false;
-      let hasRecurringOnDay = false;
-      
       if (existingAllocationsRes.ok) {
         const existingData = await existingAllocationsRes.json();
         if (existingData.allocations && existingData.allocations.length > 0) {
           // Filter out recurring allocations - they can't be pushed forward
           const taskAllocations = existingData.allocations.filter((a: any) => !a.IsRecurring);
-          const recurringAllocations = existingData.allocations.filter((a: any) => a.IsRecurring);
-          
           if (taskAllocations.length > 0) {
             hasExistingAllocations = true;
             existingTaskNames = taskAllocations.map((a: any) => a.TaskName || `Task #${a.TaskId}`);
-          }
-          
-          if (recurringAllocations.length > 0) {
-            hasRecurringOnDay = true;
           }
         }
       }
@@ -5435,7 +5401,7 @@ export default function PlanningPage() {
         const hoursToAllocate = Math.min(remainingHours, dayAvail, effectiveHoursPerDay);
         if (hoursToAllocate <= 0) continue;
 
-        let [startHour, startMin] = effectiveStartTime.split(':').map(Number);
+        const [startHour, startMin] = effectiveStartTime.split(':').map(Number);
         let startMinutes = (startHour * 60) + startMin;
 
         if (lunchDurationMinutes > 0 && startMinutes >= lunchStartMinutes && startMinutes < lunchEndMinutes) {
@@ -7105,7 +7071,7 @@ export default function PlanningPage() {
     );
   };
 
-  const handleDeleteAllocation = async (taskId: number, userId: number, allocationDate: string) => {
+  const _handleDeleteAllocation = async (taskId: number, userId: number, allocationDate: string) => {
     if (!token) return;
 
     try {
@@ -7144,7 +7110,7 @@ export default function PlanningPage() {
     return String(dateValue).split('T')[0];
   };
 
-  const openAddManualAllocationModal = (taskId: number, userId: number) => {
+  const _openAddManualAllocationModal = (taskId: number, userId: number) => {
     setManualAllocationModal({
       show: true,
       taskId,
@@ -7157,7 +7123,7 @@ export default function PlanningPage() {
     });
   };
 
-  const openEditManualAllocationModal = (allocation: any) => {
+  const _openEditManualAllocationModal = (allocation: any) => {
     setManualAllocationModal({
       show: true,
       allocationId: allocation.Id,
@@ -7260,7 +7226,7 @@ export default function PlanningPage() {
     }
   };
 
-  const handleDeleteManualAllocation = async (allocationId: number) => {
+  const _handleDeleteManualAllocation = async (allocationId: number) => {
     showConfirm(
       'Confirm Delete',
       'Are you sure you want to delete this manual allocation?',
@@ -7797,8 +7763,6 @@ export default function PlanningPage() {
       return a.projectName.localeCompare(b.projectName) || a.milestone.Name.localeCompare(b.milestone.Name);
     });
   const overdueMilestonesPreview = overdueMilestones.slice(0, 5);
-  const overdueMilestonesOutsideTimelineCount = overdueMilestones.filter((entry) => entry.isOutsideCurrentTimeline).length;
-
   return (
     <CustomerUserGuard>
     <div className="h-screen bg-gray-100 dark:bg-gray-900 flex flex-col overflow-hidden">
@@ -8503,7 +8467,6 @@ export default function PlanningPage() {
                     </defs>
                     {dependencyLines.map((line, idx) => {
                       // Draw a curved path from end of parent to start of dependent
-                      const midX = (line.x1 + line.x2) / 2;
                       const controlOffset = Math.min(50, Math.abs(line.y2 - line.y1) / 2 + 20);
                       
                       return (
@@ -9359,7 +9322,7 @@ export default function PlanningPage() {
                             );
                           })}
                         </div>
-                        {taskRows.map(({ task, row, isSubtask, parentTask, subtaskIndex, totalSubtasks, level }) => {
+                        {taskRows.map(({ task, row, isSubtask, parentTask, subtaskIndex: _subtaskIndex, totalSubtasks: _totalSubtasks, level }) => {
                           // For subtasks, try to use child allocations first, then fall back to own dates
                           let usesDerivedChildDates = false;
                           let displayedStartDate: string | null = null;
@@ -9541,9 +9504,6 @@ export default function PlanningPage() {
                           const taskTooltip = taskTooltipLines.join('\n');
                           const statusColor = getTaskStatusColor(task);
                           const priorityBorderHex = getPriorityBorderHex(task);
-                          
-                          // Format hours display (only for parent tasks)
-                          const hoursDisplay = `${workedHours}/${plannedHours}/${estimatedHours}h`;
                           
                           // Subtask styling based on level
                           const subtaskHeight = isSubtask ? 'h-6' : 'h-6';
@@ -10289,10 +10249,6 @@ export default function PlanningPage() {
                           || (task.GitHubIssueNumber ? `#${task.GitHubIssueNumber}` : null)
                           || (task.GiteaIssueNumber ? `#${task.GiteaIssueNumber}` : null)
                           || null;
-                        const sprintLabel = typeof task.SprintName === 'string' && task.SprintName.trim().length > 0
-                          ? task.SprintName.trim()
-                          : null;
-
                         return (
                           <div
                             key={`grouped-task-${groupRow.id}-${task.Id}`}

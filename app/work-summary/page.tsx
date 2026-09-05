@@ -10,8 +10,8 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
 import { getApiUrl } from '@/lib/api/config';
 import { downloadTablePdf } from '@/lib/api/pdfExport';
-import TimeEntryFormModal, { TimeEntryFormValues } from '@/components/TimeEntryFormModal';
-import CallRecordFormModal, { CallRecordFormValues } from '@/components/CallRecordFormModal';
+import TimeEntryFormModal from '@/components/TimeEntryFormModal';
+import CallRecordFormModal from '@/components/CallRecordFormModal';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import { useFormatHours } from '@/lib/useFormatHours';
 
@@ -169,12 +169,6 @@ const getResumePeriodRange = (period: ResumePeriod) => {
   return { from: toDateString(lastMonthStart), to: toDateString(lastMonthEnd) };
 };
 
-const parseResumeList = (value?: string): string[] => {
-  if (!value) return [];
-  return value.split(' || ').map(v => v.trim()).filter(Boolean);
-};
-
-
 export default function WorkSummaryPage() {
   const decimalHoursToHMS = useFormatHours();
   const { user, token, isLoading } = useAuth();
@@ -316,7 +310,7 @@ export default function WorkSummaryPage() {
         } else {
           showToast({ type: 'error', message: 'Failed to delete entry' });
         }
-      } catch (err) {
+      } catch (_err) {
         showToast({ type: 'error', message: 'Error deleting entry' });
       }
     });
@@ -337,7 +331,7 @@ export default function WorkSummaryPage() {
         } else {
           showToast({ type: 'error', message: 'Failed to delete call record' });
         }
-      } catch (err) {
+      } catch (_err) {
         showToast({ type: 'error', message: 'Error deleting call record' });
       }
     });
@@ -373,7 +367,7 @@ export default function WorkSummaryPage() {
         const data = await callRecordsResponse.json();
         setCallRecords(Array.isArray(data.data) ? data.data : []);
       }
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to load entries');
     } finally {
       setIsLoadingData(false);
@@ -408,8 +402,6 @@ export default function WorkSummaryPage() {
       setResumeLoading(false);
     }
   };
-
-  const selectedResumeRange = useMemo(() => getResumePeriodRange(resumePeriod), [resumePeriod]);
 
   const resumeTotals = useMemo(() => {
     const totalUsers = resumeSummary.length;
@@ -741,7 +733,7 @@ export default function WorkSummaryPage() {
                                 headers: ['Date', 'Type', 'Start', 'End', 'Hours', 'Project', 'Task', 'JIRA', 'Org', 'Title', 'Details'],
                                 rows,
                               }, token!);
-                            } catch (err) {
+                            } catch (_err) {
                               setError('Error exporting PDF');
                             }
                           }}

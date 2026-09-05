@@ -1025,7 +1025,7 @@ export default function ApplicationsPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         {app.ImagePath ? (
-                          // eslint-disable-next-line @next/next/no-img-element
+                           
                           <img src={app.ImagePath} alt="" className="h-9 w-9 rounded object-cover border border-gray-200 dark:border-gray-600 shrink-0" />
                         ) : (
                           <span className="text-2xl shrink-0">📦</span>
@@ -1136,7 +1136,7 @@ export default function ApplicationsPage() {
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2 min-w-0">
                       {app.ImagePath ? (
-                        // eslint-disable-next-line @next/next/no-img-element
+                         
                         <img src={app.ImagePath} alt="" className="h-8 w-8 rounded object-cover border border-gray-200 dark:border-gray-600 shrink-0" />
                       ) : (
                         <span className="text-2xl shrink-0">📦</span>
@@ -1445,7 +1445,7 @@ export default function ApplicationsPage() {
                   </p>
                   <div className="flex flex-wrap items-center gap-3">
                     {imagePreview ? (
-                      // eslint-disable-next-line @next/next/no-img-element
+                       
                       <img
                         src={imagePreview}
                         alt="Application preview"

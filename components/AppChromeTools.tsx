@@ -21,7 +21,7 @@ import TimerStartModal, { TimerMode, TimerStartCallFormValues } from '@/componen
 import NavDropdownMenu from '@/components/navbar/NavDropdownMenu';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import { useToast } from '@/contexts/ToastContext';
-import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
+import { StatusValue } from '@/lib/api/statusValues';
 import { createCustomer, CreateCustomerData } from '@/lib/api/customers';
 import { io, Socket } from 'socket.io-client';
 import { ThemeMode, getStoredThemeMode, setThemeMode } from '@/lib/theme';
@@ -243,10 +243,10 @@ export default function AppChromeTools({
   const [customerOrganizations, setCustomerOrganizations] = useState<Organization[]>([]);
   const [customerSupportUsers, setCustomerSupportUsers] = useState<SupportUser[]>([]);
   const [customerForm, setCustomerForm] = useState<CustomerFormValues>(buildDefaultCustomerFormValues([]));
-  const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
-  const [taskPriorities, setTaskPriorities] = useState<PriorityValue[]>([]);
-  const [taskTypes, setTaskTypes] = useState<StatusValue[]>([]);
-  const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
+  const [_taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
+  const [_taskPriorities, setTaskPriorities] = useState<PriorityValue[]>([]);
+  const [_taskTypes, setTaskTypes] = useState<StatusValue[]>([]);
+  const [_orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -1570,7 +1570,7 @@ export default function AppChromeTools({
     }
   };
 
-  const handleSaveTask = async () => {
+  const _handleSaveTask = async () => {
     if (!taskForm.projectId || !taskForm.taskName.trim() || !taskForm.taskType) {
       setErrorWithToast('Project, Task Name, and Task Type are required');
       return;

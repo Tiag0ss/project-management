@@ -8,12 +8,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { usersApi, User } from '@/lib/api/users';
-import { tasksApi, Task } from '@/lib/api/tasks';
+import { Task } from '@/lib/api/tasks';
 import { downloadTablePdf } from '@/lib/api/pdfExport';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
-import SearchableSelect from '@/components/SearchableSelect';
 import RichTextEditor from '@/components/RichTextEditor';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import ApprovalStatusBadge from '@/components/ApprovalStatusBadge';
@@ -84,7 +83,7 @@ export default function TimesheetPage() {
   const decimalHoursToHMS = useFormatHours();
   const { user, isLoading, token } = useAuth();
   const { permissions } = usePermissions();
-  const [userProfile, setUserProfile] = useState<User | null>(null);
+  const [_userProfile, setUserProfile] = useState<User | null>(null);
   const [workHours, setWorkHours] = useState({
     monday: 8,
     tuesday: 8,
@@ -1316,7 +1315,7 @@ export default function TimesheetPage() {
                                           {task.ProjectName}
                                         </div>
                                       </td>
-                                      {weekDates.map((date, idx) => {
+                                      {weekDates.map((date, _idx) => {
                                         const localValue = weeklyHours[task.Id]?.[date];
                                         // Find ALL entries for this task/date
                                         const entries = timeEntries.filter(e => {
@@ -1436,7 +1435,7 @@ export default function TimesheetPage() {
                                           </div>
                                         </div>
                                       </td>
-                                      {weekDates.map((date, idx) => {
+                                      {weekDates.map((date, _idx) => {
                                         const localValue = weeklyHours[task.Id]?.[date];
                                         // Find ALL entries for this task/date
                                         const entries = timeEntries.filter(e => {

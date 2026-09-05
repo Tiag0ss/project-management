@@ -3,7 +3,7 @@
 import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation'
 import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
@@ -807,7 +807,7 @@ export default function TicketDetailPage() {
             const data = await res.json();
             setError(data.message || 'Failed to delete ticket');
           }
-        } catch (err) {
+        } catch (_err) {
           setError('Failed to delete ticket');
         }
       })()

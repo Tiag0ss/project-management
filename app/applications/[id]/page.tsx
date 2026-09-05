@@ -93,12 +93,6 @@ interface AvailableTask {
   StatusName: string | null;
 }
 
-interface Customer {
-  Id: number;
-  Name: string;
-  Email?: string;
-}
-
 export default function ApplicationDetailPage(props: { params: Promise<{ id: string }> }) {
   return (
     <Suspense
@@ -115,7 +109,7 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
   const { id } = use(params);
   const { pillStyle } = useColorVision();
   const { user, token, isLoading: authLoading } = useAuth();
-  const { permissions, isLoading: permissionsLoading } = usePermissions();
+  const { permissions, isLoading: _permissionsLoading } = usePermissions();
   const router = useRouter();
 
   const [application, setApplication] = useState<Application | null>(null);
@@ -742,7 +736,7 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
               {application.ImagePath ? (
-                // eslint-disable-next-line @next/next/no-img-element
+                 
                 <img
                   src={application.ImagePath}
                   alt=""

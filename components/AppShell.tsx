@@ -167,7 +167,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       user?.id
     );
     // Only re-run on route changes; recentNav is read for label reuse at touch time.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: pathname-driven touch
+     
   }, [pathname, user?.id]);
 
   useEffect(() => {

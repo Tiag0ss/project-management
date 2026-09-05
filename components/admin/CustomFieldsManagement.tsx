@@ -69,7 +69,7 @@ export default function CustomFieldsManagement() {
   const [selectedTable, setSelectedTable] = useState<string>('Projects');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [_success, setSuccess] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingFieldId, setEditingFieldId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -238,7 +238,7 @@ export default function CustomFieldsManagement() {
 
   const confirmDeleteField = async () => {
     if (!deleteTarget) return;
-    const { id: fieldId, name: fieldName } = deleteTarget;
+    const { id: fieldId, name: _fieldName } = deleteTarget;
     setDeleteTarget(null);
 
     try {

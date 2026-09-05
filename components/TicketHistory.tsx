@@ -169,7 +169,7 @@ export default function TicketHistory({ ticketId, token }: TicketHistoryProps) {
 
         {/* Timeline entries */}
         <div className="space-y-6">
-          {history.map((entry, index) => (
+          {history.map((entry, _index) => (
             <div key={entry.Id} className="relative flex gap-4">
               {/* Icon */}
               <div className="flex-shrink-0 w-12 h-12 rounded-full bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 flex items-center justify-center text-xl z-10">

@@ -13,7 +13,7 @@ export default function FrontpageEditor() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
+  const [_successMessage, setSuccessMessage] = useState('');
   const [isDemoMode, setIsDemoMode] = useState(false);
 
   useEffect(() => {

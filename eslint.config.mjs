@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import unusedImports from "eslint-plugin-unused-imports";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -24,8 +25,10 @@ const eslintConfig = defineConfig([
     "cloudflare/**",
   ]),
   {
+    plugins: {
+      "unused-imports": unusedImports,
+    },
     // Pin React version so eslint-plugin-react skips auto-detect (broken on ESLint 10).
-    // Safe with ESLint 9 as well; matches package.json react version.
     settings: {
       react: {
         version: "19.2.4",
@@ -33,17 +36,34 @@ const eslintConfig = defineConfig([
     },
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
-      "@typescript-eslint/no-unused-vars": "warn",
-      "react-hooks/exhaustive-deps": "warn",
-      "react-hooks/set-state-in-effect": "warn",
-      // React Compiler–oriented hooks rules — warn until codebase is cleaned up
-      "react-hooks/immutability": "warn",
-      "react-hooks/rules-of-hooks": "warn",
-      "react-hooks/static-components": "warn",
-      "react-hooks/purity": "warn",
-      "react-hooks/refs": "warn",
-      "react-hooks/preserve-manual-memoization": "warn",
+      // Prefer unused-imports (autofixable) over the base unused-vars rule.
+      "@typescript-eslint/no-unused-vars": "off",
+      "unused-imports/no-unused-imports": "error",
+      "unused-imports/no-unused-vars": [
+        "warn",
+        {
+          vars: "all",
+          varsIgnorePattern: "^_",
+          args: "after-used",
+          argsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          ignoreRestSiblings: true,
+        },
+      ],
+      "@typescript-eslint/no-unused-expressions": "warn",
+      // Large pages have intentional omitted deps; re-enable gradually per screen.
+      "react-hooks/exhaustive-deps": "off",
+      "react-hooks/rules-of-hooks": "error",
+      // React Compiler–oriented rules — off until a dedicated cleanup pass.
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/immutability": "off",
+      "react-hooks/static-components": "off",
+      "react-hooks/purity": "off",
+      "react-hooks/refs": "off",
+      "react-hooks/preserve-manual-memoization": "off",
       "@next/next/no-html-link-for-pages": "warn",
+      // Branding / user-uploaded images use dynamic URLs — next/image is not always suitable.
+      "@next/next/no-img-element": "off",
       "react/no-unescaped-entities": "off",
       "react-compiler/react-compiler": "off",
       "prefer-const": "warn",

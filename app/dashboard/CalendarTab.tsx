@@ -7,7 +7,7 @@ import { projectsApi, Project as ApiProject } from '@/lib/api/projects';
 
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import { useColorVision } from '@/hooks/useColorVision';
-import { getCalendarEventColors, type CalendarEventType } from '@/lib/colorVisionPalettes';
+import { getCalendarEventColors } from '@/lib/colorVisionPalettes';
 import { Calendar, dateFnsLocalizer, Views } from 'react-big-calendar';
 import { format, parse, startOfWeek, endOfWeek, startOfMonth, endOfMonth, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
@@ -227,7 +227,7 @@ interface SlotInfo {
   end: Date;
 }
 
-export default function CalendarTab({ tasks, timeEntries, callRecords, taskAllocations, recurringAllocations, workStartTimes, lunchTime, lunchDuration, token, onDataChanged }: CalendarTabProps) {
+export default function CalendarTab({ tasks: _tasks, timeEntries, callRecords, taskAllocations, recurringAllocations, workStartTimes, lunchTime, lunchDuration, token, onDataChanged }: CalendarTabProps) {
   const { mode } = useColorVision();
   const [currentView, setCurrentView] = useState<'week' | 'month'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());

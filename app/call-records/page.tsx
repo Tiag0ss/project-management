@@ -168,7 +168,7 @@ export default function CallRecordsPage() {
             setTimeout(() => setMessage(''), 3000);
             loadCallRecords();
           }
-        } catch (err) {
+        } catch (_err) {
           setError('Error deleting call record');
         }
       },

@@ -14,7 +14,7 @@ import PageStickyChrome from '@/components/PageStickyChrome';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
 import TaskDetailModal from '@/components/TaskDetailModal';
-import { getCustomer, updateCustomer, Customer } from '@/lib/api/customers';
+import { getCustomer, Customer } from '@/lib/api/customers';
 import { projectsApi, Project as ApiProject } from '@/lib/api/projects';
 import { tasksApi, Task as ApiTask } from '@/lib/api/tasks';
 import { useFormatHours } from '@/lib/useFormatHours';
@@ -172,7 +172,7 @@ export default function CustomerDetailPage(props: { params: Promise<{ id: string
 
 function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const decimalHoursToHMS = useFormatHours();
-  const { mapColor, pillStyle, backgroundStyle } = useColorVision();
+  const { mapColor, pillStyle } = useColorVision();
   const resolvedParams = use(params);
   const customerId = parseInt(resolvedParams.id);
   
@@ -801,7 +801,6 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
 
   // Calculate ticket statistics
   const totalTickets = tickets.length;
-  const openTickets = tickets.filter(t => t.Status === 'Open').length;
   const resolvedTickets = tickets.filter(t => t.Status === 'Resolved' || t.Status === 'Closed').length;
   const unresolvedTickets = totalTickets - resolvedTickets;
 

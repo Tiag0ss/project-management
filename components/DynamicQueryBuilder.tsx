@@ -256,7 +256,7 @@ export default function DynamicQueryBuilder({ token, onDataLoaded, initialConfig
   };
 
   // Handle selecting specific relationship
-  const handleRelationshipSelect = (tableName: string, relationshipAlias: string, relation: TableRelation) => {
+  const _handleRelationshipSelect = (tableName: string, relationshipAlias: string, relation: TableRelation) => {
     console.log(`🔗 Selecting relationship for ${tableName}: ${relation.fromTable}.${relation.fromField} → ${relation.toTable}.${relation.toField}`);
     
     if (selectedTables.includes(tableName)) {
@@ -288,7 +288,7 @@ export default function DynamicQueryBuilder({ token, onDataLoaded, initialConfig
     } else {
       console.log('Adding new table with relationship');
       // Table not selected, add it along with any missing related tables
-      let newSelectedTables = [...selectedTables];
+      const newSelectedTables = [...selectedTables];
       
       // Ensure both tables from the relationship are in selectedTables
       if (!newSelectedTables.includes(tableName)) {
@@ -319,7 +319,7 @@ export default function DynamicQueryBuilder({ token, onDataLoaded, initialConfig
     }
   };
 
-  const handleTableSelect = (tableName: string) => {
+  const _handleTableSelect = (tableName: string) => {
     if (selectedTables.includes(tableName)) {
       // Remove table
       setSelectedTables(prev => prev.filter(t => t !== tableName));
@@ -553,7 +553,7 @@ export default function DynamicQueryBuilder({ token, onDataLoaded, initialConfig
           
           console.error('Server error response:', errorData);
           setError(errorMessage);
-        } catch (parseErr) {
+        } catch (_parseErr) {
           // If response is not JSON, show status and text
           const errorText = await response.text();
           const errorMessage = `HTTP ${response.status}: ${response.statusText}${errorText ? `\n\n${errorText}` : ''}`;

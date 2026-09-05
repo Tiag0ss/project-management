@@ -224,7 +224,7 @@ export default function SystemSettings({
     aiViewSql_vAI_UserWorkloadBase: '',
     aiViewSql_vAI_UserAllocations: '',
   });
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [_organizations, setOrganizations] = useState<Organization[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -607,7 +607,7 @@ export default function SystemSettings({
                     {isUploadingBranding === 'logo' ? 'Uploading…' : 'Upload logo'}
                   </button>
                   {settings.companyLogoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
+                     
                     <img src={settings.companyLogoUrl} alt="Logo preview" className="h-8 max-w-[120px] object-contain rounded border border-gray-200 dark:border-gray-600 bg-white" />
                   ) : null}
                 </div>
@@ -642,7 +642,7 @@ export default function SystemSettings({
                     {isUploadingBranding === 'favicon' ? 'Uploading…' : 'Upload favicon'}
                   </button>
                   {settings.faviconUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
+                     
                     <img src={settings.faviconUrl} alt="Favicon preview" className="h-8 w-8 object-contain rounded border border-gray-200 dark:border-gray-600 bg-white" />
                   ) : null}
                 </div>

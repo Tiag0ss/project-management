@@ -465,7 +465,6 @@ export default function TaskDetailModal({
   const externalIssueId = task?.ExternalIssueId || null;
   const jiraIssueKeyValue = formData.jiraIssueKey ? String(formData.jiraIssueKey).trim() : '';
   const gitHubIssueNumberValue = formData.gitHubIssueNumber ?? null;
-  const giteaIssueNumberValue = formData.giteaIssueNumber ?? null;
   const jiraTicketBaseUrl = task?.JiraUrl || jiraIntegration?.JiraUrl || null;
   const jiraBoardBaseUrl = jiraIntegration?.JiraProjectsUrl || jiraIntegration?.JiraUrl || task?.JiraUrl || null;
   const hasJiraTicketIntegrationConfigured = Boolean(jiraIntegration?.JiraUrl);
@@ -474,7 +473,6 @@ export default function TaskDetailModal({
   const hasTicketJiraReference = Boolean(externalTicketId && jiraTicketBaseUrl);
   const hasJiraBoardImportReference = Boolean(externalIssueId && jiraBoardBaseUrl);
   const hasGitHubIssueReference = Boolean(gitHubIssueNumberValue);
-  const hasGiteaIssueReference = Boolean(giteaIssueNumberValue);
   const showGitHubIssueSection = hasGitHubIntegrationConfigured;
   const showGiteaIssueSection = hasGiteaIntegrationConfigured;
   const githubIssueUrl = hasGitHubIssueReference && project?.GitHubOwner && project?.GitHubRepo
@@ -1191,17 +1189,6 @@ export default function TaskDetailModal({
     } catch (err: any) {
       setErrorWithToast(err.message || 'Failed to create project and move task');
       setIsMovingTask(false);
-    }
-  };
-
-  const handleAddAssignee = (userId: number) => {
-    const user = organizationUsers.find((u) => u.Id === userId);
-    if (!user) return;
-    if (taskAssignees.some((a) => a.UserId === userId)) return;
-    setTaskAssignees([...taskAssignees, { UserId: user.Id, Username: user.Username, FirstName: user.FirstName, LastName: user.LastName }]);
-    // Keep legacy single assignedTo in sync with the first assignee
-    if (taskAssignees.length === 0) {
-      setFormData({ ...formData, assignedTo: userId });
     }
   };
 
@@ -1952,7 +1939,7 @@ export default function TaskDetailModal({
     if (!visibleTabs.includes(activeTab)) {
       setActiveTab('details');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- visibleTabKey captures tab set changes
+     
   }, [activeTab, visibleTabKey]);
 
   const visibleHoursSubTabKey = visibleHoursSubTabs.join(',');
@@ -1961,7 +1948,7 @@ export default function TaskDetailModal({
     if (!visibleHoursSubTabs.includes(hoursSubTab)) {
       setHoursSubTab(visibleHoursSubTabs[0]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- visibleHoursSubTabKey captures sub-tab set changes
+     
   }, [hoursSubTab, visibleHoursSubTabKey]);
 
   const mainPageTabs = visibleTabs.map((tab) => ({
@@ -3701,13 +3688,6 @@ export default function TaskDetailModal({
                         <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                           {paginatedAllocationGroups.map((group) => {
                             const isExpanded = expandedAllocationGroups.has(group.key);
-                            const rangeDays = Math.max(
-                              1,
-                              Math.round(
-                                (new Date(`${group.endDate}T12:00:00`).getTime() - new Date(`${group.startDate}T12:00:00`).getTime()) / 86_400_000
-                              ) + 1
-                            );
-
                             return (
                               <React.Fragment key={group.key}>
                                 <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors bg-gray-50/60 dark:bg-gray-800/60">

@@ -144,7 +144,7 @@ function MemosPageContent() {
     if (!memos.some((memo) => memo.Id === memoIdFromUrl)) return;
     deepLinkedMemoRef.current = memoIdFromUrl;
     handleOpenMemo(memoIdFromUrl);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- open when memoId query changes
+     
   }, [isLoadingData, memos, memoIdFromUrl]);
 
   const handleSaveMemo = async () => {

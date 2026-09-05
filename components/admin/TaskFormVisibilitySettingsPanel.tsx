@@ -90,7 +90,7 @@ export default function TaskFormVisibilitySettingsPanel({
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [mode, token, organizationId]);
 
   const handleSave = async () => {
@@ -190,7 +190,7 @@ export default function TaskFormVisibilitySettingsPanel({
       onReset: handleResetClick,
     });
     return () => onActionsStateChange(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [loading, mode, canManage, hasUserOverride, saving, syncing, config, organizationId]);
 
   if (loading) {

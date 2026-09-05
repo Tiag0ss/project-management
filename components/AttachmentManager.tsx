@@ -24,31 +24,10 @@ const ALLOWED_TYPES = [
   'text/plain',
 ];
 
-const FILE_ICONS: { [key: string]: string } = {
-  'image/': '🖼️',
-  'application/pdf': '📄',
-  'application/msword': '📝',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '📝',
-  'application/vnd.ms-excel': '📊',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '📊',
-  'application/zip': '📦',
-  'application/x-zip-compressed': '📦',
-  'text/plain': '📃',
-};
-
 export default function AttachmentUploader({ onUpload, maxSize = 10 * 1024 * 1024, disabled = false }: AttachmentUploaderProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const getFileIcon = (fileType: string): string => {
-    for (const [type, icon] of Object.entries(FILE_ICONS)) {
-      if (fileType.startsWith(type)) {
-        return icon;
-      }
-    }
-    return '📎';
-  };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
