@@ -2,446 +2,296 @@ import express, { Response } from 'express';
 import { RowDataPacket, ResultSetHeader } from '../../config/database';
 import { authenticateToken, AuthRequest } from '../../middleware/auth';
 import { pool } from '../../config/database';
-import { encrypt, decrypt } from '../../utils/encryption';
+import { encrypt } from '../../utils/encryption';
 import logger from '../../utils/logger';
+import {
+  clearOtherVcsDefaults,
+  decryptTokenField,
+  nullApplicationFksForIntegration,
+  resolveVcsIntegration,
+} from '../../utils/vcsIntegrationResolve';
+import { parseOwnerRepoFromUrl } from '../../utils/vcsIntegrationHelpers';
 
 const router = express.Router();
 
-/**
- * @swagger
- * tags:
- *   name: GiteaIntegrations
- *   description: Gitea integration management
- */
+async function assertOrgMember(organizationId: string | string[] | number, userId: number | undefined) {
+  const orgId = Array.isArray(organizationId) ? organizationId[0] : organizationId;
+  const [memberCheck] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+    [orgId, userId]
+  );
+  return memberCheck.length > 0;
+}
 
-/**
- * @swagger
- * /api/gitea-integrations/organization/{organizationId}:
- *   get:
- *     summary: Get Gitea integration for an organization
- *     tags: [GiteaIntegrations]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: organizationId
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Gitea integration retrieved successfully
- *       403:
- *         description: Access denied
- */
-// Get Gitea integration for an organization
+async function assertOrgManager(organizationId: string | string[] | number, userId: number | undefined) {
+  const orgId = Array.isArray(organizationId) ? organizationId[0] : organizationId;
+  const [memberCheck] = await pool.execute<RowDataPacket[]>(
+    `SELECT om.*, u.IsAdmin
+     FROM OrganizationMembers om
+     INNER JOIN Users u ON om.UserId = u.Id
+     WHERE om.OrganizationId = ? AND om.UserId = ? AND (u.IsAdmin = 1 OR u.IsManager = 1)`,
+    [orgId, userId]
+  );
+  return memberCheck.length > 0;
+}
+
 router.get('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { organizationId } = req.params;
-    const userId = req.user?.userId;
-
-    // Check if user is member of the organization
-    const [memberCheck] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
-      [organizationId, userId]
-    );
-
-    if (memberCheck.length === 0) {
+    if (!(await assertOrgMember(organizationId, req.user?.userId))) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    const [integration] = await pool.execute<RowDataPacket[]>(
-      `SELECT OrganizationId, IsEnabled, GiteaUrl, CreatedAt, UpdatedAt
-       FROM OrganizationGiteaIntegrations 
-       WHERE OrganizationId = ?`,
+    const [integrations] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id, OrganizationId, Name, IsEnabled, IsDefault, GiteaUrl, CreatedAt, UpdatedAt
+       FROM OrganizationGiteaIntegrations
+       WHERE OrganizationId = ?
+       ORDER BY IsDefault DESC, Name ASC, Id ASC`,
       [organizationId]
     );
 
-    if (integration.length === 0) {
-      return res.json({ success: true, integration: null });
-    }
-
-    res.json({ success: true, integration: integration[0] });
+    res.json({ success: true, integrations, integration: integrations[0] || null });
   } catch (error) {
-    logger.error('Get Gitea integration error:', error);
-    res.status(500).json({ success: false, message: 'Failed to get Gitea integration' });
+    logger.error('Get Gitea integrations error:', error);
+    res.status(500).json({ success: false, message: 'Failed to get Gitea integrations' });
   }
 });
 
-/**
- * @swagger
- * /api/gitea-integrations/organization/{organizationId}:
- *   post:
- *     summary: Create or update Gitea integration
- *     tags: [GiteaIntegrations]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: organizationId
- *         required: true
- *         schema:
- *           type: integer
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               giteaUrl:
- *                 type: string
- *               accessToken:
- *                 type: string
- *               repoOwner:
- *                 type: string
- *               repoName:
- *                 type: string
- *               isEnabled:
- *                 type: boolean
- *     responses:
- *       200:
- *         description: Integration saved successfully
- *       403:
- *         description: Access denied
- */
-// Create or update Gitea integration
 router.post('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { organizationId } = req.params;
-    const userId = req.user?.userId;
-    const { isEnabled, giteaUrl, giteaToken } = req.body;
+    const { name, isEnabled = true, isDefault = false, giteaUrl, giteaToken } = req.body;
 
-    // Check if user is admin or manager of the organization
-    const [memberCheck] = await pool.execute<RowDataPacket[]>(
-      `SELECT om.*, u.IsAdmin 
-       FROM OrganizationMembers om
-       INNER JOIN Users u ON om.UserId = u.Id
-       WHERE om.OrganizationId = ? AND om.UserId = ? AND (u.IsAdmin = 1 OR u.IsManager = 1)`,
-      [organizationId, userId]
-    );
-
-    if (memberCheck.length === 0) {
+    if (!(await assertOrgManager(organizationId, req.user?.userId))) {
       return res.status(403).json({ success: false, message: 'Only admins and managers can configure integrations' });
-    }
-
-    // Check if integration exists
-    const [existing] = await pool.execute<RowDataPacket[]>(
-      'SELECT OrganizationId, GiteaUrl, GiteaToken FROM OrganizationGiteaIntegrations WHERE OrganizationId = ?',
-      [organizationId]
-    );
-
-    // Determine values to use
-    let finalUrl = giteaUrl;
-    let finalToken = giteaToken;
-
-    if (existing.length > 0) {
-      // If updating and values not provided, keep existing ones
-      if (!giteaUrl) finalUrl = existing[0].GiteaUrl;
-      if (!giteaToken) {
-        // Keep existing encrypted token
-        finalToken = existing[0].GiteaToken;
-      }
-    }
-
-    // Validate required fields only if enabling
-    if (isEnabled && (!finalUrl || !finalToken)) {
-      return res.status(400).json({ success: false, message: 'Gitea URL and token are required when enabling integration' });
-    }
-
-    // Encrypt the API token only if a new one was provided
-    const encryptedToken = giteaToken ? encrypt(giteaToken) : finalToken;
-
-    if (existing.length > 0) {
-      // Update existing
-      await pool.execute(
-        `UPDATE OrganizationGiteaIntegrations 
-         SET IsEnabled = ?, GiteaUrl = ?, GiteaToken = ?, UpdatedAt = CURRENT_TIMESTAMP
-         WHERE OrganizationId = ?`,
-        [isEnabled ? 1 : 0, finalUrl, encryptedToken, organizationId]
-      );
-    } else {
-      // Create new - require all fields
-      if (!giteaUrl || !giteaToken) {
-        return res.status(400).json({ success: false, message: 'Gitea URL and token are required for new integration' });
-      }
-      await pool.execute(
-        `INSERT INTO OrganizationGiteaIntegrations (OrganizationId, IsEnabled, GiteaUrl, GiteaToken)
-         VALUES (?, ?, ?, ?)`,
-        [organizationId, isEnabled ? 1 : 0, giteaUrl, encryptedToken]
-      );
-    }
-
-    res.json({ success: true, message: 'Gitea integration saved successfully' });
-  } catch (error) {
-    logger.error('Save Gitea integration error:', error);
-    res.status(500).json({ success: false, message: 'Failed to save Gitea integration' });
-  }
-});
-
-/**
- * @swagger
- * /api/gitea-integrations/organization/{organizationId}/test:
- *   post:
- *     summary: Test Gitea connection
- *     tags: [GiteaIntegrations]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: organizationId
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Connection test result
- *       403:
- *         description: Access denied
- */
-// Test Gitea connection
-router.post('/organization/:organizationId/test', authenticateToken, async (req: AuthRequest, res: Response) => {
-  try {
-    const { organizationId } = req.params;
-    const userId = req.user?.userId;
-    const { giteaUrl, giteaToken } = req.body;
-
-    // Check if user is member of the organization
-    const [memberCheck] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
-      [organizationId, userId]
-    );
-
-    if (memberCheck.length === 0) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
     if (!giteaUrl || !giteaToken) {
       return res.status(400).json({ success: false, message: 'Gitea URL and token are required' });
     }
 
-    // Test connection by fetching current user
-    const testUrl = `${giteaUrl}/api/v1/user`;
-
-    const response = await fetch(testUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `token ${giteaToken}`,
-        'Accept': 'application/json'
+    let displayName = String(name || '').trim();
+    if (!displayName) {
+      try {
+        displayName = new URL(giteaUrl).hostname || 'Gitea';
+      } catch {
+        displayName = 'Gitea';
       }
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.error('Gitea test connection failed:', response.status, errorText);
-      return res.status(400).json({ 
-        success: false, 
-        message: `Failed to connect to Gitea: ${response.status} ${response.statusText}` 
-      });
     }
 
-    const userData = await response.json();
+    if (isDefault) {
+      await clearOtherVcsDefaults('gitea', Number(organizationId));
+    }
 
-    res.json({ 
-      success: true,
-      message: 'Successfully connected to Gitea',
-      giteaUser: userData.login || userData.username
-    });
-  } catch (error: any) {
-    logger.error('Test Gitea connection error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to test Gitea connection' 
-    });
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO OrganizationGiteaIntegrations
+         (OrganizationId, Name, IsEnabled, IsDefault, GiteaUrl, GiteaToken)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [organizationId, displayName, isEnabled ? 1 : 0, isDefault ? 1 : 0, giteaUrl, encrypt(giteaToken)]
+    );
+
+    res.json({ success: true, message: 'Gitea integration created successfully', integrationId: result.insertId });
+  } catch (error) {
+    logger.error('Create Gitea integration error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create Gitea integration' });
   }
 });
 
-/**
- * @swagger
- * /api/gitea-integrations/organization/{organizationId}/search:
- *   get:
- *     summary: Search Gitea issues
- *     tags: [GiteaIntegrations]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: organizationId
- *         required: true
- *         schema:
- *           type: integer
- *       - in: query
- *         name: q
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Gitea issues returned
- *       403:
- *         description: Access denied
- */
-// Search Gitea issues
-router.get('/organization/:organizationId/search', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.put('/:integrationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { organizationId } = req.params;
-    const { query, owner, repo } = req.query;
-    const userId = req.user?.userId;
+    const integrationId = Number(req.params.integrationId);
+    const { name, isEnabled, isDefault, giteaUrl, giteaToken } = req.body;
 
-    // Check if user is member of the organization
-    const [memberCheck] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
-      [organizationId, userId]
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM OrganizationGiteaIntegrations WHERE Id = ?',
+      [integrationId]
     );
-
-    if (memberCheck.length === 0) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Integration not found' });
     }
 
-    // Owner and repo are now required
-    if (!owner || !repo) {
-      return res.status(400).json({ success: false, message: 'Repository owner and name are required' });
+    const row = existing[0];
+    if (!(await assertOrgManager(row.OrganizationId, req.user?.userId))) {
+      return res.status(403).json({ success: false, message: 'Only admins and managers can configure integrations' });
     }
 
-    // Get integration settings
-    const [integration] = await pool.execute<RowDataPacket[]>(
-      `SELECT IsEnabled, GiteaUrl, GiteaToken
-       FROM OrganizationGiteaIntegrations 
-       WHERE OrganizationId = ? AND IsEnabled = 1`,
-      [organizationId]
-    );
+    const finalName = name !== undefined ? String(name).trim() || row.Name : row.Name;
+    const finalUrl = giteaUrl !== undefined ? giteaUrl : row.GiteaUrl;
+    const finalEnabled = isEnabled !== undefined ? (isEnabled ? 1 : 0) : row.IsEnabled;
+    const finalDefault = isDefault !== undefined ? (isDefault ? 1 : 0) : row.IsDefault;
+    const encryptedToken = giteaToken ? encrypt(giteaToken) : row.GiteaToken;
 
-    if (integration.length === 0) {
-      return res.status(404).json({ success: false, message: 'Gitea integration not configured or disabled' });
-    }
-
-    const { GiteaUrl, GiteaToken: encryptedToken } = integration[0];
-    const GiteaToken = decrypt(encryptedToken);
-
-    // Repository-specific search
-    const searchUrl = `${GiteaUrl}/api/v1/repos/${owner}/${repo}/issues`;
-    const params = new URLSearchParams();
-    params.append('state', 'all');
-    params.append('page', '1');
-    params.append('limit', '50');
-
-    const fullUrl = `${searchUrl}?${params.toString()}`;
-
-    const response = await fetch(fullUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `token ${GiteaToken}`,
-        'Accept': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.error('Gitea search failed:', response.status, errorText);
-      return res.status(400).json({ 
-        success: false, 
-        message: `Failed to search Gitea: ${response.status} ${response.statusText}` 
-      });
-    }
-
-    let issues = await response.json();
-
-    // Filter by query if provided
-    if (query) {
-      const searchTerm = String(query).toLowerCase();
-      issues = issues.filter((issue: any) => 
-        issue.title?.toLowerCase().includes(searchTerm) ||
-        issue.body?.toLowerCase().includes(searchTerm) ||
-        issue.number?.toString().includes(searchTerm)
-      );
-    }
-    
-    // Map and format issues
-    const formattedIssues = issues.map((issue: any) => ({
-      id: issue.id,
-      number: issue.number,
-      title: issue.title,
-      body: issue.body,
-      state: issue.state,
-      labels: issue.labels?.map((label: any) => ({
-        name: label.name,
-        color: label.color
-      })) || [],
-      assignee: issue.assignee?.login || issue.assignee?.username,
-      assigneeName: issue.assignee?.full_name || issue.assignee?.login || issue.assignee?.username,
-      author: issue.user?.login || issue.user?.username,
-      authorName: issue.user?.full_name || issue.user?.login || issue.user?.username,
-      created_at: issue.created_at,
-      updated_at: issue.updated_at,
-      html_url: issue.html_url,
-      repository_url: issue.repository?.html_url,
-      isPullRequest: !!issue.pull_request
-    }));
-
-    // Filter out pull requests
-    const issuesOnly = formattedIssues.filter((issue: any) => !issue.isPullRequest);
-
-    res.json({ 
-      success: true, 
-      issues: issuesOnly,
-      total: issuesOnly.length
-    });
-  } catch (error: any) {
-    logger.error('Search Gitea error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to search Gitea issues' 
-    });
-  }
-});
-
-/**
- * @swagger
- * /api/gitea-integrations/organization/{organizationId}:
- *   delete:
- *     summary: Delete Gitea integration
- *     tags: [GiteaIntegrations]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: organizationId
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Integration deleted successfully
- *       403:
- *         description: Access denied
- */
-// Delete integration
-router.delete('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
-  try {
-    const { organizationId } = req.params;
-    const userId = req.user?.userId;
-
-    // Check if user is admin or manager
-    const [memberCheck] = await pool.execute<RowDataPacket[]>(
-      `SELECT om.*, u.IsAdmin 
-       FROM OrganizationMembers om
-       INNER JOIN Users u ON om.UserId = u.Id
-       WHERE om.OrganizationId = ? AND om.UserId = ? AND (u.IsAdmin = 1 OR u.IsManager = 1)`,
-      [organizationId, userId]
-    );
-
-    if (memberCheck.length === 0) {
-      return res.status(403).json({ success: false, message: 'Only admins and managers can delete integrations' });
+    if (finalDefault) {
+      await clearOtherVcsDefaults('gitea', Number(row.OrganizationId), integrationId);
     }
 
     await pool.execute(
-      'DELETE FROM OrganizationGiteaIntegrations WHERE OrganizationId = ?',
-      [organizationId]
+      `UPDATE OrganizationGiteaIntegrations
+       SET Name = ?, IsEnabled = ?, IsDefault = ?, GiteaUrl = ?, GiteaToken = ?, UpdatedAt = CURRENT_TIMESTAMP
+       WHERE Id = ?`,
+      [finalName, finalEnabled, finalDefault, finalUrl, encryptedToken, integrationId]
     );
 
+    res.json({ success: true, message: 'Gitea integration updated successfully' });
+  } catch (error) {
+    logger.error('Update Gitea integration error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update Gitea integration' });
+  }
+});
+
+router.delete('/:integrationId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const integrationId = Number(req.params.integrationId);
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM OrganizationGiteaIntegrations WHERE Id = ?',
+      [integrationId]
+    );
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Integration not found' });
+    }
+    if (!(await assertOrgManager(existing[0].OrganizationId, req.user?.userId))) {
+      return res.status(403).json({ success: false, message: 'Only admins and managers can delete integrations' });
+    }
+
+    await nullApplicationFksForIntegration('gitea', integrationId);
+    await pool.execute('DELETE FROM OrganizationGiteaIntegrations WHERE Id = ?', [integrationId]);
     res.json({ success: true, message: 'Gitea integration deleted successfully' });
   } catch (error) {
     logger.error('Delete Gitea integration error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete Gitea integration' });
+  }
+});
+
+router.post('/organization/:organizationId/test', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { organizationId } = req.params;
+    const { giteaUrl, giteaToken } = req.body;
+    if (!(await assertOrgMember(organizationId, req.user?.userId))) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+    if (!giteaUrl || !giteaToken) {
+      return res.status(400).json({ success: false, message: 'Gitea URL and token are required' });
+    }
+
+    const response = await fetch(`${String(giteaUrl).replace(/\/$/, '')}/api/v1/user`, {
+      method: 'GET',
+      headers: { Authorization: `token ${giteaToken}`, Accept: 'application/json' },
+    });
+
+    if (!response.ok) {
+      return res.status(400).json({
+        success: false,
+        message: `Failed to connect to Gitea: ${response.status} ${response.statusText}`,
+      });
+    }
+
+    const userData = await response.json();
+    res.json({
+      success: true,
+      message: 'Successfully connected to Gitea',
+      giteaUser: userData.login || userData.username,
+    });
+  } catch (error: any) {
+    logger.error('Test Gitea connection error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to test Gitea connection' });
+  }
+});
+
+router.get('/organization/:organizationId/search', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { organizationId } = req.params;
+    const { query, owner, repo, integrationId, applicationId } = req.query;
+
+    if (!(await assertOrgMember(organizationId, req.user?.userId))) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    let resolvedIntegrationId = integrationId ? Number(integrationId) : null;
+    let resolvedOwner = owner ? String(owner) : '';
+    let resolvedRepo = repo ? String(repo) : '';
+
+    if (applicationId) {
+      const [apps] = await pool.execute<RowDataPacket[]>(
+        `SELECT GiteaIntegrationId, RepositoryUrl FROM Applications
+         WHERE Id = ? AND OrganizationId = ?`,
+        [applicationId, organizationId]
+      );
+      if (apps.length === 0) {
+        return res.status(404).json({ success: false, message: 'Application not found' });
+      }
+      if (apps[0].GiteaIntegrationId) {
+        resolvedIntegrationId = Number(apps[0].GiteaIntegrationId);
+      }
+      const parsed = parseOwnerRepoFromUrl(apps[0].RepositoryUrl);
+      if (parsed) {
+        resolvedOwner = resolvedOwner || parsed.owner;
+        resolvedRepo = resolvedRepo || parsed.repo;
+      }
+    }
+
+    if (!resolvedOwner || !resolvedRepo) {
+      return res.status(400).json({ success: false, message: 'Repository owner and name are required' });
+    }
+
+    const integration = await resolveVcsIntegration('gitea', Number(organizationId), resolvedIntegrationId);
+    if (!integration || !integration.IsEnabled) {
+      return res.status(404).json({ success: false, message: 'Gitea integration not configured or disabled' });
+    }
+
+    const GiteaToken = decryptTokenField(integration.GiteaToken);
+    const GiteaUrl = String(integration.GiteaUrl).replace(/\/$/, '');
+    const params = new URLSearchParams({ state: 'all', page: '1', limit: '50' });
+
+    const response = await fetch(
+      `${GiteaUrl}/api/v1/repos/${resolvedOwner}/${resolvedRepo}/issues?${params}`,
+      {
+        method: 'GET',
+        headers: { Authorization: `token ${GiteaToken}`, Accept: 'application/json' },
+      }
+    );
+
+    if (!response.ok) {
+      return res.status(400).json({
+        success: false,
+        message: `Failed to search Gitea: ${response.status} ${response.statusText}`,
+      });
+    }
+
+    let issues = await response.json();
+    if (query) {
+      const searchTerm = String(query).toLowerCase();
+      issues = issues.filter(
+        (issue: any) =>
+          issue.title?.toLowerCase().includes(searchTerm) ||
+          issue.body?.toLowerCase().includes(searchTerm) ||
+          issue.number?.toString().includes(searchTerm)
+      );
+    }
+
+    const formattedIssues = issues
+      .map((issue: any) => ({
+        id: issue.id,
+        number: issue.number,
+        title: issue.title,
+        body: issue.body,
+        state: issue.state,
+        labels: issue.labels?.map((label: any) => ({ name: label.name, color: label.color })) || [],
+        assignee: issue.assignee?.login || issue.assignee?.username,
+        assigneeName: issue.assignee?.full_name || issue.assignee?.login || issue.assignee?.username,
+        author: issue.user?.login || issue.user?.username,
+        authorName: issue.user?.full_name || issue.user?.login || issue.user?.username,
+        created_at: issue.created_at,
+        updated_at: issue.updated_at,
+        html_url: issue.html_url,
+        repository_url: issue.repository?.html_url,
+        isPullRequest: !!issue.pull_request,
+      }))
+      .filter((issue: any) => !issue.isPullRequest);
+
+    res.json({ success: true, issues: formattedIssues, total: formattedIssues.length });
+  } catch (error: any) {
+    logger.error('Search Gitea error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to search Gitea issues' });
   }
 });
 

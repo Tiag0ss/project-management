@@ -14,6 +14,7 @@ import {
   resolveGitCredentials,
   listRemoteCommits,
 } from '../../utils/gitRemote';
+import { exclusiveApplicationVcsFks } from '../../utils/vcsIntegrationHelpers';
 import {
   APPLICATION_IMAGE_TYPES,
   APPLICATION_UPLOAD_DIR,
@@ -508,7 +509,8 @@ router.get('/:id/commits', authenticateToken, async (req: AuthRequest, res: Resp
     const perPage = Math.min(100, Math.max(1, parseInt(String(req.query.per_page || '30'), 10) || 30));
 
     const [apps] = await pool.execute<RowDataPacket[]>(
-      `SELECT a.Id, a.OrganizationId, a.RepositoryUrl
+      `SELECT a.Id, a.OrganizationId, a.RepositoryUrl,
+              a.GitHubIntegrationId, a.GiteaIntegrationId, a.BitbucketIntegrationId
        FROM Applications a
        INNER JOIN OrganizationMembers om ON a.OrganizationId = om.OrganizationId AND om.UserId = ?
        WHERE a.Id = ? AND a.IsActive = 1`,
@@ -535,7 +537,11 @@ router.get('/:id/commits', authenticateToken, async (req: AuthRequest, res: Resp
       });
     }
 
-    const creds = await resolveGitCredentials(Number(apps[0].OrganizationId), parsed);
+    const creds = await resolveGitCredentials(Number(apps[0].OrganizationId), parsed, {
+      githubIntegrationId: apps[0].GitHubIntegrationId,
+      giteaIntegrationId: apps[0].GiteaIntegrationId,
+      bitbucketIntegrationId: apps[0].BitbucketIntegrationId,
+    });
     if (!creds) {
       return res.status(400).json({
         success: false,
@@ -565,7 +571,8 @@ router.get('/:id/commits', authenticateToken, async (req: AuthRequest, res: Resp
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { Name, Description, RepositoryUrl, OrganizationId, CustomerIds, IsCustomerSpecific } = req.body;
+    const { Name, Description, RepositoryUrl, OrganizationId, CustomerIds, IsCustomerSpecific,
+      GitHubIntegrationId, GiteaIntegrationId, BitbucketIntegrationId } = req.body;
 
     if (!Name || !OrganizationId) {
       return res.status(400).json({ success: false, message: 'Name and OrganizationId are required' });
@@ -615,10 +622,28 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       }
     }
 
+    const vcsFks = exclusiveApplicationVcsFks({
+      githubIntegrationId: GitHubIntegrationId,
+      giteaIntegrationId: GiteaIntegrationId,
+      bitbucketIntegrationId: BitbucketIntegrationId,
+      repositoryUrl: RepositoryUrl,
+    });
+
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Applications (Name, Description, RepositoryUrl, IsCustomerSpecific, OrganizationId, CreatedBy, CreatedAt, UpdatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-      [Name, Description || null, RepositoryUrl || null, IsCustomerSpecific ? 1 : 0, OrganizationId, userId]
+      `INSERT INTO Applications (Name, Description, RepositoryUrl, IsCustomerSpecific, OrganizationId,
+         GitHubIntegrationId, GiteaIntegrationId, BitbucketIntegrationId, CreatedBy, CreatedAt, UpdatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [
+        Name,
+        Description || null,
+        RepositoryUrl || null,
+        IsCustomerSpecific ? 1 : 0,
+        OrganizationId,
+        vcsFks.GitHubIntegrationId,
+        vcsFks.GiteaIntegrationId,
+        vcsFks.BitbucketIntegrationId,
+        userId,
+      ]
     );
 
     const appId = result.insertId;
@@ -647,7 +672,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.user?.userId;
     const { id } = req.params;
-    const { Name, Description, RepositoryUrl, CustomerIds, IsCustomerSpecific } = req.body;
+    const { Name, Description, RepositoryUrl, CustomerIds, IsCustomerSpecific,
+      GitHubIntegrationId, GiteaIntegrationId, BitbucketIntegrationId } = req.body;
 
     if (!Name) {
       return res.status(400).json({ success: false, message: 'Name is required' });
@@ -655,7 +681,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     // Get application organization ID
     const [apps] = await pool.execute<RowDataPacket[]>(
-      'SELECT OrganizationId FROM Applications WHERE Id = ? AND IsActive = 1',
+      `SELECT OrganizationId, RepositoryUrl, GitHubIntegrationId, GiteaIntegrationId, BitbucketIntegrationId
+       FROM Applications WHERE Id = ? AND IsActive = 1`,
       [id]
     );
 
@@ -664,6 +691,22 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     }
 
     const organizationId = apps[0].OrganizationId;
+    const nextGh =
+      GitHubIntegrationId !== undefined ? GitHubIntegrationId || null : apps[0].GitHubIntegrationId;
+    const nextGt =
+      GiteaIntegrationId !== undefined ? GiteaIntegrationId || null : apps[0].GiteaIntegrationId;
+    const nextBb =
+      BitbucketIntegrationId !== undefined
+        ? BitbucketIntegrationId || null
+        : apps[0].BitbucketIntegrationId;
+    const nextRepoUrl =
+      RepositoryUrl !== undefined ? RepositoryUrl : apps[0].RepositoryUrl;
+    const exclusiveFks = exclusiveApplicationVcsFks({
+      githubIntegrationId: nextGh,
+      giteaIntegrationId: nextGt,
+      bitbucketIntegrationId: nextBb,
+      repositoryUrl: nextRepoUrl,
+    });
 
     // Check permissions
     const [user] = await pool.execute<RowDataPacket[]>(
@@ -713,9 +756,23 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     await pool.execute(
       `UPDATE Applications
-       SET Name = ?, Description = ?, RepositoryUrl = ?, IsCustomerSpecific = COALESCE(?, IsCustomerSpecific), UpdatedAt = CURRENT_TIMESTAMP
+       SET Name = ?, Description = ?, RepositoryUrl = ?,
+           IsCustomerSpecific = COALESCE(?, IsCustomerSpecific),
+           GitHubIntegrationId = ?,
+           GiteaIntegrationId = ?,
+           BitbucketIntegrationId = ?,
+           UpdatedAt = CURRENT_TIMESTAMP
        WHERE Id = ?`,
-      [Name, Description || null, RepositoryUrl || null, isCustomerSpecificValue, id]
+      [
+        Name,
+        Description || null,
+        RepositoryUrl || null,
+        isCustomerSpecificValue,
+        exclusiveFks.GitHubIntegrationId,
+        exclusiveFks.GiteaIntegrationId,
+        exclusiveFks.BitbucketIntegrationId,
+        id,
+      ]
     );
 
     // Sync customers

@@ -1,12 +1,25 @@
 {
   "TableName": "OrganizationGiteaIntegrations",
-  "PrimaryKeyFields": "OrganizationId",
+  "PrimaryKeyFields": "Id",
   "Fields": [
+    {
+      "FieldName": "Id",
+      "DataType": "int",
+      "NotNullable": true,
+      "AutoIncrement": true,
+      "Comment": "Primary key - unique Gitea integration instance"
+    },
     {
       "FieldName": "OrganizationId",
       "DataType": "int",
       "NotNullable": true,
-      "Comment": "Primary key / Foreign key - reference to Organizations.Id"
+      "Comment": "Foreign key - reference to Organizations.Id"
+    },
+    {
+      "FieldName": "Name",
+      "DataType": "varchar(255)",
+      "NotNullable": true,
+      "Comment": "Display name for this Gitea integration instance"
     },
     {
       "FieldName": "IsEnabled",
@@ -14,6 +27,13 @@
       "NotNullable": true,
       "DefaultValue": "1",
       "Comment": "Flag indicating if Gitea integration is active"
+    },
+    {
+      "FieldName": "IsDefault",
+      "DataType": "tinyint(1)",
+      "NotNullable": true,
+      "DefaultValue": "0",
+      "Comment": "Default instance for this organization when no explicit integration is selected"
     },
     {
       "FieldName": "GiteaUrl",

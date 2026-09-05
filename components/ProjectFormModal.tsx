@@ -40,8 +40,6 @@ export default function ProjectFormModal({
   const [customers, setCustomers] = useState<{ Id: number; Name: string }[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [jiraIntegration, setJiraIntegration] = useState<{ JiraUrl: string; JiraProjectKey: string } | null>(null);
-  const [githubIntegration, setGithubIntegration] = useState<any>(null);
-  const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
   const [availableApplications, setAvailableApplications] = useState<{ Id: number; Name: string }[]>([]);
   const [formData, setFormData] = useState<CreateProjectData>({
     organizationId: project?.OrganizationId || 0,
@@ -54,10 +52,6 @@ export default function ProjectFormModal({
     isGlobal: !!project?.IsGlobal,
     customerId: project?.CustomerId || undefined,
     jiraBoardId: project?.JiraBoardId || undefined,
-    gitHubOwner: project?.GitHubOwner || undefined,
-    gitHubRepo: project?.GitHubRepo || undefined,
-    giteaOwner: project?.GiteaOwner || undefined,
-    giteaRepo: project?.GiteaRepo || undefined,
     budget: project?.Budget ?? undefined,
     budgetType: project?.BudgetType === 'hours' ? 'hours' : 'monetary',
     hourlyRate: project?.HourlyRate ?? undefined,
@@ -77,15 +71,11 @@ export default function ProjectFormModal({
       void loadCustomers(formData.organizationId);
       void loadProjectStatuses(formData.organizationId);
       void loadJiraIntegration(formData.organizationId);
-      void loadGitHubIntegration(formData.organizationId);
-      void loadGiteaIntegration(formData.organizationId);
       void loadApplicationsList(formData.organizationId);
     } else {
       setCustomers([]);
       setProjectStatuses([]);
       setJiraIntegration(null);
-      setGithubIntegration(null);
-      setGiteaIntegration(null);
       setAvailableApplications([]);
     }
   }, [formData.organizationId]);
@@ -202,44 +192,6 @@ export default function ProjectFormModal({
     } catch (err: any) {
       console.error('Failed to load Jira integration:', err);
       setJiraIntegration(null);
-    }
-  };
-
-  const loadGitHubIntegration = async (orgId: number) => {
-    try {
-      const response = await fetch(`${getApiUrl()}/api/github-integrations/organization/${orgId}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.integration && data.integration.IsEnabled && data.integration.GitHubUrl) {
-          setGithubIntegration(data.integration);
-        } else {
-          setGithubIntegration(null);
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to load GitHub integration:', err);
-      setGithubIntegration(null);
-    }
-  };
-
-  const loadGiteaIntegration = async (orgId: number) => {
-    try {
-      const response = await fetch(`${getApiUrl()}/api/gitea-integrations/organization/${orgId}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.integration && data.integration.IsEnabled && data.integration.GiteaUrl) {
-          setGiteaIntegration(data.integration);
-        } else {
-          setGiteaIntegration(null);
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to load Gitea integration:', err);
-      setGiteaIntegration(null);
     }
   };
 
@@ -382,84 +334,15 @@ export default function ProjectFormModal({
               </div>
             )}
 
-            {githubIntegration && (
+            {availableApplications.length > 0 && (
               <div className="p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-300 dark:border-gray-700">
-                <div className="flex items-center gap-2 mb-3">
-                  <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-                  </svg>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    GitHub Integration
-                  </label>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Repository Owner/Organization
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.gitHubOwner || ''}
-                      onChange={(e) => setFormData({ ...formData, gitHubOwner: e.target.value || undefined })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      placeholder="username or organization-name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Repository Name
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.gitHubRepo || ''}
-                      onChange={(e) => setFormData({ ...formData, gitHubRepo: e.target.value || undefined })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      placeholder="repository-name"
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                  Required for GitHub issues import. Find in your repository URL: github.com/<strong>owner</strong>/<strong>repo</strong>
-                </p>
-              </div>
-            )}
-
-            {giteaIntegration && (
-              <div className="p-4 bg-green-50 dark:bg-green-900/30 rounded-lg border border-green-300 dark:border-green-700">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg">🍵</span>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Gitea Integration
-                  </label>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Repository Owner/Organization
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.giteaOwner || ''}
-                      onChange={(e) => setFormData({ ...formData, giteaOwner: e.target.value || undefined })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      placeholder="username or organization-name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Repository Name
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.giteaRepo || ''}
-                      onChange={(e) => setFormData({ ...formData, giteaRepo: e.target.value || undefined })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      placeholder="repository-name"
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                  Required for Gitea issues import. Format: <strong>owner/repo</strong>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Git / VCS repositories
+                </label>
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  Configure repository URL and GitHub / Gitea / Bitbucket credentials on each{' '}
+                  <strong>Application</strong>, then link applications to this project. Issue import uses the
+                  selected application&apos;s repository.
                 </p>
               </div>
             )}

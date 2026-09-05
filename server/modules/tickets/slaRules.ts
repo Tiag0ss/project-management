@@ -213,22 +213,20 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: 'organizationId and name are required' });
     }
 
-    const autoHours = autoTransitionHours != null ? Number(autoTransitionHours) : null;
-    const autoStatusId = autoTransitionStatusId != null ? Number(autoTransitionStatusId) : null;
+    const autoHoursRaw = autoTransitionHours != null && autoTransitionHours !== '' ? Number(autoTransitionHours) : null;
+    const autoStatusIdRaw =
+      autoTransitionStatusId != null && autoTransitionStatusId !== '' ? Number(autoTransitionStatusId) : null;
 
-    if ((autoHours == null) !== (autoStatusId == null)) {
-      return res.status(400).json({
-        success: false,
-        message: 'autoTransitionHours and autoTransitionStatusId must be provided together',
-      });
-    }
-
-    if (autoHours != null && (!Number.isFinite(autoHours) || autoHours <= 0)) {
-      return res.status(400).json({
-        success: false,
-        message: 'autoTransitionHours must be greater than 0',
-      });
-    }
+    // Optional feature: require both, otherwise treat as disabled (null/null)
+    const autoTransitionEnabled =
+      autoHoursRaw != null &&
+      Number.isFinite(autoHoursRaw) &&
+      autoHoursRaw > 0 &&
+      autoStatusIdRaw != null &&
+      Number.isFinite(autoStatusIdRaw) &&
+      autoStatusIdRaw > 0;
+    const autoHours = autoTransitionEnabled ? autoHoursRaw : null;
+    const autoStatusId = autoTransitionEnabled ? autoStatusIdRaw : null;
 
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO SLARules (OrganizationId, Name, PriorityId, FirstResponseHours, ResolutionHours, AutoTransitionHours, AutoTransitionStatusId, IsActive)
@@ -291,22 +289,19 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     }
     const orgId = existingRows[0].OrganizationId;
 
-    const autoHours = autoTransitionHours != null ? Number(autoTransitionHours) : null;
-    const autoStatusId = autoTransitionStatusId != null ? Number(autoTransitionStatusId) : null;
+    const autoHoursRaw = autoTransitionHours != null && autoTransitionHours !== '' ? Number(autoTransitionHours) : null;
+    const autoStatusIdRaw =
+      autoTransitionStatusId != null && autoTransitionStatusId !== '' ? Number(autoTransitionStatusId) : null;
 
-    if ((autoHours == null) !== (autoStatusId == null)) {
-      return res.status(400).json({
-        success: false,
-        message: 'autoTransitionHours and autoTransitionStatusId must be provided together',
-      });
-    }
-
-    if (autoHours != null && (!Number.isFinite(autoHours) || autoHours <= 0)) {
-      return res.status(400).json({
-        success: false,
-        message: 'autoTransitionHours must be greater than 0',
-      });
-    }
+    const autoTransitionEnabled =
+      autoHoursRaw != null &&
+      Number.isFinite(autoHoursRaw) &&
+      autoHoursRaw > 0 &&
+      autoStatusIdRaw != null &&
+      Number.isFinite(autoStatusIdRaw) &&
+      autoStatusIdRaw > 0;
+    const autoHours = autoTransitionEnabled ? autoHoursRaw : null;
+    const autoStatusId = autoTransitionEnabled ? autoStatusIdRaw : null;
 
     await pool.execute(
       `UPDATE SLARules SET Name = ?, PriorityId = ?, FirstResponseHours = ?, ResolutionHours = ?, AutoTransitionHours = ?, AutoTransitionStatusId = ?, IsActive = ?

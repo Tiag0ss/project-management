@@ -29,6 +29,30 @@ interface Application {
   VersionCount: number;
   Customers: { Id: number; Name: string }[];
   CreatedAt: string;
+  GitHubIntegrationId?: number | null;
+  GiteaIntegrationId?: number | null;
+  BitbucketIntegrationId?: number | null;
+}
+
+interface VcsIntegrationOption {
+  Id: number;
+  Name: string;
+  IsEnabled: number;
+}
+
+type VcsProviderKind = 'github' | 'gitea' | 'bitbucket';
+
+function detectAppVcsProvider(repoUrl: string): VcsProviderKind | null {
+  if (!repoUrl.trim()) return null;
+  const lower = repoUrl.toLowerCase();
+  if (lower.includes('github.com') || lower.includes('github.')) return 'github';
+  if (lower.includes('bitbucket.org') || lower.includes('bitbucket.')) return 'bitbucket';
+  if (lower.includes('gitea.') || lower.includes('/gitea')) return 'gitea';
+  return null;
+}
+
+function emptyVcsFks() {
+  return { GitHubIntegrationId: 0, GiteaIntegrationId: 0, BitbucketIntegrationId: 0 };
 }
 
 interface Organization {
@@ -80,7 +104,13 @@ export default function ApplicationsPage() {
     IsCustomerSpecific: false,
     OrganizationId: 0,
     CustomerIds: [] as number[],
+    GitHubIntegrationId: 0,
+    GiteaIntegrationId: 0,
+    BitbucketIntegrationId: 0,
   });
+  const [githubIntegrations, setGithubIntegrations] = useState<VcsIntegrationOption[]>([]);
+  const [giteaIntegrations, setGiteaIntegrations] = useState<VcsIntegrationOption[]>([]);
+  const [bitbucketIntegrations, setBitbucketIntegrations] = useState<VcsIntegrationOption[]>([]);
 
   // Confirm modal
   const [confirmModal, setConfirmModal] = useState<{
@@ -103,6 +133,50 @@ export default function ApplicationsPage() {
   useEffect(() => {
     if (token) loadData();
   }, [token]);
+
+  useEffect(() => {
+    if (!token || !showModal || !formData.OrganizationId) {
+      setGithubIntegrations([]);
+      setGiteaIntegrations([]);
+      setBitbucketIntegrations([]);
+      return;
+    }
+
+    let cancelled = false;
+    const orgId = formData.OrganizationId;
+    const headers = { Authorization: `Bearer ${token}` };
+
+    (async () => {
+      try {
+        const [ghRes, gtRes, bbRes] = await Promise.all([
+          fetch(`${getApiUrl()}/api/github-integrations/organization/${orgId}`, { headers }),
+          fetch(`${getApiUrl()}/api/gitea-integrations/organization/${orgId}`, { headers }),
+          fetch(`${getApiUrl()}/api/bitbucket-integrations/organization/${orgId}`, { headers }),
+        ]);
+        const [ghData, gtData, bbData] = await Promise.all([ghRes.json(), gtRes.json(), bbRes.json()]);
+        if (cancelled) return;
+        setGithubIntegrations(
+          ((ghData.integrations || []) as VcsIntegrationOption[]).filter((i) => Number(i.IsEnabled) === 1)
+        );
+        setGiteaIntegrations(
+          ((gtData.integrations || []) as VcsIntegrationOption[]).filter((i) => Number(i.IsEnabled) === 1)
+        );
+        setBitbucketIntegrations(
+          ((bbData.integrations || []) as VcsIntegrationOption[]).filter((i) => Number(i.IsEnabled) === 1)
+        );
+      } catch {
+        if (!cancelled) {
+          setGithubIntegrations([]);
+          setGiteaIntegrations([]);
+          setBitbucketIntegrations([]);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, showModal, formData.OrganizationId]);
 
   useEffect(() => {
     window.localStorage.setItem('applications:viewMode', viewMode);
@@ -376,6 +450,9 @@ export default function ApplicationsPage() {
       IsCustomerSpecific: false,
       OrganizationId: organizations.length === 1 ? organizations[0].Id : 0,
       CustomerIds: [],
+      GitHubIntegrationId: 0,
+      GiteaIntegrationId: 0,
+      BitbucketIntegrationId: 0,
     });
     setImageFile(null);
     setImagePreview(null);
@@ -386,6 +463,18 @@ export default function ApplicationsPage() {
 
   const openEditModal = (app: Application) => {
     setEditingApp(app);
+    const exclusive = (() => {
+      if (app.GitHubIntegrationId) {
+        return { GitHubIntegrationId: app.GitHubIntegrationId, GiteaIntegrationId: 0, BitbucketIntegrationId: 0 };
+      }
+      if (app.GiteaIntegrationId) {
+        return { GitHubIntegrationId: 0, GiteaIntegrationId: app.GiteaIntegrationId, BitbucketIntegrationId: 0 };
+      }
+      if (app.BitbucketIntegrationId) {
+        return { GitHubIntegrationId: 0, GiteaIntegrationId: 0, BitbucketIntegrationId: app.BitbucketIntegrationId };
+      }
+      return emptyVcsFks();
+    })();
     setFormData({
       Name: app.Name,
       Description: app.Description || '',
@@ -393,6 +482,7 @@ export default function ApplicationsPage() {
       IsCustomerSpecific: !!app.IsCustomerSpecific,
       OrganizationId: app.OrganizationId,
       CustomerIds: app.Customers?.map((c) => c.Id) || [],
+      ...exclusive,
     });
     setImageFile(null);
     setImagePreview(app.ImagePath || null);
@@ -463,9 +553,53 @@ export default function ApplicationsPage() {
 
       const method = editingApp ? 'PUT' : 'POST';
 
+      const vcsFields = (() => {
+        if (formData.GitHubIntegrationId) {
+          return {
+            GitHubIntegrationId: formData.GitHubIntegrationId,
+            GiteaIntegrationId: null,
+            BitbucketIntegrationId: null,
+          };
+        }
+        if (formData.GiteaIntegrationId) {
+          return {
+            GitHubIntegrationId: null,
+            GiteaIntegrationId: formData.GiteaIntegrationId,
+            BitbucketIntegrationId: null,
+          };
+        }
+        if (formData.BitbucketIntegrationId) {
+          return {
+            GitHubIntegrationId: null,
+            GiteaIntegrationId: null,
+            BitbucketIntegrationId: formData.BitbucketIntegrationId,
+          };
+        }
+        return {
+          GitHubIntegrationId: null,
+          GiteaIntegrationId: null,
+          BitbucketIntegrationId: null,
+        };
+      })();
+
       const body = editingApp
-        ? { Name: formData.Name, Description: formData.Description, RepositoryUrl: formData.RepositoryUrl, IsCustomerSpecific: formData.IsCustomerSpecific, CustomerIds: formData.CustomerIds }
-        : { Name: formData.Name, Description: formData.Description, RepositoryUrl: formData.RepositoryUrl, IsCustomerSpecific: formData.IsCustomerSpecific, OrganizationId: formData.OrganizationId, CustomerIds: formData.CustomerIds };
+        ? {
+            Name: formData.Name,
+            Description: formData.Description,
+            RepositoryUrl: formData.RepositoryUrl,
+            IsCustomerSpecific: formData.IsCustomerSpecific,
+            CustomerIds: formData.CustomerIds,
+            ...vcsFields,
+          }
+        : {
+            Name: formData.Name,
+            Description: formData.Description,
+            RepositoryUrl: formData.RepositoryUrl,
+            IsCustomerSpecific: formData.IsCustomerSpecific,
+            OrganizationId: formData.OrganizationId,
+            CustomerIds: formData.CustomerIds,
+            ...vcsFields,
+          };
 
       const res = await fetch(url, {
         method,
@@ -1193,11 +1327,114 @@ export default function ApplicationsPage() {
                   <input
                     type="url"
                     value={formData.RepositoryUrl}
-                    onChange={(e) => setFormData({ ...formData, RepositoryUrl: e.target.value })}
+                    onChange={(e) => {
+                      const RepositoryUrl = e.target.value;
+                      const provider = detectAppVcsProvider(RepositoryUrl);
+                      const cleared = emptyVcsFks();
+                      // Keep current integration only if it still matches the detected provider
+                      if (provider === 'github' && formData.GitHubIntegrationId) {
+                        cleared.GitHubIntegrationId = formData.GitHubIntegrationId;
+                      } else if (provider === 'gitea' && formData.GiteaIntegrationId) {
+                        cleared.GiteaIntegrationId = formData.GiteaIntegrationId;
+                      } else if (provider === 'bitbucket' && formData.BitbucketIntegrationId) {
+                        cleared.BitbucketIntegrationId = formData.BitbucketIntegrationId;
+                      } else if (!provider) {
+                        // Unknown host (e.g. self-hosted): keep whichever single FK is set
+                        if (formData.GitHubIntegrationId) cleared.GitHubIntegrationId = formData.GitHubIntegrationId;
+                        else if (formData.GiteaIntegrationId) cleared.GiteaIntegrationId = formData.GiteaIntegrationId;
+                        else if (formData.BitbucketIntegrationId) {
+                          cleared.BitbucketIntegrationId = formData.BitbucketIntegrationId;
+                        }
+                      }
+                      setFormData({ ...formData, RepositoryUrl, ...cleared });
+                    }}
                     placeholder="https://github.com/org/repo"
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
+
+                {formData.OrganizationId > 0 && (() => {
+                  const provider = detectAppVcsProvider(formData.RepositoryUrl);
+                  const options: { value: string; label: string }[] = [];
+                  if (!provider || provider === 'github') {
+                    for (const row of githubIntegrations) {
+                      options.push({
+                        value: `github:${row.Id}`,
+                        label: provider ? row.Name : `GitHub — ${row.Name}`,
+                      });
+                    }
+                  }
+                  if (!provider || provider === 'gitea') {
+                    for (const row of giteaIntegrations) {
+                      options.push({
+                        value: `gitea:${row.Id}`,
+                        label: provider ? row.Name : `Gitea — ${row.Name}`,
+                      });
+                    }
+                  }
+                  if (!provider || provider === 'bitbucket') {
+                    for (const row of bitbucketIntegrations) {
+                      options.push({
+                        value: `bitbucket:${row.Id}`,
+                        label: provider ? row.Name : `Bitbucket — ${row.Name}`,
+                      });
+                    }
+                  }
+
+                  const selectedValue = formData.GitHubIntegrationId
+                    ? `github:${formData.GitHubIntegrationId}`
+                    : formData.GiteaIntegrationId
+                      ? `gitea:${formData.GiteaIntegrationId}`
+                      : formData.BitbucketIntegrationId
+                        ? `bitbucket:${formData.BitbucketIntegrationId}`
+                        : '';
+
+                  const providerLabel =
+                    provider === 'github'
+                      ? 'GitHub'
+                      : provider === 'gitea'
+                        ? 'Gitea'
+                        : provider === 'bitbucket'
+                          ? 'Bitbucket'
+                          : 'VCS';
+
+                  return (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        {providerLabel} integration
+                      </label>
+                      <select
+                        value={selectedValue}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const next = { ...formData, ...emptyVcsFks() };
+                          if (raw) {
+                            const [kind, idStr] = raw.split(':');
+                            const id = Number(idStr);
+                            if (kind === 'github') next.GitHubIntegrationId = id;
+                            else if (kind === 'gitea') next.GiteaIntegrationId = id;
+                            else if (kind === 'bitbucket') next.BitbucketIntegrationId = id;
+                          }
+                          setFormData(next);
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      >
+                        <option value="">None</option>
+                        {options.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        One repository URL uses one org credential instance
+                        {provider
+                          ? ` (${providerLabel}).`
+                          : '. For self-hosted URLs, pick the matching provider instance.'}
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

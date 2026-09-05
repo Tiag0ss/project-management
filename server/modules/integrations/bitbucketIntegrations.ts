@@ -1,10 +1,14 @@
 import express, { Response } from 'express';
-import { RowDataPacket } from '../../config/database';
+import { RowDataPacket, ResultSetHeader } from '../../config/database';
 import { authenticateToken, AuthRequest } from '../../middleware/auth';
 import { pool } from '../../config/database';
 import { encrypt } from '../../utils/encryption';
 import logger from '../../utils/logger';
 import { bitbucketAuthHeader } from '../../utils/gitRemote';
+import {
+  clearOtherVcsDefaults,
+  nullApplicationFksForIntegration,
+} from '../../utils/vcsIntegrationResolve';
 
 const router = express.Router();
 
@@ -30,137 +34,189 @@ function cloudAuthHint(): string {
   );
 }
 
-// Get Bitbucket integration for an organization
+async function assertOrgMember(organizationId: string | string[] | number, userId: number | undefined) {
+  const orgId = Array.isArray(organizationId) ? organizationId[0] : organizationId;
+  const [memberCheck] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+    [orgId, userId]
+  );
+  return memberCheck.length > 0;
+}
+
+async function assertOrgManager(organizationId: string | string[] | number, userId: number | undefined) {
+  const orgId = Array.isArray(organizationId) ? organizationId[0] : organizationId;
+  const [memberCheck] = await pool.execute<RowDataPacket[]>(
+    `SELECT om.*, u.IsAdmin
+     FROM OrganizationMembers om
+     INNER JOIN Users u ON om.UserId = u.Id
+     WHERE om.OrganizationId = ? AND om.UserId = ? AND (u.IsAdmin = 1 OR u.IsManager = 1)`,
+    [orgId, userId]
+  );
+  return memberCheck.length > 0;
+}
+
 router.get('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { organizationId } = req.params;
-    const userId = req.user?.userId;
-
-    const [memberCheck] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
-      [organizationId, userId]
-    );
-
-    if (memberCheck.length === 0) {
+    if (!(await assertOrgMember(organizationId, req.user?.userId))) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    const [integration] = await pool.execute<RowDataPacket[]>(
-      `SELECT OrganizationId, IsEnabled, BitbucketUrl, BitbucketUsername, CreatedAt, UpdatedAt
+    const [integrations] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id, OrganizationId, Name, IsEnabled, IsDefault, BitbucketUrl, BitbucketUsername, CreatedAt, UpdatedAt
        FROM OrganizationBitbucketIntegrations
-       WHERE OrganizationId = ?`,
+       WHERE OrganizationId = ?
+       ORDER BY IsDefault DESC, Name ASC, Id ASC`,
       [organizationId]
     );
 
-    if (integration.length === 0) {
-      return res.json({ success: true, integration: null });
-    }
-
-    res.json({ success: true, integration: integration[0] });
+    res.json({ success: true, integrations, integration: integrations[0] || null });
   } catch (error) {
-    logger.error('Get Bitbucket integration error:', error);
-    res.status(500).json({ success: false, message: 'Failed to get Bitbucket integration' });
+    logger.error('Get Bitbucket integrations error:', error);
+    res.status(500).json({ success: false, message: 'Failed to get Bitbucket integrations' });
   }
 });
 
-// Create or update Bitbucket integration
 router.post('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { organizationId } = req.params;
-    const userId = req.user?.userId;
-    const { isEnabled, bitbucketUrl, bitbucketToken, bitbucketUsername } = req.body;
+    const { name, isEnabled = true, isDefault = false, bitbucketUrl, bitbucketToken, bitbucketUsername } = req.body;
 
-    const [memberCheck] = await pool.execute<RowDataPacket[]>(
-      `SELECT om.*, u.IsAdmin
-       FROM OrganizationMembers om
-       INNER JOIN Users u ON om.UserId = u.Id
-       WHERE om.OrganizationId = ? AND om.UserId = ? AND (u.IsAdmin = 1 OR u.IsManager = 1)`,
-      [organizationId, userId]
-    );
-
-    if (memberCheck.length === 0) {
+    if (!(await assertOrgManager(organizationId, req.user?.userId))) {
       return res.status(403).json({ success: false, message: 'Only admins and managers can configure integrations' });
     }
 
-    const [existing] = await pool.execute<RowDataPacket[]>(
-      'SELECT OrganizationId, BitbucketUrl, BitbucketToken, BitbucketUsername FROM OrganizationBitbucketIntegrations WHERE OrganizationId = ?',
-      [organizationId]
+    if (!bitbucketUrl || !bitbucketToken) {
+      return res.status(400).json({ success: false, message: 'Bitbucket URL and token are required' });
+    }
+
+    if (isEnabled && isBitbucketCloud(bitbucketUrl)) {
+      const email = String(bitbucketUsername || '').trim();
+      if (!email || !looksLikeEmail(email)) {
+        return res.status(400).json({ success: false, message: cloudAuthHint() });
+      }
+    }
+
+    let displayName = String(name || '').trim();
+    if (!displayName) {
+      try {
+        displayName = new URL(bitbucketUrl).hostname || 'Bitbucket';
+      } catch {
+        displayName = 'Bitbucket';
+      }
+    }
+
+    if (isDefault) {
+      await clearOtherVcsDefaults('bitbucket', Number(organizationId));
+    }
+
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO OrganizationBitbucketIntegrations
+         (OrganizationId, Name, IsEnabled, IsDefault, BitbucketUrl, BitbucketUsername, BitbucketToken)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        organizationId,
+        displayName,
+        isEnabled ? 1 : 0,
+        isDefault ? 1 : 0,
+        bitbucketUrl,
+        bitbucketUsername || null,
+        encrypt(bitbucketToken),
+      ]
     );
 
-    let finalUrl = bitbucketUrl;
-    let finalToken = bitbucketToken;
-    let finalUsername = bitbucketUsername !== undefined ? bitbucketUsername : null;
-
-    if (existing.length > 0) {
-      if (!bitbucketUrl) finalUrl = existing[0].BitbucketUrl;
-      if (!bitbucketToken) {
-        finalToken = existing[0].BitbucketToken;
-      }
-      if (bitbucketUsername === undefined) {
-        finalUsername = existing[0].BitbucketUsername;
-      }
-    }
-
-    if (isEnabled && (!finalUrl || !finalToken)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Bitbucket URL and token are required when enabling integration',
-      });
-    }
-
-    if (isEnabled && finalUrl && isBitbucketCloud(finalUrl)) {
-      const email = String(finalUsername || '').trim();
-      if (!email || !looksLikeEmail(email)) {
-        return res.status(400).json({
-          success: false,
-          message: cloudAuthHint(),
-        });
-      }
-    }
-
-    const encryptedToken = bitbucketToken ? encrypt(bitbucketToken) : finalToken;
-
-    if (existing.length > 0) {
-      await pool.execute(
-        `UPDATE OrganizationBitbucketIntegrations
-         SET IsEnabled = ?, BitbucketUrl = ?, BitbucketUsername = ?, BitbucketToken = ?, UpdatedAt = CURRENT_TIMESTAMP
-         WHERE OrganizationId = ?`,
-        [isEnabled ? 1 : 0, finalUrl, finalUsername || null, encryptedToken, organizationId]
-      );
-    } else {
-      if (!bitbucketUrl || !bitbucketToken) {
-        return res.status(400).json({
-          success: false,
-          message: 'Bitbucket URL and token are required for new integration',
-        });
-      }
-      await pool.execute(
-        `INSERT INTO OrganizationBitbucketIntegrations (OrganizationId, IsEnabled, BitbucketUrl, BitbucketUsername, BitbucketToken)
-         VALUES (?, ?, ?, ?, ?)`,
-        [organizationId, isEnabled ? 1 : 0, bitbucketUrl, finalUsername || null, encryptedToken]
-      );
-    }
-
-    res.json({ success: true, message: 'Bitbucket integration saved successfully' });
+    res.json({
+      success: true,
+      message: 'Bitbucket integration created successfully',
+      integrationId: result.insertId,
+    });
   } catch (error) {
-    logger.error('Save Bitbucket integration error:', error);
-    res.status(500).json({ success: false, message: 'Failed to save Bitbucket integration' });
+    logger.error('Create Bitbucket integration error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create Bitbucket integration' });
   }
 });
 
-// Test Bitbucket connection
+router.put('/:integrationId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const integrationId = Number(req.params.integrationId);
+    const { name, isEnabled, isDefault, bitbucketUrl, bitbucketToken, bitbucketUsername } = req.body;
+
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM OrganizationBitbucketIntegrations WHERE Id = ?',
+      [integrationId]
+    );
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Integration not found' });
+    }
+
+    const row = existing[0];
+    if (!(await assertOrgManager(row.OrganizationId, req.user?.userId))) {
+      return res.status(403).json({ success: false, message: 'Only admins and managers can configure integrations' });
+    }
+
+    const finalName = name !== undefined ? String(name).trim() || row.Name : row.Name;
+    const finalUrl = bitbucketUrl !== undefined ? bitbucketUrl : row.BitbucketUrl;
+    const finalEnabled = isEnabled !== undefined ? (isEnabled ? 1 : 0) : row.IsEnabled;
+    const finalDefault = isDefault !== undefined ? (isDefault ? 1 : 0) : row.IsDefault;
+    const finalUsername =
+      bitbucketUsername !== undefined ? bitbucketUsername || null : row.BitbucketUsername;
+    const encryptedToken = bitbucketToken ? encrypt(bitbucketToken) : row.BitbucketToken;
+
+    if (finalEnabled && finalUrl && isBitbucketCloud(finalUrl)) {
+      const email = String(finalUsername || '').trim();
+      if (!email || !looksLikeEmail(email)) {
+        return res.status(400).json({ success: false, message: cloudAuthHint() });
+      }
+    }
+
+    if (finalDefault) {
+      await clearOtherVcsDefaults('bitbucket', Number(row.OrganizationId), integrationId);
+    }
+
+    await pool.execute(
+      `UPDATE OrganizationBitbucketIntegrations
+       SET Name = ?, IsEnabled = ?, IsDefault = ?, BitbucketUrl = ?, BitbucketUsername = ?, BitbucketToken = ?,
+           UpdatedAt = CURRENT_TIMESTAMP
+       WHERE Id = ?`,
+      [finalName, finalEnabled, finalDefault, finalUrl, finalUsername, encryptedToken, integrationId]
+    );
+
+    res.json({ success: true, message: 'Bitbucket integration updated successfully' });
+  } catch (error) {
+    logger.error('Update Bitbucket integration error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update Bitbucket integration' });
+  }
+});
+
+router.delete('/:integrationId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const integrationId = Number(req.params.integrationId);
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM OrganizationBitbucketIntegrations WHERE Id = ?',
+      [integrationId]
+    );
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Integration not found' });
+    }
+    if (!(await assertOrgManager(existing[0].OrganizationId, req.user?.userId))) {
+      return res.status(403).json({ success: false, message: 'Only admins and managers can delete integrations' });
+    }
+
+    await nullApplicationFksForIntegration('bitbucket', integrationId);
+    await pool.execute('DELETE FROM OrganizationBitbucketIntegrations WHERE Id = ?', [integrationId]);
+    res.json({ success: true, message: 'Bitbucket integration deleted successfully' });
+  } catch (error) {
+    logger.error('Delete Bitbucket integration error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete Bitbucket integration' });
+  }
+});
+
 router.post('/organization/:organizationId/test', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { organizationId } = req.params;
-    const userId = req.user?.userId;
     const { bitbucketUrl, bitbucketToken, bitbucketUsername } = req.body;
 
-    const [memberCheck] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
-      [organizationId, userId]
-    );
-
-    if (memberCheck.length === 0) {
+    if (!(await assertOrgMember(organizationId, req.user?.userId))) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
@@ -172,10 +228,7 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
     if (cloud) {
       const email = String(bitbucketUsername || '').trim();
       if (!email || !looksLikeEmail(email)) {
-        return res.status(400).json({
-          success: false,
-          message: cloudAuthHint(),
-        });
+        return res.status(400).json({ success: false, message: cloudAuthHint() });
       }
     }
 
@@ -186,11 +239,7 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
         testUrl = 'https://api.bitbucket.org/2.0/user';
         headers = {
           Accept: 'application/json',
-          ...bitbucketAuthHeader({
-            kind: 'cloud',
-            token: bitbucketToken,
-            username: bitbucketUsername,
-          }),
+          ...bitbucketAuthHeader({ kind: 'cloud', token: bitbucketToken, username: bitbucketUsername }),
         };
       } else {
         const base = String(bitbucketUrl).replace(/\/$/, '');
@@ -206,14 +255,8 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
     }
 
     const response = await fetch(testUrl, { method: 'GET', headers });
-
     if (!response.ok) {
-      const errorText = await response.text();
-      logger.error('Bitbucket test connection failed:', response.status, errorText);
-      const hint =
-        cloud && response.status === 401
-          ? ` ${cloudAuthHint()}`
-          : '';
+      const hint = cloud && response.status === 401 ? ` ${cloudAuthHint()}` : '';
       return res.status(400).json({
         success: false,
         message: `Failed to connect to Bitbucket: ${response.status} ${response.statusText}.${hint}`,
@@ -222,51 +265,23 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
 
     let displayName = 'Bitbucket user';
     try {
-      const userData = await response.json() as { username?: string; display_name?: string; displayName?: string; name?: string };
-      displayName = userData.display_name || userData.displayName || userData.username || userData.name || displayName;
+      const userData = (await response.json()) as {
+        username?: string;
+        display_name?: string;
+        displayName?: string;
+        name?: string;
+      };
+      displayName =
+        userData.display_name || userData.displayName || userData.username || userData.name || displayName;
     } catch {
-      // Server user list may not be a single user object
+      // ignore
     }
 
-    res.json({
-      success: true,
-      message: 'Successfully connected to Bitbucket',
-      bitbucketUser: displayName,
-    });
+    res.json({ success: true, message: 'Successfully connected to Bitbucket', bitbucketUser: displayName });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to test Bitbucket connection';
     logger.error('Test Bitbucket connection error:', error);
     res.status(500).json({ success: false, message });
-  }
-});
-
-// Delete integration
-router.delete('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
-  try {
-    const { organizationId } = req.params;
-    const userId = req.user?.userId;
-
-    const [memberCheck] = await pool.execute<RowDataPacket[]>(
-      `SELECT om.*, u.IsAdmin
-       FROM OrganizationMembers om
-       INNER JOIN Users u ON om.UserId = u.Id
-       WHERE om.OrganizationId = ? AND om.UserId = ? AND (u.IsAdmin = 1 OR u.IsManager = 1)`,
-      [organizationId, userId]
-    );
-
-    if (memberCheck.length === 0) {
-      return res.status(403).json({ success: false, message: 'Only admins and managers can delete integrations' });
-    }
-
-    await pool.execute(
-      'DELETE FROM OrganizationBitbucketIntegrations WHERE OrganizationId = ?',
-      [organizationId]
-    );
-
-    res.json({ success: true, message: 'Bitbucket integration deleted successfully' });
-  } catch (error) {
-    logger.error('Delete Bitbucket integration error:', error);
-    res.status(500).json({ success: false, message: 'Failed to delete Bitbucket integration' });
   }
 });
 

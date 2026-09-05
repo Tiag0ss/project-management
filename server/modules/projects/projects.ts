@@ -477,7 +477,9 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     }
 
     const [appRows] = await pool.execute<RowDataPacket[]>(
-      `SELECT a.Id, a.Name FROM ApplicationProjects ap
+      `SELECT a.Id, a.Name, a.RepositoryUrl,
+              a.GitHubIntegrationId, a.GiteaIntegrationId, a.BitbucketIntegrationId
+       FROM ApplicationProjects ap
        INNER JOIN Applications a ON ap.ApplicationId = a.Id
        WHERE ap.ProjectId = ?`,
       [projectId]
@@ -502,6 +504,14 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       ...projectWithHealth,
       ApplicationIds: cachedProject.appRows.map((r: RowDataPacket) => r.Id),
       ApplicationNames: cachedProject.appRows.map((r: RowDataPacket) => r.Name),
+      Applications: cachedProject.appRows.map((r: RowDataPacket) => ({
+        Id: r.Id,
+        Name: r.Name,
+        RepositoryUrl: r.RepositoryUrl ?? null,
+        GitHubIntegrationId: r.GitHubIntegrationId ?? null,
+        GiteaIntegrationId: r.GiteaIntegrationId ?? null,
+        BitbucketIntegrationId: r.BitbucketIntegrationId ?? null,
+      })),
     };
 
     res.json({

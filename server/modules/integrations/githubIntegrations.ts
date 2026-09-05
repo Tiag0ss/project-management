@@ -2,213 +2,186 @@ import express, { Response } from 'express';
 import { RowDataPacket, ResultSetHeader } from '../../config/database';
 import { authenticateToken, AuthRequest } from '../../middleware/auth';
 import { pool } from '../../config/database';
-import { encrypt, decrypt } from '../../utils/encryption';
+import { encrypt } from '../../utils/encryption';
 import logger from '../../utils/logger';
+import {
+  clearOtherVcsDefaults,
+  decryptTokenField,
+  nullApplicationFksForIntegration,
+  resolveVcsIntegration,
+} from '../../utils/vcsIntegrationResolve';
+import { parseOwnerRepoFromUrl } from '../../utils/vcsIntegrationHelpers';
 
 const router = express.Router();
 
-/**
- * @swagger
- * tags:
- *   name: GitHubIntegrations
- *   description: GitHub integration management
- */
+async function assertOrgMember(organizationId: string | string[] | number, userId: number | undefined) {
+  const orgId = Array.isArray(organizationId) ? organizationId[0] : organizationId;
+  const [memberCheck] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+    [orgId, userId]
+  );
+  return memberCheck.length > 0;
+}
 
-/**
- * @swagger
- * /api/github-integrations/organization/{organizationId}:
- *   get:
- *     summary: Get GitHub integration for an organization
- *     tags: [GitHubIntegrations]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: organizationId
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: GitHub integration retrieved successfully
- *       403:
- *         description: Access denied
- */
-// Get GitHub integration for an organization
+async function assertOrgManager(organizationId: string | string[] | number, userId: number | undefined) {
+  const orgId = Array.isArray(organizationId) ? organizationId[0] : organizationId;
+  const [memberCheck] = await pool.execute<RowDataPacket[]>(
+    `SELECT om.*, u.IsAdmin
+     FROM OrganizationMembers om
+     INNER JOIN Users u ON om.UserId = u.Id
+     WHERE om.OrganizationId = ? AND om.UserId = ? AND (u.IsAdmin = 1 OR u.IsManager = 1)`,
+    [orgId, userId]
+  );
+  return memberCheck.length > 0;
+}
+
+// List GitHub integrations for an organization
 router.get('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { organizationId } = req.params;
-    const userId = req.user?.userId;
-
-    // Check if user is member of the organization
-    const [memberCheck] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
-      [organizationId, userId]
-    );
-
-    if (memberCheck.length === 0) {
+    if (!(await assertOrgMember(organizationId, req.user?.userId))) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    const [integration] = await pool.execute<RowDataPacket[]>(
-      `SELECT OrganizationId, IsEnabled, GitHubUrl, CreatedAt, UpdatedAt
-       FROM OrganizationGitHubIntegrations 
-       WHERE OrganizationId = ?`,
+    const [integrations] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id, OrganizationId, Name, IsEnabled, IsDefault, GitHubUrl, CreatedAt, UpdatedAt
+       FROM OrganizationGitHubIntegrations
+       WHERE OrganizationId = ?
+       ORDER BY IsDefault DESC, Name ASC, Id ASC`,
       [organizationId]
     );
 
-    if (integration.length === 0) {
-      return res.json({ success: true, integration: null });
-    }
-
-    res.json({ success: true, integration: integration[0] });
+    res.json({
+      success: true,
+      integrations,
+      // Backward-compat for callers still expecting a single row
+      integration: integrations[0] || null,
+    });
   } catch (error) {
-    logger.error('Get GitHub integration error:', error);
-    res.status(500).json({ success: false, message: 'Failed to get GitHub integration' });
+    logger.error('Get GitHub integrations error:', error);
+    res.status(500).json({ success: false, message: 'Failed to get GitHub integrations' });
   }
 });
 
-/**
- * @swagger
- * /api/github-integrations/organization/{organizationId}:
- *   post:
- *     summary: Create or update GitHub integration
- *     tags: [GitHubIntegrations]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: organizationId
- *         required: true
- *         schema:
- *           type: integer
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               repoUrl:
- *                 type: string
- *               accessToken:
- *                 type: string
- *               isEnabled:
- *                 type: boolean
- *     responses:
- *       200:
- *         description: Integration saved successfully
- *       403:
- *         description: Access denied
- */
-// Create or update GitHub integration
+// Create a new GitHub integration instance
 router.post('/organization/:organizationId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { organizationId } = req.params;
     const userId = req.user?.userId;
-    const { isEnabled, gitHubUrl, gitHubToken } = req.body;
+    const { name, isEnabled = true, isDefault = false, gitHubUrl, gitHubToken } = req.body;
 
-    // Check if user is admin or manager of the organization
-    const [memberCheck] = await pool.execute<RowDataPacket[]>(
-      `SELECT om.*, u.IsAdmin 
-       FROM OrganizationMembers om
-       INNER JOIN Users u ON om.UserId = u.Id
-       WHERE om.OrganizationId = ? AND om.UserId = ? AND (u.IsAdmin = 1 OR u.IsManager = 1)`,
-      [organizationId, userId]
-    );
-
-    if (memberCheck.length === 0) {
+    if (!(await assertOrgManager(organizationId, userId))) {
       return res.status(403).json({ success: false, message: 'Only admins and managers can configure integrations' });
     }
 
-    // Check if integration exists
-    const [existing] = await pool.execute<RowDataPacket[]>(
-      'SELECT OrganizationId, GitHubUrl, GitHubToken FROM OrganizationGitHubIntegrations WHERE OrganizationId = ?',
-      [organizationId]
+    if (!gitHubUrl || !gitHubToken) {
+      return res.status(400).json({ success: false, message: 'GitHub URL and token are required' });
+    }
+
+    const displayName = String(name || '').trim() || new URL(gitHubUrl).hostname || 'GitHub';
+    const encryptedToken = encrypt(gitHubToken);
+
+    if (isDefault) {
+      await clearOtherVcsDefaults('github', Number(organizationId));
+    }
+
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO OrganizationGitHubIntegrations
+         (OrganizationId, Name, IsEnabled, IsDefault, GitHubUrl, GitHubToken)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [organizationId, displayName, isEnabled ? 1 : 0, isDefault ? 1 : 0, gitHubUrl, encryptedToken]
     );
 
-    // Determine values to use
-    let finalUrl = gitHubUrl;
-    let finalToken = gitHubToken;
-
-    if (existing.length > 0) {
-      // If updating and values not provided, keep existing ones
-      if (!gitHubUrl) finalUrl = existing[0].GitHubUrl;
-      if (!gitHubToken) {
-        // Keep existing encrypted token
-        finalToken = existing[0].GitHubToken;
-      }
-    }
-
-    // Validate required fields only if enabling
-    if (isEnabled && (!finalUrl || !finalToken)) {
-      return res.status(400).json({ success: false, message: 'GitHub URL and token are required when enabling integration' });
-    }
-
-    // Encrypt the API token only if a new one was provided
-    const encryptedToken = gitHubToken ? encrypt(gitHubToken) : finalToken;
-
-    if (existing.length > 0) {
-      // Update existing
-      await pool.execute(
-        `UPDATE OrganizationGitHubIntegrations 
-         SET IsEnabled = ?, GitHubUrl = ?, GitHubToken = ?, UpdatedAt = CURRENT_TIMESTAMP
-         WHERE OrganizationId = ?`,
-        [isEnabled ? 1 : 0, finalUrl, encryptedToken, organizationId]
-      );
-    } else {
-      // Create new - require all fields
-      if (!gitHubUrl || !gitHubToken) {
-        return res.status(400).json({ success: false, message: 'GitHub URL and token are required for new integration' });
-      }
-      await pool.execute(
-        `INSERT INTO OrganizationGitHubIntegrations (OrganizationId, IsEnabled, GitHubUrl, GitHubToken)
-         VALUES (?, ?, ?, ?)`,
-        [organizationId, isEnabled ? 1 : 0, gitHubUrl, encryptedToken]
-      );
-    }
-
-    res.json({ success: true, message: 'GitHub integration saved successfully' });
+    res.json({
+      success: true,
+      message: 'GitHub integration created successfully',
+      integrationId: result.insertId,
+    });
   } catch (error) {
-    logger.error('Save GitHub integration error:', error);
-    res.status(500).json({ success: false, message: 'Failed to save GitHub integration' });
+    logger.error('Create GitHub integration error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create GitHub integration' });
   }
 });
 
-/**
- * @swagger
- * /api/github-integrations/organization/{organizationId}/test:
- *   post:
- *     summary: Test GitHub connection
- *     tags: [GitHubIntegrations]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: organizationId
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Connection test result
- *       403:
- *         description: Access denied
- */
-// Test GitHub connection
+// Update by Id
+router.put('/:integrationId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const integrationId = Number(req.params.integrationId);
+    const userId = req.user?.userId;
+    const { name, isEnabled, isDefault, gitHubUrl, gitHubToken } = req.body;
+
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM OrganizationGitHubIntegrations WHERE Id = ?',
+      [integrationId]
+    );
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Integration not found' });
+    }
+
+    const row = existing[0];
+    if (!(await assertOrgManager(row.OrganizationId, userId))) {
+      return res.status(403).json({ success: false, message: 'Only admins and managers can configure integrations' });
+    }
+
+    const finalName = name !== undefined ? String(name).trim() || row.Name : row.Name;
+    const finalUrl = gitHubUrl !== undefined ? gitHubUrl : row.GitHubUrl;
+    const finalEnabled = isEnabled !== undefined ? (isEnabled ? 1 : 0) : row.IsEnabled;
+    const finalDefault = isDefault !== undefined ? (isDefault ? 1 : 0) : row.IsDefault;
+    const encryptedToken = gitHubToken ? encrypt(gitHubToken) : row.GitHubToken;
+
+    if (finalDefault) {
+      await clearOtherVcsDefaults('github', Number(row.OrganizationId), integrationId);
+    }
+
+    await pool.execute(
+      `UPDATE OrganizationGitHubIntegrations
+       SET Name = ?, IsEnabled = ?, IsDefault = ?, GitHubUrl = ?, GitHubToken = ?, UpdatedAt = CURRENT_TIMESTAMP
+       WHERE Id = ?`,
+      [finalName, finalEnabled, finalDefault, finalUrl, encryptedToken, integrationId]
+    );
+
+    res.json({ success: true, message: 'GitHub integration updated successfully' });
+  } catch (error) {
+    logger.error('Update GitHub integration error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update GitHub integration' });
+  }
+});
+
+// Delete by Id
+router.delete('/:integrationId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const integrationId = Number(req.params.integrationId);
+    const userId = req.user?.userId;
+
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM OrganizationGitHubIntegrations WHERE Id = ?',
+      [integrationId]
+    );
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Integration not found' });
+    }
+
+    if (!(await assertOrgManager(existing[0].OrganizationId, userId))) {
+      return res.status(403).json({ success: false, message: 'Only admins and managers can delete integrations' });
+    }
+
+    await nullApplicationFksForIntegration('github', integrationId);
+    await pool.execute('DELETE FROM OrganizationGitHubIntegrations WHERE Id = ?', [integrationId]);
+
+    res.json({ success: true, message: 'GitHub integration deleted successfully' });
+  } catch (error) {
+    logger.error('Delete GitHub integration error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete GitHub integration' });
+  }
+});
+
+// Test connection
 router.post('/organization/:organizationId/test', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { organizationId } = req.params;
-    const userId = req.user?.userId;
     const { gitHubUrl, gitHubToken } = req.body;
 
-    // Check if user is member of the organization
-    const [memberCheck] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
-      [organizationId, userId]
-    );
-
-    if (memberCheck.length === 0) {
+    if (!(await assertOrgMember(organizationId, req.user?.userId))) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
@@ -216,180 +189,140 @@ router.post('/organization/:organizationId/test', authenticateToken, async (req:
       return res.status(400).json({ success: false, message: 'GitHub URL and token are required' });
     }
 
-    // Test connection by fetching current user
-    const testUrl = `${gitHubUrl}/user`;
-
-    const response = await fetch(testUrl, {
+    const response = await fetch(`${gitHubUrl.replace(/\/$/, '')}/user`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${gitHubToken}`,
-        'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28'
-      }
+        Authorization: `Bearer ${gitHubToken}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      logger.error('GitHub test connection failed:', response.status, errorText);
-      return res.status(400).json({ 
-        success: false, 
-        message: `Failed to connect to GitHub: ${response.status} ${response.statusText}` 
+      return res.status(400).json({
+        success: false,
+        message: `Failed to connect to GitHub: ${response.status} ${response.statusText}`,
       });
     }
 
     const userData = await response.json();
-
-    res.json({ 
+    res.json({
       success: true,
       message: 'Successfully connected to GitHub',
-      gitHubUser: userData.login || userData.name
+      gitHubUser: userData.login || userData.name,
     });
   } catch (error: any) {
     logger.error('Test GitHub connection error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to test GitHub connection' 
-    });
+    res.status(500).json({ success: false, message: error.message || 'Failed to test GitHub connection' });
   }
 });
 
-/**
- * @swagger
- * /api/github-integrations/organization/{organizationId}/search:
- *   get:
- *     summary: Search GitHub issues
- *     tags: [GitHubIntegrations]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: organizationId
- *         required: true
- *         schema:
- *           type: integer
- *       - in: query
- *         name: q
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: GitHub issues returned
- *       403:
- *         description: Access denied
- */
-// Search GitHub issues
+// Search issues — prefer integrationId / applicationId
 router.get('/organization/:organizationId/search', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { organizationId } = req.params;
-    const { query, owner, repo } = req.query;
+    const { query, owner, repo, integrationId, applicationId } = req.query;
     const userId = req.user?.userId;
 
-    // Check if user is member of the organization
-    const [memberCheck] = await pool.execute<RowDataPacket[]>(
-      'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
-      [organizationId, userId]
-    );
-
-    if (memberCheck.length === 0) {
+    if (!(await assertOrgMember(organizationId, userId))) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    // Owner and repo are now required
-    if (!owner || !repo) {
+    let resolvedIntegrationId = integrationId ? Number(integrationId) : null;
+    let resolvedOwner = owner ? String(owner) : '';
+    let resolvedRepo = repo ? String(repo) : '';
+
+    if (applicationId) {
+      const [apps] = await pool.execute<RowDataPacket[]>(
+        `SELECT GitHubIntegrationId, RepositoryUrl FROM Applications
+         WHERE Id = ? AND OrganizationId = ?`,
+        [applicationId, organizationId]
+      );
+      if (apps.length === 0) {
+        return res.status(404).json({ success: false, message: 'Application not found' });
+      }
+      if (apps[0].GitHubIntegrationId) {
+        resolvedIntegrationId = Number(apps[0].GitHubIntegrationId);
+      }
+      const parsed = parseOwnerRepoFromUrl(apps[0].RepositoryUrl);
+      if (parsed) {
+        resolvedOwner = resolvedOwner || parsed.owner;
+        resolvedRepo = resolvedRepo || parsed.repo;
+      }
+    }
+
+    if (!resolvedOwner || !resolvedRepo) {
       return res.status(400).json({ success: false, message: 'Repository owner and name are required' });
     }
 
-    // Get integration settings
-    const [integration] = await pool.execute<RowDataPacket[]>(
-      `SELECT IsEnabled, GitHubUrl, GitHubToken
-       FROM OrganizationGitHubIntegrations 
-       WHERE OrganizationId = ? AND IsEnabled = 1`,
-      [organizationId]
-    );
-
-    if (integration.length === 0) {
+    const integration = await resolveVcsIntegration('github', Number(organizationId), resolvedIntegrationId);
+    if (!integration || !integration.IsEnabled) {
       return res.status(404).json({ success: false, message: 'GitHub integration not configured or disabled' });
     }
 
-    const { GitHubUrl, GitHubToken: encryptedToken } = integration[0];
-    const GitHubToken = decrypt(encryptedToken);
+    const GitHubToken = decryptTokenField(integration.GitHubToken);
+    const GitHubUrl = String(integration.GitHubUrl).replace(/\/$/, '');
 
-    // Repository-specific search
-    const searchUrl = `${GitHubUrl}/repos/${owner}/${repo}/issues`;
     const params = new URLSearchParams();
     params.append('state', 'all');
     params.append('sort', 'created');
     params.append('direction', 'desc');
     params.append('per_page', '50');
 
-    const fullUrl = `${searchUrl}?${params.toString()}`;
-
-    const response = await fetch(fullUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${GitHubToken}`,
-        'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28'
+    const response = await fetch(
+      `${GitHubUrl}/repos/${resolvedOwner}/${resolvedRepo}/issues?${params.toString()}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${GitHubToken}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
       }
-    });
+    );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      logger.error('GitHub search failed:', response.status, errorText);
-      return res.status(400).json({ 
-        success: false, 
-        message: `Failed to search GitHub: ${response.status} ${response.statusText}` 
+      return res.status(400).json({
+        success: false,
+        message: `Failed to search GitHub: ${response.status} ${response.statusText}`,
       });
     }
 
     let issues = await response.json();
-
-    // Filter by query if provided
     if (query) {
       const searchTerm = String(query).toLowerCase();
-      issues = issues.filter((issue: any) => 
-        issue.title?.toLowerCase().includes(searchTerm) ||
-        issue.body?.toLowerCase().includes(searchTerm) ||
-        issue.number?.toString().includes(searchTerm)
+      issues = issues.filter(
+        (issue: any) =>
+          issue.title?.toLowerCase().includes(searchTerm) ||
+          issue.body?.toLowerCase().includes(searchTerm) ||
+          issue.number?.toString().includes(searchTerm)
       );
     }
-    
-    // Map and format issues
-    const formattedIssues = issues.map((issue: any) => ({
-      id: issue.id,
-      number: issue.number,
-      title: issue.title,
-      body: issue.body,
-      state: issue.state,
-      labels: issue.labels?.map((label: any) => ({
-        name: label.name,
-        color: label.color
-      })) || [],
-      assignee: issue.assignee?.login,
-      assigneeName: issue.assignee?.name || issue.assignee?.login,
-      author: issue.user?.login,
-      authorName: issue.user?.name || issue.user?.login,
-      created_at: issue.created_at,
-      updated_at: issue.updated_at,
-      html_url: issue.html_url,
-      repository_url: issue.repository_url,
-      isPullRequest: !!issue.pull_request
-    }));
 
-    // Filter out pull requests
-    const issuesOnly = formattedIssues.filter((issue: any) => !issue.isPullRequest);
+    const formattedIssues = issues
+      .map((issue: any) => ({
+        id: issue.id,
+        number: issue.number,
+        title: issue.title,
+        body: issue.body,
+        state: issue.state,
+        labels: issue.labels?.map((label: any) => ({ name: label.name, color: label.color })) || [],
+        assignee: issue.assignee?.login,
+        assigneeName: issue.assignee?.name || issue.assignee?.login,
+        author: issue.user?.login,
+        authorName: issue.user?.name || issue.user?.login,
+        created_at: issue.created_at,
+        updated_at: issue.updated_at,
+        html_url: issue.html_url,
+        repository_url: issue.repository_url,
+        isPullRequest: !!issue.pull_request,
+      }))
+      .filter((issue: any) => !issue.isPullRequest);
 
-    res.json({ 
-      success: true, 
-      issues: issuesOnly,
-      total: issuesOnly.length
-    });
+    res.json({ success: true, issues: formattedIssues, total: formattedIssues.length });
   } catch (error: any) {
     logger.error('GitHub search error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to search GitHub issues' 
-    });
+    res.status(500).json({ success: false, message: error.message || 'Failed to search GitHub issues' });
   }
 });
 

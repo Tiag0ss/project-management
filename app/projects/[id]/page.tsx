@@ -150,6 +150,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
   });
   const [existingGitHubIssueIds, setExistingGitHubIssueIds] = useState<Set<string>>(new Set());
   const [showAlreadyImportedGitHub, setShowAlreadyImportedGitHub] = useState(false);
+  const [gitHubImportApplicationId, setGitHubImportApplicationId] = useState<number>(0);
   // Gitea Integration State
   const [showGiteaImportModal, setShowGiteaImportModal] = useState(false);
   const [giteaIssues, setGiteaIssues] = useState<any[]>([]);
@@ -165,6 +166,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
   });
   const [existingGiteaIssueIds, setExistingGiteaIssueIds] = useState<Set<string>>(new Set());
   const [showAlreadyImportedGitea, setShowAlreadyImportedGitea] = useState(false);
+  const [giteaImportApplicationId, setGiteaImportApplicationId] = useState<number>(0);
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
   // Jira Tickets Import State (for ticket system, not project board)
   const [showJiraTicketsModal, setShowJiraTicketsModal] = useState(false);
@@ -1858,32 +1860,54 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
     }
   };
 
-  const loadGitHubIssues = async () => {
+  const loadGitHubIssues = async (applicationIdOverride?: number) => {
     if (!token || !project) return;
-    
-    // Check if project has GitHub repository configured
-    if (!project.GitHubOwner || !project.GitHubRepo) {
-      setGitHubError('Please configure GitHub repository in Project Settings first (Owner and Repository fields)');
+
+    const applicationId = applicationIdOverride ?? gitHubImportApplicationId;
+    const linkedApps = (project.Applications || []).filter(
+      (app: { RepositoryUrl?: string | null; GitHubIntegrationId?: number | null }) =>
+        Boolean(app.RepositoryUrl) &&
+        (Boolean(app.GitHubIntegrationId) || /github/i.test(String(app.RepositoryUrl)))
+    );
+    const legacyConfigured = Boolean(project.GitHubOwner && project.GitHubRepo);
+
+    if (!applicationId && linkedApps.length === 0 && !legacyConfigured) {
+      setGitHubError(
+        'Link an Application with a GitHub repository URL (and optional GitHub integration) to this project, then select it here.'
+      );
       setGitHubLoading(false);
       return;
     }
-    
+
+    if (!applicationId && linkedApps.length > 0) {
+      setGitHubError('Select an application to import GitHub issues from.');
+      setGitHubLoading(false);
+      return;
+    }
+
     setGitHubLoading(true);
     setGitHubError('');
-    
+
     try {
       const queryParams = new URLSearchParams();
-      queryParams.append('owner', project.GitHubOwner);
-      queryParams.append('repo', project.GitHubRepo);
+      if (applicationId) {
+        queryParams.append('applicationId', String(applicationId));
+      } else if (legacyConfigured) {
+        queryParams.append('owner', String(project.GitHubOwner));
+        queryParams.append('repo', String(project.GitHubRepo));
+      }
       if (gitHubFilters.search) {
         queryParams.append('query', gitHubFilters.search);
       }
-      
-      const response = await fetch(`${getApiUrl()}/api/github-integrations/organization/${project.OrganizationId}/search?${queryParams.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
+
+      const response = await fetch(
+        `${getApiUrl()}/api/github-integrations/organization/${project.OrganizationId}/search?${queryParams.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         }
-      });
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -1892,7 +1916,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 
       const data = await response.json();
       setGitHubIssues(data.issues || []);
-      
+
       // Clear selections and mappings
       setSelectedGitHubIssues(new Set());
       setGitHubStatusMapping({});
@@ -2041,23 +2065,42 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
     }
   };
 
-  const loadGiteaIssues = async () => {
+  const loadGiteaIssues = async (applicationIdOverride?: number) => {
     if (!token || !project) return;
-    
-    // Check if project has Gitea repository configured
-    if (!project.GiteaOwner || !project.GiteaRepo) {
-      setGiteaError('Please configure Gitea repository in Project Settings first (Owner and Repository fields)');
+
+    const applicationId = applicationIdOverride ?? giteaImportApplicationId;
+    const linkedApps = (project.Applications || []).filter(
+      (app: { RepositoryUrl?: string | null; GiteaIntegrationId?: number | null }) =>
+        Boolean(app.RepositoryUrl) &&
+        (Boolean(app.GiteaIntegrationId) || /gitea/i.test(String(app.RepositoryUrl)))
+    );
+    const legacyConfigured = Boolean(project.GiteaOwner && project.GiteaRepo);
+
+    if (!applicationId && linkedApps.length === 0 && !legacyConfigured) {
+      setGiteaError(
+        'Link an Application with a Gitea repository URL (and Gitea integration) to this project, then select it here.'
+      );
       setGiteaLoading(false);
       return;
     }
-    
+
+    if (!applicationId && linkedApps.length > 0) {
+      setGiteaError('Select an application to import Gitea issues from.');
+      setGiteaLoading(false);
+      return;
+    }
+
     setGiteaLoading(true);
     setGiteaError('');
-    
+
     try {
       const queryParams = new URLSearchParams();
-      queryParams.append('owner', project.GiteaOwner);
-      queryParams.append('repo', project.GiteaRepo);
+      if (applicationId) {
+        queryParams.append('applicationId', String(applicationId));
+      } else if (legacyConfigured) {
+        queryParams.append('owner', String(project.GiteaOwner));
+        queryParams.append('repo', String(project.GiteaRepo));
+      }
       if (giteaFilters.search) {
         queryParams.append('query', giteaFilters.search);
       }
@@ -2070,12 +2113,15 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
       if (giteaFilters.type) {
         queryParams.append('type', giteaFilters.type);
       }
-      
-      const response = await fetch(`${getApiUrl()}/api/gitea-integrations/organization/${project.OrganizationId}/search?${queryParams.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
+
+      const response = await fetch(
+        `${getApiUrl()}/api/gitea-integrations/organization/${project.OrganizationId}/search?${queryParams.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         }
-      });
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -2084,17 +2130,17 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 
       const data = await response.json();
       setGiteaIssues(data.issues || []);
-      
+
       // Initialize status mapping with auto-mapping
       const mapping: {[key: string]: string} = {};
       (data.issues || []).forEach((issue: any) => {
         const state = issue.state?.toLowerCase();
         let mappedStatus = '';
-        
+
         if (state === 'closed') {
           // Try to find a "done" or "closed" status
-          const doneStatus = taskStatuses.find(s => 
-            s.StatusName.toLowerCase().includes('done') || 
+          const doneStatus = taskStatuses.find(s =>
+            s.StatusName.toLowerCase().includes('done') ||
             s.StatusName.toLowerCase().includes('closed') ||
             s.StatusName.toLowerCase().includes('complete')
           );
@@ -2103,11 +2149,11 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
           // Map open to first status (typically "To Do" or "Open")
           mappedStatus = taskStatuses[0]?.StatusName || '';
         }
-        
+
         mapping[issue.number] = mappedStatus;
       });
       setGiteaStatusMapping(mapping);
-      
+
       // Clear selections
       setSelectedGiteaIssues(new Set());
     } catch (err: any) {
@@ -2283,9 +2329,20 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
   // Load task statuses and GitHub issues when modal opens
   useEffect(() => {
     if (showGitHubImportModal && project) {
+      const linkedApps = (project.Applications || []).filter(
+        (app: { RepositoryUrl?: string | null; GitHubIntegrationId?: number | null }) =>
+          Boolean(app.RepositoryUrl) &&
+          (Boolean(app.GitHubIntegrationId) || /github/i.test(String(app.RepositoryUrl)))
+      );
+      const initialAppId =
+        gitHubImportApplicationId ||
+        (linkedApps.length === 1 ? linkedApps[0].Id : linkedApps[0]?.Id || 0);
+      if (initialAppId && initialAppId !== gitHubImportApplicationId) {
+        setGitHubImportApplicationId(initialAppId);
+      }
       loadTaskStatuses();
       loadExistingGitHubIssues();
-      loadGitHubIssues();
+      void loadGitHubIssues(initialAppId || undefined);
     } else if (!showGitHubImportModal) {
       // Reset filters when modal closes
       setGitHubFilters({
@@ -2296,6 +2353,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
       });
       setShowAlreadyImportedGitHub(false);
       setExistingGitHubIssueIds(new Set());
+      setGitHubImportApplicationId(0);
     }
   }, [showGitHubImportModal, project]);
 
@@ -2484,9 +2542,20 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
   // Load task statuses and Gitea issues when modal opens
   useEffect(() => {
     if (showGiteaImportModal && project) {
+      const linkedApps = (project.Applications || []).filter(
+        (app: { RepositoryUrl?: string | null; GiteaIntegrationId?: number | null }) =>
+          Boolean(app.RepositoryUrl) &&
+          (Boolean(app.GiteaIntegrationId) || /gitea/i.test(String(app.RepositoryUrl)))
+      );
+      const initialAppId =
+        giteaImportApplicationId ||
+        (linkedApps.length === 1 ? linkedApps[0].Id : linkedApps[0]?.Id || 0);
+      if (initialAppId && initialAppId !== giteaImportApplicationId) {
+        setGiteaImportApplicationId(initialAppId);
+      }
       loadTaskStatuses();
       loadExistingGiteaIssues();
-      loadGiteaIssues();
+      void loadGiteaIssues(initialAppId || undefined);
     } else if (!showGiteaImportModal) {
       // Reset filters when modal closes
       setGiteaFilters({
@@ -2497,6 +2566,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
       });
       setShowAlreadyImportedGitea(false);
       setExistingGiteaIssueIds(new Set());
+      setGiteaImportApplicationId(0);
     }
   }, [showGiteaImportModal, project]);
 
@@ -3440,6 +3510,39 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6">
+              {(() => {
+                const githubApps = (project?.Applications || []).filter(
+                  (app: { RepositoryUrl?: string | null; GitHubIntegrationId?: number | null }) =>
+                    Boolean(app.RepositoryUrl) &&
+                    (Boolean(app.GitHubIntegrationId) || /github/i.test(String(app.RepositoryUrl)))
+                );
+                if (githubApps.length === 0) return null;
+                return (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Application
+                    </label>
+                    <select
+                      value={gitHubImportApplicationId || ''}
+                      onChange={(e) => {
+                        const nextId = e.target.value ? Number(e.target.value) : 0;
+                        setGitHubImportApplicationId(nextId);
+                        if (nextId) void loadGitHubIssues(nextId);
+                      }}
+                      className="w-full max-w-md px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="">Select application...</option>
+                      {githubApps.map((app: { Id: number; Name: string; RepositoryUrl?: string | null }) => (
+                        <option key={app.Id} value={app.Id}>
+                          {app.Name}
+                          {app.RepositoryUrl ? ` — ${app.RepositoryUrl}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })()}
+
               {gitHubError && (
                 <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
                   {gitHubError}
@@ -3728,6 +3831,39 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6">
+              {(() => {
+                const giteaApps = (project?.Applications || []).filter(
+                  (app: { RepositoryUrl?: string | null; GiteaIntegrationId?: number | null }) =>
+                    Boolean(app.RepositoryUrl) &&
+                    (Boolean(app.GiteaIntegrationId) || /gitea/i.test(String(app.RepositoryUrl)))
+                );
+                if (giteaApps.length === 0) return null;
+                return (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Application
+                    </label>
+                    <select
+                      value={giteaImportApplicationId || ''}
+                      onChange={(e) => {
+                        const nextId = e.target.value ? Number(e.target.value) : 0;
+                        setGiteaImportApplicationId(nextId);
+                        if (nextId) void loadGiteaIssues(nextId);
+                      }}
+                      className="w-full max-w-md px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="">Select application...</option>
+                      {giteaApps.map((app: { Id: number; Name: string; RepositoryUrl?: string | null }) => (
+                        <option key={app.Id} value={app.Id}>
+                          {app.Name}
+                          {app.RepositoryUrl ? ` — ${app.RepositoryUrl}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })()}
+
               {giteaError && (
                 <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
                   {giteaError}
@@ -6577,8 +6713,20 @@ function TasksTab({
   const hasTaskStatusCheckOption =
     (hasJiraTicketIntegration && Boolean(onCheckJiraTicketStatus)) ||
     (hasJiraBoardIntegration && Boolean(onCheckJiraBoardStatus));
-  const hasGitHubIntegration = project.GitHubOwner && project.GitHubRepo;
-  const hasGiteaIntegration = project.GiteaOwner && project.GiteaRepo;
+  const hasGitHubIntegration =
+    Boolean(project.GitHubOwner && project.GitHubRepo) ||
+    (project.Applications || []).some(
+      (app: { RepositoryUrl?: string | null; GitHubIntegrationId?: number | null }) =>
+        Boolean(app.RepositoryUrl) &&
+        (Boolean(app.GitHubIntegrationId) || /github/i.test(String(app.RepositoryUrl)))
+    );
+  const hasGiteaIntegration =
+    Boolean(project.GiteaOwner && project.GiteaRepo) ||
+    (project.Applications || []).some(
+      (app: { RepositoryUrl?: string | null; GiteaIntegrationId?: number | null }) =>
+        Boolean(app.RepositoryUrl) &&
+        (Boolean(app.GiteaIntegrationId) || /gitea/i.test(String(app.RepositoryUrl)))
+    );
 
   const toggleExpand = (taskId: number) => {
     setExpandedTasks(prev => {
@@ -12784,8 +12932,6 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
   const [customers, setCustomers] = useState<{ Id: number; Name: string }[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
-  const [githubIntegration, setGithubIntegration] = useState<any>(null);
-  const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
   const [availableApplications, setAvailableApplications] = useState<{ Id: number; Name: string }[]>([]);
   const [showTransferConfirm, setShowTransferConfirm] = useState(false);
   const [error, setError] = useState('');
@@ -12798,8 +12944,6 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
     loadCustomers();
     loadProjectStatuses();
     loadJiraIntegration();
-    loadGitHubIntegration();
-    loadGiteaIntegration();
     loadApplicationsList();
   }, []);
 
@@ -12874,43 +13018,6 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
     }
   };
 
-  const loadGitHubIntegration = async () => {
-    try {
-      const response = await fetch(`${getApiUrl()}/api/github-integrations/organization/${project.OrganizationId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.integration && data.integration.IsEnabled && data.integration.GitHubUrl) {
-          setGithubIntegration(data.integration);
-        } else {
-          setGithubIntegration(null);
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to load GitHub integration:', err);
-      setGithubIntegration(null);
-    }
-  };
-
-  const loadGiteaIntegration = async () => {
-    try {
-      const response = await fetch(`${getApiUrl()}/api/gitea-integrations/organization/${project.OrganizationId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.integration && data.integration.IsEnabled && data.integration.GiteaUrl) {
-          setGiteaIntegration(data.integration);
-        } else {
-          setGiteaIntegration(null);
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to load Gitea integration:', err);
-      setGiteaIntegration(null);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -13285,110 +13392,16 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
               )}
             </div>
           )}
-
-          {githubIntegration && (
-            <div className="p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-300 dark:border-gray-700">
-              <div className="flex items-center gap-2 mb-3">
-                <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-                </svg>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  GitHub Integration
-                </label>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                    Repository Owner/Organization
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.gitHubOwner}
-                    onChange={(e) => setFormData({ ...formData, gitHubOwner: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                    placeholder="username or organization-name"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                    Repository Name
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.gitHubRepo}
-                    onChange={(e) => setFormData({ ...formData, gitHubRepo: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                    placeholder="repository-name"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                Required for GitHub issues import. Find in your repository URL: github.com/<strong>owner</strong>/<strong>repo</strong>
-              </p>
-              {(formData.gitHubOwner || formData.gitHubRepo) && (
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, gitHubOwner: '', gitHubRepo: '' })}
-                    className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
-                  >
-                    Clear Repository
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {giteaIntegration && (
-            <div className="p-4 bg-green-50 dark:bg-green-900/30 rounded-lg border border-green-300 dark:border-green-700">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-lg">🍵</span>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Gitea Integration
-                </label>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                    Repository Owner/Organization
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.giteaOwner}
-                    onChange={(e) => setFormData({ ...formData, giteaOwner: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                    placeholder="username or organization-name"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                    Repository Name
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.giteaRepo}
-                    onChange={(e) => setFormData({ ...formData, giteaRepo: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                    placeholder="repository-name"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                Required for Gitea issues import. Format: <strong>owner/repo</strong>
-              </p>
-              {(formData.giteaOwner || formData.giteaRepo) && (
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, giteaOwner: '', giteaRepo: '' })}
-                    className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
-                  >
-                    Clear Repository
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-300 dark:border-gray-700">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Git / VCS repositories
+            </label>
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              Configure repository URL and GitHub / Gitea / Bitbucket credentials on each{' '}
+              <strong>Application</strong>, then link applications to this project. Issue import uses the
+              selected application&apos;s repository.
+            </p>
+          </div>
 
           <CustomFieldsFormSection
             tableName="Projects"
@@ -13446,8 +13459,6 @@ function EditProjectModal({
   const [customers, setCustomers] = useState<{ Id: number; Name: string }[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
-  const [githubIntegration, setGithubIntegration] = useState<any>(null);
-  const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
   const [availableApplications, setAvailableApplications] = useState<{ Id: number; Name: string }[]>([]);
   const [showTransferConfirm, setShowTransferConfirm] = useState(false);
   const [error, setError] = useState('');
@@ -13459,8 +13470,6 @@ function EditProjectModal({
     loadCustomers();
     loadProjectStatuses();
     loadJiraIntegration();
-    loadGitHubIntegration();
-    loadGiteaIntegration();
     loadApplicationsList();
     // Clear any previous errors when modal opens
     setError('');
@@ -13536,43 +13545,6 @@ function EditProjectModal({
     }
   };
 
-  const loadGitHubIntegration = async () => {
-    try {
-      const response = await fetch(`${getApiUrl()}/api/github-integrations/organization/${project.OrganizationId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.integration && data.integration.IsEnabled && data.integration.GitHubUrl) {
-          setGithubIntegration(data.integration);
-        } else {
-          setGithubIntegration(null);
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to load GitHub integration:', err);
-      setGithubIntegration(null);
-    }
-  };
-
-  const loadGiteaIntegration = async () => {
-    try {
-      const response = await fetch(`${getApiUrl()}/api/gitea-integrations/organization/${project.OrganizationId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.integration && data.integration.IsEnabled && data.integration.GiteaUrl) {
-          setGiteaIntegration(data.integration);
-        } else {
-          setGiteaIntegration(null);
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to load Gitea integration:', err);
-      setGiteaIntegration(null);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -13852,88 +13824,17 @@ function EditProjectModal({
                 </p>
               </div>
             )}
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-300 dark:border-gray-700">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Git / VCS repositories
+            </label>
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              Configure repository URL and GitHub / Gitea / Bitbucket credentials on each{' '}
+              <strong>Application</strong>, then link applications to this project. Issue import uses the
+              selected application&apos;s repository.
+            </p>
+          </div>
 
-            {githubIntegration && (
-              <div className="p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-300 dark:border-gray-700">
-                <div className="flex items-center gap-2 mb-3">
-                  <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-                  </svg>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    GitHub Integration
-                  </label>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Repository Owner/Organization
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.gitHubOwner || ''}
-                      onChange={(e) => setFormData({ ...formData, gitHubOwner: e.target.value || undefined })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      placeholder="username or organization-name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Repository Name
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.gitHubRepo || ''}
-                      onChange={(e) => setFormData({ ...formData, gitHubRepo: e.target.value || undefined })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      placeholder="repository-name"
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                  Required for GitHub issues import. Find in your repository URL: github.com/<strong>owner</strong>/<strong>repo</strong>
-                </p>
-              </div>
-            )}
-
-            {giteaIntegration && (
-              <div className="p-4 bg-green-50 dark:bg-green-900/30 rounded-lg border border-green-300 dark:border-green-700">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg">🍵</span>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Gitea Integration
-                  </label>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Repository Owner/Organization
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.giteaOwner || ''}
-                      onChange={(e) => setFormData({ ...formData, giteaOwner: e.target.value || undefined })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      placeholder="username or organization-name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Repository Name
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.giteaRepo || ''}
-                      onChange={(e) => setFormData({ ...formData, giteaRepo: e.target.value || undefined })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      placeholder="repository-name"
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                  Required for Gitea issues import. Format: <strong>owner/repo</strong>
-                </p>
-              </div>
-            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
