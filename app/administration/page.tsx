@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PageTabs from '@/components/PageTabs';
+import PageStickyChrome from '@/components/PageStickyChrome';
 import UsersManagement from '@/components/admin/UsersManagement';
 import RolePermissionsManagement from '@/components/admin/RolePermissionsManagement';
 import SystemSettings from '@/components/admin/SystemSettings';
@@ -91,19 +92,21 @@ function AdministrationPageContent() {
   }
 
   return (
-    <div className="w-full space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold text-[var(--pm-text)]">Administration</h1>
-        <p className="text-sm text-[var(--pm-muted)]">Manage system settings and configurations</p>
-      </div>
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <PageStickyChrome>
+        <div>
+          <h1 className="text-xl font-semibold text-[var(--pm-text)]">Administration</h1>
+          <p className="text-sm text-[var(--pm-muted)]">Manage system settings and configurations</p>
+        </div>
 
-      <PageTabs
-        tabs={ADMIN_TAB_LABELS}
-        activeId={activeTab}
-        onChange={(id) => setActiveTab(id as AdminTab)}
-      />
+        <PageTabs
+          tabs={ADMIN_TAB_LABELS}
+          activeId={activeTab}
+          onChange={(id) => setActiveTab(id as AdminTab)}
+        />
+      </PageStickyChrome>
 
-      <main ref={scrollContainerRef} className="min-w-0">
+      <main ref={scrollContainerRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto pt-3">
         <div className="rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] shadow-sm">
           {activeTab === 'users' && <UsersManagement />}
           {activeTab === 'permissions' && <RolePermissionsManagement />}

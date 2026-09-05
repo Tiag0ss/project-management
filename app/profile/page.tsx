@@ -14,6 +14,7 @@ import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import ProfileTaskFormVisibility from '@/components/profile/ProfileTaskFormVisibility';
 import ApiTokensManagement from '@/components/admin/ApiTokensManagement';
 import PageTabs from '@/components/PageTabs';
+import PageStickyChrome from '@/components/PageStickyChrome';
 import { useUrlTab } from '@/hooks/useUrlTab';
 
 const PROFILE_TABS = [
@@ -1202,17 +1203,19 @@ function ProfilePageContent() {
   };
 
   return (
-    <div className="w-full space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold text-[var(--pm-text)]">
-          {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username}
-        </h1>
-        <p className="text-sm text-[var(--pm-muted)]">{user.email}</p>
-      </div>
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <PageStickyChrome>
+        <div>
+          <h1 className="text-xl font-semibold text-[var(--pm-text)]">
+            {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username}
+          </h1>
+          <p className="text-sm text-[var(--pm-muted)]">{user.email}</p>
+        </div>
 
-      <PageTabs tabs={profileTabs} activeId={activeTab} onChange={handleProfileTabChange} />
+        <PageTabs tabs={profileTabs} activeId={activeTab} onChange={handleProfileTabChange} />
+      </PageStickyChrome>
 
-      <main ref={scrollContainerRef} className="min-w-0">
+      <main ref={scrollContainerRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto pt-3">
         <div className="rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] p-6 shadow-sm">
               {message && (
                 <div className={`mb-4 p-3 rounded ${

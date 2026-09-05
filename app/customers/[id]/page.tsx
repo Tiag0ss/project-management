@@ -2,13 +2,14 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect, use, Suspense } from 'react';
+import { useState, useEffect, use, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation'
 import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PageTabs from '@/components/PageTabs';
+import PageStickyChrome from '@/components/PageStickyChrome';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
 import TaskDetailModal from '@/components/TaskDetailModal';
@@ -209,6 +210,7 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
   // Attachments state
   const [attachments, setAttachments] = useState<any[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
   
   // Settings form
   const [settingsForm, setSettingsForm] = useState({
@@ -887,35 +889,37 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
 
   return (
     <CustomerUserGuard>
-    <div className="w-full space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold text-[var(--pm-text)] truncate">{customer.Name}</h1>
-          {projectManager && (
-            <p className="mt-1 text-sm text-[var(--pm-muted)]">
-              PM: {projectManager.FirstName} {projectManager.LastName}
-            </p>
-          )}
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <PageStickyChrome>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold text-[var(--pm-text)] truncate">{customer.Name}</h1>
+            {projectManager && (
+              <p className="mt-1 text-sm text-[var(--pm-muted)]">
+                PM: {projectManager.FirstName} {projectManager.LastName}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => router.push(oldPath('/customers'))}
+            className="text-sm text-[var(--pm-muted)] hover:text-[var(--pm-text)]"
+          >
+            ← Back to Customers
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => router.push(oldPath('/customers'))}
-          className="text-sm text-[var(--pm-muted)] hover:text-[var(--pm-text)]"
-        >
-          ← Back to Customers
-        </button>
-      </div>
 
-      <PageTabs
-        tabs={customerTabs}
-        activeId={activeTab}
-        onChange={(id) => {
-          setActiveTab(id as TabType);
-          if (id === 'attachments') loadAttachments();
-        }}
-      />
+        <PageTabs
+          tabs={customerTabs}
+          activeId={activeTab}
+          onChange={(id) => {
+            setActiveTab(id as TabType);
+            if (id === 'attachments') loadAttachments();
+          }}
+        />
+      </PageStickyChrome>
 
-      <main className="min-w-0">
+      <main ref={scrollContainerRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto pt-3">
           {error && (
             <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
               {error}
@@ -1912,7 +1916,7 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
         </>
       )}
 
-      <ScrollToTopButton />
+      <ScrollToTopButton scrollContainerRef={scrollContainerRef} />
     </div>
     </CustomerUserGuard>
   );

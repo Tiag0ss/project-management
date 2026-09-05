@@ -24,6 +24,7 @@ import {
   saveDashboardKpis,
 } from '@/lib/api/dashboardKpis';
 import PageTabs from '@/components/PageTabs';
+import PageStickyChrome from '@/components/PageStickyChrome';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import EmptyState from '@/components/EmptyState';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
@@ -2546,9 +2547,9 @@ function DashboardContent() {
   }
 
   return (
-    <div className="w-full">
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
       {isCustomerUser ? (
-        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <main className="min-h-0 flex-1 overflow-y-auto max-w-7xl mx-auto py-6 sm:px-6 lg:px-8 w-full">
           <div className="px-4 py-6 sm:px-0 space-y-4">
             <InstallAppPrompt />
             {portalLoading ? (
@@ -2685,10 +2686,9 @@ function DashboardContent() {
           </div>
         </main>
       ) : (
-        /* Regular user view — top PageTabs (no second sidebar) */
-        <div className="flex w-full flex-col">
-          {/* Title + KPIs on one row; tabs below */}
-          <div className="mb-2 space-y-2">
+        /* Regular user view — chrome outside scroll (same as project detail) */
+        <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+          <PageStickyChrome>
             {kpiEditMode && (
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <select
@@ -3020,7 +3020,6 @@ function DashboardContent() {
             )}
               </div>
             </div>
-          </div>
 
           <PageTabs
             tabs={[
@@ -3040,8 +3039,9 @@ function DashboardContent() {
               );
             }}
           />
+          </PageStickyChrome>
 
-          <main ref={scrollContainerRef} className="min-w-0 flex-1 overflow-auto pt-2">
+          <main ref={scrollContainerRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto pt-3">
             <InstallAppPrompt className="mb-4" />
             {/* Overview Tab */}
             {activeTab === 'overview' && (

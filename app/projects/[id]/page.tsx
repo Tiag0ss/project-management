@@ -19,6 +19,7 @@ import { usersApi, User } from '@/lib/api/users';
 import { tagsApi } from '@/lib/api/tags';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PageTabs from '@/components/PageTabs';
+import PageStickyChrome from '@/components/PageStickyChrome';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
@@ -2548,9 +2549,9 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 
   return (
     <CustomerUserGuard>
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
       {/* Outside the scroll region — never covered by tab content */}
-      <div className="-mx-2 -mt-2 shrink-0 space-y-2 border-b border-[var(--pm-border)] bg-[var(--pm-panel)] px-2 pb-2 pt-2 md:-mx-3 md:-mt-3 md:px-3 md:pt-3">
+      <PageStickyChrome>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -2596,7 +2597,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
             if (id === 'attachments') loadProjectAttachments();
           }}
         />
-      </div>
+      </PageStickyChrome>
 
       <div
         className={
