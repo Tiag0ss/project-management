@@ -4,7 +4,6 @@ import next from 'next';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import { promises as fsPromises } from 'fs';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -17,6 +16,14 @@ import { runMigrations } from './utils/migrations';
 import { swaggerSpec } from './config/swagger';
 import logger from './utils/logger';
 import { getBrandFaviconFilePath, getDefaultFaviconPath, resolveFaviconTarget } from './utils/favicon';
+import {
+  findLatestDesktopInstaller,
+  findLatestIdeExtension,
+  getDownloadsCatalog,
+  getTampermonkeyScriptPath,
+  type DesktopPlatform,
+  type IdeExtensionKind,
+} from './utils/downloads';
 import authRoutes from './modules/auth/auth';
 import userRoutes from './modules/users/user';
 import projectsRoutes from './modules/projects/projects';
@@ -333,44 +340,64 @@ app.prepare().then(async () => {
     });
   });
 
-  // Download latest generated Desktop App installer from release folder
+  // Downloads: desktop installers, IDE extensions, Tampermonkey script
+  server.get('/api/downloads/catalog', async (_req, res) => {
+    try {
+      const catalog = await getDownloadsCatalog();
+      return res.json({ success: true, catalog });
+    } catch (error) {
+      logger.error('Failed to build downloads catalog', { error });
+      return res.status(500).json({ success: false, message: 'Failed to load downloads catalog' });
+    }
+  });
+
   server.get('/api/downloads/desktop-app', async (req, res) => {
     try {
-      const releaseDir = path.join(process.cwd(), 'extras', 'release');
-      if (!fs.existsSync(releaseDir)) {
-        return res.status(404).json({ success: false, message: 'Desktop installer folder not found' });
-      }
-
-      const platform = String(req.query.platform || 'win').toLowerCase();
-      const isLinux = platform === 'linux';
-      const extension = isLinux ? '.appimage' : '.exe';
-
-      const entries = await fsPromises.readdir(releaseDir);
-      const candidates = entries
-        .filter((entry) => entry.toLowerCase().endsWith(extension))
-        .filter((entry) => entry.toLowerCase().includes('desktop timer'));
-
-      if (candidates.length === 0) {
+      const platform = String(req.query.platform || 'win').toLowerCase() === 'linux' ? 'linux' : 'win';
+      const latest = await findLatestDesktopInstaller(platform as DesktopPlatform);
+      if (!latest) {
         return res.status(404).json({
           success: false,
-          message: isLinux ? 'Linux desktop installer not found' : 'Desktop installer not found',
+          message: platform === 'linux' ? 'Linux desktop installer not found' : 'Desktop installer not found',
         });
       }
-
-      const withStats = await Promise.all(
-        candidates.map(async (fileName) => {
-          const absolutePath = path.join(releaseDir, fileName);
-          const stats = await fsPromises.stat(absolutePath);
-          return { fileName, absolutePath, mtimeMs: stats.mtimeMs };
-        })
-      );
-
-      withStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
-      const latest = withStats[0];
       return res.download(latest.absolutePath, latest.fileName);
     } catch (error) {
       logger.error('Failed to provide desktop installer download', { error });
       return res.status(500).json({ success: false, message: 'Failed to download desktop installer' });
+    }
+  });
+
+  server.get('/api/downloads/ide-extension', async (req, res) => {
+    try {
+      const raw = String(req.query.ide || 'vscode').toLowerCase();
+      const ide: IdeExtensionKind =
+        raw === 'rider' ? 'rider' : raw === 'visualstudio' || raw === 'vs' ? 'visualstudio' : 'vscode';
+      const latest = await findLatestIdeExtension(ide);
+      if (!latest) {
+        return res.status(404).json({
+          success: false,
+          message: `IDE extension package for ${ide} was not found in extras/release`,
+        });
+      }
+      return res.download(latest.absolutePath, latest.fileName);
+    } catch (error) {
+      logger.error('Failed to provide IDE extension download', { error });
+      return res.status(500).json({ success: false, message: 'Failed to download IDE extension' });
+    }
+  });
+
+  server.get('/api/downloads/tampermonkey', async (_req, res) => {
+    try {
+      const scriptPath = getTampermonkeyScriptPath();
+      if (!fs.existsSync(scriptPath)) {
+        return res.status(404).json({ success: false, message: 'Tampermonkey script not found' });
+      }
+      res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+      return res.download(scriptPath, 'pm-task-commit-links.user.js');
+    } catch (error) {
+      logger.error('Failed to provide Tampermonkey script download', { error });
+      return res.status(500).json({ success: false, message: 'Failed to download Tampermonkey script' });
     }
   });
 

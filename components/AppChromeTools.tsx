@@ -211,7 +211,14 @@ export default function AppChromeTools({
 
   // Quick Actions dropdown state
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
-  const [showDesktopDownloadModal, setShowDesktopDownloadModal] = useState(false);
+  const [showDownloadsModal, setShowDownloadsModal] = useState(false);
+  const [downloadsCatalog, setDownloadsCatalog] = useState<{
+    desktop: { win: boolean; linux: boolean };
+    ide: { vscode: boolean; rider: boolean; visualstudio: boolean };
+    tampermonkey: boolean;
+  } | null>(null);
+  const [downloadsCatalogLoading, setDownloadsCatalogLoading] = useState(false);
+  const [downloadsCatalogError, setDownloadsCatalogError] = useState('');
   
   // Modal type: 'task' | 'organization' | 'project' | 'customer' | 'timeEntry' | 'callRecord' | null
   const [activeModal, setActiveModal] = useState<string | null>(null);
@@ -1409,22 +1416,45 @@ export default function AppChromeTools({
 
   const handleDesktopDownload = (platform: 'win' | 'linux') => {
     window.location.href = `${getApiUrl()}/api/downloads/desktop-app?platform=${platform}`;
-    setShowDesktopDownloadModal(false);
-    setDropdownOpen(false);
   };
 
-  const openDesktopDownloadModal = () => {
-    setShowDesktopDownloadModal(true);
+  const handleIdeExtensionDownload = (ide: 'vscode' | 'rider' | 'visualstudio') => {
+    window.location.href = `${getApiUrl()}/api/downloads/ide-extension?ide=${ide}`;
+  };
+
+  const handleTampermonkeyDownload = () => {
+    window.location.href = `${getApiUrl()}/api/downloads/tampermonkey`;
+  };
+
+  const openDownloadsModal = async () => {
+    setShowDownloadsModal(true);
     setDropdownOpen(false);
     if (isFloatingMode) {
       setIsFloatingSidebarOpen(false);
+    }
+    setDownloadsCatalogLoading(true);
+    setDownloadsCatalogError('');
+    try {
+      const response = await fetch(`${getApiUrl()}/api/downloads/catalog`, {
+        credentials: 'include',
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || 'Failed to load available downloads');
+      }
+      setDownloadsCatalog(data.catalog);
+    } catch (err: any) {
+      setDownloadsCatalog(null);
+      setDownloadsCatalogError(err?.message || 'Failed to load available downloads');
+    } finally {
+      setDownloadsCatalogLoading(false);
     }
   };
 
   // Close all modals and reset forms
   const closeAllModals = () => {
     setActiveModal(null);
-    setShowDesktopDownloadModal(false);
+    setShowDownloadsModal(false);
     setShowQuickTaskModal(false);
     setQuickTaskCreateModalState({ show: false, isLoading: false, project: null, tasks: [], error: '' });
     setError('');
@@ -2032,9 +2062,9 @@ export default function AppChromeTools({
                   <button
                     type="button"
                     className={sidebarItemClass}
-                    onClick={openDesktopDownloadModal}
+                    onClick={openDownloadsModal}
                   >
-                    <span className="w-5 text-center">💻</span>{!isSidebarEffectivelyCollapsed && <span>Download Desktop App</span>}
+                    <span className="w-5 text-center">⬇️</span>{!isSidebarEffectivelyCollapsed && <span>Downloads</span>}
                   </button>
                   <a
                     href="/docs"
@@ -2770,10 +2800,10 @@ export default function AppChromeTools({
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--pm-text)] hover:bg-[var(--pm-surface-2)]"
-                      onClick={openDesktopDownloadModal}
+                      onClick={openDownloadsModal}
                     >
                       <Download size={16} className="shrink-0 text-[var(--pm-muted)]" />
-                      Download Desktop App
+                      Downloads
                     </button>
                     <a
                       href="/docs"
@@ -2856,9 +2886,9 @@ export default function AppChromeTools({
                         <button
                           type="button"
                           className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          onClick={openDesktopDownloadModal}
+                          onClick={openDownloadsModal}
                         >
-                          💻 Download Desktop App
+                          ⬇️ Downloads
                         </button>
                         <a
                           href="/docs"
@@ -3413,15 +3443,15 @@ export default function AppChromeTools({
         onSubmit={handleSaveCallRecord}
       />
 
-      {showDesktopDownloadModal && (
+      {showDownloadsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Download Desktop App</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Downloads</h3>
                 <button
                   type="button"
-                  onClick={() => setShowDesktopDownloadModal(false)}
+                  onClick={() => setShowDownloadsModal(false)}
                   className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                   aria-label="Close"
                 >
@@ -3429,34 +3459,124 @@ export default function AppChromeTools({
                 </button>
               </div>
 
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                Choose your platform:
-              </p>
+              {downloadsCatalogLoading && (
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Checking available packages…</p>
+              )}
+              {downloadsCatalogError && (
+                <p className="text-sm text-red-600 dark:text-red-400 mb-4">{downloadsCatalogError}</p>
+              )}
 
-              <div className="space-y-3">
+              <section className="mb-6">
+                <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+                  Desktop App
+                </h4>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    disabled={!downloadsCatalog?.desktop.win}
+                    onClick={() => handleDesktopDownload('win')}
+                    className="w-full flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
+                  >
+                    <span className="text-xl">🪟</span>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">Windows</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {downloadsCatalog?.desktop.win ? 'Installer (.exe)' : 'Not available'}
+                      </p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!downloadsCatalog?.desktop.linux}
+                    onClick={() => handleDesktopDownload('linux')}
+                    className="w-full flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
+                  >
+                    <span className="text-xl">🐧</span>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">Linux</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {downloadsCatalog?.desktop.linux
+                          ? 'AppImage (CachyOS, Ubuntu, etc.)'
+                          : 'Not available'}
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              </section>
+
+              <section className="mb-6">
+                <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+                  IDE Extensions
+                </h4>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    disabled={!downloadsCatalog?.ide.vscode}
+                    onClick={() => handleIdeExtensionDownload('vscode')}
+                    className="w-full flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
+                  >
+                    <span className="text-xl">🧩</span>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">VS Code / Cursor</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {downloadsCatalog?.ide.vscode ? 'Extension (.vsix)' : 'Not available — place .vsix in extras/release'}
+                      </p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!downloadsCatalog?.ide.rider}
+                    onClick={() => handleIdeExtensionDownload('rider')}
+                    className="w-full flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
+                  >
+                    <span className="text-xl">🧠</span>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">JetBrains Rider</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {downloadsCatalog?.ide.rider ? 'Plugin package (.zip)' : 'Not available — place plugin zip in extras/release'}
+                      </p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!downloadsCatalog?.ide.visualstudio}
+                    onClick={() => handleIdeExtensionDownload('visualstudio')}
+                    className="w-full flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
+                  >
+                    <span className="text-xl">🟦</span>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">Visual Studio</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {downloadsCatalog?.ide.visualstudio
+                          ? 'Extension (.vsix)'
+                          : 'Not available — place VS .vsix in extras/release'}
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              </section>
+
+              <section>
+                <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+                  Browser
+                </h4>
                 <button
                   type="button"
-                  onClick={() => handleDesktopDownload('win')}
-                  className="w-full flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
+                  disabled={!downloadsCatalog?.tampermonkey}
+                  onClick={handleTampermonkeyDownload}
+                  className="w-full flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
                 >
-                  <span className="text-2xl">🪟</span>
+                  <span className="text-xl">🐒</span>
                   <div>
-                    <p className="font-medium text-gray-900 dark:text-white">Windows</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Installer (.exe)</p>
+                    <p className="font-medium text-gray-900 dark:text-white">Tampermonkey script</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      {downloadsCatalog?.tampermonkey
+                        ? 'pm-task-commit-links.user.js — install via Tampermonkey'
+                        : 'Not available'}
+                    </p>
                   </div>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleDesktopDownload('linux')}
-                  className="w-full flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
-                >
-                  <span className="text-2xl">🐧</span>
-                  <div>
-                    <p className="font-medium text-gray-900 dark:text-white">Linux</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">AppImage (CachyOS, Ubuntu, etc.)</p>
-                  </div>
-                </button>
-              </div>
+              </section>
             </div>
           </div>
         </div>
