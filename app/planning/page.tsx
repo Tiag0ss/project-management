@@ -21,6 +21,7 @@ import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
+import PageTabs from '@/components/PageTabs';
 import { TaskTypeIconMark } from '@/lib/taskTypeIcons';
 import { useColorVision } from '@/hooks/useColorVision';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -181,6 +182,7 @@ export default function PlanningPage() {
   const [plannerTimeEntries, setPlannerTimeEntries] = useState<any[]>([]);
   const [isLoadingPlannerTimeEntries, setIsLoadingPlannerTimeEntries] = useState(false);
   const [showGanttViewOptions, setShowGanttViewOptions] = useState(false);
+  const [isGanttExpanded, setIsGanttExpanded] = useState(false);
   const [snapshotModal, setSnapshotModal] = useState<{
     show: boolean;
     isLoading: boolean;
@@ -939,8 +941,7 @@ export default function PlanningPage() {
 
           // Reload tasks and allocations to update the Gantt chart
           if (projects.length > 0) {
-            await loadAllProjectsTasks(projects);
-            await loadAllAllocations();
+            await reloadTasksAndAllocations();
           }
 
           showAlert('Success', 'Planning allocations removed successfully');
@@ -1317,11 +1318,26 @@ export default function PlanningPage() {
 
   const loadAllAllocations = async (tasksList?: Task[], startDate?: string, endDate?: string) => {
     try {
+      const tasksToUse = tasksList || tasks;
       const range = startDate && endDate
         ? { startDate, endDate }
         : getVisibleDateRange();
-      const query = range
-        ? `?startDate=${encodeURIComponent(range.startDate)}&endDate=${encodeURIComponent(range.endDate)}`
+
+      // Expand beyond the visible window so tasks planned outside the current view
+      // still count as planned (Not Planned row + resource rows stay correct).
+      let rangeStart = range?.startDate || '';
+      let rangeEnd = range?.endDate || '';
+      if (rangeStart && rangeEnd) {
+        for (const task of tasksToUse) {
+          const plannedStart = normalizeDateKey(task.PlannedStartDate);
+          const plannedEnd = normalizeDateKey(task.PlannedEndDate);
+          if (plannedStart && plannedStart < rangeStart) rangeStart = plannedStart;
+          if (plannedEnd && plannedEnd > rangeEnd) rangeEnd = plannedEnd;
+        }
+      }
+
+      const query = rangeStart && rangeEnd
+        ? `?startDate=${encodeURIComponent(rangeStart)}&endDate=${encodeURIComponent(rangeEnd)}`
         : '';
 
       const response = await fetch(
@@ -1340,10 +1356,19 @@ export default function PlanningPage() {
       }
 
       // Load all child allocations for hierarchical tasks
-      await loadAllChildAllocations(tasksList);
+      await loadAllChildAllocations(tasksToUse);
     } catch (err) {
       console.error('Failed to load all allocations:', err);
     }
+  };
+
+  const reloadTasksAndAllocations = async () => {
+    if (projects.length === 0) {
+      await loadAllAllocations();
+      return;
+    }
+    const refreshedTasks = await loadAllProjectsTasks(projects);
+    await loadAllAllocations(refreshedTasks);
   };
 
   const loadAllChildAllocations = async (tasksList?: Task[]) => {
@@ -2838,7 +2863,16 @@ export default function PlanningPage() {
         const descendantTaskIds = new Set(descendantTasks.map((descendant) => descendant.Id));
         const hasOwnAllocations = allAllocations.some((allocation) => allocation.TaskId === t.Id);
         const hasDescendantAllocations = allAllocations.some((allocation) => descendantTaskIds.has(allocation.TaskId));
-        const hasAllocations = hasOwnAllocations || hasDescendantAllocations;
+        // Task/API plan metadata covers slices outside the currently loaded allocation window.
+        const hasPlanMetadata =
+          Number(t.PlannedHours || 0) > 0 ||
+          !!(t.PlannedStartDate && t.PlannedEndDate) ||
+          descendantTasks.some(
+            (descendant) =>
+              Number(descendant.PlannedHours || 0) > 0 ||
+              !!(descendant.PlannedStartDate && descendant.PlannedEndDate)
+          );
+        const hasAllocations = hasOwnAllocations || hasDescendantAllocations || hasPlanMetadata;
         const isAssignedUnscheduled = Number(t.UnscheduledWork || 0) === 1 && hasAnyTaskAssignee(t);
         const hasUnscheduledDescendants = hasUnscheduledAssignedDescendant(t.Id);
         const isParent = !t.ParentTaskId;
@@ -3290,6 +3324,20 @@ export default function PlanningPage() {
     setShowPlanningTools(prev => !prev);
   };
 
+  useEffect(() => {
+    if (!isGanttExpanded) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsGanttExpanded(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isGanttExpanded]);
+
   const closeExtraTimeModal = () => {
     setExtraTimeModal({ show: false, task: null, userId: null, extraHours: '', hoursPerDay: '8', isProcessing: false, error: '', leafTasks: [], selectedSubtaskIds: [] });
   };
@@ -3532,7 +3580,7 @@ export default function PlanningPage() {
           }
         }
 
-        if (projects.length > 0) { await loadAllProjectsTasks(projects); await loadAllAllocations(); }
+        if (projects.length > 0) { await reloadTasksAndAllocations(); }
         closeExtraTimeModal();
 
         const leafUpdates = leafQuotas.filter(q => q.quotaHours > 0);
@@ -3587,7 +3635,7 @@ export default function PlanningPage() {
         return;
       }
 
-      if (projects.length > 0) { await loadAllProjectsTasks(projects); await loadAllAllocations(); }
+      if (projects.length > 0) { await reloadTasksAndAllocations(); }
       closeExtraTimeModal();
 
       const currentEstimated = parseFloat(String(task.EstimatedHours || 0));
@@ -4499,8 +4547,7 @@ export default function PlanningPage() {
       }
 
       if (projects.length > 0) {
-        await loadAllProjectsTasks(projects);
-        await loadAllAllocations();
+        await reloadTasksAndAllocations();
       }
 
       setSliceTransferModal({
@@ -5063,8 +5110,7 @@ export default function PlanningPage() {
         }
       }
       if (projects.length > 0) {
-        await loadAllProjectsTasks(projects);
-        await loadAllAllocations();
+        await reloadTasksAndAllocations();
       }
       draggedTaskRef.current = null;
       draggedTaskSourceUserIdRef.current = null;
@@ -5566,8 +5612,7 @@ export default function PlanningPage() {
       }));
 
       // Step 5: Final reload to show everything updated
-      await loadAllProjectsTasks(projects);
-      await loadAllAllocations();
+      await reloadTasksAndAllocations();
 
       setPlanningProgress(prev => ({
         ...prev,
@@ -5971,8 +6016,7 @@ export default function PlanningPage() {
           }
         }
         if (projects.length > 0) {
-          await loadAllProjectsTasks(projects);
-          await loadAllAllocations();
+          await reloadTasksAndAllocations();
         }
       }
     }
@@ -6281,8 +6325,7 @@ export default function PlanningPage() {
         }
 
         if (projects.length > 0) {
-          await loadAllProjectsTasks(projects);
-          await loadAllAllocations();
+          await reloadTasksAndAllocations();
         }
 
         showAlert('Success', 'Parent task subtasks planned across selected users successfully.');
@@ -6341,8 +6384,7 @@ export default function PlanningPage() {
       }
 
       if (projects.length > 0) {
-        await loadAllProjectsTasks(projects);
-        await loadAllAllocations();
+        await reloadTasksAndAllocations();
       }
 
       showAlert('Success', 'Task planned across multiple users successfully.');
@@ -6393,8 +6435,7 @@ export default function PlanningPage() {
         
         // Reload tasks and allocations to refresh the Gantt chart
         if (projects.length > 0) {
-          await loadAllProjectsTasks(projects);
-          await loadAllAllocations();
+          await reloadTasksAndAllocations();
         }
       } catch (err) {
         console.error('Failed to push forward:', err);
@@ -6450,8 +6491,7 @@ export default function PlanningPage() {
           await deleteTaskAllocationHeaderSlice(sourceHeaderId!);
 
           if (projects.length > 0) {
-            await loadAllProjectsTasks(projects);
-            await loadAllAllocations();
+            await reloadTasksAndAllocations();
           }
         } else {
           await executeParentTaskAllocation(task, userId, startDate, normalizedTotalHours, user, maxHoursPerDay, leafTasks);
@@ -6474,8 +6514,7 @@ export default function PlanningPage() {
           }
         }
         if (projects.length > 0) {
-          await loadAllProjectsTasks(projects);
-          await loadAllAllocations();
+          await reloadTasksAndAllocations();
         }
       }
     }
@@ -6858,8 +6897,7 @@ export default function PlanningPage() {
 
       // Reload tasks and allocations to reflect changes
       if (!options?.skipReload && projects.length > 0) {
-        await loadAllProjectsTasks(projects);
-        await loadAllAllocations();
+        await reloadTasksAndAllocations();
       }
       
       // Close modal after short delay to show completion
@@ -6951,9 +6989,8 @@ export default function PlanningPage() {
     await deleteTaskAllocationHeaderSlice(headerId);
 
     if (projects.length > 0) {
-      await loadAllProjectsTasks(projects);
     }
-    await loadAllAllocations();
+    await reloadTasksAndAllocations();
   };
 
 
@@ -7055,9 +7092,8 @@ export default function PlanningPage() {
 
           // Reload data
           if (projects.length > 0) {
-            await loadAllProjectsTasks(projects);
           }
-          await loadAllAllocations();
+          await reloadTasksAndAllocations();
           
           showAlert('Success', 'All allocations deleted successfully');
         } catch (error: any) {
@@ -7090,9 +7126,8 @@ export default function PlanningPage() {
 
       // Reload tasks and allocations
       if (projects.length > 0) {
-        await loadAllProjectsTasks(projects);
       }
-      await loadAllAllocations();
+      await reloadTasksAndAllocations();
       
       showAlert('Success', 'Allocation removed successfully');
     } catch (err) {
@@ -7793,45 +7828,33 @@ export default function PlanningPage() {
           </div>
         ) : (
           <>
-            {/* Tab Navigation */}
-            <div className="w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center gap-4 px-4">
-                <div className="flex gap-4">
-                  <button
-                    onClick={() => setActiveTab('gantt')}
-                    className={`pb-3 pt-4 px-4 font-medium transition-colors border-b-2 ${
-                      activeTab === 'gantt'
-                        ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                        : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    📊 Gantt Chart
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('allocations')}
-                    className={`pb-3 pt-4 px-4 font-medium transition-colors border-b-2 ${
-                      activeTab === 'allocations'
-                        ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                        : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    📋 All Allocations ({allAllocations.length})
-                  </button>
+            {!isGanttExpanded && (
+            <div className="w-full shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 pt-1.5">
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="min-w-0 flex-1">
+                  <PageTabs
+                    tabs={[
+                      { id: 'gantt', label: 'Gantt Chart' },
+                      { id: 'allocations', label: `All Allocations (${allAllocations.length})` },
+                    ]}
+                    activeId={activeTab}
+                    onChange={(id) => setActiveTab(id as 'gantt' | 'allocations')}
+                  />
                 </div>
-
                 {activeTab === 'gantt' && (
-                  <div className="ml-auto flex items-center gap-2 py-2">
+                  <div className="mb-1.5 ml-auto flex items-center gap-1.5">
                     <input
                       type="text"
                       value={ganttSearch}
                       onChange={(e) => setGanttSearch(e.target.value)}
                       placeholder="Search tasks in Gantt..."
-                      className="w-72 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      className="h-8 w-56 sm:w-72 rounded-md border border-gray-300 bg-white px-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                     />
                     {isGanttSearchActive && (
                       <button
+                        type="button"
                         onClick={() => setGanttSearch('')}
-                        className="px-3 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                        className="inline-flex h-8 items-center rounded-md bg-gray-200 px-2.5 text-sm text-gray-900 hover:bg-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600"
                       >
                         Clear
                       </button>
@@ -7840,34 +7863,36 @@ export default function PlanningPage() {
                 )}
               </div>
             </div>
+            )}
 
-            {(isLoadingOutlookCalendar || overdueMilestones.length > 0 || hiddenUnassignedTasks.length > 0) && (
-              <div className="bg-amber-50/60 dark:bg-amber-900/10 border-b border-amber-200/50 dark:border-amber-800/30 px-4 py-2 space-y-2">
+            {!isGanttExpanded && (isLoadingOutlookCalendar || overdueMilestones.length > 0 || hiddenUnassignedTasks.length > 0) && (
+              <div className="shrink-0 border-b border-amber-200/50 bg-amber-50/60 px-3 py-1 dark:border-amber-800/30 dark:bg-amber-900/10">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                 {isLoadingOutlookCalendar && (
-                  <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
-                    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-amber-600 border-t-transparent dark:border-amber-400 dark:border-t-transparent" aria-hidden="true" />
+                  <div className="flex items-center gap-1.5 text-xs text-amber-800 dark:text-amber-300">
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-amber-600 border-t-transparent dark:border-amber-400 dark:border-t-transparent" aria-hidden="true" />
                     <span>Still loading Outlook calendar…</span>
                   </div>
                 )}
 
                 {overdueMilestones.length > 0 && (
-                  <>
+                  <div className="min-w-0">
                     <button
                       type="button"
                       onClick={() => setShowOverdueDetails(!showOverdueDetails)}
-                      className="flex items-center gap-2 text-sm hover:opacity-75 transition-opacity"
+                      className="inline-flex items-center gap-1.5 text-xs hover:opacity-75 transition-opacity"
                     >
                       <span className="text-amber-700 dark:text-amber-600">⚠️</span>
                       <span className="font-medium text-amber-800 dark:text-amber-300">
                         {overdueMilestones.length} overdue milestone{overdueMilestones.length === 1 ? '' : 's'}
                       </span>
-                      <svg className={`w-4 h-4 text-amber-600 dark:text-amber-400 transition-transform ${showOverdueDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className={`h-3.5 w-3.5 text-amber-600 dark:text-amber-400 transition-transform ${showOverdueDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7-7-7 7" />
                       </svg>
                     </button>
 
                     {showOverdueDetails && (
-                      <div className="mt-2 space-y-1 max-h-64 overflow-y-auto">
+                      <div className="mt-1.5 space-y-1 max-h-48 overflow-y-auto">
                         {overdueMilestonesPreview.map((entry) => (
                           <div key={`overdue-milestone-${entry.milestone.Id}`} className="flex items-center justify-between gap-2 text-xs py-1 px-2 rounded bg-white/50 dark:bg-gray-800/30 hover:bg-white/80 dark:hover:bg-gray-800/50 transition-colors">
                             <div className="min-w-0 flex-1">
@@ -7903,27 +7928,27 @@ export default function PlanningPage() {
                         )}
                       </div>
                     )}
-                  </>
+                  </div>
                 )}
 
                 {hiddenUnassignedTasks.length > 0 && (
-                  <>
+                  <div className="min-w-0">
                     <button
                       type="button"
                       onClick={() => setShowHiddenNotPlannedDetails(!showHiddenNotPlannedDetails)}
-                      className="flex items-center gap-2 text-sm hover:opacity-75 transition-opacity"
+                      className="inline-flex items-center gap-1.5 text-xs hover:opacity-75 transition-opacity"
                     >
                       <span className="text-amber-700 dark:text-amber-600">⚠️</span>
                       <span className="font-medium text-amber-800 dark:text-amber-300">
                         {hiddenUnassignedTasks.length} hidden not-planned task{hiddenUnassignedTasks.length === 1 ? '' : 's'} without hours
                       </span>
-                      <svg className={`w-4 h-4 text-amber-600 dark:text-amber-400 transition-transform ${showHiddenNotPlannedDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className={`h-3.5 w-3.5 text-amber-600 dark:text-amber-400 transition-transform ${showHiddenNotPlannedDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7-7-7 7" />
                       </svg>
                     </button>
 
                     {showHiddenNotPlannedDetails && (
-                      <div className="mt-2 space-y-1 max-h-64 overflow-y-auto">
+                      <div className="mt-1.5 space-y-1 max-h-48 overflow-y-auto">
                         {hiddenUnassignedTasksPreview.map((task) => {
                           const project = projects.find((p) => Number(p.Id) === Number(task.ProjectId));
                           return (
@@ -7966,19 +7991,26 @@ export default function PlanningPage() {
                         </div>
                       </div>
                     )}
-                  </>
+                  </div>
                 )}
+                </div>
               </div>
             )}
 
             {activeTab === 'gantt' && (
-          <div className="w-full bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700 flex-1 min-h-0 flex flex-col">
+          <div
+            className={`bg-white dark:bg-gray-800 overflow-hidden flex flex-col ${
+              isGanttExpanded
+                ? 'fixed inset-0 z-[90] rounded-none border-0 shadow-none'
+                : 'relative w-full flex-1 min-h-0 rounded-lg border border-gray-200 dark:border-gray-700 shadow'
+            }`}
+          >
             {/* Permission / device notice */}
             {!canPlanOnThisDevice && (
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 border-b-2 border-yellow-400 dark:border-yellow-600 p-3 sm:p-4">
-                <div className="flex items-start sm:items-center gap-2 text-yellow-800 dark:text-yellow-200">
-                  <span className="text-xl shrink-0">{isMobile && permissions?.canPlanTasks ? '📱' : '🔒'}</span>
-                  <span className="font-medium text-sm sm:text-base">
+              <div className="border-b border-yellow-400 bg-yellow-50 px-3 py-1.5 dark:border-yellow-600 dark:bg-yellow-900/20">
+                <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200">
+                  <span className="shrink-0 text-sm">{isMobile && permissions?.canPlanTasks ? '📱' : '🔒'}</span>
+                  <span className="text-xs font-medium sm:text-sm">
                     {isMobile && permissions?.canPlanTasks
                       ? 'Read-only on this device — use a larger screen to edit allocations.'
                       : "Read-only view - You don't have permission to plan tasks"}
@@ -7987,16 +8019,16 @@ export default function PlanningPage() {
               </div>
             )}
             {isGanttSearchActive && (
-              <div className="bg-orange-50 dark:bg-orange-900/20 border-b-2 border-orange-400 dark:border-orange-600 p-4">
+              <div className="border-b border-orange-400 bg-orange-50 px-3 py-1.5 dark:border-orange-600 dark:bg-orange-900/20">
                 <div className="flex items-center gap-2 text-orange-800 dark:text-orange-200">
-                  <span className="text-xl">🔎</span>
-                  <span className="font-medium">Search filter active — planning is locked while filtering.</span>
+                  <span className="text-sm">🔎</span>
+                  <span className="text-xs font-medium sm:text-sm">Search filter active — planning is locked while filtering.</span>
                 </div>
               </div>
             )}
             {!isResourceGrouping && ganttGroupBy !== 'time-entries' && (
-              <div className="bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-700 p-3">
-                <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200 text-sm">
+              <div className="border-b border-blue-200 bg-blue-50 px-3 py-1.5 dark:border-blue-700 dark:bg-blue-900/20">
+                <div className="flex items-center gap-2 text-xs text-blue-800 dark:text-blue-200 sm:text-sm">
                   <span>ℹ️</span>
                   <span className="font-medium">Customer/Project views are visualization-only. Planning drag-and-drop is available in Resource view.</span>
                 </div>
@@ -8004,8 +8036,8 @@ export default function PlanningPage() {
             )}
 
             {/* Date Navigation */}
-            <div className="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-center gap-3">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-3 py-1.5 dark:border-gray-700">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   onClick={() => {
                     const newDate = new Date(viewStartDate);
@@ -8023,13 +8055,13 @@ export default function PlanningPage() {
                       }
                     }
                   }}
-                  className="px-3 sm:px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-sm"
+                  className="inline-flex h-8 items-center rounded-md bg-gray-200 px-2.5 text-sm text-gray-900 hover:bg-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600"
                 >
                   ← Previous
                 </button>
                 <button
                   onClick={goToToday}
-                  className="px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm"
+                  className="inline-flex h-8 items-center rounded-md bg-blue-600 px-2.5 text-sm font-medium text-white hover:bg-blue-700"
                   title="Go to today"
                 >
                   📅 Today
@@ -8051,15 +8083,15 @@ export default function PlanningPage() {
                       }
                     }
                   }}
-                  className="px-3 sm:px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-sm"
+                  className="inline-flex h-8 items-center rounded-md bg-gray-200 px-2.5 text-sm text-gray-900 hover:bg-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600"
                 >
                   Next →
                 </button>
               </div>
               
               {viewMode === 'custom' ? (
-                <div className="flex items-center gap-2 text-gray-900 dark:text-white font-medium">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">From:</label>
+                <div className="flex items-center gap-1.5 text-sm text-gray-900 dark:text-white">
+                  <label className="text-xs font-medium text-gray-700 dark:text-gray-300">From</label>
                   <input
                     type="date"
                     value={customStartDate}
@@ -8075,9 +8107,9 @@ export default function PlanningPage() {
                         setViewStartDate(parsedStart);
                       }
                     }}
-                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    className="h-8 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                   />
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">To:</label>
+                  <label className="text-xs font-medium text-gray-700 dark:text-gray-300">To</label>
                   <input
                     type="date"
                     value={customEndDate}
@@ -8090,22 +8122,22 @@ export default function PlanningPage() {
                       }
                       setCustomEndDate(value);
                     }}
-                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    className="h-8 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                   />
                 </div>
               ) : (
-                <span className="text-gray-900 dark:text-white font-medium">
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
                   {viewStartDate.toLocaleDateString()} - {days[days.length - 1].toLocaleDateString()}
                 </span>
               )}
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Subtask Levels:
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                  Subtask Levels
                 </label>
                 <select
                   value={maxVisibleLevel}
                   onChange={(e) => setMaxVisibleLevel(parseInt(e.target.value))}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  className="h-8 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                   title="Maximum subtask level to show in Gantt"
                 >
                   <option value={0}>None</option>
@@ -8116,9 +8148,9 @@ export default function PlanningPage() {
                   <option value={99}>Show All</option>
                 </select>
               </div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  View Mode:
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                  View Mode
                 </label>
                 <select
                   value={viewMode}
@@ -8133,7 +8165,7 @@ export default function PlanningPage() {
                       }
                     }
                   }}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  className="h-8 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 >
                   <option value="day">Day</option>
                   <option value="week">Week</option>
@@ -8143,14 +8175,14 @@ export default function PlanningPage() {
                 </select>
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Group By:
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                  Group By
                 </label>
                 <select
                   value={ganttGroupBy}
                   onChange={(e) => setGanttGroupBy(e.target.value as 'resource' | 'customer' | 'project' | 'time-entries')}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  className="h-8 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                   title="Choose how rows are grouped in Gantt"
                 >
                   <option value="resource">Resource</option>
@@ -8160,16 +8192,25 @@ export default function PlanningPage() {
                 </select>
               </div>
 
-              <div className={`flex flex-wrap items-center gap-2 ${showGanttViewOptions && isMobile ? 'w-full' : ''}`}>
+              <div className={`ml-auto flex flex-wrap items-center gap-1.5 ${showGanttViewOptions && isMobile ? 'w-full' : ''}`}>
+                {isGanttExpanded && (
+                  <input
+                    type="text"
+                    value={ganttSearch}
+                    onChange={(e) => setGanttSearch(e.target.value)}
+                    placeholder="Search tasks..."
+                    className="h-8 w-44 rounded-md border border-gray-300 bg-white px-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:w-56"
+                  />
+                )}
                 <div className={`relative ${isMobile ? 'w-full' : ''}`} ref={ganttViewOptionsRef}>
                   <button
                     onClick={() => setShowGanttViewOptions((prev) => !prev)}
-                    className="px-3 sm:px-4 py-2 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors inline-flex items-center gap-2"
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md bg-gray-200 px-2.5 text-sm text-gray-900 transition-colors hover:bg-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600"
                     title="Gantt view options"
                     aria-label="Gantt view options"
                   >
                     ⚙️ View Options
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
@@ -8307,20 +8348,42 @@ export default function PlanningPage() {
                 </div>
                 <button
                   onClick={togglePlanningTools}
-                  className={`p-2 rounded transition-colors ${showPlanningTools ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                  className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors ${showPlanningTools ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-200 text-gray-500 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600'}`}
                   title={showPlanningTools ? 'Collapse planning tools' : 'Expand planning tools'}
                   aria-label={showPlanningTools ? 'Collapse planning tools' : 'Expand planning tools'}
                 >
-                  <svg className={`w-5 h-5 transition-transform ${showPlanningTools ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className={`h-4 w-4 transition-transform ${showPlanningTools ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsGanttExpanded((prev) => !prev)}
+                  className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+                    isGanttExpanded
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                  title={isGanttExpanded ? 'Exit full page (Esc)' : 'Expand Gantt to full page'}
+                  aria-label={isGanttExpanded ? 'Exit full page' : 'Expand Gantt to full page'}
+                  aria-pressed={isGanttExpanded}
+                >
+                  {isGanttExpanded ? (
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3" />
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
+                    </svg>
+                  )}
                 </button>
               </div>
             </div>
 
             {/* Planning Tools expandable row */}
             {showPlanningTools && (
-              <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/60 flex items-center gap-3 flex-wrap">
+              <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50 px-3 py-1.5 dark:border-gray-700 dark:bg-gray-900/60">
                 {/* Existing action buttons */}
                 {canPlanOnThisDevice && projects.length > 0 && (
                   <button
@@ -10578,9 +10641,8 @@ export default function PlanningPage() {
             }
 
             if (projects.length > 0) {
-              await loadAllProjectsTasks(projects);
             }
-            await loadAllAllocations();
+            await reloadTasksAndAllocations();
             showAlert('Success', 'All allocations for this task were deleted successfully.');
           }}
           onOpenTaskDetails={async (taskId) => {
@@ -11058,8 +11120,7 @@ export default function PlanningPage() {
               onClose={() => setSelectedTask(null)}
               onSaved={() => {
                 setSelectedTask(null);
-                loadAllProjectsTasks(projects);
-                loadAllAllocations();
+                void reloadTasksAndAllocations();
               }}
               token={token!}
               // jiraIntegration prop removed; now handled internally in modal
