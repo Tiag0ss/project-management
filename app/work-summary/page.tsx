@@ -525,8 +525,8 @@ export default function WorkSummaryPage() {
         <main className="w-full mx-auto py-4 sm:py-6 px-4 sm:px-6 lg:px-8">
           <div className="px-0 sm:px-0 space-y-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Work Summary</h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">Work Summary</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 Combined view of time entries and call records.
               </p>
             </div>

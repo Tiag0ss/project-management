@@ -551,12 +551,12 @@ export default function ExpensesPage() {
 
   return (
     <div className="w-full">
-      <div className="w-full p-4 sm:p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Expenses</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Track project and internal expenses with invoice attachments and reimbursements.
+      <div className="w-full p-4 sm:p-6 space-y-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">Expenses</h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Track project and internal expenses with invoices and reimbursements.
             </p>
           </div>
           {canCreate && (
@@ -571,6 +571,7 @@ export default function ExpensesPage() {
         </div>
 
         <CollapsibleFilterPanel
+          className="mb-2"
           title="Expense filters"
           activeCount={[
             filterDateFrom ? 1 : 0,

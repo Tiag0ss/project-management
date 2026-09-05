@@ -940,8 +940,8 @@ export default function TimesheetPage() {
         <main className="w-full mx-auto py-6 sm:px-6 lg:px-8">
           <div className="px-4 sm:px-0 space-y-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Timesheet</h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">Timesheet</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 Track your hours and review your time entries.
               </p>
             </div>
@@ -1683,7 +1683,7 @@ export default function TimesheetPage() {
                         </div>
                       </div>
                       <CollapsibleFilterPanel
-                        className="mb-4"
+                        className="mb-2"
                         title="Entry filters"
                         activeCount={historyFilterActiveCount}
                         bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"

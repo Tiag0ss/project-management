@@ -696,26 +696,27 @@ export default function ApprovalsPage() {
 
   return (
     <div className="w-full">
-      <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="w-full mx-auto px-4 py-4 sm:py-6 space-y-2 sm:px-6 lg:px-8">
 
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            {expensesEnabled ? 'Approvals & Expenses' : 'Approvals'}
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Review and manage team approvals in one place.
-          </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">
+              {expensesEnabled ? 'Approvals & Expenses' : 'Approvals'}
+            </h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Review and manage team approvals in one place.
+            </p>
+          </div>
         </div>
 
-        <div className="mb-6 flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => {
               setActiveTab('time');
               router.replace('/approvals?tab=time');
             }}
             disabled={!canApproveTime}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'time'
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'time'
               ? 'bg-blue-600 text-white'
               : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
           >
@@ -727,7 +728,7 @@ export default function ApprovalsPage() {
               router.replace('/approvals?tab=vacations');
             }}
             disabled={!canApproveVacations && !user?.isAdmin}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'vacations'
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'vacations'
               ? 'bg-blue-600 text-white'
               : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
           >
@@ -739,7 +740,7 @@ export default function ApprovalsPage() {
               router.replace('/approvals?tab=out-of-office');
             }}
             disabled={!canApproveOutOfOffice && !user?.isAdmin}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'outOfOffice'
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'outOfOffice'
               ? 'bg-blue-600 text-white'
               : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
           >
@@ -752,7 +753,7 @@ export default function ApprovalsPage() {
                 router.replace('/approvals?tab=expenses');
               }}
               disabled={!canApproveExpenses}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'expenses'
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'expenses'
                 ? 'bg-blue-600 text-white'
                 : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
             >
@@ -801,7 +802,7 @@ export default function ApprovalsPage() {
 
         {/* Filters */}
         <CollapsibleFilterPanel
-          className="mb-6"
+          className="mb-2"
           title="Timesheet filters"
           activeCount={timesheetFilterActiveCount}
           bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
@@ -1305,7 +1306,7 @@ export default function ApprovalsPage() {
               <>
                 {/* Filters */}
                 <CollapsibleFilterPanel
-                  className="mb-6"
+                  className="mb-2"
                   title={`${leaveLabel} filters`}
                   activeCount={vacationFilterActiveCount}
                   bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"

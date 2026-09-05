@@ -731,18 +731,49 @@ export default function TicketsPage() {
   return (
     <div className="w-full">
 
-      <main className="w-full mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {isCustomerUser ? 'My Tickets' : 'Support Tickets'}
-            </h1>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {isCustomerUser 
-                ? 'View and manage your support requests'
-                : 'Manage all support tickets across organizations'}
-            </p>
+      <main className="w-full mx-auto px-4 py-4 sm:py-6 space-y-2 sm:px-6 lg:px-8">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">
+                {isCustomerUser ? 'My Tickets' : 'Support Tickets'}
+              </h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {isCustomerUser
+                  ? 'View and manage your support requests'
+                  : 'Manage support tickets across organizations'}
+              </p>
+            </div>
+            {stats && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-gray-900 dark:text-white">{stats.total}</span> total
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-blue-600 dark:text-blue-400">{stats.open}</span> open
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-purple-600 dark:text-purple-400">{stats.inProgress}</span> in progress
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-yellow-600 dark:text-yellow-400">{stats.waiting}</span> waiting
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-green-600 dark:text-green-400">{stats.resolved}</span> resolved
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-red-600 dark:text-red-400">
+                    {Number(stats.urgent || 0) + Number(stats.high || 0)}
+                  </span>{' '}
+                  high priority
+                </span>
+              </div>
+            )}
           </div>
           {permissions?.canCreateTickets && (
             <button
@@ -757,38 +788,8 @@ export default function TicketsPage() {
           )}
         </div>
 
-        {/* Stats Cards */}
-        {stats && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">{stats.total}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Total</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border-l-4 border-blue-500">
-              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.open}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Open</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border-l-4 border-purple-500">
-              <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">{stats.inProgress}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">In Progress</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border-l-4 border-yellow-500">
-              <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{stats.waiting}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Waiting</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border-l-4 border-green-500">
-              <div className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.resolved}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Resolved</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border-l-4 border-red-500">
-              <div className="text-2xl font-bold text-red-600 dark:text-red-400">{Number(stats.urgent || 0) + Number(stats.high || 0)}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">High Priority</div>
-            </div>
-          </div>
-        )}
-
         <CollapsibleFilterPanel
-          className="mb-4"
+          className="mb-2"
           title="Ticket filters"
           activeCount={[
             searchQuery.trim() ? 1 : 0,
