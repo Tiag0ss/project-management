@@ -15,8 +15,13 @@ export function getReleaseDir(): string {
   return path.join(process.cwd(), 'extras', 'release');
 }
 
+export const TAMPERMONKEY_SCRIPT_FILE_NAME = 'pm-task-commit-links.user.js';
+
+/** Public path — must end in `.user.js` so Tampermonkey offers install on navigation. */
+export const TAMPERMONKEY_SCRIPT_URL_PATH = `/api/downloads/tampermonkey/${TAMPERMONKEY_SCRIPT_FILE_NAME}`;
+
 export function getTampermonkeyScriptPath(): string {
-  return path.join(process.cwd(), 'extras', 'scripts', 'tampermonkey', 'pm-task-commit-links.user.js');
+  return path.join(process.cwd(), 'extras', 'scripts', 'tampermonkey', TAMPERMONKEY_SCRIPT_FILE_NAME);
 }
 
 export function isDesktopInstallerFile(fileName: string, platform: DesktopPlatform): boolean {

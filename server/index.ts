@@ -21,6 +21,8 @@ import {
   findLatestIdeExtension,
   getDownloadsCatalog,
   getTampermonkeyScriptPath,
+  TAMPERMONKEY_SCRIPT_FILE_NAME,
+  TAMPERMONKEY_SCRIPT_URL_PATH,
   type DesktopPlatform,
   type IdeExtensionKind,
 } from './utils/downloads';
@@ -387,17 +389,24 @@ app.prepare().then(async () => {
     }
   });
 
-  server.get('/api/downloads/tampermonkey', async (_req, res) => {
+  // Redirect short path → `.user.js` URL (Tampermonkey installs on top-level navigation)
+  server.get('/api/downloads/tampermonkey', (_req, res) => {
+    return res.redirect(302, TAMPERMONKEY_SCRIPT_URL_PATH);
+  });
+
+  server.get(TAMPERMONKEY_SCRIPT_URL_PATH, async (_req, res) => {
     try {
       const scriptPath = getTampermonkeyScriptPath();
       if (!fs.existsSync(scriptPath)) {
         return res.status(404).json({ success: false, message: 'Tampermonkey script not found' });
       }
+      // Inline JS (no attachment) so the browser opens the script and Tampermonkey can install it
       res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
-      return res.download(scriptPath, 'pm-task-commit-links.user.js');
+      res.setHeader('Content-Disposition', `inline; filename="${TAMPERMONKEY_SCRIPT_FILE_NAME}"`);
+      return res.sendFile(scriptPath);
     } catch (error) {
-      logger.error('Failed to provide Tampermonkey script download', { error });
-      return res.status(500).json({ success: false, message: 'Failed to download Tampermonkey script' });
+      logger.error('Failed to serve Tampermonkey script', { error });
+      return res.status(500).json({ success: false, message: 'Failed to serve Tampermonkey script' });
     }
   });
 

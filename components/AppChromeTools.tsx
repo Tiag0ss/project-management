@@ -1422,8 +1422,13 @@ export default function AppChromeTools({
     window.location.href = `${getApiUrl()}/api/downloads/ide-extension?ide=${ide}`;
   };
 
-  const handleTampermonkeyDownload = () => {
-    window.location.href = `${getApiUrl()}/api/downloads/tampermonkey`;
+  const handleTampermonkeyInstall = () => {
+    // Open `.user.js` in a new tab — Tampermonkey intercepts and offers install
+    window.open(
+      `${getApiUrl()}/api/downloads/tampermonkey/pm-task-commit-links.user.js`,
+      '_blank',
+      'noopener,noreferrer'
+    );
   };
 
   const openDownloadsModal = async () => {
@@ -3563,7 +3568,7 @@ export default function AppChromeTools({
                 <button
                   type="button"
                   disabled={!downloadsCatalog?.tampermonkey}
-                  onClick={handleTampermonkeyDownload}
+                  onClick={handleTampermonkeyInstall}
                   className="w-full flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
                 >
                   <span className="text-xl">🐒</span>
@@ -3571,7 +3576,7 @@ export default function AppChromeTools({
                     <p className="font-medium text-gray-900 dark:text-white">Tampermonkey script</p>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       {downloadsCatalog?.tampermonkey
-                        ? 'pm-task-commit-links.user.js — install via Tampermonkey'
+                        ? 'Opens in the browser — Tampermonkey will offer to install'
                         : 'Not available'}
                     </p>
                   </div>
