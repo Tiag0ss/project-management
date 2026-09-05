@@ -1,6 +1,12 @@
+# Root package only (not a multi-package monorepo).
+# Required so older tooling that still expects a packages list does not fail;
+# pnpm 10+ also stores install/build settings here.
+packages:
+  - '.'
+
 allowBuilds:
-  '@scarf/scarf': set this to true or false
-  bcrypt: set this to true or false
-  electron: set this to true or false
-  sharp: set this to true or false
-  unrs-resolver: set this to true or false
+  '@scarf/scarf': true
+  bcrypt: true
+  electron: true
+  sharp: true
+  unrs-resolver: true
