@@ -14,7 +14,6 @@ import {
   FolderKanban,
   GanttChart,
   Globe,
-  Landmark,
   LayoutDashboard,
   Phone,
   Pin,
@@ -52,7 +51,6 @@ function buildNav(expensesEnabled: boolean): NavItem[] {
     { href: '/memos', label: 'Memos', icon: StickyNote, section: 'Service' },
     { href: '/customers', label: 'Customers', icon: Building2, section: 'Management' },
     { href: '/applications', label: 'Applications', icon: Boxes, section: 'Management' },
-    { href: '/organizations', label: 'Organizations', icon: Landmark, section: 'Management' },
     {
       href: '/approvals',
       label: expensesEnabled ? 'Approvals & Expenses' : 'Approvals',

@@ -384,7 +384,7 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
             )}
           </div>
           <a
-            href={oldPath('/organizations')}
+            href="/administration?tab=organizations"
             className="text-sm text-[var(--pm-muted)] hover:text-[var(--pm-text)]"
           >
             ← Back to Organizations

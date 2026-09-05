@@ -1670,7 +1670,6 @@ export default function AppChromeTools({ toolsOnly = true }: { toolsOnly?: boole
     !!permissions?.canDeleteApplications ||
     !!permissions?.canManageReleases;
 
-  const canShowOrganizationsOption = !!permissions?.canManageOrganizations;
   const canShowApprovalsOption = canAccessApprovals;
   const canShowVacationApprovalsOption = canAccessVacationApprovals;
   const canShowOutOfOfficeApprovalsOption = canAccessOutOfOfficeApprovals;
@@ -1712,14 +1711,13 @@ export default function AppChromeTools({ toolsOnly = true }: { toolsOnly?: boole
   const showDeliverySection = canShowProjectsLink || canShowPlanningLink;
   const showWorkLogsSection = canShowTimesheetLink || canShowExpensesLink || canShowCallRecordsLink || canShowWorkSummaryLink;
   const showServiceSection = canShowTicketsLink || canShowMemosLink;
-  const showManagementSection = canShowCustomersOption || canShowApplicationsOption || canShowOrganizationsOption || canShowAnyApprovalsOption || canShowDevSupportManagementOption;
+  const showManagementSection = canShowCustomersOption || canShowApplicationsOption || canShowAnyApprovalsOption || canShowDevSupportManagementOption;
   const showReportingSection = canShowReportsLink;
 
   const canShowManagementMenu =
     !isCustomerUser &&
     (canShowCustomersOption ||
       canShowApplicationsOption ||
-      canShowOrganizationsOption ||
     canShowAnyApprovalsOption ||
     canShowDevSupportManagementOption);
 
@@ -1996,11 +1994,6 @@ export default function AppChromeTools({ toolsOnly = true }: { toolsOnly?: boole
                       <span className="w-5 text-center">🧩</span>{!isSidebarEffectivelyCollapsed && <span>Applications</span>}
                     </a>
                   )}
-                  {canShowOrganizationsOption && (
-                    <a href={oldPath("/organizations")} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
-                      <span className="w-5 text-center">🏬</span>{!isSidebarEffectivelyCollapsed && <span>Organizations</span>}
-                    </a>
-                  )}
                   {canShowAnyApprovalsOption && (
                     <a href={approvalsMenuHref} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">✅</span>{!isSidebarEffectivelyCollapsed && <span>{approvalsMenuLabel}</span>}
@@ -2258,12 +2251,6 @@ export default function AppChromeTools({ toolsOnly = true }: { toolsOnly?: boole
                         label: '🧩 Applications',
                         href: '/applications',
                         visible: !!canShowApplicationsOption,
-                        onClick: () => setManagementMenuOpen(false),
-                      },
-                      {
-                        label: '🏬 Organizations',
-                        href: '/organizations',
-                        visible: !!canShowOrganizationsOption,
                         onClick: () => setManagementMenuOpen(false),
                       },
                       {
@@ -3034,11 +3021,6 @@ export default function AppChromeTools({ toolsOnly = true }: { toolsOnly?: boole
               {canShowApplicationsOption && (
                 <a href={oldPath("/applications")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>🧩</span><span>Applications</span>
-                </a>
-              )}
-              {canShowOrganizationsOption && (
-                <a href={oldPath("/organizations")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
-                  <span>🏬</span><span>Organizations</span>
                 </a>
               )}
               {canShowAnyApprovalsOption && (

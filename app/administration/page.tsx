@@ -17,10 +17,12 @@ import CustomFieldsManagement from '@/components/admin/CustomFieldsManagement';
 import CustomTablesManagement from '@/components/admin/CustomTablesManagement';
 import ApiTokensManagement from '@/components/admin/ApiTokensManagement';
 import TaskFormVisibilitySettingsPanel from '@/components/admin/TaskFormVisibilitySettingsPanel';
+import OrganizationsManagement from '@/components/admin/OrganizationsManagement';
 import { useUrlTab } from '@/hooks/useUrlTab';
 
 type AdminTab =
   | 'users'
+  | 'organizations'
   | 'permissions'
   | 'settings'
   | 'task-form'
@@ -33,6 +35,7 @@ type AdminTab =
 
 const ADMIN_TABS = [
   'users',
+  'organizations',
   'permissions',
   'settings',
   'task-form',
@@ -46,6 +49,7 @@ const ADMIN_TABS = [
 
 const ADMIN_TAB_LABELS: { id: AdminTab; label: string }[] = [
   { id: 'users', label: 'Users' },
+  { id: 'organizations', label: 'Organizations' },
   { id: 'permissions', label: 'Role Permissions' },
   { id: 'settings', label: 'System Settings' },
   { id: 'task-form', label: 'Task Form' },
@@ -109,6 +113,7 @@ function AdministrationPageContent() {
       <main ref={scrollContainerRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto pt-3">
         <div className="rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] shadow-sm">
           {activeTab === 'users' && <UsersManagement />}
+          {activeTab === 'organizations' && <OrganizationsManagement />}
           {activeTab === 'permissions' && <RolePermissionsManagement />}
           {activeTab === 'settings' && <SystemSettings />}
           {activeTab === 'task-form' && token && (
