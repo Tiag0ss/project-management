@@ -5,7 +5,7 @@ import { getApiUrl } from '@/lib/api/config';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type ReactNode } from 'react';
 import Link from 'next/link';
 const oldPath = (p: string) => p; // new shell uses canonical routes
 import { useRouter, usePathname } from 'next/navigation';
@@ -91,7 +91,14 @@ const buildDefaultCustomerFormValues = (organizations: Organization[]): Customer
   CustomFields: {},
 });
 
-export default function AppChromeTools({ toolsOnly = true }: { toolsOnly?: boolean }) {
+export default function AppChromeTools({
+  toolsOnly = true,
+  leading,
+}: {
+  toolsOnly?: boolean;
+  /** Left header content (org switcher / demo). Enables true mid-gap timer centering when toolsOnly. */
+  leading?: ReactNode;
+}) {
   const { user, token, logout, isCustomerUser } = useAuth();
   const { permissions, isLoading: permissionsLoading } = usePermissions();
   const { showToast } = useToast();
@@ -2065,15 +2072,23 @@ export default function AppChromeTools({ toolsOnly = true }: { toolsOnly?: boole
           <div
             className={
               toolsOnly
-                ? 'relative flex items-center justify-end min-h-10 gap-2'
+                ? 'relative flex min-h-10 w-full items-center gap-2'
                 : 'relative flex justify-between items-center h-16 gap-2'
             }
           >
-            {toolsOnly && !isCustomerUser && (
-              <div className="pointer-events-auto absolute left-1/2 top-1/2 z-[5] -translate-x-1/2 -translate-y-1/2">
-                <NavTimerIndicator centered />
-              </div>
+            {toolsOnly && leading != null && (
+              <div className="relative z-20 min-w-0 shrink-0">{leading}</div>
             )}
+            {toolsOnly && !isCustomerUser && (
+              <>
+                <div className="min-w-0 flex-1" aria-hidden />
+                <div className="relative z-10 shrink-0">
+                  <NavTimerIndicator centered />
+                </div>
+                <div className="min-w-0 flex-1" aria-hidden />
+              </>
+            )}
+            {toolsOnly && isCustomerUser && <div className="min-w-0 flex-1" aria-hidden />}
             <div className={`flex items-center gap-2 sm:space-x-8 min-w-0 flex-1 ${toolsOnly ? 'hidden' : ''}`}>
               {shouldUseLeftSidebar && (
                 <button
@@ -2289,7 +2304,7 @@ export default function AppChromeTools({ toolsOnly = true }: { toolsOnly?: boole
               </div>
             )}
 
-            <div className="flex items-center gap-1.5 sm:gap-2 md:space-x-4 shrink-0">
+            <div className={`flex items-center gap-1.5 sm:gap-2 md:space-x-4 shrink-0 ${toolsOnly ? 'relative z-10' : ''}`}>
               {/* Global Search - Hidden for customer users */}
               {!isCustomerUser && (
               <div className="relative hidden sm:block" ref={searchRef}>

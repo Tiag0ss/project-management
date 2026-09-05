@@ -41,7 +41,7 @@ export default function AuthenticatedAppGate({ children }: { children: ReactNode
   }, [publicRoute, isLoading, token, router]);
 
   if (publicRoute) {
-    return <>{children}</>;
+    return <div className="pm-app min-h-screen text-[var(--pm-text)]">{children}</div>;
   }
 
   if (isLoading || !token) {

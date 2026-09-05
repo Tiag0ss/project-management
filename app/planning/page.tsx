@@ -8470,7 +8470,7 @@ export default function PlanningPage() {
                     })}
                   </svg>
                 )}
-                <div className="sticky top-0 z-[30]">
+                <div className="sticky top-0 z-[60]">
                   {/* Month header */}
                   {timelineColumns.length > 0 && (
                     <div className="flex border-b-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800">
@@ -8570,7 +8570,7 @@ export default function PlanningPage() {
 
                 {/* Milestones row */}
                 <div className="flex border-b border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-900/15">
-                  <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[60] bg-emerald-50/60 dark:bg-emerald-900/15 p-3 border-r border-gray-200 dark:border-gray-700">
+                  <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[50] bg-emerald-50 dark:bg-emerald-950 p-3 border-r border-gray-200 dark:border-gray-700">
                     <div className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
                       🏁 Milestones
                     </div>
@@ -8658,7 +8658,7 @@ export default function PlanningPage() {
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDropOnUser(e, null)}
                   >
-                    <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[60] bg-red-50 dark:bg-red-900/20 p-3 border-r border-gray-200 dark:border-gray-700">
+                    <div className="w-48 min-w-48 max-w-48 flex-none sticky left-0 z-[50] bg-red-50 dark:bg-red-950 p-3 border-r border-gray-200 dark:border-gray-700">
                       <div className="text-sm font-medium text-red-700 dark:text-red-400">
                         ⚠️ Not Planned ({visibleUnassignedTasks.length})
                       </div>
@@ -9893,7 +9893,7 @@ export default function PlanningPage() {
                           );
                         })}
                         {draggedTask && canPlanOnThisDevice && ganttSearch.trim().length === 0 && (
-                          <div className="absolute inset-0 z-[60] flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
+                          <div className="absolute inset-0 z-[10] flex" style={useFixedPixelColumns ? { minWidth: `${timelineDaysWidthPx}px` } : undefined}>
                             {timelineColumns.map((column, idx) => {
                               const dateKey = getDateKeyFromDate(column.start);
                               const showDayDropTarget = hoveredDropCell?.userId === userRow.Id && hoveredDropCell?.dateKey === dateKey;

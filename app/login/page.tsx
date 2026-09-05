@@ -8,6 +8,12 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { prepareAuthEncryptionSession } from '@/lib/api/auth';
 import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
+import AuthShell, {
+  authFieldClass,
+  authLabelClass,
+  authLinkClass,
+  authPrimaryButtonClass,
+} from '@/components/AuthShell';
 
 function LoginPageInner() {
   const [username, setUsername] = useState('');
@@ -16,6 +22,8 @@ function LoginPageInner() {
   const [isLoading, setIsLoading] = useState(false);
   const [allowPublicRegistration, setAllowPublicRegistration] = useState(false);
   const [registrationType, setRegistrationType] = useState<'internal' | 'customer'>('internal');
+  const [companyName, setCompanyName] = useState('Project Management');
+  const [companyLogoUrl, setCompanyLogoUrl] = useState('');
   const { login } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -23,16 +31,14 @@ function LoginPageInner() {
   useEffect(() => {
     checkInstallStatus();
     checkRegistrationSettings();
-    prepareAuthEncryptionSession().catch((err) => {
-      console.error('Failed to prepare auth encryption session:', err);
+    prepareAuthEncryptionSession().catch(() => {
+      // Encryption session is best-effort before submit.
     });
   }, []);
 
   const checkInstallStatus = async () => {
     try {
-      const response = await fetch(
-        `${getApiUrl()}/api/install/check`
-      );
+      const response = await fetch(`${getApiUrl()}/api/install/check`);
       if (response.ok) {
         const data = await response.json();
         if (data.needsInstall) {
@@ -40,24 +46,24 @@ function LoginPageInner() {
           return;
         }
       }
-    } catch (err) {
-      console.error('Failed to check install status:', err);
+    } catch {
+      // Ignore install probe failures on login.
     }
   };
 
   const checkRegistrationSettings = async () => {
     try {
-      const response = await fetch(
-        `${getApiUrl()}/api/system-settings/public`
-      );
-      
+      const response = await fetch(`${getApiUrl()}/api/system-settings/public`);
+
       if (response.ok) {
         const data = await response.json();
         setAllowPublicRegistration(data.allowPublicRegistration === true);
         setRegistrationType(data.publicRegistrationType || 'internal');
+        setCompanyName(data.companyName || 'Project Management');
+        setCompanyLogoUrl(data.companyLogoUrl || '');
       }
-    } catch (err) {
-      console.error('Failed to load registration settings:', err);
+    } catch {
+      // Keep defaults when public settings are unavailable.
     }
   };
 
@@ -75,84 +81,76 @@ function LoginPageInner() {
       } else {
         router.push('/dashboard');
       }
-    } catch (err: any) {
-      setError(err.message || 'Login failed. Please try again.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-100 dark:bg-gray-900 px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 sm:p-8">
-          <h1 className="text-3xl font-bold text-center mb-8 text-gray-900 dark:text-white">
-            Login
-          </h1>
-
-          {error && (
-            <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded">
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Username or Email
-              </label>
-              <input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                placeholder="Enter your username or email"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Password
-              </label>
-              <PasswordInput
-                ref={passwordRef}
-                id="password"
-                name="password"
-                required
-                autoComplete="current-password"
-                placeholder="Enter your password"
-              />
-              <div className="mt-2 text-right">
-                <Link href="/forgot-password" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
-                  Forgot password?
-                </Link>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-            >
-              {isLoading ? 'Logging in...' : 'Login'}
-            </button>
-          </form>
-
-          {allowPublicRegistration && (
-            <div className="mt-6 text-center">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                {registrationType === 'customer' ? 'Need customer access?' : "Don't have an account?"}{' '}
-                <Link href="/register" className="text-blue-600 dark:text-blue-400 hover:underline font-medium">
-                  {registrationType === 'customer' ? 'Register as customer' : 'Create account'}
-                </Link>
-              </p>
-            </div>
-          )}
+    <AuthShell
+      title="Login"
+      description="Sign in to access your workspace."
+      companyName={companyName}
+      companyLogoUrl={companyLogoUrl}
+      footer={
+        allowPublicRegistration ? (
+          <p>
+            {registrationType === 'customer' ? 'Need customer access?' : "Don't have an account?"}{' '}
+            <Link href="/register" className={`${authLinkClass} font-medium`}>
+              {registrationType === 'customer' ? 'Register as customer' : 'Create account'}
+            </Link>
+          </p>
+        ) : null
+      }
+    >
+      {error && (
+        <div className="mb-3 rounded border border-red-400 bg-red-100 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+          {error}
         </div>
-      </div>
-    </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div>
+          <label htmlFor="username" className={authLabelClass}>
+            Username or Email
+          </label>
+          <input
+            id="username"
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            className={authFieldClass}
+            placeholder="Enter your username or email"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="password" className={authLabelClass}>
+            Password
+          </label>
+          <PasswordInput
+            ref={passwordRef}
+            id="password"
+            name="password"
+            required
+            autoComplete="current-password"
+            placeholder="Enter your password"
+          />
+          <div className="mt-1.5 text-right">
+            <Link href="/forgot-password" className={`text-xs ${authLinkClass}`}>
+              Forgot password?
+            </Link>
+          </div>
+        </div>
+
+        <button type="submit" disabled={isLoading} className={authPrimaryButtonClass}>
+          {isLoading ? 'Logging in…' : 'Login'}
+        </button>
+      </form>
+    </AuthShell>
   );
 }
 
@@ -160,8 +158,8 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center bg-gray-100 dark:bg-gray-900">
-          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
+        <div className="flex min-h-screen items-center justify-center bg-[var(--pm-bg)]">
+          <div className="text-sm text-[var(--pm-muted)]">Loading…</div>
         </div>
       }
     >

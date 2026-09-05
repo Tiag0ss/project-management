@@ -173,10 +173,15 @@ router.get('/user-flags', authenticateToken, async (req: AuthRequest, res: Respo
 // Get public frontpage content (no auth required)
 router.get('/public-frontpage', async (req, res: Response) => {
   try {
+    // Demo mode always serves the built-in default frontpage (no stored HTML).
+    if (isDemoModeEnabled()) {
+      return res.json({ success: true, content: null, demoMode: true });
+    }
+
     const settingsMap = await getCachedSettingsMap();
     const content = settingsMap.frontpage_content ?? null;
 
-    res.json({ success: true, content });
+    res.json({ success: true, content, demoMode: false });
   } catch (error) {
     logger.error('Get public frontpage content error:', error);
     res.status(500).json({ 

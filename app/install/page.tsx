@@ -5,6 +5,12 @@ import { getApiUrl } from '@/lib/api/config';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
+import AuthShell, {
+  authFieldClass,
+  authLabelClass,
+  authPrimaryButtonClass,
+  authSecondaryButtonClass,
+} from '@/components/AuthShell';
 
 const API_URL = getApiUrl();
 
@@ -15,7 +21,6 @@ export default function InstallPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  // Admin user fields
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -23,7 +28,6 @@ export default function InstallPage() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
 
-  // Organization fields
   const [organizationName, setOrganizationName] = useState('');
   const [organizationAbbreviation, setOrganizationAbbreviation] = useState('');
   const [organizationDescription, setOrganizationDescription] = useState('');
@@ -42,8 +46,8 @@ export default function InstallPage() {
           return;
         }
       }
-    } catch (err) {
-      console.error('Failed to check install status:', err);
+    } catch {
+      // Show wizard if probe fails.
     } finally {
       setIsLoading(false);
     }
@@ -129,37 +133,25 @@ export default function InstallPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        // Log detailed error for debugging
-        console.error('Install setup error:', {
-          status: response.status,
-          statusText: response.statusText,
-          data
-        });
-        
         let errorMessage = data.message || 'Setup failed';
-        
-        // Include additional error details if available
-        if (data.error) {
-          if (data.error.sqlMessage) {
-            errorMessage += `\nDatabase Error: ${data.error.sqlMessage}`;
-          } else if (data.error.details) {
-            errorMessage += `\nDetails: ${data.error.details}`;
-          }
+        if (data.error?.sqlMessage) {
+          errorMessage += `\nDatabase Error: ${data.error.sqlMessage}`;
+        } else if (data.error?.details) {
+          errorMessage += `\nDetails: ${data.error.details}`;
         }
-        
         throw new Error(errorMessage);
       }
 
-      // Auto-login: save token and user
       if (data.token && data.user) {
         localStorage.setItem('authToken', data.token);
         localStorage.setItem('authUser', JSON.stringify(data.user));
       }
+      clearPasswordInput(passwordRef);
+      clearPasswordInput(confirmPasswordRef);
 
-      // Redirect to dashboard
       window.location.href = '/dashboard';
-    } catch (err: any) {
-      setError(err.message || 'An error occurred during setup');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred during setup');
     } finally {
       setIsSubmitting(false);
     }
@@ -167,267 +159,202 @@ export default function InstallPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-100 dark:bg-gray-900">
-        <div className="text-gray-500 dark:text-gray-400 text-lg">Checking system status...</div>
+      <div className="flex min-h-screen items-center justify-center bg-[var(--pm-bg)]">
+        <div className="text-sm text-[var(--pm-muted)]">Checking system status…</div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 px-4 py-12">
-      <div className="w-full max-w-lg">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
-            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">System Setup</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">
-            Welcome! Let&apos;s configure your project management system.
-          </p>
-        </div>
-
-        {/* Step indicator */}
-        <div className="flex items-center justify-center mb-8">
-          <div className="flex items-center">
-            <div className={`flex items-center justify-center w-10 h-10 rounded-full font-semibold text-sm ${
-              step >= 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'
-            }`}>
-              {step > 1 ? '✓' : '1'}
-            </div>
-            <span className={`ml-2 text-sm font-medium ${
-              step >= 1 ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500'
-            }`}>
-              Admin Account
-            </span>
-          </div>
-          <div className={`w-16 h-0.5 mx-3 ${
-            step >= 2 ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
-          }`} />
-          <div className="flex items-center">
-            <div className={`flex items-center justify-center w-10 h-10 rounded-full font-semibold text-sm ${
-              step >= 2 ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'
-            }`}>
-              2
-            </div>
-            <span className={`ml-2 text-sm font-medium ${
-              step >= 2 ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500'
-            }`}>
-              Organization
-            </span>
-          </div>
-        </div>
-
-        {/* Card */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8">
-          {/* Error message */}
-          {error && (
-            <div className="mb-6 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
-
-          {/* Step 1: Admin Account */}
-          {step === 1 && (
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">
-                Administrator Account
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-                Create the main administrator account with full system access.
-              </p>
-
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      First Name
-                    </label>
-                    <input
-                      type="text"
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                      placeholder="John"
-                      className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Last Name
-                    </label>
-                    <input
-                      type="text"
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
-                      placeholder="Doe"
-                      className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Username <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="admin"
-                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Email <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="admin@example.com"
-                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Password <span className="text-red-500">*</span>
-                  </label>
-                  <PasswordInput
-                    ref={passwordRef}
-                    name="password"
-                    placeholder="Min. 6 characters"
-                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    required
-                    autoComplete="new-password"
-                    preventAutofill
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Confirm Password <span className="text-red-500">*</span>
-                  </label>
-                  <PasswordInput
-                    ref={confirmPasswordRef}
-                    name="confirmPassword"
-                    placeholder="Repeat password"
-                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    required
-                    autoComplete="new-password"
-                    preventAutofill
-                  />
-                </div>
-              </div>
-
-              <div className="mt-8">
-                <button
-                  onClick={handleNextStep}
-                  className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-                >
-                  Next: Organization →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 2: Organization */}
-          {step === 2 && (
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">
-                Main Organization
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-                Create the primary organization. You can add more organizations later.
-              </p>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Organization Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={organizationName}
-                    onChange={(e) => setOrganizationName(e.target.value)}
-                    placeholder="My Company"
-                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Abbreviation
-                  </label>
-                  <input
-                    type="text"
-                    value={organizationAbbreviation}
-                    onChange={(e) => setOrganizationAbbreviation(e.target.value.toUpperCase())}
-                    placeholder="e.g., ACME"
-                    maxLength={10}
-                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                    Used in ticket numbers (e.g., TKT-ACME-1). Max 10 characters.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Description
-                  </label>
-                  <textarea
-                    value={organizationDescription}
-                    onChange={(e) => setOrganizationDescription(e.target.value)}
-                    placeholder="Brief description of the organization..."
-                    rows={3}
-                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-8 flex gap-3">
-                <button
-                  onClick={handlePrevStep}
-                  className="flex-1 px-6 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors"
-                >
-                  ← Back
-                </button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={isSubmitting}
-                  className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      Installing...
-                    </>
-                  ) : (
-                    '🚀 Complete Setup'
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <p className="text-center text-xs text-gray-400 dark:text-gray-500 mt-6">
-          This setup wizard will only appear when no users exist in the system.
-        </p>
+    <AuthShell
+      title="System Setup"
+      description="Welcome. Configure the administrator account and primary organization."
+      companyName="Project Management"
+      maxWidthClassName="max-w-lg"
+      footer={
+        <p>This setup wizard only appears when no users exist in the system.</p>
+      }
+    >
+      <div className="mb-4 flex items-center justify-center gap-2 text-xs">
+        <span
+          className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 font-medium ${
+            step >= 1
+              ? 'bg-[var(--pm-accent)] text-[var(--pm-accent-fg)]'
+              : 'bg-[var(--pm-surface-2)] text-[var(--pm-muted)]'
+          }`}
+        >
+          {step > 1 ? '✓' : '1'}
+        </span>
+        <span className={step >= 1 ? 'text-[var(--pm-text)]' : 'text-[var(--pm-muted)]'}>Admin</span>
+        <span className={`h-px w-8 ${step >= 2 ? 'bg-[var(--pm-accent)]' : 'bg-[var(--pm-border)]'}`} />
+        <span
+          className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 font-medium ${
+            step >= 2
+              ? 'bg-[var(--pm-accent)] text-[var(--pm-accent-fg)]'
+              : 'bg-[var(--pm-surface-2)] text-[var(--pm-muted)]'
+          }`}
+        >
+          2
+        </span>
+        <span className={step >= 2 ? 'text-[var(--pm-text)]' : 'text-[var(--pm-muted)]'}>Organization</span>
       </div>
-    </div>
+
+      {error && (
+        <div className="mb-3 whitespace-pre-wrap rounded border border-red-400 bg-red-100 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+          {error}
+        </div>
+      )}
+
+      {step === 1 && (
+        <div className="space-y-3">
+          <p className="text-xs text-[var(--pm-muted)]">
+            Create the main administrator account with full system access.
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className={authLabelClass}>First Name</label>
+              <input
+                type="text"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                placeholder="John"
+                className={authFieldClass}
+              />
+            </div>
+            <div>
+              <label className={authLabelClass}>Last Name</label>
+              <input
+                type="text"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="Doe"
+                className={authFieldClass}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className={authLabelClass}>
+              Username <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="admin"
+              className={authFieldClass}
+              required
+            />
+          </div>
+
+          <div>
+            <label className={authLabelClass}>
+              Email <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@example.com"
+              className={authFieldClass}
+              required
+            />
+          </div>
+
+          <div>
+            <label className={authLabelClass}>
+              Password <span className="text-red-500">*</span>
+            </label>
+            <PasswordInput
+              ref={passwordRef}
+              name="password"
+              placeholder="Min. 6 characters"
+              required
+              autoComplete="new-password"
+              preventAutofill
+            />
+          </div>
+
+          <div>
+            <label className={authLabelClass}>
+              Confirm Password <span className="text-red-500">*</span>
+            </label>
+            <PasswordInput
+              ref={confirmPasswordRef}
+              name="confirmPassword"
+              placeholder="Repeat password"
+              required
+              autoComplete="new-password"
+              preventAutofill
+            />
+          </div>
+
+          <button type="button" onClick={handleNextStep} className={authPrimaryButtonClass}>
+            Next: Organization
+          </button>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="space-y-3">
+          <p className="text-xs text-[var(--pm-muted)]">
+            Create the primary organization. You can add more organizations later.
+          </p>
+          <div>
+            <label className={authLabelClass}>
+              Organization Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={organizationName}
+              onChange={(e) => setOrganizationName(e.target.value)}
+              placeholder="My Company"
+              className={authFieldClass}
+              required
+            />
+          </div>
+
+          <div>
+            <label className={authLabelClass}>Abbreviation</label>
+            <input
+              type="text"
+              value={organizationAbbreviation}
+              onChange={(e) => setOrganizationAbbreviation(e.target.value.toUpperCase())}
+              placeholder="e.g., ACME"
+              maxLength={10}
+              className={authFieldClass}
+            />
+            <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
+              Used in ticket numbers (e.g., TKT-ACME-1). Max 10 characters.
+            </p>
+          </div>
+
+          <div>
+            <label className={authLabelClass}>Description</label>
+            <textarea
+              value={organizationDescription}
+              onChange={(e) => setOrganizationDescription(e.target.value)}
+              placeholder="Brief description of the organization…"
+              rows={3}
+              className={`${authFieldClass} resize-none`}
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <button type="button" onClick={handlePrevStep} className={authSecondaryButtonClass}>
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className={authPrimaryButtonClass}
+            >
+              {isSubmitting ? 'Installing…' : 'Complete Setup'}
+            </button>
+          </div>
+        </div>
+      )}
+    </AuthShell>
   );
 }

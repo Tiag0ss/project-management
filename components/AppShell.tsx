@@ -35,25 +35,35 @@ type NavItem = {
   section?: string;
 };
 
+type FeatureFlags = {
+  expensesEnabled: boolean;
+  internalTicketsEnabled: boolean;
+  memosEnabled: boolean;
+};
+
 /** Main product nav — account / search / timer / quick actions live in the top bar. */
-function buildNav(expensesEnabled: boolean): NavItem[] {
+function buildNav(flags: FeatureFlags): NavItem[] {
   return [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/projects', label: 'Projects', icon: FolderKanban, section: 'Delivery' },
     { href: '/planning', label: 'Planning', icon: GanttChart, section: 'Delivery' },
     { href: '/timesheet', label: 'Timesheet', icon: Timer, section: 'Work' },
-    ...(expensesEnabled
+    ...(flags.expensesEnabled
       ? [{ href: '/expenses', label: 'Expenses', icon: Wallet, section: 'Work' } as NavItem]
       : []),
     { href: '/call-records', label: 'Call Records', icon: Phone, section: 'Work' },
     { href: '/work-summary', label: 'Work Summary', icon: BookOpen, section: 'Work' },
-    { href: '/tickets', label: 'Tickets', icon: Ticket, section: 'Service' },
-    { href: '/memos', label: 'Memos', icon: StickyNote, section: 'Service' },
+    ...(flags.internalTicketsEnabled
+      ? [{ href: '/tickets', label: 'Tickets', icon: Ticket, section: 'Service' } as NavItem]
+      : []),
+    ...(flags.memosEnabled
+      ? [{ href: '/memos', label: 'Memos', icon: StickyNote, section: 'Service' } as NavItem]
+      : []),
     { href: '/customers', label: 'Customers', icon: Building2, section: 'Management' },
     { href: '/applications', label: 'Applications', icon: Boxes, section: 'Management' },
     {
       href: '/approvals',
-      label: expensesEnabled ? 'Approvals & Expenses' : 'Approvals',
+      label: flags.expensesEnabled ? 'Approvals & Expenses' : 'Approvals',
       icon: CheckSquare,
       section: 'Management',
     },
@@ -82,7 +92,12 @@ function SectionSplitter({ title, expanded }: { title: string; expanded: boolean
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [pinnedExpanded, setPinnedExpanded] = useState(false);
   const [hovered, setHovered] = useState(false);
-  const [expensesEnabled, setExpensesEnabled] = useState(false);
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlags>({
+    expensesEnabled: false,
+    internalTicketsEnabled: true,
+    memosEnabled: true,
+  });
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const expanded = pinnedExpanded || hovered;
   // Hover-only expand overlays; pinned expand must reserve content width.
   const contentOffsetClass = pinnedExpanded ? 'w-72' : 'w-16';
@@ -92,8 +107,32 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     useActiveOrganization();
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const publicRes = await fetch(`${getApiUrl()}/api/system-settings/public`);
+        if (publicRes.ok && !cancelled) {
+          const publicData = await publicRes.json();
+          setIsDemoMode(publicData.demoMode === true);
+        } else if (!cancelled) {
+          setIsDemoMode(false);
+        }
+      } catch {
+        if (!cancelled) setIsDemoMode(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!token) {
-      setExpensesEnabled(false);
+      setFeatureFlags({
+        expensesEnabled: false,
+        internalTicketsEnabled: true,
+        memosEnabled: true,
+      });
       return;
     }
     let cancelled = false;
@@ -104,9 +143,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         });
         if (!flagsRes.ok || cancelled) return;
         const flagsData = await flagsRes.json();
-        if (!cancelled) setExpensesEnabled(flagsData.expensesEnabled === true);
+        if (!cancelled) {
+          setFeatureFlags({
+            expensesEnabled: flagsData.expensesEnabled === true,
+            internalTicketsEnabled: flagsData.internalTicketsEnabled !== false,
+            memosEnabled: flagsData.memosEnabled !== false,
+          });
+        }
       } catch {
-        if (!cancelled) setExpensesEnabled(false);
+        if (!cancelled) {
+          setFeatureFlags({
+            expensesEnabled: false,
+            internalTicketsEnabled: true,
+            memosEnabled: true,
+          });
+        }
       }
     })();
     return () => {
@@ -114,7 +165,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [token]);
 
-  const NAV = useMemo(() => buildNav(expensesEnabled), [expensesEnabled]);
+  const NAV = useMemo(() => buildNav(featureFlags), [featureFlags]);
 
   const visibleNav = NAV.filter((item) => {
     if (item.href === '/portal') return isCustomerUser || Boolean(user?.customerId);
@@ -154,7 +205,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className={[
-          'fixed left-0 top-0 z-50 flex h-dvh flex-col overflow-hidden border-r border-[var(--pm-border)] bg-[var(--pm-panel)] shadow-xl transition-[width] duration-200',
+          'fixed left-0 top-0 z-[80] flex h-dvh flex-col overflow-hidden border-r border-[var(--pm-border)] bg-[var(--pm-panel)] shadow-xl transition-[width] duration-200',
           expanded ? 'w-72' : 'w-16',
         ].join(' ')}
       >
@@ -232,34 +283,43 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="z-40 flex min-h-12 shrink-0 items-center gap-3 border-b border-[var(--pm-border)] bg-[var(--pm-panel)] px-2 py-1.5 sm:px-3">
-          <div className="z-10 flex min-w-[10rem] shrink-0 items-center gap-2 sm:min-w-[12rem]">
-            <Building2 size={16} className="shrink-0 text-[var(--pm-accent)]" />
-            {orgLoading ? (
-              <span className="text-sm text-[var(--pm-muted)]">Organizations…</span>
-            ) : organizations.length <= 1 ? (
-              <span className="truncate text-sm font-medium" title={organizations[0]?.Name}>
-                {organizations[0]?.Name ?? 'No organization'}
-              </span>
-            ) : (
-              <select
-                className="w-full max-w-[14rem] rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-2 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
-                value={activeOrganizationId ?? ''}
-                onChange={(e) => setActiveOrganizationId(Number(e.target.value) || null)}
-                aria-label="Active organization"
-              >
-                {organizations.map((o) => (
-                  <option key={o.Id} value={o.Id}>
-                    {o.Name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <AppChromeTools toolsOnly />
-          </div>
+        <header className="relative z-[70] flex min-h-12 shrink-0 items-center border-b border-[var(--pm-border)] bg-[var(--pm-panel)] px-2 py-1.5 sm:px-3">
+          <AppChromeTools
+            toolsOnly
+            leading={
+              <div className="flex min-w-0 max-w-[min(100%,18rem)] items-center gap-2 sm:max-w-[22rem]">
+                <Building2 size={16} className="shrink-0 text-[var(--pm-accent)]" />
+                {orgLoading ? (
+                  <span className="text-sm text-[var(--pm-muted)]">Organizations…</span>
+                ) : organizations.length <= 1 ? (
+                  <span className="truncate text-sm font-medium" title={organizations[0]?.Name}>
+                    {organizations[0]?.Name ?? 'No organization'}
+                  </span>
+                ) : (
+                  <select
+                    className="w-full max-w-[14rem] rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-2 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
+                    value={activeOrganizationId ?? ''}
+                    onChange={(e) => setActiveOrganizationId(Number(e.target.value) || null)}
+                    aria-label="Active organization"
+                  >
+                    {organizations.map((o) => (
+                      <option key={o.Id} value={o.Id}>
+                        {o.Name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {isDemoMode && (
+                  <span
+                    className="hidden shrink-0 items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 sm:inline-flex dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                    title="Demo mode is enabled"
+                  >
+                    Demo
+                  </span>
+                )}
+              </div>
+            }
+          />
         </header>
 
         <main className="pm-density flex min-h-0 w-full flex-1 flex-col overflow-y-auto p-2 md:p-3">{children}</main>
