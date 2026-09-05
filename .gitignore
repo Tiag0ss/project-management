@@ -33,7 +33,12 @@ yarn-error.log*
 
 # production
 /build
-/extras/release
+# Release binaries (desktop installers, VSIX, unpacked builds) — never commit.
+# Ignore both paths: V2 uses extras/release; main still used /release at repo root.
+# Leftover local files after switching branches would otherwise flood `git status`.
+/release
+/extras/release/*
+!/extras/release/.gitkeep
 
 # misc
 .DS_Store
